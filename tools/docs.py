@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Dependency-free documentation bootstrap checker for System (level 1).
 
-The normative standard is the DNA documentation architecture. This tool checks
-level 1 plus a few lightweight graph and generator rules; it does not claim
-level 2/3 conformance. Run from any directory with Python 3.11+.
+The normative standard is docs/governance/documentation-architecture.md.
+This checker implements level 1 plus limited graph and generator checks; it
+does not claim complete level 2/3 conformance. Run from any directory with Python 3.11+.
 """
 from __future__ import annotations
 
