@@ -7,6 +7,9 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | Command | Result |
 |---|---|
 | `system doctor [--json]` | which rows are mounted, and a write/read probe of the SQLite storage domain `system_doctor`; exit 0 when every required row is mounted and the probe passes, 1 otherwise |
+| `system artifact put <file> [--media-type t] [--classification c]` | store the file as a `file@1` Artifact (default `local-private`, producer the operator) and print its ID |
+| `system artifact show <id>` | the envelope and occurrences as JSON; exit 1 when missing |
+| `system artifact cat <id>` | the bytes; exit 1 when unavailable |
 | `system work` | the Work namespace; no subcommands until M2, exit 2 |
 | `system --help` | help, exit 0 |
 
@@ -14,5 +17,7 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 - [src/cli.ts](src/cli.ts) — the commander program.
 - [src/doctor.ts](src/doctor.ts) — the checks, behind a `DoctorHost` seam so
   [tests](tests/README.md) need no host.
+
+The operator ID is `SYSTEM_OPERATOR_ID`, or the OS user name when unset.
 
 Built with `corepack pnpm build` into `lib/`, which the profile loads.

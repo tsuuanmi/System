@@ -15,7 +15,7 @@ const home = mkdtempSync(join(tmpdir(), 'system-smoke-'))
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
-const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'subprocess', 'credentials', 'system-app']
+const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'subprocess', 'credentials', 'system-app']
 
 function system(...args: string[]) {
   const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], {
@@ -102,4 +102,51 @@ test('the work namespace exists and says it is not implemented yet', () => {
   const ran = system('work')
   assert.equal(ran.status, 2)
   assert.match(ran.stdout, /milestone M2/)
+})
+
+test('an Artifact stored in one process is read by ID alone after a restart', () => {
+  const file = join(home, 'input.txt')
+  writeFileSync(file, 'durable bytes\n')
+  const put = system('artifact', 'put', file, '--media-type', 'text/plain')
+  assert.equal(put.status, 0, put.stderr)
+  const id = put.stdout.trim()
+  assert.match(id, /^sha256:[0-9a-f]{64}$/)
+  // Every `system` call boots a new host process: these reads happen after a restart.
+  const shown = system('artifact', 'show', id)
+  assert.equal(shown.status, 0, shown.stderr)
+  const read = JSON.parse(shown.stdout) as { state: string; envelope: { id: string; kind: string; blob: { bytes: number; mediaType: string }; classification: string }; occurrences: unknown[] }
+  assert.equal(read.state, 'stored')
+  assert.equal(read.envelope.id, id)
+  assert.deepEqual([read.envelope.kind, read.envelope.blob.bytes, read.envelope.blob.mediaType, read.envelope.classification], ['file', 14, 'text/plain', 'local-private'])
+  const cat = system('artifact', 'cat', id)
+  assert.equal(cat.status, 0, cat.stderr)
+  assert.equal(cat.stdout, 'durable bytes\n')
+  // Equal content stored again keeps its ID and adds an occurrence.
+  assert.equal(system('artifact', 'put', file, '--media-type', 'text/plain').stdout.trim(), id)
+  const again = JSON.parse(system('artifact', 'show', id).stdout) as { occurrences: unknown[] }
+  assert.equal(again.occurrences.length, 2)
+})
+
+test('an unknown or malformed Artifact ID is reported, not invented', () => {
+  const missing = system('artifact', 'show', `sha256:${'0'.repeat(64)}`)
+  assert.equal(missing.status, 1)
+  assert.match(missing.stdout, /"state": "missing"/)
+  const malformed = system('artifact', 'show', 'not-an-id')
+  assert.equal(malformed.status, 1)
+  assert.match(malformed.stderr, /not an Artifact ID/)
+})
+
+test('an Artifact whose bytes were deleted reads as unavailable', () => {
+  const file = join(home, 'doomed.txt')
+  writeFileSync(file, 'soon gone\n')
+  const id = system('artifact', 'put', file).stdout.trim()
+  const { envelope } = JSON.parse(system('artifact', 'show', id).stdout) as { envelope: { blob: { attachmentId: string } } }
+  const hex = envelope.blob.attachmentId.slice('sha256:'.length)
+  const root = join(home, 'attachments', 'v1')
+  rmSync(join(root, 'file-objects', hex.slice(0, 2), hex), { force: true })
+  rmSync(join(root, 'files', hex.slice(0, 2), hex), { recursive: true, force: true })
+  const cat = system('artifact', 'cat', id)
+  assert.equal(cat.status, 1)
+  assert.match(cat.stderr, /no longer stored/)
+  assert.equal(system('artifact', 'show', id).status, 0, 'the record itself remains')
 })

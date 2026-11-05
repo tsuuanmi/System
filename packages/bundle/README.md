@@ -14,6 +14,7 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `storage-sqlite` | `@deepseek-ai/dsh-storage-sqlite` | `storage.backend.sqlite` | yes | SQLite file `$DSH_HOME/system/state.sqlite`, WAL journal |
 | `storage-domain` | `@deepseek-ai/dsh-storage-domain` | `storageDomain` | yes | Work and Artifact records (ADR-0004 decision 9), default backend `sqlite` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` | `attachments` | yes | content-addressed Artifact bytes under `$DSH_HOME/attachments/v1` |
+| `artifacts` | `@system/artifacts` | `artifacts` | yes | immutable Artifacts over `storageDomain` and `attachments` (ADR-0003) |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | key references; unused in M0, may be disabled |
 | `system-app` | `@system/app` | — | yes | the CLI |
@@ -45,7 +46,7 @@ the runtime. Install scripts of DSH dependencies are denied in
 
 ## Measured on 2026-11-05 (Linux 5.4, Node 24.21.0)
 
-- `system doctor`: about 1.05 s wall time, about 89 MB peak RSS, 7 rows mounted.
+- M0: `system doctor` about 1.05 s wall time, about 89 MB peak RSS, 7 rows mounted.
 - Installed closure: 604 packages, 642 MB of `node_modules`. The
   `@deepseek-ai/dsh` launcher package depends on the default DSH stack
   (`dsh-base`, web, headless, tools); those packages are installed but **not
@@ -53,8 +54,7 @@ the runtime. Install scripts of DSH dependencies are denied in
 
 ## Known limitations
 
-- `attachment-local` and `subprocess` are only checked for presence; they are
-  first used by Artifacts (M1) and Workers (M3).
+- `subprocess` is only checked for presence; Workers first use it in M3.
 - DSH's SQLite backend sets `journal_mode` but not `synchronous`; the M2 crash
   tests must measure the effective level.
 - pnpm reports unmet `@opentelemetry/api` peer ranges inside DSH's own

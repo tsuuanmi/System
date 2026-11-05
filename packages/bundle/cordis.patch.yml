@@ -20,6 +20,10 @@
     - id: attachment-local
       name: '@deepseek-ai/dsh-attachment-local'
 
+    # Immutable, content-addressed Artifacts over the two rows above (ADR-0003).
+    - id: artifacts
+      name: '@system/artifacts'
+
     # Process spawning for Worker adapters and verifiers (ADR-0004 decisions 5, 12).
     - id: subprocess
       name: '@deepseek-ai/dsh-subprocess-local'

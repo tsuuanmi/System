@@ -3,14 +3,16 @@
  * after the host has started, and exits through the launcher's shutdown path.
  */
 import { readFileSync } from 'node:fs'
+import { userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
-import { buildProgram, type Run } from './cli.ts'
-import { REQUIRED_BACKEND, type DoctorHost, type StorageStatus } from './doctor.ts'
+import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
+import { buildProgram, type AppHost, type ArtifactCommands, type Run } from './cli.ts'
+import { REQUIRED_BACKEND, type StorageStatus } from './doctor.ts'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -55,14 +57,37 @@ async function probeStorage(ctx: Context): Promise<StorageStatus> {
   }
 }
 
+/** The operator a CLI call acts for (ADR-0004 decision 1). */
+export function operatorId(): string {
+  return process.env.SYSTEM_OPERATOR_ID || userInfo().username
+}
+
+function artifactCommands(ctx: Context): ArtifactCommands {
+  const artifacts = ctx.get('artifacts') as Artifacts | undefined
+  if (!artifacts) throw new Error('the artifacts row is not mounted (run `system doctor`)')
+  return {
+    putFile: (path, mediaType, classification) => {
+      if (!(CLASSIFICATIONS as readonly string[]).includes(classification)) throw new Error(`unknown classification ${classification}`)
+      return artifacts.putBytes({
+        kind: 'file', schemaVersion: 1, data: readFileSync(path), mediaType,
+        classification: classification as Classification, producer: { type: 'operator', ref: operatorId() },
+      })
+    },
+    get: (id) => artifacts.get(id),
+    readBytes: (id) => artifacts.readBytes(id),
+  }
+}
+
 export function apply(ctx: Context): void {
-  const host: DoctorHost = {
+  const host: AppHost = {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,
     probeStorage: () => probeStorage(ctx),
+    artifacts: () => artifactCommands(ctx),
   }
   let selected: Run | undefined
-  const program = buildProgram(host, { out: (text) => { process.stdout.write(text) } }, (run) => { selected = run })
+  const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) } }
+  const program = buildProgram(host, io, (run) => { selected = run })
   parseCmdline(ctx, program)
   const run = selected
   if (run === undefined) return
