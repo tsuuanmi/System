@@ -1,32 +1,46 @@
 # Agent instructions
 
-This file routes coding agents. Product facts belong in `docs/`, not here.
+This file routes coding agents. Product facts belong in `docs/`.
 
 ## Read before changing
 
-1. Read [README.md](README.md) and [docs/README.md](docs/README.md).
-2. Read [documentation governance](docs/governance/documentation.md) and the appropriate canonical or evolutionary documents.
-3. Run `python3 tools/docs.py trace <path-or-ID>` for an existing document or ID; inspect the related documentation.
-4. When implementation packages exist, read their nearest `README.md`, source, and tests. Package READMEs describe ownership, exclusions, entry points, dependency direction, and governing documents.
-5. Proposals are context only until accepted and promoted to canonical documentation.
+1. Read [README.md](README.md) and the [knowledge router](docs/README.md).
+2. Read the [System documentation profile](docs/governance/documentation.md)
+   and relevant current, draft, proposal and research documents.
+3. Run `python3 tools/docs.py trace <path-or-ID>` for each existing
+   document or ID affected; read related documents.
+4. When source exists, read its nearest source README, implementation and tests.
+5. An external audit target is **evidence only**: never assume its decisions,
+   package layout or release state apply to System.
 
-If source and normative documentation disagree, surface and reconcile the mismatch rather than silently picking one.
+When source and normative documentation disagree, reconcile the conflict.
 
 ## Change invariants
 
-- Keep changes small, coherent, and production-quality.
-- One authoritative implementation and one home per fact; no speculative frameworks, knobs, parallel runtimes, or compatibility layers.
-- Make access, side effects, trust boundaries, and operator approval explicit before adding executable Workers or tools.
-- Never claim a feature is shipped without implementation and evidence.
+- Make the smallest coherent, production-quality change.
+- One source of truth per fact; no parallel implementations or speculative
+  abstractions without tested need.
+- Keep task state independent of a specific Worker session, and treat
+  side-effect retries, authority, egress and accounting as explicit review
+  questions until contracts are accepted.
+- Research and proposals cannot become product authority without promotion.
+- Never claim shipped behavior from a diagram, roadmap or test proposal.
 
-## Documentation is part of the change
+## Documentation updates
 
-Update the appropriate documentation alongside any behavior, module boundary, public contract, verification, or durable decision change. Declare typed relationships in front matter; do not maintain generated blocks by hand. Retire knowledge only with evidence and a recorded ledger entry, following [governance](docs/governance/documentation.md).
+Update governing documents with code and validation changes. Put typed edges
+in front matter; use [the portable standard](docs/governance/documentation-architecture.md).
+Never edit generated blocks manually. Retire documents via ledger and proof,
+not direct deletion.
 
 ## Verification
 
-Run `python3 tools/docs.py check` and `python3 tools/docs.py sync --check`. For changes affecting paths covered by documentation, run `python3 tools/docs.py impact <base-ref>`. Discover and run implementation-specific checks from CI once code exists. Do not weaken a check to make a change pass.
+Run `python3 tools/docs.py check` and `python3 tools/docs.py sync --check`;
+when source globs are declared, run `python3 tools/docs.py impact <base-ref>`.
+Discover additional implementation checks from CI when they exist. Never
+weaken gates to force a passing result.
 
 ## Final review
 
-Inspect the diff; check links and consistency; report verified results and unresolved questions.
+Inspect the diff and links, prove any new claims, and report what remains
+unverified.

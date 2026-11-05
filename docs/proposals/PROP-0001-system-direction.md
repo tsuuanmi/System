@@ -4,47 +4,67 @@ type: proposal
 status: draft
 created: 2026-11-05
 summary: Establish System's goals, architectural questions, and first validation slice without assuming an implementation.
+evidence: [RES-0001, RES-0002]
 ---
 
 # Proposal: System direction
 
 ## Motivation
 
-System aims to make it practical to assign AI work to capable Workers while maintaining clear control over permissions, cost, recovery, and result quality. These outcomes are a **proposal for review**, not existing product behavior.
+System aims to make AI work portable among Workers while keeping the operator
+in control of significant decisions. **This document is a draft**, not a
+shipped specification. See the [MVP assessment](../research/RES-0002-mvp-assessment.md)
+for auditable candidates rather than copying another system's product scope.
 
-## Proposed goals
+## Proposed outcomes
 
-1. **Right Worker, right job:** choose an appropriate Worker by capabilities, task needs, data locality, and budget rather than vendor name.
-2. **Small, inspectable core:** keep correctness-critical contracts explicit and optional features replaceable. Complexity must justify its operational cost.
-3. **Durable execution:** record useful work and handoffs so cancellation and restart can recover safely without unintended side-effect replay.
-4. **Operator authority:** enforce bounded access, explicit data egress, approvals for sensitive actions, and trustworthy usage accounting.
-5. **Verifiable quality:** evaluate latency, cost, reliability, reproducibility, and ease of maintenance with executable tests and reproducible measurements.
+1. **Artifact-based handoff:** meaningful inputs, outputs and decisions survive
+   the Worker and allow independently chosen Workers to continue the task.
+2. **Workflow-agnostic core:** the execution model serves at least one code
+   and one non-code workflow without controller changes.
+3. **Operator attention is scarce:** routine actions within explicit policy
+   proceed, but sensitive effects and material choices remain governed.
+4. **Small, inspectable core:** keep correctness-critical guarantees in clear
+   boundaries and allow optional capabilities to disappear cleanly.
+5. **Reliability before breadth:** restart recovery, side-effect integrity,
+   usage correctness and outcome quality take priority over feature count.
 
-No specific host, plugin framework, programming language, provider, or deployment model is decided in this proposal.
+No particular host, framework, plugin API, language, vendor, or release
+version is selected. Reference research is non-normative.
 
-## Decisions to make
+## Decisions needed for the MVP
 
-- **Execution model:** which minimal abstractions distinguish a task, Worker, capability, result, and effect?
-- **Plugin boundaries:** which capabilities should be independently installable, testable, and removable?
-- **Worker contracts:** how to represent tool authorization, cancellation, resource limits, provenance, and usage consistently?
-- **Recovery:** which data must persist, and which actions require reconciliation rather than automatic retry?
-- **Trust:** how are local-only data, network egress, credentials, and permissions bounded?
-- **Proof:** which vertical slice demonstrates useful work with the least infrastructure?
+- Which Worker contract and single end-to-end task flow are indispensable?
+- Which durable records and effect-reconciliation states are necessary?
+- Where are approvals, egress, credentials and usage trust boundaries enforced?
+- What minimal verification makes a result safe to accept or act on?
+- Which host/runtime choices can meet the same tests with less complexity?
+- Are the R1–R5 reference targets appropriate for this new product, or do they
+  require new definitions and thresholds?
 
-Accepted durable choices belong in new decision documents when warranted, with explicit alternatives and evidence.
+[The boundary model](../architecture/boundaries.md) and [[RES-0002]]
+frame the review. An accepted architectural choice should be recorded in a
+new decision document with alternatives and tests.
 
-## Suggested first vertical slice
+## Proposed first vertical slice
 
-1. Write a small, testable set of requirements and trust boundaries.
-2. Implement one Worker behind a narrow interface, a durable task record, and a single client entry point.
-3. Demonstrate start, completion, restart recovery, cancellation, denied side effects, and recorded usage.
-4. Measure overhead, task latency, memory/CPU cost, and failure behavior with repeatable benchmarks.
-5. Add further Worker classes and orchestration only when a verified use case requires them.
+1. Agree minimum tasks, success measures and trust constraints.
+2. Execute one real Worker from a client through policy, a durable record and
+   a result reference.
+3. Prove restart/cancel safety and no duplicate external effects.
+4. Verify usage against a credible independent oracle.
+5. Run a small non-code task through the same controller without engine
+   modifications.
+6. Measure runtime overhead and operational effort with repeatable evidence.
 
-## Non-goals for this documentation PR
+## Non-goals of this documentation PR
 
-No runnable product or API is claimed. This PR does not choose the runtime, freeze a plugin interface, promise compatibility with unspecified interfaces, or assert untested performance.
+No executable product is claimed, architecture is not frozen, and old
+implementation features are not included by default. The audit does not make
+new feature commitments until the operator reviews the evidence.
 
-## Exit criteria
+## Acceptance
 
-The operator accepts or revises the scope, identifies initial architecture decisions and success measures, and assigns validation ownership. Only accepted parts become canonical requirements, architecture, and design.
+Choose MVP outcomes, the smallest proven capability closure, boundaries and
+measurable acceptance tests; promote accepted facts into canonical
+requirements and architecture. Everything else stays research or proposal.

@@ -1,21 +1,32 @@
 # System knowledge router
 
-This index distinguishes **current repository truth** from proposals and future implementation. System begins as a fresh project. At bootstrap the repository has documentation and tooling, but no product implementation.
+This index distinguishes **current repository truth** from proposals,
+exploratory audit evidence, and future implementation. System is a fresh
+project; no product runtime or verified production capability is claimed.
 
-| Question | Where to read | Authority |
+| Question | Read | Authority |
 |---|---|---|
-| How are documents organized, checked, and retired? | [Governance](governance/README.md) | Current repository policy |
-| What direction should System take? | [Proposals](proposals/README.md) | Under review; not current production behavior |
+| How is knowledge organized, checked and retired? | [Governance](governance/README.md) | Current repository policy |
+| How can another repository adopt the governance model? | [Portable standard and bootstrap](governance/bootstrap.md) | Reusable, product-agnostic governance |
+| What are the present architectural boundaries? | [Architecture](architecture/README.md) | Explicitly draft target model |
+| What external evidence informs MVP choices? | [Research](research/README.md) | Exploratory, non-normative |
+| What product direction is under consideration? | [Proposals](proposals/README.md) | Proposed, not current behavior |
 
 ## Change workflow
 
-Start with a proposal for an unaccepted change. Once decisions are made, record durable rationale in decisions, intended behavior in requirements, responsibility boundaries in architecture, and mechanisms in design **when these areas have real content**. Source and tests, once present, are executable reality. Do not create areas only to fill a template.
+Proposals describe unaccepted commitments. Research records evidence and
+uncertainty. Promote accepted choices into requirements, architecture, design,
+reference and decisions **only when those areas have real content**. Source
+and tests, once present, are executable reality.
 
-The [documentation profile](governance/documentation.md) selects the areas currently in use and the conformance level. Folder READMEs orient. Authored document relationships carry meaning; generated indexes are refreshed by tooling.
+The [documentation profile](governance/documentation.md) names active areas
+and conformance level. Folder READMEs route rather than duplicate knowledge.
+Typed relationships belong in front matter. Generated indexes are created by
+the documentation tool.
 
 ## Reading rules
 
-- One fact has one home. Link rather than repeat it.
-- Proposals cannot silently become canonical requirements.
-- Documentation changes travel with the behavior they describe.
-- Lifecycle metadata belongs in front matter where needed.
+- Each fact has one home; link instead of repeating it.
+- Draft architecture, research and proposals are not deployed functionality.
+- Documentation evolves in the same change set as its source behavior.
+- Do not copy external architecture or decisions into System by implication.

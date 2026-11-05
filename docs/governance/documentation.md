@@ -1,7 +1,7 @@
 ---
 level: 1
-areas: [governance=governance, proposals=proposal]
-id-prefixes: [proposal=PROP]
+areas: [governance=governance, architecture=architecture, research=research, proposals=proposal]
+id-prefixes: [proposal=PROP, research=RES]
 source-roots: []
 forbidden-names: [archive, archives, deprecated, history, legacy, old, temp, temporary]
 ledger: governance/retired.md
@@ -11,39 +11,60 @@ max-lines: 500
 reviewed: 2026-11-05
 ---
 
-# Documentation policy
+# System documentation profile
 
-System adopts the [DNA Documentation Architecture Standard](https://github.com/tsuuanmi/DNA/blob/main/docs/governance/documentation-architecture.md) by reference. This document records only System-specific choices; the standard is not duplicated here.
+System adopts its own [Portable Documentation Architecture Standard](documentation-architecture.md).
+That is the product-agnostic specification for future repositories. **This
+file is only the local System configuration**; do not copy its areas or product
+assumptions into another project. For reuse, see [bootstrap](bootstrap.md).
 
-## Scope and conformance
+## Active areas and authority
 
-- **Level 1 (minimum)** while there is no product source: typed identity, structural READMEs, forbidden-path checks, and relative Markdown links. The local checker additionally validates declared relations and generated indexes where present.
-- Only `governance/` and `proposals/` exist initially, because they hold actual knowledge. Add requirements, architecture, design, decisions, reference, validation, engineering, operations, security, or research **when they have real content**.
-- `source-roots` is empty intentionally. Register each real source root when implementation begins, and give each source package its own README.
-- The documentation standard is maintained in DNA; this repository keeps its own contributor workflow and runnable checks.
+- [Governance](README.md) — documentation standard, tooling and lifecycle.
+- [Architecture](../architecture/README.md) — early **draft** logical boundaries,
+  not a deployed implementation or a frozen runtime choice.
+- [Research](../research/README.md) — audit sources, constraints, evidence and
+  alternatives, without production authority.
+- [Proposals](../proposals/README.md) — pending product direction and scope.
 
-## Identity, authority, and links
+Other standard areas will be added as actual decisions, requirements, code
+contracts, validations or procedures exist. The absence of a folder is not a
+claim that the responsibility is unimportant.
 
-Proposals have immutable `PROP-NNNN` identifiers. IDs match their filename prefixes and are never reused. Proposal states are `draft`, `proposed`, `accepted`, `rejected`, `implementing`, `implemented`, `superseded`, or `withdrawn`.
+## Local identity and graph policy
 
-Documents use explicit lifecycle front matter where useful. Use `[[PROP-0001]]` for document-ID relationships; router READMEs and source paths use relative Markdown links to render on GitHub. Typed edges such as `evidence`, `supersedes`, `implements`, and `covers` belong in front matter rather than only in prose. A `covers` glob must refer to existing paths.
+Typed IDs: `PROP-NNNN` for proposals and `RES-NNNN` for research.
+Never reuse IDs. The local `source-roots` list stays empty until System
+contains source packages. When introduced, add their README ownership and
+relevant `covers` edges. Use wikilinks for typed document references and
+normal Markdown links in routers and for source files.
 
-## Commands and gates
+## Available commands
 
-From the root, using Python 3.11+ without third-party dependencies:
+From the root, using Python 3.11+ and no third-party packages:
 
 | Command | Purpose |
 |---|---|
-| `python3 tools/docs.py check` | Structure, identity, internal links, metadata |
-| `python3 tools/docs.py sync` | Regenerate supported index blocks |
-| `python3 tools/docs.py sync --check` | Detect stale generated content |
-| `python3 tools/docs.py trace <path-or-ID>` | Inspect declared document relations |
-| `python3 tools/docs.py impact <base-ref>` | Require updates for changed covered paths or justified PR waivers |
+| `python3 tools/docs.py check` | Structure, identity, local paths and supported graph checks |
+| `python3 tools/docs.py sync` | Generate supported index blocks |
+| `python3 tools/docs.py sync --check` | Verify indexes have no drift |
+| `python3 tools/docs.py trace <path-or-ID>` | Trace declared document edges and inverses |
+| `python3 tools/docs.py impact <base-ref>` | Check changed, covered paths and explicit PR waivers |
+| `python3 tools/bootstrap_docs.py --out <target> --name <name>` | Create a new project's documentation skeleton without overwriting files |
 
-CI runs `check`, `sync --check`, and, on pull requests, `impact`. An impact waiver is a PR-body line such as `docs-unchanged: docs/path.md — reason`. Reviewers remain responsible for semantic correctness.
+CI runs check, sync --check and impact (PR only), plus a bootstrap smoke test.
+A waiver is a PR-body line like
+`docs-unchanged: docs/architecture/boundaries.md — formatting-only change`.
 
-## Lifecycle
+**Conformance disclosure:** this is a **Level 1** bootstrap checker with some
+additional graph features; it does **not** implement every Level 2/3 rule,
+complete impact closure, or automated retirement. Do not raise the profile
+level until implementation and CI prove the additional contract.
 
-Retired documents must have surviving knowledge promoted into current documentation and references updated; add an append-only row to [the ledger](retired.md), including a full-text commit reference. Never reuse identifiers or delete documents without recording why.
+## Change and retirement
 
-Level 2/3 conformance, complete trace closure, automated retirement, and expanded impact checks require a subsequent verified tooling change before increasing `level`. The present checker is deliberately not described as full level 2 or 3 conformance.
+One fact, one home. Update the authoritative document with its behavior.
+Research and proposals never silently become requirements. Accepted knowledge
+is promoted before obsolete documents are retired. For retirement, fold
+surviving facts forward, rewrite links, append an [ledger](retired.md) entry
+with last live commit/path, and never reuse the ID.

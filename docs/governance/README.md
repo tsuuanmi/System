@@ -1,8 +1,17 @@
 # Governance
 
-This area owns System's **current documentation rules**, identifiers, verification workflow, and retention ledger. It is not a place for product architecture or feature proposals.
+This area defines **System's present documentation rules**, ownership,
+identifier policy, validation, and the evidence-based retirement ledger.
+It does not prescribe a product implementation.
 
-- [Documentation policy and repository profile](documentation.md)
+- [Portable Documentation Architecture Standard](documentation-architecture.md)
+  — reusable, repository-agnostic normative specification.
+- [Bootstrap guide](bootstrap.md)
+  — scaffolding a different repository using the portable standard.
+- [System documentation profile](documentation.md)
+  — areas, IDs, checks and conventions specific to this repository.
 - [Retired-document ledger](retired.md)
+  — append-only record of retired System documents.
 
-The source standard is [DNA: Documentation Architecture Standard](https://github.com/tsuuanmi/DNA/blob/main/docs/governance/documentation-architecture.md). It is a separate repository and may require access; the rules and commands needed to contribute to System are recorded locally in the policy and agent instructions.
+The portable standard is **local and self-contained**. A consuming repository
+can adopt it without access to any external product or documentation repository.
