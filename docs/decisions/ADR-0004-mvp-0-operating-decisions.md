@@ -20,9 +20,13 @@ claim**: work persists, Workers change, humans govern, and two domains run
 on one controller. This ADR records the choices for that slice (**MVP-0**)
 and names what is deferred to **MVP-1**.
 
-DSH facts below come from upstream `deepseek-ai/deepseek-harness` at commit
-`fcc0ad4` (tag `dsh-v0.2.2-rc.1`), read from docs and source on 2026-11-05.
-They are not yet reproduced by System tests.
+DSH facts below come from upstream `deepseek-ai/deepseek-harness` at tag
+`dsh-v0.2.2-rc.1`, commit `66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`. They
+were first read at master commit `fcc0ad4`, which is 811 commits ahead of the
+tag; they were rechecked at the tag on 2026-11-05: the storage, attachment and
+`sdk-minimal` packages are identical, and the subagent result fields and
+parent-Agent requirement are unchanged. Only the M0 boot path is reproduced by
+System tests so far.
 
 ## Decision
 
@@ -41,9 +45,10 @@ They are not yet reproduced by System tests.
    interchangeability (MVP-02) is shown as a Claude Code to Codex takeover.
 5. **Worker adapter.** A System-owned adapter plugin reuses DSH's subprocess
    and credential layers and the pinned agent SDKs. The stock `subagent-*`
-   adapters are not used directly: their `SubagentResult` drops usage and
-   workspace changes, shares one working directory and needs a parent DSH
-   Agent. An upstream change to carry usage and a per-run working directory
+   adapters are not used directly: their `SubagentResult` carries only
+   output, structured output, diagnostic and stop reason (no usage or
+   workspace changes), and every start needs a parent DSH Agent. A per-run
+   `cwd` is accepted. An upstream change to carry usage and a per-run working directory
    is filed separately.
 6. **Attempt execution.** Each attempt gets a fresh git worktree built from
    the exact input Artifact, a throwaway `HOME` (no SSH keys, `gh` login or
@@ -94,7 +99,7 @@ They are not yet reproduced by System tests.
     worktree, clean environment and disallowed tools are configuration, not
     enforcement; an agent running as the operator could still reach the
     network and the operator's files. MVP-04 is narrowed accordingly.
-15. **DSH pin.** `@deepseek-ai/dsh@0.2.2-rc.1` at commit `fcc0ad4`. All DSH
+15. **DSH pin.** `@deepseek-ai/dsh@0.2.2-rc.1`, tag commit `66491b05`. All DSH
     releases are prereleases; each upgrade is its own recorded decision,
     checked against that version's upgrade guide.
 
