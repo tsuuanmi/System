@@ -1,0 +1,13 @@
+diff --git a/lib/index.js b/lib/index.js
+index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..08292ab6413907f311469d729557ddf5be734acd 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -51,6 +51,8 @@ async function openDatabase(path, journalMode) {
+ 		await createDatabaseFile(actual);
+ 	}
+ 	const db = new DatabaseSync(actual);
++	// System patch: wait for another process's write lock instead of failing with "database is locked".
++	db.exec("PRAGMA busy_timeout = 5000");
+ 	try {
+ 		configureDatabase(db, actual, journalMode);
+ 		return db;

@@ -10,3 +10,6 @@ allowBuilds:
   protobufjs: false
   # The pinned pnpm that `dsh plugin` runs works without its install script.
   pnpm: false
+# Dependency fixes and why: patches/README.md.
+patchedDependencies:
+  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1': patches/@deepseek-ai__dsh-storage-sqlite@0.2.2-rc.1.patch
