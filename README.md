@@ -55,3 +55,45 @@ corepack pnpm check  # build, typecheck, unit tests, offline smoke tests
 
 The source is described in [packages](packages/README.md), [bin](bin/README.md)
 and [tests](tests/README.md). No release is published.
+
+## Operating MVP-0
+
+Credentials go into the DSH store by name; values are never printed:
+
+```sh
+bin/system credentials set CLAUDE_CODE_OAUTH_TOKEN   # from `claude setup-token`
+mkdir -p ~/.dsh/system/codex/default
+CODEX_HOME=~/.dsh/system/codex/default codex login --device-auth
+bin/system credentials set GITHUB_TOKEN              # System's own; Workers never get it
+bin/system workers                                   # which accounts are usable, and why not
+```
+
+A Software Engineering change needs a repository whose base commit has
+[`.system/checks.yaml`](.system/checks.yaml) and an `origin` remote:
+
+```sh
+TASK=$(bin/system task new --repo <path> --text "<what to do>" | tail -1)
+bin/system work submit --workflow workflows/software-engineering.yaml --input "$TASK"
+bin/system work show <work>          # events, verdicts, the published branch and pull request
+bin/system approve <work>            # held Work: a human at a terminal only
+bin/system work cancel <work> --wait
+bin/system work retry <work> [--step implement] [--worker codex/default]
+```
+
+Research takes a question as its input
+(`bin/system task new --text "<question>"`, then `--workflow workflows/research.yaml`).
+A step asks for a model tier with the capability `tier.economy`,
+`tier.standard` or `tier.frontier`.
+
+Environment variables: `DSH_HOME` (default `~/.dsh`), `SYSTEM_OPERATOR_ID`
+(default: the OS user), `SYSTEM_CALLER` (`human` or `agent`; labels a call,
+never authorises an approval), `SYSTEM_REAL_AGENTS=1` (runs the
+credential-gated tests in `tests/real-agents.test.ts`). Launcher flags go
+before the command, such as `bin/system --patch overlay.yml work submit ...`.
+
+**System develops System:** [`.system/checks.yaml`](.system/checks.yaml) is
+this repository's own required checks. Commit `e99996b` was made by System
+through its Software Engineering Workflow (Work `work:6bd9748e…`; Claude Code
+at the economy tier; checks passed; published as a draft pull request to a
+local mirror) and taken in after review. See [PLAN.md](PLAN.md) for the
+evidence of every milestone and the known limits.

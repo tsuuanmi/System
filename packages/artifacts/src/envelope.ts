@@ -68,7 +68,6 @@ export type BlobRef = z.infer<typeof blobRefSchema>
 /** The exact external object an Artifact describes, such as a git tree. */
 export type Subject = z.infer<typeof subjectSchema>
 export type Envelope = z.infer<typeof envelopeSchema>
-export type Lineage = Envelope['lineage']
 /** One production event; equal content produced twice has two occurrences. */
 export type Occurrence = z.infer<typeof occurrenceSchema>
 /** Who produced one occurrence of an Artifact. */

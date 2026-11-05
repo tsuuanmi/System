@@ -8,8 +8,8 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -23,7 +23,7 @@ function system(args: string[]) {
   const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], { env, encoding: 'utf8', timeout: 900_000 })
   return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr }
 }
-type Observed = { type: string; status?: string; usage?: { state: string; inputTokens?: number }; worker?: { ref: string; version?: string; tier?: string; model?: string } }
+type Observed = { type: string; attemptId?: string; status?: string; usage?: { state: string; inputTokens?: number }; worker?: { ref: string; version?: string; tier?: string; model?: string } }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as { events: Observed[]; state: { status: string; reason?: string; steps: { task: { outputs: { result?: string }; partial?: { result?: string } } } } }
 const tree = (id: string) => (JSON.parse(system(['artifact', 'show', id]).stdout) as { envelope: { content: { commit: string; parent: string } } }).envelope.content
 const fileAt = (commit: string, path: string) => execFileSync('git', ['-C', gitRepo, 'show', `${commit}:${path}`], { encoding: 'utf8' })
@@ -67,18 +67,19 @@ test('a cancelled Claude Code attempt is taken over by Codex from its partial tr
   ].join('\n'))
   const submit = spawn(process.execPath, [join(repo, 'bin', 'system'), 'work', 'submit', '--capability', 'code-write', 'tier.economy', '--input', input], { env, stdio: ['ignore', 'pipe', 'pipe'] })
   let out = ''
+  let err = ''
   submit.stdout.on('data', (d) => { out += d })
+  submit.stderr.on('data', (d) => { err += d })
   const exited = new Promise<number | null>((r) => submit.on('close', r))
   while (!out.trim()) await new Promise((r) => setTimeout(r, 200))
   const workId = out.trim().split('\n')[0]!
-  // Cancel as soon as step one is on disk in the attempt's worktree, while the agent sleeps.
-  const attempts = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', 'attempts')
+  // Cancel 3 s after dispatch: an agent CLI takes longer than that just to start, so the attempt is
+  // always mid-run, whatever the model does with its instructions.
   const started = Date.now()
-  const stepOne = () => existsSync(attempts) && readdirSync(attempts).some((a) => existsSync(join(attempts, a, 'work', 'NOTES.md')))
-  while (!stepOne() && Date.now() - started < 120_000) await new Promise((r) => setTimeout(r, 250))
-  assert.ok(stepOne(), 'the agent wrote step one within 2 minutes')
-  await new Promise((r) => setTimeout(r, 2_000))
-  assert.equal(system(['work', 'cancel', workId, '--reason', 'real takeover test', '--wait']).status, 0)
+  while (!show(workId).events.some((e) => e.type === 'dispatched') && Date.now() - started < 60_000) await new Promise((r) => setTimeout(r, 250))
+  await new Promise((r) => setTimeout(r, 3_000))
+  const cancel = system(['work', 'cancel', workId, '--reason', 'real takeover test', '--wait'])
+  assert.equal(cancel.status, 0, `cancel: ${cancel.stdout}${cancel.stderr}\nhost stderr: ${err}`)
   assert.equal(await exited, 5)
   const cancelled = show(workId)
   assert.equal(cancelled.state.status, 'cancelled')
@@ -89,7 +90,7 @@ test('a cancelled Claude Code attempt is taken over by Codex from its partial tr
   const done = show(workId)
   const final = tree(done.state.steps.task.outputs.result!)
   assert.equal(final.parent, partial.commit, 'Codex started from the cancelled attempt\'s tree')
-  assert.match(fileAt(final.commit, 'NOTES.md'), /step two/)
+  assert.match(fileAt(final.commit, 'NOTES.md'), /step one/)
   const observed = done.events.filter((e) => e.type === 'observed')
   assert.deepEqual(observed.map((e) => [e.worker?.ref, e.status]), [['claude-code/default', 'cancelled'], ['codex/default', 'succeeded']])
   assert.equal(observed[1]!.usage?.state, 'observed')

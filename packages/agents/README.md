@@ -71,8 +71,9 @@ model is recorded for it.
    as `git-tree@1` and pinned at `refs/system/artifacts/<commit>`; every other
    slot is the file `out/<slot>` as `file@1`. A missing output fails the attempt.
 5. **Record:** usage from the CLI's own JSON (unknown when absent), the
-   account, CLI path and version, and the bounded stdout as a `local-private`
-   log Artifact. The log is never handed to another Worker.
+   account, CLI path and version (asked once, on first use, never at
+   startup), and the bounded stdout as a `local-private` log Artifact. The
+   log is never handed to another Worker.
 6. **Clean up:** the worktree registration and the attempt directory are removed.
 
 **Cancel:** the controller aborts the attempt; DSH sends SIGTERM to the range

@@ -147,10 +147,10 @@ async function readSecret(prompt: string): Promise<string> {
   }
 }
 
-function workersView(ctx: Context): WorkersView {
+async function workersView(ctx: Context): Promise<WorkersView> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
   const agents = ctx.get('agents') as AgentsService | undefined
-  return { registered: capabilities?.workerRefs() ?? [], accounts: agents?.accounts() ?? [] }
+  return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
 }
 
 /** One typed line from a human at the terminal; anything else is refused (ADR-0004 decision 3). */

@@ -49,9 +49,11 @@ All DSH packages are `0.2.2-rc.1`, tag commit `66491b05`; `engines.dsh` pins
 the runtime. Install scripts of DSH dependencies are denied in
 [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml).
 
-## Measured on 2026-11-05 (Linux 5.4, Node 24.21.0)
+## Measured on 2026-11-06 (Linux 5.4, Node 24.21.0)
 
-- M0: `system doctor` about 1.05 s wall time, about 89 MB peak RSS, 7 rows mounted.
+- `system doctor` with 12 of 13 rows mounted: about 1.1 s wall time, about
+  95 MB peak RSS. Agent CLI versions are asked lazily; probing them at
+  startup had cost about 0.9 s per command.
 - Installed closure: 604 packages, 642 MB of `node_modules`. The
   `@deepseek-ai/dsh` launcher package depends on the default DSH stack
   (`dsh-base`, web, headless, tools); those packages are installed but **not

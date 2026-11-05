@@ -58,7 +58,7 @@ export interface AppHost extends DoctorHost {
   artifacts(): ArtifactCommands
   work(): WorkCommands
   credentials(): CredentialCommands
-  workers(): WorkersView
+  workers(): Promise<WorkersView>
 }
 
 /** A command the program selected, run after startup. */
@@ -132,7 +132,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .description('registered Workers, and each configured agent account with why it is or is not available')
     .action(() => {
       select(async () => {
-        const { registered, accounts } = host.workers()
+        const { registered, accounts } = await host.workers()
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}\n`)

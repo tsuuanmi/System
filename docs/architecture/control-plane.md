@@ -7,7 +7,8 @@ covers: [packages/bundle/cordis.patch.yml]
 
 # System control-plane architecture
 
-**Status: selected target architecture, not an implemented system.**
+**Status: selected architecture; MVP-0 is implemented** (see
+[packages](../../packages/README.md) and the evidence in [PLAN.md](../../PLAN.md)).
 System is a durable AI work **control plane** hosted on **DSH/Cordis**.
 Its execution plane is existing agent/model/tool/Worker capabilities mounted
 as DSH plugins or reached through adapters. See
@@ -89,7 +90,7 @@ the System work services and the DSH hosting/execution capabilities needed
 to satisfy their contracts. Every additional plugin has an explicit reason and
 dependency. The complete list is determined by an actual profile dependency
 audit, **not** by copying a reference bundle. The current tree is
-[`@system/bundle`](../../packages/bundle/README.md): ten rows (one, `fakes`, disabled), no `dsh-base`,
+[`@system/bundle`](../../packages/bundle/README.md): thirteen rows (one, `fakes`, disabled), no `dsh-base`,
 checked by `system doctor` and the offline smoke test.
 
 **Configuration-first plugin lifecycle:**

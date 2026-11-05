@@ -59,15 +59,16 @@ smallest two-workflow spike validates the transitions.
 earlier questions: System owns the work semantics and stores them in the DSH
 storage hub (one key per Work, one atomic update per transition), and Workers
 use a System-owned adapter built on DSH's subprocess and credential layers
-because the stock subagent adapters drop usage and workspace changes.
+because the stock subagent adapters drop usage and workspace changes. The
+minimal Worker contract that represents both code patches and research
+reports is `WorkerRequest`/`WorkerResult` in `@system/work`: exact input
+Artifact IDs in, output slots captured by the adapter out.
 
 ## Unanswered design questions
 
 - Can a plugin update be staged and drained without bypassing Cordis lifecycle?
 - Which provider metering oracle and result verification can be reproduced in
   a local CI fixture?
-- What minimum Worker contract represents both code patches and research
-  reports without encoding either domain?
 
 The [MVP contract](../requirements/mvp.md) owns required behavior; this page
 records possible mechanisms until experiments choose one.

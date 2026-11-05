@@ -13,6 +13,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import type { GitTreeContent } from './kinds.ts'
 
 const run = promisify(execFile)
 const GIT_MS = 60_000
@@ -39,16 +40,8 @@ export async function git(dir: string, args: string[], env: Record<string, strin
   }
 }
 
-/** The exact identity of one commit in one repository: the content of a `git-tree@1` Artifact. */
-export interface GitTree {
-  repository: string
-  commit: string
-  tree: string
-  parent?: string
-}
-
 /** Resolve `ref` in the repository that contains `path`. */
-export async function snapshot(path: string, ref = 'HEAD'): Promise<GitTree> {
+export async function snapshot(path: string, ref = 'HEAD'): Promise<GitTreeContent> {
   const repository = realpathSync((await git(path, ['rev-parse', '--show-toplevel'])).trim())
   const commit = (await git(repository, ['rev-parse', '--verify', `${ref}^{commit}`])).trim()
   const tree = (await git(repository, ['rev-parse', `${commit}^{tree}`])).trim()
@@ -65,7 +58,7 @@ export async function addWorktree(repository: string, path: string, commit: stri
  * Capture everything in the worktree, tracked or not (ignored files excepted),
  * as one commit on `base`; an unchanged worktree is `base` itself.
  */
-export async function captureTree(repository: string, worktree: string, base: string, message: string): Promise<GitTree> {
+export async function captureTree(repository: string, worktree: string, base: string, message: string): Promise<GitTreeContent> {
   const scratch = mkdtempSync(join(tmpdir(), 'system-index-'))
   try {
     const index = { GIT_INDEX_FILE: join(scratch, 'index') }

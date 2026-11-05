@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { Artifacts, type ArtifactRecord, type BlobStore, type RecordTable } from '@system/artifacts'
 import { Capabilities, GIT_TREE_KIND, TASK_KIND, WorkController, resolvedSpecSchema, gitTreeSchema, parseWorkflow, resolve, snapshot, taskSchema, type GitTreeContent, type ResolvedSpec, type SpecStore, type WorkRecord, type WorkTable, type WorkerRequest } from '@system/work'
 import { agentWorker, type Account, type Spawner } from '../src/agent.ts'
+import { lazyVersion } from '../src/index.ts'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-agent.mjs')
 const root = mkdtempSync(join(tmpdir(), 'system-agents-'))
@@ -74,7 +75,7 @@ function repo(): string {
 
 function account(runtime: 'claude-code' | 'codex', extra: Partial<Account> = {}): Account {
   return {
-    ref: `${runtime}/default`, runtime, capabilities: ['code-write', 'research'], command: fake, version: 'fake',
+    ref: `${runtime}/default`, runtime, capabilities: ['code-write', 'research'], command: fake, version: async () => 'fake',
     token: async () => 'the-token', ...extra,
   }
 }
@@ -287,4 +288,28 @@ test('a step asking for a tier runs that tier\'s model; no tier runs standard; t
   const none = await bare.run({ ...request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']), capabilities: ['code-write'] })
   const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${treeOf(artifacts, none.outputs.change!).commit}:ENV.json`], { encoding: 'utf8' })) as { model?: string }
   assert.equal(seen.model, undefined, 'an account with no models passes no model flag')
+})
+
+test('registering an account spawns nothing; every attempt records the CLI version', async () => {
+  const { artifacts } = memory()
+  let asked = 0
+  const worker = agentWorker(account('claude-code', { version: async () => { asked += 1; return '9.9.9 (fake)' } }), artifacts, spawner, join(root, 'attempts-11'))
+  assert.equal(asked, 0)
+  const first = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs') }, ['report']))
+  const second = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs') }, ['report']))
+  assert.deepEqual([first.executor?.version, second.executor?.version], ['9.9.9 (fake)', '9.9.9 (fake)'])
+})
+
+test('lazyVersion spawns `<command> --version` once, on first use', async () => {
+  const spawned: string[][] = []
+  const subprocess = {
+    spawn(spec: { argv: readonly string[] }) {
+      spawned.push([...spec.argv])
+      return { done: Promise.resolve({ exitCode: 0, signal: null }), collected: { stdout: { readFrom: () => ({ text: '1.2.3 (Fake)\nmore\n', nextOffset: 0, lossy: false }) } } }
+    },
+  } as unknown as Parameters<typeof lazyVersion>[0]
+  const version = lazyVersion(subprocess, '/bin/fake')
+  assert.equal(spawned.length, 0)
+  assert.deepEqual(await Promise.all([version(), version()]), ['1.2.3 (Fake)', '1.2.3 (Fake)'])
+  assert.deepEqual(spawned, [['/bin/fake', '--version']])
 })

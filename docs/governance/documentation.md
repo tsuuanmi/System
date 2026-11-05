@@ -45,7 +45,7 @@ document references and normal Markdown links in routers and for source files.
 
 ## Available commands
 
-From the root, using Python 3.11+ and no third-party packages:
+From the root, using Python 3.8+ and no third-party packages:
 
 | Command | Purpose |
 |---|---|

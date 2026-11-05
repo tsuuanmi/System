@@ -3,7 +3,7 @@
 
 The normative standard is docs/governance/documentation-architecture.md.
 This checker implements level 1 plus limited graph and generator checks; it
-does not claim complete level 2/3 conformance. Run from any directory with Python 3.11+.
+does not claim complete level 2/3 conformance. Run from any directory with Python 3.8+.
 """
 from __future__ import annotations
 

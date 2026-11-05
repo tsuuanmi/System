@@ -38,9 +38,10 @@ export interface Account {
   ref: string
   runtime: Runtime
   capabilities: string[]
-  /** Absolute path of the CLI, and its `--version` output. */
+  /** Absolute path of the CLI. */
   command: string
-  version: string
+  /** Its `--version` output, asked when first needed. */
+  version: () => Promise<string>
   /** claude-code: resolves the credential named by the account's tokenRef. */
   token?: () => Promise<string | undefined>
   /** codex: the account's System-owned CODEX_HOME holding `auth.json`. */
@@ -72,7 +73,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
   const tier = requestedTier(request.capabilities)
   const model = tier ? account.models?.[tier] : account.models?.standard
   const executor: NonNullable<WorkerResult['executor']> = {
-    ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: account.version,
+    ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: await account.version(),
     ...(tier ? { tier } : {}), ...(model ? { model } : {}),
   }
   const ws = await prepare(artifacts, request, join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')))

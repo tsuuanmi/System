@@ -100,7 +100,6 @@ export const eventSchema = z.discriminatedUnion('type', [
 export type WorkEvent = z.infer<typeof eventSchema>
 export type NewEvent = WorkEvent extends infer E ? (E extends { seq: number; at: string } ? Omit<E, 'seq' | 'at'> : never) : never
 export type Caller = z.infer<typeof caller>
-export type Usage = z.infer<typeof usage>
 
 const stepState = z.object({
   state: z.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled']),

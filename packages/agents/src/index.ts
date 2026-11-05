@@ -49,7 +49,8 @@ export interface AccountStatus {
 }
 
 export interface AgentsService {
-  accounts(): AccountStatus[]
+  /** Every configured account; the CLI version of each available one is asked here, once. */
+  accounts(): Promise<AccountStatus[]>
 }
 
 /** A `Spawner` over the DSH subprocess service, which owns each process range. */
@@ -73,10 +74,17 @@ export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
   }
 }
 
-async function version(subprocess: SubprocessRuntime, command: string, cwd: string): Promise<string> {
-  const handle = subprocess.spawn({ argv: [command, '--version'], cwd, graceMs: 2000, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } } })
-  await handle.done
-  return (handle.collected.stdout?.readFrom(0).text ?? '').trim().split('\n')[0] ?? ''
+/** `<command> --version`, spawned once, on first use: startup spawns nothing. */
+export function lazyVersion(subprocess: SubprocessRuntime, command: string): () => Promise<string> {
+  let asked: Promise<string> | undefined
+  return () => {
+    asked ??= (async () => {
+      const handle = subprocess.spawn({ argv: [command, '--version'], cwd: process.cwd(), graceMs: 2000, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } } })
+      await handle.done
+      return (handle.collected.stdout?.readFrom(0).text ?? '').trim().split('\n')[0] ?? ''
+    })()
+    return asked
+  }
 }
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
@@ -86,6 +94,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const credentials = ctx.get('credentials') as CredentialProvider
   const attempts = systemPath(ctx, 'attempts')
   const statuses: AccountStatus[] = []
+  const versions = new Map<string, () => Promise<string>>()
   const dispose: (() => void)[] = []
   for (const account of config.accounts ?? []) {
     const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, available: false, reason: '' }
@@ -93,13 +102,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     try {
       const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
       status.command = command
-      status.version = await version(subprocess, command, process.cwd())
+      const askVersion = lazyVersion(subprocess, command)
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
       const tiers = TIERS.filter((tier) => account.models?.[tier])
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
-      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: status.version, models: account.models }
+      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models }
       if (account.runtime === 'claude-code') {
         const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
         if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)
@@ -112,10 +121,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       dispose.push(capabilities.registerWorker(agentWorker(resolved, artifacts, subprocessSpawner(subprocess), attempts)))
       status.available = true
       status.reason = 'registered'
+      versions.set(account.ref, askVersion)
     } catch (error) {
       status.reason = (error as Error).message
     }
   }
   ctx.effect(() => () => { for (const d of dispose) d() }, 'agent registrations')
-  ctx.provide('agents', { accounts: () => statuses.map((s) => ({ ...s })) } satisfies AgentsService)
+  const accounts = () => Promise.all(statuses.map(async (status) => {
+    const askVersion = versions.get(status.ref)
+    return askVersion ? { ...status, version: await askVersion() } : { ...status }
+  }))
+  ctx.provide('agents', { accounts } satisfies AgentsService)
 }
