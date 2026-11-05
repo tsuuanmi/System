@@ -13,7 +13,10 @@ The `fakes` row: a scripted Worker (`fake-worker`) and verifier
 ```
 
 The Worker stores one `fake-output@1` Artifact per output slot, with the
-step's inputs as its inputs. The verifier returns `pass` unless told otherwise.
+step's inputs as its inputs. The verifier accepts `fake-output`, pins a
+`fake-criteria@1` Artifact, stores one evidence Artifact per verdict, and
+returns `pass` unless told otherwise. Turn the `verifiers` row off beside it:
+both offer the same verifier capabilities.
 
 Test hooks, read from the environment:
 

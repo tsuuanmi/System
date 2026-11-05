@@ -15,7 +15,7 @@ const home = mkdtempSync(join(tmpdir(), 'system-smoke-'))
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
-const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'agents', 'credentials', 'system-app']
+const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'agents', 'credentials', 'system-app']
 
 function system(...args: string[]) {
   const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], {

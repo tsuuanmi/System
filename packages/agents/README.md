@@ -43,9 +43,11 @@ the tier, the configured model, and the models the CLI reports it served.
 ```
 
 Verified on 2026-11-06 with Claude Code 2.1.311: `haiku`, `sonnet` and `opus`
-served `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5`. The
-Codex account lists no models yet, so it offers no tier and runs the CLI's
-default; add its model names to `models` to give it tiers.
+served `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5`. Codex's
+tiers come from the models Codex 0.166.0 lists for this account, by their own
+descriptions: `gpt-6-luna` (economy), `gpt-6.1-sol` (standard), `gpt-6-astra`
+(frontier). Codex does not report which model served, so only the requested
+model is recorded for it.
 
 ## One attempt
 

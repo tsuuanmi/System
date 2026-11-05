@@ -84,6 +84,7 @@ export function prompt(ws: Workspace, request: WorkerRequest): string {
     'Instructions:',
     ws.instructions ?? '(no written instructions; use the inputs)',
     '',
+    ...(request.instructions ? ['Instructions for this step:', request.instructions, ''] : []),
     ...(ws.listed.length ? ['Inputs (read-only):', ...ws.listed.map((i) => `- ${i.name}: ${i.where}`), ''] : []),
     `Your working directory is ${ws.work}.`,
     ...(tree ? [

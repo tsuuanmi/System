@@ -16,7 +16,7 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system credentials status <NAME...>` | `configured (<source>)` or `not configured` per name, never the value; exit 1 if any is missing |
 | `system work submit (--workflow <file> \| --capability <name...>) [--input <id>] [--no-run]` | admit Work from a Workflow file or as a direct Task, print its ID, then run it |
 | `system work cancel <workId> [--reason r] [--wait]` | stop running Work: a live host is asked to stop its attempt (SIGTERM, SIGKILL after 30 s) and records the outcome; otherwise it is recorded here. Partial output is kept, unaccepted |
-| `system work retry <workId> [--worker ref] [--reason r]` | take a failed or cancelled Worker step over with a new attempt, optionally by one named Worker, starting from the last attempt's partial output |
+| `system work retry <workId> [--step id] [--worker ref] [--reason r]` | run a Worker step of failed, cancelled or held Work again as a new attempt (default: the first that did not succeed), optionally by one named Worker, starting from the last attempt's partial output; every later step is reset |
 | `system work run <workId>` | advance admitted or interrupted Work until terminal |
 | `system work show <workId>` | the record (events and state) as JSON |
 | `system work list` | ID, status and pinned spec of every Work |

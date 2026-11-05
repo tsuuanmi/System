@@ -18,6 +18,7 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `work` | `@system/work` | `work`, `capabilities` | yes | Work records, the capability registry and the controller (ADR-0002, ADR-0004) |
 | `fakes` | `@system/fakes` | — | no, **disabled** | scripted Worker and verifier for offline tests |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
+| `verifiers` | `@system/verifiers` | `verifiers` | no | `code.required-checks`, `research.citation-check` (ADR-0003, ADR-0004) |
 | `agents` | `@system/agents` | `agents` | no | Claude Code and Codex accounts as Workers (ADR-0004, ADR-0005); accounts without a CLI or credential are skipped |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
 | `system-app` | `@system/app` | — | yes | the CLI |

@@ -37,7 +37,7 @@ export interface WorkCommands {
   list(): WorkRecord[]
   replay(workId: string): { state: WorkState; matches: boolean }
   cancel(workId: string, reason: string): Promise<'requested' | WorkRecord>
-  retry(workId: string, worker: string | undefined, reason: string): Promise<WorkRecord>
+  retry(workId: string, worker: string | undefined, reason: string, step?: string): Promise<WorkRecord>
   /** Whether another live host process holds the Work. */
   runningElsewhere(workId: string): boolean
   newTask(instructions: string, repository: string | undefined, ref: string | undefined): Promise<{ task: string; base?: string }>
@@ -197,11 +197,12 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
       })
     })
   work.command('retry <workId>')
-    .description('take over a failed or cancelled Worker step with a new attempt from the recorded Artifacts')
+    .description('run a Worker step of failed, cancelled or held Work again as a new attempt; the steps after it are reset')
+    .option('--step <id>', 'the Worker step to run again (default: the first one that did not succeed)')
     .option('--worker <ref>', 'only this Worker may take it over (see system workers)')
     .option('--reason <text>', 'why', 'retried by the operator')
-    .action((workId: string, options: { worker?: string; reason: string }) => {
-      select(async () => exitCode((await host.work().retry(workId, options.worker, options.reason)).state.status))
+    .action((workId: string, options: { step?: string; worker?: string; reason: string }) => {
+      select(async () => exitCode((await host.work().retry(workId, options.worker, options.reason, options.step)).state.status))
     })
   work.command('run <workId>')
     .description('advance admitted or interrupted Work until it is terminal')

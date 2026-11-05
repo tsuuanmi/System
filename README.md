@@ -15,7 +15,8 @@ without deleting their source.
 `system doctor` checks it, `system artifact` stores and reads immutable
 Artifacts by ID, and `system work` admits Workflow files or direct Tasks and
 runs them durably, with Claude Code and Codex accounts as Workers (cancel and
-takeover included). Verifiers are still scripted fakes.
+takeover included), and verifies results with the repository's pinned checks
+or citation checks.
 
 ## Read and contribute
 

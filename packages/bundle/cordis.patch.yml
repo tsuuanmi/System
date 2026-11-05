@@ -41,6 +41,10 @@
     - id: subprocess
       name: '@deepseek-ai/dsh-subprocess-local'
 
+    # Verifier capabilities: code.required-checks, research.citation-check (ADR-0003).
+    - id: verifiers
+      name: '@system/verifiers'
+
     # Agent CLI accounts as Workers (ADR-0004, ADR-0005). An account whose CLI
     # or credential is missing is skipped with its reason (`system workers`).
     # One entry per account; routing takes the first capable one.
@@ -61,6 +65,11 @@
             runtime: codex
             capabilities: [code-write]
             codexHome: codex/default
+            # From the models Codex 0.166.0 lists for this account, by their descriptions.
+            models:
+              economy: gpt-6-luna
+              standard: gpt-6.1-sol
+              frontier: gpt-6-astra
 
     # Optional: Worker tokens (`system credentials`, ADR-0005). Only real
     # Workers read it, so it may be disabled by a profile patch.

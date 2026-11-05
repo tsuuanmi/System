@@ -12,6 +12,8 @@ export interface WorkerRequest {
   capabilities: string[]
   inputs: Record<string, string>
   outputs: string[]
+  /** The Workflow step's own instructions, if it has any. */
+  instructions?: string
   /** Aborted when the operator cancels; the Worker stops and reports `cancelled`. */
   signal: AbortSignal
 }
@@ -51,19 +53,44 @@ export interface VerifyRequest {
   attemptId: string
   stepId: string
   capability: string
+  /** The exact subject Artifact ID. */
   subject: string
+  /** The criteria Artifact ID pinned at admission. */
   criteria: string
 }
 
+/**
+ * A verdict and what it is about. The controller refuses (`error`) a result
+ * whose subject or criteria differ from the request, a `pass` without
+ * evidence, and evidence that is not stored; it then stores the `verdict@1`
+ * Artifact itself (ADR-0003 decisions 6 and 8).
+ */
 export interface VerifyResult {
   verdict: 'pass' | 'fail' | 'inconclusive' | 'error'
   reason: string
-  verdictId?: string
+  subject: string
+  criteria: string
+  /** Stored Artifact IDs supporting the verdict. */
+  evidence: string[]
+}
+
+export interface CriteriaRequest {
+  capability: string
+  /** The criteria name the Workflow file gives. */
+  name: string
+  /** The Work's input Artifact, if any (a task naming a repository, ...). */
+  input?: string
+  operatorId: string
 }
 
 export interface VerifierPort {
   ref: string
+  version: string
   capabilities: readonly string[]
+  /** Subject Artifact kinds it can judge; anything else is an `error` verdict, never a pass. */
+  accepts: readonly string[]
+  /** Pin the named criteria for one Work at admission, as an Artifact; throws to refuse admission. */
+  criteria(request: CriteriaRequest): Promise<string>
   verify(request: VerifyRequest): Promise<VerifyResult>
 }
 

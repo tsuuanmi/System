@@ -26,3 +26,16 @@ export const gitTreeSchema = z.object({
   parent: sha.optional(),
 }).strict()
 export type GitTreeContent = z.infer<typeof gitTreeSchema>
+
+/** A verdict, stored by the controller and bound to its exact subject and criteria. */
+export const VERDICT_KIND = { kind: 'verdict', schemaVersion: 1 } as const
+export const verdictSchema = z.object({
+  subject: artifactId,
+  criteria: artifactId,
+  capability: z.string(),
+  verifier: z.object({ ref: z.string(), version: z.string() }).strict(),
+  verdict: z.enum(['pass', 'fail', 'inconclusive', 'error']),
+  reason: z.string(),
+  evidence: z.array(artifactId),
+}).strict()
+export type Verdict = z.infer<typeof verdictSchema>

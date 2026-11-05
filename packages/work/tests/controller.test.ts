@@ -6,7 +6,8 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { WorkController, WorkError, type SpecStore, type WorkTable } from '../src/controller.ts'
 import { fold, type WorkRecord } from '../src/record.ts'
-import { Capabilities, type VerifyResult, type WorkerPort, type WorkerRequest } from '../src/registry.ts'
+import type { Verdict } from '../src/kinds.ts'
+import { Capabilities, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest } from '../src/registry.ts'
 import { WorkflowError, directTask, parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -31,11 +32,20 @@ function memoryTable(rows = new Map<string, WorkRecord>()): WorkTable & { rows: 
   }
 }
 
-function memorySpecs(): SpecStore & { stored: Set<string> } {
+function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict> } {
   const specs = new Map<string, ResolvedSpec>()
   const stored = new Set<string>()
+  const verdicts = new Map<string, Verdict>()
   return {
     stored,
+    verdicts,
+    kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
+    async putVerdict(verdict) {
+      const verdictId = id(JSON.stringify(verdict))
+      verdicts.set(verdictId, verdict)
+      stored.add(verdictId)
+      return verdictId
+    },
     async putSpec(spec) {
       const specId = id(JSON.stringify(spec))
       specs.set(specId, structuredClone(spec))
@@ -56,7 +66,7 @@ interface Harness {
   specs: ReturnType<typeof memorySpecs>
 }
 
-function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; table?: ReturnType<typeof memoryTable>; specs?: ReturnType<typeof memorySpecs> } = {}): Harness {
+function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: ReturnType<typeof memoryTable>; specs?: ReturnType<typeof memorySpecs> } = {}): Harness {
   const table = options.table ?? memoryTable()
   const specs = options.specs ?? memorySpecs()
   const capabilities = new Capabilities()
@@ -78,11 +88,21 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
   })
   capabilities.registerVerifier({
     ref: 'fake-verifier',
+    version: '1',
     capabilities: ['code.required-checks', 'research.citation-check'],
+    accepts: ['output'],
+    async criteria(request) {
+      const criteria = id(`criteria/${request.name}`)
+      specs.stored.add(criteria)
+      return criteria
+    },
     async verify(request) {
       verdicts.push(`${request.stepId}:${request.subject}`)
-      return { verdict: options.verdict ?? 'pass', reason: 'scripted' }
+      const evidence = id(`evidence/${request.attemptId}`)
+      specs.stored.add(evidence)
+      return { verdict: options.verdict ?? 'pass', reason: 'scripted', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
     },
+    ...options.verifier,
   })
   return { controller: new WorkController(table, specs, capabilities), capabilities, calls, verdicts, table, specs }
 }
@@ -126,7 +146,7 @@ test('a Worker gets exact Artifact IDs for its inputs, never a slot name', async
   const done = await runFixture(h, 'software-engineering.yaml')
   assert.deepEqual(h.calls[0]!.inputs, { task: done.state.input })
   const dispatched = done.events.find((e) => e.type === 'dispatched' && e.stepId === 'checks')
-  assert.deepEqual(dispatched && 'inputs' in dispatched && dispatched.inputs, { subject: done.state.steps.implement!.outputs.change })
+  assert.deepEqual(dispatched && 'inputs' in dispatched && dispatched.inputs, { subject: done.state.steps.implement!.outputs.change, criteria: done.state.criteria.checks })
 })
 
 test('an invalid Workflow dispatches zero Workers and creates no Work', async () => {
@@ -268,7 +288,7 @@ test('cancel with no live host records the outcome directly, with the caller', a
 test('retry is refused for running or succeeded Work and for an unknown Worker', async () => {
   const h = harness()
   const done = await runFixture(h, 'research.yaml')
-  await assert.rejects(() => h.controller.retry(done.id, { caller, reason: 'x' }), /only failed or cancelled Work is retried/)
+  await assert.rejects(() => h.controller.retry(done.id, { caller, reason: 'x' }), /only failed, cancelled or held Work is retried/)
   const failed = await runFixture(harness({ worker: { run: async () => ({ status: 'failed', outputs: {}, reason: 'red' }) } }), 'research.yaml')
   const fresh = harness({ table: memoryTable(new Map([[failed.id, failed]])) })
   await assert.rejects(() => fresh.controller.retry(failed.id, { worker: 'nobody', caller, reason: 'x' }), /no enabled Worker nobody/)
@@ -312,4 +332,96 @@ test('a tier is a capability: a step asking for a tier no Worker offers is refus
   assert.doesNotThrow(() => resolve(parseWorkflow(workflow('tier.frontier')), capabilities.available()))
   assert.throws(() => resolve(parseWorkflow(workflow('tier.economy')), capabilities.available()), /needs Worker capability tier.economy, which no enabled Worker provides/)
   assert.equal(capabilities.routeWorker(['code-write', 'tier.frontier']).selected?.ref, 'claude')
+})
+
+async function verdictOf(h: Harness, verifier: Partial<VerifierPort>) {
+  const custom = harness({ ...{ table: h.table, specs: h.specs }, verifier })
+  const done = await runFixture(custom, 'software-engineering.yaml')
+  const verified = done.events.find((e) => e.type === 'verified')
+  return { done, verified: verified?.type === 'verified' ? verified : undefined, specs: custom.specs }
+}
+
+test('a verdict about another subject, other criteria, or without stored evidence is an error, never a pass', async () => {
+  const cases: [string, Partial<VerifierPort>, RegExp][] = [
+    ['wrong subject', { async verify(r) { return { verdict: 'pass', reason: 'ok', subject: id('another tree'), criteria: r.criteria, evidence: [r.subject] } } }, /it judged .* not the subject/],
+    ['other criteria', { async verify(r) { return { verdict: 'pass', reason: 'ok', subject: r.subject, criteria: id('laxer criteria'), evidence: [r.subject] } } }, /not the pinned/],
+    ['no evidence', { async verify(r) { return { verdict: 'pass', reason: 'ok', subject: r.subject, criteria: r.criteria, evidence: [] } } }, /a pass needs evidence/],
+    ['unstored evidence', { async verify(r) { return { verdict: 'pass', reason: 'ok', subject: r.subject, criteria: r.criteria, evidence: [id('nowhere')] } } }, /is not stored/],
+    ['subject kind not accepted', { accepts: ['git-tree'] }, /judges git-tree, not output/],
+  ]
+  for (const [name, verifier, reason] of cases) {
+    const { done, verified } = await verdictOf(harness(), verifier)
+    assert.equal(verified?.verdict, 'error', name)
+    assert.match(verified!.reason, reason, name)
+    assert.equal(done.state.status, 'failed', name)
+  }
+})
+
+test('the controller stores the verdict Artifact bound to the exact subject and pinned criteria', async () => {
+  const h = harness()
+  const done = await runFixture(h, 'software-engineering.yaml')
+  const verified = done.events.find((e) => e.type === 'verified')
+  assert.ok(verified?.type === 'verified' && verified.verdictId)
+  const stored = h.specs.verdicts.get(verified.verdictId!)!
+  assert.deepEqual([stored.subject, stored.criteria, stored.verdict, stored.verifier], [done.state.steps.implement!.outputs.change, done.state.criteria.checks, 'pass', { ref: 'fake-verifier', version: '1' }])
+  assert.equal(stored.evidence.length, 1)
+})
+
+test('criteria a verifier cannot pin refuse admission, and no Work is created', async () => {
+  const h = harness({ verifier: { async criteria() { throw new Error('no .system/checks.yaml at the base commit') } } })
+  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), h.capabilities.available())
+  const task = await input(h)
+  await assert.rejects(() => h.controller.admit({ spec, input: task, caller, source: { kind: 'workflow-file' } }), /cannot pin criteria repo-checks-v1: no .system\/checks.yaml/)
+  assert.equal(h.table.rows.size, 0)
+})
+
+test('retry --step after failed checks reruns the Worker and re-verifies the new subject; the old verdict never counts', async () => {
+  let verdict: VerifyResult['verdict'] = 'fail'
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: { async verify(r) {
+    const evidence = id(`evidence/${r.attemptId}`)
+    specs.stored.add(evidence)
+    return { verdict, reason: verdict, subject: r.subject, criteria: r.criteria, evidence: [evidence] }
+  } } })
+  const failed = await runFixture(h, 'software-engineering.yaml')
+  assert.equal(failed.state.status, 'failed')
+  const firstChange = failed.state.steps.implement!.outputs.change
+  await assert.rejects(() => h.controller.retry(failed.id, { caller, reason: 'x' }), /name one with --step/)
+  verdict = 'pass'
+  const done = await h.controller.retry(failed.id, { step: 'implement', caller, reason: 'fix the failing checks' })
+  assert.equal(done.state.status, 'succeeded')
+  const reopened = done.events.find((e) => e.type === 'reopened')
+  assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'checks', 'accept'])
+  const verifiedSubjects = done.events.filter((e) => e.type === 'verified').map((e) => e.type === 'verified' && e.subject)
+  assert.deepEqual(verifiedSubjects, [firstChange, done.state.steps.implement!.outputs.change])
+  assert.notEqual(verifiedSubjects[1], firstChange)
+  assert.equal(h.controller.replay(failed.id).matches, true)
+})
+
+test('the controller and Workflow compiler name no domain, Worker or verifier', () => {
+  const src = join(repo, 'packages', 'work', 'src')
+  for (const file of ['controller.ts', 'workflow.ts', 'record.ts', 'registry.ts']) {
+    const code = readFileSync(join(src, file), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+    assert.doesNotMatch(code, /research|software|engineering|citation|claude|codex|required-checks|code-write|git-tree/i, file)
+  }
+})
+
+test('a Work record written before M4 (no criteria, no new event fields) still parses and replays', async () => {
+  const { workRecordSchema } = await import('../src/record.ts')
+  const spec = 'sha256:' + 'a'.repeat(64)
+  const input = 'sha256:' + 'b'.repeat(64)
+  const out = 'sha256:' + 'c'.repeat(64)
+  const old = {
+    id: 'work:old',
+    events: [
+      { type: 'admitted', seq: 0, at: 't', caller: { type: 'agent', operatorId: 'tan' }, specId: spec, input, source: { kind: 'direct-task' } },
+      { type: 'dispatched', seq: 1, at: 't', stepId: 'task', attemptId: 'attempt:1', executor: 'worker', capability: 'code-write', selected: 'claude-code/default', candidates: [], inputs: { input } },
+      { type: 'observed', seq: 2, at: 't', stepId: 'task', attemptId: 'attempt:1', status: 'succeeded', outputs: { result: out }, usage: { state: 'unknown' }, worker: { ref: 'claude-code/default', account: 'default', command: '/x/claude', version: '2.1.311' } },
+      { type: 'terminal', seq: 3, at: 't', outcome: 'succeeded', reason: 'every step succeeded', results: { 'task.result': out } },
+    ],
+    state: { status: 'succeeded', specId: spec, input, steps: { task: { state: 'succeeded', attempts: ['attempt:1'], outputs: { result: out } } }, reason: 'every step succeeded', results: { 'task.result': out } },
+  }
+  const parsed = workRecordSchema.parse(old)
+  assert.deepEqual(parsed.state.criteria, {})
+  assert.deepEqual(fold(['task'], parsed.events), parsed.state)
 })

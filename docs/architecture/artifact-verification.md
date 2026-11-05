@@ -3,7 +3,7 @@ type: architecture
 status: active
 reviewed: 2026-11-05
 decided-by: [ADR-0003]
-covers: [packages/artifacts/src/envelope.ts, packages/artifacts/src/canonical.ts]
+covers: [packages/artifacts/src/envelope.ts, packages/artifacts/src/canonical.ts, packages/work/src/kinds.ts]
 ---
 
 # Artifact-ID handoff and pluggable verification
@@ -102,6 +102,16 @@ VerdictArtifact:
   evidenceArtifactIds[]
   provenance (including provider/observations where used)
 ```
+
+**Implemented (M4):** the contract is `VerifierPort` in
+[`@system/work`](../../packages/work/src/registry.ts): criteria are pinned
+per Work at admission as an Artifact (a verifier that cannot pin them refuses
+the Work), and the controller stores the `verdict@1` Artifact itself after
+refusing, as `error`, a verdict about another subject or other criteria, a
+`pass` without evidence, unstored evidence, or a subject kind the verifier
+does not accept. A verdict whose subject has since been replaced counts as
+`stale`. The two verifiers are described in
+[`@system/verifiers`](../../packages/verifiers/README.md).
 
 **No single review algorithm is mandatory.** The Work Controller checks
 that the configured required verifier capability is available, its subject

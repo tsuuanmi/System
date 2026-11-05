@@ -21,6 +21,7 @@ export const ROWS: readonly RowProbe[] = [
   { id: 'artifacts', service: 'artifacts', required: true, purpose: 'immutable Artifacts' },
   { id: 'work', service: 'work', required: true, purpose: 'Work records and the controller' },
   { id: 'subprocess', service: 'subprocess', required: true, purpose: 'Worker and verifier processes' },
+  { id: 'verifiers', service: 'verifiers', required: false, purpose: 'code checks and citation checks' },
   { id: 'agents', service: 'agents', required: false, purpose: 'agent CLI accounts as Workers' },
   { id: 'credentials', service: 'credentials', required: false, purpose: 'model and GitHub key references' },
 ]

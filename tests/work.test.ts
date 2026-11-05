@@ -16,7 +16,9 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const home = mkdtempSync(join(tmpdir(), 'system-work-'))
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 const log = join(home, 'fake-calls.log')
-const FAKES_ON = `- id: fakes
+const FAKES_ON = `- id: verifiers
+  disabled: true
+- id: fakes
   disabled: false
   config:
     workers: [code-write, research, web-search]
@@ -115,7 +117,8 @@ test('with the fakes row disabled by config, admission names the missing capabil
     const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'research.yaml'), '--input', input])
     assert.equal(ran.status, 1)
     assert.match(ran.stderr, /needs Worker capability research, which no enabled Worker provides/)
-    assert.match(ran.stderr, /needs verifier research.citation-check, which no enabled verifier provides/)
+    // The real `verifiers` row is on when the fakes are off, so the verifier is available.
+    assert.doesNotMatch(ran.stderr, /needs verifier/)
   } finally {
     writeFileSync(patch, FAKES_ON)
   }

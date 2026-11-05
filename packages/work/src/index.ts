@@ -12,7 +12,7 @@ import { sha256, type Artifacts } from '@system/artifacts'
 import { FileControl } from './control.ts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, WorkController, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
 import { snapshot } from './git.ts'
-import { GIT_TREE_KIND, TASK_KIND, gitTreeSchema, taskSchema } from './kinds.ts'
+import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema } from './kinds.ts'
 import type { Caller, WorkRecord } from './record.ts'
 import { workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
@@ -98,6 +98,17 @@ function specStore(artifacts: Artifacts): SpecStore {
       return read.state === 'stored' && read.envelope.kind === SPEC_KIND ? read.envelope.content as ResolvedSpec : undefined
     },
     exists: (id) => artifacts.get(id).state === 'stored',
+    kindOf(id) {
+      const read = artifacts.get(id)
+      return read.state === 'stored' ? read.envelope.kind : undefined
+    },
+    async putVerdict(verdict) {
+      return (await artifacts.put({
+        ...VERDICT_KIND, content: verdict, inputs: [verdict.subject, verdict.criteria, ...verdict.evidence],
+        subject: { type: 'artifact', ref: verdict.subject },
+        classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
+      })).id
+    },
   }
 }
 
@@ -114,6 +125,7 @@ export async function apply(ctx: Context): Promise<void> {
   const artifacts = ctx.get('artifacts') as Artifacts
   artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
+  artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   const capabilities = new Capabilities()
   const control = new FileControl(systemPath(ctx, 'control'))
   const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(artifacts), capabilities, control)

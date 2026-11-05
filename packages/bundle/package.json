@@ -26,6 +26,7 @@
     "@system/app": "workspace:*",
     "@system/artifacts": "workspace:*",
     "@system/fakes": "workspace:*",
+    "@system/verifiers": "workspace:*",
     "@system/work": "workspace:*"
   }
 }

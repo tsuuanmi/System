@@ -13,5 +13,7 @@ only when lifecycle or configuration demands it (PLAN.md package guidance).
   off by default.
 - [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code
   and Codex accounts as Workers.
+- [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
+  `code.required-checks` and `research.citation-check`.
 - [app](app/README.md) — `@system/app`, the CLI app row (`system doctor`,
   `system artifact`, `system work`).

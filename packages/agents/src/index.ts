@@ -52,7 +52,8 @@ export interface AgentsService {
   accounts(): AccountStatus[]
 }
 
-function spawner(subprocess: SubprocessRuntime): Spawner {
+/** A `Spawner` over the DSH subprocess service, which owns each process range. */
+export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
   return {
     spawn(spec) {
       const handle = subprocess.spawn({
@@ -108,7 +109,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         resolved.codexHome = isAbsolute(home) ? home : systemPath(ctx, home)
         if (!existsSync(join(resolved.codexHome, 'auth.json'))) throw new Error(`no auth.json in ${resolved.codexHome} (CODEX_HOME=${resolved.codexHome} codex login --device-auth)`)
       }
-      dispose.push(capabilities.registerWorker(agentWorker(resolved, artifacts, spawner(subprocess), attempts)))
+      dispose.push(capabilities.registerWorker(agentWorker(resolved, artifacts, subprocessSpawner(subprocess), attempts)))
       status.available = true
       status.reason = 'registered'
     } catch (error) {

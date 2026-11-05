@@ -33,6 +33,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     kind: 'fake-output', schemaVersion: 1,
     content: z.object({ stepId: z.string(), slot: z.string(), inputs: z.record(z.string(), z.string()), attemptId: z.string(), state: z.enum(['complete', 'partial']) }).strict(),
   })
+  artifacts.registerKind({ kind: 'fake-criteria', schemaVersion: 1, content: z.object({ capability: z.string(), name: z.string() }).strict() })
   const put = async (request: WorkerRequest, slot: string, state: 'complete' | 'partial') => (await artifacts.put({
     kind: 'fake-output', schemaVersion: 1,
     content: { stepId: request.stepId, slot, inputs: request.inputs, attemptId: request.attemptId, state },
@@ -62,10 +63,22 @@ export function apply(ctx: Context, config: Config = {}): void {
     }),
     capabilities.registerVerifier({
       ref: 'fake-verifier',
+      version: '1',
       capabilities: config.verifiers ?? [],
+      accepts: ['fake-output'],
+      async criteria(request) {
+        return (await artifacts.put({
+          kind: 'fake-criteria', schemaVersion: 1, content: { capability: request.capability, name: request.name },
+          classification: 'public', producer: { type: 'verifier', ref: 'fake-verifier' },
+        })).id
+      },
       async verify(request): Promise<VerifyResult> {
         const verdict = (VERDICTS as readonly string[]).includes(process.env.SYSTEM_FAKE_VERDICT ?? '') ? process.env.SYSTEM_FAKE_VERDICT as VerifyResult['verdict'] : 'pass'
-        return { verdict, reason: `scripted ${verdict} for ${request.subject} against ${request.criteria}` }
+        const evidence = (await artifacts.put({
+          kind: 'fake-criteria', schemaVersion: 1, content: { capability: request.capability, name: `evidence for ${request.subject}` },
+          classification: 'public', producer: { type: 'verifier', ref: 'fake-verifier' },
+        })).id
+        return { verdict, reason: `scripted ${verdict}`, subject: request.subject, criteria: request.criteria, evidence: [evidence] }
       },
     }),
   ]

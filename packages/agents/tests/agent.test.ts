@@ -127,7 +127,7 @@ test('without a repository every output is a file the agent wrote; a missing one
   assert.equal(ok.status, 'succeeded', ok.reason)
   const sources = artifacts.get(ok.outputs.sources!)
   assert.equal(sources.state === 'stored' && sources.envelope.blob?.mediaType, 'application/json')
-  assert.equal(Buffer.from(await artifacts.readBytes(ok.outputs.report!)).toString(), '# report\n')
+  assert.equal(Buffer.from(await artifacts.readBytes(ok.outputs.report!)).toString(), '# report [s1]\n')
   const missing = await worker.run(request({ question: await task(artifacts, 'nothing written') }, ['report']))
   assert.equal(missing.status, 'failed')
   assert.match(missing.reason!, /wrote no output file for report/)
@@ -224,6 +224,8 @@ test('Codex takes over cancelled Claude work from the partial Artifact, in one W
     async putSpec(spec) { return (await artifacts.put({ kind: 'note-spec', schemaVersion: 1, content: spec, classification: 'public', producer: { type: 'operator', ref: 't' } })).id },
     getSpec: (id) => { const r = artifacts.get(id); return r.state === 'stored' ? r.envelope.content as ResolvedSpec : undefined },
     exists: (id) => artifacts.get(id).state === 'stored',
+    kindOf: (id) => { const r = artifacts.get(id); return r.state === 'stored' ? r.envelope.kind : undefined },
+    putVerdict: async () => { throw new Error('no verify step in this test') },
   }
   artifacts.registerKind({ kind: 'note-spec', schemaVersion: 1, content: resolvedSpecSchema })
   const capabilities = new Capabilities()

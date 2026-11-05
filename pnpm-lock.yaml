@@ -280,6 +280,9 @@ importers:
       '@system/fakes':
         specifier: workspace:*
         version: link:../fakes
+      '@system/verifiers':
+        specifier: workspace:*
+        version: link:../verifiers
       '@system/work':
         specifier: workspace:*
         version: link:../work
@@ -292,6 +295,31 @@ importers:
       '@system/work':
         specifier: workspace:*
         version: link:../work
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+
+  packages/verifiers:
+    dependencies:
+      '@deepseek-ai/dsh-subprocess':
+        specifier: 0.2.2-rc.1
+        version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-http-proxy@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
+      '@system/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
       zod:
         specifier: 4.4.3
         version: 4.4.3

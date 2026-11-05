@@ -29,6 +29,8 @@ export const eventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('admitted'), seq: z.number().int(), at, caller,
     specId: artifactId, input: artifactId.optional(),
+    /** Each verify step's criteria Artifact, pinned at admission. */
+    criteria: z.record(z.string(), artifactId).optional(),
     source: z.object({ kind: z.enum(['workflow-file', 'direct-task']), path: z.string().optional(), fileHash: z.string().optional() }).strict(),
   }).strict(),
   z.object({
@@ -52,6 +54,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), attemptId: z.string(), subject: artifactId, criteria: z.string(),
     verdict: z.enum(['pass', 'fail', 'inconclusive', 'error']), reason: z.string(),
     verdictId: artifactId.optional(),
+    evidence: z.array(artifactId).optional(),
+    verifier: z.object({ ref: z.string(), version: z.string() }).strict().optional(),
   }).strict(),
   z.object({
     type: z.literal('attempt-lost'), seq: z.number().int(), at,
@@ -64,6 +68,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     worker: z.string().optional(),
     /** The previous attempt's partial output, handed to the new attempt as input `previous`. */
     previous: artifactId.optional(),
+    /** Steps reset with it: the step and everything that depends on it, so no verdict outlives its subject. */
+    reset: z.array(z.string()).optional(),
   }).strict(),
   z.object({
     type: z.literal('terminal'), seq: z.number().int(), at,
@@ -83,12 +89,16 @@ const stepState = z.object({
   outputs: z.record(z.string(), artifactId),
   partial: z.record(z.string(), artifactId).optional(),
   verdict: z.enum(['pass', 'fail', 'inconclusive', 'error']).optional(),
+  /** For a verify step: the exact subject its verdict is about. */
+  subject: artifactId.optional(),
 }).strict()
 
 export const stateSchema = z.object({
   status: z.enum(['running', 'succeeded', 'failed', 'held', 'cancelled']),
   specId: artifactId,
   input: artifactId.optional(),
+  /** Added in M4; records written before it read as `{}` (DSH validates every stored record at open). */
+  criteria: z.record(z.string(), artifactId).default({}),
   steps: z.record(z.string(), stepState),
   reason: z.string().optional(),
   results: z.record(z.string(), artifactId),
@@ -112,7 +122,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
   const first = events[0]
   if (!first || first.type !== 'admitted') throw new TypeError('a Work record starts with its admission')
   const steps: Record<string, StepState> = Object.fromEntries(stepIds.map((stepId) => [stepId, { state: 'pending', attempts: [], outputs: {} }]))
-  const state: WorkState = { status: 'running', specId: first.specId, input: first.input, steps, results: {} }
+  const state: WorkState = { status: 'running', specId: first.specId, input: first.input, criteria: { ...first.criteria }, steps, results: {} }
   for (const event of events.slice(1)) {
     switch (event.type) {
       case 'admitted':
@@ -133,6 +143,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
       case 'verified': {
         const s = steps[event.stepId]!
         s.verdict = event.verdict
+        s.subject = event.subject
         s.state = 'succeeded'
         break
       }
@@ -140,7 +151,12 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         steps[event.stepId]!.state = 'pending'
         break
       case 'reopened':
+        for (const stepId of event.reset ?? []) {
+          if (stepId === event.stepId) continue
+          steps[stepId] = { state: 'pending', attempts: steps[stepId]!.attempts, outputs: {} }
+        }
         steps[event.stepId]!.state = 'pending'
+        steps[event.stepId]!.outputs = {}
         state.status = 'running'
         delete state.reason
         state.results = {}

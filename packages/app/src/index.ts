@@ -99,7 +99,7 @@ function workCommands(ctx: Context): WorkCommands {
     list: () => work.controller.list(),
     replay: (workId) => work.controller.replay(workId),
     cancel: (workId, reason) => work.controller.cancel(workId, { reason, caller: caller() }),
-    retry: (workId, worker, reason) => work.controller.retry(workId, { worker, reason, caller: caller() }),
+    retry: (workId, worker, reason, step) => work.controller.retry(workId, { worker, step, reason, caller: caller() }),
     runningElsewhere: (workId) => work.controller.runningElsewhere(workId),
     newTask: (instructions, repository, ref) => work.newTask(instructions, repository, ref, caller()),
   }

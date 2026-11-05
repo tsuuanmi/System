@@ -3,6 +3,7 @@
 // markers in the prompt's instructions:
 //   FAKE:edit     write NOTE.md in the working directory
 //   FAKE:outputs  write every listed output file
+//   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below
 //   FAKE:sleep    unless PARTIAL.md exists: wait; on SIGTERM write PARTIAL.md and exit 143
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
 //   FAKE:fail     report an error
@@ -41,8 +42,13 @@ function finish(ok, message) {
 
 if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
 if (has('edit')) writeFileSync(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
+const QUOTE = 'System verifies citations exactly'
+const cited = /FAKE:cite=(\S+)/.exec(prompt)?.[1]
 if (has('outputs')) {
-  for (const [, slot, path] of prompt.matchAll(/^- ([a-z][a-z0-9-]*) \(the file (\/[^)]+)\)$/gm)) writeFileSync(path, slot === 'sources' ? '{"sources":[]}\n' : `# ${slot}\n`)
+  for (const [, slot, path] of prompt.matchAll(/^- ([a-z][a-z0-9-]*) \(the file (\/[^)]+)\)$/gm)) {
+    const sources = { sources: cited ? [{ id: 's1', url: cited, quote: QUOTE, claims: ['System checks quotes'] }] : [] }
+    writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : `# ${slot} [s1]\n`)
+  }
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')
 if (has('fail')) finish(false, 'scripted failure')

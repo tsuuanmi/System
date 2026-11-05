@@ -28,6 +28,8 @@ const workerStep = z.object({
   capabilities: z.array(capability).min(1),
   inputs: z.record(id, ref).optional(),
   outputs: z.array(id).min(1),
+  /** What this step's Worker is told besides the task, such as an output format. */
+  instructions: z.string().min(1).max(8 * 1024).optional(),
 }).strict()
 
 const verifyStep = z.object({

@@ -60,7 +60,7 @@ one form:
 
 | Form | Fields | Meaning |
 |---|---|---|
-| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`) | one Worker attempt; each output slot must name a stored Artifact |
+| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
 | verify step | `verify: {capability, subject, criteria}` | one verifier call on the exact Artifact the `subject` reference resolves to |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
 
@@ -88,6 +88,12 @@ and deduplicated, so how dependencies are written never changes the spec. It
 is pinned as an Artifact of kind `workflow-spec@1`; its Artifact ID is the
 spec hash. A direct Task without a file is the same spec with one implicit
 step `task`, output `result`.
+
+**Criteria** are pinned per Work at admission: each verify step's verifier
+turns the `criteria` name into an Artifact, recorded on the Work, or refuses
+the Work. **`system work retry --step <id>`** reruns a Worker step of failed,
+cancelled or held Work and resets every step after it, so a verdict never
+outlives its subject.
 
 **Outcomes:** every step done and every required verdict `pass` is
 `succeeded`; any `fail` or `error` verdict, a failed step, or a Worker missing
