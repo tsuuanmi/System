@@ -1,15 +1,14 @@
 # System
 
-**System** is the next-generation successor to [system_1](https://github.com/tsuuanmi/system_1), a local-first harness for routing work among AI Workers and coordinating durable workflows.
+**System** is a local-first, extensible harness for capability-routed AI Workers and durable workflows.
 
-**Status:** documentation-first bootstrap. This repository does not yet contain a runnable System implementation. Features, installation steps, compatibility, and architecture from `system_1` must **not** be assumed to work here.
+**Status:** fresh, documentation-first project. This repository has no runnable implementation yet. All proposed capabilities and architectural choices are subject to review and verification.
 
 ## Start here
 
-- [Documentation](docs/README.md) — where to find current rules, background evidence, and proposed changes.
-- [Next-generation proposal](docs/proposals/PROP-0001-next-generation-direction.md) — goals, questions, and acceptance criteria **under discussion**.
-- [Predecessor baseline](docs/research/RES-0001-system-1-baseline.md) — what to learn from `system_1`, without treating it as the new implementation.
+- [Documentation](docs/README.md) — the knowledge router and documentation authority.
+- [Initial product direction](docs/proposals/PROP-0001-system-direction.md) — goals, open architectural questions, and first acceptance slice; **draft, not a shipped specification**.
 - [Documentation governance](docs/governance/documentation.md) — repository-specific adoption of the DNA standard.
-- [Agent instructions](AGENTS.md) — where coding agents must look before making changes.
+- [Agent instructions](AGENTS.md) — rules for contributors and coding agents.
 
-No installation commands are published until an implementation and a verified build exist.
+No installation commands will be published until an implementation and a verified build exist.
