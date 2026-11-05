@@ -23,7 +23,7 @@ export interface Parsed {
 /** Variables kept from the host environment; credentials come only from the account. */
 const KEEP = ['PATH', 'LANG', 'LC_ALL', 'TZ']
 
-export function baseEnv(ws: Workspace): Record<string, string> {
+function baseEnv(ws: Workspace): Record<string, string> {
   const env: Record<string, string> = { HOME: ws.home, TMPDIR: ws.home }
   for (const key of KEEP) if (process.env[key]) env[key] = process.env[key]!
   return env
@@ -81,6 +81,8 @@ export function parseCodex(stdout: string): Parsed {
   let input = 0
   let output = 0
   let turns = 0
+  /** A turn without both counts makes the total unknown, never a partial sum. */
+  let counted = true
   let failure: string | undefined
   let message = ''
   for (const line of stdout.split('\n')) {
@@ -91,10 +93,15 @@ export function parseCodex(stdout: string): Parsed {
     } catch {
       continue
     }
-    if (event.type === 'turn.completed' && event.usage) {
+    if (event.type === 'turn.completed') {
       turns += 1
-      input += event.usage.input_tokens ?? 0
-      output += event.usage.output_tokens ?? 0
+      const u = event.usage
+      if (u && Number.isInteger(u.input_tokens) && Number.isInteger(u.output_tokens)) {
+        input += u.input_tokens!
+        output += u.output_tokens!
+      } else {
+        counted = false
+      }
     }
     if (event.type === 'turn.failed' || event.type === 'error') failure = event.error?.message ?? event.message ?? event.type
     if (event.type === 'item.completed' && event.item?.type === 'agent_message') message = event.item.text ?? message
@@ -102,6 +109,6 @@ export function parseCodex(stdout: string): Parsed {
   return {
     ok: turns > 0 && failure === undefined,
     message: failure ?? message,
-    usage: turns ? { inputTokens: input, outputTokens: output, source: `codex turn.completed usage over ${turns} turn(s) (input includes cached)` } : undefined,
+    usage: turns && counted ? { inputTokens: input, outputTokens: output, source: `codex turn.completed usage over ${turns} turn(s) (input includes cached)` } : undefined,
   }
 }

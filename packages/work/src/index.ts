@@ -25,6 +25,7 @@ export * from './git.ts'
 export * from './kinds.ts'
 export * from './record.ts'
 export * from './registry.ts'
+export * from './summary.ts'
 export * from './workflow.ts'
 
 export const name = 'system-work'

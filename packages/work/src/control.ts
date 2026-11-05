@@ -1,10 +1,10 @@
 /**
- * Cross-process control of Work: the `HostControl` seam, `LocalControl` for a
- * single process, and `FileControl` over files under `$DSH_HOME/system/control`
+ * Cross-process control of Work: the `HostControl` seam and `FileControl` over
+ * files under `$DSH_HOME/system/control`
  * (one lock file per Work holding the running host's pid, created exclusively,
  * a dead pid's lock stale; one cancel file per Work a running host polls).
  */
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Caller } from './record.ts'
 import { WorkError } from './errors.ts'
@@ -27,34 +27,6 @@ export interface HostControl {
 export interface CancelRequest {
   reason: string
   caller: Caller
-}
-
-/** For a single process (tests): no other host exists. */
-export class LocalControl implements HostControl {
-  private readonly held = new Set<string>()
-  private readonly cancels = new Map<string, CancelRequest>()
-
-  acquire(workId: string): () => void {
-    if (this.held.has(workId)) throw new WorkError(`${workId} is already being run`)
-    this.held.add(workId)
-    return () => { this.held.delete(workId) }
-  }
-
-  heldElsewhere(workId: string): boolean {
-    return this.held.has(workId)
-  }
-
-  requestCancel(workId: string, request: CancelRequest): void {
-    this.cancels.set(workId, request)
-  }
-
-  cancelRequest(workId: string): CancelRequest | undefined {
-    return this.cancels.get(workId)
-  }
-
-  clearCancel(workId: string): void {
-    this.cancels.delete(workId)
-  }
 }
 
 function alive(pid: number): boolean {
@@ -92,7 +64,7 @@ export class FileControl implements HostControl {
     const lock = this.file(workId, 'lock')
     const holder = this.holder(workId)
     if (holder !== undefined && holder !== process.pid) throw new WorkError(`${workId} is being run by process ${holder}; cancel it with \`system work cancel\``)
-    if (holder === undefined) rmSync(lock, { force: true })
+    if (holder === undefined && existsSync(lock)) this.takeStale(workId, lock)
     let fd: number
     try {
       fd = openSync(lock, 'wx', 0o600)
@@ -102,6 +74,30 @@ export class FileControl implements HostControl {
     writeSync(fd, String(process.pid))
     closeSync(fd)
     return () => { if (this.holder(workId) === process.pid) rmSync(lock, { force: true }) }
+  }
+
+  /**
+   * Remove a stale lock without ever removing a live one: move it aside
+   * atomically, and if what was moved belongs to a live process (another host
+   * replaced the stale lock first), put it back and refuse.
+   */
+  private takeStale(workId: string, lock: string): void {
+    const aside = `${lock}.${process.pid}.stale`
+    try {
+      renameSync(lock, aside)
+    } catch {
+      return
+    }
+    const pid = Number(readFileSync(aside, 'utf8'))
+    if (Number.isInteger(pid) && pid > 0 && alive(pid)) {
+      try {
+        linkSync(aside, lock)
+      } finally {
+        rmSync(aside, { force: true })
+      }
+      throw new WorkError(`${workId} is being run by process ${pid}`)
+    }
+    rmSync(aside, { force: true })
   }
 
   heldElsewhere(workId: string): boolean {

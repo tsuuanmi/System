@@ -4,62 +4,18 @@
  * packages/ledger-core/conformance/artifacts.ts) to this envelope.
  */
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { z } from 'zod'
-import { Artifacts, ArtifactError, type BlobStore, type PutContent, type RecordTable } from '../src/artifacts.ts'
-import { artifactId, type ArtifactRecord } from '../src/envelope.ts'
-
-/** Like a DSH table: a write is acknowledged durable first and applied in memory after a turn. */
-const durableWrite = () => new Promise((resolve) => setImmediate(resolve))
-
-function memoryTable(): RecordTable & { rows: Map<string, ArtifactRecord>; failNextPut?: boolean } {
-  const rows = new Map<string, ArtifactRecord>()
-  const table = {
-    rows,
-    failNextPut: false,
-    get: (key: string) => rows.get(key),
-    async put(key: string, value: ArtifactRecord) {
-      if (table.failNextPut) {
-        table.failNextPut = false
-        throw new Error('simulated crash before the record write')
-      }
-      await durableWrite()
-      rows.set(key, structuredClone(value))
-    },
-    async update(key: string, fn: (current: ArtifactRecord) => ArtifactRecord) {
-      const current = rows.get(key)
-      if (!current) throw new Error('missing-key')
-      const next = fn(structuredClone(current))
-      await durableWrite()
-      rows.set(key, next)
-      return next
-    },
-  }
-  return table
-}
-
-function memoryBlobs(): BlobStore & { objects: Map<string, Uint8Array> } {
-  const objects = new Map<string, Uint8Array>()
-  return {
-    objects,
-    async save(data) {
-      const attachmentId = `sha256:${createHash('sha256').update(data).digest('hex')}`
-      objects.set(attachmentId, data)
-      return { attachmentId, bytes: data.byteLength }
-    },
-    async read({ attachmentId }) {
-      return objects.get(attachmentId)
-    },
-  }
-}
+import { memoryBlobStore, memoryRecordTable } from '../../../test-support/memory.ts'
+import { Artifacts, ArtifactError, type PutContent } from '../src/artifacts.ts'
+import { artifactId } from '../src/envelope.ts'
 
 let clock = 0
 const now = () => new Date(Date.UTC(2026, 10, 5, 0, 0, clock++)).toISOString()
 
 function store() {
-  const records = memoryTable()
-  const blobs = memoryBlobs()
+  const records = memoryRecordTable()
+  const blobs = memoryBlobStore()
   const artifacts = new Artifacts(records, blobs, now)
   artifacts.registerKind({ kind: 'note', schemaVersion: 1, content: z.object({ text: z.string() }).strict() })
   return { artifacts, records, blobs }

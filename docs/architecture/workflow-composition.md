@@ -2,7 +2,7 @@
 type: architecture
 status: active
 reviewed: 2026-11-05
-decided-by: [ADR-0002]
+decided-by: [ADR-0002, ADR-0006]
 covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*.yaml]
 ---
 
@@ -101,7 +101,8 @@ outlives its subject.
 `effect-intended` with an `operationId` stable for the Work, step and subject;
 after it, `effect-observed`. A lost host or a failed `apply` leads to
 `reconcile`, which only reads the remote: `applied` is recorded, `absent` is
-applied again, `unknown` holds the Work. An effect is never retried blindly.
+applied again, `unknown` holds the Work until a later run reads a definite
+outcome. An effect is never retried blindly, and runs only on a `pass`.
 
 **Operator decisions:** Work held for an inconclusive verdict, an effect that
 needs approval, or `approval: operator` records the step it awaits.

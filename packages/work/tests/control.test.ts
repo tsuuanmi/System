@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { FileControl } from '../src/control.ts'
 
@@ -34,4 +34,36 @@ test('a cancel request is read until cleared', () => {
   assert.deepEqual(control.cancelRequest('work:c'), { reason: 'r', caller: { type: 'human', operatorId: 't' } })
   control.clearCancel('work:c')
   assert.equal(control.cancelRequest('work:c'), undefined)
+})
+
+test('two hosts racing for a stale lock never both win', async () => {
+  const { spawn } = await import('node:child_process')
+  const { pathToFileURL, fileURLToPath } = await import('node:url')
+  const source = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'control.ts')).href
+  const contender = `
+    const { FileControl } = await import(${JSON.stringify(source)})
+    const control = new FileControl(process.argv[1])
+    try {
+      const release = control.acquire('work:race')
+      await new Promise((r) => setTimeout(r, 300))
+      release()
+      console.log('won')
+    } catch {
+      console.log('lost')
+    }`
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
+  let doubleWins = 0
+  for (let round = 0; round < 15; round++) {
+    const raceDir = join(dir, `race-${round}`)
+    new FileControl(raceDir)
+    writeFileSync(join(raceDir, 'work_race.lock'), dead)
+    const outcomes = await Promise.all([0, 1].map(() => new Promise<string>((resolve) => {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', contender, raceDir], { stdio: ['ignore', 'pipe', 'inherit'] })
+      let out = ''
+      child.stdout.on('data', (d) => { out += d })
+      child.on('close', () => resolve(out.trim()))
+    })))
+    if (outcomes.filter((o) => o === 'won').length > 1) doubleWins += 1
+  }
+  assert.equal(doubleWins, 0)
 })

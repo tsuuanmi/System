@@ -5,15 +5,13 @@
  * killed host.
  */
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { repo, systemCli } from '../test-support/cli.ts'
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const home = mkdtempSync(join(tmpdir(), 'system-work-'))
+const cli = systemCli('system-work', { SYSTEM_OPERATOR_ID: 'tester' })
+const home = cli.home
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 const log = join(home, 'fake-calls.log')
 const FAKES_ON = `- id: verifiers
@@ -28,14 +26,8 @@ const FAKES_ON = `- id: verifiers
     effects: [git.publish]
 `
 
-function system(args: string[], env: Record<string, string> = {}) {
-  const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], {
-    env: { ...process.env, DSH_HOME: home, SYSTEM_FAKE_LOG: log, SYSTEM_OPERATOR_ID: 'tester', ...env },
-    encoding: 'utf8',
-    timeout: 120_000,
-  })
-  return { status: ran.status, signal: ran.signal, stdout: ran.stdout, stderr: ran.stderr }
-}
+
+const system = (args: string[], env: Record<string, string> = {}) => cli.run(args, { env: { SYSTEM_FAKE_LOG: log, ...env } })
 
 const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : [])
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as {

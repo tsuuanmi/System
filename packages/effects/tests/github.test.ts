@@ -4,13 +4,13 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { Artifacts, type ArtifactRecord, type BlobStore, type RecordTable } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts'
+import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { GIT_TREE_KIND, gitTreeSchema, pin, snapshot, type EffectIntent } from '@system/work'
 import { githubPublisher, type PublishConfig } from '../src/github.ts'
 
@@ -56,22 +56,7 @@ after(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-function store(): Artifacts {
-  const rows = new Map<string, ArtifactRecord>()
-  const records: RecordTable = {
-    get: (k) => rows.get(k),
-    async put(k, v) { rows.set(k, structuredClone(v)) },
-    async update(k, fn) { const n = fn(structuredClone(rows.get(k)!)); rows.set(k, n); return n },
-  }
-  const objects = new Map<string, Uint8Array>()
-  const blobs: BlobStore = {
-    async save(data) { const attachmentId = `sha256:${createHash('sha256').update(data).digest('hex')}`; objects.set(attachmentId, data); return { attachmentId, bytes: data.byteLength } },
-    async read({ attachmentId }) { return objects.get(attachmentId) },
-  }
-  const artifacts = new Artifacts(records, blobs)
-  artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
-  return artifacts
-}
+const store = () => memoryArtifacts({ ...GIT_TREE_KIND, content: gitTreeSchema }).artifacts
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
 

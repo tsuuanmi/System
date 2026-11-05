@@ -10,7 +10,9 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
+import { memoryWorkTable, until } from '../../../test-support/memory.ts'
+import { LocalControl } from '../../../test-support/process.ts'
+import { WorkController, type SpecStore } from '../src/controller.ts'
 import type { Verdict } from '../src/kinds.ts'
 import type { Caller, WorkRecord } from '../src/record.ts'
 import { Capabilities, type EffectIntent, type EffectPort, type Reconciled, type VerifyResult } from '../src/registry.ts'
@@ -21,17 +23,6 @@ const SE = readFileSync(join(repo, 'workflows', 'software-engineering.yaml'), 'u
 const human: Caller = { type: 'human', operatorId: 'tan' }
 const agent: Caller = { type: 'agent', operatorId: 'tan' }
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
-const turn = () => new Promise((resolve) => setImmediate(resolve))
-
-/** Wait for a condition, failing the test instead of hanging. */
-async function until(condition: () => boolean, what: string) {
-  const deadline = Date.now() + 5000
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
-    await turn()
-  }
-}
-
 interface Remote {
   /** operationId -> what is published. */
   published: Map<string, Record<string, string>>
@@ -51,11 +42,7 @@ function world(rows = new Map<string, WorkRecord>(), remote: Remote = { publishe
   const kinds = new Map<string, string>()
   const specs = new Map<string, ResolvedSpec>()
   const store = (text: string, kind: string) => { const artifactId = id(text); stored.add(artifactId); kinds.set(artifactId, kind); return artifactId }
-  const table: WorkTable = {
-    get: (key) => rows.get(key), keys: () => rows.keys(),
-    async put(key, value) { await turn(); rows.set(key, structuredClone(value)) },
-    async update(key, fn) { const next = fn(structuredClone(rows.get(key)!)); await turn(); rows.set(key, next); return structuredClone(next) },
-  }
+  const table = memoryWorkTable(rows)
   const specStore: SpecStore = {
     async putSpec(spec) { const specId = store(JSON.stringify(spec), 'workflow-spec'); specs.set(specId, spec); return specId },
     getSpec: (specId) => structuredClone(specs.get(specId)),
@@ -91,7 +78,7 @@ function controller(w: ReturnType<typeof world>, options: Options = {}) {
       return found ? { state: 'applied', reason: 'found on the remote', detail: found } : { state: 'absent', reason: 'not on the remote' }
     }))(intent, w.remote),
   })
-  return new WorkController(w.table, w.specStore, capabilities)
+  return new WorkController(w.table, w.specStore, capabilities, new LocalControl())
 }
 
 async function admit(c: WorkController, w: ReturnType<typeof world>, yaml = SE) {
@@ -125,10 +112,12 @@ test('nothing is published unless the required verdict passed on that exact subj
   const failed = await controller(failing, { verdict: 'fail' }).run((await admit(controller(failing, { verdict: 'fail' }), failing)).id)
   assert.equal(failed.state.status, 'failed')
   assert.ok(!types(failed).includes('effect-intended'))
+  // ADR-0004 decision 12: the push happens only after a pass; an inconclusive verdict cannot be approved past it.
   const unsure = world()
-  const held = await controller(unsure, { verdict: 'inconclusive' }).run((await admit(controller(unsure, { verdict: 'inconclusive' }), unsure)).id)
-  assert.equal(held.state.status, 'held')
-  assert.match(held.state.reason!, /publish needs a passing checks verdict on its subject; checks is inconclusive/)
+  const notPublished = await controller(unsure, { verdict: 'inconclusive' }).run((await admit(controller(unsure, { verdict: 'inconclusive' }), unsure)).id)
+  assert.equal(notPublished.state.status, 'failed')
+  assert.match(notPublished.state.reason!, /publish needs a passing verdict on its subject: checks=inconclusive/)
+  assert.equal(notPublished.state.awaiting, undefined)
   assert.equal(unsure.remote.applies + failing.remote.applies, 0)
 })
 
@@ -172,6 +161,24 @@ test('an outcome reconciliation cannot establish holds the Work and applies noth
   assert.equal(held.state.status, 'held')
   assert.match(held.state.reason!, /outcome of publish is unknown: the remote did not answer/)
   assert.equal(w.remote.applies, 0)
+})
+
+test('Work held on an unknown outcome resumes when a later run can read the remote', async () => {
+  const w = world()
+  const first = controller(w, { apply: async (intent, remote) => {
+    remote.applies += 1
+    remote.published.set(intent.operationId, { branch: 'system/x', commit: intent.subject })
+    return new Promise(() => {})
+  } })
+  const admitted = await admit(first, w)
+  void first.run(admitted.id)
+  await until(() => w.remote.applies > 0, 'the remote effect')
+  const held = await controller(w, { reconcile: async () => ({ state: 'unknown', reason: 'the remote did not answer' }) }).run(admitted.id)
+  assert.equal(held.state.status, 'held')
+  const resumed = await controller(w).run(admitted.id)
+  assert.equal(resumed.state.status, 'succeeded', resumed.state.reason)
+  assert.equal(w.remote.applies, 1, 'no second apply')
+  assert.deepEqual(resumed.events.filter((e) => e.type === 'effect-observed').map((e) => e.type === 'effect-observed' && e.state), ['unknown', 'applied'])
 })
 
 test('an apply that throws is reconciled, never retried blindly', async () => {
@@ -243,4 +250,26 @@ test('after failed checks, retry --step implement publishes the new subject, nev
   assert.equal(intents[0]?.type === 'effect-intended' && intents[0].subject, done.state.steps.implement!.outputs.change)
   assert.notEqual(done.state.steps.implement!.outputs.change, rejected)
   assert.equal(w.remote.applies, 1)
+})
+
+test('retry --step publish redoes only the effect: the Worker and the checks are not run again', async () => {
+  const w = world()
+  let failing = true
+  const c = controller(w, { apply: async (intent, remote) => {
+    if (failing) throw new Error('GitHub answered 502')
+    remote.applies += 1
+    remote.published.set(intent.operationId, { commit: intent.subject })
+    return { state: 'applied', reason: 'published', detail: { commit: intent.subject } }
+  } })
+  const failed = await c.run((await admit(c, w)).id)
+  assert.equal(failed.state.status, 'failed')
+  failing = false
+  const done = await c.retry(failed.id, { step: 'publish', caller: human, reason: 'transient API error' })
+  assert.equal(done.state.status, 'succeeded', done.state.reason)
+  assert.equal(done.events.filter((e) => e.type === 'dispatched').length, 2, 'implement and checks ran once each')
+  const intents = done.events.filter((e) => e.type === 'effect-intended')
+  assert.equal(intents.length, 2)
+  assert.equal(intents[0]?.type === 'effect-intended' && intents[0].operationId, intents[1]?.type === 'effect-intended' && intents[1].operationId, 'the same subject is the same operation')
+  assert.equal(w.remote.applies, 1)
+  assert.equal(c.replay(failed.id).matches, true)
 })

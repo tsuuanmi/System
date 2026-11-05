@@ -2,7 +2,7 @@
 level: 1
 areas: [governance=governance, requirements=requirement, architecture=architecture, decisions=decision, research=research, proposals=proposal]
 id-prefixes: [proposal=PROP, research=RES, decision=ADR]
-source-roots: [packages, bin, tests, workflows]
+source-roots: [packages, bin, tests, test-support, workflows]
 forbidden-names: [archive, archives, deprecated, history, legacy, old, temp, temporary]
 ledger: governance/retired.md
 reachability-depth: 3
@@ -38,7 +38,7 @@ engineering or operations knowledge actually exists.
 
 Typed IDs: `PROP-NNNN` for proposals, `RES-NNNN` for research and
 `ADR-NNNN` for decisions. Never reuse IDs. The local `source-roots` are
-`packages`, `bin`, `tests` and `workflows`: every directory under them that holds files git
+`packages`, `bin`, `tests`, `test-support` and `workflows`: every directory under them that holds files git
 does not ignore needs an ownership README, and relevant documents declare
 `covers` edges to the source they describe. Use wikilinks for typed
 document references and normal Markdown links in routers and for source files.

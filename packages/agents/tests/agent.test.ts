@@ -5,64 +5,24 @@
  * SIGKILL after the grace.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { Artifacts, type ArtifactRecord, type BlobStore, type RecordTable } from '@system/artifacts'
-import { Capabilities, GIT_TREE_KIND, TASK_KIND, WorkController, resolvedSpecSchema, gitTreeSchema, parseWorkflow, resolve, snapshot, taskSchema, type GitTreeContent, type ResolvedSpec, type SpecStore, type WorkRecord, type WorkTable, type WorkerRequest } from '@system/work'
-import { agentWorker, type Account, type Spawner } from '../src/agent.ts'
+import type { Artifacts } from '@system/artifacts'
+import { memoryArtifacts, memoryWorkTable } from '../../../test-support/memory.ts'
+import { LocalControl, processSpawner } from '../../../test-support/process.ts'
+import { Capabilities, GIT_TREE_KIND, TASK_KIND, WorkController, resolvedSpecSchema, gitTreeSchema, parseWorkflow, resolve, snapshot, taskSchema, type GitTreeContent, type ResolvedSpec, type SpecStore, type WorkerRequest } from '@system/work'
+import { agentWorker, type Account } from '../src/agent.ts'
 import { lazyVersion } from '../src/index.ts'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-agent.mjs')
 const root = mkdtempSync(join(tmpdir(), 'system-agents-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 
-function memory(): { artifacts: Artifacts } {
-  const rows = new Map<string, ArtifactRecord>()
-  const records: RecordTable = {
-    get: (key) => rows.get(key),
-    async put(key, value) { rows.set(key, structuredClone(value)) },
-    async update(key, fn) { const next = fn(structuredClone(rows.get(key)!)); rows.set(key, next); return next },
-  }
-  const objects = new Map<string, Uint8Array>()
-  const blobs: BlobStore = {
-    async save(data) {
-      const attachmentId = `sha256:${createHash('sha256').update(data).digest('hex')}`
-      objects.set(attachmentId, data)
-      return { attachmentId, bytes: data.byteLength }
-    },
-    async read({ attachmentId }) { return objects.get(attachmentId) },
-  }
-  const artifacts = new Artifacts(records, blobs)
-  artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
-  artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
-  return { artifacts }
-}
-
-const spawner: Spawner = {
-  spawn(spec) {
-    const child = spawn(spec.argv[0]!, spec.argv.slice(1), { cwd: spec.cwd, env: Object.fromEntries(Object.entries(spec.env).filter(([, v]) => v !== undefined)) as NodeJS.ProcessEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (d) => { stdout += d })
-    child.stderr.on('data', (d) => { stderr += d })
-    const group = (signal: NodeJS.Signals) => { try { process.kill(-child.pid!, signal) } catch { /* gone */ } }
-    spec.signal.addEventListener('abort', () => {
-      group('SIGTERM')
-      setTimeout(() => group('SIGKILL'), spec.graceMs).unref()
-    }, { once: true })
-    return {
-      done: new Promise((resolve) => child.on('close', (exitCode, signal) => resolve({ exitCode, signal }))),
-      stdout: () => stdout,
-      stderr: () => stderr,
-    }
-  },
-}
-
+const memory = () => memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema })
 function repo(): string {
   const dir = mkdtempSync(join(root, 'repo-'))
   const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
@@ -104,7 +64,7 @@ test('a code change is captured from the working tree as one pinned commit on th
   const { artifacts } = memory()
   const repository = repo()
   const attempts = join(root, 'attempts-1')
-  const worker = agentWorker(account('claude-code'), artifacts, spawner, attempts)
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
   const result = await worker.run(request({ task: await task(artifacts, 'FAKE:edit', repository) }, ['change']))
   assert.equal(result.status, 'succeeded', result.reason)
   const tree = treeOf(artifacts, result.outputs.change!)
@@ -123,7 +83,7 @@ test('a code change is captured from the working tree as one pinned commit on th
 
 test('without a repository every output is a file the agent wrote; a missing one fails the attempt', async () => {
   const { artifacts } = memory()
-  const worker = agentWorker(account('claude-code'), artifacts, spawner, join(root, 'attempts-2'))
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-2'))
   const ok = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs') }, ['report', 'sources']))
   assert.equal(ok.status, 'succeeded', ok.reason)
   const sources = artifacts.get(ok.outputs.sources!)
@@ -140,7 +100,7 @@ test('the agent sees a throwaway HOME, its own token and nothing else from the h
   process.env.SSH_AUTH_SOCK = '/tmp/should-not-leak'
   process.env.GH_TOKEN = 'should-not-leak'
   try {
-    const worker = agentWorker(account('claude-code'), artifacts, spawner, join(root, 'attempts-3'))
+    const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-3'))
     const result = await worker.run(request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']))
     const tree = treeOf(artifacts, result.outputs.change!)
     const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${tree.commit}:ENV.json`], { encoding: 'utf8' })) as { keys: string[]; home: string }
@@ -154,7 +114,7 @@ test('the agent sees a throwaway HOME, its own token and nothing else from the h
 
 test('a missing token fails the attempt before anything runs', async () => {
   const { artifacts } = memory()
-  const worker = agentWorker(account('claude-code', { token: async () => undefined }), artifacts, spawner, join(root, 'attempts-4'))
+  const worker = agentWorker(account('claude-code', { token: async () => undefined }), artifacts, processSpawner, join(root, 'attempts-4'))
   const result = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs') }, ['report']))
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /token is not configured/)
@@ -164,12 +124,13 @@ test('cancel stops the agent with SIGTERM and keeps what it left as partial outp
   const { artifacts } = memory()
   const repository = repo()
   const abort = new AbortController()
-  const worker = agentWorker(account('claude-code'), artifacts, spawner, join(root, 'attempts-5'))
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-5'))
   const running = worker.run(request({ task: await task(artifacts, 'FAKE:sleep', repository) }, ['change'], abort.signal))
   setTimeout(() => abort.abort(), 500)
   const result = await running
   assert.equal(result.status, 'cancelled')
   assert.deepEqual(result.outputs, {})
+  assert.equal(result.usage, undefined, 'a stopped attempt reports no usage: what it printed is incomplete')
   const partial = treeOf(artifacts, result.partial!.change!)
   assert.equal(execFileSync('git', ['-C', repository, 'show', `${partial.commit}:PARTIAL.md`], { encoding: 'utf8' }), 'half done\n')
 })
@@ -177,7 +138,7 @@ test('cancel stops the agent with SIGTERM and keeps what it left as partial outp
 test('an agent ignoring SIGTERM is killed when the grace ends', async () => {
   const { artifacts } = memory()
   const abort = new AbortController()
-  const worker = agentWorker(account('claude-code'), artifacts, spawner, join(root, 'attempts-6'), 300)
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-6'), 300)
   const started = Date.now()
   const running = worker.run(request({ question: await task(artifacts, 'FAKE:stubborn') }, ['report'], abort.signal))
   setTimeout(() => abort.abort(), 200)
@@ -192,7 +153,7 @@ test('each Codex attempt gets a fresh CODEX_HOME with only auth.json; a refresh 
   const codexHome = join(root, 'codex-account')
   mkdirSync(codexHome)
   writeFileSync(join(codexHome, 'auth.json'), '{"token":"v1"}')
-  const worker = agentWorker(account('codex', { codexHome, token: undefined }), artifacts, spawner, join(root, 'attempts-7'))
+  const worker = agentWorker(account('codex', { codexHome, token: undefined }), artifacts, processSpawner, join(root, 'attempts-7'))
   const result = await worker.run(request({ task: await task(artifacts, 'FAKE:env FAKE:refresh', repository) }, ['change']))
   assert.equal(result.status, 'succeeded', result.reason)
   const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${treeOf(artifacts, result.outputs.change!).commit}:ENV.json`], { encoding: 'utf8' })) as { codexHome: string; codexHomeFiles: string[]; keys: string[] }
@@ -206,7 +167,7 @@ test('each Codex attempt gets a fresh CODEX_HOME with only auth.json; a refresh 
 
 test('an agent error fails the attempt with its message', async () => {
   const { artifacts } = memory()
-  const worker = agentWorker(account('codex', { codexHome: join(root, 'codex-account') }), artifacts, spawner, join(root, 'attempts-8'))
+  const worker = agentWorker(account('codex', { codexHome: join(root, 'codex-account') }), artifacts, processSpawner, join(root, 'attempts-8'))
   const result = await worker.run(request({ question: await task(artifacts, 'FAKE:fail') }, ['report']))
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /codex\/default exit 1: scripted failure/)
@@ -215,12 +176,7 @@ test('an agent error fails the attempt with its message', async () => {
 test('Codex takes over cancelled Claude work from the partial Artifact, in one Work history, with no transcript', async () => {
   const { artifacts } = memory()
   const repository = repo()
-  const rows = new Map<string, WorkRecord>()
-  const table: WorkTable = {
-    get: (key) => rows.get(key), keys: () => rows.keys(),
-    async put(key, value) { rows.set(key, structuredClone(value)) },
-    async update(key, fn) { const next = fn(structuredClone(rows.get(key)!)); rows.set(key, next); return next },
-  }
+  const table = memoryWorkTable()
   const specs: SpecStore = {
     async putSpec(spec) { return (await artifacts.put({ kind: 'note-spec', schemaVersion: 1, content: spec, classification: 'public', producer: { type: 'operator', ref: 't' } })).id },
     getSpec: (id) => { const r = artifacts.get(id); return r.state === 'stored' ? r.envelope.content as ResolvedSpec : undefined },
@@ -233,9 +189,9 @@ test('Codex takes over cancelled Claude work from the partial Artifact, in one W
   const codexHome = join(root, 'codex-takeover')
   mkdirSync(codexHome)
   writeFileSync(join(codexHome, 'auth.json'), '{}')
-  capabilities.registerWorker(agentWorker(account('claude-code'), artifacts, spawner, join(root, 'attempts-9')))
-  capabilities.registerWorker(agentWorker(account('codex', { codexHome }), artifacts, spawner, join(root, 'attempts-9')))
-  const controller = new WorkController(table, specs, capabilities)
+  capabilities.registerWorker(agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-9')))
+  capabilities.registerWorker(agentWorker(account('codex', { codexHome }), artifacts, processSpawner, join(root, 'attempts-9')))
+  const controller = new WorkController(table, specs, capabilities, new LocalControl())
   const spec = resolve(parseWorkflow('schema: system.workflow/v1\nid: one\nversion: 1\nsteps:\n  - id: implement\n    capabilities: [code-write]\n    inputs: {task: $work.input}\n    outputs: [change]\n'), capabilities.available())
   const input = await task(artifacts, 'FAKE:sleep FAKE:edit', repository)
   const admitted = await controller.admit({ spec, input, caller: { type: 'human', operatorId: 't' }, source: { kind: 'workflow-file' } })
@@ -270,7 +226,7 @@ test('a step asking for a tier runs that tier\'s model; no tier runs standard; t
   const { artifacts } = memory()
   const repository = repo()
   const models = { economy: 'haiku', standard: 'sonnet', frontier: 'opus' }
-  const worker = agentWorker(account('claude-code', { models }), artifacts, spawner, join(root, 'attempts-10'))
+  const worker = agentWorker(account('claude-code', { models }), artifacts, processSpawner, join(root, 'attempts-10'))
   const run = async (capabilities: string[]) => {
     const r = { ...request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']), capabilities }
     const result = await worker.run(r)
@@ -284,7 +240,7 @@ test('a step asking for a tier runs that tier\'s model; no tier runs standard; t
   const plain = await run(['code-write'])
   assert.equal(plain.seen, 'sonnet')
   assert.equal(plain.executor?.tier, undefined)
-  const bare = agentWorker(account('codex', { codexHome: join(root, 'codex-account') }), artifacts, spawner, join(root, 'attempts-10'))
+  const bare = agentWorker(account('codex', { codexHome: join(root, 'codex-account') }), artifacts, processSpawner, join(root, 'attempts-10'))
   const none = await bare.run({ ...request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']), capabilities: ['code-write'] })
   const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${treeOf(artifacts, none.outputs.change!).commit}:ENV.json`], { encoding: 'utf8' })) as { model?: string }
   assert.equal(seen.model, undefined, 'an account with no models passes no model flag')
@@ -293,7 +249,7 @@ test('a step asking for a tier runs that tier\'s model; no tier runs standard; t
 test('registering an account spawns nothing; every attempt records the CLI version', async () => {
   const { artifacts } = memory()
   let asked = 0
-  const worker = agentWorker(account('claude-code', { version: async () => { asked += 1; return '9.9.9 (fake)' } }), artifacts, spawner, join(root, 'attempts-11'))
+  const worker = agentWorker(account('claude-code', { version: async () => { asked += 1; return '9.9.9 (fake)' } }), artifacts, processSpawner, join(root, 'attempts-11'))
   assert.equal(asked, 0)
   const first = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs') }, ['report']))
   const second = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs') }, ['report']))

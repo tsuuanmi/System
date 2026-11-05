@@ -169,6 +169,15 @@ importers:
       '@deepseek-ai/dsh':
         specifier: 0.2.2-rc.1
         version: 0.2.2-rc.1(a82e36c603574ba498963dd3068e7c52)
+      '@system/agents':
+        specifier: workspace:*
+        version: link:packages/agents
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:packages/artifacts
+      '@system/work':
+        specifier: workspace:*
+        version: link:packages/work
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2

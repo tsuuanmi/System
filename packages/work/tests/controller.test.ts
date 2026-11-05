@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
+import { memoryWorkTable } from '../../../test-support/memory.ts'
+import { LocalControl } from '../../../test-support/process.ts'
+import { WorkController, type SpecStore } from '../src/controller.ts'
 import { WorkError } from '../src/errors.ts'
 import { fold, type WorkRecord } from '../src/record.ts'
 import type { Verdict } from '../src/kinds.ts'
@@ -15,23 +17,6 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'utf8')
 const caller = { type: 'human', operatorId: 'tan' } as const
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
-
-/** Like a DSH table: durable first, visible in memory a turn later. */
-function memoryTable(rows = new Map<string, WorkRecord>()): WorkTable & { rows: Map<string, WorkRecord> } {
-  const turn = () => new Promise((resolve) => setImmediate(resolve))
-  return {
-    rows,
-    get: (key) => rows.get(key),
-    keys: () => rows.keys(),
-    async put(key, value) { await turn(); rows.set(key, structuredClone(value)) },
-    async update(key, fn) {
-      const next = fn(structuredClone(rows.get(key)!))
-      await turn()
-      rows.set(key, next)
-      return structuredClone(next)
-    },
-  }
-}
 
 function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict> } {
   const specs = new Map<string, ResolvedSpec>()
@@ -63,12 +48,12 @@ interface Harness {
   capabilities: Capabilities
   calls: WorkerRequest[]
   verdicts: string[]
-  table: ReturnType<typeof memoryTable>
+  table: ReturnType<typeof memoryWorkTable>
   specs: ReturnType<typeof memorySpecs>
 }
 
-function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: ReturnType<typeof memoryTable>; specs?: ReturnType<typeof memorySpecs> } = {}): Harness {
-  const table = options.table ?? memoryTable()
+function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: ReturnType<typeof memoryWorkTable>; specs?: ReturnType<typeof memorySpecs> } = {}): Harness {
+  const table = options.table ?? memoryWorkTable()
   const specs = options.specs ?? memorySpecs()
   const capabilities = new Capabilities()
   const calls: WorkerRequest[] = []
@@ -111,7 +96,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
     async apply(intent) { return { state: 'applied', reason: 'published', detail: { subject: intent.subject } } },
     async reconcile() { return { state: 'absent', reason: 'nothing published' } },
   })
-  return { controller: new WorkController(table, specs, capabilities), capabilities, calls, verdicts, table, specs }
+  return { controller: new WorkController(table, specs, capabilities, new LocalControl()), capabilities, calls, verdicts, table, specs }
 }
 
 async function input(h: Harness): Promise<string> {
@@ -173,7 +158,7 @@ test('admission refuses a missing input and an input that is not stored', async 
 })
 
 test('a restart mid-attempt re-dispatches that step only, as a new attempt, with the same inputs', async () => {
-  const table = memoryTable()
+  const table = memoryWorkTable()
   const specs = memorySpecs()
   // The first host's Worker never returns: its process "dies" mid-attempt.
   const first = harness({ table, specs, worker: { run: () => new Promise(() => {}) } })
@@ -256,7 +241,7 @@ test('a Worker that disappears after admission fails the Work with a missing-cap
   const h = harness()
   const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
-  const bare = new WorkController(h.table, h.specs, new Capabilities())
+  const bare = new WorkController(h.table, h.specs, new Capabilities(), new LocalControl())
   const done = await bare.run(admitted.id)
   assert.equal(done.state.status, 'failed')
   assert.match(done.state.reason!, /no enabled Worker provides research, web-search/)
@@ -297,7 +282,7 @@ test('retry is refused for running or succeeded Work and for an unknown Worker',
   const done = await runFixture(h, 'research.yaml')
   await assert.rejects(() => h.controller.retry(done.id, { caller, reason: 'x' }), /only failed, cancelled or held Work is retried/)
   const failed = await runFixture(harness({ worker: { run: async () => ({ status: 'failed', outputs: {}, reason: 'red' }) } }), 'research.yaml')
-  const fresh = harness({ table: memoryTable(new Map([[failed.id, failed]])) })
+  const fresh = harness({ table: memoryWorkTable(new Map([[failed.id, failed]])) })
   await assert.rejects(() => fresh.controller.retry(failed.id, { worker: 'nobody', caller, reason: 'x' }), /no enabled Worker nobody/)
 })
 
@@ -442,4 +427,20 @@ test('a host lost during admission, after the spec was pinned and before the Wor
   assert.equal(h.table.rows.size, 0)
   assert.equal(h.calls.length, 0)
   assert.equal(h.controller.list().length, 0)
+})
+
+test('the verifier is pinned at admission with its version: another version at run time is an error verdict', async () => {
+  const table = memoryWorkTable()
+  const specs = memorySpecs()
+  const v1 = harness({ table, specs })
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), v1.capabilities.available())
+  const admitted = await v1.controller.admit({ spec, input: await input(v1), caller, source: { kind: 'workflow-file' } })
+  const admittedEvent = admitted.events[0]
+  assert.deepEqual(admittedEvent?.type === 'admitted' && admittedEvent.verifiers, { citations: { ref: 'fake-verifier', version: '1' } })
+  const v2 = harness({ table, specs, verifier: { version: '2' } })
+  const done = await v2.controller.run(admitted.id)
+  const verified = done.events.find((e) => e.type === 'verified')
+  assert.equal(verified?.type === 'verified' && verified.verdict, 'error')
+  assert.match(verified?.type === 'verified' ? verified.reason : '', /pinned fake-verifier@1 at admission; fake-verifier@2 is enabled now/)
+  assert.equal(done.state.status, 'failed')
 })

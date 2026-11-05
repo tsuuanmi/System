@@ -2,16 +2,8 @@
  * The `fakes` row: a scripted Worker and verifier for offline tests and
  * demonstrations. Disabled in the System bundle; a profile patch enables it.
  *
- * Environment hooks (tests only):
- * - SYSTEM_FAKE_LOG=<file>: append "<workId> <stepId> <attemptId>" per Worker call.
- * - SYSTEM_FAKE_CRASH_AT=<stepId>: SIGKILL the host when that step is dispatched.
- * - SYSTEM_FAKE_FAIL=<stepId>: that step's Worker reports failure.
- * - SYSTEM_FAKE_SLEEP_AT=<stepId>: that step's Worker waits until it is cancelled,
- *   then reports `cancelled` with one partial output.
- * - SYSTEM_FAKE_VERDICT=<pass|fail|inconclusive|error>: every verdict (default pass).
- *
- * The fake effect provider "publishes" into `$DSH_HOME/system/fake-effects.json`
- * (operation ID -> subject), so reconciliation works across host processes.
+ * Environment hooks for tests and the fake publisher's state file: see
+ * the package README, their one home.
  */
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
@@ -38,6 +30,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     content: z.object({ stepId: z.string(), slot: z.string(), inputs: z.record(z.string(), z.string()), attemptId: z.string(), state: z.enum(['complete', 'partial']) }).strict(),
   })
   artifacts.registerKind({ kind: 'fake-criteria', schemaVersion: 1, content: z.object({ capability: z.string(), name: z.string() }).strict() })
+  /** A `fake-criteria@1` Artifact: the fake verifier's criteria and evidence. */
+  const note = async (capability: string, name: string) => (await artifacts.put({
+    kind: 'fake-criteria', schemaVersion: 1, content: { capability, name },
+    classification: 'public', producer: { type: 'verifier', ref: 'fake-verifier' },
+  })).id
   const put = async (request: WorkerRequest, slot: string, state: 'complete' | 'partial') => (await artifacts.put({
     kind: 'fake-output', schemaVersion: 1,
     content: { stepId: request.stepId, slot, inputs: request.inputs, attemptId: request.attemptId, state },
@@ -71,17 +68,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       capabilities: config.verifiers ?? [],
       accepts: ['fake-output'],
       async criteria(request) {
-        return (await artifacts.put({
-          kind: 'fake-criteria', schemaVersion: 1, content: { capability: request.capability, name: request.name },
-          classification: 'public', producer: { type: 'verifier', ref: 'fake-verifier' },
-        })).id
+        return note(request.capability, request.name)
       },
       async verify(request): Promise<VerifyResult> {
         const verdict = (VERDICTS as readonly string[]).includes(process.env.SYSTEM_FAKE_VERDICT ?? '') ? process.env.SYSTEM_FAKE_VERDICT as VerifyResult['verdict'] : 'pass'
-        const evidence = (await artifacts.put({
-          kind: 'fake-criteria', schemaVersion: 1, content: { capability: request.capability, name: `evidence for ${request.subject}` },
-          classification: 'public', producer: { type: 'verifier', ref: 'fake-verifier' },
-        })).id
+        const evidence = await note(request.capability, `evidence for ${request.subject}`)
         return { verdict, reason: `scripted ${verdict}`, subject: request.subject, criteria: request.criteria, evidence: [evidence] }
       },
     }),

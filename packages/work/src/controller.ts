@@ -12,7 +12,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
-import { LocalControl, type CancelRequest, type HostControl } from './control.ts'
+import type { CancelRequest, HostControl } from './control.ts'
 import { WorkError } from './errors.ts'
 import type { Verdict } from './kinds.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifyResult } from './registry.ts'
@@ -39,7 +39,7 @@ export interface SpecStore {
 }
 
 /** How often a running attempt checks for a cancel request. */
-export const CANCEL_POLL_MS = 250
+const CANCEL_POLL_MS = 250
 
 export const SPEC_KIND = 'workflow-spec'
 export const SPEC_SCHEMA_VERSION = 1
@@ -63,14 +63,16 @@ export class WorkController {
   private readonly specs: SpecStore
   private readonly capabilities: Capabilities
   private readonly control: HostControl
-  private readonly now: () => string
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, control: HostControl = new LocalControl(), now: () => string = () => new Date().toISOString()) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, control: HostControl) {
     this.table = table
     this.specs = specs
     this.capabilities = capabilities
     this.control = control
-    this.now = now
+  }
+
+  private now(): string {
+    return new Date().toISOString()
   }
 
   /** Pin the spec and create the Work record; nothing is dispatched yet. */
@@ -80,9 +82,11 @@ export class WorkController {
     if (admission.input && !this.specs.exists(admission.input)) throw new WorkError(`input ${admission.input} is not a stored Artifact`)
     // Pin every verify step's criteria now: later edits to a repository or a verifier's defaults cannot change them.
     const criteria: Record<string, string> = {}
+    const verifiers: Record<string, { ref: string; version: string }> = {}
     for (const s of admission.spec.steps.filter(isVerifyStep)) {
       const verifier = this.capabilities.routeVerifier(s.verify.capability).selected
       if (!verifier) throw new WorkError(`no enabled verifier provides ${s.verify.capability}`)
+      verifiers[s.id] = { ref: verifier.ref, version: verifier.version }
       try {
         criteria[s.id] = await verifier.criteria({ capability: s.verify.capability, name: s.verify.criteria, input: admission.input, operatorId: admission.caller.operatorId })
       } catch (error) {
@@ -101,7 +105,7 @@ export class WorkController {
     }
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = `work:${randomUUID()}`
-    const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: admission.input, criteria, source: admission.source }
+    const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: admission.input, criteria, verifiers, source: admission.source }
     const record: WorkRecord = { id, events: [admitted], state: fold(admission.spec.steps.map((s) => s.id), [admitted]) }
     await this.table.put(id, workRecordSchema.parse(record))
     return record
@@ -181,11 +185,11 @@ export class WorkController {
     if (!['failed', 'cancelled', 'held'].includes(record.state.status)) throw new WorkError(`only failed, cancelled or held Work is retried; ${workId} is ${record.state.status}`)
     if (options.worker && !this.capabilities.workerRefs().includes(options.worker)) throw new WorkError(`no enabled Worker ${options.worker}; enabled: ${this.capabilities.workerRefs().join(', ') || 'none'}`)
     const spec = this.specOf(record)
-    const workerSteps = spec.steps.filter(isWorkerStep)
     const step = options.step
-      ? workerSteps.find((s) => s.id === options.step)
-      : workerSteps.find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded'))
-    if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
+      ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isEffectStep(s)))
+      : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded'))
+    if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
+    if (isEffectStep(step) && options.worker) throw new WorkError(`${step.id} is an effect step; --worker names Workers only`)
     if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
     const reset = [step.id, ...dependentsOf(spec, step.id)]
@@ -359,8 +363,12 @@ export class WorkController {
       selected: verifier.ref, candidates: route.candidates, inputs: { subject, criteria },
     })
     const kind = this.specs.kindOf(subject)
+    const admitted = record.events[0]
+    const pinned = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
     let result: VerifyResult
-    if (!kind || !verifier.accepts.includes(kind)) {
+    if (pinned && (pinned.ref !== verifier.ref || pinned.version !== verifier.version)) {
+      result = { verdict: 'error', reason: `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`, subject, criteria, evidence: [] }
+    } else if (!kind || !verifier.accepts.includes(kind)) {
       result = { verdict: 'error', reason: `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`, subject, criteria, evidence: [] }
     } else {
       try {
@@ -449,13 +457,10 @@ export class WorkController {
   private async runEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<WorkRecord> {
     const subject = this.resolveRef(record, s.effect.subject)
     const decided = this.decisionOf(record, s.id)
-    const verdicts = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const)
-    const notPass = verdicts.filter(([, verdict]) => verdict !== 'pass')
-    if (notPass.some(([, verdict]) => verdict !== 'inconclusive')) {
+    // ADR-0004 decision 12: only a pass on this exact subject allows the effect; no decision overrides it.
+    const notPass = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const).filter(([, verdict]) => verdict !== 'pass')
+    if (notPass.length) {
       return this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
-    }
-    if (notPass.length && !decided) {
-      return this.finish(record, 'held', `${s.id} needs a passing ${notPass.map(([id]) => id).join(', ')} verdict on its subject; ${notPass.map(([id, v]) => `${id} is ${v}`).join(', ')}`, s.id)
     }
     const provider = this.capabilities.routeEffect(s.effect.capability).selected
     if (!provider) return this.finish(record, 'failed', `no enabled provider offers ${s.effect.capability} for step ${s.id}`)

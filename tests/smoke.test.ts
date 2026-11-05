@@ -3,28 +3,19 @@
  * Needs `corepack pnpm install` and `corepack pnpm build`; no model credentials.
  */
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { repo, systemCli } from '../test-support/cli.ts'
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const home = mkdtempSync(join(tmpdir(), 'system-smoke-'))
+const cli = systemCli('system-smoke', {})
+const home = cli.home
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
 const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'agents', 'credentials', 'system-app']
 
-function system(...args: string[]) {
-  const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], {
-    env: { ...process.env, DSH_HOME: home },
-    encoding: 'utf8',
-    timeout: 120_000,
-  })
-  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr }
-}
+const system = (...args: string[]) => cli.run(args)
 
 function doctor() {
   const ran = system('doctor', '--json')
@@ -41,13 +32,13 @@ after(() => {
 })
 
 test('a command before init names the fix', () => {
-  const empty = mkdtempSync(join(tmpdir(), 'system-empty-'))
+  const empty = systemCli('system-empty', {})
   try {
-    const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), 'doctor'], { env: { ...process.env, DSH_HOME: empty }, encoding: 'utf8' })
+    const ran = empty.run(['doctor'])
     assert.equal(ran.status, 1)
     assert.match(ran.stderr, /run `system init` first/)
   } finally {
-    rmSync(empty, { recursive: true, force: true })
+    rmSync(empty.home, { recursive: true, force: true })
   }
 })
 
@@ -153,9 +144,7 @@ test('an Artifact whose bytes were deleted reads as unavailable', () => {
 test('credentials set stores a piped value without printing it and keeps other entries', () => {
   const file = join(home, '.credentials.yaml')
   writeFileSync(file, 'version: 1\nrefs:\n  OTHER_KEY: keep-me\n', { mode: 0o600 })
-  const set = spawnSync(process.execPath, [join(repo, 'bin', 'system'), 'credentials', 'set', 'SMOKE_TOKEN'], {
-    env: { ...process.env, DSH_HOME: home }, input: 'secret-value-123\n', encoding: 'utf8', timeout: 120_000,
-  })
+  const set = cli.run(['credentials', 'set', 'SMOKE_TOKEN'], { input: 'secret-value-123\n' })
   assert.equal(set.status, 0, set.stderr)
   assert.doesNotMatch(set.stdout + set.stderr, /secret-value-123/)
   const status = system('credentials', 'status', 'SMOKE_TOKEN', 'OTHER_KEY', 'ABSENT_TOKEN')

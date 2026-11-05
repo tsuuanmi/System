@@ -13,7 +13,7 @@ import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type Wor
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, type Runtime } from './runtimes.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
-export const GRACE_MS = 30_000
+const GRACE_MS = 30_000
 const MAX_LOG_BYTES = 256 * 1024
 
 export interface SpawnSpec {
@@ -111,7 +111,8 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     })).id
     const captured = await capture(artifacts, ws, request, account.ref)
     const common = { log, usage: parsed.usage, executor }
-    if (request.signal.aborted) return { status: 'cancelled', outputs: {}, partial: captured.outputs, reason: 'cancelled; the agent was stopped', ...common }
+    // A stopped agent's output is incomplete, so its usage is unknown rather than a partial count.
+    if (request.signal.aborted) return { status: 'cancelled', outputs: {}, partial: captured.outputs, reason: 'cancelled; the agent was stopped', log, executor }
     if (outcome.exitCode !== 0 || !parsed.ok) {
       const why = outcome.signal ? `signal ${outcome.signal}` : `exit ${outcome.exitCode}`
       return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...common }

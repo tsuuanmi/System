@@ -12,7 +12,7 @@
 import { parse } from 'yaml'
 import { z } from 'zod'
 
-export const WORKFLOW_SCHEMA = 'system.workflow/v1'
+const WORKFLOW_SCHEMA = 'system.workflow/v1'
 const ID = /^[a-z][a-z0-9-]{0,62}$/
 const CAPABILITY = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/
 /** `$work.input`, or `$steps.<step>.<slot>`. */

@@ -7,22 +7,21 @@
  *   SYSTEM_REAL_AGENTS=1 node --test tests/real-agents.test.ts
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { repo, systemCli } from '../test-support/cli.ts'
 
 const enabled = process.env.SYSTEM_REAL_AGENTS === '1'
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const env = { ...process.env, SYSTEM_CALLER: 'human' }
+/** The operator's own profile: real accounts and tokens. */
+const cli = systemCli('system-real', { SYSTEM_CALLER: 'human' }, process.env.DSH_HOME || join(homedir(), '.dsh'))
+const { env } = cli
 const gitRepo = mkdtempSync(join(tmpdir(), 'system-real-'))
 
-function system(args: string[]) {
-  const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], { env, encoding: 'utf8', timeout: 900_000 })
-  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr }
-}
+const system = (args: string[]) => cli.run(args, { timeoutMs: 900_000 })
+
 type Observed = { type: string; attemptId?: string; status?: string; usage?: { state: string; inputTokens?: number }; worker?: { ref: string; version?: string; tier?: string; model?: string } }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as { events: Observed[]; state: { status: string; reason?: string; steps: { task: { outputs: { result?: string }; partial?: { result?: string } } } } }
 const tree = (id: string) => (JSON.parse(system(['artifact', 'show', id]).stdout) as { envelope: { content: { commit: string; parent: string } } }).envelope.content

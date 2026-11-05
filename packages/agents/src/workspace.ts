@@ -69,7 +69,7 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
 }
 
 /** The slot captured from the working tree, if any. */
-export function treeSlot(ws: Workspace, outputs: readonly string[]): string | undefined {
+function treeSlot(ws: Workspace, outputs: readonly string[]): string | undefined {
   return ws.base ? outputs[0] : undefined
 }
 

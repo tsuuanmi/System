@@ -28,6 +28,7 @@ Test hooks, read from the environment:
 | `SYSTEM_FAKE_LOG=<file>` | append `<workId> <stepId> <attemptId>` per Worker call |
 | `SYSTEM_FAKE_CRASH_AT=<stepId>` | SIGKILL the host when that step is dispatched |
 | `SYSTEM_FAKE_FAIL=<stepId>` | that step's Worker reports failure |
+| `SYSTEM_FAKE_SLEEP_AT=<stepId>` | that step's Worker waits until cancelled, then reports `cancelled` with one partial output |
 | `SYSTEM_FAKE_VERDICT=<verdict>` | every verdict (`pass`, `fail`, `inconclusive`, `error`) |
 
 Source: [src/index.ts](src/index.ts).

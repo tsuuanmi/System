@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import type { WorkRecord, WorkState } from '@system/work'
+import { summarize, type WorkRecord, type WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 export interface CliIo {
@@ -248,6 +248,16 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .action(() => {
       select(async () => {
         for (const record of host.work().list()) io.out(`${record.id}  ${record.state.status.padEnd(9)}  ${record.state.specId}\n`)
+        return 0
+      })
+    })
+  work.command('report <workId>')
+    .description('duration, attempts, operator touches and usage of a Work, from its events')
+    .action((workId: string) => {
+      select(async () => {
+        const record = host.work().get(workId)
+        if (!record) throw new Error(`no Work ${workId}`)
+        io.out(`${JSON.stringify(summarize(record), null, 2)}\n`)
         return 0
       })
     })

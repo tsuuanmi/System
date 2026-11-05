@@ -5,17 +5,14 @@
  * against a local HTTP server). Verdicts are Artifacts bound to exact IDs.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const fake = join(repo, 'packages', 'agents', 'tests', 'fake-agent.mjs')
-const home = mkdtempSync(join(tmpdir(), 'system-verify-'))
-const env = { ...process.env, DSH_HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human' }
+const cli = systemCli('system-verify')
+const home = cli.home
 let server: ChildProcess
 let site = ''
 
@@ -29,10 +26,8 @@ const server = createServer((req, res) => {
 server.listen(0, '127.0.0.1', () => console.log(server.address().port))
 `
 
-function system(args: string[]) {
-  const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], { env, encoding: 'utf8', timeout: 180_000 })
-  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr }
-}
+const system = (args: string[]) => cli.run(args)
+
 type Verified = { type: string; stepId?: string; subject?: string; criteria?: string; verdict?: string; verdictId?: string; evidence?: string[] }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as { events: Verified[]; state: { status: string; reason?: string; criteria: Record<string, string>; steps: Record<string, { outputs: Record<string, string> }> } }
 const artifact = (id: string) => JSON.parse(system(['artifact', 'show', id]).stdout) as { envelope: { kind: string; content: Record<string, unknown> } }
@@ -62,10 +57,10 @@ before(async () => {
       - ref: claude-code/default
         runtime: claude-code
         capabilities: [code-write, research, web-search]
-        command: ${fake}
+        command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 `)
-  const set = spawnSync(process.execPath, [join(repo, 'bin', 'system'), 'credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { env, input: 'fake\n', encoding: 'utf8' })
+  const set = cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake\n' })
   assert.equal(set.status, 0, set.stderr)
 })
 

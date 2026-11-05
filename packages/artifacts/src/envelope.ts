@@ -9,7 +9,7 @@
 import { z } from 'zod'
 import { CONTENT_ID_RE, hashDomain, type ContentId } from './canonical.ts'
 
-export const ARTIFACT_ID_DOMAIN = 'system.artifact/v1'
+const ARTIFACT_ID_DOMAIN = 'system.artifact/v1'
 
 /** Inline content above this many canonical UTF-8 bytes must be stored as a blob. */
 export const MAX_INLINE_BYTES = 256 * 1024

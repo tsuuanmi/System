@@ -1,7 +1,10 @@
 # Agent instructions
 
 System is a DSH-hosted **durable work control plane**, not a new agent runtime.
-The source tree is currently a documentation and MVP-specification baseline.
+MVP-0 is implemented in [packages](packages/README.md) (see the evidence in
+[PLAN.md](PLAN.md)); [test-support](test-support/README.md) holds the shared
+test stand-ins. Changes to this repository are checked by
+[`.system/checks.yaml`](.system/checks.yaml).
 
 ## Read before changing
 

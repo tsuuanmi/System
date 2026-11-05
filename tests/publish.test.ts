@@ -8,23 +8,18 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const fake = join(repo, 'packages', 'agents', 'tests', 'fake-agent.mjs')
-const home = mkdtempSync(join(tmpdir(), 'system-publish-'))
+const cli = systemCli('system-publish')
+const { home, env } = cli
 const control = join(home, 'system', 'control')
-const env = { ...process.env, DSH_HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human' }
 const SE = join(repo, 'workflows', 'software-engineering.yaml')
 const servers: ChildProcess[] = []
 
-function system(args: string[], extra: Record<string, string> = {}) {
-  const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 180_000 })
-  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr }
-}
+
+const system = (args: string[]) => cli.run(args)
 
 async function github(...args: string[]): Promise<{ url: string; state: () => Promise<{ pulls: { number: number; head: string; draft: boolean }[]; calls: string[] }> }> {
   const server = spawn(process.execPath, [join(repo, 'tests', 'fake-github.mjs'), ...args], { stdio: ['ignore', 'pipe', 'inherit'] })
@@ -41,7 +36,7 @@ function profile(apiUrl: string) {
       - ref: claude-code/default
         runtime: claude-code
         capabilities: [code-write]
-        command: ${fake}
+        command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 - id: effects
   config:
@@ -77,7 +72,7 @@ const commitOf = (artifactId: string) => (JSON.parse(system(['artifact', 'show',
 before(() => {
   assert.equal(system(['init']).status, 0)
   for (const [name, value] of [['CLAUDE_CODE_OAUTH_TOKEN', 'fake'], ['GITHUB_TOKEN', 'ghs_test']]) {
-    assert.equal(spawnSync(process.execPath, [join(repo, 'bin', 'system'), 'credentials', 'set', name!], { env, input: `${value}\n` }).status, 0)
+    assert.equal(cli.run(['credentials', 'set', name!], { input: `${value}\n` }).status, 0)
   }
 })
 

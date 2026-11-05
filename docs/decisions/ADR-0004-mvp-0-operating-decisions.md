@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-05
 summary: Fix the MVP-0 operating choices — single operator, human-only approval, external agent Workers in per-attempt worktrees, Work state in the DSH storage hub, System-owned push/PR effects, and deferred sandboxing.
-related: [ADR-0001, ADR-0002, ADR-0003, ADR-0005, RES-0003, PROP-0001]
+related: [ADR-0001, ADR-0002, ADR-0003, ADR-0005, ADR-0006, RES-0003, PROP-0001]
 ---
 
 # MVP-0 operating decisions
@@ -114,8 +114,9 @@ System tests so far.
 - Usage checked against an independent oracle; MVP-0 records usage only.
 - Cold-start, memory and service-count benchmarks.
 - MCP entry point.
-- Workflow schema beyond `steps`, `dependsOn`, `capabilities`, `outputs`,
-  `verify` and `accept`.
+- Workflow schema beyond `system.workflow/v1` as recorded in
+  [ADR-0006](ADR-0006-workflow-vocabulary-for-mvp-0.md) (originally: beyond
+  `steps`, `dependsOn`, `capabilities`, `outputs`, `verify` and `accept`).
 
 ## Planned after MVP-1: Website Worker
 

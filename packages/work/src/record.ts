@@ -31,6 +31,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     specId: artifactId, input: artifactId.optional(),
     /** Each verify step's criteria Artifact, pinned at admission. */
     criteria: z.record(z.string(), artifactId).optional(),
+    /** Each verify step's verifier and version, pinned at admission (absent in records written before M6). */
+    verifiers: z.record(z.string(), z.object({ ref: z.string(), version: z.string() }).strict()).optional(),
     source: z.object({ kind: z.enum(['workflow-file', 'direct-task']), path: z.string().optional(), fileHash: z.string().optional() }).strict(),
   }).strict(),
   z.object({
@@ -201,6 +203,11 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         if (event.detail) effect.detail = { ...event.detail }
         if (event.state === 'applied') steps[event.stepId]!.state = 'succeeded'
         if (event.state === 'failed') steps[event.stepId]!.state = 'failed'
+        // A hold on an unknown outcome (no decision awaited) ends once the outcome is known.
+        if (event.state !== 'unknown' && state.status === 'held' && !state.awaiting) {
+          state.status = 'running'
+          delete state.reason
+        }
         break
       }
       case 'decided':

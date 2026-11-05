@@ -25,7 +25,7 @@ export const citationCriteriaSchema = z.object({
 }).strict()
 export type CitationCriteria = z.infer<typeof citationCriteriaSchema>
 
-export const DEFAULT_CRITERIA: Omit<CitationCriteria, 'name'> = { minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 2 * 1024 * 1024 }
+const DEFAULT_CRITERIA: Omit<CitationCriteria, 'name'> = { minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 2 * 1024 * 1024 }
 
 export const sourcesSchema = z.object({
   sources: z.array(z.object({

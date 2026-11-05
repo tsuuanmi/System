@@ -23,6 +23,8 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay. No domain-specific branch.
 - [src/control.ts](src/control.ts) — `FileControl`: the per-Work lock and cancel request.
+- [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
+  operator touches and usage from a Work's events (`system work report`).
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
   admit a file or a direct Task).
 
@@ -30,7 +32,8 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 
 Each DSH host caches records in memory, so only the host that holds a Work's
 lock (`$DSH_HOME/system/control/<work>.lock`, its pid; a dead pid's lock is
-stale) writes that Work. `system work cancel` from another process writes a
+stale, and is taken over by an atomic rename that puts back a live one)
+writes that Work. `system work cancel` from another process writes a
 cancel request the running host polls every 250 ms; the host aborts its
 attempt, records `observed` (`cancelled`, with partial output) and `terminal`
 (`cancelled`, with the caller). With no live host, the cancel is recorded
@@ -41,11 +44,15 @@ attempt: the Work keeps one history.
 ## Effects and decisions
 
 An effect step runs only after every required verdict on its exact subject
-is `pass`. The controller records `effect-intended` (a stable
+is `pass`; no decision overrides that (ADR-0004 decision 12). Verifiers are
+pinned at admission with their version; another version at run time gives an
+`error` verdict. `system work retry --step <effect step>` redoes only the
+effect. The controller records `effect-intended` (a stable
 `op:<sha256>` for the Work, step and subject) before calling the provider
 and `effect-observed` after. On restart, or after `apply` throws, it calls
 the provider's read-only `reconcile`: `applied` is recorded, `absent` is
-applied again (or, after a throw, fails the Work), `unknown` holds it. A
+applied again (or, after a throw, fails the Work), `unknown` holds it until a
+later run reads a definite outcome and resumes. A
 cancel records what reconciliation finds and applies nothing.
 `decide(workId, {decision, caller})` refuses agent callers; an approval
 reruns the Work, a denial fails it.

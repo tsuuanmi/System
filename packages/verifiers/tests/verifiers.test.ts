@@ -3,15 +3,15 @@
  * real Artifact store over in-memory tables.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import type { Spawner } from '@system/agents'
-import { Artifacts, type ArtifactRecord, type BlobStore, type RecordTable } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts'
+import { memoryArtifacts } from '../../../test-support/memory.ts'
+import { processSpawner } from '../../../test-support/process.ts'
 import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkRunSchema, checksSchema, requiredChecks } from '../src/checks.ts'
 import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
@@ -38,37 +38,10 @@ after(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-function store(): Artifacts {
-  const rows = new Map<string, ArtifactRecord>()
-  const records: RecordTable = {
-    get: (key) => rows.get(key),
-    async put(key, value) { rows.set(key, structuredClone(value)) },
-    async update(key, fn) { const next = fn(structuredClone(rows.get(key)!)); rows.set(key, next); return next },
-  }
-  const objects = new Map<string, Uint8Array>()
-  const blobs: BlobStore = {
-    async save(data) { const attachmentId = `sha256:${createHash('sha256').update(data).digest('hex')}`; objects.set(attachmentId, data); return { attachmentId, bytes: data.byteLength } },
-    async read({ attachmentId }) { return objects.get(attachmentId) },
-  }
-  const artifacts = new Artifacts(records, blobs)
-  for (const [kind, content] of [[TASK_KIND, taskSchema], [GIT_TREE_KIND, gitTreeSchema], [CHECKS_KIND, checksSchema], [CHECK_RUN_KIND, checkRunSchema], [CITATION_CRITERIA_KIND, citationCriteriaSchema], [CITATION_CHECK_KIND, citationCheckSchema]] as const) {
-    artifacts.registerKind({ ...kind, content })
-  }
-  return artifacts
-}
-
-const spawner: Spawner = {
-  spawn(spec) {
-    const child = spawn(spec.argv[0]!, spec.argv.slice(1), { cwd: spec.cwd, env: Object.fromEntries(Object.entries(spec.env).filter(([, v]) => v !== undefined)) as NodeJS.ProcessEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (d) => { stdout += d })
-    child.stderr.on('data', (d) => { stderr += d })
-    spec.signal.addEventListener('abort', () => { try { process.kill(-child.pid!, 'SIGKILL') } catch { /* gone */ } }, { once: true })
-    return { done: new Promise((resolve) => child.on('close', (exitCode, signal) => resolve({ exitCode, signal }))), stdout: () => stdout, stderr: () => stderr }
-  },
-}
-
+const store = () => memoryArtifacts(
+  { ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema }, { ...CHECKS_KIND, content: checksSchema },
+  { ...CHECK_RUN_KIND, content: checkRunSchema }, { ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema }, { ...CITATION_CHECK_KIND, content: citationCheckSchema },
+).artifacts
 const producer = { type: 'operator' as const, ref: 'tester' }
 
 function repo(checksYaml?: string): string {
@@ -110,7 +83,7 @@ const CHECKS = 'checks:\n  - name: value-is-good\n    run: grep -qx good value.t
 
 test('criteria are pinned from .system/checks.yaml at the base commit, refused when absent or invalid', async () => {
   const artifacts = store()
-  const verifier = requiredChecks(artifacts, spawner)
+  const verifier = requiredChecks(artifacts, processSpawner)
   const pinned = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: (await taskOn(artifacts, repo(CHECKS))).task, operatorId: 't' })
   const read = artifacts.get(pinned)
   assert.equal(read.state === 'stored' && read.envelope.kind, 'checks')
@@ -124,7 +97,7 @@ test('checks run on the exact subject commit: a good change passes with one evid
   const artifacts = store()
   const repository = repo(CHECKS)
   const { task, tree } = await taskOn(artifacts, repository)
-  const verifier = requiredChecks(artifacts, spawner)
+  const verifier = requiredChecks(artifacts, processSpawner)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
   const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
@@ -139,7 +112,7 @@ test('a change that breaks a check fails; a Worker editing checks.yaml cannot we
   const artifacts = store()
   const repository = repo(CHECKS)
   const { task, tree } = await taskOn(artifacts, repository)
-  const verifier = requiredChecks(artifacts, spawner)
+  const verifier = requiredChecks(artifacts, processSpawner)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
   const subject = await change(artifacts, repository, tree.commit, { 'value.txt': 'bad\n', '.system/checks.yaml': 'checks:\n  - name: nothing\n    run: "true"\n' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
@@ -151,7 +124,7 @@ test('a check over its timeout fails', async () => {
   const artifacts = store()
   const repository = repo('checks:\n  - name: slow\n    run: sleep 30\n    timeoutSeconds: 1\n')
   const { task, treeId } = await taskOn(artifacts, repository)
-  const verifier = requiredChecks(artifacts, spawner)
+  const verifier = requiredChecks(artifacts, processSpawner)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
   assert.equal(result.verdict, 'fail')

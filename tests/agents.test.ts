@@ -5,22 +5,17 @@
  * work, all through `bin/system`. No model credentials are used.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const fake = join(repo, 'packages', 'agents', 'tests', 'fake-agent.mjs')
-const home = mkdtempSync(join(tmpdir(), 'system-agents-'))
-const env = { ...process.env, DSH_HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human' }
+const cli = systemCli('system-agents')
+const { home, env } = cli
 
-function system(args: string[], input?: string) {
-  const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], { env, encoding: 'utf8', timeout: 120_000, input })
-  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr }
-}
+
+const system = (args: string[], input?: string) => cli.run(args, { input })
 
 type Record = { events: { type: string; selected?: string; inputs?: { previous?: string }; worker?: { ref: string; version?: string }; status?: string }[]; state: { status: string; reason?: string; steps: { task: { outputs: { result?: string }; partial?: { result?: string } } } } }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as Record
@@ -36,12 +31,12 @@ before(() => {
       - ref: claude-code/default
         runtime: claude-code
         capabilities: [code-write]
-        command: ${fake}
+        command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
       - ref: codex/default
         runtime: codex
         capabilities: [code-write]
-        command: ${fake}
+        command: ${fakeAgent}
         codexHome: codex/default
 `)
   assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
@@ -74,7 +69,7 @@ test('a direct Task runs Claude Code in its own worktree and records the exact r
   assert.equal(ran.status, 0, ran.stderr)
   const record = show(ran.stdout.trim())
   const observed = record.events.find((e) => e.type === 'observed')!
-  assert.deepEqual(observed.worker, { ref: 'claude-code/default', account: 'default', command: fake, version: '0.0.0-fake (Claude Code)', servedModels: ['served-default'] })
+  assert.deepEqual(observed.worker, { ref: 'claude-code/default', account: 'default', command: fakeAgent, version: '0.0.0-fake (Claude Code)', servedModels: ['served-default'] })
   const result = tree(record.state.steps.task.outputs.result!)
   assert.equal(execFileSync('git', ['-C', gitRepo, 'show', `${result.commit}:NOTE.md`], { encoding: 'utf8' }), 'edited by claude\n')
   assert.equal(execFileSync('git', ['-C', gitRepo, 'status', '--porcelain'], { encoding: 'utf8' }), '')
