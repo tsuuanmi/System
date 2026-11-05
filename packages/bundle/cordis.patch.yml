@@ -41,6 +41,22 @@
     - id: subprocess
       name: '@deepseek-ai/dsh-subprocess-local'
 
+    # Agent CLI accounts as Workers (ADR-0004, ADR-0005). An account whose CLI
+    # or credential is missing is skipped with its reason (`system workers`).
+    # One entry per account; routing takes the first capable one.
+    - id: agents
+      name: '@system/agents'
+      config:
+        accounts:
+          - ref: claude-code/default
+            runtime: claude-code
+            capabilities: [code-write, research, web-search]
+            tokenRef: CLAUDE_CODE_OAUTH_TOKEN
+          - ref: codex/default
+            runtime: codex
+            capabilities: [code-write]
+            codexHome: codex/default
+
     # Optional: Worker tokens (`system credentials`, ADR-0005). Only real
     # Workers read it, so it may be disabled by a profile patch.
     - id: credentials

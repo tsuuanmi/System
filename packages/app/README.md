@@ -10,16 +10,20 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system artifact put <file> [--media-type t] [--classification c]` | store the file as a `file@1` Artifact (default `local-private`, producer the operator) and print its ID |
 | `system artifact show <id>` | the envelope and occurrences as JSON; exit 1 when missing |
 | `system artifact cat <id>` | the bytes; exit 1 when unavailable |
+| `system task new (--text t \| --file f) [--repo path [--ref r]]` | store a `task@1` input; with `--repo`, first the exact base commit as `git-tree@1` |
+| `system workers` | registered Workers, and each agent account with its CLI version or why it is unavailable |
 | `system credentials set <NAME>` | read a value without echo (or from piped stdin) and store it in `$DSH_HOME/.credentials.yaml` through the DSH credential API; other entries are kept |
 | `system credentials status <NAME...>` | `configured (<source>)` or `not configured` per name, never the value; exit 1 if any is missing |
 | `system work submit (--workflow <file> \| --capability <name...>) [--input <id>] [--no-run]` | admit Work from a Workflow file or as a direct Task, print its ID, then run it |
+| `system work cancel <workId> [--reason r] [--wait]` | stop running Work: a live host is asked to stop its attempt (SIGTERM, SIGKILL after 30 s) and records the outcome; otherwise it is recorded here. Partial output is kept, unaccepted |
+| `system work retry <workId> [--worker ref] [--reason r]` | take a failed or cancelled Worker step over with a new attempt, optionally by one named Worker, starting from the last attempt's partial output |
 | `system work run <workId>` | advance admitted or interrupted Work until terminal |
 | `system work show <workId>` | the record (events and state) as JSON |
 | `system work list` | ID, status and pinned spec of every Work |
 | `system work replay <workId>` | fold the events again and compare with the stored state; runs nothing; exit 1 on mismatch |
 
 Work exit codes: `0` succeeded, `1` failed or refused, `3` held for the
-operator, `4` not terminal. Each call records its caller: `human` when stdin is
+operator, `4` not terminal, `5` cancelled. Each call records its caller: `human` when stdin is
 a terminal, otherwise `agent`, unless `SYSTEM_CALLER` says `human` or `agent`.
 | `system --help` | help, exit 0 |
 

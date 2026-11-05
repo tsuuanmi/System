@@ -68,3 +68,14 @@ the operator's home (checked on 2026-11-05 on the development host):
 - **Provider API keys** (ADR-0004 decision 7): not available to the operator.
 - **Mount or copy `~/.claude` and `~/.codex` into each attempt:** rejected;
   it exposes the operator's whole agent configuration and history.
+
+## Follow-up: decision 4, settled by test (2026-11-06)
+
+A probe of Codex CLI 0.166.0 with `--ephemeral` and a shared `CODEX_HOME`
+found `memories_1.sqlite`, `state_5.sqlite`, shell snapshots and logs written
+there, so a shared directory carries state between attempts. A second probe
+with a fresh `CODEX_HOME` holding only a copy of `auth.json` ran normally.
+Each attempt therefore gets a fresh `CODEX_HOME` with only `auth.json`; a
+refreshed `auth.json` is copied back to the account directory unless that file
+changed meanwhile, and attempts of one account run one at a time. See
+[`@system/agents`](../../packages/agents/README.md).

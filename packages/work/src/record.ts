@@ -13,6 +13,9 @@ const caller = z.object({ type: z.enum(['human', 'agent']), operatorId: z.string
 /** Why a candidate Worker or verifier was or was not chosen. */
 const candidate = z.object({ ref: z.string(), selected: z.boolean(), reason: z.string() }).strict()
 
+/** Which account, binary and version ran an attempt (ADR-0005 decision 5). */
+const executor = z.object({ ref: z.string(), account: z.string().optional(), command: z.string().optional(), version: z.string().optional() }).strict()
+
 const usage = z.union([
   z.object({ state: z.literal('unknown') }).strict(),
   z.object({ state: z.literal('observed'), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), source: z.string() }).strict(),
@@ -32,8 +35,13 @@ export const eventSchema = z.discriminatedUnion('type', [
   }).strict(),
   z.object({
     type: z.literal('observed'), seq: z.number().int(), at,
-    stepId: z.string(), attemptId: z.string(), status: z.enum(['succeeded', 'failed']),
+    stepId: z.string(), attemptId: z.string(), status: z.enum(['succeeded', 'failed', 'cancelled']),
     outputs: z.record(z.string(), artifactId), reason: z.string().optional(), usage,
+    /** What a cancelled attempt left behind: kept, never accepted as the step's output. */
+    partial: z.record(z.string(), artifactId).optional(),
+    /** The bounded agent output, for audit only; never handed to another Worker. */
+    log: artifactId.optional(),
+    worker: executor.optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,
@@ -46,9 +54,17 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), attemptId: z.string(), reason: z.string(),
   }).strict(),
   z.object({
+    type: z.literal('reopened'), seq: z.number().int(), at, caller,
+    stepId: z.string(), reason: z.string(),
+    /** Only this Worker may take the step over. */
+    worker: z.string().optional(),
+    /** The previous attempt's partial output, handed to the new attempt as input `previous`. */
+    previous: artifactId.optional(),
+  }).strict(),
+  z.object({
     type: z.literal('terminal'), seq: z.number().int(), at,
     outcome: z.enum(['succeeded', 'failed', 'held', 'cancelled']), reason: z.string(),
-    results: z.record(z.string(), artifactId),
+    results: z.record(z.string(), artifactId), caller: caller.optional(),
   }).strict(),
 ])
 
@@ -58,9 +74,10 @@ export type Caller = z.infer<typeof caller>
 export type Usage = z.infer<typeof usage>
 
 const stepState = z.object({
-  state: z.enum(['pending', 'running', 'succeeded', 'failed']),
+  state: z.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled']),
   attempts: z.array(z.string()),
   outputs: z.record(z.string(), artifactId),
+  partial: z.record(z.string(), artifactId).optional(),
   verdict: z.enum(['pass', 'fail', 'inconclusive', 'error']).optional(),
 }).strict()
 
@@ -106,6 +123,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         const s = steps[event.stepId]!
         s.state = event.status
         if (event.status === 'succeeded') s.outputs = { ...event.outputs }
+        if (event.partial) s.partial = { ...event.partial }
         break
       }
       case 'verified': {
@@ -116,6 +134,12 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
       }
       case 'attempt-lost':
         steps[event.stepId]!.state = 'pending'
+        break
+      case 'reopened':
+        steps[event.stepId]!.state = 'pending'
+        state.status = 'running'
+        delete state.reason
+        state.results = {}
         break
       case 'terminal':
         state.status = event.outcome

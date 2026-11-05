@@ -11,5 +11,7 @@ only when lifecycle or configuration demands it (PLAN.md package guidance).
   Workflow compiler and the Work Controller.
 - [fakes](fakes/README.md) — `@system/fakes`, a scripted Worker and verifier,
   off by default.
+- [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code
+  and Codex accounts as Workers.
 - [app](app/README.md) — `@system/app`, the CLI app row (`system doctor`,
   `system artifact`, `system work`).

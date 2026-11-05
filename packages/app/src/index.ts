@@ -11,9 +11,10 @@ import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
-import type { Caller, WorkService } from '@system/work'
+import type { AgentsService } from '@system/agents'
+import type { Caller, Capabilities, WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { buildProgram, type AppHost, type ArtifactCommands, type CredentialCommands, type Run, type WorkCommands } from './cli.ts'
+import { buildProgram, type AppHost, type ArtifactCommands, type CredentialCommands, type Run, type WorkCommands, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type StorageStatus } from './doctor.ts'
 
 export const name = 'system-app'
@@ -97,6 +98,10 @@ function workCommands(ctx: Context): WorkCommands {
     get: (workId) => work.controller.get(workId),
     list: () => work.controller.list(),
     replay: (workId) => work.controller.replay(workId),
+    cancel: (workId, reason) => work.controller.cancel(workId, { reason, caller: caller() }),
+    retry: (workId, worker, reason) => work.controller.retry(workId, { worker, reason, caller: caller() }),
+    runningElsewhere: (workId) => work.controller.runningElsewhere(workId),
+    newTask: (instructions, repository, ref) => work.newTask(instructions, repository, ref, caller()),
   }
 }
 
@@ -140,6 +145,12 @@ async function readSecret(prompt: string): Promise<string> {
   }
 }
 
+function workersView(ctx: Context): WorkersView {
+  const capabilities = ctx.get('capabilities') as Capabilities | undefined
+  const agents = ctx.get('agents') as AgentsService | undefined
+  return { registered: capabilities?.workerRefs() ?? [], accounts: agents?.accounts() ?? [] }
+}
+
 export function apply(ctx: Context): void {
   const host: AppHost = {
     hasService: (service) => ctx.get(service as never) !== undefined,
@@ -148,6 +159,7 @@ export function apply(ctx: Context): void {
     artifacts: () => artifactCommands(ctx),
     work: () => workCommands(ctx),
     credentials: () => credentialCommands(ctx),
+    workers: () => workersView(ctx),
   }
   let selected: Run | undefined
   const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret }

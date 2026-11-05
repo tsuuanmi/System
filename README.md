@@ -14,7 +14,8 @@ without deleting their source.
 ([PLAN.md](PLAN.md)). M0 to M2 exist: the `system` DSH profile boots,
 `system doctor` checks it, `system artifact` stores and reads immutable
 Artifacts by ID, and `system work` admits Workflow files or direct Tasks and
-runs them durably. Only scripted fake Workers and verifiers exist so far.
+runs them durably, with Claude Code and Codex accounts as Workers (cancel and
+takeover included). Verifiers are still scripted fakes.
 
 ## Read and contribute
 

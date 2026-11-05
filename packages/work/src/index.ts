@@ -4,17 +4,24 @@
  * storage domain `system_work`, one key per Work (ADR-0004 decision 9).
  */
 import { readFileSync } from 'node:fs'
-import { resolve as resolvePath } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve as resolvePath } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { sha256, type Artifacts } from '@system/artifacts'
+import { FileControl } from './control.ts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, WorkController, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import { snapshot } from './git.ts'
+import { GIT_TREE_KIND, TASK_KIND, gitTreeSchema, taskSchema } from './kinds.ts'
 import type { Caller, WorkRecord } from './record.ts'
 import { workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
 import { directTask, parseWorkflow, resolve, type ResolvedSpec } from './workflow.ts'
 
+export * from './control.ts'
 export * from './controller.ts'
+export * from './git.ts'
+export * from './kinds.ts'
 export * from './record.ts'
 export * from './registry.ts'
 export * from './workflow.ts'
@@ -32,10 +39,33 @@ export const workDomain = defineDomain({
 export class WorkService {
   readonly controller: WorkController
   private readonly capabilities: Capabilities
+  private readonly artifacts: Artifacts
 
-  constructor(controller: WorkController, capabilities: Capabilities) {
+  constructor(controller: WorkController, capabilities: Capabilities, artifacts: Artifacts) {
     this.controller = controller
     this.capabilities = capabilities
+    this.artifacts = artifacts
+  }
+
+  /**
+   * Store a `task@1` input; with a repository, first snapshot `ref` there as a
+   * `git-tree@1` Artifact the task starts from.
+   */
+  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller): Promise<{ task: string; base?: string }> {
+    const producer = { type: 'operator' as const, ref: caller.operatorId }
+    let base: string | undefined
+    if (repository) {
+      const tree = await snapshot(repository, ref)
+      base = (await this.artifacts.put({
+        ...GIT_TREE_KIND, content: tree, subject: { type: 'git-commit', ref: tree.commit },
+        classification: 'local-private', producer,
+      })).id
+    }
+    const task = await this.artifacts.put({
+      ...TASK_KIND, content: { instructions, ...(base ? { base } : {}) }, inputs: base ? [base] : [],
+      classification: 'local-private', producer,
+    })
+    return { task: task.id, base }
   }
 
   /** Read, preflight and pin a Workflow file; the file is never read again for this Work. */
@@ -71,12 +101,22 @@ function specStore(artifacts: Artifacts): SpecStore {
   }
 }
 
+/** `$DSH_HOME/system/...`: the launcher's home resolver when present. */
+export function systemPath(ctx: Context, ...segments: string[]): string {
+  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
+  return homePath ? homePath('system', ...segments) : join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', ...segments)
+}
+
 export async function apply(ctx: Context): Promise<void> {
   const domains = ctx.get('storageDomain') as DomainFacility
   const domain = await domains.open(workDomain)
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
+  const artifacts = ctx.get('artifacts') as Artifacts
+  artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
+  artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   const capabilities = new Capabilities()
-  const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(ctx.get('artifacts') as Artifacts), capabilities)
+  const control = new FileControl(systemPath(ctx, 'control'))
+  const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(artifacts), capabilities, control)
   ctx.provide('capabilities', capabilities)
-  ctx.provide('work', new WorkService(controller, capabilities))
+  ctx.provide('work', new WorkService(controller, capabilities, artifacts))
 }

@@ -12,14 +12,21 @@ export interface WorkerRequest {
   capabilities: string[]
   inputs: Record<string, string>
   outputs: string[]
+  /** Aborted when the operator cancels; the Worker stops and reports `cancelled`. */
+  signal: AbortSignal
 }
 
 export interface WorkerResult {
-  status: 'succeeded' | 'failed'
+  status: 'succeeded' | 'failed' | 'cancelled'
   /** Output slot -> Artifact ID; every declared slot on success. */
   outputs: Record<string, string>
+  /** What a cancelled or failed attempt left behind; never accepted. */
+  partial?: Record<string, string>
   reason?: string
   usage?: { inputTokens: number; outputTokens: number; source: string }
+  /** Bounded agent output as an Artifact, for audit. */
+  log?: string
+  executor?: { ref: string; account?: string; command?: string; version?: string }
 }
 
 export interface WorkerPort {
@@ -76,21 +83,28 @@ export class Capabilities {
     }
   }
 
-  /** The first registered Worker with every needed capability; every candidate's reason is kept. */
-  routeWorker(needs: readonly string[], exclude: ReadonlySet<string> = new Set()): Route<WorkerPort> {
-    return route(this.workers, needs, exclude)
+  /**
+   * The first registered Worker with every needed capability; every candidate's reason is kept.
+   * `only`: a takeover names the one Worker allowed (`system work retry --worker`).
+   */
+  routeWorker(needs: readonly string[], only?: string): Route<WorkerPort> {
+    return route(this.workers, needs, only)
+  }
+
+  workerRefs(): string[] {
+    return this.workers.map((w) => w.ref)
   }
 
   routeVerifier(capability: string): Route<VerifierPort> {
-    return route(this.verifiers, [capability], new Set())
+    return route(this.verifiers, [capability])
   }
 }
 
-function route<P extends { ref: string; capabilities: readonly string[] }>(ports: readonly P[], needs: readonly string[], exclude: ReadonlySet<string>): Route<P> {
+function route<P extends { ref: string; capabilities: readonly string[] }>(ports: readonly P[], needs: readonly string[], only?: string): Route<P> {
   let selected: P | undefined
   const candidates = ports.map((port) => {
     const missing = needs.filter((c) => !port.capabilities.includes(c))
-    if (exclude.has(port.ref)) return { ref: port.ref, selected: false, reason: 'excluded by the caller' }
+    if (only !== undefined && port.ref !== only) return { ref: port.ref, selected: false, reason: `the takeover names ${only}` }
     if (missing.length) return { ref: port.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
     if (selected) return { ref: port.ref, selected: false, reason: `capable; ${selected.ref} registered first` }
     selected = port

@@ -251,3 +251,56 @@ test('routing records every candidate and why it was or was not chosen', async (
     { ref: 'coder-only', selected: false, reason: 'lacks research, web-search' },
   ])
 })
+
+test('cancel with no live host records the outcome directly, with the caller', async () => {
+  const h = harness()
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
+  const done = await h.controller.cancel(admitted.id, { reason: 'not needed', caller: { type: 'agent', operatorId: 'tan' } })
+  assert.notEqual(done, 'requested')
+  if (done === 'requested') return
+  assert.equal(done.state.status, 'cancelled')
+  assert.match(done.state.reason!, /cancelled by agent tan: not needed/)
+  assert.equal(h.calls.length, 0)
+  await assert.rejects(() => h.controller.cancel(admitted.id, { reason: 'again', caller }), /already cancelled/)
+})
+
+test('retry is refused for running or succeeded Work and for an unknown Worker', async () => {
+  const h = harness()
+  const done = await runFixture(h, 'research.yaml')
+  await assert.rejects(() => h.controller.retry(done.id, { caller, reason: 'x' }), /only failed or cancelled Work is retried/)
+  const failed = await runFixture(harness({ worker: { run: async () => ({ status: 'failed', outputs: {}, reason: 'red' }) } }), 'research.yaml')
+  const fresh = harness({ table: memoryTable(new Map([[failed.id, failed]])) })
+  await assert.rejects(() => fresh.controller.retry(failed.id, { worker: 'nobody', caller, reason: 'x' }), /no enabled Worker nobody/)
+})
+
+test('a cancel during an attempt keeps its partial output, and retry hands it on as previous', async () => {
+  const h = harness({
+    worker: {
+      async run(request) {
+        if (request.inputs.previous) {
+          const out = id(`${request.attemptId}/done`)
+          h.specs.stored.add(out)
+          return { status: 'succeeded', outputs: Object.fromEntries(request.outputs.map((s) => [s, out])) }
+        }
+        await new Promise((resolve) => request.signal.addEventListener('abort', resolve, { once: true }))
+        const partial = id('partial')
+        h.specs.stored.add(partial)
+        return { status: 'cancelled', outputs: {}, partial: { report: partial } }
+      },
+    },
+  })
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
+  const running = h.controller.run(admitted.id)
+  while (h.table.rows.get(admitted.id)!.events.length < 2) await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(await h.controller.cancel(admitted.id, { reason: 'stop', caller }), 'requested')
+  const cancelled = await running
+  assert.equal(cancelled.state.status, 'cancelled')
+  assert.deepEqual(cancelled.state.steps.investigate!.partial, { report: id('partial') })
+  const done = await h.controller.retry(admitted.id, { caller, reason: 'again' })
+  assert.equal(done.state.status, 'succeeded')
+  const second = done.events.filter((e) => e.type === 'dispatched')[1]
+  assert.equal(second?.type === 'dispatched' && second.inputs.previous, id('partial'))
+  assert.equal(h.controller.replay(admitted.id).matches, true)
+})

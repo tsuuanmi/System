@@ -2,6 +2,7 @@
  * The `system` command line. Each action returns an exit code; the plugin
  * runs it once the host has started and then asks the launcher to exit.
  */
+import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
 import type { WorkRecord, WorkState } from '@system/work'
@@ -35,12 +36,23 @@ export interface WorkCommands {
   get(workId: string): WorkRecord | undefined
   list(): WorkRecord[]
   replay(workId: string): { state: WorkState; matches: boolean }
+  cancel(workId: string, reason: string): Promise<'requested' | WorkRecord>
+  retry(workId: string, worker: string | undefined, reason: string): Promise<WorkRecord>
+  /** Whether another live host process holds the Work. */
+  runningElsewhere(workId: string): boolean
+  newTask(instructions: string, repository: string | undefined, ref: string | undefined): Promise<{ task: string; base?: string }>
+}
+
+export interface WorkersView {
+  registered: string[]
+  accounts: { ref: string; available: boolean; reason: string; version?: string }[]
 }
 
 export interface AppHost extends DoctorHost {
   artifacts(): ArtifactCommands
   work(): WorkCommands
   credentials(): CredentialCommands
+  workers(): WorkersView
 }
 
 /** A command the program selected, run after startup. */
@@ -92,6 +104,35 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         return 0
       })
     })
+  program.command('workers')
+    .description('registered Workers, and each configured agent account with why it is or is not available')
+    .action(() => {
+      select(async () => {
+        const { registered, accounts } = host.workers()
+        io.out(`registered: ${registered.join(', ') || 'none'}\n`)
+        for (const a of accounts) {
+          io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}\n`)
+        }
+        return 0
+      })
+    })
+  const task = program.command('task').description('task inputs for Work')
+  task.command('new')
+    .description('store a task@1 Artifact (and, with --repo, the exact base commit) and print its ID')
+    .option('--text <instructions>', 'the instructions')
+    .option('--file <path>', 'read the instructions from a file')
+    .option('--repo <path>', 'a git repository the task starts from')
+    .option('--ref <ref>', 'the commit or branch in --repo', 'HEAD')
+    .action((options: { text?: string; file?: string; repo?: string; ref: string }) => {
+      select(async () => {
+        if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
+        const instructions = options.text ?? readFileSync(options.file!, 'utf8')
+        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined)
+        if (created.base) io.out(`base ${created.base}\n`)
+        io.out(`${created.task}\n`)
+        return 0
+      })
+    })
   const credentials = program.command('credentials').description('store Worker tokens in the DSH credential store; values are never printed')
   credentials.command('set <name>')
     .description('read a value without echo (or from piped stdin) and store it under <name>')
@@ -136,6 +177,32 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         return exitCode((await commands.run(admitted.id)).state.status)
       })
     })
+  work.command('cancel <workId>')
+    .description('stop running Work: its attempt gets SIGTERM, then SIGKILL after 30 s; partial output is kept, unaccepted')
+    .option('--reason <text>', 'why', 'cancelled by the operator')
+    .option('--wait', 'wait until the running host has recorded the cancellation')
+    .action((workId: string, options: { reason: string; wait?: boolean }) => {
+      select(async () => {
+        const outcome = await host.work().cancel(workId, options.reason)
+        if (outcome !== 'requested') {
+          io.out(`${workId} cancelled\n`)
+          return exitCode(outcome.state.status)
+        }
+        io.out(`${workId}: cancellation requested from the running host\n`)
+        if (!options.wait) return 0
+        // This process caches records, so it waits for the host to release the Work instead.
+        while (host.work().runningElsewhere(workId)) await new Promise((resolve) => setTimeout(resolve, 250))
+        io.out(`${workId}: the running host has stopped; see system work show\n`)
+        return 0
+      })
+    })
+  work.command('retry <workId>')
+    .description('take over a failed or cancelled Worker step with a new attempt from the recorded Artifacts')
+    .option('--worker <ref>', 'only this Worker may take it over (see system workers)')
+    .option('--reason <text>', 'why', 'retried by the operator')
+    .action((workId: string, options: { worker?: string; reason: string }) => {
+      select(async () => exitCode((await host.work().retry(workId, options.worker, options.reason)).state.status))
+    })
   work.command('run <workId>')
     .description('advance admitted or interrupted Work until it is terminal')
     .action((workId: string) => {
@@ -171,7 +238,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
   return program
 }
 
-/** succeeded 0, failed 1, held for the operator 3, not terminal 4. */
+/** succeeded 0, failed 1, held for the operator 3, not terminal 4, cancelled 5. */
 export function exitCode(status: string): number {
-  return { succeeded: 0, failed: 1, held: 3 }[status] ?? 4
+  return { succeeded: 0, failed: 1, held: 3, cancelled: 5 }[status] ?? 4
 }

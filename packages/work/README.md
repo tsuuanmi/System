@@ -22,8 +22,27 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   verifiers, route by capability with a reason for every candidate.
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay. No domain-specific branch.
-- [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (admit a
-  file or a direct Task).
+- [src/control.ts](src/control.ts) — `FileControl`: the per-Work lock and cancel request.
+- [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
+  admit a file or a direct Task).
+
+## Cancel, takeover and one host per Work
+
+Each DSH host caches records in memory, so only the host that holds a Work's
+lock (`$DSH_HOME/system/control/<work>.lock`, its pid; a dead pid's lock is
+stale) writes that Work. `system work cancel` from another process writes a
+cancel request the running host polls every 250 ms; the host aborts its
+attempt, records `observed` (`cancelled`, with partial output) and `terminal`
+(`cancelled`, with the caller). With no live host, the cancel is recorded
+directly. `system work retry` appends `reopened` (caller, reason, optional
+Worker, the partial output as `previous`) and runs the step again as a new
+attempt: the Work keeps one history.
+
+## Input kinds
+
+[src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`) and
+`git-tree@1` (`repository`, `commit`, `tree`, `parent`), registered by this
+row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 
 ## Crash boundaries
 
@@ -40,7 +59,7 @@ never re-run blindly.
 
 A three-step Software Engineering record is about 3.9 KB of JSON, and the
 smoke test bounds it at 16 KB. Run one step at a time; there is no
-concurrency, retry policy or timeout yet.
+concurrency, automatic retry or timeout yet.
 
 ## Reuse
 

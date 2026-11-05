@@ -18,6 +18,7 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `work` | `@system/work` | `work`, `capabilities` | yes | Work records, the capability registry and the controller (ADR-0002, ADR-0004) |
 | `fakes` | `@system/fakes` | — | no, **disabled** | scripted Worker and verifier for offline tests |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
+| `agents` | `@system/agents` | `agents` | no | Claude Code and Codex accounts as Workers (ADR-0004, ADR-0005); accounts without a CLI or credential are skipped |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
 | `system-app` | `@system/app` | — | yes | the CLI |
 
@@ -56,7 +57,6 @@ the runtime. Install scripts of DSH dependencies are denied in
 
 ## Known limitations
 
-- `subprocess` is only checked for presence; Workers first use it in M3.
 - DSH's SQLite backend sets `journal_mode` but not `synchronous`; the M2 crash
   tests must measure the effective level.
 - pnpm reports unmet `@opentelemetry/api` peer ranges inside DSH's own
