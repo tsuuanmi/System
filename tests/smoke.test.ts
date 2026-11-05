@@ -149,3 +149,20 @@ test('an Artifact whose bytes were deleted reads as unavailable', () => {
   assert.match(cat.stderr, /no longer stored/)
   assert.equal(system('artifact', 'show', id).status, 0, 'the record itself remains')
 })
+
+test('credentials set stores a piped value without printing it and keeps other entries', () => {
+  const file = join(home, '.credentials.yaml')
+  writeFileSync(file, 'version: 1\nrefs:\n  OTHER_KEY: keep-me\n', { mode: 0o600 })
+  const set = spawnSync(process.execPath, [join(repo, 'bin', 'system'), 'credentials', 'set', 'SMOKE_TOKEN'], {
+    env: { ...process.env, DSH_HOME: home }, input: 'secret-value-123\n', encoding: 'utf8', timeout: 120_000,
+  })
+  assert.equal(set.status, 0, set.stderr)
+  assert.doesNotMatch(set.stdout + set.stderr, /secret-value-123/)
+  const status = system('credentials', 'status', 'SMOKE_TOKEN', 'OTHER_KEY', 'ABSENT_TOKEN')
+  assert.equal(status.status, 1, 'one name is not configured')
+  assert.match(status.stdout, /SMOKE_TOKEN {2}configured \(file\)/)
+  assert.match(status.stdout, /OTHER_KEY {2}configured/)
+  assert.match(status.stdout, /ABSENT_TOKEN {2}not configured/)
+  assert.doesNotMatch(status.stdout, /secret-value-123|keep-me/)
+  assert.match(readFileSync(file, 'utf8'), /OTHER_KEY: keep-me/)
+})

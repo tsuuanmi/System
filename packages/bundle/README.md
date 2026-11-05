@@ -18,7 +18,7 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `work` | `@system/work` | `work`, `capabilities` | yes | Work records, the capability registry and the controller (ADR-0002, ADR-0004) |
 | `fakes` | `@system/fakes` | — | no, **disabled** | scripted Worker and verifier for offline tests |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
-| `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | key references; unused in M0, may be disabled |
+| `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
 | `system-app` | `@system/app` | — | yes | the CLI |
 
 Each row is mounted because a System contract needs it; adding a row adds a

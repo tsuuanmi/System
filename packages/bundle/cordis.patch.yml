@@ -41,8 +41,8 @@
     - id: subprocess
       name: '@deepseek-ai/dsh-subprocess-local'
 
-    # Optional: credential references for model and GitHub keys. Nothing in M0
-    # reads it, so it may be disabled by a profile patch.
+    # Optional: Worker tokens (`system credentials`, ADR-0005). Only real
+    # Workers read it, so it may be disabled by a profile patch.
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 

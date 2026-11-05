@@ -12,7 +12,8 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import { z } from 'zod'
 import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
 import type { Caller, WorkService } from '@system/work'
-import { buildProgram, type AppHost, type ArtifactCommands, type Run, type WorkCommands } from './cli.ts'
+import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import { buildProgram, type AppHost, type ArtifactCommands, type CredentialCommands, type Run, type WorkCommands } from './cli.ts'
 import { REQUIRED_BACKEND, type StorageStatus } from './doctor.ts'
 
 export const name = 'system-app'
@@ -99,6 +100,46 @@ function workCommands(ctx: Context): WorkCommands {
   }
 }
 
+function credentialCommands(ctx: Context): CredentialCommands {
+  const store = ctx.get('credentials') as CredentialProvider | undefined
+  if (!store) throw new Error('the credentials row is not mounted (run `system doctor`)')
+  return {
+    set: (name, value) => store.set(credentialRef(name), value),
+    describe: (name) => store.describe(credentialRef(name)),
+  }
+}
+
+/** Read a secret: hidden on a terminal, or the whole of piped stdin less its final newline. */
+async function readSecret(prompt: string): Promise<string> {
+  const stdin = process.stdin
+  if (!stdin.isTTY) {
+    const chunks: Buffer[] = []
+    for await (const chunk of stdin) chunks.push(chunk as Buffer)
+    return Buffer.concat(chunks).toString('utf8').replace(/\r?\n$/, '')
+  }
+  process.stderr.write(prompt)
+  stdin.setRawMode(true)
+  stdin.resume()
+  let value = ''
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const onData = (chunk: Buffer) => {
+        for (const char of chunk.toString('utf8')) {
+          if (char === '\r' || char === '\n') { stdin.off('data', onData); resolve(value); return }
+          if (char === '\u0003') { stdin.off('data', onData); reject(new Error('cancelled')); return }
+          if (char === '\u007f') value = value.slice(0, -1)
+          else value += char
+        }
+      }
+      stdin.on('data', onData)
+    })
+  } finally {
+    stdin.setRawMode(false)
+    stdin.pause()
+    process.stderr.write('\n')
+  }
+}
+
 export function apply(ctx: Context): void {
   const host: AppHost = {
     hasService: (service) => ctx.get(service as never) !== undefined,
@@ -106,9 +147,10 @@ export function apply(ctx: Context): void {
     probeStorage: () => probeStorage(ctx),
     artifacts: () => artifactCommands(ctx),
     work: () => workCommands(ctx),
+    credentials: () => credentialCommands(ctx),
   }
   let selected: Run | undefined
-  const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) } }
+  const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret }
   const program = buildProgram(host, io, (run) => { selected = run })
   parseCmdline(ctx, program)
   const run = selected

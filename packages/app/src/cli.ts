@@ -10,6 +10,14 @@ import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 export interface CliIo {
   out(text: string): void
   write(data: Uint8Array): void
+  /** A secret from the terminal without echo, or all of piped stdin. */
+  readSecret(prompt: string): Promise<string>
+}
+
+/** The credential operations the CLI offers; values go in, never out. */
+export interface CredentialCommands {
+  set(name: string, value: string): Promise<void>
+  describe(name: string): Promise<{ configured: boolean; source?: string }>
 }
 
 /** The Artifact operations the CLI offers, resolved against the running host. */
@@ -32,6 +40,7 @@ export interface WorkCommands {
 export interface AppHost extends DoctorHost {
   artifacts(): ArtifactCommands
   work(): WorkCommands
+  credentials(): CredentialCommands
 }
 
 /** A command the program selected, run after startup. */
@@ -81,6 +90,31 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
       select(async () => {
         io.write(await host.artifacts().readBytes(id))
         return 0
+      })
+    })
+  const credentials = program.command('credentials').description('store Worker tokens in the DSH credential store; values are never printed')
+  credentials.command('set <name>')
+    .description('read a value without echo (or from piped stdin) and store it under <name>')
+    .action((name: string) => {
+      select(async () => {
+        const value = await io.readSecret(`${name}: `)
+        if (!value) throw new Error('no value given; nothing stored')
+        await host.credentials().set(name, value)
+        io.out(`stored ${name}\n`)
+        return 0
+      })
+    })
+  credentials.command('status <names...>')
+    .description('whether each name is configured, and from where')
+    .action((names: string[]) => {
+      select(async () => {
+        let missing = 0
+        for (const name of names) {
+          const info = await host.credentials().describe(name)
+          if (!info.configured) missing += 1
+          io.out(`${name}  ${info.configured ? `configured (${info.source})` : 'not configured'}\n`)
+        }
+        return missing ? 1 : 0
       })
     })
   const work = program.command('work').description('submit, run, inspect and replay Work')

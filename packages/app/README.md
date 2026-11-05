@@ -10,6 +10,8 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system artifact put <file> [--media-type t] [--classification c]` | store the file as a `file@1` Artifact (default `local-private`, producer the operator) and print its ID |
 | `system artifact show <id>` | the envelope and occurrences as JSON; exit 1 when missing |
 | `system artifact cat <id>` | the bytes; exit 1 when unavailable |
+| `system credentials set <NAME>` | read a value without echo (or from piped stdin) and store it in `$DSH_HOME/.credentials.yaml` through the DSH credential API; other entries are kept |
+| `system credentials status <NAME...>` | `configured (<source>)` or `not configured` per name, never the value; exit 1 if any is missing |
 | `system work submit (--workflow <file> \| --capability <name...>) [--input <id>] [--no-run]` | admit Work from a Workflow file or as a direct Task, print its ID, then run it |
 | `system work run <workId>` | advance admitted or interrupted Work until terminal |
 | `system work show <workId>` | the record (events and state) as JSON |
