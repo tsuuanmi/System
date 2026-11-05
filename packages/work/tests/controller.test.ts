@@ -432,3 +432,14 @@ test('a Work record written before M4 (no criteria, no new event fields) still p
   assert.deepEqual(parsed.state.criteria, {})
   assert.deepEqual(fold(['task'], parsed.events), parsed.state)
 })
+
+test('a host lost during admission, after the spec was pinned and before the Work record, leaves no Work and runs nothing', async () => {
+  const h = harness()
+  h.table.put = async () => { throw new Error('host lost') }
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const task = await input(h)
+  await assert.rejects(() => h.controller.admit({ spec, input: task, caller, source: { kind: 'workflow-file' } }), /host lost/)
+  assert.equal(h.table.rows.size, 0)
+  assert.equal(h.calls.length, 0)
+  assert.equal(h.controller.list().length, 0)
+})

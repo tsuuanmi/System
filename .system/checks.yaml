@@ -1,0 +1,6 @@
+# Required checks System runs on a change to this repository
+# (code.required-checks, pinned from the base commit at admission).
+checks:
+  - name: docs
+    run: python3 tools/docs.py check && python3 tools/docs.py sync --check
+    timeoutSeconds: 120
