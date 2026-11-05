@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-05
 summary: Fix the MVP-0 operating choices — single operator, human-only approval, external agent Workers in per-attempt worktrees, Work state in the DSH storage hub, System-owned push/PR effects, and deferred sandboxing.
-related: [ADR-0001, ADR-0002, ADR-0003, RES-0003, PROP-0001]
+related: [ADR-0001, ADR-0002, ADR-0003, ADR-0005, RES-0003, PROP-0001]
 ---
 
 # MVP-0 operating decisions
@@ -57,9 +57,10 @@ System tests so far.
    disallowed; Codex uses its native `workspace-write` sandbox. When the agent
    exits, the **adapter** — not the agent — snapshots the resulting tree as
    the output Artifact and reads usage from the agent's JSON output.
-7. **Model credentials.** Workers use provider API keys, referenced by name in
-   DSH credential config and injected per attempt. Subscription logins are
-   not mounted.
+7. **Model credentials.** *Replaced by
+   [ADR-0005](ADR-0005-subscription-tokens-for-workers.md):* Workers use
+   System-held subscription tokens. (Originally: provider API keys,
+   referenced by name in DSH credential config and injected per attempt.)
 8. **Cancellation.** `system work cancel` sends SIGTERM to the agent's
    process group, waits 30 s, then SIGKILL. The attempt is recorded as
    `cancelled` with reason and caller; the partial tree is kept as an
