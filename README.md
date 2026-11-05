@@ -21,6 +21,10 @@ the MVP implementation has **not** been built or validated in this repository.
   **Software Engineering** and **Research** workflows.
 - [Control-plane architecture](docs/architecture/control-plane.md) —
   DSH-hosted logical ownership, plugin boundaries and active composition.
+- [Declarative Workflow composition](docs/architecture/workflow-composition.md)
+  — Work/Task primitive; step graphs, Workers and verification in config files.
+- [Artifact-ID and verification contracts](docs/architecture/artifact-verification.md)
+  — deterministic handoff, exact-subject evidence and verifiers as capabilities.
 - [ADR-0001](docs/decisions/ADR-0001-control-plane-on-dsh.md) — accepted
   decision and alternatives.
 - [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)

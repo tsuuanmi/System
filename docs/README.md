@@ -9,6 +9,8 @@ System is a fresh project with no running product code in this repository.
 | Why does System exist? | [Product Charter](requirements/purpose.md) | Accepted product intent |
 | What must the smallest product prove? | [MVP requirements](requirements/mvp.md) | Current acceptance contract |
 | Which responsibilities belong to System vs DSH? | [Control-plane architecture](architecture/README.md) | Selected target, not shipped |
+| Where does Workflow step order live? | [Workflow composition](architecture/workflow-composition.md) | External config, accepted target |
+| How do Workers exchange and verify results? | [Artifact-ID and verifier contracts](architecture/artifact-verification.md) | Accepted target, not implemented |
 | Why was the control-plane/DSH choice made? | [ADR index](decisions/README.md) | Accepted rationale |
 | What external evidence or open tests inform the MVP? | [Research](research/README.md) | Exploratory, non-normative |
 | What design work remains proposed? | [Proposals](proposals/README.md) | Unaccepted details |

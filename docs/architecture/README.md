@@ -5,10 +5,16 @@ boundary contracts. Selection is not the same as a working implementation.
 
 - [Control-plane architecture](control-plane.md) — accepted logical ownership,
   DSH/Cordis host composition, plugin lifecycle and cross-workflow invariants.
+- [Work and Workflow composition](workflow-composition.md) — Task as primitive,
+  declarative config with dependencies and capability-based steps.
+- [Artifact IDs and verification](artifact-verification.md) — immutable
+  handoff, replay boundaries and configurable verifier capabilities.
 - [Boundary and failure questions](boundaries.md) — draft interface sketches,
   risks and implementation questions not yet proven in code.
 
-The architectural rationale is [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md).
+Architectural rationale: [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md),
+[ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md) and
+[ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
 The product's why and scope live in the
 [Product Charter](../requirements/purpose.md) and
 [MVP requirements](../requirements/mvp.md).
