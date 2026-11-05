@@ -43,7 +43,7 @@ Accepted durable choices belong in new decision documents when warranted, with e
 
 ## Non-goals for this documentation PR
 
-No runnable product or API is claimed. This PR does not choose the runtime, freeze a plugin interface, create migration commitments, or assert untested performance.
+No runnable product or API is claimed. This PR does not choose the runtime, freeze a plugin interface, promise compatibility with unspecified interfaces, or assert untested performance.
 
 ## Exit criteria
 
