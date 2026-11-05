@@ -1,6 +1,6 @@
 # PLAN.md — System MVP-0 implementation handoff
 
-> **Status:** M0 and M1 done (local and CI, PR #2); M2 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
+> **Status:** M0, M1 and M2 done (local and CI, PR #2); M3 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
 > **Updated:** 2026-11-05. Target: **MVP-0 only** on the current System branch.
 
 ## Goal and rules
@@ -68,13 +68,13 @@ Relevant pinned DSH APIs:
 
 ### M2: Durable Work/Task + minimal Workflow file compiler
 
-- [ ] Define Work ID, Attempt ID, lifecycle/state events, terminal outcome and explicit decision reasons.
-- [ ] **Implement ADR-0004 storage literally:** \`ctx.storageDomain\` table \`work\`, **one key per Work**; each atomic \`update(workId, fn)\` stores Work's events, current state and effect intents/results. Artifact metadata is a separate content-keyed table; bytes use attachment store. Measure Work record size and handle cross-table crash boundaries.
-- [ ] Implement direct **single Task with no YAML**, fake Worker and persisted result Artifact.
-- [ ] Parse **external versioned YAML**, only \`steps\`, \`dependsOn\`, \`capabilities\`, \`outputs\`, \`verify\`, \`accept\`; keep code/research Workflow files as **data files** (proposed \`workflows/software-engineering.yaml\`, \`workflows/research.yaml\`).
-- [ ] Preflight unique steps, cycles, missing refs/outputs, unknown Worker/verifier capability, invalid fields and versions **before any execution**.
-- [ ] Canonicalize/persist accepted resolved Workflow spec as Artifact ID. Editing/removing YAML changes future admissions **only**. Translate symbolic output slots to exact Artifact IDs before Worker handoff.
-- [ ] Persist dispatch/observations and recover Work state after restart **without replaying nondeterministic agent calls or remote effects**.
+- [x] Define Work ID, Attempt ID, lifecycle/state events, terminal outcome and explicit decision reasons. *(\`work:<uuid>\`, \`attempt:<uuid>\`; events \`admitted\`, \`dispatched\` with every routing candidate and reason, \`observed\`, \`verified\`, \`attempt-lost\`, \`terminal\` with reason.)*
+- [x] **Implement ADR-0004 storage literally:** \`ctx.storageDomain\` table \`work\`, **one key per Work**; each atomic \`update(workId, fn)\` stores Work's events, current state and effect intents/results. Artifact metadata is a separate content-keyed table; bytes use attachment store. Measure Work record size and handle cross-table crash boundaries. *(Domain \`system_work\`; a 3-step record is about 3.9 KB, bounded at 16 KB by a test; crash boundaries in packages/work/README.md. Effect intent/result events join the same record in M5.)*
+- [x] Implement direct **single Task with no YAML**, fake Worker and persisted result Artifact.
+- [x] Parse **external versioned YAML**, only \`steps\`, \`dependsOn\`, \`capabilities\`, \`outputs\`, \`verify\`, \`accept\`; keep code/research Workflow files as **data files** (proposed \`workflows/software-engineering.yaml\`, \`workflows/research.yaml\`). *(Also \`inputs\`, the Artifact-ID binding MVP-09 requires, and a required \`version\`; \`approval: operator\` replaces the sketch's \`operator-merge\`.)*
+- [x] Preflight unique steps, cycles, missing refs/outputs, unknown Worker/verifier capability, invalid fields and versions **before any execution**.
+- [x] Canonicalize/persist accepted resolved Workflow spec as Artifact ID. Editing/removing YAML changes future admissions **only**. Translate symbolic output slots to exact Artifact IDs before Worker handoff.
+- [x] Persist dispatch/observations and recover Work state after restart **without replaying nondeterministic agent calls or remote effects**.
 
 **Gate M2:** direct Task and both YAML fixtures execute through one fake controller; invalid YAML dispatches zero Workers; spec hash survives mid-run file edit and restart.
 
@@ -153,7 +153,7 @@ Relevant pinned DSH APIs:
 |---|---|---|---|
 | M0 DSH bootstrap | done | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. GitHub Actions on PR #2: \`build\` pass (19 s), \`docs\` pass. |
 | M1 Artifacts | done | \`26d91c0\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 23/23 (18 new: canonical form, ID independence from producer/time, each content field changes the ID, distinct occurrences, input set order, refusals store nothing, classification floor, no relabel on dedup, immutable reads, crash between blob and record, unavailable bytes, concurrent equal puts, malformed IDs); smoke 10/10 (3 new: read by ID after a process restart, missing/malformed IDs, deleted bytes). Mutation check: putting the producer into the ID fails 2 tests; removing the per-ID lock fails 1. \`system doctor\` about 1.08 s, 91 MB RSS. GitHub Actions on PR #2 at \`b3c7ae6\`: \`build\` and \`docs\` pass. |
-| M2 Work + YAML | not started | — | — |
+| M2 Work + YAML | done | \`77cf8e2\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 49/49 (26 new), smoke 17/17 (7 new). Gate on the real profile with \`fakes\` enabled by patch: direct Task, Software Engineering and Research succeed through one controller; an invalid Workflow is refused with zero Worker calls and no Work; host SIGKILLed mid-attempt, file edited, \`work run\` keeps the pinned spec ID, re-runs only the lost step (2 \`implement\` attempts, 1 \`checks\`) and succeeds; \`work replay\` matches; fakes disabled gives the missing-capability reason; SQLite WAL with \`synchronous=2\` (FULL) asserted. Bugs found by tests and fixed: dependency-order hash instability, \`\$steps\` reference parsing, replay comparison under storage key reordering. \`system doctor\` about 1.1 s, 93 MB RSS. GitHub Actions at \`77cf8e2\`: \`build\` and \`docs\` pass. |
 | M3 Workers | not started | — | — |
 | M4 Verifiers | not started | — | — |
 | M5 GitHub effects | not started | — | — |
