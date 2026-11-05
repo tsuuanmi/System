@@ -46,6 +46,12 @@ HEADER = re.compile(r"^# (.+)$", re.MULTILINE)
 ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*-\d{4}$")
 WAIVER = re.compile(r"docs-unchanged:\s*(\S+)\s*[-—–]+\s*(\S.*)")
 
+def prose_only(text: str) -> str:
+    """Ignore examples and code when checking authored document links."""
+    text = re.sub(r"(?ms)^[ \t]*(```|~~~).*?^[ \t]*\1[ \t]*$", "", text)
+    text = re.sub(r"(?m)^(?: {4}|\t).*?$", "", text)
+    return re.sub(r"`[^`\n]*`", "", text)
+
 
 def front_matter(text: str, path: str, errors: list[str]) -> tuple[dict[str, list[str]], str]:
     if not text.startswith("---\n"):
@@ -151,14 +157,14 @@ class Graph:
 
     def links(self, doc: Document) -> set[str]:
         linked: set[str] = set()
-        for raw in MARKDOWN_LINK.findall(doc.body):
+        for raw in MARKDOWN_LINK.findall(prose_only(doc.body)):
             target = unquote(raw.split("#", 1)[0].strip().strip("<>").split(" ", 1)[0])
             if not target or re.match(r"^[A-Za-z]+:", target):
                 continue
             dest = (doc.path.parent / target).resolve()
             if dest.is_file() and dest.suffix == ".md" and DOCS in dest.parents:
                 linked.add(dest.relative_to(DOCS).as_posix())
-        for raw in WIKILINK.findall(doc.body):
+        for raw in WIKILINK.findall(prose_only(doc.body)):
             resolved = self.resolve(raw)
             if resolved is not None:
                 linked.add(resolved.rel)
@@ -199,7 +205,7 @@ class Graph:
             if not file.exists():
                 continue
             text = file.read_text(encoding="utf-8")
-            for raw in MARKDOWN_LINK.findall(text):
+            for raw in MARKDOWN_LINK.findall(prose_only(text)):
                 target = unquote(raw.split("#", 1)[0].strip().strip("<>").split(" ", 1)[0])
                 if not target or re.match(r"^[A-Za-z]+:", target):
                     continue
@@ -237,7 +243,7 @@ class Graph:
                 self.errors.append(f"DOC-ID-003 {path}: invalid {doc.kind} status {status}")
             if not doc.router and doc.kind == "proposal" and not (first(doc.meta, "created") or first(doc.meta, "date")):
                 self.errors.append(f"DOC-ID-003 {path}: creation date required")
-            for raw in WIKILINK.findall(doc.body):
+            for raw in WIKILINK.findall(prose_only(doc.body)):
                 if self.resolve(raw) is None:
                     self.errors.append(f"DOC-LNK-002 {path}: unresolved [[{raw}]]")
             for relation in RELATIONS:
