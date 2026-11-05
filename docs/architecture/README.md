@@ -1,15 +1,16 @@
 # Architecture
 
-This area owns System's **architecture reasoning and current design boundaries**:
-what is in the system, where responsibilities belong, and what may cross
-boundaries. It does not claim that a runtime is implemented.
+This area owns the **selected architectural direction** and its evolving
+boundary contracts. Selection is not the same as a working implementation.
 
-The first document is intentionally **draft**. Its boundary model gives the MVP
-audit a common vocabulary; acceptance of a runtime or plugin architecture
-requires a separate review and, when appropriate, a decision record.
+- [Control-plane architecture](control-plane.md) — accepted logical ownership,
+  DSH/Cordis host composition, plugin lifecycle and cross-workflow invariants.
+- [Boundary and failure questions](boundaries.md) — draft interface sketches,
+  risks and implementation questions not yet proven in code.
 
-- [System boundaries (draft)](boundaries.md) — logical responsibilities, safety
-  constraints, and implementation questions.
-
-For feature candidates and external evidence, use [research](../research/README.md).
-For proposed product commitments, use [PROP-0001](../proposals/PROP-0001-system-direction.md).
+The architectural rationale is [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md).
+The product's why and scope live in the
+[Product Charter](../requirements/purpose.md) and
+[MVP requirements](../requirements/mvp.md).
+DSH capability references, alternatives and experiments belong in
+[research](../research/RES-0003-dsh-control-plane-evaluation.md).

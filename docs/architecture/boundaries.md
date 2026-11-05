@@ -4,60 +4,66 @@ status: draft
 reviewed: 2026-11-05
 ---
 
-# System architecture: boundary model
+# Draft boundaries and failure scenarios
 
-**State: draft target, not a deployed architecture.** This describes the logical
-boundaries that an MVP must evaluate. It intentionally chooses no language,
-framework, host, storage engine, plugin runtime, or model vendor.
+This is a **working technical sketch** inside the
+[selected control-plane architecture](control-plane.md). The product role and
+DSH host are already decided in
+[ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md);
+specific schemas, service keys, process boundaries and storage remain open.
+No implementation exists in this repository yet.
 
-## Logical responsibilities
+## Minimum candidate contracts
 
-| Boundary | Responsibility | Must not own |
-|---|---|---|
-| Client / operator | submit work, state intent, grant sensitive approvals, inspect evidence | silent execution of privileged effects |
-| Work controller | track a task, steps, state transitions, deadlines and recovery | provider-specific tool logic |
-| Worker adapter | prove capabilities, carry out authorized work, return typed result and usage | long-lived canonical task state |
-| State / artifacts | durable inputs, result references, effects, provenance and reconciliation | unverified model claims as trusted facts |
-| Policy / effects | decide data egress, tool authority, effect identity and approval | agent-generated exceptions to its own policy |
-| Verification | evaluate results against acceptance criteria and record evidence | rewrite the accepted subject while verifying |
-| Optional capabilities | additional Worker classes, UIs, gateways, integrations | hidden dependencies in the minimal controller |
+| Contract | Input | Output | Must be testable |
+|---|---|---|---|
+| Work admission | requested outcome, constraints, input artifacts | stable work ID, accepted/held reason | no phantom or duplicate work IDs |
+| Worker capability | declared skills, boundaries, availability | admitted adapter/session/attempt | worker replacement and unsupported capability |
+| Execution result | authorized input references, work/attempt ID | artifact reference, completion evidence, usage provenance | cannot self-accept or widen its permissions |
+| External effect | unique operation ID, scope, authorization | committed/failed/unknown state | crashes cannot cause blind duplicate effect |
+| Verification | frozen result reference and criteria | verdict + evidence bound to same reference | changed artifact invalidates earlier verdict |
+| Lifecycle control | plugin identity, desired state, in-flight assignments | admitted/draining/disabled/unavailable | safe disable/re-enable and dependency loss |
 
-These are **evaluation boundaries**, not an adopted implementation topology.
+These are conceptual contracts. Precise wire formats are deferred until the
+smallest two-workflow spike validates the transitions.
 
 ## Candidate invariants to prove
 
-1. Work identity and its material state outlive any single Worker session.
-2. An external effect is never automatically replayed when its outcome is
-   unknown; recovery reconciles it or fails closed.
-3. A Worker's capability and authority are checked before assignment and
-   before sensitive side effects.
-4. Local data and credentials do not cross an external boundary without an
-   explicit, auditable policy decision.
-5. The same accepted result is the subject of required checks and independent
-   review; a changed result requires new evidence.
-6. Resource use, failures, cancellation and approval requests are recorded
-   using testable semantics, not estimated from an agent's memory.
-7. Optional capabilities can be removed without disabling correctness-critical
-   guarantees.
+1. Work identity and material artifacts outlive any Worker session or process.
+2. Unknown external effects reconcile or hold; they are not blindly retried.
+3. A Worker cannot authorize its own privilege, network egress or credentials.
+4. A decision is attributable to an operator or applicable policy version.
+5. Verification binds to the exact artifact and records checked evidence.
+6. Usage claims include origin, scope, completeness and deduplication rule.
+7. An optional plugin being disabled cannot invalidate core state or bypass
+   the admission gate.
+8. An unavailable required plugin blocks dependent work explicitly, even if
+   unrelated plugins remain healthy.
+9. Software Engineering and Research share one controller state machine.
 
-## Proposed end-to-end data flow
+## Failure points for a controlled spike
 
-    intent -> durable task -> policy + capability admission
-           -> Worker -> result/artifact -> verification -> operator decision
-                      -> usage/effect ledger -> recovery and inspection
+- Crash before assigning the Worker; crash during execution; crash after a
+  remote effect but before confirmation; crash after result before verification.
+- Cancel an attempt and disable its backing DSH plugin mid-flight.
+- Layer a higher-priority configuration patch that overrides the intended
+  enablement, and confirm that admission observes **effective** state.
+- Try a malicious or buggy Worker adapter that reports false success or
+  attempts unauthorized data egress.
+- Retry a resumed session whose usage report is cumulative, not incremental.
+- Change the artifact after checks to prove stale verification is rejected.
 
-Every arrow represents a boundary to audit. The exact state machine, records,
-and deployment remain open. No production code implements this diagram yet.
+## Unanswered design questions
 
-## Questions for the audit
+- Do DSH-persisted primitives fully satisfy System work semantics, or is a
+  thin System-owned durable work ledger needed?
+- What exact DSH services can safely implement each boundary, and which need
+  a System adapter?
+- Can a plugin update be staged and drained without bypassing Cordis lifecycle?
+- Which provider metering oracle and result verification can be reproduced in
+  a local CI fixture?
+- What minimum Worker contract represents both code patches and research
+  reports without encoding either domain?
 
-- What is the smallest state model supporting restart, cancellation,
-  idempotent effects and auditability?
-- Which boundaries must share a process, and which can be independent plugins?
-- Can approval and usage accounting stay correct under provider failures?
-- What capability subset proves a non-code workflow without building a full
-  board, review organization, browser automation stack or reporting UI?
-- What concrete tests demonstrate each invariant at minimal cost?
-
-See [the MVP evidence and audit](../research/RES-0001-audit-baseline.md)
-and [the candidate scope](../research/RES-0002-mvp-assessment.md).
+The [MVP contract](../requirements/mvp.md) owns required behavior; this page
+records possible mechanisms until experiments choose one.
