@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
-import { systemPath, type Capabilities } from '@system/work'
+import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { agentWorker, type Account, type Spawner } from './agent.ts'
 import type { Runtime } from './runtimes.ts'
 
@@ -30,6 +30,8 @@ export interface AccountConfig {
   tokenRef?: string
   /** codex: CODEX_HOME, relative to $DSH_HOME/system unless absolute. */
   codexHome?: string
+  /** The model per tier; each listed tier adds the capability `tier.<name>`. */
+  models?: Partial<Record<Tier, string>>
 }
 
 export interface Config {
@@ -91,7 +93,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
       status.command = command
       status.version = await version(subprocess, command, process.cwd())
-      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, command, version: status.version }
+      const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
+      if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
+      const tiers = TIERS.filter((tier) => account.models?.[tier])
+      const offered = [...account.capabilities, ...tiers.map(tierCapability)]
+      status.capabilities = offered
+      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: status.version, models: account.models }
       if (account.runtime === 'claude-code') {
         const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
         if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)

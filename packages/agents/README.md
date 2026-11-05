@@ -18,12 +18,34 @@ The `agents` row: each configured agent CLI account becomes a System Worker
         runtime: claude-code
         capabilities: [code-write, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
+        models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
       - ref: codex/default
         runtime: codex
         capabilities: [code-write]
         codexHome: codex/default        # under $DSH_HOME/system unless absolute
       # A second account is another entry with its own ref and credential.
 ```
+
+## Model tiers
+
+Tiers are those of System 1: `economy`, `standard`, `frontier`. An account's
+`models` maps each tier it offers to a model; each listed tier adds the
+capability `tier.<name>`, so a Workflow step asks for one like any other
+capability (`capabilities: [code-write, tier.frontier]`) and preflight refuses
+a tier no enabled account offers. A step with no tier gets the `standard`
+model, or the CLI's default when the account lists none. Each attempt records
+the tier, the configured model, and the models the CLI reports it served.
+
+```yaml
+      - ref: claude-code/default
+        runtime: claude-code
+        models: {economy: haiku, standard: sonnet, frontier: opus}
+```
+
+Verified on 2026-11-06 with Claude Code 2.1.311: `haiku`, `sonnet` and `opus`
+served `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5`. The
+Codex account lists no models yet, so it offers no tier and runs the CLI's
+default; add its model names to `models` to give it tiers.
 
 ## One attempt
 
@@ -38,9 +60,9 @@ The `agents` row: each configured agent CLI account becomes a System Worker
    a copy of the account's `auth.json`.
 3. **Run** through the DSH subprocess service, which owns the process range in
    a user-systemd scope:
-   - `claude -p <prompt> --output-format json --permission-mode acceptEdits
+   - `claude -p <prompt> --output-format json [--model <tier's model>] --permission-mode acceptEdits
      --allowedTools Bash WebSearch WebFetch --disallowedTools "Bash(git push:*)" "Bash(gh:*)"`
-   - `codex exec --json --ephemeral --ignore-user-config --skip-git-repo-check
+   - `codex exec --json --ephemeral --ignore-user-config --skip-git-repo-check [-m <model>]
      -s workspace-write -C work --add-dir out <prompt>`
 4. **Capture**, the same rule for every domain: in a git workspace the first
    output slot is the working tree, committed on the base with a private index

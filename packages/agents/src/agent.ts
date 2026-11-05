@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
-import type { WorkerPort, WorkerRequest, WorkerResult } from '@system/work'
+import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, type Runtime } from './runtimes.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
@@ -45,6 +45,8 @@ export interface Account {
   token?: () => Promise<string | undefined>
   /** codex: the account's System-owned CODEX_HOME holding `auth.json`. */
   codexHome?: string
+  /** The model to run for each offered tier; a step with no tier gets `standard`, else the CLI's default. */
+  models?: Partial<Record<Tier, string>>
 }
 
 const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
@@ -67,7 +69,12 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
 }
 
 async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, request: WorkerRequest, graceMs: number): Promise<WorkerResult> {
-  const executor = { ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: account.version }
+  const tier = requestedTier(request.capabilities)
+  const model = tier ? account.models?.[tier] : account.models?.standard
+  const executor: NonNullable<WorkerResult['executor']> = {
+    ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: account.version,
+    ...(tier ? { tier } : {}), ...(model ? { model } : {}),
+  }
   const ws = await prepare(artifacts, request, join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')))
   try {
     const text = prompt(ws, request)
@@ -76,7 +83,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     if (account.runtime === 'claude-code') {
       const token = await account.token?.()
       if (!token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
-      invocation = claudeInvocation(account.command, ws, text, token)
+      invocation = claudeInvocation(account.command, ws, text, token, model)
     } else {
       const home = join(ws.root, 'codex-home')
       mkdirSync(home, { mode: 0o700 })
@@ -85,7 +92,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       // A fresh CODEX_HOME per attempt holding only auth.json: no memories or history carry over (ADR-0005).
       copyFileSync(source, join(home, 'auth.json'))
       codexAuth = { attempt: join(home, 'auth.json'), account: source, before: digest(source) }
-      invocation = codexInvocation(account.command, ws, text, home)
+      invocation = codexInvocation(account.command, ws, text, home, model)
     }
     // Remove every host variable the agent was not given (SSH agent, tokens, ...).
     const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
@@ -95,6 +102,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     const stdout = spawned.stdout()
     const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
     if (codexAuth) keepRefreshedAuth(codexAuth)
+    if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
     const log = (await artifacts.putBytes({
       kind: 'file', schemaVersion: 1, data: Buffer.from(stdout.slice(-MAX_LOG_BYTES)),
       mediaType: account.runtime === 'claude-code' ? 'application/json' : 'application/x-ndjson',

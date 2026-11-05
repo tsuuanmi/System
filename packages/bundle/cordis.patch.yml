@@ -52,6 +52,11 @@
             runtime: claude-code
             capabilities: [code-write, research, web-search]
             tokenRef: CLAUDE_CODE_OAUTH_TOKEN
+            # A step asks for a tier with the capability tier.<name>.
+            models:
+              economy: haiku
+              standard: sonnet
+              frontier: opus
           - ref: codex/default
             runtime: codex
             capabilities: [code-write]

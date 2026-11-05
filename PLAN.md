@@ -87,6 +87,7 @@ Relevant pinned DSH APIs:
 - [x] Extract only needed Git helpers from [System 1 worktrees.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/agent-workers/src/worktrees.ts); do not inherit its worktree-per-run ownership or landing system.
 - [x] \`system work cancel\`: process-group SIGTERM, 30 s, SIGKILL, persist reason/caller, retain partial output as **unaccepted** Artifact and reconcile pending effects.
 - [x] Record bounded agent output and usage provenance; unobserved usage = **unknown**, not zero. Verify Claude -> Codex takeover from Artifact ID without transcript handoff.
+- [x] *Operator-requested addition (2026-11-06):* model tiers as capabilities (\`tier.economy\`, \`tier.standard\`, \`tier.frontier\`, System 1's names); an account maps tiers to models; each attempt records tier, model and served models. *(Real check: Claude \`haiku\`/\`sonnet\`/\`opus\` served \`claude-haiku-5-5\`/\`claude-sonnet-5-5\`/\`claude-opus-5-5\`. Codex has no tier models configured.)*
 
 **Gate M3:** fake tests + separately flagged real provider smoke tests show takeover, cancellation and output persistence. Credentials are optional for offline CI.
 
@@ -146,6 +147,10 @@ Relevant pinned DSH APIs:
 - [ ] **MVP-1:** usage oracle comparison and resource/cold-start benchmarks.
 - [ ] **MVP-1:** MCP entry point and wider workflow syntax when justified.
 - [ ] **Post MVP-1:** Website Worker / browser-driven brainstorming and research behind the same Worker contract.
+- [ ] **After MVP-0:** align the capability vocabulary with System 1 (\`develop\`, \`research\`, \`review\`, \`plan\`, \`web-search\`) and migrate the two Workflow files.
+- [ ] **After MVP-0:** tier bounds on a step (\`min\`/\`max\`, lowest open tier served, as System 1's work requirement) instead of one exact \`tier.*\` capability.
+- [ ] **After MVP-0:** Codex model names per tier, verified against the installed CLI.
+- [ ] **After MVP-0:** choose among several accounts by quota, cooldown or rotation (today: the first capable account).
 
 ## Status / evidence log (update after each milestone)
 

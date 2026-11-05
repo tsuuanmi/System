@@ -14,7 +14,11 @@ const caller = z.object({ type: z.enum(['human', 'agent']), operatorId: z.string
 const candidate = z.object({ ref: z.string(), selected: z.boolean(), reason: z.string() }).strict()
 
 /** Which account, binary and version ran an attempt (ADR-0005 decision 5). */
-const executor = z.object({ ref: z.string(), account: z.string().optional(), command: z.string().optional(), version: z.string().optional() }).strict()
+const executor = z.object({
+  ref: z.string(), account: z.string().optional(), command: z.string().optional(), version: z.string().optional(),
+  /** The tier the step asked for, the model configured for it, and the models the CLI reports it served. */
+  tier: z.string().optional(), model: z.string().optional(), servedModels: z.array(z.string()).optional(),
+}).strict()
 
 const usage = z.union([
   z.object({ state: z.literal('unknown') }).strict(),

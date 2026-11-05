@@ -8,6 +8,7 @@
 //   FAKE:fail     report an error
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
+// The model given with --model / -m is written into ENV.json and reported as served.
 import { appendFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -20,6 +21,8 @@ if (args[0] === '--version') {
 const prompt = codex ? args.at(-1) : args[args.indexOf('-p') + 1]
 const has = (marker) => prompt.includes(`FAKE:${marker}`)
 const cwd = process.cwd()
+const flag = codex ? '-m' : '--model'
+const model = args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined
 
 function finish(ok, message) {
   if (codex) {
@@ -31,12 +34,12 @@ function finish(ok, message) {
       console.log(JSON.stringify({ type: 'turn.failed', error: { message } }))
     }
   } else {
-    console.log(JSON.stringify({ type: 'result', is_error: !ok, result: message, usage: { input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 } }))
+    console.log(JSON.stringify({ type: 'result', is_error: !ok, result: message, usage: { input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, modelUsage: { [model ? `served-${model}` : 'served-default']: {} } }))
   }
   process.exit(ok ? 0 : 1)
 }
 
-if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [] }))
+if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
 if (has('edit')) writeFileSync(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
 if (has('outputs')) {
   for (const [, slot, path] of prompt.matchAll(/^- ([a-z][a-z0-9-]*) \(the file (\/[^)]+)\)$/gm)) writeFileSync(path, slot === 'sources' ? '{"sources":[]}\n' : `# ${slot}\n`)

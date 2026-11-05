@@ -15,6 +15,8 @@ export interface Invocation {
 export interface Parsed {
   ok: boolean
   message: string
+  /** Models the CLI says it used, when it says. */
+  servedModels?: string[]
   usage?: { inputTokens: number; outputTokens: number; source: string }
 }
 
@@ -27,10 +29,11 @@ export function baseEnv(ws: Workspace): Record<string, string> {
   return env
 }
 
-export function claudeInvocation(command: string, ws: Workspace, prompt: string, token: string): Invocation {
+export function claudeInvocation(command: string, ws: Workspace, prompt: string, token: string, model?: string): Invocation {
   return {
     argv: [
       command, '-p', prompt, '--output-format', 'json',
+      ...(model ? ['--model', model] : []),
       '--permission-mode', 'acceptEdits',
       '--add-dir', ws.inputs, '--add-dir', ws.outputs,
       '--allowedTools', 'Bash', 'WebSearch', 'WebFetch',
@@ -42,7 +45,7 @@ export function claudeInvocation(command: string, ws: Workspace, prompt: string,
 }
 
 export function parseClaude(stdout: string): Parsed {
-  let result: { is_error?: boolean; result?: unknown; subtype?: string; usage?: Record<string, number> }
+  let result: { is_error?: boolean; result?: unknown; subtype?: string; usage?: Record<string, number>; modelUsage?: Record<string, unknown> }
   try {
     result = JSON.parse(stdout.trim().split('\n').at(-1) ?? '')
   } catch {
@@ -52,6 +55,7 @@ export function parseClaude(stdout: string): Parsed {
   return {
     ok: result.is_error === false,
     message: String(result.result ?? result.subtype ?? ''),
+    servedModels: result.modelUsage ? Object.keys(result.modelUsage).sort() : undefined,
     usage: u && Number.isInteger(u.input_tokens) && Number.isInteger(u.output_tokens)
       ? {
           inputTokens: u.input_tokens! + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0),
@@ -62,10 +66,11 @@ export function parseClaude(stdout: string): Parsed {
   }
 }
 
-export function codexInvocation(command: string, ws: Workspace, prompt: string, codexHome: string): Invocation {
+export function codexInvocation(command: string, ws: Workspace, prompt: string, codexHome: string, model?: string): Invocation {
   return {
     argv: [
       command, 'exec', '--json', '--ephemeral', '--ignore-user-config', '--skip-git-repo-check',
+      ...(model ? ['-m', model] : []),
       '-s', 'workspace-write', '-C', ws.work, '--add-dir', ws.outputs, prompt,
     ],
     env: { ...baseEnv(ws), CODEX_HOME: codexHome },

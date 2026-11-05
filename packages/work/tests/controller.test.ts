@@ -304,3 +304,12 @@ test('a cancel during an attempt keeps its partial output, and retry hands it on
   assert.equal(second?.type === 'dispatched' && second.inputs.previous, id('partial'))
   assert.equal(h.controller.replay(admitted.id).matches, true)
 })
+
+test('a tier is a capability: a step asking for a tier no Worker offers is refused at preflight', () => {
+  const capabilities = new Capabilities()
+  capabilities.registerWorker({ ref: 'claude', capabilities: ['code-write', 'tier.standard', 'tier.frontier'], run: async () => ({ status: 'failed', outputs: {} }) })
+  const workflow = (tier: string) => `schema: system.workflow/v1\nid: t\nversion: 1\nsteps:\n  - id: a\n    capabilities: [code-write, ${tier}]\n    outputs: [x]\n`
+  assert.doesNotThrow(() => resolve(parseWorkflow(workflow('tier.frontier')), capabilities.available()))
+  assert.throws(() => resolve(parseWorkflow(workflow('tier.economy')), capabilities.available()), /needs Worker capability tier.economy, which no enabled Worker provides/)
+  assert.equal(capabilities.routeWorker(['code-write', 'tier.frontier']).selected?.ref, 'claude')
+})

@@ -26,7 +26,17 @@ export interface WorkerResult {
   usage?: { inputTokens: number; outputTokens: number; source: string }
   /** Bounded agent output as an Artifact, for audit. */
   log?: string
-  executor?: { ref: string; account?: string; command?: string; version?: string }
+  executor?: { ref: string; account?: string; command?: string; version?: string; tier?: string; model?: string; servedModels?: string[] }
+}
+
+/** Model tiers, as System 1 names them (ADR-0073 there): a step asks for one as capability `tier.<name>`. */
+export const TIERS = ['economy', 'standard', 'frontier'] as const
+export type Tier = (typeof TIERS)[number]
+export const tierCapability = (tier: Tier) => `tier.${tier}`
+
+/** The tier a step's capabilities ask for, if any. */
+export function requestedTier(capabilities: readonly string[]): Tier | undefined {
+  return TIERS.find((tier) => capabilities.includes(tierCapability(tier)))
 }
 
 export interface WorkerPort {

@@ -116,7 +116,7 @@ test('a code change is captured from the working tree as one pinned commit on th
   assert.deepEqual(readdirSync(attempts), [], 'the attempt directory and worktree are removed')
   assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1)
   assert.deepEqual(result.usage, { inputTokens: 33, outputTokens: 5, source: 'claude-code result.usage (input includes cache reads and writes)' })
-  assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake' })
+  assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake', servedModels: ['served-default'] })
   assert.equal(artifacts.get(result.log!).state, 'stored')
 })
 
@@ -261,4 +261,28 @@ test('Codex takes over cancelled Claude work from the partial Artifact, in one W
   assert.equal(done.state.input, input, 'the Work input never changed')
   assert.equal(controller.replay(admitted.id).matches, true)
   assert.ok(!existsSync(join(root, 'attempts-9')) || readdirSync(join(root, 'attempts-9')).length === 0)
+})
+
+test('a step asking for a tier runs that tier\'s model; no tier runs standard; the served model is recorded', async () => {
+  const { artifacts } = memory()
+  const repository = repo()
+  const models = { economy: 'haiku', standard: 'sonnet', frontier: 'opus' }
+  const worker = agentWorker(account('claude-code', { models }), artifacts, spawner, join(root, 'attempts-10'))
+  const run = async (capabilities: string[]) => {
+    const r = { ...request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']), capabilities }
+    const result = await worker.run(r)
+    assert.equal(result.status, 'succeeded', result.reason)
+    const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${treeOf(artifacts, result.outputs.change!).commit}:ENV.json`], { encoding: 'utf8' })) as { model?: string }
+    return { seen: seen.model, executor: result.executor }
+  }
+  const frontier = await run(['code-write', 'tier.frontier'])
+  assert.equal(frontier.seen, 'opus')
+  assert.deepEqual([frontier.executor?.tier, frontier.executor?.model, frontier.executor?.servedModels], ['frontier', 'opus', ['served-opus']])
+  const plain = await run(['code-write'])
+  assert.equal(plain.seen, 'sonnet')
+  assert.equal(plain.executor?.tier, undefined)
+  const bare = agentWorker(account('codex', { codexHome: join(root, 'codex-account') }), artifacts, spawner, join(root, 'attempts-10'))
+  const none = await bare.run({ ...request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']), capabilities: ['code-write'] })
+  const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${treeOf(artifacts, none.outputs.change!).commit}:ENV.json`], { encoding: 'utf8' })) as { model?: string }
+  assert.equal(seen.model, undefined, 'an account with no models passes no model flag')
 })

@@ -64,6 +64,10 @@ one form:
 | verify step | `verify: {capability, subject, criteria}` | one verifier call on the exact Artifact the `subject` reference resolves to |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
 
+**Model tiers are capabilities.** A step asks for `tier.economy`,
+`tier.standard` or `tier.frontier` beside its other capabilities; an agent
+account offers the tiers it has a model for. Routing never names a model.
+
 Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
 another schema version, duplicate steps, unknown or self dependencies, cycles
 (with their path), a reference to a step the step does not depend on or to an
