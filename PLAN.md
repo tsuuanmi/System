@@ -1,6 +1,6 @@
 # PLAN.md — System MVP-0 implementation handoff
 
-> **Status:** M0 done; M1 done locally, CI on PR #2 pending; M2 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
+> **Status:** M0 and M1 done (local and CI, PR #2); M2 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
 > **Updated:** 2026-11-05. Target: **MVP-0 only** on the current System branch.
 
 ## Goal and rules
@@ -152,7 +152,7 @@ Relevant pinned DSH APIs:
 | Milestone | Status | Commit/PR | Test command and result / blocker |
 |---|---|---|---|
 | M0 DSH bootstrap | done | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. GitHub Actions on PR #2: \`build\` pass (19 s), \`docs\` pass. |
-| M1 Artifacts | done locally; CI pending | \`26d91c0\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 23/23 (18 new: canonical form, ID independence from producer/time, each content field changes the ID, distinct occurrences, input set order, refusals store nothing, classification floor, no relabel on dedup, immutable reads, crash between blob and record, unavailable bytes, concurrent equal puts, malformed IDs); smoke 10/10 (3 new: read by ID after a process restart, missing/malformed IDs, deleted bytes). Mutation check: putting the producer into the ID fails 2 tests; removing the per-ID lock fails 1. \`system doctor\` about 1.08 s, 91 MB RSS. |
+| M1 Artifacts | done | \`26d91c0\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 23/23 (18 new: canonical form, ID independence from producer/time, each content field changes the ID, distinct occurrences, input set order, refusals store nothing, classification floor, no relabel on dedup, immutable reads, crash between blob and record, unavailable bytes, concurrent equal puts, malformed IDs); smoke 10/10 (3 new: read by ID after a process restart, missing/malformed IDs, deleted bytes). Mutation check: putting the producer into the ID fails 2 tests; removing the per-ID lock fails 1. \`system doctor\` about 1.08 s, 91 MB RSS. GitHub Actions on PR #2 at \`b3c7ae6\`: \`build\` and \`docs\` pass. |
 | M2 Work + YAML | not started | — | — |
 | M3 Workers | not started | — | — |
 | M4 Verifiers | not started | — | — |
