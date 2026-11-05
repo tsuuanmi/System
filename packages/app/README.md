@@ -10,7 +10,15 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system artifact put <file> [--media-type t] [--classification c]` | store the file as a `file@1` Artifact (default `local-private`, producer the operator) and print its ID |
 | `system artifact show <id>` | the envelope and occurrences as JSON; exit 1 when missing |
 | `system artifact cat <id>` | the bytes; exit 1 when unavailable |
-| `system work` | the Work namespace; no subcommands until M2, exit 2 |
+| `system work submit (--workflow <file> \| --capability <name...>) [--input <id>] [--no-run]` | admit Work from a Workflow file or as a direct Task, print its ID, then run it |
+| `system work run <workId>` | advance admitted or interrupted Work until terminal |
+| `system work show <workId>` | the record (events and state) as JSON |
+| `system work list` | ID, status and pinned spec of every Work |
+| `system work replay <workId>` | fold the events again and compare with the stored state; runs nothing; exit 1 on mismatch |
+
+Work exit codes: `0` succeeded, `1` failed or refused, `3` held for the
+operator, `4` not terminal. Each call records its caller: `human` when stdin is
+a terminal, otherwise `agent`, unless `SYSTEM_CALLER` says `human` or `agent`.
 | `system --help` | help, exit 0 |
 
 - [src/index.ts](src/index.ts) — the Cordis plugin: wiring to DSH services.

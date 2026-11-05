@@ -89,7 +89,7 @@ the System work services and the DSH hosting/execution capabilities needed
 to satisfy their contracts. Every additional plugin has an explicit reason and
 dependency. The complete list is determined by an actual profile dependency
 audit, **not** by copying a reference bundle. The current tree is
-[`@system/bundle`](../../packages/bundle/README.md): eight rows, no `dsh-base`,
+[`@system/bundle`](../../packages/bundle/README.md): ten rows (one, `fakes`, disabled), no `dsh-base`,
 checked by `system doctor` and the offline smoke test.
 
 **Configuration-first plugin lifecycle:**

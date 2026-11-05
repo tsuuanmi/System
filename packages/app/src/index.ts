@@ -11,7 +11,8 @@ import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
-import { buildProgram, type AppHost, type ArtifactCommands, type Run } from './cli.ts'
+import type { Caller, WorkService } from '@system/work'
+import { buildProgram, type AppHost, type ArtifactCommands, type Run, type WorkCommands } from './cli.ts'
 import { REQUIRED_BACKEND, type StorageStatus } from './doctor.ts'
 
 export const name = 'system-app'
@@ -78,12 +79,33 @@ function artifactCommands(ctx: Context): ArtifactCommands {
   }
 }
 
+/** Who made this CLI call (ADR-0004 decision 3): a terminal is a human unless SYSTEM_CALLER says otherwise. */
+export function caller(): Caller {
+  const declared = process.env.SYSTEM_CALLER
+  const type = declared === 'human' || declared === 'agent' ? declared : process.stdin.isTTY ? 'human' : 'agent'
+  return { type, operatorId: operatorId() }
+}
+
+function workCommands(ctx: Context): WorkCommands {
+  const work = ctx.get('work') as WorkService | undefined
+  if (!work) throw new Error('the work row is not mounted (run `system doctor`)')
+  return {
+    admitFile: (path, input) => work.admitFile(path, input, caller()),
+    admitTask: (capabilities, input) => work.admitTask(capabilities, input, caller()),
+    run: (workId) => work.controller.run(workId),
+    get: (workId) => work.controller.get(workId),
+    list: () => work.controller.list(),
+    replay: (workId) => work.controller.replay(workId),
+  }
+}
+
 export function apply(ctx: Context): void {
   const host: AppHost = {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,
     probeStorage: () => probeStorage(ctx),
     artifacts: () => artifactCommands(ctx),
+    work: () => workCommands(ctx),
   }
   let selected: Run | undefined
   const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) } }

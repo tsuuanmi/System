@@ -15,7 +15,7 @@ const home = mkdtempSync(join(tmpdir(), 'system-smoke-'))
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
-const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'subprocess', 'credentials', 'system-app']
+const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'credentials', 'system-app']
 
 function system(...args: string[]) {
   const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], {
@@ -98,10 +98,9 @@ test('init is repeatable and keeps the operator patch', () => {
   assert.equal(readFileSync(patch, 'utf8'), '# kept\n[]\n')
 })
 
-test('the work namespace exists and says it is not implemented yet', () => {
-  const ran = system('work')
-  assert.equal(ran.status, 2)
-  assert.match(ran.stdout, /milestone M2/)
+test('the fakes row is installed but off by default', () => {
+  const ran = system('--dump-config')
+  assert.match(ran.stdout, /- id: fakes\n  name: '@system\/fakes'\n  disabled: true/)
 })
 
 test('an Artifact stored in one process is read by ID alone after a restart', () => {

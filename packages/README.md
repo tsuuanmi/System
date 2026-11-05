@@ -7,5 +7,9 @@ only when lifecycle or configuration demands it (PLAN.md package guidance).
   `system` DSH profile: the explicit Cordis tree.
 - [artifacts](artifacts/README.md) — `@system/artifacts`, the `artifacts` row:
   immutable content-addressed Artifacts.
+- [work](work/README.md) — `@system/work`, the `work` row: Work records, the
+  Workflow compiler and the Work Controller.
+- [fakes](fakes/README.md) — `@system/fakes`, a scripted Worker and verifier,
+  off by default.
 - [app](app/README.md) — `@system/app`, the CLI app row (`system doctor`,
-  `system work`).
+  `system artifact`, `system work`).

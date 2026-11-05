@@ -193,6 +193,9 @@ importers:
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
       commander:
         specifier: 15.0.0
         version: 15.0.0
@@ -246,6 +249,47 @@ importers:
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@system/fakes':
+        specifier: workspace:*
+        version: link:../fakes
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+
+  packages/fakes:
+    dependencies:
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+
+  packages/work:
+    dependencies:
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: 0.2.2-rc.1
+        version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
 
 packages:
 

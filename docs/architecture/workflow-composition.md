@@ -3,11 +3,14 @@ type: architecture
 status: active
 reviewed: 2026-11-05
 decided-by: [ADR-0002]
+covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*.yaml]
 ---
 
 # Work primitive and declarative Workflow composition
 
-**Accepted architecture direction, not implemented file format.** Work/Task
+**Accepted architecture; `system.workflow/v1` is implemented** by
+[`@system/work`](../../packages/work/README.md) and exercised with fake Workers
+(M2); real Workers and verifiers arrive in M3 and M4. Work/Task
 is the basic durable unit. A Workflow is a versioned **config file** interpreted
 by a single generic Work Controller; it is not a code module per use case.
 The decision is [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md).
@@ -49,62 +52,44 @@ capabilities, invalid verifier IDs and incompatible schema versions are
 rejected *before starting a Worker*. Configured Worker IDs may be hints, but
 default selection is capability-based, not hardcoded to a vendor.
 
-## Illustrative config: Software Engineering
+## The implemented vocabulary: `system.workflow/v1`
 
-This is a **sketch, not a validated schema or executable configuration**.
-Names and syntax remain open until the loader spike.
+Top level: `schema: system.workflow/v1`, `id`, a positive integer `version`,
+and 1 to 32 `steps`. Each step has an `id`, optional `dependsOn`, and exactly
+one form:
 
-```yaml
-schema: system.workflow/v1
-id: software-engineering
-steps:
-  - id: implement
-    capabilities: [code-write]
-    inputs: {task: "$work.input"}
-    outputs: [change]
-  - id: verify
-    dependsOn: [implement]
-    verify:
-      capability: code.required-checks
-      subject: "$steps.implement.change"
-      criteria: code-default-v1
-  - id: accept
-    dependsOn: [verify]
-    accept: {requires: [verify], approval: operator-merge}
-```
+| Form | Fields | Meaning |
+|---|---|---|
+| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`) | one Worker attempt; each output slot must name a stored Artifact |
+| verify step | `verify: {capability, subject, criteria}` | one verifier call on the exact Artifact the `subject` reference resolves to |
+| accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
 
-The compiler resolves the symbolic `$steps.implement.change` into an
-**exact Artifact ID** before verification or a downstream Worker reads it.
-A new patch or commit means a new subject that must be reverified.
+Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
+another schema version, duplicate steps, unknown or self dependencies, cycles
+(with their path), a reference to a step the step does not depend on or to an
+output that step does not declare, an accept step on a non-verify step, more
+than one accept step, and any Worker or verifier capability the **effective**
+composition does not provide.
 
-## Illustrative config: Research
+The repository's two files are [`workflows/software-engineering.yaml`](../../workflows/software-engineering.yaml)
+and [`workflows/research.yaml`](../../workflows/research.yaml). They differ
+only in capabilities, output slots and verifier. Compared with the earlier
+sketch, `inputs` binds Artifacts explicitly, `version` is required, and
+`approval: operator` replaces `operator-merge`, because System never merges
+(ADR-0004 decision 10).
 
-The schema is **identical**; only the selected Worker and verifier
-capabilities differ:
+The resolved spec is the validated workflow with its steps in a stable
+dependency order (file order among ready steps) and each `dependsOn` sorted
+and deduplicated, so how dependencies are written never changes the spec. It
+is pinned as an Artifact of kind `workflow-spec@1`; its Artifact ID is the
+spec hash. A direct Task without a file is the same spec with one implicit
+step `task`, output `result`.
 
-```yaml
-schema: system.workflow/v1
-id: research
-steps:
-  - id: investigate
-    capabilities: [research, web-search]
-    inputs: {question: "$work.input"}
-    outputs: [report]
-  - id: verify
-    dependsOn: [investigate]
-    verify:
-      capability: research.citation-check
-      subject: "$steps.investigate.report"
-      criteria: citations-v1
-  - id: accept
-    dependsOn: [verify]
-    accept: {requires: [verify]}
-```
-
-Research may also request independent review in config; none is mandated
-universally. If the same controller cannot run these two definitions by
-changing only config, Worker adapters and verification capabilities,
-workflow agnosticism has **failed**.
+**Outcomes:** every step done and every required verdict `pass` is
+`succeeded`; any `fail` or `error` verdict, a failed step, or a Worker missing
+at run time is `failed`; an `inconclusive` verdict or `approval: operator` is
+`held` for the operator. Missing evidence is never a pass, with or without an
+accept step.
 
 ## Deterministic admission and replay boundary
 
@@ -123,6 +108,14 @@ workflow agnosticism has **failed**.
    spec/version. That must invalidate any affected downstream verification.
 7. Where the remote side effect is uncertain, hold or reconcile it before
    retrying. Workflow structure alone cannot guarantee exactly-once effects.
+
+**Implemented recovery:** each Work is one storage key holding its events
+(`admitted`, `dispatched`, `observed`, `verified`, `attempt-lost`, `terminal`)
+and the state they fold to; every change is one atomic update. A step whose
+last attempt was dispatched but never observed is recorded `attempt-lost` and
+dispatched again as a new attempt with the same recorded inputs; completed
+steps are never re-run. `system work replay` folds the events again and
+compares the result with the stored state.
 
 DAG support should emerge from `dependsOn` only. Do not require a
 DAG-specific user abstraction for a one-step task.

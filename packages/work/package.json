@@ -1,0 +1,30 @@
+{
+  "name": "@system/work",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Durable Work, the Workflow file compiler and the generic Work Controller (ADR-0002, ADR-0004)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
+    "@system/artifacts": "workspace:*",
+    "yaml": "2.9.1",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0"
+  }
+}

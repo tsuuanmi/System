@@ -1,0 +1,100 @@
+/**
+ * Capability registry: Worker and verifier rows register here; admission and
+ * routing read it. Routing is by capability, never by domain or vendor.
+ */
+import type { AvailableCapabilities } from './workflow.ts'
+
+/** What a Worker gets for one attempt: exact Artifact IDs only, no transcript. */
+export interface WorkerRequest {
+  workId: string
+  attemptId: string
+  stepId: string
+  capabilities: string[]
+  inputs: Record<string, string>
+  outputs: string[]
+}
+
+export interface WorkerResult {
+  status: 'succeeded' | 'failed'
+  /** Output slot -> Artifact ID; every declared slot on success. */
+  outputs: Record<string, string>
+  reason?: string
+  usage?: { inputTokens: number; outputTokens: number; source: string }
+}
+
+export interface WorkerPort {
+  /** A stable name, recorded in routing decisions. */
+  ref: string
+  capabilities: readonly string[]
+  run(request: WorkerRequest): Promise<WorkerResult>
+}
+
+export interface VerifyRequest {
+  workId: string
+  attemptId: string
+  stepId: string
+  capability: string
+  subject: string
+  criteria: string
+}
+
+export interface VerifyResult {
+  verdict: 'pass' | 'fail' | 'inconclusive' | 'error'
+  reason: string
+  verdictId?: string
+}
+
+export interface VerifierPort {
+  ref: string
+  capabilities: readonly string[]
+  verify(request: VerifyRequest): Promise<VerifyResult>
+}
+
+export interface Route<P> {
+  selected?: P
+  candidates: { ref: string; selected: boolean; reason: string }[]
+}
+
+export class Capabilities {
+  private readonly workers: WorkerPort[] = []
+  private readonly verifiers: VerifierPort[] = []
+
+  registerWorker(port: WorkerPort): () => void {
+    this.workers.push(port)
+    return () => { this.workers.splice(this.workers.indexOf(port), 1) }
+  }
+
+  registerVerifier(port: VerifierPort): () => void {
+    this.verifiers.push(port)
+    return () => { this.verifiers.splice(this.verifiers.indexOf(port), 1) }
+  }
+
+  available(): AvailableCapabilities {
+    return {
+      workers: new Set(this.workers.flatMap((w) => w.capabilities)),
+      verifiers: new Set(this.verifiers.flatMap((v) => v.capabilities)),
+    }
+  }
+
+  /** The first registered Worker with every needed capability; every candidate's reason is kept. */
+  routeWorker(needs: readonly string[], exclude: ReadonlySet<string> = new Set()): Route<WorkerPort> {
+    return route(this.workers, needs, exclude)
+  }
+
+  routeVerifier(capability: string): Route<VerifierPort> {
+    return route(this.verifiers, [capability], new Set())
+  }
+}
+
+function route<P extends { ref: string; capabilities: readonly string[] }>(ports: readonly P[], needs: readonly string[], exclude: ReadonlySet<string>): Route<P> {
+  let selected: P | undefined
+  const candidates = ports.map((port) => {
+    const missing = needs.filter((c) => !port.capabilities.includes(c))
+    if (exclude.has(port.ref)) return { ref: port.ref, selected: false, reason: 'excluded by the caller' }
+    if (missing.length) return { ref: port.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
+    if (selected) return { ref: port.ref, selected: false, reason: `capable; ${selected.ref} registered first` }
+    selected = port
+    return { ref: port.ref, selected: true, reason: `provides ${needs.join(', ')}` }
+  })
+  return { selected, candidates }
+}

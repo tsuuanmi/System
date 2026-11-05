@@ -1,0 +1,82 @@
+/**
+ * The `work` row: provides `ctx.capabilities` (the Worker and verifier
+ * registry) and `ctx.work` (admission and the Work Controller) over the DSH
+ * storage domain `system_work`, one key per Work (ADR-0004 decision 9).
+ */
+import { readFileSync } from 'node:fs'
+import { resolve as resolvePath } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
+import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { sha256, type Artifacts } from '@system/artifacts'
+import { SPEC_KIND, SPEC_SCHEMA_VERSION, WorkController, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import type { Caller, WorkRecord } from './record.ts'
+import { workRecordSchema } from './record.ts'
+import { Capabilities } from './registry.ts'
+import { directTask, parseWorkflow, resolve, type ResolvedSpec } from './workflow.ts'
+
+export * from './controller.ts'
+export * from './record.ts'
+export * from './registry.ts'
+export * from './workflow.ts'
+
+export const name = 'system-work'
+export const inject = ['storageDomain', 'artifacts']
+
+export const workDomain = defineDomain({
+  name: 'system_work',
+  version: 1,
+  tables: { work: domainTable(workRecordSchema) },
+})
+
+/** Admission entry points the CLI uses. */
+export class WorkService {
+  readonly controller: WorkController
+  private readonly capabilities: Capabilities
+
+  constructor(controller: WorkController, capabilities: Capabilities) {
+    this.controller = controller
+    this.capabilities = capabilities
+  }
+
+  /** Read, preflight and pin a Workflow file; the file is never read again for this Work. */
+  admitFile(path: string, input: string | undefined, caller: Caller): Promise<WorkRecord> {
+    const absolute = resolvePath(path)
+    const bytes = readFileSync(absolute)
+    const spec = resolve(parseWorkflow(bytes.toString('utf8')), this.capabilities.available())
+    return this.controller.admit({ spec, input, caller, source: { kind: 'workflow-file', path: absolute, fileHash: sha256(bytes) } })
+  }
+
+  /** A single Task: no Workflow file, one implicit step. */
+  admitTask(capabilities: string[], input: string | undefined, caller: Caller): Promise<WorkRecord> {
+    const spec = directTask(capabilities, input !== undefined, this.capabilities.available())
+    return this.controller.admit({ spec, input, caller, source: { kind: 'direct-task' } })
+  }
+}
+
+function specStore(artifacts: Artifacts): SpecStore {
+  artifacts.registerKind({ kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: resolvedSpecSchema })
+  return {
+    async putSpec(spec, caller) {
+      const envelope = await artifacts.put({
+        kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: spec,
+        classification: 'operator-shared', producer: { type: 'operator', ref: caller.operatorId },
+      })
+      return envelope.id
+    },
+    getSpec(specId) {
+      const read = artifacts.get(specId)
+      return read.state === 'stored' && read.envelope.kind === SPEC_KIND ? read.envelope.content as ResolvedSpec : undefined
+    },
+    exists: (id) => artifacts.get(id).state === 'stored',
+  }
+}
+
+export async function apply(ctx: Context): Promise<void> {
+  const domains = ctx.get('storageDomain') as DomainFacility
+  const domain = await domains.open(workDomain)
+  ctx.effect(() => () => { void domain.close() }, 'system_work domain')
+  const capabilities = new Capabilities()
+  const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(ctx.get('artifacts') as Artifacts), capabilities)
+  ctx.provide('capabilities', capabilities)
+  ctx.provide('work', new WorkService(controller, capabilities))
+}

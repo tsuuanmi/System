@@ -15,6 +15,8 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `storage-domain` | `@deepseek-ai/dsh-storage-domain` | `storageDomain` | yes | Work and Artifact records (ADR-0004 decision 9), default backend `sqlite` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` | `attachments` | yes | content-addressed Artifact bytes under `$DSH_HOME/attachments/v1` |
 | `artifacts` | `@system/artifacts` | `artifacts` | yes | immutable Artifacts over `storageDomain` and `attachments` (ADR-0003) |
+| `work` | `@system/work` | `work`, `capabilities` | yes | Work records, the capability registry and the controller (ADR-0002, ADR-0004) |
+| `fakes` | `@system/fakes` | — | no, **disabled** | scripted Worker and verifier for offline tests |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | key references; unused in M0, may be disabled |
 | `system-app` | `@system/app` | — | yes | the CLI |

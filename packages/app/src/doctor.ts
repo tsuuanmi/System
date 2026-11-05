@@ -19,6 +19,7 @@ export const ROWS: readonly RowProbe[] = [
   { id: 'storage-domain', service: 'storageDomain', required: true, purpose: 'Work and Artifact records' },
   { id: 'attachment-local', service: 'attachments', required: true, purpose: 'Artifact bytes' },
   { id: 'artifacts', service: 'artifacts', required: true, purpose: 'immutable Artifacts' },
+  { id: 'work', service: 'work', required: true, purpose: 'Work records and the controller' },
   { id: 'subprocess', service: 'subprocess', required: true, purpose: 'Worker and verifier processes' },
   { id: 'credentials', service: 'credentials', required: false, purpose: 'model and GitHub key references' },
 ]

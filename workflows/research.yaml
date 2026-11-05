@@ -1,0 +1,23 @@
+# Research (MVP-0). A research Worker answers a question with a report and its
+# sources; a citation verifier checks the exact sources Artifact.
+# Same schema and controller as software-engineering.yaml: only the
+# capabilities, outputs and verifier differ.
+schema: system.workflow/v1
+id: research
+version: 1
+steps:
+  - id: investigate
+    capabilities: [research, web-search]
+    inputs:
+      question: $work.input
+    outputs: [report, sources]
+  - id: citations
+    dependsOn: [investigate]
+    verify:
+      capability: research.citation-check
+      subject: $steps.investigate.sources
+      criteria: citations-v1
+  - id: accept
+    dependsOn: [citations]
+    accept:
+      requires: [citations]

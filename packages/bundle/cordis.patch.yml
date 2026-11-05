@@ -24,6 +24,19 @@
     - id: artifacts
       name: '@system/artifacts'
 
+    # Durable Work, the capability registry and the Work Controller (ADR-0002, ADR-0004).
+    - id: work
+      name: '@system/work'
+
+    # Scripted Worker and verifier for offline tests. Off: a profile patch
+    # turns it on with `disabled: false` and its capability lists.
+    - id: fakes
+      name: '@system/fakes'
+      disabled: true
+      config:
+        workers: [code-write, research, web-search]
+        verifiers: [code.required-checks, research.citation-check]
+
     # Process spawning for Worker adapters and verifiers (ADR-0004 decisions 5, 12).
     - id: subprocess
       name: '@deepseek-ai/dsh-subprocess-local'

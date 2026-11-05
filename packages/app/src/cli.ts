@@ -4,6 +4,7 @@
  */
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
+import type { WorkRecord, WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 export interface CliIo {
@@ -18,8 +19,19 @@ export interface ArtifactCommands {
   readBytes(id: string): Promise<Uint8Array>
 }
 
+/** The Work operations the CLI offers. */
+export interface WorkCommands {
+  admitFile(path: string, input: string | undefined): Promise<WorkRecord>
+  admitTask(capabilities: string[], input: string | undefined): Promise<WorkRecord>
+  run(workId: string): Promise<WorkRecord>
+  get(workId: string): WorkRecord | undefined
+  list(): WorkRecord[]
+  replay(workId: string): { state: WorkState; matches: boolean }
+}
+
 export interface AppHost extends DoctorHost {
   artifacts(): ArtifactCommands
+  work(): WorkCommands
 }
 
 /** A command the program selected, run after startup. */
@@ -71,13 +83,61 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         return 0
       })
     })
-  const work = program.command('work').description('submit, inspect and cancel Work (from milestone M2)')
-  work.action(() => {
-    select(async () => {
-      io.out(work.helpInformation())
-      io.out('no work commands yet: they arrive with milestone M2 (PLAN.md)\n')
-      return 2
+  const work = program.command('work').description('submit, run, inspect and replay Work')
+  work.command('submit')
+    .description('admit Work from a Workflow file, or a single Task by capability, then run it')
+    .option('--workflow <file>', 'a system.workflow/v1 YAML file')
+    .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
+    .option('--input <artifactId>', 'the input Artifact')
+    .option('--no-run', 'admit only')
+    .action((options: { workflow?: string; capability?: string[]; input?: string; run: boolean }) => {
+      select(async () => {
+        if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
+        const commands = host.work()
+        const admitted = options.workflow
+          ? await commands.admitFile(options.workflow, options.input)
+          : await commands.admitTask(options.capability!, options.input)
+        io.out(`${admitted.id}\n`)
+        if (!options.run) return 0
+        return exitCode((await commands.run(admitted.id)).state.status)
+      })
     })
-  })
+  work.command('run <workId>')
+    .description('advance admitted or interrupted Work until it is terminal')
+    .action((workId: string) => {
+      select(async () => exitCode((await host.work().run(workId)).state.status))
+    })
+  work.command('show <workId>')
+    .description('print the Work record (events and state) as JSON')
+    .action((workId: string) => {
+      select(async () => {
+        const record = host.work().get(workId)
+        if (!record) throw new Error(`no Work ${workId}`)
+        io.out(`${JSON.stringify(record, null, 2)}\n`)
+        return 0
+      })
+    })
+  work.command('list')
+    .description('list Work: id, status, pinned spec')
+    .action(() => {
+      select(async () => {
+        for (const record of host.work().list()) io.out(`${record.id}  ${record.state.status.padEnd(9)}  ${record.state.specId}\n`)
+        return 0
+      })
+    })
+  work.command('replay <workId>')
+    .description('fold the recorded events again and compare with the stored state; runs nothing')
+    .action((workId: string) => {
+      select(async () => {
+        const replayed = host.work().replay(workId)
+        io.out(`${JSON.stringify(replayed, null, 2)}\n`)
+        return replayed.matches ? 0 : 1
+      })
+    })
   return program
+}
+
+/** succeeded 0, failed 1, held for the operator 3, not terminal 4. */
+export function exitCode(status: string): number {
+  return { succeeded: 0, failed: 1, held: 3 }[status] ?? 4
 }

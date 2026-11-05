@@ -11,9 +11,10 @@ capabilities and community plugins can be enabled or disabled by configuration
 without deleting their source.
 
 **Current state:** MVP-0 is being built milestone by milestone
-([PLAN.md](PLAN.md)). M0 and M1 exist: the `system` DSH profile boots,
-`system doctor` checks it, and `system artifact put|show|cat` stores and reads
-immutable Artifacts by ID. There is no Work, Worker or verifier yet.
+([PLAN.md](PLAN.md)). M0 to M2 exist: the `system` DSH profile boots,
+`system doctor` checks it, `system artifact` stores and reads immutable
+Artifacts by ID, and `system work` admits Workflow files or direct Tasks and
+runs them durably. Only scripted fake Workers and verifiers exist so far.
 
 ## Read and contribute
 
