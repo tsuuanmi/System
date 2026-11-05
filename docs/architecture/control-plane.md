@@ -51,11 +51,11 @@ separation, additional daemon or independent scheduler.
 
 | Concern | System control plane owns | DSH / execution plugin owns |
 |---|---|---|
-| Work | durable work ID, states, acceptance, handoff | run/session-local execution detail |
+| Work | Task identity and lifecycle, optional pinned Workflow config ID, Artifact-ID handoff and acceptance | run/session-local execution detail |
 | Worker | admitted capabilities, assignment, external identity/attempt | concrete model loop, tools and provider-specific protocol |
 | Artifacts | stable references, version/provenance and input/output contracts | production of bytes/patches/reports through tools |
 | Effects | authorization, idempotency identity, reconciliation/uncertainty | permitted invocation of a concrete external operation |
-| Verification | bind check to exact result, aggregate verdict/evidence | test runner, review Worker, citation checker |
+| Verification | select verifier capability by config; bind verdict to Artifact ID and criteria | test runner, citation checker or optional review implementation |
 | Usage | provenance, aggregation and validity flags | provider observations and local metering if available |
 | Plugins | required capability contracts, safe admission/drain policy | installation, config layering, service lifecycle, enabled state |
 | Operator | meaningful approval, override and decision records | presentation surfaces / notification transport |
@@ -65,6 +65,20 @@ System SHOULD reuse them **where proven**; reuse does not transfer the
 responsibility for correct work semantics, permission enforcement or safe
 recovery. Do not build a duplicate store or approval gate without an identified
 contract gap; identify the authoritative record before implementing one.
+
+## Work vs Workflow and deterministic Artifact-ID handoff
+
+**Work/Task is primitive; Workflow is an optional external configuration file**
+that composes steps and dependencies. The admitted resolved config is pinned
+as a content-addressed artifact; changing files affects future work only.
+
+Workers exchange immutable, typed Artifact IDs, not copied conversations.
+Controller replay uses persisted observations and decisions, not a rerun of
+model generation. Verification is a registered capability selected in the
+workflow config and bound to the exact result ID and criteria. A coding checker
+and a citation checker share the same controller without a universal review
+sequence. See [Workflow composition](workflow-composition.md) and
+[Artifact/verification boundary](artifact-verification.md).
 
 ## Kernel / active-composition rule
 

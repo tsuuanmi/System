@@ -19,8 +19,9 @@ client -> work admission -> policy/capability check -> Worker execution
                  -> durable state, effect record and inspection
 ```
 
-**MVP-01 Work continuity:** a stable work identifier, lifecycle and artifacts
-survive interruption independently of model conversation/session state.
+**MVP-01 Work continuity:** a stable **Work/Task ID** is the primitive; it
+survives interruption independently of model conversation/session or workflow
+configuration. A single Task does not require a public multi-step DAG.
 
 **MVP-02 Worker interchangeability:** a bounded Worker contract represents
 capabilities, input artifact references, completion/failure, cancellation and
@@ -36,9 +37,10 @@ Do not claim exactly-once external effects without proof.
 authority; entry and effect boundaries enforce declared permissions, data
 egress limits and explicit operator approvals.
 
-**MVP-05 Verification:** a verifier checks the precise result/artifact version
-against workflow-specific acceptance criteria. Invalidation after result
-changes must be detectable.
+**MVP-05 Verification:** each configured verifier is a typed capability
+contract. It checks an **exact Artifact ID** against pinned criteria and
+records an evidence-backed verdict. A changed subject invalidates old
+verification; no generic review stage is forced on every workflow.
 
 **MVP-06 Observable accounting:** record events and provider usage with
 provenance sufficient to identify resumed-session double counting and explain
@@ -50,10 +52,31 @@ through a **small DSH/Cordis profile/bundle**, with explicit dependencies and
 configuration-based enable/disable. Keep optional code installed when
 disabled; do not make optional features hidden prerequisites.
 
-**MVP-08 Two domain proofs:** the same work state machine, policy/effect
-semantics and Worker contract must run both Software Engineering and Research.
-Differences belong in Worker adapters, validation policies and workflow
-definitions, **not in separate hardcoded engines**.
+**MVP-08 Two domain proofs:** the same Work state machine, policy/effect
+semantics and Worker contract run both Software Engineering and Research.
+Their step order, capabilities and verification choices come from **two
+external configuration files**, not separate domain engines or hardcoded
+workflow registration.
+
+**MVP-09 Config-defined composition:** a versioned Workflow configuration
+file (prefer YAML) declares ordered/dependent steps, Worker capabilities,
+Artifact-ID bindings and verifier capabilities. The admitted resolved spec
+is immutable, content-addressed and retained with Work. A config edit or
+removal cannot mutate an existing Work; invalid definitions fail preflight.
+DSH profile config separately controls enabled plugin capabilities.
+
+**MVP-10 Artifact-ID protocol and orchestration determinism:** durable
+inter-Worker handoffs use typed, immutable **Artifact IDs**, not transcripts
+or mutable paths. Equal canonical content has stable identity while producer
+events and read authority stay distinct. Replay is deterministic from pinned
+specs, persisted events and observed decisions; a model's text output need
+not be deterministic.
+
+**MVP-11 Verifier interchangeability:** Workflow config chooses one or more
+registered verifier capabilities, each bound to the exact Artifact ID and
+criteria version and returning a typed evidence-backed verdict. A code-tree
+checker and a research citation/evidence checker must both work without a
+core change. Model review is optional unless the selected policy requires it.
 
 ## Mandatory end-to-end acceptance cases
 
@@ -62,12 +85,20 @@ definitions, **not in separate hardcoded engines**.
 | Software Engineering | Input task -> authorized coding Worker -> immutable patch/commit -> required checks -> review/approval -> accepted result | exact checked tree identity, check results, effect and approval provenance |
 | Research | Question -> authorized research Worker -> report artifact and source references -> evidence/citation verification -> accepted result | report identity, accessible cited evidence, verification verdict and provenance |
 
-Both workflows MUST exercise durable work identity, routing/admission, policy
-enforcement, artifacts, verification and terminal outcome recording. Research
+Both workflows MUST load from independent **declarative config files** and
+exercise the **same** Work identity, routing/admission, policy enforcement,
+Artifact-ID handoff, verification and terminal outcome recording. Modifying
+a workflow file must not require rebuilding the Work Controller. Research
 must not be a coding workflow renamed. The research verifier checks citation
 traceability and bounded claims, not an impossible guarantee of factual truth.
 
 ## Failure and governance tests
+
+The admission tests reject duplicate step IDs, cycles, missing artifact
+outputs, unavailable Worker/verifier capabilities, bad schemas and policy
+violations. One Task must run without an external workflow definition. A
+workflow config change mid-run must not change its recorded resolved spec.
+A re-executed model may produce different content and a distinct Artifact ID.
 
 1. Restart/crash at assignment, before commit of an external effect and after
    the effect but before recording confirmation. Prove no blind duplicate.
@@ -105,9 +136,12 @@ closure and plugin toggle/reload safety.
 
 ## Open implementation choices
 
-The concrete DB, schema, Worker transport, DSH bundle layout, process boundaries,
-CLI/MCP exposure and verification providers require test-backed design.
+The concrete DB, artifact hashing/envelope, Workflow config schema, Worker
+transport, DSH bundle layout, process boundaries, CLI/MCP exposure and verifier
+implementations require test-backed design.
 They may not weaken the requirements above.
 
-See the [control-plane architecture](../architecture/control-plane.md) and
-[DSH research](../research/RES-0003-dsh-control-plane-evaluation.md).
+See [Workflow composition](../architecture/workflow-composition.md),
+[Artifact-ID verification](../architecture/artifact-verification.md),
+[control-plane architecture](../architecture/control-plane.md) and the
+[pinned source audit](../research/RES-0004-reference-workflow-artifact-audit.md).

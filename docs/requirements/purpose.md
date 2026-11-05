@@ -50,33 +50,40 @@ evade policy.
 1. **Work-first, not agent-first:** work and its outcomes are the domain model;
    Workers and models are replaceable execution resources.
 2. **State outside Workers:** conversations may help execution, but canonical
-   work state, artifact references and decisions remain under System control.
+   Work/Task state, immutable Artifact IDs and decisions remain under System control.
 3. **Outcome over activity:** success means accepted, evidenced work, not a
-   Worker declaring itself complete.
-4. **Small active core, expansive optional ecosystem:** correctness-critical
+   Worker declaring itself complete. Verification is a **capability contract**
+   selected per workflow, not a fixed multi-agent review ritual.
+4. **Deterministic handoff, not deterministic generation:** Workers exchange
+   immutable Artifact IDs; the controller replays recorded events and
+   decisions. Model text may differ between attempts.
+5. **Config-defined workflows:** Work/Task is primitive; multi-step workflow
+   definitions and order live in independently versioned files, not engine code.
+6. **Small active core, expansive optional ecosystem:** correctness-critical
    contracts are explicit; optional capabilities are enabled through DSH
    configuration and can remain installed but inactive.
-5. **Reliability before feature breadth:** prioritize safe recovery, effects,
+7. **Reliability before feature breadth:** prioritize safe recovery, effects,
    authority and accounting over the number of services and plugins.
-6. **Reuse before build:** DSH/Cordis is the chosen host and composition
+8. **Reuse before build:** DSH/Cordis is the chosen host and composition
    foundation; reuse its mechanisms and community ecosystem instead of
    recreating them without evidence.
-7. **Complexity must earn its place:** every required module needs a measurable
+9. **Complexity must earn its place:** every required module needs a measurable
    guarantee or use case. A small *active composition* is the target, not
    deleting code merely to reduce its directory size.
-8. **Humans govern exceptions and high-stakes decisions:** automatic
+10. **Humans govern exceptions and high-stakes decisions:** automatic
    execution is bounded and explainable, not unconditionally autonomous.
 
 ## Success means
 
 - Two unrelated workflows reach verified outcomes through the same core with
-  configuration and Worker differences only.
+  **configuration files**, Worker capability and verifier policy differences only.
 - A failed or replaced Worker does not destroy work identity or evidence;
   unknown external effects are reconciled or held for a decision.
 - Permission checks and egress restrictions remain enforced across optional
   plugin boundaries.
 - The operator can see why an action happened, which Worker performed it,
-  what artifact was produced, and why the result was accepted.
+  the exact **Artifact IDs** created and consumed, and which verifier evidence
+  authorized the accepted result.
 - Operator interventions, task completion, restart behavior and usage
   accounting can be measured. Numeric release targets require measurement
   definitions and separately accepted evidence.
@@ -102,4 +109,6 @@ Product purpose is independent of a particular Worker and workflow. Hosting
 is **not** undecided: DSH/Cordis is selected for execution/plugin composition
 ([ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md)).
 System-specific work contracts should not expose DSH-internal event types
-at their public boundary where a narrow adapter will suffice.
+at their public boundary where a narrow adapter will suffice. Additional
+accepted decisions: [Workflow as configuration](../decisions/ADR-0002-work-primitive-configured-workflows.md)
+and [artifact/verification contracts](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
