@@ -228,7 +228,8 @@ class Graph:
                 if not target or re.match(r"^[A-Za-z]+:", target):
                     continue
                 path = (file.parent / target).resolve()
-                if not path.is_relative_to(ROOT) or not path.exists():
+                inside_root = path == ROOT or ROOT in path.parents
+                if not inside_root or not path.exists():
                     self.errors.append(
                         f"DOC-LNK-001 {file.relative_to(ROOT)}: broken link {raw}"
                     )
