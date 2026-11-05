@@ -233,9 +233,9 @@ class Graph:
                     self.errors.append(f"DOC-ID-003 {path}: status required")
             status = first(doc.meta, "status", "active")
             valid = STATUSES.get(doc.kind, LIVING)
-            if status not in valid:
+            if not doc.router and status not in valid:
                 self.errors.append(f"DOC-ID-003 {path}: invalid {doc.kind} status {status}")
-            if doc.kind == "proposal" and not (first(doc.meta, "created") or first(doc.meta, "date")):
+            if not doc.router and doc.kind == "proposal" and not (first(doc.meta, "created") or first(doc.meta, "date")):
                 self.errors.append(f"DOC-ID-003 {path}: creation date required")
             for raw in WIKILINK.findall(doc.body):
                 if self.resolve(raw) is None:
