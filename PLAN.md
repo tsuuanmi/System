@@ -1,6 +1,6 @@
 # PLAN.md — System MVP-0 implementation handoff
 
-> **Status:** M0 done locally (GitHub CI not yet run); M1 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
+> **Status:** M0 done (local and CI, PR #2); M1 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
 > **Updated:** 2026-11-05. Target: **MVP-0 only** on the current System branch.
 
 ## Goal and rules
@@ -151,7 +151,7 @@ Relevant pinned DSH APIs:
 
 | Milestone | Status | Commit/PR | Test command and result / blocker |
 |---|---|---|---|
-| M0 DSH bootstrap | done locally; CI pending | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. Not run: GitHub Actions (no PR for this branch yet). |
+| M0 DSH bootstrap | done | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. GitHub Actions on PR #2: \`build\` pass (19 s), \`docs\` pass. |
 | M1 Artifacts | not started | — | — |
 | M2 Work + YAML | not started | — | — |
 | M3 Workers | not started | — | — |
