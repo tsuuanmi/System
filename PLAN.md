@@ -1,6 +1,6 @@
 # PLAN.md — System MVP-0 implementation handoff
 
-> **Status:** M0 done (local and CI, PR #2); M1 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
+> **Status:** M0 done; M1 done locally, CI on PR #2 pending; M2 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
 > **Updated:** 2026-11-05. Target: **MVP-0 only** on the current System branch.
 
 ## Goal and rules
@@ -58,11 +58,11 @@ Relevant pinned DSH APIs:
 
 ### M1: Artifact Foundation (first port target)
 
-- [ ] Define minimal typed Artifact envelope: \`artifactId\`, kind/version, content or blob ref, input Artifact IDs, classification, producer provenance and separate producer occurrence/attempt identity.
-- [ ] Port/adapt the **small** canonical JSON/SHA-256 utility and tests from [System 1 canonical.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/libs/src/canonical.ts) **only if copying is permitted**; otherwise reimplement behavior. Freeze versioned canonicalization and hash domain separation.
-- [ ] Adapt [System 1 artifact invariants](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/artifacts) and [conformance tests](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/ledger-core/conformance) to DSH storage/attachment APIs; **do not add a second full SQLite ledger** by default.
-- [ ] Enforce immutable content, schema validation, missing-input refusal, lineage and stable ID; persist metadata separately from content. Define how partial write/orphaned blob is reconciled.
-- [ ] Tests: same canonical content -> same Artifact ID despite different producer/time; different content -> different ID; producer events remain distinct; changed/invalid input refused; restart -> read by ID succeeds.
+- [x] Define minimal typed Artifact envelope: \`artifactId\`, kind/version, content or blob ref, input Artifact IDs, classification, producer provenance and separate producer occurrence/attempt identity. *(packages/artifacts/src/envelope.ts; occurrences carry producer, workId, attemptId, time.)*
+- [x] Port/adapt the **small** canonical JSON/SHA-256 utility and tests from [System 1 canonical.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/libs/src/canonical.ts) **only if copying is permitted**; otherwise reimplement behavior. Freeze versioned canonicalization and hash domain separation. *(Ported with the owner's permission; {B}artifact-id/v1{B} with domain tag {B}system.artifact/v1{B}, documented in artifact-verification.md.)*
+- [x] Adapt [System 1 artifact invariants](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/artifacts) and [conformance tests](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/ledger-core/conformance) to DSH storage/attachment APIs; **do not add a second full SQLite ledger** by default. *(DSH storage domain {B}system_artifacts{B} plus attachments; no own database.)*
+- [x] Enforce immutable content, schema validation, missing-input refusal, lineage and stable ID; persist metadata separately from content. Define how partial write/orphaned blob is reconciled. *(Bytes before record; an orphan blob is reused by the retry; deleted bytes read as {B}unavailable{B}. Orphan GC is not implemented.)*
+- [x] Tests: same canonical content -> same Artifact ID despite different producer/time; different content -> different ID; producer events remain distinct; changed/invalid input refused; restart -> read by ID succeeds.
 
 **Gate M1:** Artifact stored and read after process restart **by ID only**, stable digest and provenance verified.
 
@@ -152,7 +152,7 @@ Relevant pinned DSH APIs:
 | Milestone | Status | Commit/PR | Test command and result / blocker |
 |---|---|---|---|
 | M0 DSH bootstrap | done | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. GitHub Actions on PR #2: \`build\` pass (19 s), \`docs\` pass. |
-| M1 Artifacts | not started | — | — |
+| M1 Artifacts | done locally; CI pending | \`26d91c0\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 23/23 (18 new: canonical form, ID independence from producer/time, each content field changes the ID, distinct occurrences, input set order, refusals store nothing, classification floor, no relabel on dedup, immutable reads, crash between blob and record, unavailable bytes, concurrent equal puts, malformed IDs); smoke 10/10 (3 new: read by ID after a process restart, missing/malformed IDs, deleted bytes). Mutation check: putting the producer into the ID fails 2 tests; removing the per-ID lock fails 1. \`system doctor\` about 1.08 s, 91 MB RSS. |
 | M2 Work + YAML | not started | — | — |
 | M3 Workers | not started | — | — |
 | M4 Verifiers | not started | — | — |
