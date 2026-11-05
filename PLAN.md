@@ -1,6 +1,6 @@
 # PLAN.md — System MVP-0 implementation handoff
 
-> **Status:** not started. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
+> **Status:** M0 done locally (GitHub CI not yet run); M1 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
 > **Updated:** 2026-11-05. Target: **MVP-0 only** on the current System branch.
 
 ## Goal and rules
@@ -47,12 +47,12 @@ Relevant pinned DSH APIs:
 
 ### M0: Reproducible DSH boot and CLI
 
-- [ ] Verify/pin DSH exact tag and runtime dependencies, correct ADR-0004 upstream hash in a small docs commit.
-- [ ] Create **minimal System profile/bundle** on Cordis; inspect effective active plugin rows and dependency closure. **Do not inherit full \`dsh-base\`** unless an actual required dependency forces it.
-- [ ] Implement thin \`system\` wrapper for \`dsh --profile system "$@"\`; expose at least \`system doctor\` or equivalent health and \`system work\` namespace.
-- [ ] Enable/reuse DSH storage hub/domain, attachment/content store, subprocess and credentials only as actually needed; document which are mounted.
-- [ ] Add reproducible build, typecheck, unit-test commands and offline smoke tests (no model credentials). One optional plugin can be disabled by config without deleting its source; in-flight toggling is MVP-1.
-- [ ] Record exact package versions, commands and limitations in source README.
+- [x] Verify/pin DSH exact tag and runtime dependencies, correct ADR-0004 upstream hash in a small docs commit. *(\`d02fa55\`: tag is \`66491b05\`; \`fcc0ad4\` is 811 commits ahead; cited facts rechecked at the tag.)*
+- [x] Create **minimal System profile/bundle** on Cordis; inspect effective active plugin rows and dependency closure. **Do not inherit full \`dsh-base\`** unless an actual required dependency forces it. *(\`@system/bundle\`: 7 rows, no \`dsh-base\`; \`--dump-config\` asserted by the smoke test.)*
+- [x] Implement thin \`system\` wrapper for \`dsh --profile system "$@"\`; expose at least \`system doctor\` or equivalent health and \`system work\` namespace.
+- [x] Enable/reuse DSH storage hub/domain, attachment/content store, subprocess and credentials only as actually needed; document which are mounted. *(packages/bundle/README.md; attachments and subprocess are mounted but first exercised in M1/M3.)*
+- [x] Add reproducible build, typecheck, unit-test commands and offline smoke tests (no model credentials). One optional plugin can be disabled by config without deleting its source; in-flight toggling is MVP-1.
+- [x] Record exact package versions, commands and limitations in source README.
 
 **Gate M0:** profile boots, CLI health works, CI/offline test passes; no second model loop/plugin manager.
 
@@ -151,7 +151,7 @@ Relevant pinned DSH APIs:
 
 | Milestone | Status | Commit/PR | Test command and result / blocker |
 |---|---|---|---|
-| M0 DSH bootstrap | not started | — | — |
+| M0 DSH bootstrap | done locally; CI pending | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. Not run: GitHub Actions (no PR for this branch yet). |
 | M1 Artifacts | not started | — | — |
 | M2 Work + YAML | not started | — | — |
 | M3 Workers | not started | — | — |
