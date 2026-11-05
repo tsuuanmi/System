@@ -10,6 +10,8 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system artifact put <file> [--media-type t] [--classification c]` | store the file as a `file@1` Artifact (default `local-private`, producer the operator) and print its ID |
 | `system artifact show <id>` | the envelope and occurrences as JSON; exit 1 when missing |
 | `system artifact cat <id>` | the bytes; exit 1 when unavailable |
+| `system approve <workId> [--reason r]` | approve what held Work awaits (an effect needing approval, an inconclusive verdict, `approval: operator`) and run it on; a human at a terminal must type the Work ID's first 8 characters |
+| `system deny <workId> --reason r` | deny it; the Work fails. Same terminal confirmation |
 | `system task new (--text t \| --file f) [--repo path [--ref r]]` | store a `task@1` input; with `--repo`, first the exact base commit as `git-tree@1` |
 | `system workers` | registered Workers, and each agent account with its CLI version or why it is unavailable |
 | `system credentials set <NAME>` | read a value without echo (or from piped stdin) and store it in `$DSH_HOME/.credentials.yaml` through the DSH credential API; other entries are kept |

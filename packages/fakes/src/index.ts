@@ -9,11 +9,14 @@
  * - SYSTEM_FAKE_SLEEP_AT=<stepId>: that step's Worker waits until it is cancelled,
  *   then reports `cancelled` with one partial output.
  * - SYSTEM_FAKE_VERDICT=<pass|fail|inconclusive|error>: every verdict (default pass).
+ *
+ * The fake effect provider "publishes" into `$DSH_HOME/system/fake-effects.json`
+ * (operation ID -> subject), so reconciliation works across host processes.
  */
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Artifacts } from '@system/artifacts'
-import type { Capabilities, VerifyResult, WorkerRequest } from '@system/work'
+import { systemPath, type Capabilities, type VerifyResult, type WorkerRequest } from '@system/work'
 import { z } from 'zod'
 
 export const name = 'system-fakes'
@@ -22,6 +25,7 @@ export const inject = ['capabilities', 'artifacts']
 export interface Config {
   workers?: string[]
   verifiers?: string[]
+  effects?: string[]
 }
 
 const VERDICTS = ['pass', 'fail', 'inconclusive', 'error'] as const
@@ -82,5 +86,20 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
     }),
   ]
+  const published = systemPath(ctx, 'fake-effects.json')
+  const read = (): Record<string, string> => (existsSync(published) ? JSON.parse(readFileSync(published, 'utf8')) as Record<string, string> : {})
+  dispose.push(capabilities.registerEffect({
+    ref: 'fake-publisher', version: '1', capabilities: config.effects ?? [], accepts: ['fake-output'],
+    validate: () => undefined,
+    approval: () => undefined,
+    async apply(intent) {
+      writeFileSync(published, JSON.stringify({ ...read(), [intent.operationId]: intent.subject }))
+      return { state: 'applied', reason: 'published (fake)', detail: { subject: intent.subject } }
+    },
+    async reconcile(intent) {
+      const subject = read()[intent.operationId]
+      return subject ? { state: 'applied', reason: 'found (fake)', detail: { subject } } : { state: 'absent', reason: 'not published (fake)' }
+    },
+  }))
   ctx.effect(() => () => { for (const d of dispose) d() }, 'fake registrations')
 }

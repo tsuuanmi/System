@@ -38,6 +38,18 @@ directly. `system work retry` appends `reopened` (caller, reason, optional
 Worker, the partial output as `previous`) and runs the step again as a new
 attempt: the Work keeps one history.
 
+## Effects and decisions
+
+An effect step runs only after every required verdict on its exact subject
+is `pass`. The controller records `effect-intended` (a stable
+`op:<sha256>` for the Work, step and subject) before calling the provider
+and `effect-observed` after. On restart, or after `apply` throws, it calls
+the provider's read-only `reconcile`: `applied` is recorded, `absent` is
+applied again (or, after a throw, fails the Work), `unknown` holds it. A
+cancel records what reconciliation finds and applies nothing.
+`decide(workId, {decision, caller})` refuses agent callers; an approval
+reruns the Work, a denial fails it.
+
 ## Input kinds
 
 [src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`) and

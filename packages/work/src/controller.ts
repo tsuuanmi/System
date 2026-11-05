@@ -9,13 +9,15 @@
  * its process; it is recorded `attempt-lost` and dispatched again as a new
  * attempt with the same recorded inputs. Completed steps are never re-run.
  */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
+import { LocalControl, type CancelRequest, type HostControl } from './control.ts'
+import { WorkError } from './errors.ts'
 import type { Verdict } from './kinds.ts'
-import type { Capabilities, VerifyResult } from './registry.ts'
+import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifyResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
-import { isVerifyStep, isWorkerStep, workflowSchema, type ResolvedSpec, type Step } from './workflow.ts'
+import { isEffectStep, isVerifyStep, isWorkerStep, workflowSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
 export interface WorkTable {
@@ -36,6 +38,9 @@ export interface SpecStore {
   putVerdict(verdict: Verdict): Promise<string>
 }
 
+/** How often a running attempt checks for a cancel request. */
+export const CANCEL_POLL_MS = 250
+
 export const SPEC_KIND = 'workflow-spec'
 export const SPEC_SCHEMA_VERSION = 1
 
@@ -52,63 +57,6 @@ export interface Admission {
   source: { kind: 'workflow-file' | 'direct-task'; path?: string; fileHash?: string }
 }
 
-/**
- * Cross-process control of one Work (one DSH host per Work at a time). Each
- * host caches records in memory, so only the host that holds a Work's lock
- * writes it; another process asks it to cancel through `requestCancel`.
- */
-export interface HostControl {
-  /** Take the Work's lock; throws when a live host already runs it. Returns the release. */
-  acquire(workId: string): () => void
-  /** Whether a live run holds the Work's lock: another process, or another call in this one. */
-  heldElsewhere(workId: string): boolean
-  requestCancel(workId: string, request: CancelRequest): void
-  cancelRequest(workId: string): CancelRequest | undefined
-  clearCancel(workId: string): void
-}
-
-export interface CancelRequest {
-  reason: string
-  caller: Caller
-}
-
-/** For a single process (tests): no other host exists. */
-export class LocalControl implements HostControl {
-  private readonly held = new Set<string>()
-  private readonly cancels = new Map<string, CancelRequest>()
-
-  acquire(workId: string): () => void {
-    if (this.held.has(workId)) throw new WorkError(`${workId} is already being run`)
-    this.held.add(workId)
-    return () => { this.held.delete(workId) }
-  }
-
-  heldElsewhere(workId: string): boolean {
-    return this.held.has(workId)
-  }
-
-  requestCancel(workId: string, request: CancelRequest): void {
-    this.cancels.set(workId, request)
-  }
-
-  cancelRequest(workId: string): CancelRequest | undefined {
-    return this.cancels.get(workId)
-  }
-
-  clearCancel(workId: string): void {
-    this.cancels.delete(workId)
-  }
-}
-
-/** How often a running attempt checks for a cancel request. */
-export const CANCEL_POLL_MS = 250
-
-export class WorkError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'WorkError'
-  }
-}
 
 export class WorkController {
   private readonly table: WorkTable
@@ -141,6 +89,15 @@ export class WorkController {
         throw new WorkError(`step ${s.id}: ${verifier.ref} cannot pin criteria ${s.verify.criteria}: ${(error as Error).message}`)
       }
       if (!this.specs.exists(criteria[s.id]!)) throw new WorkError(`step ${s.id}: ${verifier.ref} returned criteria ${criteria[s.id]} that is not stored`)
+    }
+    for (const s of admission.spec.steps.filter(isEffectStep)) {
+      const provider = this.capabilities.routeEffect(s.effect.capability).selected
+      if (!provider) throw new WorkError(`no enabled provider offers ${s.effect.capability}`)
+      try {
+        provider.validate(s.effect.capability, { ...s.effect.params })
+      } catch (error) {
+        throw new WorkError(`step ${s.id}: ${provider.ref} refuses its params: ${(error as Error).message}`)
+      }
     }
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = `work:${randomUUID()}`
@@ -180,7 +137,10 @@ export class WorkController {
       let record = await this.recover(this.require(workId))
       while (!TERMINAL.has(record.state.status)) {
         const cancel = this.control.cancelRequest(workId)
-        record = cancel ? await this.cancelled(record, cancel) : await this.step(record)
+        const unknown = Object.values(record.state.effects).find((e) => e.state === 'unknown')
+        if (cancel) record = await this.cancelled(record, cancel)
+        else if (unknown) record = await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`)
+        else record = await this.step(record)
       }
       return record
     } finally {
@@ -255,13 +215,61 @@ export class WorkController {
   }
 
   /** Mark attempts that were dispatched but never observed as lost. */
-  private async recover(record: WorkRecord): Promise<WorkRecord> {
+  private async recover(record: WorkRecord, { resumeEffects = true } = {}): Promise<WorkRecord> {
+    const pendingEffects = new Set(Object.values(record.state.effects).filter((e) => e.state === 'intended' || e.state === 'unknown').map((e) => e.stepId))
     for (const [stepId, s] of Object.entries(record.state.steps)) {
-      if (s.state !== 'running') continue
+      if (s.state !== 'running' || pendingEffects.has(stepId)) continue
       const attemptId = s.attempts.at(-1)!
       record = await this.append(record, { type: 'attempt-lost', stepId, attemptId, reason: 'the host stopped before the attempt reported; it is dispatched again as a new attempt' })
     }
+    // An effect whose outcome was not recorded is never applied again blindly: reconcile first.
+    for (const [operationId, effect] of Object.entries(record.state.effects)) {
+      if (effect.state !== 'intended' && effect.state !== 'unknown') continue
+      const intent = this.intentOf(record, operationId)
+      const provider = this.capabilities.routeEffect(intent.capability).selected
+      if (!provider) {
+        record = await this.append(record, { type: 'effect-observed', stepId: effect.stepId, operationId, state: 'unknown', reason: `no enabled provider of ${intent.capability} can reconcile it` })
+        continue
+      }
+      record = await this.reconcile(record, provider, intent, resumeEffects ? 'apply-if-absent' : 'record-only')
+    }
     return record
+  }
+
+  /** Rebuild the recorded intent of an operation. */
+  private intentOf(record: WorkRecord, operationId: string): EffectIntent {
+    const event = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === operationId)
+    if (event?.type !== 'effect-intended') throw new WorkError(`no recorded intent for ${operationId}`)
+    return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params }
+  }
+
+  /** Read the remote; apply only when it shows the effect absent and `then` allows it. */
+  private async reconcile(record: WorkRecord, provider: EffectPort, intent: EffectIntent, then: 'apply-if-absent' | 'record-only'): Promise<WorkRecord> {
+    let found: Reconciled
+    try {
+      found = await provider.reconcile(intent)
+    } catch (error) {
+      found = { state: 'unknown', reason: `reconciliation failed: ${(error as Error).message}` }
+    }
+    record = await this.append(record, {
+      type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: found.state, reason: found.reason,
+      ...(found.state === 'applied' ? { detail: found.detail } : {}),
+    })
+    return found.state === 'absent' && then === 'apply-if-absent' ? this.applyEffect(record, provider, intent) : record
+  }
+
+  private async applyEffect(record: WorkRecord, provider: EffectPort, intent: EffectIntent): Promise<WorkRecord> {
+    let outcome: EffectOutcome
+    try {
+      outcome = await provider.apply(intent)
+    } catch (error) {
+      // The remote may or may not have changed: read it, and never retry here.
+      const after = await this.reconcile(record, provider, intent, 'record-only')
+      const effect = after.state.effects[intent.operationId]!
+      if (effect.state === 'absent') return this.finish(after, 'failed', `${intent.stepId} failed: ${(error as Error).message}; the remote shows nothing published`)
+      return after
+    }
+    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: outcome.state, reason: outcome.reason, detail: outcome.detail })
   }
 
   private async step(record: WorkRecord): Promise<WorkRecord> {
@@ -273,6 +281,7 @@ export class WorkController {
     if (!next) return this.finishWithoutAccept(record, spec)
     if (isWorkerStep(next)) return this.runWorker(record, next)
     if (isVerifyStep(next)) return this.runVerifier(record, next)
+    if (isEffectStep(next)) return this.runEffect(record, spec, next)
     return this.accept(record, next)
   }
 
@@ -331,7 +340,7 @@ export class WorkController {
 
   /** Record cancellation as terminal; a still-running step is marked lost first. */
   private async cancelled(record: WorkRecord, request: CancelRequest): Promise<WorkRecord> {
-    record = await this.recover(record)
+    record = await this.recover(record, { resumeEffects: false })
     const done = await this.append(record, { type: 'terminal', outcome: 'cancelled', reason: `cancelled by ${request.caller.type} ${request.caller.operatorId}: ${request.reason}`, results: {}, caller: request.caller })
     this.control.clearCancel(record.id)
     return done
@@ -417,17 +426,80 @@ export class WorkController {
     if (notPass.some(([, verdict]) => verdict !== 'inconclusive')) {
       return this.finish(record, 'failed', `required verification did not pass: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
     }
-    if (notPass.length) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`)
-    if (s.accept.approval === 'operator') return this.finish(record, 'held', 'verification passed; awaiting operator approval')
-    return this.finish(record, 'succeeded', `accepted on ${s.accept.requires.join(', ')}`)
+    const decided = this.decisionOf(record, s.id)
+    if (notPass.length) {
+      if (!decided) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id)
+      return this.finish(record, 'succeeded', `accepted by ${decided.caller.operatorId} despite inconclusive ${notPass.map(([id]) => id).join(', ')}: ${decided.reason}`)
+    }
+    if (s.accept.approval === 'operator' && !decided) return this.finish(record, 'held', 'verification passed; awaiting operator approval', s.id)
+    return this.finish(record, 'succeeded', decided ? `accepted by ${decided.caller.operatorId}: ${decided.reason}` : `accepted on ${s.accept.requires.join(', ')}`)
   }
 
-  private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string): Promise<WorkRecord> {
+  /** The operator's approval of a step since it was last reset, if any. */
+  private decisionOf(record: WorkRecord, stepId: string): Extract<WorkEvent, { type: 'decided' }> | undefined {
+    if (record.state.steps[stepId]!.decision !== 'approved') return undefined
+    const event = record.events.findLast((e) => e.type === 'decided' && e.stepId === stepId)
+    return event?.type === 'decided' ? event : undefined
+  }
+
+  /**
+   * Publish the exact subject the required verifiers passed, at most once per
+   * operation: intent first, effect second, outcome third.
+   */
+  private async runEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<WorkRecord> {
+    const subject = this.resolveRef(record, s.effect.subject)
+    const decided = this.decisionOf(record, s.id)
+    const verdicts = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const)
+    const notPass = verdicts.filter(([, verdict]) => verdict !== 'pass')
+    if (notPass.some(([, verdict]) => verdict !== 'inconclusive')) {
+      return this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
+    }
+    if (notPass.length && !decided) {
+      return this.finish(record, 'held', `${s.id} needs a passing ${notPass.map(([id]) => id).join(', ')} verdict on its subject; ${notPass.map(([id, v]) => `${id} is ${v}`).join(', ')}`, s.id)
+    }
+    const provider = this.capabilities.routeEffect(s.effect.capability).selected
+    if (!provider) return this.finish(record, 'failed', `no enabled provider offers ${s.effect.capability} for step ${s.id}`)
+    const kind = this.specs.kindOf(subject)
+    if (!kind || !provider.accepts.includes(kind)) return this.finish(record, 'failed', `${provider.ref} publishes ${provider.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`)
+    const intent: EffectIntent = {
+      operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
+      workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params },
+    }
+    const why = provider.approval(intent)
+    if (why && !decided) return this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id)
+    record = await this.append(record, {
+      type: 'effect-intended', stepId: s.id, operationId: intent.operationId, capability: intent.capability, subject,
+      params: intent.params, provider: { ref: provider.ref, version: provider.version },
+    })
+    return this.applyEffect(record, provider, intent)
+  }
+
+  /**
+   * Record a human operator's decision on held Work; an approval runs it on.
+   * Agent callers are refused (ADR-0004 decision 3).
+   */
+  async decide(workId: string, decision: { decision: 'approved' | 'denied'; caller: Caller; reason: string }): Promise<WorkRecord> {
+    if (decision.caller.type !== 'human') throw new WorkError('only a human operator approves; an agent caller cannot decide')
+    const record = this.require(workId)
+    const stepId = record.state.status === 'held' ? record.state.awaiting : undefined
+    if (!stepId) throw new WorkError(`nothing awaits a decision on ${workId} (it is ${record.state.status})`)
+    const release = this.control.acquire(workId)
+    let decided: WorkRecord
+    try {
+      decided = await this.append(record, { type: 'decided', caller: decision.caller, stepId, decision: decision.decision, reason: decision.reason })
+      if (decision.decision === 'denied') return await this.finish(decided, 'failed', `${stepId} denied by ${decision.caller.operatorId}: ${decision.reason}`)
+    } finally {
+      release()
+    }
+    return this.run(workId)
+  }
+
+  private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string, awaiting?: string): Promise<WorkRecord> {
     const results: Record<string, string> = {}
     for (const [stepId, s] of Object.entries(record.state.steps)) {
       for (const [slot, id] of Object.entries(s.outputs)) results[`${stepId}.${slot}`] = id
     }
-    return this.append(record, { type: 'terminal', outcome, reason, results })
+    return this.append(record, { type: 'terminal', outcome, reason, results, ...(awaiting ? { awaiting } : {}) })
   }
 }
 
@@ -439,9 +511,15 @@ function dependentsOf(spec: ResolvedSpec, stepId: string): string[] {
   return spec.steps.map((s) => s.id).filter((id) => found.has(id))
 }
 
+function lastReason(record: WorkRecord, stepId: string): string {
+  const event = record.events.findLast((e) => e.type === 'effect-observed' && e.stepId === stepId)
+  return event?.type === 'effect-observed' ? event.reason : 'no observation'
+}
+
 function refsOf(s: Step): string[] {
   if (isWorkerStep(s)) return Object.values(s.inputs ?? {})
   if (isVerifyStep(s)) return [s.verify.subject]
+  if (isEffectStep(s)) return [s.effect.subject]
   return []
 }
 

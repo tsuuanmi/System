@@ -5,7 +5,9 @@ read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
 - [software-engineering.yaml](software-engineering.yaml) — `implement`
-  (`code-write`) → `checks` (`code.required-checks`) → `accept`.
+  (`code-write`) → `checks` (`code.required-checks`) → `publish`
+  (`git.publish`: the checked commit to `system/<work>`, one draft pull
+  request) → `accept`.
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`) → `accept`.

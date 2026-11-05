@@ -277,6 +277,9 @@ importers:
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@system/effects':
+        specifier: workspace:*
+        version: link:../effects
       '@system/fakes':
         specifier: workspace:*
         version: link:../fakes
@@ -286,6 +289,22 @@ importers:
       '@system/work':
         specifier: workspace:*
         version: link:../work
+
+  packages/effects:
+    dependencies:
+      '@deepseek-ai/dsh-credentials':
+        specifier: 0.2.2-rc.1
+        version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
 
   packages/fakes:
     dependencies:

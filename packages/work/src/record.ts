@@ -72,9 +72,28 @@ export const eventSchema = z.discriminatedUnion('type', [
     reset: z.array(z.string()).optional(),
   }).strict(),
   z.object({
+    type: z.literal('effect-intended'), seq: z.number().int(), at,
+    stepId: z.string(), operationId: z.string(), capability: z.string(), subject: artifactId,
+    params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+    provider: z.object({ ref: z.string(), version: z.string() }).strict(),
+  }).strict(),
+  z.object({
+    type: z.literal('effect-observed'), seq: z.number().int(), at,
+    stepId: z.string(), operationId: z.string(),
+    /** `absent` and `unknown` come from reconciliation, which only reads the remote. */
+    state: z.enum(['applied', 'failed', 'absent', 'unknown']), reason: z.string(),
+    detail: z.record(z.string(), z.string()).optional(),
+  }).strict(),
+  z.object({
+    type: z.literal('decided'), seq: z.number().int(), at, caller,
+    stepId: z.string(), decision: z.enum(['approved', 'denied']), reason: z.string(),
+  }).strict(),
+  z.object({
     type: z.literal('terminal'), seq: z.number().int(), at,
     outcome: z.enum(['succeeded', 'failed', 'held', 'cancelled']), reason: z.string(),
     results: z.record(z.string(), artifactId), caller: caller.optional(),
+    /** For `held`: the step whose operator decision `system approve` records. */
+    awaiting: z.string().optional(),
   }).strict(),
 ])
 
@@ -91,6 +110,14 @@ const stepState = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive', 'error']).optional(),
   /** For a verify step: the exact subject its verdict is about. */
   subject: artifactId.optional(),
+  /** An operator's decision on this step (approval of an effect or of an inconclusive verdict). */
+  decision: z.enum(['approved', 'denied']).optional(),
+}).strict()
+
+const effectState = z.object({
+  stepId: z.string(),
+  state: z.enum(['intended', 'applied', 'failed', 'absent', 'unknown']),
+  detail: z.record(z.string(), z.string()).optional(),
 }).strict()
 
 export const stateSchema = z.object({
@@ -100,7 +127,10 @@ export const stateSchema = z.object({
   /** Added in M4; records written before it read as `{}` (DSH validates every stored record at open). */
   criteria: z.record(z.string(), artifactId).default({}),
   steps: z.record(z.string(), stepState),
+  /** Added in M5; operation ID -> what is known of that external effect. */
+  effects: z.record(z.string(), effectState).default({}),
   reason: z.string().optional(),
+  awaiting: z.string().optional(),
   results: z.record(z.string(), artifactId),
 }).strict()
 
@@ -122,7 +152,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
   const first = events[0]
   if (!first || first.type !== 'admitted') throw new TypeError('a Work record starts with its admission')
   const steps: Record<string, StepState> = Object.fromEntries(stepIds.map((stepId) => [stepId, { state: 'pending', attempts: [], outputs: {} }]))
-  const state: WorkState = { status: 'running', specId: first.specId, input: first.input, criteria: { ...first.criteria }, steps, results: {} }
+  const state: WorkState = { status: 'running', specId: first.specId, input: first.input, criteria: { ...first.criteria }, steps, effects: {}, results: {} }
   for (const event of events.slice(1)) {
     switch (event.type) {
       case 'admitted':
@@ -151,6 +181,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         steps[event.stepId]!.state = 'pending'
         break
       case 'reopened':
+        delete state.awaiting
         for (const stepId of event.reset ?? []) {
           if (stepId === event.stepId) continue
           steps[stepId] = { state: 'pending', attempts: steps[stepId]!.attempts, outputs: {} }
@@ -161,10 +192,29 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         delete state.reason
         state.results = {}
         break
+      case 'effect-intended':
+        steps[event.stepId]!.state = 'running'
+        state.effects[event.operationId] = { stepId: event.stepId, state: 'intended' }
+        break
+      case 'effect-observed': {
+        const effect = state.effects[event.operationId]!
+        effect.state = event.state
+        if (event.detail) effect.detail = { ...event.detail }
+        if (event.state === 'applied') steps[event.stepId]!.state = 'succeeded'
+        if (event.state === 'failed') steps[event.stepId]!.state = 'failed'
+        break
+      }
+      case 'decided':
+        steps[event.stepId]!.decision = event.decision
+        state.status = 'running'
+        delete state.reason
+        delete state.awaiting
+        break
       case 'terminal':
         state.status = event.outcome
         state.reason = event.reason
         state.results = { ...event.results }
+        if (event.awaiting) state.awaiting = event.awaiting
         break
     }
   }

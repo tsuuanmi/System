@@ -15,5 +15,7 @@ only when lifecycle or configuration demands it (PLAN.md package guidance).
   and Codex accounts as Workers.
 - [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
   `code.required-checks` and `research.citation-check`.
+- [effects](effects/README.md) — `@system/effects`, the `effects` row:
+  `git.publish`, push and one draft pull request, never a merge.
 - [app](app/README.md) — `@system/app`, the CLI app row (`system doctor`,
   `system artifact`, `system work`).

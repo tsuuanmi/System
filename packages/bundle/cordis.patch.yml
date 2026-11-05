@@ -36,6 +36,7 @@
       config:
         workers: [code-write, research, web-search]
         verifiers: [code.required-checks, research.citation-check]
+        effects: [git.publish]
 
     # Process spawning for Worker adapters and verifiers (ADR-0004 decisions 5, 12).
     - id: subprocess
@@ -44,6 +45,17 @@
     # Verifier capabilities: code.required-checks, research.citation-check (ADR-0003).
     - id: verifiers
       name: '@system/verifiers'
+
+    # System-owned external effects: git.publish pushes a verified commit to
+    # system/<work> and opens one draft pull request; never merges (ADR-0004 decision 10).
+    # The token is the credential GITHUB_TOKEN (system credentials set GITHUB_TOKEN).
+    - id: effects
+      name: '@system/effects'
+      config:
+        remote: origin
+        base: main
+        apiUrl: https://api.github.com
+        tokenRef: GITHUB_TOKEN
 
     # Agent CLI accounts as Workers (ADR-0004, ADR-0005). An account whose CLI
     # or credential is missing is skipped with its reason (`system workers`).

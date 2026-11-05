@@ -15,8 +15,9 @@ without deleting their source.
 `system doctor` checks it, `system artifact` stores and reads immutable
 Artifacts by ID, and `system work` admits Workflow files or direct Tasks and
 runs them durably, with Claude Code and Codex accounts as Workers (cancel and
-takeover included), and verifies results with the repository's pinned checks
-or citation checks.
+takeover included), verifies results with the repository's pinned checks or
+citation checks, and publishes a checked commit as one draft pull request
+(never merging); `system approve` is for a human at a terminal.
 
 ## Read and contribute
 

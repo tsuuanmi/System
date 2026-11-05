@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { WorkController, WorkError, type SpecStore, type WorkTable } from '../src/controller.ts'
+import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
+import { WorkError } from '../src/errors.ts'
 import { fold, type WorkRecord } from '../src/record.ts'
 import type { Verdict } from '../src/kinds.ts'
 import { Capabilities, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest } from '../src/registry.ts'
@@ -104,6 +105,12 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
     },
     ...options.verifier,
   })
+  capabilities.registerEffect({
+    ref: 'fake-publisher', version: '1', capabilities: ['git.publish'], accepts: ['output'],
+    validate: () => undefined, approval: () => undefined,
+    async apply(intent) { return { state: 'applied', reason: 'published', detail: { subject: intent.subject } } },
+    async reconcile() { return { state: 'absent', reason: 'nothing published' } },
+  })
   return { controller: new WorkController(table, specs, capabilities), capabilities, calls, verdicts, table, specs }
 }
 
@@ -179,7 +186,7 @@ test('a restart mid-attempt re-dispatches that step only, as a new attempt, with
   const second = harness({ table, specs })
   const done = await second.controller.run(admitted.id)
   assert.equal(done.state.status, 'succeeded')
-  assert.deepEqual(done.events.map((e) => e.type), ['admitted', 'dispatched', 'attempt-lost', 'dispatched', 'observed', 'dispatched', 'verified', 'terminal'])
+  assert.deepEqual(done.events.map((e) => e.type), ['admitted', 'dispatched', 'attempt-lost', 'dispatched', 'observed', 'dispatched', 'verified', 'effect-intended', 'effect-observed', 'terminal'])
   assert.equal(second.calls.length, 1, 'the second host ran implement once; checks ran once')
   assert.notEqual(second.calls[0]!.attemptId, lostAttempt)
   assert.deepEqual(done.state.steps.implement!.attempts, [lostAttempt, second.calls[0]!.attemptId])
@@ -213,7 +220,7 @@ test('a failed, errored or missing verdict fails the Work; inconclusive is held'
 
 test('without an accept step a failed verdict still fails the Work', async () => {
   const h = harness({ verdict: 'fail' })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml').replace(/  - id: accept[\s\S]*$/, '')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml').replace(/  - id: publish[\s\S]*$/, '')), h.capabilities.available())
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.status, 'failed')
@@ -391,7 +398,7 @@ test('retry --step after failed checks reruns the Worker and re-verifies the new
   const done = await h.controller.retry(failed.id, { step: 'implement', caller, reason: 'fix the failing checks' })
   assert.equal(done.state.status, 'succeeded')
   const reopened = done.events.find((e) => e.type === 'reopened')
-  assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'checks', 'accept'])
+  assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'checks', 'publish', 'accept'])
   const verifiedSubjects = done.events.filter((e) => e.type === 'verified').map((e) => e.type === 'verified' && e.subject)
   assert.deepEqual(verifiedSubjects, [firstChange, done.state.steps.implement!.outputs.change])
   assert.notEqual(verifiedSubjects[1], firstChange)

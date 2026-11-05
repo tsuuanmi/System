@@ -25,6 +25,7 @@
     "@system/agents": "workspace:*",
     "@system/app": "workspace:*",
     "@system/artifacts": "workspace:*",
+    "@system/effects": "workspace:*",
     "@system/fakes": "workspace:*",
     "@system/verifiers": "workspace:*",
     "@system/work": "workspace:*"

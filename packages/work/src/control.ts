@@ -1,11 +1,61 @@
 /**
- * `HostControl` over files under `$DSH_HOME/system/control`: one lock file per
- * Work holding the running host's pid (created exclusively; a dead pid's lock
- * is stale), and one cancel file per Work a running host polls.
+ * Cross-process control of Work: the `HostControl` seam, `LocalControl` for a
+ * single process, and `FileControl` over files under `$DSH_HOME/system/control`
+ * (one lock file per Work holding the running host's pid, created exclusively,
+ * a dead pid's lock stale; one cancel file per Work a running host polls).
  */
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import { WorkError, type CancelRequest, type HostControl } from './controller.ts'
+import type { Caller } from './record.ts'
+import { WorkError } from './errors.ts'
+
+/**
+ * Cross-process control of one Work (one DSH host per Work at a time). Each
+ * host caches records in memory, so only the host that holds a Work's lock
+ * writes it; another process asks it to cancel through `requestCancel`.
+ */
+export interface HostControl {
+  /** Take the Work's lock; throws when a live host already runs it. Returns the release. */
+  acquire(workId: string): () => void
+  /** Whether a live run holds the Work's lock: another process, or another call in this one. */
+  heldElsewhere(workId: string): boolean
+  requestCancel(workId: string, request: CancelRequest): void
+  cancelRequest(workId: string): CancelRequest | undefined
+  clearCancel(workId: string): void
+}
+
+export interface CancelRequest {
+  reason: string
+  caller: Caller
+}
+
+/** For a single process (tests): no other host exists. */
+export class LocalControl implements HostControl {
+  private readonly held = new Set<string>()
+  private readonly cancels = new Map<string, CancelRequest>()
+
+  acquire(workId: string): () => void {
+    if (this.held.has(workId)) throw new WorkError(`${workId} is already being run`)
+    this.held.add(workId)
+    return () => { this.held.delete(workId) }
+  }
+
+  heldElsewhere(workId: string): boolean {
+    return this.held.has(workId)
+  }
+
+  requestCancel(workId: string, request: CancelRequest): void {
+    this.cancels.set(workId, request)
+  }
+
+  cancelRequest(workId: string): CancelRequest | undefined {
+    return this.cancels.get(workId)
+  }
+
+  clearCancel(workId: string): void {
+    this.cancels.delete(workId)
+  }
+}
 
 function alive(pid: number): boolean {
   try {
@@ -16,6 +66,7 @@ function alive(pid: number): boolean {
   }
 }
 
+/** `HostControl` over files: see the module comment. */
 export class FileControl implements HostControl {
   private readonly dir: string
 

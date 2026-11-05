@@ -18,11 +18,14 @@ const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 const log = join(home, 'fake-calls.log')
 const FAKES_ON = `- id: verifiers
   disabled: true
+- id: effects
+  disabled: true
 - id: fakes
   disabled: false
   config:
     workers: [code-write, research, web-search]
     verifiers: [code.required-checks, research.citation-check]
+    effects: [git.publish]
 `
 
 function system(args: string[], env: Record<string, string> = {}) {
@@ -101,7 +104,7 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   const done = show(workId)
   assert.equal(done.state.specId, pinned)
   assert.equal(done.state.status, 'succeeded')
-  assert.deepEqual(done.events.map((e) => e.type), ['admitted', 'dispatched', 'attempt-lost', 'dispatched', 'observed', 'dispatched', 'verified', 'terminal'])
+  assert.deepEqual(done.events.map((e) => e.type), ['admitted', 'dispatched', 'attempt-lost', 'dispatched', 'observed', 'dispatched', 'verified', 'effect-intended', 'effect-observed', 'terminal'])
   assert.equal(done.state.steps.implement!.attempts.length, 2)
   assert.deepEqual(calls().map((line) => line.split(' ')[1]), ['implement', 'implement'])
 

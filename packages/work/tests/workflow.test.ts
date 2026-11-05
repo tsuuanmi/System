@@ -11,6 +11,7 @@ const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'u
 const available: AvailableCapabilities = {
   workers: new Set(['code-write', 'research', 'web-search']),
   verifiers: new Set(['code.required-checks', 'research.citation-check']),
+  effects: new Set(['git.publish']),
 }
 
 const base = `schema: system.workflow/v1
@@ -32,7 +33,7 @@ function problems(yaml: string, caps: AvailableCapabilities = available): string
 test('both repository Workflow files parse and resolve with the same schema', () => {
   const se = resolve(parseWorkflow(fixture('software-engineering.yaml')), available)
   const research = resolve(parseWorkflow(fixture('research.yaml')), available)
-  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks', 'accept'])
+  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks', 'publish', 'accept'])
   assert.deepEqual(research.steps.map((s) => s.id), ['investigate', 'citations', 'accept'])
   assert.deepEqual(se.workflow, { id: 'software-engineering', version: 1 })
 })
@@ -94,11 +95,12 @@ test('a reference must name an output of a step this step depends on', () => {
 })
 
 test('capabilities no enabled Worker or verifier provides are refused before any Worker runs', () => {
-  const none: AvailableCapabilities = { workers: new Set(), verifiers: new Set() }
+  const none: AvailableCapabilities = { workers: new Set(), verifiers: new Set(), effects: new Set() }
   const found = problems(fixture('software-engineering.yaml'), none)
   assert.deepEqual(found, [
     'step implement needs Worker capability code-write, which no enabled Worker provides',
     'step checks needs verifier code.required-checks, which no enabled verifier provides',
+    'step publish needs effect git.publish, which no enabled effect provider offers',
   ])
 })
 
@@ -113,4 +115,35 @@ test('accept must require verify steps it depends on, appear once, and come last
 test('how dependsOn is written never changes the resolved spec', () => {
   const steps = (deps: string) => `${base}  - id: a\n    capabilities: [research]\n    outputs: [x]\n  - id: b\n    capabilities: [research]\n    outputs: [x]\n  - id: c\n    dependsOn: ${deps}\n    capabilities: [research]\n    outputs: [x]\n`
   assert.deepEqual(resolve(parseWorkflow(steps('[b, a]')), available), resolve(parseWorkflow(steps('[a, b, a]')), available))
+})
+
+const withEffects = available
+const publishing = (effect: string, dependsOn = '[checks]') => `${base}  - id: implement
+    capabilities: [code-write]
+    outputs: [change]
+  - id: checks
+    dependsOn: [implement]
+    verify:
+      capability: code.required-checks
+      subject: $steps.implement.change
+      criteria: c1
+  - id: publish
+    dependsOn: ${dependsOn}
+    effect:
+${effect}
+`
+
+test('an effect step names its capability, exact subject and the verify steps that must pass first', () => {
+  const spec = resolve(parseWorkflow(publishing('      capability: git.publish\n      subject: $steps.implement.change\n      requires: [checks]\n      params:\n        ready: false')), withEffects)
+  assert.deepEqual(spec.steps.map((s) => s.id), ['implement', 'checks', 'publish'])
+})
+
+test('an effect step is refused when its provider is missing, its requirements are not verify steps it depends on, or it would publish another subject than was verified', () => {
+  const ok = '      capability: git.publish\n      subject: $steps.implement.change\n      requires: [checks]'
+  assert.deepEqual(problems(publishing(ok), { ...available, effects: new Set() }), ['step publish needs effect git.publish, which no enabled effect provider offers'])
+  assert.match(problems(publishing(ok.replace('requires: [checks]', 'requires: [implement]')), withEffects).join(';'), /publish requires implement, which is not a verify step/)
+  assert.match(problems(publishing(ok, '[implement]'), withEffects).join(';'), /publish requires checks, but does not depend on it/)
+  assert.match(problems(publishing(ok.replace('requires: [checks]', 'requires: []')), withEffects).join(';'), /requires|too_small|>=1/i)
+  const twoOutputs = publishing(ok).replace('outputs: [change]', 'outputs: [change, notes]').replace('subject: $steps.implement.change\n      requires', 'subject: $steps.implement.notes\n      requires')
+  assert.match(problems(twoOutputs, withEffects).join(';'), /publish publishes \$steps\.implement\.notes, but checks verified \$steps\.implement\.change/)
 })

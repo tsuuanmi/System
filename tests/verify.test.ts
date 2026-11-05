@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -75,7 +75,9 @@ after(() => {
 })
 
 const task = (text: string, repository?: string) => system(['task', 'new', '--text', text, ...(repository ? ['--repo', repository] : [])]).stdout.trim().split('\n').at(-1)!
-const SE = join(repo, 'workflows', 'software-engineering.yaml')
+/** The Software Engineering file without its publish step: these tests are about verification (tests/publish.test.ts covers the whole file). */
+const SE = join(home, 'software-engineering-checks.yaml')
+writeFileSync(SE, readFileSync(join(repo, 'workflows', 'software-engineering.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]'))
 const RESEARCH = join(repo, 'workflows', 'research.yaml')
 
 test('Software Engineering: the exact changed commit passes the base commit\'s pinned checks', () => {

@@ -20,6 +20,7 @@ import { directTask, parseWorkflow, resolve, type ResolvedSpec } from './workflo
 
 export * from './control.ts'
 export * from './controller.ts'
+export * from './errors.ts'
 export * from './git.ts'
 export * from './kinds.ts'
 export * from './record.ts'

@@ -1,6 +1,7 @@
 # Software Engineering (MVP-0). A coding Worker changes the repository, the
-# required checks verify the exact result, and Work is accepted on that verdict.
-# Pushing and the draft PR are System effects (M5), not Workflow steps.
+# required checks verify the exact result, System pushes that exact commit to
+# system/<work> and opens a draft pull request (never merges), and Work is
+# accepted on the verdict.
 schema: system.workflow/v1
 id: software-engineering
 version: 1
@@ -16,7 +17,13 @@ steps:
       capability: code.required-checks
       subject: $steps.implement.change
       criteria: repo-checks-v1
-  - id: accept
+  - id: publish
     dependsOn: [checks]
+    effect:
+      capability: git.publish
+      subject: $steps.implement.change
+      requires: [checks]
+  - id: accept
+    dependsOn: [publish]
     accept:
       requires: [checks]

@@ -62,6 +62,7 @@ one form:
 |---|---|---|
 | Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
 | verify step | `verify: {capability, subject, criteria}` | one verifier call on the exact Artifact the `subject` reference resolves to |
+| effect step | `effect: {capability, subject, requires: [verify steps], params?}` | one external effect of the exact subject, only after every required verdict on that subject is `pass`; recorded as intent, then outcome |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
 
 **Model tiers are capabilities.** A step asks for `tier.economy`,
@@ -94,6 +95,18 @@ turns the `criteria` name into an Artifact, recorded on the Work, or refuses
 the Work. **`system work retry --step <id>`** reruns a Worker step of failed,
 cancelled or held Work and resets every step after it, so a verdict never
 outlives its subject.
+
+**Effects** (ADR-0004 decision 10): an effect step's provider validates its
+`params` at admission. Before `apply` the controller records
+`effect-intended` with an `operationId` stable for the Work, step and subject;
+after it, `effect-observed`. A lost host or a failed `apply` leads to
+`reconcile`, which only reads the remote: `applied` is recorded, `absent` is
+applied again, `unknown` holds the Work. An effect is never retried blindly.
+
+**Operator decisions:** Work held for an inconclusive verdict, an effect that
+needs approval, or `approval: operator` records the step it awaits.
+`system approve` / `system deny` record a `decided` event and run on or fail
+the Work; they need a human at a terminal (ADR-0004 decision 3).
 
 **Outcomes:** every step done and every required verdict `pass` is
 `succeeded`; any `fail` or `error` verdict, a failed step, or a Worker missing

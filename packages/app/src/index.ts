@@ -99,6 +99,8 @@ function workCommands(ctx: Context): WorkCommands {
     list: () => work.controller.list(),
     replay: (workId) => work.controller.replay(workId),
     cancel: (workId, reason) => work.controller.cancel(workId, { reason, caller: caller() }),
+    // Only reached after confirmHuman: the caller is a human at a terminal.
+    decide: (workId, decision, operator, reason) => work.controller.decide(workId, { decision, reason, caller: { type: 'human', operatorId: operator } }),
     retry: (workId, worker, reason, step) => work.controller.retry(workId, { worker, step, reason, caller: caller() }),
     runningElsewhere: (workId) => work.controller.runningElsewhere(workId),
     newTask: (instructions, repository, ref) => work.newTask(instructions, repository, ref, caller()),
@@ -151,6 +153,22 @@ function workersView(ctx: Context): WorkersView {
   return { registered: capabilities?.workerRefs() ?? [], accounts: agents?.accounts() ?? [] }
 }
 
+/** One typed line from a human at the terminal; anything else is refused (ADR-0004 decision 3). */
+async function confirmHuman(prompt: string, expected: string): Promise<string> {
+  if (!process.stdin.isTTY) {
+    throw new Error('this decision needs a human at a terminal: stdin is not a terminal, so the caller may be an agent (ADR-0004 decision 3)')
+  }
+  const { createInterface } = await import('node:readline/promises')
+  const lines = createInterface({ input: process.stdin, output: process.stderr })
+  try {
+    const typed = (await lines.question(prompt)).trim()
+    if (typed !== expected) throw new Error('the confirmation did not match; nothing was decided')
+  } finally {
+    lines.close()
+  }
+  return operatorId()
+}
+
 export function apply(ctx: Context): void {
   const host: AppHost = {
     hasService: (service) => ctx.get(service as never) !== undefined,
@@ -162,7 +180,7 @@ export function apply(ctx: Context): void {
     workers: () => workersView(ctx),
   }
   let selected: Run | undefined
-  const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret }
+  const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
   const program = buildProgram(host, io, (run) => { selected = run })
   parseCmdline(ctx, program)
   const run = selected

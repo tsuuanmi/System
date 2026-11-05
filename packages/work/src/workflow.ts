@@ -44,7 +44,20 @@ const acceptStep = z.object({
   accept: z.object({ requires: z.array(id).min(1), approval: z.literal('operator').optional() }).strict(),
 }).strict()
 
-const step = z.union([workerStep, verifyStep, acceptStep])
+const effectStep = z.object({
+  id,
+  dependsOn: z.array(id).optional(),
+  effect: z.object({
+    capability,
+    subject: ref,
+    /** Verify steps whose verdict on this exact subject must be `pass` before the effect runs. */
+    requires: z.array(id).min(1),
+    /** Provider parameters, validated by the provider at admission. */
+    params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  }).strict(),
+}).strict()
+
+const step = z.union([workerStep, verifyStep, effectStep, acceptStep])
 
 export const workflowSchema = z.object({
   schema: z.literal(WORKFLOW_SCHEMA),
@@ -58,15 +71,18 @@ export type Step = Workflow['steps'][number]
 export type WorkerStep = z.infer<typeof workerStep>
 export type VerifyStep = z.infer<typeof verifyStep>
 export type AcceptStep = z.infer<typeof acceptStep>
+export type EffectStep = z.infer<typeof effectStep>
 
 export const isWorkerStep = (s: Step): s is WorkerStep => 'capabilities' in s
 export const isVerifyStep = (s: Step): s is VerifyStep => 'verify' in s
 export const isAcceptStep = (s: Step): s is AcceptStep => 'accept' in s
+export const isEffectStep = (s: Step): s is EffectStep => 'effect' in s
 
 /** What the effective composition can run, checked at admission. */
 export interface AvailableCapabilities {
   workers: ReadonlySet<string>
   verifiers: ReadonlySet<string>
+  effects: ReadonlySet<string>
 }
 
 export class WorkflowError extends Error {
@@ -170,6 +186,15 @@ export function preflight(workflow: Workflow, available: AvailableCapabilities):
     } else if (isVerifyStep(s)) {
       checkRef(s, s.verify.subject, 'verifies')
       if (!available.verifiers.has(s.verify.capability)) problems.push(`step ${s.id} needs verifier ${s.verify.capability}, which no enabled verifier provides`)
+    } else if (isEffectStep(s)) {
+      checkRef(s, s.effect.subject, 'publishes')
+      if (!available.effects.has(s.effect.capability)) problems.push(`step ${s.id} needs effect ${s.effect.capability}, which no enabled effect provider offers`)
+      for (const required of s.effect.requires) {
+        const target = byId.get(required)
+        if (!target || !isVerifyStep(target)) problems.push(`step ${s.id} requires ${required}, which is not a verify step`)
+        else if (!before.get(s.id)!.has(required)) problems.push(`step ${s.id} requires ${required}, but does not depend on it`)
+        else if (target.verify.subject !== s.effect.subject) problems.push(`step ${s.id} publishes ${s.effect.subject}, but ${required} verified ${target.verify.subject}`)
+      }
     } else {
       for (const required of s.accept.requires) {
         const target = byId.get(required)

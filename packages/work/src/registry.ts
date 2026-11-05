@@ -94,6 +94,48 @@ export interface VerifierPort {
   verify(request: VerifyRequest): Promise<VerifyResult>
 }
 
+/**
+ * One external effect, identified by `operationId` (stable for a Work, step
+ * and subject). A provider applies it at most once per operation: before any
+ * retry after an unknown outcome, the controller calls `reconcile`, which
+ * only reads (ADR-0004 decision 10, MVP-03).
+ */
+export interface EffectIntent {
+  operationId: string
+  workId: string
+  stepId: string
+  capability: string
+  /** The exact Artifact ID the effect publishes. */
+  subject: string
+  params: Record<string, string | number | boolean>
+}
+
+export interface EffectOutcome {
+  state: 'applied' | 'failed'
+  reason: string
+  /** What the remote side now holds, such as a branch, commit and pull request. */
+  detail: Record<string, string>
+}
+
+export type Reconciled =
+  | { state: 'applied'; reason: string; detail: Record<string, string> }
+  | { state: 'absent'; reason: string }
+  | { state: 'unknown'; reason: string }
+
+export interface EffectPort {
+  ref: string
+  version: string
+  capabilities: readonly string[]
+  /** Subject Artifact kinds it can publish. */
+  accepts: readonly string[]
+  /** Refuse admission for parameters or a configuration it cannot honour. */
+  validate(capability: string, params: EffectIntent['params']): void
+  /** Why this intent needs an operator's approval, or `undefined` when it is routine. */
+  approval(intent: EffectIntent): string | undefined
+  apply(intent: EffectIntent): Promise<EffectOutcome>
+  reconcile(intent: EffectIntent): Promise<Reconciled>
+}
+
 export interface Route<P> {
   selected?: P
   candidates: { ref: string; selected: boolean; reason: string }[]
@@ -102,6 +144,7 @@ export interface Route<P> {
 export class Capabilities {
   private readonly workers: WorkerPort[] = []
   private readonly verifiers: VerifierPort[] = []
+  private readonly effects: EffectPort[] = []
 
   registerWorker(port: WorkerPort): () => void {
     this.workers.push(port)
@@ -113,10 +156,16 @@ export class Capabilities {
     return () => { this.verifiers.splice(this.verifiers.indexOf(port), 1) }
   }
 
+  registerEffect(port: EffectPort): () => void {
+    this.effects.push(port)
+    return () => { this.effects.splice(this.effects.indexOf(port), 1) }
+  }
+
   available(): AvailableCapabilities {
     return {
       workers: new Set(this.workers.flatMap((w) => w.capabilities)),
       verifiers: new Set(this.verifiers.flatMap((v) => v.capabilities)),
+      effects: new Set(this.effects.flatMap((e) => e.capabilities)),
     }
   }
 
@@ -134,6 +183,10 @@ export class Capabilities {
 
   routeVerifier(capability: string): Route<VerifierPort> {
     return route(this.verifiers, [capability])
+  }
+
+  routeEffect(capability: string): Route<EffectPort> {
+    return route(this.effects, [capability])
   }
 }
 

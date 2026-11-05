@@ -13,6 +13,11 @@ export interface CliIo {
   write(data: Uint8Array): void
   /** A secret from the terminal without echo, or all of piped stdin. */
   readSecret(prompt: string): Promise<string>
+  /**
+   * Ask a human at a terminal to type `expected`; resolves the operator ID.
+   * Refuses when stdin is not a terminal, whatever SYSTEM_CALLER says.
+   */
+  confirmHuman(prompt: string, expected: string): Promise<string>
 }
 
 /** The credential operations the CLI offers; values go in, never out. */
@@ -37,6 +42,7 @@ export interface WorkCommands {
   list(): WorkRecord[]
   replay(workId: string): { state: WorkState; matches: boolean }
   cancel(workId: string, reason: string): Promise<'requested' | WorkRecord>
+  decide(workId: string, decision: 'approved' | 'denied', operatorId: string, reason: string): Promise<WorkRecord>
   retry(workId: string, worker: string | undefined, reason: string, step?: string): Promise<WorkRecord>
   /** Whether another live host process holds the Work. */
   runningElsewhere(workId: string): boolean
@@ -104,6 +110,24 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         return 0
       })
     })
+  const decide = (decision: 'approved' | 'denied') => (workId: string, options: { reason: string }) => {
+    select(async () => {
+      const record = host.work().get(workId)
+      if (!record) throw new Error(`no Work ${workId}`)
+      io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
+      const short = workId.replace(/^work:/, '').slice(0, 8)
+      const operatorId = await io.confirmHuman(`Type ${short} to record "${decision}" for ${record.state.awaiting ?? 'it'}: `, short)
+      return exitCode((await host.work().decide(workId, decision, operatorId, options.reason)).state.status)
+    })
+  }
+  program.command('approve <workId>')
+    .description('approve what held Work awaits (an effect, or an inconclusive verdict); a human at a terminal only')
+    .option('--reason <text>', 'why', 'approved by the operator')
+    .action(decide('approved'))
+  program.command('deny <workId>')
+    .description('deny what held Work awaits; the Work fails. A human at a terminal only')
+    .requiredOption('--reason <text>', 'why')
+    .action(decide('denied'))
   program.command('workers')
     .description('registered Workers, and each configured agent account with why it is or is not available')
     .action(() => {

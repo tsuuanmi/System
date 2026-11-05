@@ -14,6 +14,11 @@ GitHub credentials. Run with `corepack pnpm smoke`.
   takeover, `retry` refusals.
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts.
+- [publish.test.ts](publish.test.ts) — M5 gate: the whole Software
+  Engineering file publishes one draft pull request to a bare remote and the
+  fake GitHub in [fake-github.mjs](fake-github.mjs); a host killed after the
+  pull request was created or during the push is reconciled without a
+  duplicate; approval needs a human at a pseudo-terminal (`script`).
 - [verify.test.ts](verify.test.ts) — M4 gate: both Workflow files through one
   controller with fake-CLI Workers and the real verifiers (git checks, citation
   fetches from a local site run in its own process).

@@ -1,0 +1,192 @@
+/**
+ * M5 gate on the real profile: the Software Engineering Workflow publishes the
+ * exact checked commit as one draft pull request, and a host killed on either
+ * side of the remote effect is reconciled without a duplicate. Remote: a real
+ * bare git repository (file://) and a fake GitHub API in its own process.
+ * Workers run on the fake CLI. Approval needs a human at a real terminal.
+ */
+import assert from 'node:assert/strict'
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { after, before, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const fake = join(repo, 'packages', 'agents', 'tests', 'fake-agent.mjs')
+const home = mkdtempSync(join(tmpdir(), 'system-publish-'))
+const control = join(home, 'system', 'control')
+const env = { ...process.env, DSH_HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human' }
+const SE = join(repo, 'workflows', 'software-engineering.yaml')
+const servers: ChildProcess[] = []
+
+function system(args: string[], extra: Record<string, string> = {}) {
+  const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), ...args], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 180_000 })
+  return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr }
+}
+
+async function github(...args: string[]): Promise<{ url: string; state: () => Promise<{ pulls: { number: number; head: string; draft: boolean }[]; calls: string[] }> }> {
+  const server = spawn(process.execPath, [join(repo, 'tests', 'fake-github.mjs'), ...args], { stdio: ['ignore', 'pipe', 'inherit'] })
+  servers.push(server)
+  const port = await new Promise<string>((r) => server.stdout!.once('data', (d) => r(String(d).trim())))
+  const url = `http://127.0.0.1:${port}`
+  return { url, state: async () => (await fetch(`${url}/_state`)).json() as never }
+}
+
+function profile(apiUrl: string) {
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  config:
+    accounts:
+      - ref: claude-code/default
+        runtime: claude-code
+        capabilities: [code-write]
+        command: ${fake}
+        tokenRef: CLAUDE_CODE_OAUTH_TOKEN
+- id: effects
+  config:
+    remote: origin
+    base: main
+    apiUrl: ${apiUrl}
+    repository: tester/scratch
+    tokenRef: GITHUB_TOKEN
+`)
+}
+
+/** A repository with required checks, its bare `origin`, and a task on it. */
+function project() {
+  const bare = mkdtempSync(join(home, 'remote-'))
+  execFileSync('git', ['init', '--bare', '--quiet', bare])
+  const work = mkdtempSync(join(home, 'repo-'))
+  const git = (...args: string[]) => execFileSync('git', ['-C', work, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }, encoding: 'utf8' }).trim()
+  git('init', '--quiet', '-b', 'main')
+  mkdirSync(join(work, '.system'))
+  writeFileSync(join(work, '.system', 'checks.yaml'), 'checks:\n  - name: note-exists\n    run: test -f NOTE.md\n')
+  git('add', '.')
+  git('commit', '--quiet', '-m', 'base')
+  git('remote', 'add', 'origin', `file://${bare}`)
+  git('push', '--quiet', 'origin', 'main')
+  const task = system(['task', 'new', '--text', 'FAKE:edit', '--repo', work]).stdout.trim().split('\n').at(-1)!
+  return { bare, work, task, branchOf: (workId: string) => execFileSync('git', ['-C', bare, 'rev-parse', `refs/heads/system/${workId.replace('work:', '')}`], { encoding: 'utf8' }).trim() }
+}
+
+type Event = { type: string; state?: string; reason?: string; detail?: Record<string, string>; subject?: string }
+const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as { events: Event[]; state: { status: string; reason?: string; steps: Record<string, { outputs: Record<string, string> }> } }
+const commitOf = (artifactId: string) => (JSON.parse(system(['artifact', 'show', artifactId]).stdout) as { envelope: { content: { commit: string } } }).envelope.content.commit
+
+before(() => {
+  assert.equal(system(['init']).status, 0)
+  for (const [name, value] of [['CLAUDE_CODE_OAUTH_TOKEN', 'fake'], ['GITHUB_TOKEN', 'ghs_test']]) {
+    assert.equal(spawnSync(process.execPath, [join(repo, 'bin', 'system'), 'credentials', 'set', name!], { env, input: `${value}\n` }).status, 0)
+  }
+})
+
+after(() => {
+  for (const s of servers) s.kill()
+  rmSync(home, { recursive: true, force: true })
+})
+
+test('the exact checked commit is pushed to system/<work> and one draft pull request opened; running again changes nothing', async () => {
+  const gh = await github()
+  profile(gh.url)
+  const p = project()
+  const ran = system(['work', 'submit', '--workflow', SE, '--input', p.task])
+  assert.equal(ran.status, 0, ran.stderr)
+  const workId = ran.stdout.trim()
+  const record = show(workId)
+  const verified = record.events.find((e) => e.type === 'verified')!
+  const published = record.events.find((e) => e.type === 'effect-observed')!
+  assert.equal(published.state, 'applied')
+  assert.equal(p.branchOf(workId), commitOf(verified.subject!))
+  assert.deepEqual((await gh.state()).pulls.map((pr) => [pr.head, pr.draft]), [[`system/${workId.replace('work:', '')}`, true]])
+  assert.equal(published.detail!.pullRequest, '1')
+  const events = record.events.length
+  assert.equal(system(['work', 'run', workId]).status, 0)
+  assert.equal(show(workId).events.length, events)
+  assert.equal((await gh.state()).pulls.length, 1)
+  assert.ok((await gh.state()).calls.every((c) => !/merge/i.test(c)))
+})
+
+test('a host killed after the pull request was created but before it heard back is reconciled: no second pull request', async () => {
+  const gh = await github('--kill-host-on-create', control)
+  profile(gh.url)
+  const p = project()
+  const crashed = system(['work', 'submit', '--workflow', SE, '--input', p.task])
+  assert.notEqual(crashed.status, 0)
+  const workId = crashed.stdout.trim()
+  assert.deepEqual(show(workId).events.at(-1)?.type, 'effect-intended')
+  const resumed = system(['work', 'run', workId])
+  assert.equal(resumed.status, 0, resumed.stderr)
+  const observed = show(workId).events.filter((e) => e.type === 'effect-observed')
+  assert.deepEqual(observed.map((e) => e.state), ['applied'])
+  assert.match(observed[0]!.reason!, /pull request #1 is open/)
+  assert.equal((await gh.state()).pulls.length, 1)
+})
+
+test('a host killed during the push, before the remote took it, is reconciled as absent and published once', async () => {
+  const gh = await github()
+  profile(gh.url)
+  const p = project()
+  const marker = join(home, `killed-${Date.now()}`)
+  const hook = join(p.bare, 'hooks', 'pre-receive')
+  writeFileSync(hook, `#!/bin/sh\nif [ ! -f ${marker} ]; then touch ${marker}; for f in ${control}/*.lock; do kill -9 "$(cat "$f")"; done; exit 1; fi\nexit 0\n`)
+  chmodSync(hook, 0o755)
+  const crashed = system(['work', 'submit', '--workflow', SE, '--input', p.task])
+  assert.notEqual(crashed.status, 0)
+  const workId = crashed.stdout.trim()
+  assert.equal(show(workId).events.at(-1)?.type, 'effect-intended')
+  assert.equal((await gh.state()).pulls.length, 0)
+  const resumed = system(['work', 'run', workId])
+  assert.equal(resumed.status, 0, resumed.stderr)
+  assert.deepEqual(show(workId).events.filter((e) => e.type === 'effect-observed').map((e) => e.state), ['absent', 'applied'])
+  assert.equal((await gh.state()).pulls.length, 1)
+  assert.equal(p.branchOf(workId), commitOf(show(workId).state.steps.implement!.outputs.change!))
+})
+
+const hasScript = spawnSync('script', ['--version']).status === 0
+
+/** Run `system` on a real pseudo-terminal, typing `input`. */
+function onTerminal(args: string[], input: string) {
+  const command = [process.execPath, join(repo, 'bin', 'system'), ...args].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ')
+  return spawnSync('script', ['-qec', command, '/dev/null'], { env: { ...env, SYSTEM_CALLER: '' }, input, encoding: 'utf8', timeout: 180_000 })
+}
+
+test('marking the pull request ready waits for a human at a terminal; an agent or a pipe cannot approve', { skip: !hasScript && 'needs script(1) for a pseudo-terminal' }, async () => {
+  const gh = await github()
+  profile(gh.url)
+  const p = project()
+  const ready = join(home, 'ready.yaml')
+  writeFileSync(ready, readFileSync(SE, 'utf8').replace('      requires: [checks]\n  - id: accept', '      requires: [checks]\n      params:\n        ready: true\n  - id: accept'))
+  const held = system(['work', 'submit', '--workflow', ready, '--input', p.task])
+  assert.equal(held.status, 3, held.stderr)
+  const workId = held.stdout.trim()
+  assert.match(show(workId).state.reason!, /publish awaits operator approval: marking the pull request ready for review/)
+  assert.equal((await gh.state()).pulls.length, 0)
+
+  const piped = system(['approve', workId, '--reason', 'ok'])
+  assert.equal(piped.status, 1)
+  assert.match(piped.stderr, /needs a human at a terminal/)
+  const wrong = onTerminal(['approve', workId, '--reason', 'ok'], 'not-the-id\n')
+  assert.notEqual(wrong.status, 0)
+  assert.equal(show(workId).state.status, 'held')
+
+  const approved = onTerminal(['approve', workId, '--reason', 'reviewed'], `${workId.slice(5, 13)}\n`)
+  assert.equal(approved.status, 0, approved.stdout)
+  assert.equal(show(workId).state.status, 'succeeded')
+  assert.deepEqual((await gh.state()).pulls.map((pr) => pr.draft), [false])
+  const decided = show(workId).events.find((e) => e.type === 'decided') as Event & { caller: { type: string; operatorId: string } }
+  assert.deepEqual([decided.caller.type, decided.caller.operatorId], ['human', 'tester'])
+})
+
+test('a human can deny instead; the Work fails and nothing is published', { skip: !hasScript && 'needs script(1) for a pseudo-terminal' }, async () => {
+  const gh = await github()
+  profile(gh.url)
+  const p = project()
+  const ready = join(home, 'ready-deny.yaml')
+  writeFileSync(ready, readFileSync(SE, 'utf8').replace('      requires: [checks]\n  - id: accept', '      requires: [checks]\n      params:\n        ready: true\n  - id: accept'))
+  const workId = system(['work', 'submit', '--workflow', ready, '--input', p.task]).stdout.trim()
+  const denied = onTerminal(['deny', workId, '--reason', 'not now'], `${workId.slice(5, 13)}\n`)
+  assert.equal(denied.status, 1, denied.stdout)
+  assert.match(show(workId).state.reason!, /publish denied by tester: not now/)
+  assert.equal((await gh.state()).pulls.length, 0)
+})
