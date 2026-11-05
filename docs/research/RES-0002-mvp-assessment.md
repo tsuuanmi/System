@@ -3,80 +3,92 @@ id: RES-0002
 type: research
 status: active
 summary: Evaluate candidate MVP capabilities against reliability, autonomy, metering and workflow-agnostic evidence without selecting System's architecture.
-related: [RES-0001]
+related: [RES-0001, RES-0003, ADR-0001]
 ---
 
 # MVP selection assessment
 
-**Status: audit hypotheses, not product scope.** Evaluate the fresh System MVP
-using [the recorded reference evidence](RES-0001-audit-baseline.md).
-Architecture remains draft; the product proposal is [[PROP-0001]].
+**Status: audit hypotheses, not implementation results.**
+The product mission, **control-plane role**, DSH/Cordis host choice and two
+workflow-agnostic cases are now decided. The [Product Charter](../requirements/purpose.md)
+and [MVP contract](../requirements/mvp.md) are authoritative; this page
+evaluates the smallest implementation needed to meet them. The
+[reference audit](RES-0001-audit-baseline.md) is historical external evidence.
 
 ## Selection rule
 
-A capability enters MVP only if it is needed to demonstrate an agreed outcome,
-a safety boundary, recovery, or the ability to perform both a code and non-code
-workflow. Choose the **smallest executable slice** with measurable acceptance
-criteria. If a capability only improves convenience, defer it. Delete only
-after dependency, data-retention, and behavior tests establish safe removal.
+A capability enters MVP only if it supports the agreed requirements, a safety
+boundary, crash recovery or both code and research end-to-end proofs. Choose
+the **smallest active DSH plugin composition** with measurable acceptance
+criteria. Keep optional code available, but disabled by configuration unless
+there is evidence that it is needed. Deletion is a separate, explicit
+retirement decision, not how optionality is achieved.
 
 ## Preliminary capability disposition
 
 | Capability / concern | Hypothesis | Proof required |
 |---|---|---|
-| Durable task/artifact identity and persistence | **Keep** | crash/restart state test and readable handoff |
-| One Worker interface plus one real adapter | **Keep** | capability admission, cancel, timeout, repeatable execution |
-| Idempotency / effect journal / reconciliation | **Keep** | kill at effect boundaries; no duplicate external actions |
-| Minimal policy, tool approvals, data-egress gate | **Keep** | denied action cannot escape via another path |
-| Usage accounting and a baseline metrics view | **Keep** | provider oracle, delta accounting across resumed sessions |
-| Independent review plus exact-result required checks | **Test for MVP** | measurable quality gain for cost; minimal subject binding |
-| One non-code workflow using the same engine | **Keep as acceptance test** | completes without changing controller implementation |
-| Git/PR landing workflow and batch operator approval | **Evaluate** | if release target is code delivery, test the merge boundary |
-| DSH/Cordis host and each plugin | **Benchmark / inspect** | dependency closure, cold start, CPU/RAM, correctness and maintenance cost |
-| Website browser Workers | **Defer by default** | demonstrated indispensable MVP use case and reliability |
-| Model-provider gateways, expanded UI/reporting | **Defer by default** | users cannot achieve basic workflow via simpler interface |
-| Auto-start per project | **Evaluate behind explicit policy** | material reduction in operator touches without safety regression |
-| Scientific research profiles, experiment registry and feedback platform | **Defer platform breadth** | keep only a tiny non-code end-to-end test first |
+| Durable task/artifact identity and persistence | **Required semantics; reuse DSH service if sufficient** | crash/restart state test and readable handoff |
+| Worker adapter and capability admission | **Required** | cancel, timeout, replacement and untrusted output handling |
+| Effect journal, idempotency and reconciliation | **Required** | kill at effect boundaries; no blind duplicate action |
+| Policy, approvals and egress boundary | **Required; evaluate DSH plugins for reuse** | denied action cannot escape via another path |
+| Usage accounting and minimal metrics | **Required** | provider oracle and resumed-session delta |
+| Exact-result verification | **Required** | both code tree and research report bound to a specific artifact |
+| Software Engineering end-to-end | **Required** | test/review/approved outcome with same controller |
+| Research end-to-end | **Required** | citations/evidence report with no controller code modification |
+| Small DSH/Cordis host composition | **Selected foundation; optimize config** | effective plugin tree, deps, cold start, CPU/RAM and safety |
+| Community plugin integration | **Available but gated** | pinned compatibility, permission and provenance checks |
+| Optional Website/browser Workers | **Disabled unless needed** | explicit evidence of required use case and reliability |
+| Model gateways, expanded UI/reporting | **Disabled unless needed** | cannot complete both fixtures via simpler entry point |
+| Auto-start | **Evaluate behind policy** | reduces operator touches without safety regression |
+| Feedback platform, large workflow DSL | **Disabled/deferred** | demonstrated product necessity |
 
-*Keep* means an audit priority, **not** a commitment to import existing code.
+"Disabled" is a **configuration and composition state**, not a request to
+remove source, uninstall packages or discard community integration.
 
 ## Audit workstreams and outputs
 
-1. **Inventory:** enumerate plugins/packages and their configured-on status.
-   Output: verified package graph, owners and execution entry points.
-2. **Reachability:** map a minimal local client → task → Worker → artifact →
-   verification → decision path. Output: indispensable dependency closure.
-3. **Effect integrity:** trace persistence, lease fencing, retries, cancellation,
-   approvals and egress. Output: crash and abuse-case test matrix.
-4. **Metering and latency:** inspect usage sources, resumed sessions,
-   approvals, worker startup and time allocation. Output: reproducible baseline.
-5. **Removal experiment:** switch off candidate capabilities in a disposable
-   test profile. Output: what breaks, what tests prove no regression.
-6. **Decision:** compare a minimal DSH/Cordis composition with alternatives on
-   identical acceptance tests. Output: an operator-reviewed proposal and ADRs,
-   not an implicit architectural choice.
+1. **DSH inventory:** pin its release, inspect services, bundles, profile
+   overrides and which plugin rows mount in the effective configuration.
+2. **Minimal capability closure:** map client -> Work -> Worker -> Artifact ->
+   verification -> decision; create a profile with no unrelated active rows.
+3. **Effect integrity:** test persistence, retry, approvals, egress and plugin
+   lifecycle during crash/cancellation/unload.
+4. **Metering:** test cumulative resumed-session usage against an oracle and
+   distinguish missing data from zero usage.
+5. **Composition experiments:** disable/re-enable plugins, verify config-layer
+   precedence and fail-closed behavior on missing required services.
+6. **Cross-domain proof:** run Software Engineering and Research via the
+   same work core and swap adapters under a compatible contract.
+7. **Decision:** retain only proven System-specific mechanisms and record
+   which DSH services implement the rest.
 
-## Proposed MVP proof matrix
+## MVP proof matrix
 
 | Test | Expected proof |
 |---|---|
-| T1 Start/finish | one task runs through client, policy, Worker and result |
-| T2 Crash/restart | killed process resumes or reconciles without duplicated effects |
-| T3 Trust boundaries | denied tool, secret or forbidden egress is blocked |
-| T4 Accounting | usage delta is correct when a Worker session is resumed |
-| T5 Outcome quality | independent check acts on exact immutable result |
-| T6 Workflow portability | at least one non-code task runs through same controller without code changes |
-| T7 Operator autonomy | accepted tasks and approval requests are instrumented |
-| T8 Runtime cost | measure cold start, steady RAM/CPU, latency and maintenance surface |
+| T1 Two workflows | Software Engineering and Research use identical Work Core |
+| T2 Crash/restart | killed process resumes or reconciles with no blind duplicate effect |
+| T3 Trust boundaries | denied tool, credential abuse and forbidden egress blocked |
+| T4 Accounting | session resumes without double-counted usage |
+| T5 Verification | exact artifact identity and workflow-specific evidence |
+| T6 Replaceability | a compatible Worker can take over work without engine modification |
+| T7 Plugin configuration | optional plugin disabled without deletion; effective state verified |
+| T8 Plugin unload | in-flight work drains, holds or safely reconciles |
+| T9 Runtime overhead | cold start, memory, service count and latency measured |
+| T10 Operator autonomy | accepted tasks and approval requests instrumented |
 
-These are **test proposals**, not passing results or established thresholds.
+These are **test plans**, not passing results. Historical reference
+targets R1–R5 are candidate benchmarks, not pre-adopted System release gates.
 
 ## Audit acceptance
 
-Deliver a scored keep / replace / drop / defer table with evidence links,
-dependency closure, test coverage, measured cost, and unresolved risk. Compare
-the minimal tested architecture against [[PROP-0001]] and ask for acceptance
-before freezing System's MVP requirements.
+Deliver a scored **reuse / thin wrapper / implement / disable** table with
+upstream source and version, active dependency closure, observed behavior,
+tests, measured overhead and risks. Review against
+[ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md) and the
+[MVP contract](../requirements/mvp.md), then accept the remaining
+implementation designs explicitly.
 
-No additional board, roadmap, PLAN.md or STATUS.md is maintained in the source
-tree to duplicate decisions.
+Avoid tracked PLAN.md/TODO.md/STATUS.md copies that duplicate canonical
+decisions, project tasks or verified validation records.

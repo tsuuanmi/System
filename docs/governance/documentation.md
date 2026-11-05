@@ -1,7 +1,7 @@
 ---
 level: 1
-areas: [governance=governance, architecture=architecture, research=research, proposals=proposal]
-id-prefixes: [proposal=PROP, research=RES]
+areas: [governance=governance, requirements=requirement, architecture=architecture, decisions=decision, research=research, proposals=proposal]
+id-prefixes: [proposal=PROP, research=RES, decision=ADR]
 source-roots: []
 forbidden-names: [archive, archives, deprecated, history, legacy, old, temp, temporary]
 ledger: governance/retired.md
@@ -21,23 +21,26 @@ assumptions into another project. For reuse, see [bootstrap](bootstrap.md).
 ## Active areas and authority
 
 - [Governance](README.md) — documentation standard, tooling and lifecycle.
-- [Architecture](../architecture/README.md) — early **draft** logical boundaries,
-  not a deployed implementation or a frozen runtime choice.
-- [Research](../research/README.md) — audit sources, constraints, evidence and
-  alternatives, without production authority.
-- [Proposals](../proposals/README.md) — pending product direction and scope.
+- [Requirements](../requirements/README.md) — accepted product purpose,
+  philosophy and MVP behavior; no shipped implementation is implied.
+- [Architecture](../architecture/README.md) — accepted control-plane/DSH
+  direction and separate draft interface mechanics.
+- [Decisions](../decisions/README.md) — durable architectural rationale.
+- [Research](../research/README.md) — external evidence, risks and proposed
+  experiments; non-normative.
+- [Proposals](../proposals/README.md) — implementation and design questions
+  still awaiting acceptance.
 
-Other standard areas will be added as actual decisions, requirements, code
-contracts, validations or procedures exist. The absence of a folder is not a
-claim that the responsibility is unimportant.
+Other standard areas will be added when source, specific design, validation,
+engineering or operations knowledge actually exists.
 
 ## Local identity and graph policy
 
-Typed IDs: `PROP-NNNN` for proposals and `RES-NNNN` for research.
-Never reuse IDs. The local `source-roots` list stays empty until System
-contains source packages. When introduced, add their README ownership and
-relevant `covers` edges. Use wikilinks for typed document references and
-normal Markdown links in routers and for source files.
+Typed IDs: `PROP-NNNN` for proposals, `RES-NNNN` for research and
+`ADR-NNNN` for decisions. Never reuse IDs. The local `source-roots` list
+stays empty until System contains source packages. When introduced, add
+their ownership READMEs and relevant `covers` edges. Use wikilinks for typed
+document references and normal Markdown links in routers and for source files.
 
 ## Available commands
 
@@ -50,16 +53,15 @@ From the root, using Python 3.11+ and no third-party packages:
 | `python3 tools/docs.py sync --check` | Verify indexes have no drift |
 | `python3 tools/docs.py trace <path-or-ID>` | Trace declared document edges and inverses |
 | `python3 tools/docs.py impact <base-ref>` | Check changed, covered paths and explicit PR waivers |
-| `python3 tools/bootstrap_docs.py --out <target> --name <name>` | Create a new project's documentation skeleton without overwriting files |
+| `python3 tools/bootstrap_docs.py --out <target> --name <name>` | Create a different project's governance skeleton without overwriting files |
 
 CI runs check, sync --check and impact (PR only), plus a bootstrap smoke test.
 A waiver is a PR-body line like
-`docs-unchanged: docs/architecture/boundaries.md — formatting-only change`.
+`docs-unchanged: docs/architecture/control-plane.md — formatting-only change`.
 
-**Conformance disclosure:** this is a **Level 1** bootstrap checker with some
-additional graph features; it does **not** implement every Level 2/3 rule,
-complete impact closure, or automated retirement. Do not raise the profile
-level until implementation and CI prove the additional contract.
+**Conformance disclosure:** this is a **Level 1** bootstrap checker with
+additional limited graph support; not every Level 2/3 check, complete impact
+closure, or automated retirement is implemented.
 
 ## Change and retirement
 
