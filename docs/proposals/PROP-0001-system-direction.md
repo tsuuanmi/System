@@ -4,8 +4,8 @@ type: proposal
 status: draft
 created: 2026-11-05
 summary: Establish System's goals, architectural questions, and first validation slice without assuming an implementation.
-evidence: [RES-0001, RES-0002, RES-0003]
-related: [ADR-0001]
+evidence: [RES-0001, RES-0002, RES-0003, RES-0004]
+related: [ADR-0001, ADR-0002, ADR-0003]
 ---
 
 # Proposal: first implementation slice
@@ -16,7 +16,10 @@ The [Product Charter](../requirements/purpose.md) defines System's accepted
 mission and philosophy. [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md)
 records the selected **System control-plane / DSH-Cordis host** architecture,
 configurable plugin reuse and a common core for **Software Engineering** and
-**Research**. [MVP requirements](../requirements/mvp.md) own mandatory behavior.
+**Research**. [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md)
+and [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
+add Work as primitive, external Workflow config, Artifact-ID handoff and
+configurable verifier capabilities. [MVP requirements](../requirements/mvp.md) own mandatory behavior.
 These are decisions, **not** shipped implementation claims.
 
 This proposal is **draft** only for implementation mechanisms, sequence and
@@ -38,8 +41,10 @@ records official DSH capabilities, lifecycle hazards and experiments.
   configuration, not just intended flags.
 - Existing DSH persistence/approval/policy services versus a small
   System-owned work ledger where semantic gaps are proven.
-- Worker adapter contract, artifact identity and effect reconciliation
-  state transitions.
+- The exact external Workflow YAML schema/loader, symbolic reference
+  resolution and canonical hashing of the admitted spec.
+- Worker adapter contract, typed Artifact-ID hashing/provenance schema,
+  versioned verifier API and effect reconciliation state transitions.
 - Thin client entry point (CLI, MCP or both) for end-to-end tests.
 - Verification policies for exact code tree and cited research report.
 - Safe plugin disable/re-enable with inflight work and version changes.
@@ -56,8 +61,8 @@ accepted by implication.
    mechanisms when the required semantics are satisfied.
 3. Add policy/effect gate, crash injection, exact-result verification and
    usage provenance as acceptance gates, not later accessories.
-4. Complete one Software Engineering case and one Research case with the
-   **same controller code**, varying Worker and verification policies only.
+4. Load independent Software Engineering and Research config files with
+   the **same controller code**; change only Worker and verifier capabilities.
 5. Kill/restart, disable/re-enable optional plugins and swap one Worker
    adapter in test fixtures. Record observed limits and runtime costs.
 6. Promote tested schemas/decisions into architecture/reference/validation

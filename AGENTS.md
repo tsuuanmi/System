@@ -9,7 +9,9 @@ The source tree is currently a documentation and MVP-specification baseline.
    [MVP contract](docs/requirements/mvp.md).
 2. Read the [documentation router](docs/README.md), the
    [local governance profile](docs/governance/documentation.md) and
-   [ADR-0001](docs/decisions/ADR-0001-control-plane-on-dsh.md).
+   [ADR-0001](docs/decisions/ADR-0001-control-plane-on-dsh.md),
+   [ADR-0002](docs/decisions/ADR-0002-work-primitive-configured-workflows.md),
+   and [ADR-0003](docs/decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
 3. Read relevant [control-plane architecture](docs/architecture/control-plane.md),
    draft boundaries, research and proposals. Research is evidence, not a
    production promise.
@@ -19,8 +21,16 @@ The source tree is currently a documentation and MVP-specification baseline.
 
 ## Product invariants
 
-- **Work-first:** canonical work identity, handoff artifacts and decisions
-  are not owned by a single Worker conversation/session.
+- **Work-first:** Task is the primitive; a Workflow is an optional external
+  **config file**. Step order/dependencies, Worker capabilities and verifier
+  selection live in config, not domain-specific engine code.
+- **Artifact-first:** inter-Worker handoff uses immutable **Artifact IDs**,
+  not copied conversation transcripts or mutable workspace paths. Controller
+  replay is deterministic from pinned specs and recorded observations, not
+  repeated LLM inference.
+- **Verification as capability:** bind each configured verification verdict
+  to an exact Artifact ID, criteria and version; do not force a universal
+  code-review or model-review pipeline onto unrelated workflows.
 - **Control plane on DSH:** reuse DSH/Cordis for hosting, plugin composition
   and available Worker execution. Do not build a parallel plugin manager or
   general-purpose model loop.
