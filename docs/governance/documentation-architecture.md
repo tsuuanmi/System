@@ -145,9 +145,9 @@ Derived indexes, status tables, decision-family maps, coverage and inverse
 edges MUST be produced, never maintained manually. Generator blocks use the
 exact opening and closing markers shown below (illustrative):
 
-    <!-- docs:begin index:proposal -->
-    ... generated output ...
-    <!-- docs:end index:proposal -->
+The opening marker is `<!-- docs:begin index:proposal -->` and the closing
+marker is `<!-- docs:end index:proposal -->`. The generator owns the lines
+between them.
 
 A portable implementation SHOULD provide sync, sync --check, check, trace,
 impact, candidates and retire. See section 8 for the minimum contract.
