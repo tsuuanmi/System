@@ -124,6 +124,12 @@ A community plugin may execute code inside the DSH host process. Therefore:
 - Disable and update operations are treated as lifecycle events with possible
   effects on in-flight work and persisted outcomes.
 
+**MVP-0 limitation:** Workers run as the operator in per-attempt worktrees
+with a throwaway `HOME` and no push credentials, but without a sandbox or
+egress control; this is configuration, not isolation. Containers and an
+allowlisting proxy are MVP-1
+([ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md)).
+
 ## Domain independence
 
 Both domains use the **same core semantics**: work identity, attempt/result,
@@ -144,7 +150,8 @@ different tools and result formats. This is a release-blocking MVP proof.
 
 ## Unfixed implementation details
 
-The exact DSH bundle/profile, storage backend, restart protocol, schema and
-Worker adapter API remain open. Boundary hypotheses and crash scenarios are
+MVP-0 storage, Worker adapter approach and effect executor are chosen in
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The exact DSH
+bundle/profile, restart protocol, schema and Worker adapter API remain open. Boundary hypotheses and crash scenarios are
 tracked in [draft boundary design](boundaries.md); alternative evidence and
 test plan live in [RES-0003](../research/RES-0003-dsh-control-plane-evaluation.md).

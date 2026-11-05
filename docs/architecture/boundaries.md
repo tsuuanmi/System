@@ -53,12 +53,16 @@ smallest two-workflow spike validates the transitions.
 - Retry a resumed session whose usage report is cumulative, not incremental.
 - Change the artifact after checks to prove stale verification is rejected.
 
+## Answered for MVP-0
+
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md) answers two
+earlier questions: System owns the work semantics and stores them in the DSH
+storage hub (one key per Work, one atomic update per transition), and Workers
+use a System-owned adapter built on DSH's subprocess and credential layers
+because the stock subagent adapters drop usage and workspace changes.
+
 ## Unanswered design questions
 
-- Do DSH-persisted primitives fully satisfy System work semantics, or is a
-  thin System-owned durable work ledger needed?
-- What exact DSH services can safely implement each boundary, and which need
-  a System adapter?
 - Can a plugin update be staged and drained without bypassing Cordis lifecycle?
 - Which provider metering oracle and result verification can be reproduced in
   a local CI fixture?

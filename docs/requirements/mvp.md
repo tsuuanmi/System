@@ -35,7 +35,9 @@ Do not claim exactly-once external effects without proof.
 
 **MVP-04 Policy and authority:** Worker calls cannot grant their own wider
 authority; entry and effect boundaries enforce declared permissions, data
-egress limits and explicit operator approvals.
+egress limits and explicit operator approvals. *MVP-0:* Workers hold no push
+credentials, only System's effect executor performs effects, and approval is
+human-only at the CLI; egress limits are deferred to MVP-1.
 
 **MVP-05 Verification:** each configured verifier is a typed capability
 contract. It checks an **exact Artifact ID** against pinned criteria and
@@ -45,7 +47,8 @@ verification; no generic review stage is forced on every workflow.
 **MVP-06 Observable accounting:** record events and provider usage with
 provenance sufficient to identify resumed-session double counting and explain
 operator interventions. Compare accounting with a reliable oracle when one
-is available; otherwise mark it unverified.
+is available; otherwise mark it unverified. *MVP-0:* record usage with
+provenance only; the oracle comparison is MVP-1.
 
 **MVP-07 Composable execution:** runtime and optional features are assembled
 through a **small DSH/Cordis profile/bundle**, with explicit dependencies and
@@ -115,11 +118,39 @@ A re-executed model may produce different content and a distinct Artifact ID.
    confirm there is no domain-specific engine branch.
 8. Record timing, restart survival, operator touches and usage provenance.
 
+## MVP-0 and MVP-1
+
+The first build is **MVP-0**: the smallest slice that proves work persists,
+Workers change, humans govern, and two domains share one controller.
+Operating choices are in
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md).
+
+| Requirement or test | MVP-0 | MVP-1 |
+|---|---|---|
+| MVP-01, 10 Work and Artifact IDs survive restart | yes | — |
+| MVP-02 Worker takeover (Claude Code to Codex) | yes | — |
+| MVP-03 push/PR effects with intent and outcome | yes, crash after effect before record | all three crash points |
+| MVP-04 authority | no Worker credentials, human-only approve | sandbox and egress allowlist |
+| MVP-05, 11 exact-subject verifiers | yes | — |
+| MVP-06 usage | recorded only | oracle comparison |
+| MVP-07 small DSH profile | yes | plugin disable/reload with in-flight work (tests 3, 4) |
+| MVP-08, 09 two YAML workflows pinned at admission | yes, minimal schema | wider schema |
+| Failure test 5 (deny privileged effect and egress) | effect denial only | egress denial |
+| Failure test 8 (timing, overhead) | operator touches and usage | cold start, memory, service count |
+| Research evidence | verifier re-fetches cited URLs | System `fetch` tool, cited by Artifact ID |
+| Entry point | CLI | MCP |
+
+Failure tests 1, 2, 6 and 7 are MVP-0. MVP-1 keeps every requirement above;
+MVP-0 does not weaken them, it orders them.
+
 ## Out of MVP unless evidence shows necessity
 
 Multi-user tenancy, hosted service, an extensive UI/board, custom model loop,
 general workflow DSL, fleet scheduler, marketplace frontend, agent voting,
 complex feedback/learning pipelines and automatic browser automation.
+A **Website Worker** (browser-driven web chat UI for brainstorming and
+research) is planned after MVP-1 as another Worker adapter; see
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md).
 
 DSH's plugin ecosystem **remains available**. Not being required for the MVP
 means a plugin is absent from the *active profile* (or disabled in config), not
@@ -136,9 +167,10 @@ closure and plugin toggle/reload safety.
 
 ## Open implementation choices
 
-The concrete DB, artifact hashing/envelope, Workflow config schema, Worker
-transport, DSH bundle layout, process boundaries, CLI/MCP exposure and verifier
-implementations require test-backed design.
+MVP-0 storage, Worker runtime, CLI and effect choices are fixed in
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The artifact
+hashing/envelope, exact Workflow config schema, DSH bundle layout and verifier
+implementations still require test-backed design.
 They may not weaken the requirements above.
 
 See [Workflow composition](../architecture/workflow-composition.md),

@@ -5,7 +5,7 @@ status: draft
 created: 2026-11-05
 summary: Establish System's goals, architectural questions, and first validation slice without assuming an implementation.
 evidence: [RES-0001, RES-0002, RES-0003, RES-0004]
-related: [ADR-0001, ADR-0002, ADR-0003]
+related: [ADR-0001, ADR-0002, ADR-0003, ADR-0004]
 ---
 
 # Proposal: first implementation slice
@@ -35,18 +35,22 @@ without rebuilding DSH's agent loop, plugin manager or ecosystem?
 capability closure. [RES-0003](../research/RES-0003-dsh-control-plane-evaluation.md)
 records official DSH capabilities, lifecycle hazards and experiments.
 
+## Decided for MVP-0
+
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md) fixes the
+operator model, CLI entry point, human-only approval, external agent Workers
+and adapter approach, Work storage in the DSH storage hub, System-owned
+push/PR effects, verification policies for both domains, the DSH pin and
+the MVP-0/MVP-1 split.
+
 ## Open engineering choices
 
 - Minimal DSH profile/bundle and required plugin closure; verify effective
   configuration, not just intended flags.
-- Existing DSH persistence/approval/policy services versus a small
-  System-owned work ledger where semantic gaps are proven.
 - The exact external Workflow YAML schema/loader, symbolic reference
   resolution and canonical hashing of the admitted spec.
-- Worker adapter contract, typed Artifact-ID hashing/provenance schema,
-  versioned verifier API and effect reconciliation state transitions.
-- Thin client entry point (CLI, MCP or both) for end-to-end tests.
-- Verification policies for exact code tree and cited research report.
+- Worker adapter contract details, typed Artifact-ID hashing/provenance
+  schema, versioned verifier API and effect reconciliation state transitions.
 - Safe plugin disable/re-enable with inflight work and version changes.
 - Metrics definitions and benchmark reproducibility.
 

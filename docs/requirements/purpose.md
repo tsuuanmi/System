@@ -98,8 +98,9 @@ System results or automatically adopted release thresholds.
 - Training or creating a foundation model, a new agent loop, or a replacement
   for the DSH plugin manager.
 - A proprietary replacement for every community plugin or model adapter.
-- Treating Website Workers, token arbitrage, complex multi-agent debate,
-  a full project board, or a rich dashboard as the reason System exists.
+- Treating token arbitrage, complex multi-agent debate, a full project
+  board, or a rich dashboard as the reason System exists. Website Workers
+  are a planned Worker type, not the product's purpose.
 - Creating a new runtime service for every logical boundary.
 - Claiming universality without an executed second domain.
 
