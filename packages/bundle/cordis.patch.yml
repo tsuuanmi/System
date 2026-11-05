@@ -1,0 +1,34 @@
+# The system profile lists ONLY this bundle: no dsh-base, no agent loop, no
+# model adapters (ADR-0001 point 3, ADR-0004). Every row is mounted because a
+# System contract needs it; packages/bundle/README.md names the reason for each.
+- insert:
+    # Storage hub, SQLite backend and the domain facility (ADR-0004 decision 9).
+    - id: storage
+      name: '@deepseek-ai/dsh-storage'
+
+    - id: storage-sqlite
+      name: '@deepseek-ai/dsh-storage-sqlite'
+      config:
+        path: !!js dshHomePath('system', 'state.sqlite')
+
+    - id: storage-domain
+      name: '@deepseek-ai/dsh-storage-domain'
+      config:
+        backend: sqlite
+
+    # Content-addressed blob store for Artifact bytes (ADR-0003, ADR-0004).
+    - id: attachment-local
+      name: '@deepseek-ai/dsh-attachment-local'
+
+    # Process spawning for Worker adapters and verifiers (ADR-0004 decisions 5, 12).
+    - id: subprocess
+      name: '@deepseek-ai/dsh-subprocess-local'
+
+    # Optional: credential references for model and GitHub keys. Nothing in M0
+    # reads it, so it may be disabled by a profile patch.
+    - id: credentials
+      name: '@deepseek-ai/dsh-credentials-local'
+
+    # The System CLI app: parses `system <command>` and exits.
+    - id: system-app
+      name: '@system/app'

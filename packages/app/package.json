@@ -1,0 +1,31 @@
+{
+  "name": "@system/app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The System CLI app row: `system doctor`, `system work`",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-cmdline": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
+    "commander": "15.0.0",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0"
+  }
+}

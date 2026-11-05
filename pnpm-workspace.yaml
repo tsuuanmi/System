@@ -1,0 +1,12 @@
+packages:
+  - "packages/*"
+# No dependency install scripts run (supply-chain review, ADR-0001). The DSH
+# subprocess postinstall only restores node-pty's helper bit; System uses no PTY.
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': false
+  '@google/genai': false
+  koffi: false
+  node-pty: false
+  protobufjs: false
+  # The pinned pnpm that `dsh plugin` runs works without its install script.
+  pnpm: false

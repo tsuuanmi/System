@@ -170,6 +170,24 @@ class Graph:
                 linked.add(resolved.rel)
         return linked
 
+    @staticmethod
+    def source_directories(source: Path) -> list[Path]:
+        """Directories under a source root that hold files git does not ignore."""
+        try:
+            listed = subprocess.run(
+                ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", str(source)],
+                cwd=ROOT, check=True, capture_output=True, text=True,
+            ).stdout.splitlines()
+        except (OSError, subprocess.CalledProcessError):
+            return [source, *(p for p in source.rglob("*") if p.is_dir())]
+        directories = {source}
+        for file in listed:
+            parent = (ROOT / file).parent
+            while parent != source and source in parent.parents:
+                directories.add(parent)
+                parent = parent.parent
+        return sorted(directories)
+
     def check_structure(self) -> None:
         for name in ("README.md", "AGENTS.md", "docs/README.md"):
             if not (ROOT / name).is_file():
@@ -194,7 +212,7 @@ class Graph:
                 self.errors.append(f"DOC-STR-002 unmatched source-root: {root}")
             for source in roots:
                 if source.is_dir():
-                    for directory in [source, *(p for p in source.rglob("*") if p.is_dir())]:
+                    for directory in self.source_directories(source):
                         if not (directory / "README.md").exists():
                             self.errors.append(
                                 f"DOC-STR-002 missing {directory.relative_to(ROOT)}/README.md"

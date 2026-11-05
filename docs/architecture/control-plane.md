@@ -2,6 +2,7 @@
 type: architecture
 status: active
 reviewed: 2026-11-05
+covers: [packages/bundle/cordis.patch.yml]
 ---
 
 # System control-plane architecture
@@ -87,7 +88,9 @@ An MVP profile mounts only what is required to run the two
 the System work services and the DSH hosting/execution capabilities needed
 to satisfy their contracts. Every additional plugin has an explicit reason and
 dependency. The complete list is determined by an actual profile dependency
-audit, **not** by copying a reference bundle.
+audit, **not** by copying a reference bundle. The current tree is
+[`@system/bundle`](../../packages/bundle/README.md): seven rows, no `dsh-base`,
+checked by `system doctor` and the offline smoke test.
 
 **Configuration-first plugin lifecycle:**
 
