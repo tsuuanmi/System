@@ -1,6 +1,6 @@
 # PLAN.md — System MVP-0 implementation handoff
 
-> **Status:** M0, M1 and M2 done (local and CI, PR #2); M3 next. This is an execution checklist for a local coding agent, **not** a new source of product requirements.
+> **Status:** M0 to M3 done (local and CI, PR #2); M4 next. Worker auth uses subscription tokens (ADR-0005). This is an execution checklist for a local coding agent, **not** a new source of product requirements.
 > **Updated:** 2026-11-05. Target: **MVP-0 only** on the current System branch.
 
 ## Goal and rules
@@ -80,13 +80,13 @@ Relevant pinned DSH APIs:
 
 ### M3: Worker registry + Claude Code / Codex
 
-- [ ] Define tiny Worker contract: capability descriptor, admit/reject reason, input Artifact IDs, per-attempt ID/cwd, cancel, output Artifact IDs, provider usage observation, terminal status.
-- [ ] Build capability-based registry and fake adapter first; record routing decisions and unavailable reasons. No hardcoded domain-specific branches.
-- [ ] Compare pinned DSH native \`subagent-*\` APIs with System needs. Use DSH subprocess/credentials and official Claude/Codex SDKs or **small, evidenced System-owned adapter** where DSH seam cannot expose required usage/worktree/result details.
-- [ ] Create **new git worktree per attempt** from frozen input Artifact (not one shared worktree per whole Workflow), throwaway HOME, minimal selected provider credential environment; the adapter captures output tree/changes as Artifact.
-- [ ] Extract only needed Git helpers from [System 1 worktrees.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/agent-workers/src/worktrees.ts); do not inherit its worktree-per-run ownership or landing system.
-- [ ] \`system work cancel\`: process-group SIGTERM, 30 s, SIGKILL, persist reason/caller, retain partial output as **unaccepted** Artifact and reconcile pending effects.
-- [ ] Record bounded agent output and usage provenance; unobserved usage = **unknown**, not zero. Verify Claude -> Codex takeover from Artifact ID without transcript handoff.
+- [x] Define tiny Worker contract: capability descriptor, admit/reject reason, input Artifact IDs, per-attempt ID/cwd, cancel, output Artifact IDs, provider usage observation, terminal status. *(\`WorkerRequest\`/\`WorkerResult\` in packages/work/src/registry.ts: abort signal, \`cancelled\`, unaccepted \`partial\`, log Artifact, executor account/path/version.)*
+- [x] Build capability-based registry and fake adapter first; record routing decisions and unavailable reasons. No hardcoded domain-specific branches.
+- [x] Compare pinned DSH native \`subagent-*\` APIs with System needs. Use DSH subprocess/credentials and official Claude/Codex SDKs or **small, evidenced System-owned adapter** where DSH seam cannot expose required usage/worktree/result details. *(At the tag \`SubagentResult\` lacks usage and changes and needs a parent Agent, so \`@system/agents\` runs the CLIs through DSH \`subprocess\` (user-systemd scope ownership) and DSH \`credentials\`.)*
+- [x] Create **new git worktree per attempt** from frozen input Artifact (not one shared worktree per whole Workflow), throwaway HOME, minimal selected provider credential environment; the adapter captures output tree/changes as Artifact.
+- [x] Extract only needed Git helpers from [System 1 worktrees.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/agent-workers/src/worktrees.ts); do not inherit its worktree-per-run ownership or landing system.
+- [x] \`system work cancel\`: process-group SIGTERM, 30 s, SIGKILL, persist reason/caller, retain partial output as **unaccepted** Artifact and reconcile pending effects.
+- [x] Record bounded agent output and usage provenance; unobserved usage = **unknown**, not zero. Verify Claude -> Codex takeover from Artifact ID without transcript handoff.
 
 **Gate M3:** fake tests + separately flagged real provider smoke tests show takeover, cancellation and output persistence. Credentials are optional for offline CI.
 
@@ -154,7 +154,7 @@ Relevant pinned DSH APIs:
 | M0 DSH bootstrap | done | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. GitHub Actions on PR #2: \`build\` pass (19 s), \`docs\` pass. |
 | M1 Artifacts | done | \`26d91c0\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 23/23 (18 new: canonical form, ID independence from producer/time, each content field changes the ID, distinct occurrences, input set order, refusals store nothing, classification floor, no relabel on dedup, immutable reads, crash between blob and record, unavailable bytes, concurrent equal puts, malformed IDs); smoke 10/10 (3 new: read by ID after a process restart, missing/malformed IDs, deleted bytes). Mutation check: putting the producer into the ID fails 2 tests; removing the per-ID lock fails 1. \`system doctor\` about 1.08 s, 91 MB RSS. GitHub Actions on PR #2 at \`b3c7ae6\`: \`build\` and \`docs\` pass. |
 | M2 Work + YAML | done | \`77cf8e2\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 49/49 (26 new), smoke 17/17 (7 new). Gate on the real profile with \`fakes\` enabled by patch: direct Task, Software Engineering and Research succeed through one controller; an invalid Workflow is refused with zero Worker calls and no Work; host SIGKILLed mid-attempt, file edited, \`work run\` keeps the pinned spec ID, re-runs only the lost step (2 \`implement\` attempts, 1 \`checks\`) and succeeds; \`work replay\` matches; fakes disabled gives the missing-capability reason; SQLite WAL with \`synchronous=2\` (FULL) asserted. Bugs found by tests and fixed: dependency-order hash instability, \`\$steps\` reference parsing, replay comparison under storage key reordering. \`system doctor\` about 1.1 s, 93 MB RSS. GitHub Actions at \`77cf8e2\`: \`build\` and \`docs\` pass. |
-| M3 Workers | not started | — | — |
+| M3 Workers | done | \`e72a761\` (ADR-0005), \`a42f329\`, \`d111da4\` on \`mvp0/implementation\` | Clean install exit 0; \`corepack pnpm check\`: unit 64/64, smoke 22/22 (2 credential-gated skipped in CI). Fake-CLI tests: exact pinned commit on the base, file outputs, env stripped to PATH/LANG/LC_ALL/TZ plus the account credential, SIGTERM cancel with partial tree, SIGKILL after grace, per-attempt \`CODEX_HOME\` with refresh copy-back, cross-process \`work cancel --wait\` (exit 5), contested \`work run\` refused, Codex takeover from the partial commit with \`replay\` matching. **Real, on this host** (\`SYSTEM_REAL_AGENTS=1\`): Claude Code 2.1.311 made a real change captured as a commit with observed usage (15 s); Claude cancelled mid-\`sleep 45\`, Codex 0.166.0 took over from its partial tree in the same Work (59 s), usage observed for Codex and recorded unknown for the killed Claude attempt. Probe finding: Codex writes memories/state into a shared \`CODEX_HOME\` even with \`--ephemeral\`. Bugs fixed: cancel poll kept a hung process alive; in-process cancel was refused. GitHub Actions at \`d111da4\`: \`build\` and \`docs\` pass. |
 | M4 Verifiers | not started | — | — |
 | M5 GitHub effects | not started | — | — |
 | M6 MVP-0 E2E | not started | — | — |
