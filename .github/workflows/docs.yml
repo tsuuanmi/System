@@ -19,6 +19,12 @@ jobs:
         run: python3 tools/docs.py check
       - name: Verify generated indexes
         run: python3 tools/docs.py sync --check
+      - name: Smoke test portable bootstrap
+        run: |
+          tmp="$(mktemp -d)"
+          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
+          (cd "$tmp/independent" && python3 tools/docs.py check && python3 tools/docs.py sync --check)
+          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
       - name: Check covered-path impact
         if: github.event_name == 'pull_request'
         env:
