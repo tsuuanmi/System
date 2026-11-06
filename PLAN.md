@@ -247,6 +247,10 @@ written first.
   - removing the old mode;
   - the CLI picks a Node that DSH accepts (>= 24.9) by itself, or names the
     fix (an operator ran `bin/system` under Node 22 on 2026-11-06);
+  - operator-facing errors print one line, with no stack trace (a mistyped
+    approval confirmation printed one on 2026-11-06). The confirmation prompt
+    is on its own line and says that nothing is decided unless the typed
+    text matches, so pasted commands are not taken as the answer;
   - the operations runbook with its cutover and rollback checklist (`docs/operations/`);
   - the API reference.
   **Release R1.**
