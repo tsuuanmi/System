@@ -80,6 +80,26 @@ active attempt and coherent terminal status. This also is **not yet
 a confirmed defect**. Prefer a narrow fix within existing control
 boundaries before proposing a persistent daemon or lease service.
 
+**Fix.** `FileControl` publishes the lock by linking a complete draft
+holding the token `<pid> <start time>` (field 22 of `/proc/<pid>/stat`
+where /proc exists). A holder is alive only if its pid is alive and, when
+both sides have a start time, they match, so a reused pid does not keep a
+dead host's lock live; a pid-only lock written by older versions keeps the
+pid rule. A stale lock is unlinked only while holding the takeover mutex
+`<work>.takeover` (published the same way; `EEXIST` refuses), after reading
+the lock again: a live or still-publishing lock is left alone and the
+takeover refuses. Nothing is renamed aside, a fresh acquire never takes the
+mutex, and `release()` removes the lock only if it holds this process's
+token. A mutex whose holder is dead and older than 10 s is a crash leftover
+and is removed once. Tests: a lock replaced by a live holder before the
+re-read, three processes racing for a stale lock, a reused pid and
+leftover mutexes.
+
+**Remaining case.** Two hosts removing the same crashed `.takeover` within
+microseconds of each other: the slower unlink can remove the faster host's
+new mutex, so two hosts may then read and remove the lock at once. Only
+that window is open.
+
 ## Crash/recovery invariant map
 
 1. **Work admission:** no committed Work without valid pinned spec, inputs

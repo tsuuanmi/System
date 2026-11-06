@@ -139,7 +139,8 @@ test('after a host is killed mid-step, four hosts resuming at once dispatch the 
   assert.ok(workId, 'the submit printed its Work ID')
   for (let i = 0; i < 300 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
   const lock = join(home, 'system', 'control', `${workId.replace(/[^a-z0-9-]/gi, '_')}.lock`)
-  process.kill(Number(readFileSync(lock, 'utf8')), 'SIGKILL')
+  // The lock holds `<pid> <start time>`.
+  process.kill(Number(readFileSync(lock, 'utf8').split(' ')[0]), 'SIGKILL')
   assert.notEqual(await exited, 0, 'the killed host did not finish the Work')
 
   const runs = await Promise.all([0, 1, 2, 3].map(() => new Promise<{ status: number | null; stderr: string }>((resolve) => {

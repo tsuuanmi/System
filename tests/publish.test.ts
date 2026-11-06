@@ -124,7 +124,7 @@ test('a host killed during the push, before the remote took it, is reconciled as
   const p = project()
   const marker = join(home, `killed-${Date.now()}`)
   const hook = join(p.bare, 'hooks', 'pre-receive')
-  writeFileSync(hook, `#!/bin/sh\nif [ ! -f ${marker} ]; then touch ${marker}; for f in ${control}/*.lock; do kill -9 "$(cat "$f")"; done; exit 1; fi\nexit 0\n`)
+  writeFileSync(hook, `#!/bin/sh\nif [ ! -f ${marker} ]; then touch ${marker}; for f in ${control}/*.lock; do kill -9 "$(cut -d' ' -f1 "$f")"; done; exit 1; fi\nexit 0\n`)
   chmodSync(hook, 0o755)
   const crashed = system(['work', 'submit', '--workflow', SE, '--input', p.task])
   assert.notEqual(crashed.status, 0)

@@ -1,8 +1,9 @@
 /**
  * Cross-process control of Work: the `HostControl` seam and `FileControl` over
  * files under `$DSH_HOME/system/control`
- * (one lock file per Work holding the running host's pid, published
- * atomically with its pid already in it, a dead pid's lock stale; one cancel
+ * (one lock file per Work holding the running host's `<pid> <start time>`, published
+ * atomically with it already in it, a dead or reused pid's lock stale, removed
+ * only under a `<work>.takeover` mutex; one cancel
  * file per Work a running host polls; one count file per Work holding how
  * many events the last lock holder wrote).
  */
@@ -47,18 +48,71 @@ function alive(pid: number): boolean {
   }
 }
 
+/** A process's start time (field 22 of `/proc/<pid>/stat`), or '' when /proc has none. */
+function startOf(pid: number): string {
+  try {
+    // The command name (field 2) may hold spaces and parentheses: count fields after its closing one.
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19] ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/** The holder token of a process: `<pid> <start>`. */
+function tokenOf(pid: number): string {
+  return `${pid} ${startOf(pid)}`
+}
+
 /**
  * The live pid holding a lock file, if any. A file with no pid yet that is
- * recent counts as held (pid 0: being published); an old one is stale.
+ * recent counts as held (pid 0: being published); an old one is stale. A pid
+ * is live only if the process exists and, when both the token and /proc have
+ * a start time, they match (a dead pid reused by another process is stale).
  */
 function holderOf(file: string): number | undefined {
   try {
     const text = readFileSync(file, 'utf8')
     if (!text.trim()) return Date.now() - statSync(file).mtimeMs < PUBLISHING_MS ? 0 : undefined
-    const pid = Number(text)
-    return Number.isInteger(pid) && pid > 0 && alive(pid) ? pid : undefined
+    const [pidText, start] = text.trim().split(/\s+/)
+    const pid = Number(pidText)
+    if (!Number.isInteger(pid) || pid <= 0 || !alive(pid)) return undefined
+    const now = startOf(pid)
+    return start && now && start !== now ? undefined : pid
   } catch {
     return undefined
+  }
+}
+
+/** Publish a file holding this process's token by linking a complete draft to `path`; false if `path` exists. */
+function publish(path: string): boolean {
+  const draft = `${path}.${process.pid}.new`
+  writeFileSync(draft, tokenOf(process.pid), { mode: 0o600 })
+  try {
+    linkSync(draft, path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+    throw error
+  } finally {
+    rmSync(draft, { force: true })
+  }
+}
+
+/** Remove `path` if it holds this process's token. */
+function unpublish(path: string): void {
+  try {
+    if (readFileSync(path, 'utf8').trim() === tokenOf(process.pid)) rmSync(path, { force: true })
+  } catch {
+    // already gone
+  }
+}
+
+function mtimeOf(file: string): number {
+  try {
+    return statSync(file).mtimeMs
+  } catch {
+    return 0
   }
 }
 
@@ -85,42 +139,37 @@ export class FileControl implements HostControl {
     if (holder === 0) throw new WorkError(`${workId} is being run by another process`)
     if (holder !== undefined && holder !== process.pid) throw new WorkError(`${workId} is being run by process ${holder}; cancel it with \`system work cancel\``)
     if (holder === undefined && existsSync(lock)) this.takeStale(workId, lock)
-    // Publish the lock with the pid already in it: a link to a complete file
+    // Publish the lock with its token already in it: a link to a complete file
     // appears atomically and fails if a lock exists, so no host sees it empty.
-    const draft = `${lock}.${process.pid}.new`
-    writeFileSync(draft, String(process.pid), { mode: 0o600 })
-    try {
-      linkSync(draft, lock)
-    } catch {
-      throw new WorkError(`${workId} is being run by another process`)
-    } finally {
-      rmSync(draft, { force: true })
-    }
-    return () => { if (this.holder(workId) === process.pid) rmSync(lock, { force: true }) }
+    if (!publish(lock)) throw new WorkError(`${workId} is being run by another process`)
+    return () => unpublish(lock)
   }
 
+  /** Called while holding the takeover mutex, before the lock is read again. */
+  protected beforeRecheck(_lock: string): void {}
+
   /**
-   * Remove a stale lock without ever removing a live one: move it aside
-   * atomically, and if what was moved belongs to a live process (another host
-   * replaced the stale lock first), put it back and refuse.
+   * Remove a stale lock without ever removing a live one: hold the takeover
+   * mutex (`<work>.takeover`, published like the lock), read the lock again
+   * and unlink it only if it is still stale. A fresh acquire never takes the mutex.
    */
   private takeStale(workId: string, lock: string): void {
-    const aside = `${lock}.${process.pid}.stale`
+    const mutex = lock.replace(/\.lock$/, '.takeover')
+    if (!publish(mutex)) {
+      // A mutex left by a crashed host (dead holder, older than PUBLISHING_MS) is removed once.
+      const leftover = holderOf(mutex) === undefined && Date.now() - mtimeOf(mutex) > PUBLISHING_MS
+      if (!leftover) throw new WorkError(`${workId} is being run by another process`)
+      rmSync(mutex, { force: true })
+      if (!publish(mutex)) throw new WorkError(`${workId} is being run by another process`)
+    }
     try {
-      renameSync(lock, aside)
-    } catch {
-      return
+      this.beforeRecheck(lock)
+      const pid = holderOf(lock)
+      if (pid !== undefined) throw new WorkError(pid ? `${workId} is being run by process ${pid}` : `${workId} is being run by another process`)
+      rmSync(lock, { force: true })
+    } finally {
+      unpublish(mutex)
     }
-    const pid = holderOf(aside)
-    if (pid !== undefined) {
-      try {
-        linkSync(aside, lock)
-      } finally {
-        rmSync(aside, { force: true })
-      }
-      throw new WorkError(pid ? `${workId} is being run by process ${pid}` : `${workId} is being run by another process`)
-    }
-    rmSync(aside, { force: true })
   }
 
   heldElsewhere(workId: string): boolean {

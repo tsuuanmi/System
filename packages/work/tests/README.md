@@ -11,7 +11,9 @@
   hold and its resumption, approval and denial, retrying only the effect.
 - `control.test.ts` — `FileControl`: one live holder, stale locks, a lock
   still being published (no pid yet) never taken as stale, cancel requests,
-  processes racing for a free or a stale lock, and the count of events
+  a lock replaced by a live holder during a takeover surviving, a reused pid,
+  a leftover takeover mutex, processes racing for a free or a stale lock, and
+  the count of events
   written that fences stale hosts.
 - `conversation.test.ts` — `conversation@1`: a manifest over stored parts,
   stable IDs, corrections, the preview and its secret warnings, and a task's

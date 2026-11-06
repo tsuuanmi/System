@@ -31,7 +31,7 @@ const server = createServer((req, res) => {
       if (killDir && !killed) {
         killed = true
         for (const file of readdirSync(killDir).filter((f) => f.endsWith('.lock'))) {
-          try { process.kill(Number(readFileSync(join(killDir, file), 'utf8')), 'SIGKILL') } catch { /* gone */ }
+          try { process.kill(Number(readFileSync(join(killDir, file), 'utf8').split(' ')[0]), 'SIGKILL') } catch { /* gone */ }
         }
         return res.destroy()
       }
