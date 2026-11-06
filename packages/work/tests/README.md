@@ -8,8 +8,9 @@
 - `effects.test.ts` — effect steps with a scripted remote: intent before
   effect, reconciliation after a lost host or a throw, the unknown-outcome
   hold and its resumption, approval and denial, retrying only the effect.
-- `control.test.ts` — `FileControl`: one live holder, stale locks, cancel
-  requests, and two processes racing for a stale lock.
+- `control.test.ts` — `FileControl`: one live holder, stale locks, a lock
+  still being published (no pid yet) never taken as stale, cancel requests,
+  and processes racing for a free or a stale lock.
 - `summary.test.ts` — operator touches and usage from a Work's events.
 
 Shared stand-ins come from [test-support](../../../test-support/README.md).

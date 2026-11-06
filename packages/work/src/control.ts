@@ -1,10 +1,11 @@
 /**
  * Cross-process control of Work: the `HostControl` seam and `FileControl` over
  * files under `$DSH_HOME/system/control`
- * (one lock file per Work holding the running host's pid, created exclusively,
- * a dead pid's lock stale; one cancel file per Work a running host polls).
+ * (one lock file per Work holding the running host's pid, published
+ * atomically with its pid already in it, a dead pid's lock stale; one cancel
+ * file per Work a running host polls).
  */
-import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Caller } from './record.ts'
 import { WorkError } from './errors.ts'
@@ -29,12 +30,30 @@ export interface CancelRequest {
   caller: Caller
 }
 
+/** How long a lock without a pid counts as one still being published (earlier versions wrote the pid after creating the file). */
+const PUBLISHING_MS = 10_000
+
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * The live pid holding a lock file, if any. A file with no pid yet that is
+ * recent counts as held (pid 0: being published); an old one is stale.
+ */
+function holderOf(file: string): number | undefined {
+  try {
+    const text = readFileSync(file, 'utf8')
+    if (!text.trim()) return Date.now() - statSync(file).mtimeMs < PUBLISHING_MS ? 0 : undefined
+    const pid = Number(text)
+    return Number.isInteger(pid) && pid > 0 && alive(pid) ? pid : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -52,27 +71,26 @@ export class FileControl implements HostControl {
   }
 
   private holder(workId: string): number | undefined {
-    try {
-      const pid = Number(readFileSync(this.file(workId, 'lock'), 'utf8'))
-      return Number.isInteger(pid) && pid > 0 && alive(pid) ? pid : undefined
-    } catch {
-      return undefined
-    }
+    return holderOf(this.file(workId, 'lock'))
   }
 
   acquire(workId: string): () => void {
     const lock = this.file(workId, 'lock')
     const holder = this.holder(workId)
+    if (holder === 0) throw new WorkError(`${workId} is being run by another process`)
     if (holder !== undefined && holder !== process.pid) throw new WorkError(`${workId} is being run by process ${holder}; cancel it with \`system work cancel\``)
     if (holder === undefined && existsSync(lock)) this.takeStale(workId, lock)
-    let fd: number
+    // Publish the lock with the pid already in it: a link to a complete file
+    // appears atomically and fails if a lock exists, so no host sees it empty.
+    const draft = `${lock}.${process.pid}.new`
+    writeFileSync(draft, String(process.pid), { mode: 0o600 })
     try {
-      fd = openSync(lock, 'wx', 0o600)
+      linkSync(draft, lock)
     } catch {
       throw new WorkError(`${workId} is being run by another process`)
+    } finally {
+      rmSync(draft, { force: true })
     }
-    writeSync(fd, String(process.pid))
-    closeSync(fd)
     return () => { if (this.holder(workId) === process.pid) rmSync(lock, { force: true }) }
   }
 
@@ -88,14 +106,14 @@ export class FileControl implements HostControl {
     } catch {
       return
     }
-    const pid = Number(readFileSync(aside, 'utf8'))
-    if (Number.isInteger(pid) && pid > 0 && alive(pid)) {
+    const pid = holderOf(aside)
+    if (pid !== undefined) {
       try {
         linkSync(aside, lock)
       } finally {
         rmSync(aside, { force: true })
       }
-      throw new WorkError(`${workId} is being run by process ${pid}`)
+      throw new WorkError(pid ? `${workId} is being run by process ${pid}` : `${workId} is being run by another process`)
     }
     rmSync(aside, { force: true })
   }

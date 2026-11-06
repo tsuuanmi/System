@@ -23,7 +23,7 @@ const yaml = createRequire(join(repo, 'packages', 'work', 'package.json'))('yaml
 const bundle = yaml.parse(readFileSync(join(repo, 'packages', 'bundle', 'cordis.patch.yml'), 'utf8'), { logLevel: 'error' }) as { insert: { id: string; config?: { accounts?: Account[] } }[] }[]
 const accounts = bundle[0]!.insert.find((row) => row.id === 'agents')!.config!.accounts!
 
-type Event = { type: string; stepId?: string; selected?: string; inputs?: Record<string, string>; status?: string; outputs?: Record<string, string> }
+type Event = { type: string; seq: number; stepId?: string; selected?: string; inputs?: Record<string, string>; status?: string; outputs?: Record<string, string> }
 type WorkView = { events: Event[]; state: { status: string; reason?: string; specId: string; steps: Record<string, { state: string; outputs: Record<string, string> }> } }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as WorkView
 /** Who produced an Artifact, in which Work: its recorded occurrences. */
@@ -121,6 +121,41 @@ test('a stop after the first proposal reuses it: the retry runs only the second 
   ])
   assert.equal(done.state.steps['idea-a']!.outputs.proposal, first, 'the first proposal is the same Artifact, not generated again')
   assert.equal(dispatched(done).at(-1)!.inputs!['proposal-a'], first)
+  assert.equal(system(['work', 'replay', workId]).status, 0)
+})
+
+test('after a host is killed mid-step, four hosts resuming at once dispatch the lost step once, losing no event', async () => {
+  const marker = join(home, `hang-kill-${Date.now()}`)
+  const input = brief(`FAKE:outputs FAKE:sign FAKE:hang=idea-b:${marker}`)
+  const submit = spawn(process.execPath, [join(repo, 'bin', 'system'), 'work', 'submit', '--workflow', BRAINSTORM, '--input', input], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+  let out = ''
+  submit.stdout.on('data', (d) => { out += d })
+  const exited = new Promise<number | null>((resolve) => submit.on('close', resolve))
+  let workId = ''
+  for (let i = 0; i < 200 && !workId; i++) {
+    await new Promise((r) => setTimeout(r, 100))
+    if (out.trim()) workId = out.trim().split('\n')[0]!
+  }
+  assert.ok(workId, 'the submit printed its Work ID')
+  for (let i = 0; i < 300 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
+  const lock = join(home, 'system', 'control', `${workId.replace(/[^a-z0-9-]/gi, '_')}.lock`)
+  process.kill(Number(readFileSync(lock, 'utf8')), 'SIGKILL')
+  assert.notEqual(await exited, 0, 'the killed host did not finish the Work')
+
+  const runs = await Promise.all([0, 1, 2, 3].map(() => new Promise<{ status: number | null; stderr: string }>((resolve) => {
+    const child = spawn(process.execPath, [join(repo, 'bin', 'system'), 'work', 'run', workId], { env, stdio: ['ignore', 'ignore', 'pipe'] })
+    let stderr = ''
+    child.stderr.on('data', (d) => { stderr += d })
+    child.on('close', (status) => resolve({ status, stderr }))
+  })))
+  const winners = runs.filter((r) => r.status === 0)
+  assert.equal(winners.length, 1, JSON.stringify(runs))
+  for (const loser of runs.filter((r) => r.status !== 0)) assert.match(loser.stderr, /is being run by/)
+  const done = show(workId)
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(dispatched(done).map((e) => e.stepId), ['idea-a', 'idea-b', 'idea-b', 'synthesis'])
+  assert.deepEqual(done.events.filter((e) => e.type === 'attempt-lost').map((e) => e.stepId), ['idea-b'])
+  assert.deepEqual(done.events.map((e) => e.seq), done.events.map((_, i) => i), 'every event kept, in order')
   assert.equal(system(['work', 'replay', workId]).status, 0)
 })
 

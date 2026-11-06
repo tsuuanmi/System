@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
@@ -27,6 +27,22 @@ test('a lock left by a dead process is stale and taken over', () => {
   control.acquire('work:b')()
 })
 
+test('a lock another host is still publishing (no pid yet) is not stale: no second holder', () => {
+  const control = new FileControl(dir)
+  writeFileSync(join(dir, 'work_d.lock'), '')
+  assert.throws(() => control.acquire('work:d'), /is being run by another process/)
+  assert.equal(readFileSync(join(dir, 'work_d.lock'), 'utf8'), '', 'the publishing host keeps its lock')
+})
+
+test('an empty lock left long ago (a host that died while publishing) is stale and taken over', () => {
+  const control = new FileControl(dir)
+  const lock = join(dir, 'work_e.lock')
+  writeFileSync(lock, '')
+  const old = new Date(Date.now() - 60_000)
+  utimesSync(lock, old, old)
+  control.acquire('work:e')()
+})
+
 test('a cancel request is read until cleared', () => {
   const control = new FileControl(dir)
   assert.equal(control.cancelRequest('work:c'), undefined)
@@ -36,7 +52,8 @@ test('a cancel request is read until cleared', () => {
   assert.equal(control.cancelRequest('work:c'), undefined)
 })
 
-test('two hosts racing for a stale lock never both win', async () => {
+/** Rounds of several processes taking one Work's lock at once; how many rounds had more than one winner. */
+async function race(contenders: number, rounds: number, prepare: (raceDir: string) => void): Promise<number> {
   const { spawn } = await import('node:child_process')
   const { pathToFileURL, fileURLToPath } = await import('node:url')
   const source = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'control.ts')).href
@@ -51,13 +68,11 @@ test('two hosts racing for a stale lock never both win', async () => {
     } catch {
       console.log('lost')
     }`
-  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
   let doubleWins = 0
-  for (let round = 0; round < 15; round++) {
-    const raceDir = join(dir, `race-${round}`)
-    new FileControl(raceDir)
-    writeFileSync(join(raceDir, 'work_race.lock'), dead)
-    const outcomes = await Promise.all([0, 1].map(() => new Promise<string>((resolve) => {
+  for (let round = 0; round < rounds; round++) {
+    const raceDir = mkdtempSync(join(dir, 'race-'))
+    prepare(raceDir)
+    const outcomes = await Promise.all(Array.from({ length: contenders }, () => new Promise<string>((resolve) => {
       const child = spawn(process.execPath, ['--input-type=module', '-e', contender, raceDir], { stdio: ['ignore', 'pipe', 'inherit'] })
       let out = ''
       child.stdout.on('data', (d) => { out += d })
@@ -65,5 +80,14 @@ test('two hosts racing for a stale lock never both win', async () => {
     })))
     if (outcomes.filter((o) => o === 'won').length > 1) doubleWins += 1
   }
-  assert.equal(doubleWins, 0)
+  return doubleWins
+}
+
+test('hosts racing for a free lock never both win', async () => {
+  assert.equal(await race(6, 10, () => undefined), 0)
+})
+
+test('two hosts racing for a stale lock never both win', async () => {
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
+  assert.equal(await race(2, 15, (raceDir) => writeFileSync(join(raceDir, 'work_race.lock'), dead)), 0)
 })

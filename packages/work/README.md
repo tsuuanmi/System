@@ -31,8 +31,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 ## Cancel, takeover and one host per Work
 
 Each DSH host caches records in memory, so only the host that holds a Work's
-lock (`$DSH_HOME/system/control/<work>.lock`, its pid; a dead pid's lock is
-stale, and is taken over by an atomic rename that puts back a live one)
+lock (`$DSH_HOME/system/control/<work>.lock`, its pid, published by linking a
+complete file so it never exists empty; a dead pid's lock is stale, and is
+taken over by an atomic rename that puts back a live one)
 writes that Work. `system work cancel` from another process writes a
 cancel request the running host polls every 250 ms; the host aborts its
 attempt, records `observed` (`cancelled`, with partial output) and `terminal`

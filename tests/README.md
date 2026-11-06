@@ -17,7 +17,9 @@ GitHub credentials. Run with `corepack pnpm smoke`.
 - [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
   accounts (CLI pointed at the fake): two proposals by different providers
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal
-  without Codex, a stop after the first proposal reusing it, and a pinned spec.
+  without Codex, a stop after the first proposal reusing it, a host killed
+  mid-step then four hosts resuming at once (one wins; the lost step is
+  dispatched once more; no event lost), and a pinned spec.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
   writing one store all succeed (no "database is locked"), also when they
   all find the store missing and create it together.
