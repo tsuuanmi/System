@@ -10,3 +10,8 @@ checks:
     # DSH hosts and stay with `corepack pnpm check`.
     run: corepack pnpm install --frozen-lockfile && corepack pnpm build && corepack pnpm typecheck && corepack pnpm test
     timeoutSeconds: 600
+  - name: smoke
+    # The booted-profile smoke tests (bin/system against throwaway DSH homes);
+    # they caught what the unit tests missed when the lock format changed.
+    run: corepack pnpm install --frozen-lockfile && corepack pnpm build && corepack pnpm smoke
+    timeoutSeconds: 900
