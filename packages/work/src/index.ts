@@ -11,9 +11,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { sha256, type Artifacts, type Envelope } from '@system/artifacts'
 import { FileControl } from './control.ts'
-import { SPEC_KIND, SPEC_SCHEMA_VERSION, WorkController, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import { SPEC_KIND, SPEC_SCHEMA_VERSION, WorkController, resolvedSpecSchema, type HostIdentity, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, addConversation, conversationSchema, type Asserted, type ConversationParts } from './conversation.ts'
 import { snapshot } from './git.ts'
+import { Host } from './host.ts'
 import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema } from './kinds.ts'
 import type { Caller, WorkRecord } from './record.ts'
 import { workRecordSchema } from './record.ts'
@@ -45,16 +46,30 @@ export const workDomain = defineDomain({
   tables: { work: domainTable(workRecordSchema) },
 })
 
+/** What the Host core is built over: the row's own table, specs and identity. */
+export interface HostStorage {
+  table: WorkTable
+  specs: SpecStore
+  identity: HostIdentity
+}
+
 /** Admission entry points the CLI uses. */
 export class WorkService {
   readonly controller: WorkController
   private readonly capabilities: Capabilities
   private readonly artifacts: Artifacts
+  private readonly storage: HostStorage
 
-  constructor(controller: WorkController, capabilities: Capabilities, artifacts: Artifacts) {
+  constructor(controller: WorkController, capabilities: Capabilities, artifacts: Artifacts, storage: HostStorage) {
     this.controller = controller
     this.capabilities = capabilities
     this.artifacts = artifacts
+    this.storage = storage
+  }
+
+  /** The Host core over this row's table, specs and capabilities (PROP-0004 C1): takes the lock for `home`, then recovers. */
+  startHost(home: string): Promise<Host> {
+    return Host.start({ home, capabilities: this.capabilities, ...this.storage })
   }
 
   /**
@@ -127,6 +142,12 @@ function specStore(artifacts: Artifacts): SpecStore {
   }
 }
 
+/** `$DSH_HOME`: the launcher's home resolver when present. */
+export function dshHome(ctx: Context): string {
+  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
+  return homePath ? homePath() : process.env.DSH_HOME || join(homedir(), '.dsh')
+}
+
 /** `$DSH_HOME/system/...`: the launcher's home resolver when present. */
 export function systemPath(ctx: Context, ...segments: string[]): string {
   const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
@@ -146,7 +167,10 @@ export async function apply(ctx: Context): Promise<void> {
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
   const capabilities = new Capabilities()
   const control = new FileControl(systemPath(ctx, 'control'))
-  const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(artifacts), capabilities, control, { id: randomUUID(), loadedAt })
+  const table = domain.table('work') as unknown as WorkTable
+  const specs = specStore(artifacts)
+  const identity = { id: randomUUID(), loadedAt }
+  const controller = new WorkController(table, specs, capabilities, control, identity)
   ctx.provide('capabilities', capabilities)
-  ctx.provide('work', new WorkService(controller, capabilities, artifacts))
+  ctx.provide('work', new WorkService(controller, capabilities, artifacts, { table, specs, identity }))
 }

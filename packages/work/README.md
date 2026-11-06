@@ -30,7 +30,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   `submit`, `run`, `retry`, `cancel`, `decide`, `get`, `list`, `replay`,
   `interrupted`, `uncertain`, `close`.
 - [src/host-lock.ts](src/host-lock.ts) — `acquireHostLock`: an abstract Unix
-  socket named after the canonical `DSH_HOME` (Linux only).
+  socket named after the canonical `DSH_HOME` (Linux only); `hostHeld` asks whether one is held, without taking it.
 - [src/lane.ts](src/lane.ts) — `commitLane`: sections run one at a time, in order.
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
   operator touches and usage from a Work's events (`system work report`):
@@ -44,7 +44,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   of what the operator asserts and a fixed notice; the preview and its
   secret warnings, over the parts, their names and the asserted fields.
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
-  add a conversation, admit a file or a direct Task).
+  add a conversation, admit a file or a direct Task, and `startHost`: the `Host` over the row's own table, specs and capabilities).
 
 ## Cancel, takeover and one host per Work
 

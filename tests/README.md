@@ -6,6 +6,11 @@ Offline tests of the booted `system` profile. Each creates a throwaway
 GitHub credentials. Run with `corepack pnpm smoke`.
 
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
+- [host-process.test.ts](host-process.test.ts) — H4a: `bin/system host` as a
+  child process: `host.hello` and `host.ping` on `host.sock`, a second Host
+  refused, the old-path Work commands refused while it runs, SIGTERM and SIGINT
+  stop it with exit 0 and free the home, a killed Host's stale socket is
+  replaced, and what `init` says about the service.
 - [work.test.ts](work.test.ts) — M2 gate: both Workflow files and a direct
   Task through one controller with the `fakes` row on, invalid Workflows,
   the pinned spec across a file edit and a SIGKILLed host, SQLite durability.

@@ -46,6 +46,8 @@ export interface ArtifactCommands {
 
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
+  /** Refuses while a Host holds the home: the commands below that change Work run their own controller until the CLI goes through the Host (H4b). */
+  noHost(): Promise<void>
   admitFile(path: string, input: string | undefined): Promise<WorkRecord>
   admitTask(capabilities: string[], input: string | undefined): Promise<WorkRecord>
   run(workId: string): Promise<WorkRecord>
@@ -71,6 +73,8 @@ export interface AppHost extends DoctorHost {
   work(): WorkCommands
   credentials(): CredentialCommands
   workers(): Promise<WorkersView>
+  /** Run as the Host of this home until stopped by a signal; resolves once it has stopped. */
+  runHost(): Promise<void>
 }
 
 /** A command the program selected, run after startup. */
@@ -91,6 +95,14 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         const report = await runDoctor(host)
         io.out(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report))
         return report.ok ? 0 : 1
+      })
+    })
+  program.command('host')
+    .description('run the Host: own every Work of this home and serve $DSH_HOME/system/host.sock until SIGTERM or SIGINT')
+    .action(() => {
+      select(async () => {
+        await host.runHost()
+        return 0
       })
     })
   const artifact = program.command('artifact').description('store and read immutable Artifacts by ID')
@@ -124,6 +136,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     })
   const decide = (decision: 'approved' | 'denied') => (workId: string, options: { reason: string }) => {
     select(async () => {
+      await host.work().noHost()
       const record = host.work().get(workId)
       if (!record) throw new Error(`no Work ${workId}`)
       io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
@@ -257,6 +270,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
+        await commands.noHost()
         const admitted = options.workflow
           ? await commands.admitFile(options.workflow, options.input)
           : await commands.admitTask(options.capability!, options.input)
@@ -271,6 +285,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--wait', 'wait until the running host has recorded the cancellation')
     .action((workId: string, options: { reason: string; wait?: boolean }) => {
       select(async () => {
+        await host.work().noHost()
         const outcome = await host.work().cancel(workId, options.reason)
         if (outcome !== 'requested') {
           io.out(`${workId} cancelled\n`)
@@ -290,12 +305,18 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--worker <ref>', 'only this Worker may take it over (see system workers)')
     .option('--reason <text>', 'why', 'retried by the operator')
     .action((workId: string, options: { step?: string; worker?: string; reason: string }) => {
-      select(async () => exitCode((await host.work().retry(workId, options.worker, options.reason, options.step)).state.status))
+      select(async () => {
+        await host.work().noHost()
+        return exitCode((await host.work().retry(workId, options.worker, options.reason, options.step)).state.status)
+      })
     })
   work.command('run <workId>')
     .description('advance admitted or interrupted Work until it is terminal')
     .action((workId: string) => {
-      select(async () => exitCode((await host.work().run(workId)).state.status))
+      select(async () => {
+        await host.work().noHost()
+        return exitCode((await host.work().run(workId)).state.status)
+      })
     })
   work.command('show <workId>')
     .description('print the Work record (events and state) as JSON')

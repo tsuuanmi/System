@@ -7,6 +7,7 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | Command | Result |
 |---|---|
 | `system doctor [--json]` | which rows are mounted, and a write/read probe of the SQLite storage domain `system_doctor`; exit 0 when every required row is mounted and the probe passes, 1 otherwise |
+| `system host` | run as the Host of this home: serve the operation table on `$DSH_HOME/system/host.sock` until SIGTERM or SIGINT, then stop and exit 0; one line to stderr at start and stop; a second one on the same home fails with the lock's message (see the [runbook](../../docs/operations/runbook.md)) |
 | `system artifact put <file> [--media-type t] [--classification c]` | store the file as a `file@1` Artifact (default `local-private`, producer the operator) and print its ID |
 | `system artifact show <id>` | the envelope and occurrences as JSON; exit 1 when missing |
 | `system artifact cat <id>` | the bytes; exit 1 when unavailable |
@@ -27,6 +28,8 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system work report <workId>` | duration, attempts, operator touches (human cancels, retries, decisions) and usage (fresh input, cache read, cache write, output), with unreported usage counted apart |
 | `system work replay <workId>` | fold the events again and compare with the stored state; runs nothing; exit 1 on mismatch |
 | `system --help` | help, exit 0 |
+
+While a Host holds the home, `work submit`, `run`, `retry`, `cancel`, `approve` and `deny` refuse with `a Host is running for <home>; stop it first (systemctl --user stop system)`: until the CLI goes through the socket (H4b) they run their own controller, and there is one writer.
 
 Work exit codes: `0` succeeded, `1` failed or refused, `3` held for the
 operator, `4` not terminal, `5` cancelled. Each call records its caller: `human` when stdin is

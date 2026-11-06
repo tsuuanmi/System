@@ -1,6 +1,6 @@
 ---
 level: 1
-areas: [governance=governance, requirements=requirement, architecture=architecture, decisions=decision, research=research, proposals=proposal]
+areas: [governance=governance, requirements=requirement, architecture=architecture, decisions=decision, research=research, proposals=proposal, operations=operations]
 id-prefixes: [proposal=PROP, research=RES, decision=ADR]
 source-roots: [packages, bin, tests, test-support, workflows]
 forbidden-names: [archive, archives, deprecated, history, legacy, old, temp, temporary]
@@ -30,9 +30,11 @@ assumptions into another project. For reuse, see [bootstrap](bootstrap.md).
   experiments; non-normative.
 - [Proposals](../proposals/README.md) — implementation and design questions
   still awaiting acceptance.
+- [Operations](../operations/README.md) — the runbook for starting, stopping
+  and diagnosing the Host.
 
-Other standard areas will be added when source, specific design, validation,
-engineering or operations knowledge actually exists.
+Other standard areas will be added when source, specific design, validation
+or engineering knowledge actually exists.
 
 ## Local identity and graph policy
 
