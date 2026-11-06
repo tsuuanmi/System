@@ -262,10 +262,11 @@ written first.
   - an agent caller cannot approve;
   - the guarantees table in host.md has a passing test per row;
   - growth measures are recorded.
-- [ ] Attempt time limit (found 2026-11-07): an attempt that hung on a test
-  ran for 2 hours with nothing to stop it (Work `38ff51c3`). Add a per-step
-  wall-clock budget, after which the attempt is cancelled like an operator
-  cancel (partial output kept), with a default per Workflow.
+- [x] Attempt time limit (found 2026-11-07): an attempt that hung on a test
+  ran for 2 hours with nothing to stop it (Work `38ff51c3`). Done:
+  `attemptTimeoutMinutes` in the `agents` row config (per Account, default 60;
+  not in the Workflow, ADR-0006); past it the attempt is stopped like a cancel,
+  partial output kept, and fails with the limit as its reason.
 - [ ] Gate R2: Brainstorm's two proposals overlap in time, and two Works on
   one Account never run two attempts at once.
 - [ ] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on

@@ -13,6 +13,7 @@ The `agents` row: each configured agent CLI account becomes a System Worker
 ```yaml
 - id: agents
   config:
+    attemptTimeoutMinutes: 60           # row-wide default; an account may set its own
     accounts:
       - ref: claude-code/default        # <runtime>/<account>
         runtime: claude-code
@@ -114,7 +115,7 @@ Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 
 No sandbox or egress control (ADR-0004 decision 14): the agent runs as the
 operator and could read the operator's files, including the credential store.
-No retries or timeouts beyond cancel. `--allowedTools Bash` lets Claude Code
+No retries, and no time limit beyond the attempt's. `--allowedTools Bash` lets Claude Code
 run any shell command except `git push` and `gh`.
 
 ## Reuse

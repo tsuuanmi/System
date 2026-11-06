@@ -8,12 +8,15 @@
 //   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below
 //   FAKE:sleep    unless PARTIAL.md exists: wait; on SIGTERM write PARTIAL.md and exit 143
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
+//   FAKE:grandchild=FILE  start a process in the agent's own group that waits, and write its pid to FILE
+//   FAKE:escaped=FILE     the same, but in a session of its own (setsid), as a `system host` a test started might be
 //   FAKE:fail     report an error
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
 //   FAKE:noise    with FAKE:followup, print 300 KB of other events between the results
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
 // The model given with --model / -m is written into ENV.json and reported as served.
+import { spawn } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -80,6 +83,10 @@ if (has('outputs')) {
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')
 if (has('fail')) finish(false, 'scripted failure')
+for (const [marker, detached] of [['grandchild', false], ['escaped', true]]) {
+  const pidFile = new RegExp(`FAKE:${marker}=(\\S+)`).exec(prompt)?.[1]
+  if (pidFile) writeFileSync(pidFile, String(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached, stdio: 'ignore' }).pid))
+}
 const hang = /FAKE:hang=([a-z0-9-]+):(\S+)/.exec(prompt)
 if (hang && prompt.includes(`Step: ${hang[1]}\n`) && !existsSync(hang[2])) {
   writeFileSync(hang[2], '')
