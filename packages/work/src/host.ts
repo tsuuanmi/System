@@ -39,10 +39,16 @@ interface Idempotent {
   commandId?: string
 }
 
-/** A command seen: the hash of its arguments, and its answer (a stored receipt answers with the Work as it is now). */
+/** What `run` and `retry` also take: a signal that the Work is held and about to be driven (not given when a repeat is answered from a receipt). */
+interface Starting extends Idempotent {
+  started?: () => void
+}
+
+/** A command seen: the hash of its arguments, its answer (a stored receipt answers with the Work as it is now), and whether it has begun driving its Work. */
 interface Seen {
   args: string
   result: () => Promise<unknown>
+  begun: Promise<void>
 }
 
 export class Host {
@@ -80,7 +86,7 @@ export class Host {
   private async recover(): Promise<void> {
     for (const record of this.controller.list()) {
       for (const receipt of record.receipts ?? []) {
-        this.commands.set(receipt.commandId, { args: receipt.args, result: async () => this.controller.get(record.id) })
+        this.commands.set(receipt.commandId, { args: receipt.args, result: async () => this.controller.get(record.id), begun: Promise.resolve() })
       }
       if (TERMINAL.has(record.state.status)) continue
       this.lost.push(...await this.lane(() => this.controller.interrupt(record.id)))
@@ -123,38 +129,47 @@ export class Host {
   /** Admit a Work. With a `commandId` its ID derives from it, and the same submit again returns that Work. */
   submit(admission: Admission, options: Idempotent = {}): Promise<WorkRecord> {
     const workId = options.commandId ? workIdOf(options.commandId) : undefined
-    return this.once(options.commandId, 'submit', admission, (command) => this.lane(() => this.controller.admit(admission, { workId, command })))
+    return this.once(options.commandId, 'submit', admission, undefined, (command) => this.lane(() => this.controller.admit(admission, { workId, command })))
   }
 
-  run(workId: string, options: Idempotent = {}): Promise<WorkRecord> {
-    return this.once(options.commandId, 'run', { workId }, (command) => this.controller.run(workId, command))
+  run(workId: string, options: Starting = {}): Promise<WorkRecord> {
+    return this.once(options.commandId, 'run', { workId }, options.started, (command, started) => this.controller.run(workId, command, started))
   }
 
-  retry(workId: string, options: Idempotent & { worker?: string; step?: string; caller: Caller; reason: string }): Promise<WorkRecord> {
-    const { commandId, ...retry } = options
-    return this.once(commandId, 'retry', { workId, ...retry }, (command) => this.controller.retry(workId, retry, command))
+  retry(workId: string, options: Starting & { worker?: string; step?: string; caller: Caller; reason: string }): Promise<WorkRecord> {
+    const { commandId, started, ...retry } = options
+    return this.once(commandId, 'retry', { workId, ...retry }, started, (command, begin) => this.controller.retry(workId, retry, command, begin))
   }
 
   cancel(workId: string, options: Idempotent & CancelRequest): Promise<'requested' | WorkRecord> {
     const { commandId, ...request } = options
-    return this.once(commandId, 'cancel', { workId, ...request }, (command) => this.controller.cancel(workId, request, command))
+    return this.once(commandId, 'cancel', { workId, ...request }, undefined, (command) => this.controller.cancel(workId, request, command))
   }
 
-  decide(workId: string, options: Idempotent & { decision: 'approved' | 'denied'; caller: Caller; reason: string }): Promise<WorkRecord> {
-    const { commandId, ...decision } = options
-    return this.once(commandId, 'decide', { workId, ...decision }, (command) => this.controller.decide(workId, decision, command))
+  decide(workId: string, options: Starting & { decision: 'approved' | 'denied'; caller: Caller; reason: string }): Promise<WorkRecord> {
+    const { commandId, started, ...decision } = options
+    return this.once(commandId, 'decide', { workId, ...decision }, started, (command, begin) => this.controller.decide(workId, decision, command, begin))
   }
 
-  /** Do `act` once per `commandId`: a repeat joins or replays it, and different arguments are refused. */
-  private once<T>(commandId: string | undefined, op: string, args: unknown, act: (command?: Command) => Promise<T>): Promise<T> {
-    if (!commandId) return act()
+  /**
+   * Do `act` once per `commandId`: a repeat joins or replays it, and different
+   * arguments are refused. `started` is called when `act` says it has begun
+   * driving its Work, and for a repeat when the first call had.
+   */
+  private once<T>(commandId: string | undefined, op: string, args: unknown, started: (() => void) | undefined, act: (command: Command | undefined, begin: () => void) => Promise<T>): Promise<T> {
+    if (!commandId) return act(undefined, () => started?.())
     const hash = hashDomain('system.command/v1', { op, args })
     const seen = this.commands.get(commandId)
     if (seen) {
-      return seen.args === hash ? seen.result() as Promise<T> : Promise.reject(new WorkError(`commandId ${commandId} was used with different arguments; use a new commandId for a different command`))
+      if (seen.args !== hash) return Promise.reject(new WorkError(`commandId ${commandId} was used with different arguments; use a new commandId for a different command`))
+      if (started) void seen.begun.then(started)
+      return seen.result() as Promise<T>
     }
-    const result = act({ id: commandId, args: hash })
-    this.commands.set(commandId, { args: hash, result: () => result })
+    let begin!: () => void
+    const begun = new Promise<void>((resolve) => { begin = resolve })
+    if (started) void begun.then(started)
+    const result = act({ id: commandId, args: hash }, begin)
+    this.commands.set(commandId, { args: hash, result: () => result, begun })
     return result
   }
 }

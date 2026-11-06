@@ -202,10 +202,11 @@ export class WorkController {
     return { state, matches: canonicalJson(state) === canonicalJson(record.state) }
   }
 
-  /** Advance until the Work is terminal, holding its lock. */
-  async run(workId: string, command?: Command): Promise<WorkRecord> {
+  /** Advance until the Work is terminal, holding its lock. `started` is called once the lock is held, before the first step. */
+  async run(workId: string, command?: Command, started?: () => void): Promise<WorkRecord> {
     const release = await this.enter(workId, command)
     try {
+      started?.()
       return await this.drive(workId)
     } finally {
       this.leave(workId, release)
@@ -304,10 +305,11 @@ export class WorkController {
    * only by `worker`. The new attempt gets the same recorded inputs plus, as
    * `previous`, the partial output the last attempt left. Then run.
    */
-  async retry(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }, command?: Command): Promise<WorkRecord> {
+  async retry(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }, command?: Command, started?: () => void): Promise<WorkRecord> {
     const release = await this.enter(workId, command)
     try {
       await this.lane(() => this.reopen(workId, options))
+      started?.()
       return await this.drive(workId)
     } finally {
       this.leave(workId, release)
@@ -694,7 +696,7 @@ export class WorkController {
    * Record a human operator's decision on held Work; an approval runs it on.
    * Agent callers are refused (ADR-0004 decision 3).
    */
-  async decide(workId: string, decision: { decision: 'approved' | 'denied'; caller: Caller; reason: string }, command?: Command): Promise<WorkRecord> {
+  async decide(workId: string, decision: { decision: 'approved' | 'denied'; caller: Caller; reason: string }, command?: Command, started?: () => void): Promise<WorkRecord> {
     if (decision.caller.type !== 'human') throw new WorkError('only a human operator approves; an agent caller cannot decide')
     const release = await this.enter(workId, command)
     try {
@@ -705,6 +707,7 @@ export class WorkController {
         const decided = await this.append(record, { type: 'decided', caller: decision.caller, stepId, decision: decision.decision, reason: decision.reason })
         return decision.decision === 'denied' ? await this.finish(decided, 'failed', `${stepId} denied by ${decision.caller.operatorId}: ${decision.reason}`) : undefined
       })
+      started?.()
       return denied ?? await this.drive(workId)
     } finally {
       this.leave(workId, release)

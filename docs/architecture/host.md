@@ -9,10 +9,10 @@ reviewed: 2026-11-06
 **Status:** accepted design for milestone H
 ([ADR-0007](../decisions/ADR-0007-one-long-lived-host.md) as amended, and
 [PROP-0004](../proposals/PROP-0004-host-design.md)). **In progress.**
-Implemented so far (H2, in-process, no socket): the Host lock, the commit
-lane, receipts and recovery on start, in `packages/work`
-(`host-lock.ts`, `lane.ts`, `host.ts`). Not yet: the socket and API (H3), the
-CLI cutover (H4), parallel steps and Account slots (H5). Until release R1,
+Implemented so far: the Host lock, the commit lane, receipts and recovery on
+start, in `packages/work` (`host-lock.ts`, `lane.ts`, `host.ts`; H2), and the
+socket with its operation table, in `packages/host` (H3). Not yet: the CLI
+cutover (H4), parallel steps and Account slots (H5). Until release R1,
 every `system` command still boots its own host, as described in
 [Work ownership and recovery](work-ownership-and-recovery.md). This document
 describes the target, and is updated as each step lands.
@@ -120,13 +120,23 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
     Host runs.
   - A `run` cut short has no receipt, so after a restart the same `commandId`
     runs the Work on.
-- **Implemented (H3a), the transport:** `packages/host`.
-  - It serves `host.hello` and `host.ping` on a Unix socket, with the 1 MiB
-    frame bound and a dispatch table with an `agent` flag per method. Its
-    README is the protocol reference.
-  - The Work operations, `work.events` and the caller recorded on each call
-    are H3b.
-- **Following a Work.** `work.events` takes a cursor. The CLI polls it every
+- **Implemented (H3), the socket and the operation table:** `packages/host`.
+  Its README is the protocol and API reference, the latter generated from the
+  table and checked by a test.
+  - The transport (`index.ts`): `host.hello`, the 1 MiB frame bound and a
+    dispatch table `method -> { params, handler, agent }`. Params are a zod
+    schema per method; the connection's caller reaches each handler.
+  - The rows (`operations.ts`): `work.*`, `approval.decide`, `task.new`,
+    `artifact.*`, `conversation.*`, `workers.list`, `credentials.*` and
+    `host.status`. They need the DSH-backed parts (Artifacts, credentials,
+    Workers) as `Services`; the CLI brings them at H4.
+  - `work.submit` takes the Workflow file's contents, never a path.
+  - `work.run`, `work.retry` and `approval.decide` answer once the Work is
+    being driven, through a `started` signal of the Host core, so a refusal
+    still reaches the caller and a long run does not hold the call. A closed
+    connection never cancels a Work.
+- **Following a Work.** `work.events` takes `{ workId, after }` and returns the
+  events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact
@@ -190,13 +200,13 @@ before the code (Charter 12, fixture first).
 
 | Guarantee | Test |
 |---|---|
-| One Host per home | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts); `a second Host on the same home is refused; another home is not; a closed Host frees its home` (host.test.ts). The `system host` command is H3. |
+| One Host per home | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts); `a second Host on the same home is refused; another home is not; a closed Host frees its home` (host.test.ts). The `system host` command is H4. |
 | No change from a stale copy | Held for the Host's commands (H2): `a cancel and the report of a held attempt in the same turn: both are recorded, in order, and the record replays`, `run and cancel submitted together: the cancel is decided first, so nothing is dispatched`, `two runs of one Work together: one drives it, the other is refused, nothing interleaves`, `writes of different Works never overlap: every change goes through the one lane`, `seed 1` to `seed 20: run, cancel and run again at random moments lose and repeat no event`, `the lane runs one section at a time, in order, and a failure does not block the next`, `a closed Host writes nothing, even when its attempt reports late` (host.test.ts); the controller itself by H1 in packages/work/tests/seam.test.ts. |
 | The five defects of 2026-11-06 stay fixed | One regression per defect, run against the Host. Held by H1 against the controller, in the tests named in [tests/README.md](../../tests/README.md#regressions). |
-| A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `submit sent twice at once gives one Work`, `the same run twice dispatches once`, `the same run sent twice while it runs joins it`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket: H3. |
-| Agents cannot approve | Every operation not flagged `agent` is refused to an agent caller. (H3) |
+| A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `submit sent twice at once gives one Work`, `the same run twice dispatches once`, `the same run sent twice while it runs joins it`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
+| Agents cannot approve | Held (H3): `an agent connection is refused every method flagged agent: false, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
 | Recovery is conservative | Held except for the slot (H2): `a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until reconciled: H5. |
-| Version skew is caught | A client and a Host of different versions refuse to talk. (H3) |
+| Version skew is caught | Held (H3a): `a Host of another version refuses the hello and names the fix` (packages/host/tests/transport.test.ts). |
 | Slots hold (R2) | Two Works contend for one Account: never two attempts at once. Brainstorm's two proposals overlap in time. (H5) |
 
 ## Not here

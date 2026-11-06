@@ -33,6 +33,8 @@ export * from './record.ts'
 export * from './registry.ts'
 export * from './summary.ts'
 export * from './workflow.ts'
+/** The zod the Work schemas are built with, for the packages that validate the same shapes. */
+export { z } from 'zod'
 
 export const name = 'system-work'
 export const inject = ['storageDomain', 'artifacts']

@@ -6,7 +6,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
-import type { Caller, Host } from '@system/work'
+import type { Caller, Host, z } from '@system/work'
 
 export const VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
@@ -21,6 +21,8 @@ export const METHOD_NOT_FOUND = -32601
 export const INVALID_PARAMS = -32602
 /** Refused by the Host: a handshake not done or not matching. */
 export const REFUSED = -32000
+/** An operation closed to agents, called by one. */
+export const NOT_ALLOWED = -32001
 
 export class RpcError extends Error {
   readonly code: number
@@ -31,6 +33,10 @@ export class RpcError extends Error {
 }
 
 export interface Method {
+  /** One line for the API reference: what it does and returns. */
+  summary?: string
+  /** The shape of `params`; a call that does not fit is refused with -32602, and the handler gets the parsed value. */
+  params?: z.ZodType
   handler: (host: Host, params: any, caller: Caller) => unknown | Promise<unknown>
   /** Whether a caller of type `agent` may call it. */
   agent: boolean
@@ -49,22 +55,27 @@ export interface Served {
   close(): Promise<void>
 }
 
-const builtin: Methods = {
-  'host.ping': {
-    agent: true,
-    handler(host) {
-      const records = host.list()
-      return { version: VERSION, pid: process.pid, works: records.length, recordBytes: records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0) }
-    },
-  },
+/** The memory report (C18): what the records weigh, counted from the records. */
+const report = (host: Host) => {
+  const records = host.list()
+  return { version: VERSION, pid: process.pid, works: records.length, recordBytes: records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0) }
 }
+
+/** The `host.*` rows every Host serves, besides `host.hello`, which the connection itself handles. */
+const builtin: Methods = {
+  'host.ping': { agent: true, summary: 'Whether the Host answers: `{ version, pid, works, recordBytes }`.', handler: (host) => report(host) },
+  'host.status': { agent: true, summary: 'The memory report (C18), counted from the records: the same `{ version, pid, works, recordBytes }`, for the growth budget.', handler: (host) => report(host) },
+}
+
+/** The whole table a Host serves: the built-in rows and `extra`. */
+export const tableOf = (extra: Methods = {}): Methods => ({ ...builtin, ...extra })
 
 const callerOf = (value: any): Caller | undefined =>
   value && (value.type === 'human' || value.type === 'agent') && typeof value.operatorId === 'string' && value.operatorId ? { type: value.type, operatorId: value.operatorId } : undefined
 
 /** Listen on `options.path`; each connection must say `host.hello` before any other method. */
 export async function serve(host: Host, options: ServeOptions): Promise<Served> {
-  const methods = { ...builtin, ...options.methods }
+  const methods = tableOf(options.methods)
   const version = options.version ?? VERSION
   const sockets = new Set<Socket>()
   const server: Server = createServer((socket) => {
@@ -95,8 +106,14 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         const method = Object.hasOwn(methods, request.method) ? methods[request.method] : undefined
         if (!method) throw new RpcError(METHOD_NOT_FOUND, `unknown method ${request.method}`)
         if (!caller) throw new RpcError(REFUSED, `say host.hello first: ${request.method} needs a version and a caller`)
-        if (caller.type === 'agent' && !method.agent) throw new RpcError(REFUSED, `${request.method} is not open to an agent caller`)
-        send({ jsonrpc: '2.0', id, result: await method.handler(host, request.params, caller) ?? null })
+        if (caller.type === 'agent' && !method.agent) throw new RpcError(NOT_ALLOWED, `${request.method}: not allowed for agents`)
+        let params = request.params
+        if (method.params) {
+          const parsed = method.params.safeParse(params ?? {})
+          if (!parsed.success) throw new RpcError(INVALID_PARAMS, `invalid params for ${request.method}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'params'}: ${i.message}`).join('; ')}`)
+          params = parsed.data
+        }
+        send({ jsonrpc: '2.0', id, result: await method.handler(host, params, caller) ?? null })
       } catch (error) {
         if (error instanceof RpcError) fail(id, error.code, error.message)
         else fail(id, -32603, error instanceof Error ? error.message : String(error))

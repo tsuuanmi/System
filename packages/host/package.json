@@ -7,6 +7,7 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./operations": "./lib/operations.js",
     "./package.json": "./package.json"
   },
   "files": [
