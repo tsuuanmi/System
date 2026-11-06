@@ -76,9 +76,20 @@ test('a code change is captured from the working tree as one pinned commit on th
   assert.equal(execFileSync('git', ['-C', repository, 'status', '--porcelain'], { encoding: 'utf8' }), '', 'the operator checkout is untouched')
   assert.deepEqual(readdirSync(attempts), [], 'the attempt directory and worktree are removed')
   assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1)
-  assert.deepEqual(result.usage, { inputTokens: 33, cacheReadTokens: 20, cacheWriteTokens: 10, outputTokens: 5, source: 'claude-code result.usage (input_tokens is fresh; total adds cache_creation and cache_read)' })
+  assert.deepEqual(result.usage, { inputTokens: 33, cacheReadTokens: 20, cacheWriteTokens: 10, outputTokens: 5, costUsd: 0.5, source: 'claude-code result.usage over 1 result(s) (input_tokens is fresh; total adds cache_creation and cache_read)' })
   assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake', servedModels: ['served-default'] })
   assert.equal(artifacts.get(result.log!).state, 'stored')
+})
+
+test('usage sums every result of a stream, from the whole stdout and not the bounded log', async () => {
+  const { artifacts } = memory()
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-followup'))
+  const result = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs FAKE:followup FAKE:noise') }, ['report']))
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.deepEqual(result.usage, { inputTokens: 40, cacheReadTokens: 24, cacheWriteTokens: 12, outputTokens: 11, costUsd: 0.75, source: 'claude-code result.usage over 2 result(s) (input_tokens is fresh; total adds cache_creation and cache_read)' })
+  const log = Buffer.from(await artifacts.readBytes(result.log!)).toString()
+  assert.ok(log.length <= 256 * 1024, 'the log is bounded')
+  assert.ok(!log.includes('"input_tokens":3,'), 'the first result is past the bound, yet it was counted')
 })
 
 test('without a repository every output is a file the agent wrote; a missing one fails the attempt', async () => {

@@ -106,7 +106,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
     const log = (await artifacts.putBytes({
       kind: 'file', schemaVersion: 1, data: Buffer.from(stdout.slice(-MAX_LOG_BYTES)),
-      mediaType: account.runtime === 'claude-code' ? 'application/json' : 'application/x-ndjson',
+      mediaType: 'application/x-ndjson',
       classification: 'local-private', producer: { type: 'worker', ref: account.ref }, workId: request.workId, attemptId: request.attemptId,
     })).id
     const captured = await capture(artifacts, ws, request, account.ref)

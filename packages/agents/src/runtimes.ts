@@ -18,7 +18,7 @@ export interface Parsed {
   /** Models the CLI says it used, when it says. */
   servedModels?: string[]
   /** `inputTokens` is the total; fresh input is it minus the cache fields, which are absent when the CLI did not split them. */
-  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; source: string }
+  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; /** List-price cost the CLI computed itself, summed over its results; absent when it did not report one. */ costUsd?: number; source: string }
 }
 
 /** Variables kept from the host environment; credentials come only from the account. */
@@ -33,7 +33,7 @@ function baseEnv(ws: Workspace): Record<string, string> {
 export function claudeInvocation(command: string, ws: Workspace, prompt: string, token: string, model?: string): Invocation {
   return {
     argv: [
-      command, '-p', prompt, '--output-format', 'json',
+      command, '-p', prompt, '--output-format', 'stream-json', '--verbose',
       ...(model ? ['--model', model] : []),
       '--permission-mode', 'acceptEdits',
       '--add-dir', ws.inputs, '--add-dir', ws.outputs,
@@ -45,27 +45,66 @@ export function claudeInvocation(command: string, ws: Workspace, prompt: string,
   }
 }
 
+interface ClaudeResult {
+  is_error?: boolean
+  result?: unknown
+  subtype?: string
+  usage?: Record<string, number>
+  total_cost_usd?: unknown
+  modelUsage?: Record<string, unknown>
+}
+
+/** `stream-json` prints one `result` per turn, so a follow-up turn (a background command's notification) adds one; usage is summed over all of them. */
 export function parseClaude(stdout: string): Parsed {
-  let result: { is_error?: boolean; result?: unknown; subtype?: string; usage?: Record<string, number>; modelUsage?: Record<string, unknown> }
-  try {
-    result = JSON.parse(stdout.trim().split('\n').at(-1) ?? '')
-  } catch {
-    return { ok: false, message: `unreadable Claude Code output: ${stdout.slice(0, 200)}` }
+  const results: ClaudeResult[] = []
+  for (const line of stdout.split('\n')) {
+    try {
+      const event = JSON.parse(line)
+      if (event?.type === 'result') results.push(event)
+    } catch {
+      continue
+    }
   }
-  const u = result.usage
+  const last = results.at(-1)
+  if (!last) return { ok: false, message: `unreadable Claude Code output: ${stdout.slice(0, 200)}` }
+  let input = 0
+  let read = 0
+  let write = 0
+  let output = 0
+  let cost = 0
+  /** A result without both counts makes the total unknown, never a partial sum; likewise the split and the cost. */
+  let counted = true
+  let split = true
+  let priced = true
+  for (const { usage: u, total_cost_usd: c } of results) {
+    if (u && Number.isInteger(u.input_tokens) && Number.isInteger(u.output_tokens)) {
+      input += u.input_tokens!
+      output += u.output_tokens!
+      // The split is reported whole or not at all, so a half-reported one never reads as zero cache.
+      if (Number.isInteger(u.cache_read_input_tokens) && Number.isInteger(u.cache_creation_input_tokens)) {
+        read += u.cache_read_input_tokens!
+        write += u.cache_creation_input_tokens!
+      } else {
+        split = false
+      }
+      input += (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+    } else {
+      counted = false
+    }
+    if (typeof c === 'number' && Number.isFinite(c)) cost += c
+    else priced = false
+  }
   return {
-    ok: result.is_error === false,
-    message: String(result.result ?? result.subtype ?? ''),
-    servedModels: result.modelUsage ? Object.keys(result.modelUsage).sort() : undefined,
-    usage: u && Number.isInteger(u.input_tokens) && Number.isInteger(u.output_tokens)
+    ok: last.is_error === false,
+    message: String(last.result ?? last.subtype ?? ''),
+    servedModels: results.some((r) => r.modelUsage) ? [...new Set(results.flatMap((r) => Object.keys(r.modelUsage ?? {})))].sort() : undefined,
+    usage: counted
       ? {
-          inputTokens: u.input_tokens! + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0),
-          // The split is reported whole or not at all, so a half-reported one never reads as zero cache.
-          ...(Number.isInteger(u.cache_read_input_tokens) && Number.isInteger(u.cache_creation_input_tokens)
-            ? { cacheReadTokens: u.cache_read_input_tokens!, cacheWriteTokens: u.cache_creation_input_tokens! }
-            : {}),
-          outputTokens: u.output_tokens!,
-          source: 'claude-code result.usage (input_tokens is fresh; total adds cache_creation and cache_read)',
+          inputTokens: input,
+          ...(split ? { cacheReadTokens: read, cacheWriteTokens: write } : {}),
+          outputTokens: output,
+          ...(priced ? { costUsd: cost } : {}),
+          source: `claude-code result.usage over ${results.length} result(s) (input_tokens is fresh; total adds cache_creation and cache_read)`,
         }
       : undefined,
   }

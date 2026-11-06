@@ -59,7 +59,7 @@ export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
     spawn(spec) {
       const handle = subprocess.spawn({
         argv: spec.argv, cwd: spec.cwd, env: spec.env, signal: spec.signal, graceMs: spec.graceMs,
-        stdio: { stdin: 'ignore', stdout: { maxBytes: 4 * 1024 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
+        stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
       })
       return {
         // Settle only once the whole process range is gone, not just the direct child.

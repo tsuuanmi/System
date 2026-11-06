@@ -25,7 +25,7 @@ export interface WorkerResult {
   /** What a cancelled or failed attempt left behind; never accepted. */
   partial?: Record<string, string>
   reason?: string
-  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; source: string }
+  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; costUsd?: number; source: string }
   /** Bounded agent output as an Artifact, for audit. */
   log?: string
   executor?: { ref: string; account?: string; command?: string; version?: string; tier?: string; model?: string; servedModels?: string[] }
