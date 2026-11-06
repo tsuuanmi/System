@@ -138,6 +138,23 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
 - **Following a Work.** `work.events` takes `{ workId, after }` and returns the
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
+  - **Implemented (H4b-1):** the CLI is a thin client (`packages/app`:
+    `remote.ts` is an `AppHost` over the socket, `client.ts` its entry, run by
+    `bin/system` for every command but `init`, `host` and `doctor`, without
+    booting DSH). `buildProgram` is the same program over either `AppHost`.
+  - It reads the Workflow file and sends its contents. A call that changes
+    something carries a fresh `commandId`, sent once more with the same one
+    after a timeout.
+  - `work submit`, `run`, `retry`, `approve`, `deny` and `cancel --wait` follow
+    the Work and exit with the usual codes (0, 1, 3, 5). Ctrl-C prints
+    `detached; <work> goes on in the Host` and exits 0; with
+    `--cancel-on-interrupt` it sends `work.cancel` and follows to the end.
+  - `approve` and `deny` keep the terminal confirmation and send
+    `approval.decide` after it, on a connection whose caller is human.
+  - No Host: one line, `the System Host is not running for <home>`, exit 1. No
+    answer in 10 s: "not answering", naming the runbook.
+  - `doctor` still boots DSH and also reports whether a Host answers.
+  - The old in-process mode stays in the code, unused by the CLI, until H4b-2.
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact
   subject at a terminal, and the Host checks that subject again before it
@@ -199,12 +216,13 @@ Credentials still come from the DSH store.
   `~/.dsh` gets no unit.
 - `bin/system` runs the newest Node 24 (>= 24.9) under `~/.nvm/versions/node/`
   when the running one is older, or names `nvm install 24`.
-- Until H4b, the old per-command path refuses to change Work while a Host holds
-  the home: `submit`, `run`, `retry`, `cancel`, `approve`, `deny`.
+- Until H4b-2 deletes it, the old per-command path (reached only by a leading
+  DSH flag, as `system --patch f work list`) refuses to change Work while a
+  Host holds the home.
 
 The commands are in the [operations runbook](../operations/runbook.md).
 
-The CLI pings the Host with a timeout and says which case it hit:
+The CLI says which case it hit (H4b-1):
 - not running: run `systemctl --user start system`;
 - not answering: see the [operations runbook](../operations/runbook.md).
 

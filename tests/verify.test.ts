@@ -16,7 +16,7 @@ const home = cli.home
 let server: ChildProcess
 let site = ''
 
-/** The test process blocks in spawnSync while a host fetches, so the site runs in its own process. */
+/** The test process blocks in spawnSync while the Host fetches, so the site runs in its own process. */
 const SITE = `
 const { createServer } = require('node:http')
 const server = createServer((req, res) => {
@@ -60,11 +60,15 @@ before(async () => {
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 `)
+  // The Host reads its credentials when it starts: store the token, then start it again.
+  await cli.start()
   const set = cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake\n' })
   assert.equal(set.status, 0, set.stderr)
+  await cli.start()
 })
 
-after(() => {
+after(async () => {
+  await cli.stop()
   server.kill()
   rmSync(home, { recursive: true, force: true })
 })

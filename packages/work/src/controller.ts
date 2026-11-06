@@ -368,10 +368,9 @@ export class WorkController {
     return lost
   }
 
-  /** The steps whose last attempt is dispatched and not observed, with that attempt; an effect step is reconciled instead. */
+  /** The steps whose last attempt is dispatched and not observed, with that attempt; an effect step has none, and is reconciled instead. */
   private runningAttempts(record: WorkRecord): [string, string][] {
-    const pendingEffects = new Set(Object.values(record.state.effects).filter((e) => e.state === 'intended' || e.state === 'unknown').map((e) => e.stepId))
-    return Object.entries(record.state.steps).filter(([stepId, s]) => s.state === 'running' && !pendingEffects.has(stepId)).map(([stepId, s]) => [stepId, s.attempts.at(-1)!])
+    return Object.entries(record.state.steps).filter(([, s]) => s.state === 'running' && s.attempts.length > 0).map(([stepId, s]) => [stepId, s.attempts.at(-1)!])
   }
 
   /** Mark attempts that were dispatched but never observed as lost. */
@@ -381,14 +380,16 @@ export class WorkController {
     }
     // An effect whose outcome was not recorded is never applied again blindly: reconcile first.
     for (const [operationId, effect] of Object.entries(record.state.effects)) {
-      if (effect.state !== 'intended' && effect.state !== 'unknown') continue
+      // Read as absent by a Host's start, which applies nothing: an explicit run applies it.
+      const unapplied = effect.state === 'absent' && resumeEffects && record.state.steps[effect.stepId]!.state === 'running'
+      if (effect.state !== 'intended' && effect.state !== 'unknown' && !unapplied) continue
       const intent = this.intentOf(record, operationId)
       const provider = this.capabilities.routeEffect(intent.capability).selected
       if (!provider) {
         record = await this.append(record, { type: 'effect-observed', stepId: effect.stepId, operationId, state: 'unknown', reason: `no enabled provider of ${intent.capability} can reconcile it` })
         continue
       }
-      record = await this.reconcile(record, provider, intent, resumeEffects ? 'apply-if-absent' : 'record-only')
+      record = unapplied ? await this.applyEffect(record, provider, intent) : await this.reconcile(record, provider, intent, resumeEffects ? 'apply-if-absent' : 'record-only')
     }
     return record
   }

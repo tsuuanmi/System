@@ -40,11 +40,18 @@ export interface StorageStatus {
   detail: string
 }
 
+/** Whether a Host answers on the home's socket; reported, never a failure of the doctor. */
+export interface HostStatus {
+  answering: boolean
+  detail: string
+}
+
 export interface DoctorReport {
   ok: boolean
   versions: { node: string; dsh: string }
   rows: RowStatus[]
   storage: StorageStatus
+  host: HostStatus
   problems: string[]
 }
 
@@ -53,6 +60,7 @@ export interface DoctorHost {
   hasService(name: string): boolean
   dshVersion(): string
   probeStorage(): Promise<StorageStatus>
+  probeHost(): Promise<HostStatus>
 }
 
 export async function runDoctor(host: DoctorHost): Promise<DoctorReport> {
@@ -71,6 +79,7 @@ export async function runDoctor(host: DoctorHost): Promise<DoctorReport> {
     versions: { node: process.version, dsh: host.dshVersion() },
     rows,
     storage,
+    host: await host.probeHost(),
     problems,
   }
 }
@@ -82,6 +91,7 @@ export function formatReport(report: DoctorReport): string {
     lines.push(`  ${row.id.padEnd(17)} ${state.padEnd(8)} ${row.required ? 'required' : 'optional'}  ${row.purpose}`)
   }
   lines.push(`  storage probe     ${report.storage.ok ? 'ok' : 'failed'}  backend ${report.storage.backend}: ${report.storage.detail}`)
+  lines.push(`  host              ${report.host.answering ? 'answering' : 'not answering'}: ${report.host.detail}`)
   for (const problem of report.problems) lines.push(`  problem: ${problem}`)
   return `${lines.join('\n')}\n`
 }

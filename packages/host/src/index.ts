@@ -32,6 +32,12 @@ export class RpcError extends Error {
   }
 }
 
+/** Nothing listens at the socket: the Host is not running. */
+export class NotRunning extends Error {}
+
+/** A call got no answer in time. A client may repeat a call that carries a `commandId`. */
+export class NotAnswering extends Error {}
+
 export interface Method {
   /** One line for the API reference: what it does and returns. */
   summary?: string
@@ -171,7 +177,7 @@ export function connect(path: string, options: ConnectOptions = {}): Promise<Cli
       pending.clear()
     }
     socket.once('error', (error: NodeJS.ErrnoException) => {
-      reject(error.code === 'ENOENT' || error.code === 'ECONNREFUSED' ? new Error(`the Host is not running (no answer at ${path}); start it: systemctl --user start system`) : error)
+      reject(error.code === 'ENOENT' || error.code === 'ECONNREFUSED' ? new NotRunning(`the Host is not running (no answer at ${path}); start it: systemctl --user start system`) : error)
     })
     socket.on('error', (error) => drop(error))
     socket.on('close', () => drop(new Error('the Host closed the connection')))
@@ -203,7 +209,7 @@ export function connect(path: string, options: ConnectOptions = {}): Promise<Cli
         return new Promise((res, rej) => {
           const timer = setTimeout(() => {
             pending.delete(id)
-            rej(new Error(`the Host is not answering ${method} after ${timeout} ms`))
+            rej(new NotAnswering(`the Host is not answering ${method} after ${timeout} ms`))
           }, timeout)
           pending.set(id, { resolve: res, reject: rej, timer })
           socket.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)

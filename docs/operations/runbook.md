@@ -1,8 +1,8 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-06
-covers: [bin/system, bin/service.mjs, packages/app/src/index.ts, packages/host/src/process.ts]
+reviewed: 2026-11-07
+covers: [bin/system, bin/service.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
 ---
 
 # Runbook
@@ -10,9 +10,9 @@ covers: [bin/system, bin/service.mjs, packages/app/src/index.ts, packages/host/s
 How to run the Host of the default home (`~/.dsh`) as a user service, and
 what to do when it does not. The design is in [Host](../architecture/host.md#running-it).
 
-**Status:** the Host runs as a process (H4a). Until the CLI goes through its
-socket (H4b), commands that change Work do not work while it runs; read the
-[guard message](#a-host-is-running-for-home).
+**Status:** the Host runs as a process (H4a) and the CLI is its thin client
+(H4b-1): every command but `init`, `host` and `doctor` talks to the Host on
+`$DSH_HOME/system/host.sock`, so a Host must run for them.
 
 ## Install and start
 
@@ -57,7 +57,12 @@ listening on <socket>`) and one at stop (`system host: stopped`).
 
 ## Host not running
 
-The client says so when nothing answers at `$DSH_HOME/system/host.sock`:
+The CLI prints one line and exits 1 when nothing answers at
+`$DSH_HOME/system/host.sock`:
+
+```
+system: the System Host is not running for <home>: systemctl --user start system (or run: system host)
+```
 
 1. `systemctl --user status system`: is it `active`? If not, start it.
 2. If it failed, read `journalctl --user -u system -e`. A missing `claude`,
@@ -71,13 +76,37 @@ The client says so when nothing answers at `$DSH_HOME/system/host.sock`:
 A stale `host.sock` file is not a problem: the Host removes it once it holds
 the home.
 
-## A Host is running for <home>
+## The Host is not answering
 
 ```
-system: a Host is running for <home>; stop it first (systemctl --user stop system)
+system: the System Host for <home> is not answering (...): see docs/operations/runbook.md, "The Host is not answering"
 ```
 
-Until H4b, the commands that change Work (`work submit`, `run`, `retry`,
-`cancel`, `approve`, `deny`) run their own controller, and two writers on one
-home are refused. Stop the service, run the command, start it again.
-Reading (`work show`, `list`, `report`, `replay`) is not refused.
+The socket accepts connections but a call got no answer in 10 seconds. A call
+that changes something (`submit`, `run`, `retry`, `cancel`, `approve`) is sent
+once more with the same `commandId`, so the Host does it once: look at
+`system work list` before sending it again yourself.
+
+1. `systemctl --user status system` and `journalctl --user -u system -e`: is
+   the Host alive, and busy or stuck?
+2. `system doctor` boots DSH beside the Host and says whether it answers.
+3. If it is stuck, `systemctl --user restart system`. Whatever was running is
+   left interrupted; nothing runs again until `system work run` or `retry`.
+
+## Following a Work, and detaching
+
+`work submit`, `work run`, `work retry`, `approve` and `deny` return once the
+Host has admitted the operation, then poll `work.events` every second until the
+Work is terminal, and exit 0 (succeeded), 1 (failed), 3 (held) or 5
+(cancelled). `work cancel --wait` follows the same way.
+
+Ctrl-C **detaches**: the CLI prints `detached; <work> goes on in the Host` and
+exits 0; the Work is not touched. With `--cancel-on-interrupt` Ctrl-C sends
+`work.cancel` instead and follows the Work to its end; a second Ctrl-C then
+detaches. Closing the terminal or killing the CLI never cancels a Work: only
+`system work cancel` does. Read what happened with `system work show <id>`.
+
+## Errors
+
+An error is one line, `system: <message>`, never a stack. `SYSTEM_DEBUG=1`
+prints the stack as well.

@@ -3,24 +3,16 @@
  * with the client of @system/host; no model or GitHub credentials.
  */
 import assert from 'node:assert/strict'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, rmSync } from 'node:fs'
 import { after, before, test } from 'node:test'
 import { VERSION, connect } from '../packages/host/src/index.ts'
-import { repo, systemCli } from '../test-support/cli.ts'
+import { systemCli } from '../test-support/cli.ts'
 
-// A socket path is limited to about 100 bytes, and tmpdir() may be longer.
-const cli = systemCli('system-host-process', { SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human', SYSTEM_NO_SERVICE: '1' }, mkdtempSync('/tmp/sh-hp-'))
-const socket = join(cli.home, 'system', 'host.sock')
-const hosts: ChildProcess[] = []
+const cli = systemCli('system-host-process', { SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human', SYSTEM_NO_SERVICE: '1' })
+const socket = cli.socket
 after(async () => {
   // Stop what a failed test left running; SIGKILL only if SIGTERM is not enough.
-  await Promise.all(hosts.filter((host) => host.exitCode === null && host.signalCode === null).map((host) => new Promise<void>((done) => {
-    const force = setTimeout(() => host.kill('SIGKILL'), 10_000)
-    host.once('exit', () => { clearTimeout(force); done() })
-    host.kill('SIGTERM')
-  })))
+  await cli.stop()
   rmSync(cli.home, { recursive: true, force: true })
 })
 
@@ -29,37 +21,11 @@ before(() => {
   assert.equal(ran.status, 0, ran.stderr)
 })
 
-interface Running {
-  child: ChildProcess
-  stderr: () => string
-  exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
-}
-
-function startHost(): Running {
-  const child = spawn(process.execPath, [join(repo, 'bin', 'system'), 'host'], { env: cli.env, stdio: ['ignore', 'ignore', 'pipe'] })
-  hosts.push(child)
-  let stderr = ''
-  child.stderr!.on('data', (d) => { stderr += d })
-  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })))
-  return { child, stderr: () => stderr, exited }
-}
-
-/** Connect once the Host answers, or fail with what it said if it exited first. */
-async function reach(host: Running) {
-  let gone = false
-  void host.exited.then(() => { gone = true })
-  for (let tries = 0; tries < 600; tries++) {
-    if (gone) assert.fail(`the Host exited before answering: ${host.stderr()}`)
-    try { return await connect(socket) } catch { await new Promise((resolve) => setTimeout(resolve, 100)) }
-  }
-  return assert.fail(`the Host never answered: ${host.stderr()}`)
-}
-
 const human = { type: 'human', operatorId: 'tester' }
 
 test('system host serves hello and ping on host.sock, and logs its start', { timeout: 60_000 }, async () => {
-  const host = startHost()
-  const client = await reach(host)
+  const host = await cli.start()
+  const client = await connect(socket)
   try {
     assert.deepEqual(await client.call('host.hello', { version: VERSION, caller: human }), { version: VERSION })
     const ping = await client.call('host.ping') as { version: string; pid: number; works: number }
@@ -74,9 +40,9 @@ test('system host serves hello and ping on host.sock, and logs its start', { tim
   await host.exited
 })
 
-test('while a Host runs: a second Host fails at once, and old-path Work commands refuse', { timeout: 60_000 }, async () => {
-  const host = startHost()
-  const client = await reach(host)
+test('while a Host runs: a second Host fails at once, and the Work commands reach the running one', { timeout: 60_000 }, async () => {
+  const host = await cli.start()
+  const client = await connect(socket)
   client.close()
   const second = cli.run(['host'], { timeoutMs: 60_000 })
   assert.equal(second.status, 1)
@@ -86,40 +52,36 @@ test('while a Host runs: a second Host fails at once, and old-path Work commands
   await again.call('host.hello', { version: VERSION, caller: human })
   again.close()
 
-  const message = `a Host is running for ${cli.home}; stop it first (systemctl --user stop system)`
-  const commands = [
-    ['work', 'submit', '--capability', 'fake'], ['work', 'run', 'work:x'], ['work', 'retry', 'work:x'],
-    ['work', 'cancel', 'work:x'], ['approve', 'work:x'], ['deny', 'work:x', '--reason', 'no'],
-  ]
-  for (const args of commands) {
+  // The Work commands go through the running Host, which answers them.
+  for (const args of [['work', 'run', 'work:x'], ['work', 'retry', 'work:x'], ['work', 'cancel', 'work:x'], ['approve', 'work:x'], ['deny', 'work:x', '--reason', 'no']]) {
     const ran = cli.run(args, { timeoutMs: 60_000 })
     assert.equal(ran.status, 1, `${args.join(' ')}: ${ran.stderr}`)
-    assert.equal(ran.stderr.trim(), `system: ${message}`, args.join(' '))
+    assert.equal(ran.stderr.trim(), 'system: no Work work:x', args.join(' '))
   }
-  // Reading is not refused.
+  const submit = cli.run(['work', 'submit', '--capability', 'fake'], { timeoutMs: 60_000 })
+  assert.equal(submit.status, 1)
+  assert.match(submit.stderr, /^system: .*capability fake/)
   assert.equal(cli.run(['work', 'list']).status, 0)
   host.child.kill('SIGTERM')
   await host.exited
 })
 
 test('SIGTERM stops the Host with exit 0, releases the lock and the socket, and a new Host starts', { timeout: 60_000 }, async () => {
-  const first = startHost()
-  ;(await reach(first)).close()
+  const first = await cli.start()
   first.child.kill('SIGTERM')
   assert.deepEqual(await first.exited, { code: 0, signal: null })
   assert.match(first.stderr(), /^system host: stopped$/m)
   assert.equal(existsSync(socket), false)
-  assert.equal(cli.run(['work', 'list']).status, 0)
+  assert.match(cli.run(['work', 'list']).stderr, /the System Host is not running for /)
 
-  const second = startHost()
-  ;(await reach(second)).close()
+  const second = await cli.start()
   second.child.kill('SIGINT')
   assert.deepEqual(await second.exited, { code: 0, signal: null })
 })
 
 test('a stale socket file left by a killed Host is replaced once the lock is taken', { timeout: 60_000 }, async () => {
-  const first = startHost()
-  const client = await reach(first)
+  const first = await cli.start()
+  const client = await connect(socket)
   await client.call('host.hello', { version: VERSION, caller: human })
   // The wrapper's child is the Host; killing it leaves the socket file behind.
   const { pid } = await client.call('host.ping') as { pid: number }
@@ -127,8 +89,8 @@ test('a stale socket file left by a killed Host is replaced once the lock is tak
   process.kill(pid, 'SIGKILL')
   await first.exited
   assert.equal(existsSync(socket), true)
-  const second = startHost()
-  const again = await reach(second)
+  const second = await cli.start()
+  const again = await connect(socket)
   await again.call('host.hello', { version: VERSION, caller: human })
   again.close()
   second.child.kill('SIGTERM')

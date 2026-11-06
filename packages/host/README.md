@@ -97,9 +97,9 @@ await serving.stop()                                // server, then the Host cor
 
 ## Client
 
-`call` rejects after `timeout` ms (default 10 s, `CALL_TIMEOUT`) with "the Host
-is not answering"; `connect` rejects with "the Host is not running" on ENOENT or
-ECONNREFUSED. A server error rejects with an `RpcError` carrying its `code`.
+`call` rejects after `timeout` ms (default 10 s, `CALL_TIMEOUT`) with
+`NotAnswering`, "the Host is not answering"; `connect` rejects with `NotRunning`,
+"the Host is not running", on ENOENT or ECONNREFUSED. A server error rejects with an `RpcError` carrying its `code`.
 
 ## Tests
 

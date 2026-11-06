@@ -1,27 +1,24 @@
 #!/usr/bin/env node
 // A fake GitHub API for tests, run as its own process (tests block in
 // spawnSync while a host calls it). Prints its port. GET /_state returns the
-// pull requests. With --kill-host-on-create <controlDir>, the first pull
-// request it creates is followed by SIGKILL to every host whose Work lock is in
-// that directory, before the response: a remote effect applied, never received.
-// --kill-host-on-merge <controlDir> does the same after the first merge. The
+// pull requests. With --kill-host-on-create <pidFile>, the first pull
+// request it creates is followed by SIGKILL to the Host whose process ID is in
+// that file, before the response: a remote effect applied, never received.
+// --kill-host-on-merge <pidFile> does the same after the first merge. The
 // merge endpoint needs --bare <dir>, the remote the branches are pushed to, to
 // compare `sha` with the head.
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { join } from 'node:path'
 
 const flag = (name) => process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined
-const killDir = flag('--kill-host-on-create')
-const mergeKillDir = flag('--kill-host-on-merge')
+const killFile = flag('--kill-host-on-create')
+const mergeKillFile = flag('--kill-host-on-merge')
 const bare = flag('--bare')
 let killed = false
 let mergeKilled = false
-const killHosts = (dir) => {
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.lock'))) {
-    try { process.kill(Number(readFileSync(join(dir, file), 'utf8').split(' ')[0]), 'SIGKILL') } catch { /* gone */ }
-  }
+const killHost = (pidFile) => {
+  try { process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL') } catch { /* gone */ }
 }
 const headSha = (branch) => {
   try { return execFileSync('git', ['-C', bare, 'rev-parse', `refs/heads/${branch}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
@@ -51,9 +48,9 @@ const server = createServer((req, res) => {
       if (input.sha !== headSha(pull.head)) return send(409, { message: 'Head branch was modified. Review and try the merge again.' })
       pull.merged = true
       pull.mergeCommit = execFileSync('git', ['-C', bare, 'commit-tree', '-p', input.sha, '-m', 'merge', `${input.sha}^{tree}`], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim()
-      if (mergeKillDir && !mergeKilled) {
+      if (mergeKillFile && !mergeKilled) {
         mergeKilled = true
-        killHosts(mergeKillDir)
+        killHost(mergeKillFile)
         return res.destroy()
       }
       return send(200, { sha: pull.mergeCommit, merged: true, message: 'Pull Request successfully merged' })
@@ -62,9 +59,9 @@ const server = createServer((req, res) => {
       const input = JSON.parse(body)
       const pull = { number: pulls.length + 1, head: input.head, base: input.base, draft: input.draft, title: input.title, node_id: `PR_${pulls.length + 1}` }
       pulls.push(pull)
-      if (killDir && !killed) {
+      if (killFile && !killed) {
         killed = true
-        killHosts(killDir)
+        killHost(killFile)
         return res.destroy()
       }
       return send(201, view(pull))

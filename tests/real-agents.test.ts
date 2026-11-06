@@ -5,19 +5,21 @@
  * the economy tier only.
  *
  *   SYSTEM_REAL_AGENTS=1 node --test tests/real-agents.test.ts
+ *
+ * The Host is the operator's own when one answers (the service); otherwise the
+ * test starts `system host` for the profile and stops it after.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { repo, systemCli } from '../test-support/cli.ts'
+import { systemCli } from '../test-support/cli.ts'
 
 const enabled = process.env.SYSTEM_REAL_AGENTS === '1'
 /** The operator's own profile: real accounts and tokens. */
 const cli = systemCli('system-real', { SYSTEM_CALLER: 'human' }, process.env.DSH_HOME || join(homedir(), '.dsh'))
-const { env } = cli
 const gitRepo = mkdtempSync(join(tmpdir(), 'system-real-'))
 
 const system = (args: string[]) => cli.run(args, { timeoutMs: 900_000 })
@@ -27,8 +29,9 @@ const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).std
 const tree = (id: string) => (JSON.parse(system(['artifact', 'show', id]).stdout) as { envelope: { content: { commit: string; parent: string } } }).envelope.content
 const fileAt = (commit: string, path: string) => execFileSync('git', ['-C', gitRepo, 'show', `${commit}:${path}`], { encoding: 'utf8' })
 
-before(() => {
+before(async () => {
   if (!enabled) return
+  await cli.pid().catch(() => cli.start())
   const git = (...args: string[]) => execFileSync('git', ['-C', gitRepo, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   git('init', '--quiet')
   writeFileSync(join(gitRepo, 'README.md'), '# scratch repository for System real-agent tests\n')
@@ -39,7 +42,10 @@ before(() => {
   assert.match(workers.stdout, /codex\/default\s+available/, workers.stdout)
 })
 
-after(() => rmSync(gitRepo, { recursive: true, force: true }))
+after(async () => {
+  await cli.stop()
+  rmSync(gitRepo, { recursive: true, force: true })
+})
 
 const newTask = (text: string) => system(['task', 'new', '--text', text, '--repo', gitRepo]).stdout.trim().split('\n').at(-1)!
 
@@ -64,22 +70,17 @@ test('a cancelled Claude Code attempt is taken over by Codex from its partial tr
     '3. Append the line: step two  to NOTES.md',
     'If NOTES.md already contains "step one", skip steps 1 and 2.',
   ].join('\n'))
-  const submit = spawn(process.execPath, [join(repo, 'bin', 'system'), 'work', 'submit', '--capability', 'code-write', 'tier.economy', '--input', input], { env, stdio: ['ignore', 'pipe', 'pipe'] })
-  let out = ''
-  let err = ''
-  submit.stdout.on('data', (d) => { out += d })
-  submit.stderr.on('data', (d) => { err += d })
-  const exited = new Promise<number | null>((r) => submit.on('close', r))
-  while (!out.trim()) await new Promise((r) => setTimeout(r, 200))
-  const workId = out.trim().split('\n')[0]!
+  const submit = cli.runAsync(['work', 'submit', '--capability', 'code-write', 'tier.economy', '--input', input])
+  while (!submit.stdout().trim()) await new Promise((r) => setTimeout(r, 200))
+  const workId = submit.stdout().trim().split('\n')[0]!
   // Cancel 3 s after dispatch: an agent CLI takes longer than that just to start, so the attempt is
   // always mid-run, whatever the model does with its instructions.
   const started = Date.now()
   while (!show(workId).events.some((e) => e.type === 'dispatched') && Date.now() - started < 60_000) await new Promise((r) => setTimeout(r, 250))
   await new Promise((r) => setTimeout(r, 3_000))
   const cancel = system(['work', 'cancel', workId, '--reason', 'real takeover test', '--wait'])
-  assert.equal(cancel.status, 0, `cancel: ${cancel.stdout}${cancel.stderr}\nhost stderr: ${err}`)
-  assert.equal(await exited, 5)
+  assert.equal(cancel.status, 0, `cancel: ${cancel.stdout}${cancel.stderr}\nsubmit stderr: ${submit.stderr()}`)
+  assert.equal((await submit.done).status, 5)
   const cancelled = show(workId)
   assert.equal(cancelled.state.status, 'cancelled')
   const partial = tree(cancelled.state.steps.task.partial!.result!)

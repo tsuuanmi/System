@@ -255,6 +255,16 @@ written first.
   - the API reference.
   **Release R1.**
   H4a: `system host`, unit, Node selection.
+  H4b-1: the thin CLI (`packages/app`: `remote.ts`, `client.ts`, `io.ts`), the
+  old in-process mode unused but not yet deleted (H4b-2). Evidence:
+  `tests/cli-host.test.ts` (no Host, not answering, Ctrl-C detach,
+  `--cancel-on-interrupt`, timeout retry with one `commandId`, one-line errors,
+  doctor); every test of `tests/` runs through a Host started by
+  `test-support/cli.ts`. Found on the way: a Host restart after an effect was
+  read as absent recorded an `attempt-lost` event with no attempt (the stored
+  record then failed its schema at the next start); fixed in
+  `WorkController.recover`, test `an effect found absent on start is published
+  only by an explicit run`.
 - [ ] H5. Parallel steps and Works with per-Account slots. Barrier tests for
   shared-Account contention and for restarts. **Release R2.**
 - [ ] Gate R1:

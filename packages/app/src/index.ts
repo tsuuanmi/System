@@ -3,7 +3,6 @@
  * after the host has started, and exits through the launcher's shutdown path.
  */
 import { readFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
@@ -12,12 +11,14 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import { z } from 'zod'
 import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
 import type { AgentsService } from '@system/agents'
-import { WorkError, dshHome, hostHeld, type Caller, type Capabilities, type WorkService } from '@system/work'
+import { WorkError, dshHome, hostHeld, type Capabilities, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildProgram, type AppHost, type ArtifactCommands, type CredentialCommands, type Run, type WorkCommands, type WorkersView } from './cli.ts'
-import { REQUIRED_BACKEND, type StorageStatus } from './doctor.ts'
+import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
+import { caller, confirmHuman, errorLine, explain, operatorId, readSecret } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { serveHost } from '../../host/lib/process.js'
+import { VERSION, connect } from '../../host/lib/index.js'
+import { serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -62,9 +63,20 @@ async function probeStorage(ctx: Context): Promise<StorageStatus> {
   }
 }
 
-/** The operator a CLI call acts for (ADR-0004 decision 1). */
-export function operatorId(): string {
-  return process.env.SYSTEM_OPERATOR_ID || userInfo().username
+/** Whether a Host answers on the socket of `home`: a hello and a ping, in three seconds. */
+async function probeHost(home: string): Promise<HostStatus> {
+  try {
+    const client = await connect(socketPath(home), { timeout: 3000 })
+    try {
+      await client.call('host.hello', { version: VERSION, caller: caller() })
+      const ping = await client.call('host.ping') as { version: string; pid: number }
+      return { answering: true, detail: `version ${ping.version}, pid ${ping.pid}` }
+    } finally {
+      client.close()
+    }
+  } catch (error) {
+    return { answering: false, detail: (explain(error, home) as Error).message }
+  }
 }
 
 function artifactCommands(ctx: Context): ArtifactCommands {
@@ -81,13 +93,6 @@ function artifactCommands(ctx: Context): ArtifactCommands {
     get: (id) => artifacts.get(id),
     readBytes: (id) => artifacts.readBytes(id),
   }
-}
-
-/** Who made this CLI call (ADR-0004 decision 3): a terminal is a human unless SYSTEM_CALLER says otherwise. */
-export function caller(): Caller {
-  const declared = process.env.SYSTEM_CALLER
-  const type = declared === 'human' || declared === 'agent' ? declared : process.stdin.isTTY ? 'human' : 'agent'
-  return { type, operatorId: operatorId() }
 }
 
 /**
@@ -109,13 +114,17 @@ function workCommands(ctx: Context): WorkCommands {
     admitTask: (capabilities, input) => work.admitTask(capabilities, input, caller()),
     run: (workId) => work.controller.run(workId),
     get: (workId) => work.controller.get(workId),
-    list: () => work.controller.list(),
+    list: () => work.controller.list().map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
     replay: (workId) => work.controller.replay(workId),
     cancel: (workId, reason) => work.controller.cancel(workId, { reason, caller: caller() }),
     // Only reached after confirmHuman: the caller is a human at a terminal.
     decide: (workId, decision, operator, reason) => work.controller.decide(workId, { decision, reason, caller: { type: 'human', operatorId: operator } }),
     retry: (workId, worker, reason, step) => work.controller.retry(workId, { worker, step, reason, caller: caller() }),
-    runningElsewhere: (workId) => work.controller.runningElsewhere(workId),
+    wait: async (workId) => {
+      // This process caches records, so it waits for the host to release the Work instead.
+      while (work.controller.runningElsewhere(workId)) await new Promise((resolve) => setTimeout(resolve, 250))
+      return work.controller.get(workId)!
+    },
     newTask: (instructions, repository, ref, context) => work.newTask(instructions, repository, ref, caller(), context),
     addConversation: (parts, asserted, supersedes) => work.addConversation(parts, asserted, supersedes, caller()),
   }
@@ -130,57 +139,10 @@ function credentialCommands(ctx: Context): CredentialCommands {
   }
 }
 
-/** Read a secret: hidden on a terminal, or the whole of piped stdin less its final newline. */
-async function readSecret(prompt: string): Promise<string> {
-  const stdin = process.stdin
-  if (!stdin.isTTY) {
-    const chunks: Buffer[] = []
-    for await (const chunk of stdin) chunks.push(chunk as Buffer)
-    return Buffer.concat(chunks).toString('utf8').replace(/\r?\n$/, '')
-  }
-  process.stderr.write(prompt)
-  stdin.setRawMode(true)
-  stdin.resume()
-  let value = ''
-  try {
-    return await new Promise<string>((resolve, reject) => {
-      const onData = (chunk: Buffer) => {
-        for (const char of chunk.toString('utf8')) {
-          if (char === '\r' || char === '\n') { stdin.off('data', onData); resolve(value); return }
-          if (char === '\u0003') { stdin.off('data', onData); reject(new Error('cancelled')); return }
-          if (char === '\u007f') value = value.slice(0, -1)
-          else value += char
-        }
-      }
-      stdin.on('data', onData)
-    })
-  } finally {
-    stdin.setRawMode(false)
-    stdin.pause()
-    process.stderr.write('\n')
-  }
-}
-
 async function workersView(ctx: Context): Promise<WorkersView> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
   const agents = ctx.get('agents') as AgentsService | undefined
   return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
-}
-
-/** One typed line from a human at the terminal; anything else is refused (ADR-0004 decision 3). */
-async function confirmHuman(prompt: string, expected: string): Promise<string> {
-  if (!process.stdin.isTTY) {
-    throw new Error('this decision needs a human at a terminal: stdin is not a terminal, so the caller may be an agent (ADR-0004 decision 3)')
-  }
-  const { createInterface } = await import('node:readline/promises')
-  const lines = createInterface({ input: process.stdin, output: process.stderr })
-  try {
-    const typed = (await lines.question(prompt)).trim()
-    if (typed !== expected) throw new Error('the confirmation did not match; nothing was decided')
-  } finally {
-    lines.close()
-  }
-  return operatorId()
 }
 
 /** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT. */
@@ -227,6 +189,7 @@ export function apply(ctx: Context): void {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,
     probeStorage: () => probeStorage(ctx),
+    probeHost: () => probeHost(dshHome(ctx)),
     artifacts: () => artifactCommands(ctx),
     work: () => workCommands(ctx),
     credentials: () => credentialCommands(ctx),
@@ -242,8 +205,7 @@ export function apply(ctx: Context): void {
   const exit = ctx.get('appExit')!
   const start = (): void => {
     run().then(exit, (error: unknown) => {
-      // A refusal is a line to read; anything else is a defect worth its stack.
-      process.stderr.write(`system: ${error instanceof WorkError ? error.message : (error as Error).stack ?? String(error)}\n`)
+      process.stderr.write(errorLine(error))
       exit(1)
     })
   }

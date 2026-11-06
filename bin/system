@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // The `system` wrapper (ADR-0004 decision 2): `system init` creates or refreshes
-// the `system` DSH profile (and, on Linux, the Host's user unit); every other
-// command runs `dsh --profile system "$@"`.
+// the `system` DSH profile (and, on Linux, the Host's user unit); `host` and
+// `doctor` run `dsh --profile system "$@"`, and every other command is a thin
+// client of the Host (packages/app/src/client.ts).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { constants, homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { MIN_NODE, nodeChoice, serviceMode, unitPath, unitText } from './service.mjs'
 
 const PROFILE = 'system'
@@ -38,6 +39,9 @@ if (choice.use === 'none') fail(`DSH 0.2.2-rc.1 needs Node >=${MIN_NODE}; this i
 if (choice.use === 'other') process.exit(await run(join(nodes, choice.version, 'bin', 'node'), [fileURLToPath(import.meta.url), ...process.argv.slice(2)], process.env))
 if (!existsSync(dshBin)) fail(`DSH is not installed at ${dshBin}: run \`corepack pnpm install\` in ${repo}`)
 if (!existsSync(join(repo, 'packages', 'app', 'lib', 'index.js'))) fail(`the System app is not built: run \`corepack pnpm build\` in ${repo}`)
+
+/** Every command but `init`, `host` and `doctor` goes to the Host; a leading flag is for DSH. */
+const thin = (args) => args.length > 0 && !args[0].startsWith('-') && !['host', 'doctor'].includes(args[0])
 
 function dsh(args) {
   // `dsh plugin` runs pnpm from PATH: use the workspace's pinned copy.
@@ -91,7 +95,11 @@ async function init(args) {
 
 const args = process.argv.slice(2)
 if (args[0] === 'init') await init(args.slice(1))
-else {
+else if (thin(args)) {
+  // The Host's thin client does not boot DSH: no profile is needed to ask a Host.
+  const { main } = await import(pathToFileURL(join(repo, 'packages', 'app', 'lib', 'client.js')).href)
+  process.exit(await main(args, home))
+} else {
   if (!existsSync(join(profileDir, 'package.json'))) fail(`no ${PROFILE} profile under ${home}/profiles: run \`system init\` first`)
   process.exit(await dsh(['--profile', PROFILE, ...args]))
 }

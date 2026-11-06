@@ -16,18 +16,21 @@ const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'agents', 'credentials', 'system-app']
 
 const system = (...args: string[]) => cli.run(args)
+const human = { SYSTEM_CALLER: 'human' }
 
 function doctor() {
   const ran = system('doctor', '--json')
   return { status: ran.status, report: JSON.parse(ran.stdout) as { ok: boolean; rows: { id: string; mounted: boolean }[] } }
 }
 
-before(() => {
+before(async () => {
   const ran = system('init')
   assert.equal(ran.status, 0, ran.stderr)
+  await cli.start()
 })
 
-after(() => {
+after(async () => {
+  await cli.stop()
   rmSync(home, { recursive: true, force: true })
 })
 
@@ -94,14 +97,14 @@ test('the fakes row is installed but off by default', () => {
   assert.match(ran.stdout, /- id: fakes\n  name: '@system\/fakes'\n  disabled: true/)
 })
 
-test('an Artifact stored in one process is read by ID alone after a restart', () => {
+test('an Artifact stored in one Host is read by ID alone after a restart', async () => {
   const file = join(home, 'input.txt')
   writeFileSync(file, 'durable bytes\n')
   const put = system('artifact', 'put', file, '--media-type', 'text/plain')
   assert.equal(put.status, 0, put.stderr)
   const id = put.stdout.trim()
   assert.match(id, /^sha256:[0-9a-f]{64}$/)
-  // Every `system` call boots a new host process: these reads happen after a restart.
+  await cli.start()
   const shown = system('artifact', 'show', id)
   assert.equal(shown.status, 0, shown.stderr)
   const read = JSON.parse(shown.stdout) as { state: string; envelope: { id: string; kind: string; blob: { bytes: number; mediaType: string }; classification: string }; occurrences: unknown[] }
@@ -144,10 +147,11 @@ test('an Artifact whose bytes were deleted reads as unavailable', () => {
 test('credentials set stores a piped value without printing it and keeps other entries', () => {
   const file = join(home, '.credentials.yaml')
   writeFileSync(file, 'version: 1\nrefs:\n  OTHER_KEY: keep-me\n', { mode: 0o600 })
-  const set = cli.run(['credentials', 'set', 'SMOKE_TOKEN'], { input: 'secret-value-123\n' })
+  // The Host takes credentials only from a human, which a pipe is not unless it says so.
+  const set = cli.run(['credentials', 'set', 'SMOKE_TOKEN'], { input: 'secret-value-123\n', env: human })
   assert.equal(set.status, 0, set.stderr)
   assert.doesNotMatch(set.stdout + set.stderr, /secret-value-123/)
-  const status = system('credentials', 'status', 'SMOKE_TOKEN', 'OTHER_KEY', 'ABSENT_TOKEN')
+  const status = cli.run(['credentials', 'status', 'SMOKE_TOKEN', 'OTHER_KEY', 'ABSENT_TOKEN'], { env: human })
   assert.equal(status.status, 1, 'one name is not configured')
   assert.match(status.stdout, /SMOKE_TOKEN {2}configured \(file\)/)
   assert.match(status.stdout, /OTHER_KEY {2}configured/)
