@@ -32,9 +32,13 @@ export interface AccountConfig {
   codexHome?: string
   /** The model per tier; each listed tier adds the capability `tier.<name>`. */
   models?: Partial<Record<Tier, string>>
+  /** Wall-clock limit of one attempt, in minutes; overrides the row's. */
+  attemptTimeoutMinutes?: number
 }
 
 export interface Config {
+  /** Wall-clock limit of one attempt, in minutes (fractions allowed); default 60. */
+  attemptTimeoutMinutes?: number
   accounts?: AccountConfig[]
 }
 
@@ -108,7 +112,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const tiers = TIERS.filter((tier) => account.models?.[tier])
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
-      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models }
+      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes: account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes }
       if (account.runtime === 'claude-code') {
         const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
         if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)

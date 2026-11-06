@@ -181,6 +181,52 @@ test('an agent ignoring SIGTERM is killed when the grace ends', async () => {
   assert.ok(Date.now() - started < 10_000)
 })
 
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+
+test('an attempt over its time limit is stopped like a cancel but fails, naming the limit, and keeps its partial output', async () => {
+  const { artifacts } = memory()
+  const repository = repo()
+  const worker = agentWorker(account('claude-code', { attemptTimeoutMinutes: 0.01 }), artifacts, processSpawner, join(root, 'attempts-timeout'), 300)
+  const started = Date.now()
+  const result = await worker.run(request({ task: await task(artifacts, 'FAKE:edit FAKE:stubborn', repository) }, ['change']))
+  assert.equal(result.status, 'failed')
+  assert.equal(result.reason, 'attempt exceeded its time limit of 0.01 minutes')
+  assert.deepEqual(result.outputs, {})
+  assert.ok(Date.now() - started < 10_000, 'SIGTERM was ignored, so SIGKILL ended it after the grace')
+  const partial = treeOf(artifacts, result.partial!.change!)
+  assert.equal(execFileSync('git', ['-C', repository, 'show', `${partial.commit}:NOTE.md`], { encoding: 'utf8' }), 'edited by claude\n')
+})
+
+test('an attempt within its time limit is unaffected, and an operator cancel stays a cancel', async () => {
+  const { artifacts } = memory()
+  const repository = repo()
+  const worker = agentWorker(account('claude-code', { attemptTimeoutMinutes: 5 }), artifacts, processSpawner, join(root, 'attempts-within'))
+  const done = await worker.run(request({ task: await task(artifacts, 'FAKE:edit', repository) }, ['change']))
+  assert.equal(done.status, 'succeeded', done.reason)
+  const abort = new AbortController()
+  const running = worker.run(request({ task: await task(artifacts, 'FAKE:sleep', repository) }, ['change'], abort.signal))
+  setTimeout(() => abort.abort(), 300)
+  assert.equal((await running).status, 'cancelled')
+})
+
+test('the time limit stops what the agent spawned in its process group, but not a session of its own', async () => {
+  const { artifacts } = memory()
+  const child = join(root, 'grandchild.pid')
+  const escaped = join(root, 'escaped.pid')
+  const worker = agentWorker(account('claude-code', { attemptTimeoutMinutes: 0.01 }), artifacts, processSpawner, join(root, 'attempts-group'), 300)
+  const result = await worker.run(request({ question: await task(artifacts, `FAKE:sleep FAKE:grandchild=${child} FAKE:escaped=${escaped}`) }, ['report']))
+  assert.equal(result.status, 'failed')
+  const [grandchild, runaway] = [child, escaped].map((file) => Number(readFileSync(file, 'utf8')))
+  try {
+    assert.ok(!alive(grandchild!), 'a grandchild in the agent group is gone')
+    // The gap of the process-group kill, which is also DSH's fallback without user-systemd: a
+    // setsid descendant survives. DSH's systemd scope owns such descendants, so the gap is a host without one.
+    assert.ok(alive(runaway!), 'a setsid grandchild escapes a process-group kill')
+  } finally {
+    try { process.kill(runaway!, 'SIGKILL') } catch { /* gone */ }
+  }
+})
+
 test('each Codex attempt gets a fresh CODEX_HOME with only auth.json; a refresh is copied back', async () => {
   const { artifacts } = memory()
   const repository = repo()

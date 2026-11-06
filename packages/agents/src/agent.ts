@@ -4,6 +4,7 @@
  * a `Spawner` (the DSH subprocess service in production), capture outputs,
  * store a bounded log, clean up. Cancellation aborts the process range with a
  * 30 s grace; whatever the attempt produced is kept as unaccepted partial output.
+ * An attempt past its time limit is stopped the same way but fails: nobody cancelled it.
  */
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
@@ -14,6 +15,8 @@ import { claudeInvocation, codexInvocation, parseClaude, parseCodex, type Runtim
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
 const GRACE_MS = 30_000
+/** The wall-clock limit of an attempt when neither the account nor the row sets one. */
+export const DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 60
 const MAX_LOG_BYTES = 256 * 1024
 
 export interface SpawnSpec {
@@ -48,6 +51,8 @@ export interface Account {
   codexHome?: string
   /** The model to run for each offered tier; a step with no tier gets `standard`, else the CLI's default. */
   models?: Partial<Record<Tier, string>>
+  /** Wall-clock limit of one attempt, in minutes (fractions allowed). */
+  attemptTimeoutMinutes?: number
 }
 
 const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
@@ -98,8 +103,16 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     // Remove every host variable the agent was not given (SSH agent, tokens, ...).
     const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
     Object.assign(env, invocation.env)
-    const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: request.signal, graceMs })
-    const outcome = await spawned.done
+    // The limit stops the agent through the same abort as an operator cancel, so SIGTERM, the grace and SIGKILL are one path.
+    const limit = account.attemptTimeoutMinutes ?? DEFAULT_ATTEMPT_TIMEOUT_MINUTES
+    const stop = new AbortController()
+    const forward = () => stop.abort()
+    if (request.signal.aborted) forward()
+    request.signal.addEventListener('abort', forward, { once: true })
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
+    const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs })
+    const outcome = await spawned.done.finally(() => { clearTimeout(timer); request.signal.removeEventListener('abort', forward) })
     const stdout = spawned.stdout()
     const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
     if (codexAuth) keepRefreshedAuth(codexAuth)
@@ -113,6 +126,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     const common = { log, usage: parsed.usage, executor }
     // A stopped agent's output is incomplete, so its usage is unknown rather than a partial count.
     if (request.signal.aborted) return { status: 'cancelled', outputs: {}, partial: captured.outputs, reason: 'cancelled; the agent was stopped', log, executor }
+    if (timedOut) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `attempt exceeded its time limit of ${limit} minutes`, log, executor }
     if (outcome.exitCode !== 0 || !parsed.ok) {
       const why = outcome.signal ? `signal ${outcome.signal}` : `exit ${outcome.exitCode}`
       return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...common }

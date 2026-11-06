@@ -67,6 +67,10 @@
     - id: agents
       name: '@system/agents'
       config:
+        # Wall-clock limit of one attempt, in minutes (fractions allowed; default 60).
+        # An attempt past it is stopped like a cancel but fails, so a hung test
+        # cannot hold an Account for hours. An account may set its own.
+        attemptTimeoutMinutes: 60
         accounts:
           - ref: claude-code/default
             runtime: claude-code
