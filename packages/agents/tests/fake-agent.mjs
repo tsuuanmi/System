@@ -10,6 +10,7 @@
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
 //   FAKE:grandchild=FILE  start a process in the agent's own group that waits, and write its pid to FILE
 //   FAKE:escaped=FILE     the same, but in a session of its own (setsid), as a `system host` a test started might be
+//   FAKE:delay=MS finish only after MS milliseconds, so attempts can be seen to overlap
 //   FAKE:fail     report an error
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
@@ -101,5 +102,6 @@ if (hang && prompt.includes(`Step: ${hang[1]}\n`) && !existsSync(hang[2])) {
   })
   setInterval(() => {}, 1000)
 } else {
-  finish(true, 'done')
+  const delay = Number(/FAKE:delay=(\d+)/.exec(prompt)?.[1] ?? 0)
+  setTimeout(() => finish(true, 'done'), delay)
 }

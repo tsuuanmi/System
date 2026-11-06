@@ -114,7 +114,7 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(preview.parts.map((p) => p.role), ['response'])
   assert.deepEqual(await call('conversation.add', { parts, asserted: { provider: 'web' }, supersedes: [] }), { id: 'conversation:1' })
 
-  assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake'])
+  assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake/claude', 'fake/codex'])
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   assert.equal((await call('host.ping') as { works: number }).works, 2)

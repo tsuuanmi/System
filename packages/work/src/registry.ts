@@ -45,6 +45,10 @@ export interface WorkerPort {
   /** A stable name, recorded in routing decisions. */
   ref: string
   capabilities: readonly string[]
+  /** How many attempts of this Account run at once; default 1. */
+  maxConcurrentAttempts?: number
+  /** Whether the process of an attempt is confirmed gone: what settles a lost attempt, which until then keeps its Account's slot. Absent: never confirmed. */
+  gone?(attemptId: string): Promise<boolean>
   run(request: WorkerRequest): Promise<WorkerResult>
 }
 
@@ -175,6 +179,11 @@ export class Capabilities {
    */
   routeWorker(needs: readonly string[], only?: string): Route<WorkerPort> {
     return route(this.workers, needs, only)
+  }
+
+  /** The Worker (Account) of a ref. */
+  workerFor(ref: string): WorkerPort | undefined {
+    return this.workers.find((w) => w.ref === ref)
   }
 
   workerRefs(): string[] {

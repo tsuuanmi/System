@@ -108,6 +108,34 @@ systemctl --user status system
 Whatever was running when the Host stopped is lost at the next start and is
 left interrupted; nothing runs again until `system work run` or `retry`.
 
+## Attempts at once, and held slots
+
+Each Account (an `agents` account such as `claude-code/default`) runs one
+attempt at a time; other steps and Works that need it wait in the Host. To allow
+more, set `maxConcurrentAttempts` (a whole number of at least 1, else the account
+is skipped and `system workers` says why) in the profile's `agents` row, then
+restart the Host:
+
+```yaml
+- id: agents
+  config:
+    maxConcurrentAttempts: 1      # every account; default 1
+    accounts:
+      - ref: claude-code/default
+        maxConcurrentAttempts: 2  # this account only
+```
+
+Codex accounts share one `auth.json`; with several attempts at once only the
+first refresh is copied back.
+
+A Host that stops with attempts running leaves them lost at the next start, and
+their Account slots **held** while their process may still run. An agent attempt
+is gone when its pid file (`$DSH_HOME/system/attempts/<attempt>.pid`) is absent or
+names no live process. The Host checks at start and again when a waiting Work
+has nothing of its own running, so a held slot clears after `system work run`
+once the process is gone. If it never does, a process is still alive: find it
+with `pgrep -fa claude` or `pgrep -fa codex`.
+
 ## Another home
 
 Only `~/.dsh` gets the unit. For any other `DSH_HOME`, run

@@ -35,12 +35,16 @@ export interface Fixture {
   table: ReturnType<typeof memoryWorkTable>
   /** The step IDs of attempts started, in order. */
   attempts: string[]
+  /** The most attempts of each Account (Worker ref) that ran at once. */
+  peak: Record<string, number>
   /** Hold the attempts of `stepId` at its barrier until released. */
   hold(stepId: string): void
-  /** Wait until an attempt of `stepId` is at its barrier. */
-  arrived(stepId: string): Promise<void>
-  /** Let the attempt held at `stepId` go on. */
+  /** Wait until `count` attempts of `stepId` are at its barrier. */
+  arrived(stepId: string, count?: number): Promise<void>
+  /** Let the attempts held at `stepId` go on. */
   release(stepId: string): void
+  /** Say that the process of an attempt is confirmed gone: its Account's Worker then reports it settled. */
+  gone(attemptId: string): void
   /** Admit a Workflow file from workflows/ with a stored input. */
   admit(file: string): Promise<WorkRecord>
   /** The same admission, not yet submitted: what `Host.submit` takes. */
@@ -51,8 +55,15 @@ export interface Fixture {
   startHost(home: string): Promise<Host>
 }
 
-/** With a `seed`, every attempt first yields a seeded number (0 to 8) of event-loop turns. */
-export function fixture(options: { seed?: number } = {}): Fixture {
+/** The two Accounts of the fake Workers: Brainstorm's proposals use different ones, as the bundle's do. */
+export const CLAUDE = 'fake/claude'
+export const CODEX = 'fake/codex'
+
+/**
+ * With a `seed`, every attempt first yields a seeded number (0 to 8) of
+ * event-loop turns. `slots` is each Account's `maxConcurrentAttempts`.
+ */
+export function fixture(options: { seed?: number; slots?: number } = {}): Fixture {
   const random = options.seed === undefined ? undefined : seeded(options.seed)
   const stored = new Set<string>()
   const specs = new Map<string, ResolvedSpec>()
@@ -65,34 +76,47 @@ export function fixture(options: { seed?: number } = {}): Fixture {
     exists: (artifactId) => stored.has(artifactId),
   }
   const held = new Set<string>()
-  const waiting = new Map<string, () => void>()
-  const arrivals = new Map<string, () => void>()
-  const arrived = new Set<string>()
+  const waiting = new Map<string, (() => void)[]>()
+  const arrivals = new Map<string, { count: number; go: () => void }[]>()
+  const arrived = new Map<string, number>()
+  const goneAttempts = new Set<string>()
+  const active: Record<string, number> = {}
+  const peak: Record<string, number> = {}
   const attempts: string[] = []
   const delay = async () => { for (let n = Math.floor((random?.() ?? 0) * 9); n > 0; n--) await turn() }
 
   const remote: Fixture['remote'] = { state: 'absent' }
   const capabilities = new Capabilities()
-  capabilities.registerWorker({
-    ref: 'fake',
-    capabilities: ['code-write', 'research', 'web-search', 'brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis'],
+  const worker = (ref: string, offered: string[]) => capabilities.registerWorker({
+    ref,
+    capabilities: offered,
+    maxConcurrentAttempts: options.slots,
+    async gone(attemptId) { return goneAttempts.has(attemptId) },
     async run(request) {
       attempts.push(request.stepId)
-      await delay()
-      if (held.has(request.stepId)) {
-        arrived.add(request.stepId)
-        arrivals.get(request.stepId)?.()
-        await new Promise<void>((go) => waiting.set(request.stepId, go))
+      active[ref] = (active[ref] ?? 0) + 1
+      peak[ref] = Math.max(peak[ref] ?? 0, active[ref]!)
+      try {
+        await delay()
+        if (held.has(request.stepId)) {
+          arrived.set(request.stepId, (arrived.get(request.stepId) ?? 0) + 1)
+          for (const waiter of arrivals.get(request.stepId) ?? []) if (arrived.get(request.stepId)! >= waiter.count) waiter.go()
+          await new Promise<void>((go) => waiting.set(request.stepId, [...(waiting.get(request.stepId) ?? []), go]))
+        }
+        await delay()
+        const outputs = Object.fromEntries(request.outputs.map((slot) => {
+          const out = id(`${request.attemptId}/${slot}`)
+          stored.add(out)
+          return [slot, out]
+        }))
+        return { status: 'succeeded', outputs }
+      } finally {
+        active[ref]!--
       }
-      await delay()
-      const outputs = Object.fromEntries(request.outputs.map((slot) => {
-        const out = id(`${request.attemptId}/${slot}`)
-        stored.add(out)
-        return [slot, out]
-      }))
-      return { status: 'succeeded', outputs }
     },
   })
+  worker(CLAUDE, ['code-write', 'research', 'web-search', 'brainstorm.idea-a', 'brainstorm.synthesis'])
+  worker(CODEX, ['brainstorm.idea-b'])
   capabilities.registerVerifier({
     ref: 'fake-verifier', version: '1', capabilities: ['code.required-checks', 'research.citation-check'], accepts: ['output'],
     async criteria(request) { const c = id(`criteria/${request.name}`); stored.add(c); return c },
@@ -113,10 +137,11 @@ export function fixture(options: { seed?: number } = {}): Fixture {
   const table = memoryWorkTable()
   const controller = new WorkController(table, specStore, capabilities)
   return {
-    controller, capabilities, table, attempts, remote,
+    controller, capabilities, table, attempts, remote, peak,
     hold: (stepId) => { held.add(stepId) },
-    arrived: (stepId) => (arrived.has(stepId) ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, go))),
-    release: (stepId) => { held.delete(stepId); waiting.get(stepId)?.(); waiting.delete(stepId) },
+    arrived: (stepId, count = 1) => ((arrived.get(stepId) ?? 0) >= count ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, [...(arrivals.get(stepId) ?? []), { count, go }]))),
+    release: (stepId) => { held.delete(stepId); for (const go of waiting.get(stepId) ?? []) go(); waiting.delete(stepId) },
+    gone: (attemptId) => { goneAttempts.add(attemptId) },
     admission(file) {
       const spec = resolve(parseWorkflow(readFileSync(join(repo, 'workflows', file), 'utf8')), capabilities.available())
       const input = id('the task')

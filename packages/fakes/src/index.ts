@@ -44,6 +44,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   const dispose = [
     capabilities.registerWorker({
       ref: 'fake-worker',
+      // It runs no process: a lost attempt of it is gone at once.
+      async gone() { return true },
       capabilities: config.workers ?? [],
       async run(request) {
         if (process.env.SYSTEM_FAKE_LOG) appendFileSync(process.env.SYSTEM_FAKE_LOG, `${request.workId} ${request.stepId} ${request.attemptId}\n`)

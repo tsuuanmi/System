@@ -34,7 +34,9 @@ GitHub credentials. Run with `corepack pnpm smoke`.
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal
   without Codex, a stop after the first proposal reusing it, a host killed
   mid-step then four `work run`s at once against the restarted Host (one wins;
-  the lost step is dispatched once more; no event lost), and a pinned spec.
+  the lost step is dispatched once more; no event lost), a pinned spec, and
+  (H5) the two proposals overlapping in time, compared by `dispatched` and
+  `observed` timestamps.
 - [conversation.test.ts](conversation.test.ts) — PROP-0003: a conversation
   previewed (nothing stored, secrets named not printed), `--yes` refused on a
   warning unless `--accept-warnings`, `--product-context`, stored, shown, and

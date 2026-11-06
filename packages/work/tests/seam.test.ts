@@ -11,8 +11,8 @@ test('Brainstorm records its events in dispatch, observe order', async () => {
   const done = await f.controller.run((await f.admit('brainstorm.yaml')).id)
   assert.deepEqual(shape(done), [
     'admitted',
-    'dispatched:idea-a', 'observed:idea-a',
-    'dispatched:idea-b', 'observed:idea-b',
+    'dispatched:idea-a', 'dispatched:idea-b',
+    'observed:idea-a', 'observed:idea-b',
     'dispatched:synthesis', 'observed:synthesis',
     'terminal:succeeded',
   ])
@@ -41,7 +41,7 @@ test('a cancel request while an attempt is held at a barrier is recorded after t
   assert.equal(await f.controller.cancel(admitted.id, { caller, reason: 'stop' }), 'requested')
   f.release('idea-b')
   const done = await running
-  assert.deepEqual(shape(done), ['admitted', 'dispatched:idea-a', 'observed:idea-a', 'dispatched:idea-b', 'observed:idea-b', 'terminal:cancelled'])
+  assert.deepEqual(shape(done), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'observed:idea-a', 'observed:idea-b', 'terminal:cancelled'])
   assert.deepEqual(f.attempts, ['idea-a', 'idea-b'])
   assertConsistent(f, done.id)
 })

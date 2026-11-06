@@ -6,7 +6,7 @@
  * proposal Artifacts; no verifier.
  */
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -22,7 +22,7 @@ const yaml = createRequire(join(repo, 'packages', 'work', 'package.json'))('yaml
 const bundle = yaml.parse(readFileSync(join(repo, 'packages', 'bundle', 'cordis.patch.yml'), 'utf8'), { logLevel: 'error' }) as { insert: { id: string; config?: { accounts?: Account[] } }[] }[]
 const accounts = bundle[0]!.insert.find((row) => row.id === 'agents')!.config!.accounts!
 
-type Event = { type: string; seq: number; stepId?: string; selected?: string; inputs?: Record<string, string>; status?: string; outputs?: Record<string, string> }
+type Event = { type: string; seq: number; at: string; stepId?: string; selected?: string; inputs?: Record<string, string>; status?: string; outputs?: Record<string, string> }
 type WorkView = { events: Event[]; state: { status: string; reason?: string; specId: string; steps: Record<string, { state: string; outputs: Record<string, string> }> } }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as WorkView
 /** Who produced an Artifact, in which Work: its recorded occurrences. */
@@ -97,6 +97,21 @@ test('a brief yields two independent proposals and a synthesis of exactly those 
   assert.equal(system(['work', 'replay', workId]).status, 0)
 })
 
+test('the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both', { timeout: 120_000 }, () => {
+  const input = brief('FAKE:outputs FAKE:sign FAKE:delay=1500')
+  const ran = system(['work', 'submit', '--workflow', BRAINSTORM, '--input', input])
+  assert.equal(ran.status, 0, ran.stderr)
+  const record = show(ran.stdout.trim())
+  assert.equal(record.state.status, 'succeeded')
+  const at = (type: string, stepId: string) => Date.parse(record.events.find((e) => e.type === type && e.stepId === stepId)!.at)
+  const proposals = ['idea-a', 'idea-b']
+  const lastDispatched = Math.max(...proposals.map((s) => at('dispatched', s)))
+  const firstObserved = Math.min(...proposals.map((s) => at('observed', s)))
+  assert.ok(lastDispatched < firstObserved, `the proposals ran one after the other: dispatched at ${proposals.map((s) => at('dispatched', s))}, observed at ${proposals.map((s) => at('observed', s))}`)
+  assert.ok(at('dispatched', 'synthesis') >= Math.max(...proposals.map((s) => at('observed', s))), 'the synthesis started before both proposals were observed')
+  assert.equal(system(['work', 'replay', ran.stdout.trim()]).status, 0)
+})
+
 test('without a Codex account the Work is refused before any Worker runs: no same-provider substitute', { timeout: 120_000 }, async () => {
   const noCodex = join(home, 'no-codex.yml')
   writeFileSync(noCodex, `- id: agents\n  config: ${JSON.stringify({ accounts: accounts.filter((a) => a.runtime !== 'codex').map((a) => ({ ...a, command: fakeAgent })) })}\n`)
@@ -147,6 +162,9 @@ test('after the Host is killed mid-step, four runs asked for at once dispatch th
   assert.ok(existsSync(marker), 'idea-b started')
   process.kill(await cli.pid(), 'SIGKILL')
   assert.notEqual((await submit.done).status, 0, 'the killed Host did not finish the Work')
+  // The hanging agent outlived the Host, so its attempt keeps the Account's slot: stop it, as an operator would.
+  const attempts = join(home, 'system', 'attempts')
+  for (const file of readdirSync(attempts).filter((f) => f.endsWith('.pid'))) process.kill(Number(readFileSync(join(attempts, file), 'utf8')), 'SIGKILL')
   await cli.start()
 
   const runs = await Promise.all([0, 1, 2, 3].map(() => cli.runAsync(['work', 'run', workId]).done))
