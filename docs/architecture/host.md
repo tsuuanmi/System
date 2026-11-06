@@ -120,6 +120,12 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
     Host runs.
   - A `run` cut short has no receipt, so after a restart the same `commandId`
     runs the Work on.
+- **Implemented (H3a), the transport:** `packages/host`.
+  - It serves `host.hello` and `host.ping` on a Unix socket, with the 1 MiB
+    frame bound and a dispatch table with an `agent` flag per method. Its
+    README is the protocol reference.
+  - The Work operations, `work.events` and the caller recorded on each call
+    are H3b.
 - **Following a Work.** `work.events` takes a cursor. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
 - **Reads.** `work show` and every other read go through the Host.
