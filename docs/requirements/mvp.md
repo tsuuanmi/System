@@ -10,8 +10,8 @@ The MVP is the **smallest running DSH-hosted System control plane** that proves
 [P1–P3](purpose.md#fundamental-purposes). This defines the required outcomes,
 not a committed implementation schedule, package inventory or release date.
 **MVP-0 is implemented** on the `mvp0/implementation` branch; the evidence
-for each milestone, and what is not yet exercised (github.com itself), is in
-[PLAN.md](../../PLAN.md). MVP-1 is not started.
+for each milestone, including one live publish to a throwaway github.com
+repository, is in [PLAN.md](../../PLAN.md). MVP-1 is not started.
 
 ## Required common path
 
