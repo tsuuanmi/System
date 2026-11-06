@@ -85,7 +85,6 @@ export function remoteHost(remote: Remote): AppHost {
   }
 
   const work: WorkCommands = {
-    noHost: async () => {},
     admitFile: (path, input) => change('work.submit', { workflow: readFileSync(path, 'utf8'), input }),
     admitTask: (capabilities, input) => change('work.submit', { capabilities, input }),
     async run(workId, options) {

@@ -1,25 +1,22 @@
 /**
  * The `work` row: provides `ctx.capabilities` (the Worker and verifier
- * registry) and `ctx.work` (admission and the Work Controller) over the DSH
+ * registry) and `ctx.work` (what the Host core is built over) over the DSH
  * storage domain `system_work`, one key per Work (ADR-0004 decision 9).
  */
-import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve as resolvePath } from 'node:path'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { sha256, type Artifacts, type Envelope } from '@system/artifacts'
-import { FileControl } from './control.ts'
-import { SPEC_KIND, SPEC_SCHEMA_VERSION, WorkController, resolvedSpecSchema, type HostIdentity, type SpecStore, type WorkTable } from './controller.ts'
+import type { Artifacts, Envelope } from '@system/artifacts'
+import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, addConversation, conversationSchema, type Asserted, type ConversationParts } from './conversation.ts'
 import { snapshot } from './git.ts'
 import { Host } from './host.ts'
 import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema } from './kinds.ts'
-import type { Caller, WorkRecord } from './record.ts'
+import type { Caller } from './record.ts'
 import { workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
-import { directTask, parseWorkflow, resolve, type ResolvedSpec } from './workflow.ts'
+import type { ResolvedSpec } from './workflow.ts'
 
 export * from './control.ts'
 export * from './controller.ts'
@@ -46,22 +43,19 @@ export const workDomain = defineDomain({
   tables: { work: domainTable(workRecordSchema) },
 })
 
-/** What the Host core is built over: the row's own table, specs and identity. */
+/** What the Host core is built over: the row's own table and specs. */
 export interface HostStorage {
   table: WorkTable
   specs: SpecStore
-  identity: HostIdentity
 }
 
-/** Admission entry points the CLI uses. */
+/** What the Host serves besides Works: inputs for Tasks, and the Host core itself. */
 export class WorkService {
-  readonly controller: WorkController
   private readonly capabilities: Capabilities
   private readonly artifacts: Artifacts
   private readonly storage: HostStorage
 
-  constructor(controller: WorkController, capabilities: Capabilities, artifacts: Artifacts, storage: HostStorage) {
-    this.controller = controller
+  constructor(capabilities: Capabilities, artifacts: Artifacts, storage: HostStorage) {
     this.capabilities = capabilities
     this.artifacts = artifacts
     this.storage = storage
@@ -96,20 +90,6 @@ export class WorkService {
   /** Store a conversation the operator had elsewhere (PROP-0003). */
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<Envelope> {
     return addConversation(this.artifacts, parts, asserted, { producer: { type: 'operator', ref: caller.operatorId }, supersedes })
-  }
-
-  /** Read, preflight and pin a Workflow file; the file is never read again for this Work. */
-  admitFile(path: string, input: string | undefined, caller: Caller): Promise<WorkRecord> {
-    const absolute = resolvePath(path)
-    const bytes = readFileSync(absolute)
-    const spec = resolve(parseWorkflow(bytes.toString('utf8')), this.capabilities.available())
-    return this.controller.admit({ spec, input, caller, source: { kind: 'workflow-file', path: absolute, fileHash: sha256(bytes) } })
-  }
-
-  /** A single Task: no Workflow file, one implicit step. */
-  admitTask(capabilities: string[], input: string | undefined, caller: Caller): Promise<WorkRecord> {
-    const spec = directTask(capabilities, input !== undefined, this.capabilities.available())
-    return this.controller.admit({ spec, input, caller, source: { kind: 'direct-task' } })
   }
 }
 
@@ -156,8 +136,6 @@ export function systemPath(ctx: Context, ...segments: string[]): string {
 
 export async function apply(ctx: Context): Promise<void> {
   const domains = ctx.get('storageDomain') as DomainFacility
-  // Before the store is opened: its snapshot is no newer than this.
-  const loadedAt = Date.now()
   const domain = await domains.open(workDomain)
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
   const artifacts = ctx.get('artifacts') as Artifacts
@@ -166,11 +144,8 @@ export async function apply(ctx: Context): Promise<void> {
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
   const capabilities = new Capabilities()
-  const control = new FileControl(systemPath(ctx, 'control'))
   const table = domain.table('work') as unknown as WorkTable
   const specs = specStore(artifacts)
-  const identity = { id: randomUUID(), loadedAt }
-  const controller = new WorkController(table, specs, capabilities, control, identity)
   ctx.provide('capabilities', capabilities)
-  ctx.provide('work', new WorkService(controller, capabilities, artifacts, { table, specs, identity }))
+  ctx.provide('work', new WorkService(capabilities, artifacts, { table, specs }))
 }

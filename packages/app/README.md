@@ -40,8 +40,9 @@ Work exit codes: `0` succeeded, `1` failed or refused, `3` held for the
 operator, `4` not terminal, `5` cancelled. Each call records its caller: `human` when stdin is
 a terminal, otherwise `agent`, unless `SYSTEM_CALLER` says `human` or `agent`.
 
-- [src/index.ts](src/index.ts) — the Cordis plugin: wiring to DSH services, and
-  `system host`. Its in-process `AppHost` is unused by the CLI and goes in H4b-2.
+- [src/index.ts](src/index.ts) — the Cordis plugin: wiring to DSH services for
+  `doctor` and `system host`. It runs no Work itself: any other command reached
+  through a leading DSH flag says it is a client of the Host.
 - [src/cli.ts](src/cli.ts) — the commander program, over an `AppHost`.
 - [src/remote.ts](src/remote.ts) — the `AppHost` over the Host's socket;
   [src/client.ts](src/client.ts) — the entry `bin/system` runs for it;

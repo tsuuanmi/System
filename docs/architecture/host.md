@@ -1,21 +1,21 @@
 ---
 type: architecture
 status: active
-reviewed: 2026-11-06
+reviewed: 2026-11-07
 ---
 
 # The Host
 
-**Status:** accepted design for milestone H
+**Status:** R1 implemented
 ([ADR-0007](../decisions/ADR-0007-one-long-lived-host.md) as amended, and
-[PROP-0004](../proposals/PROP-0004-host-design.md)). **In progress.**
-Implemented so far: the Host lock, the commit lane, receipts and recovery on
-start, in `packages/work` (`host-lock.ts`, `lane.ts`, `host.ts`; H2), and the
-socket with its operation table, in `packages/host` (H3). Not yet: the CLI
-cutover (H4), parallel steps and Account slots (H5). Until release R1,
-every `system` command still boots its own host, as described in
-[Work ownership and recovery](work-ownership-and-recovery.md). This document
-describes the target, and is updated as each step lands.
+[PROP-0004](../proposals/PROP-0004-host-design.md)). The Host lock, the commit
+lane, receipts and recovery on start are in `packages/work` (`host-lock.ts`,
+`lane.ts`, `host.ts`; H2), the socket with its operation table in
+`packages/host` (H3), and the Host as a process with the thin CLI in
+`packages/app` (H4). The old per-command mode, where every `system` command
+booted its own host and coordinated through files, is gone; what it did is in
+[Work ownership and recovery](work-ownership-and-recovery.md). Not yet:
+parallel steps and Account slots (H5, release R2).
 
 ## Why
 
@@ -68,11 +68,14 @@ file can be left behind.
 
 **Implemented (H2):** `acquireHostLock` in `host-lock.ts`; `Host.start`
 takes it first and gives it back if recovery fails. Off Linux it refuses and
-says so. It does not replace `FileControl` before the cutover (H4): a Host
-keeps its Works' locks and cancel requests in memory (`MemoryControl`).
+says so. A Host keeps its Works' locks and cancel requests in memory
+(`MemoryControl`).
 
-The old per-Work lock files, takeover mutex and write fence go away. The
-first Host ignores them, and the cutover checklist deletes them.
+The old per-Work lock files, takeover mutex and write marks
+(`$DSH_HOME/system/control/*.lock`, `*.takeover`, `*.written`) are gone from
+the code (H4b-2). The Host ignores any left over and deletes none; the
+[cutover checklist](../operations/runbook.md#cutover-to-the-host-r1) deletes
+them by hand.
 
 ### The commit lane
 
@@ -154,7 +157,6 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   - No Host: one line, `the System Host is not running for <home>`, exit 1. No
     answer in 10 s: "not answering", naming the runbook.
   - `doctor` still boots DSH and also reports whether a Host answers.
-  - The old in-process mode stays in the code, unused by the CLI, until H4b-2.
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact
   subject at a terminal, and the Host checks that subject again before it
@@ -216,9 +218,6 @@ Credentials still come from the DSH store.
   `~/.dsh` gets no unit.
 - `bin/system` runs the newest Node 24 (>= 24.9) under `~/.nvm/versions/node/`
   when the running one is older, or names `nvm install 24`.
-- Until H4b-2 deletes it, the old per-command path (reached only by a leading
-  DSH flag, as `system --patch f work list`) refuses to change Work while a
-  Host holds the home.
 
 The commands are in the [operations runbook](../operations/runbook.md).
 
@@ -235,9 +234,9 @@ before the code (Charter 12, fixture first).
 
 | Guarantee | Test |
 |---|---|
-| One Host per home | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts); `a second Host on the same home is refused; another home is not; a closed Host frees its home` (host.test.ts). `system host` (H4a): `host-process.test.ts`. |
-| No change from a stale copy | Held for the Host's commands (H2): `a cancel and the report of a held attempt in the same turn: both are recorded, in order, and the record replays`, `run and cancel submitted together: the cancel is decided first, so nothing is dispatched`, `two runs of one Work together: one drives it, the other is refused, nothing interleaves`, `writes of different Works never overlap: every change goes through the one lane`, `seed 1` to `seed 20: run, cancel and run again at random moments lose and repeat no event`, `the lane runs one section at a time, in order, and a failure does not block the next`, `a closed Host writes nothing, even when its attempt reports late` (host.test.ts); the controller itself by H1 in packages/work/tests/seam.test.ts. |
-| The five defects of 2026-11-06 stay fixed | One regression per defect, run against the Host. Held by H1 against the controller, in the tests named in [tests/README.md](../../tests/README.md#regressions). |
+| One Host per home (ends the empty lock and stale-lock removal of 2026-11-06: no lock file exists to be empty, stale or moved) | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts); `a second Host on the same home is refused; another home is not; a closed Host frees its home` (host.test.ts). `system host` (H4a): `host-process.test.ts`, which also holds `the Host ignores the control files of the old mode and leaves them where they are; it makes no control directory` (H4b-2). |
+| No change from a stale copy (ends the stale snapshot of 2026-11-06: one process loads the store, so no second copy exists) | Held for the Host's commands (H2): `no copy of the store outlives its Host: a second Host is refused while one runs a Work, and the next one starts from what the first wrote`, `a cancel and the report of a held attempt in the same turn: both are recorded, in order, and the record replays`, `run and cancel submitted together: the cancel is decided first, so nothing is dispatched`, `two runs of one Work together: one drives it, the other is refused, nothing interleaves`, `writes of different Works never overlap: every change goes through the one lane`, `seed 1` to `seed 20: run, cancel and run again at random moments lose and repeat no event`, `the lane runs one section at a time, in order, and a failure does not block the next`, `a closed Host writes nothing, even when its attempt reports late` (host.test.ts); the controller itself by H1 in packages/work/tests/seam.test.ts. |
+| The five defects of 2026-11-06 stay fixed | The empty lock, stale-lock removal and the stale snapshot are the first two rows. The SQLite store-creation race and the profile config rewrite are in [tests/README.md](../../tests/README.md#regressions) (`concurrency.test.ts`, run through the Host). |
 | A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `submit sent twice at once gives one Work`, `the same run twice dispatches once`, `the same run sent twice while it runs joins it`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
 | Agents cannot approve | Held (H3): `an agent connection is refused every method flagged agent: false, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
 | Recovery is conservative | Held except for the slot (H2): `a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until reconciled: H5. |

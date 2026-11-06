@@ -184,15 +184,28 @@ Growth is expected. The budgets make it visible and justified; they do not
 forbid it. Record the measures at the end of every milestone. Growth above
 budget is either justified in the milestone's row or paid for by removal.
 
-| Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone |
-|---|---|---|
-| Active core: `packages/work/src` + `packages/artifacts/src`, lines | 2,317 | +20% |
-| All package source, lines | 4,081 | recorded |
-| Docs under `docs/`: lines (files) | 3,571 (37) | +20%, and no fact stated twice |
-| Unit check, clean worktree | ~1 min | under 2 min |
-| All required checks (`.system/checks.yaml`) | ~7 min | under 10 min |
-| Flaky tests known | 0 | 0: a flaky test is fixed before features |
+| Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone | R1 (end of H4, 2026-11-07) |
+|---|---|---|---|
+| Active core: `packages/work/src` + `packages/artifacts/src`, lines | 2,317 | +20% | 2,564 (+10.7%) |
+| All package source, lines (`.ts` and `.mjs` under `packages/*/src`) | 4,081 | recorded | 5,299 (+29.8%) |
+| Docs under `docs/`: lines (files) | 3,571 (37) | +20%, and no fact stated twice | 4,284 (43) (+20.0%) |
+| Unit check, clean worktree | ~1 min | under 2 min | 39 s (install, build, typecheck, test) |
+| All required checks (`.system/checks.yaml`) | ~7 min | under 10 min | about 5 min (docs 2 s, unit 39 s, smoke 4 min 14 s) |
+| Flaky tests known | 0 | 0: a flaky test is fixed before features | 0 |
+| Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) |
 | Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed |
+
+**Growth at R1.** The core grew 10.7% since the baseline, inside the +20%
+budget. Before H4b-2 it was 2,852 lines (+23.1%, over the budget): the Host
+(`host.ts`, `lane.ts`, `host-lock.ts`, 247 lines), receipts in `controller.ts`
+and `record.ts`, and `conversation.ts` and `summary.ts` from before H. H4b-2
+took out 288 lines (`FileControl`, its lock and mutex code, the write fence and
+the row's own controller and admission path) and brought it back inside. All
+source grew more (+29.8%, recorded only) because the Host (`packages/host`),
+the thin CLI and the unit file are new. Docs are at +20.0%, 1 line under the
+budget: the Host design, the runbook and the API reference are new, and H4b-2
+rewrote the ownership document to a pointer instead of keeping both. The next
+milestone has to pay for its docs by removal.
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -241,7 +254,7 @@ written first.
   - the version handshake and the caller;
   - `work.events` with a cursor;
   - `host.status` with the memory report.
-- [ ] H4. Cutover. Includes:
+- [x] H4. Cutover. Includes:
   - the thin CLI (reads through the Host; Ctrl-C detaches);
   - `system.service` (plain unit, captured PATH, lingering);
   - removing the old mode;
@@ -256,7 +269,7 @@ written first.
   **Release R1.**
   H4a: `system host`, unit, Node selection.
   H4b-1: the thin CLI (`packages/app`: `remote.ts`, `client.ts`, `io.ts`), the
-  old in-process mode unused but not yet deleted (H4b-2). Evidence:
+  old in-process mode unused but not yet deleted. Evidence:
   `tests/cli-host.test.ts` (no Host, not answering, Ctrl-C detach,
   `--cancel-on-interrupt`, timeout retry with one `commandId`, one-line errors,
   doctor); every test of `tests/` runs through a Host started by
@@ -265,14 +278,49 @@ written first.
   record then failed its schema at the next start); fixed in
   `WorkController.recover`, test `an effect found absent on start is published
   only by an explicit run`.
+  H4b-2: the old mode removed: the per-command path in `packages/app`,
+  `FileControl` with its per-Work lock, takeover mutex and write fence, the
+  controller's `hold`, `noteWrite`, `lastWrite` and `HostIdentity`, the H4a
+  transition guard (`hostHeld`), the row's own controller and admission
+  (`WorkService.controller`, `admitFile`, `admitTask`), `snapshotWorkTable` and
+  `LocalControl`, with `control.test.ts` and the five fence tests of
+  `controller.test.ts`. The Host ignores leftover `control/*.lock`, `*.takeover`
+  and `*.written` files and deletes none: test `the Host ignores the control
+  files of the old mode and leaves them where they are; it makes no control
+  directory` (`tests/host-process.test.ts`). The runbook has the cutover
+  checklist and the rollback. Each guarantee the deleted tests held has its
+  test against the Host in host.md's table; the added one is `no copy of the
+  store outlives its Host: a second Host is refused while one runs a Work, and
+  the next one starts from what the first wrote` (`host.test.ts`).
 - [ ] H5. Parallel steps and Works with per-Account slots. Barrier tests for
   shared-Account contention and for restarts. **Release R2.**
-- [ ] Gate R1:
-  - every existing smoke behaviour passes through the Host;
-  - a Host killed mid-step recovers on restart, conservatively, and replay matches;
-  - an agent caller cannot approve;
-  - the guarantees table in host.md has a passing test per row;
-  - growth measures are recorded.
+- [x] Gate R1 (checked 2026-11-07, each item against a test that exists):
+  - [x] every existing smoke behaviour passes through the Host: every file of
+    `tests/` drives `bin/system` through `systemCli` (`test-support/cli.ts`),
+    which starts a Host; `with no Host, a command prints one line and exits 1`
+    (`tests/cli-host.test.ts`) shows that no command runs Work without one.
+    `corepack pnpm smoke` passes (63 passed; 2 skipped, the credential-gated
+    `real-agents.test.ts`, which also go through the Host when enabled);
+  - [x] a Host killed mid-step recovers on restart, conservatively, and replay
+    matches: `a Host killed mid-attempt: the new Host marks the attempt lost,
+    does not run the Work, and an explicit run continues it` (`host.test.ts`);
+    through the process, `the pinned spec survives a Workflow file edit and a
+    killed host; done steps never re-run` (`tests/work.test.ts`: the Work stays
+    `running` after the restart until `work run`) and `after the Host is killed
+    mid-step, four runs asked for at once dispatch the lost step once, losing no
+    event` (`tests/brainstorm.test.ts`, which ends with `work replay` exit 0);
+  - [x] an agent caller cannot approve: `an agent connection is refused every
+    method flagged agent: false, and only those` and `approval.decide needs a
+    human even when its row is opened to agents`
+    (`packages/host/tests/operations.test.ts`); `marking the pull request ready
+    waits for a human at a terminal; an agent or a pipe cannot approve`
+    (`tests/publish.test.ts`);
+  - [x] the guarantees table in host.md has a passing test per row, but the
+    last: `Slots hold (R2)` belongs to H5 and release R2, not R1. The rows the
+    deleted tests held are now `One Host per home` and `No change from a stale
+    copy`;
+  - [x] growth measures are recorded: the budget table above. The core grew
+    10.7% since the baseline (within +20%), and docs 20.0% (1 line under).
 - [x] Attempt time limit (found 2026-11-07): an attempt that hung on a test
   ran for 2 hours with nothing to stop it (Work `38ff51c3`). Done:
   `attemptTimeoutMinutes` in the `agents` row config (per Account, default 60;

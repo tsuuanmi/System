@@ -9,13 +9,13 @@ import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
-import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
+import type { Artifacts, Classification } from '@system/artifacts'
 import type { AgentsService } from '@system/agents'
-import { WorkError, dshHome, hostHeld, type Capabilities, type WorkService } from '@system/work'
+import { dshHome, type Capabilities, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { buildProgram, type AppHost, type ArtifactCommands, type CredentialCommands, type Run, type WorkCommands, type WorkersView } from './cli.ts'
+import { buildProgram, type AppHost, type CredentialCommands, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
-import { caller, confirmHuman, errorLine, explain, operatorId, readSecret } from './io.ts'
+import { caller, confirmHuman, errorLine, explain, readSecret } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, connect } from '../../host/lib/index.js'
 import { serveHost, socketPath } from '../../host/lib/process.js'
@@ -79,57 +79,6 @@ async function probeHost(home: string): Promise<HostStatus> {
   }
 }
 
-function artifactCommands(ctx: Context): ArtifactCommands {
-  const artifacts = ctx.get('artifacts') as Artifacts | undefined
-  if (!artifacts) throw new Error('the artifacts row is not mounted (run `system doctor`)')
-  return {
-    putFile: (path, mediaType, classification) => {
-      if (!(CLASSIFICATIONS as readonly string[]).includes(classification)) throw new Error(`unknown classification ${classification}`)
-      return artifacts.putBytes({
-        kind: 'file', schemaVersion: 1, data: readFileSync(path), mediaType,
-        classification: classification as Classification, producer: { type: 'operator', ref: operatorId() },
-      })
-    },
-    get: (id) => artifacts.get(id),
-    readBytes: (id) => artifacts.readBytes(id),
-  }
-}
-
-/**
- * Until the CLI goes through the Host's socket (H4b), a command that changes
- * Work runs its own controller: refuse while a Host holds the home, so there is
- * one writer.
- */
-async function noHostHolds(ctx: Context): Promise<void> {
-  const home = dshHome(ctx)
-  if (await hostHeld(home)) throw new WorkError(`a Host is running for ${home}; stop it first (systemctl --user stop system)`)
-}
-
-function workCommands(ctx: Context): WorkCommands {
-  const work = ctx.get('work') as WorkService | undefined
-  if (!work) throw new Error('the work row is not mounted (run `system doctor`)')
-  return {
-    noHost: () => noHostHolds(ctx),
-    admitFile: (path, input) => work.admitFile(path, input, caller()),
-    admitTask: (capabilities, input) => work.admitTask(capabilities, input, caller()),
-    run: (workId) => work.controller.run(workId),
-    get: (workId) => work.controller.get(workId),
-    list: () => work.controller.list().map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
-    replay: (workId) => work.controller.replay(workId),
-    cancel: (workId, reason) => work.controller.cancel(workId, { reason, caller: caller() }),
-    // Only reached after confirmHuman: the caller is a human at a terminal.
-    decide: (workId, decision, operator, reason) => work.controller.decide(workId, { decision, reason, caller: { type: 'human', operatorId: operator } }),
-    retry: (workId, worker, reason, step) => work.controller.retry(workId, { worker, step, reason, caller: caller() }),
-    wait: async (workId) => {
-      // This process caches records, so it waits for the host to release the Work instead.
-      while (work.controller.runningElsewhere(workId)) await new Promise((resolve) => setTimeout(resolve, 250))
-      return work.controller.get(workId)!
-    },
-    newTask: (instructions, repository, ref, context) => work.newTask(instructions, repository, ref, caller(), context),
-    addConversation: (parts, asserted, supersedes) => work.addConversation(parts, asserted, supersedes, caller()),
-  }
-}
-
 function credentialCommands(ctx: Context): CredentialCommands {
   const store = ctx.get('credentials') as CredentialProvider | undefined
   if (!store) throw new Error('the credentials row is not mounted (run `system doctor`)')
@@ -184,16 +133,21 @@ async function runHost(ctx: Context): Promise<void> {
   })
 }
 
+/** Every command but `doctor` and `host` is the thin client's: it talks to the Host and never boots DSH. */
+function thinOnly(): never {
+  throw new Error('this command is a client of the Host: run it as `system <command>`, without DSH flags')
+}
+
 export function apply(ctx: Context): void {
   const host: AppHost = {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,
     probeStorage: () => probeStorage(ctx),
     probeHost: () => probeHost(dshHome(ctx)),
-    artifacts: () => artifactCommands(ctx),
-    work: () => workCommands(ctx),
-    credentials: () => credentialCommands(ctx),
-    workers: () => workersView(ctx),
+    artifacts: thinOnly,
+    work: thinOnly,
+    credentials: thinOnly,
+    workers: thinOnly,
     runHost: () => runHost(ctx),
   }
   let selected: Run | undefined

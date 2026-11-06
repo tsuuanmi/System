@@ -13,7 +13,7 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts, memoryWorkTable } from '../../../test-support/memory.ts'
-import { LocalControl, processSpawner } from '../../../test-support/process.ts'
+import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, Capabilities, GIT_TREE_KIND, NOTICE, TASK_KIND, addConversation, conversationSchema, WorkController, resolvedSpecSchema, gitTreeSchema, parseWorkflow, resolve, snapshot, taskSchema, type GitTreeContent, type ResolvedSpec, type SpecStore, type WorkerRequest } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
 import { lazyVersion } from '../src/index.ts'
@@ -271,7 +271,7 @@ test('Codex takes over cancelled Claude work from the partial Artifact, in one W
   writeFileSync(join(codexHome, 'auth.json'), '{}')
   capabilities.registerWorker(agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-9')))
   capabilities.registerWorker(agentWorker(account('codex', { codexHome }), artifacts, processSpawner, join(root, 'attempts-9')))
-  const controller = new WorkController(table, specs, capabilities, new LocalControl())
+  const controller = new WorkController(table, specs, capabilities)
   const spec = resolve(parseWorkflow('schema: system.workflow/v1\nid: one\nversion: 1\nsteps:\n  - id: implement\n    capabilities: [code-write]\n    inputs: {task: $work.input}\n    outputs: [change]\n'), capabilities.available())
   const input = await task(artifacts, 'FAKE:sleep FAKE:edit', repository)
   const admitted = await controller.admit({ spec, input, caller: { type: 'human', operatorId: 't' }, source: { kind: 'workflow-file' } })

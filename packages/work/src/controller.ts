@@ -15,7 +15,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
-import type { CancelRequest, HostControl } from './control.ts'
+import { MemoryControl, type CancelRequest } from './control.ts'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
 import type { Verdict } from './kinds.ts'
@@ -81,12 +81,6 @@ export interface LostAttempt {
   attemptId: string
 }
 
-/** One host's identity for the stale-snapshot fence: a random ID, and when it began loading the Work store. */
-export interface HostIdentity {
-  id: string
-  loadedAt: number
-}
-
 /** A dispatched Worker attempt: what `execute` needs and `observe` reports on. */
 interface WorkerAttempt {
   workId: string
@@ -117,18 +111,15 @@ export class WorkController {
   private readonly table: WorkTable
   private readonly specs: SpecStore
   private readonly capabilities: Capabilities
-  private readonly control: HostControl
-  private readonly host: HostIdentity
+  private readonly control = new MemoryControl()
   private readonly lane: Lane
   /** Commands whose receipt the next `terminal` event of a Work carries. */
   private readonly expected = new Map<string, Receipt[]>()
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, control: HostControl, host: HostIdentity = { id: randomUUID(), loadedAt: Date.now() }, lane: Lane = noLane) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane) {
     this.table = table
     this.specs = specs
     this.capabilities = capabilities
-    this.control = control
-    this.host = host
     this.lane = lane
   }
 
@@ -216,7 +207,7 @@ export class WorkController {
   /** In the lane, take the Work's lock, so runs and cancels reach it in the order they were asked. */
   private enter(workId: string, command?: Command): Promise<() => void> {
     return this.lane(async () => {
-      const release = this.hold(workId)
+      const release = this.control.acquire(workId)
       if (command) this.expect(workId, command)
       return release
     })
@@ -230,23 +221,6 @@ export class WorkController {
   /** The command's receipt is written with the next `terminal` event of the Work. */
   private expect(workId: string, command: Command): void {
     this.expected.set(workId, [...(this.expected.get(workId) ?? []), { commandId: command.id, args: command.args, result: { workId, status: 'running' } }])
-  }
-
-  /**
-   * Take the Work's lock, then check this host's copy is current. Each host
-   * reads the store once when it starts, so a host that started before
-   * another one wrote the Work would act on, and overwrite, an older record.
-   * Writers mark the Work before and after each write, so a mark by another
-   * host at or after this host's load means its copy may be behind.
-   */
-  private hold(workId: string): () => void {
-    const release = this.control.acquire(workId)
-    const last = this.control.lastWrite(workId)
-    if (last && last.host !== this.host.id && last.at >= this.host.loadedAt) {
-      release()
-      throw new WorkError(`${workId} changed since this command started (another process ran it); run the command again`)
-    }
-    return release
   }
 
   /**
@@ -290,7 +264,7 @@ export class WorkController {
         if (command) this.expect(workId, command)
         return 'requested'
       }
-      const release = this.hold(workId)
+      const release = this.control.acquire(workId)
       if (command) this.expect(workId, command)
       try {
         return await this.cancelled(await this.recover(record), request)
@@ -341,18 +315,14 @@ export class WorkController {
 
   private async append(record: WorkRecord, event: NewEvent): Promise<WorkRecord> {
     const stepIds = this.specOf(record).steps.map((s) => s.id)
-    // Marked before the write too: a crash between the update and the second mark still leaves one.
-    this.control.noteWrite(record.id, { host: this.host.id, at: Date.now() })
     // The terminal event settles the commands waiting on this Work: their receipts go in the same update.
     const receipts = event.type === 'terminal' ? (this.expected.get(record.id) ?? []).map((r) => ({ ...r, result: { workId: record.id, status: event.outcome } })) : []
     if (receipts.length) this.expected.delete(record.id)
-    const updated = await this.table.update(record.id, (current) => {
+    return this.table.update(record.id, (current) => {
       const next = { ...event, seq: current.events.length, at: this.now() } as WorkEvent
       const events = [...current.events, next]
       return { ...current, events, state: fold(stepIds, events), ...(receipts.length ? { receipts: [...(current.receipts ?? []), ...receipts] } : {}) }
     })
-    this.control.noteWrite(record.id, { host: this.host.id, at: Date.now() })
-    return updated
   }
 
   /**

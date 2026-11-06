@@ -160,8 +160,8 @@ different tools and result formats. This is a release-blocking MVP proof.
 The [Brainstorm Workflow](brainstorm-composition.md) uses Claude and
 Codex to generate two separate proposal Artifacts and a third synthesis
 Artifact through the same Work Controller; no domain engine, new Worker
-type, Team plugin or verifier is mandatory. The B4 review and fixes for
-SQLite bootstrap and PID-lock publication are documented in
+type, Team plugin or verifier is mandatory. The B4 review of
+SQLite bootstrap and PID locks, and the Host that replaced the locks, are in
 [Work ownership and recovery](work-ownership-and-recovery.md).
 B3 value evaluation is still in progress and does not change this
 ownership contract.

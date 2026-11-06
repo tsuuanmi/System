@@ -17,8 +17,7 @@
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
-import { MemoryControl } from './control.ts'
-import { WorkController, type Admission, type Command, type HostIdentity, type LostAttempt, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type Command, type LostAttempt, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
@@ -31,7 +30,6 @@ export interface HostOptions {
   table: WorkTable
   specs: SpecStore
   capabilities: Capabilities
-  identity?: HostIdentity
 }
 
 /** An option every command takes: with it, a repeat is answered, not done again. */
@@ -67,7 +65,7 @@ export class Host {
       if (this.closed) throw new WorkError(`the Host is closed (it ran ${this.lock.home})`)
       return section()
     })
-    this.controller = new WorkController(options.table, options.specs, options.capabilities, new MemoryControl(), options.identity, this.lane)
+    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane)
   }
 
   /** Take the lock for `options.home`, then recover, then accept operations. Refuses when another Host holds the home. */

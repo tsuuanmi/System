@@ -104,5 +104,5 @@ an additional Worker provider or mandatory model verifier.
 
 See [Workflow composition](workflow-composition.md),
 [Artifact contracts](artifact-verification.md),
-[draft runtime integrity boundary](work-ownership-and-recovery.md) and
+[runtime integrity boundary](work-ownership-and-recovery.md) and
 [draft roadmap](../proposals/PROP-0002-post-mvp-roadmap.md).
