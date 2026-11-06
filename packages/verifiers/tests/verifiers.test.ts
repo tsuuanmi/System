@@ -135,14 +135,17 @@ async function sources(artifacts: Artifacts, json: unknown): Promise<string> {
   return (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(JSON.stringify(json)), mediaType: 'application/json', classification: 'public', producer })).id
 }
 
-async function cite(json: unknown) {
+/** `criteria` pins other criteria content instead of the verifier's own defaults. */
+async function cite(json: unknown, pinned?: Record<string, unknown>) {
   const artifacts = store()
   const verifier = citationCheck(artifacts)
-  const criteria = await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v1', operatorId: 't' })
+  const criteria = pinned
+    ? (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: pinned, classification: 'public', producer })).id
+    : await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v1', operatorId: 't' })
   const subject = await sources(artifacts, json)
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'citations', capability: 'research.citation-check', subject, criteria })
   const evidence = artifacts.get(result.evidence[0]!)
-  return { result, evidence: evidence.state === 'stored' ? evidence.envelope.content as { problems: string[]; results: { found: boolean; status: number | null; contentHash?: string }[] } : undefined }
+  return { result, evidence: evidence.state === 'stored' ? evidence.envelope.content as { problems: string[]; minConfirmedRatio?: number; confirmedRatio?: number; results: { found: boolean; status: number | null; contentHash?: string }[] } : undefined }
 }
 
 test('a quote found at its URL passes, ignoring markup, entities, case and whitespace; evidence keeps the page hash', async () => {
@@ -152,7 +155,8 @@ test('a quote found at its URL passes, ignoring markup, entities, case and white
   assert.match(evidence?.results[0]?.contentHash ?? '', /^sha256:/)
 })
 
-test('a quote not on the page, or only inside a script, is inconclusive, never a pass', async () => {
+// Why not a pass any more: 0 of 1 confirmed is below the default ratio of 0.5, so a lone unconfirmed source still holds the Work.
+test('a quote not on the page, or only inside a script, is not confirmed: inconclusive when it is the only source', async () => {
   assert.equal((await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: 'a sentence the page never says', claims: ['c'] }] })).result.verdict, 'inconclusive')
   assert.equal((await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: 'secret quote here', claims: ['c'] }] })).result.verdict, 'inconclusive')
 })
@@ -174,4 +178,64 @@ test('a malformed sources file, no sources, or an empty quote fails', async () =
 
 test('normalize folds markup, entities, typographic quotes and whitespace', () => {
   assert.equal(normalize('<p>It’s  &quot;A&quot;\n<b>B</b></p>'), 'it\'s "a" b')
+})
+
+test('normalize drops Markdown code and emphasis marks and keeps link text (real cases from held research Works)', () => {
+  // The Worker read pages as Markdown; the page text is rendered, so the marks must not matter.
+  assert.equal(normalize('the `"input"` field'), normalize('the "input" field'))
+  assert.equal(normalize('**bold** and *italic* and __strong__ and _em_'), 'bold and italic and strong and em')
+  assert.equal(normalize('see [the guide](https://example.com/a_b?x=1) now'), 'see the guide now')
+  assert.equal(normalize('[`fetch`](https://example.com) returns **`ok`**'), 'fetch returns ok')
+})
+
+test('a quote that differs from the page only in Markdown formatting is found', async () => {
+  const { result } = await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: '**System** verifies [`citations`](https://example.com/x) _exactly_', claims: ['c'] }] })
+  assert.equal(result.verdict, 'pass', result.reason)
+})
+
+const twoOfThree = () => ({ sources: [
+  { id: 's1', url: `${base}/article`, quote: 'system verifies citations', claims: ['c'] },
+  { id: 's2', url: `${base}/article`, quote: 'exactly & carefully', claims: ['c'] },
+  { id: 's3', url: `${base}/gone`, quote: 'a quote on a missing page', claims: ['c'] },
+] })
+const criteriaWith = (extra: Record<string, unknown>) => ({ name: 'c', minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 1 << 20, ...extra })
+
+test('2 of 3 confirmed passes at the default 0.5, naming the unconfirmed source; evidence has ratio and threshold', async () => {
+  const { result, evidence } = await cite(twoOfThree())
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /2 of 3/)
+  assert.match(result.reason, /s3 \(HTTP 404, quote unreadable\)/)
+  assert.doesNotMatch(result.reason, /s1|s2/)
+  assert.equal(evidence?.minConfirmedRatio, 0.5)
+  assert.equal(evidence?.confirmedRatio, 2 / 3)
+})
+
+test('2 of 3 confirmed is inconclusive at 1.0, and the reason still lists the unconfirmed source', async () => {
+  const { result, evidence } = await cite(twoOfThree(), criteriaWith({ minConfirmedRatio: 1 }))
+  assert.equal(result.verdict, 'inconclusive')
+  assert.match(result.reason, /s3/)
+  assert.equal(evidence?.minConfirmedRatio, 1)
+})
+
+test('criteria pinned without minConfirmedRatio keep the old rule: every quote must be found', async () => {
+  assert.equal((await cite(twoOfThree(), criteriaWith({}))).result.verdict, 'inconclusive')
+  const { result, evidence } = await cite({ sources: twoOfThree().sources.slice(0, 2) }, criteriaWith({}))
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.equal(evidence?.minConfirmedRatio, 1)
+})
+
+test('the reason names every unconfirmed source with why: quote not found, or fetch failed', async () => {
+  const { result } = await cite({ sources: [
+    { id: 'ok', url: `${base}/article`, quote: 'system verifies citations', claims: ['c'] },
+    { id: 'nf', url: `${base}/article`, quote: 'a sentence the page never says', claims: ['c'] },
+    { id: 'ff', url: 'http://127.0.0.1:1/x', quote: 'system verifies citations', claims: ['c'] },
+  ] }, criteriaWith({ minConfirmedRatio: 0.3 }))
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /nf \(HTTP 200, quote not found\)/)
+  assert.match(result.reason, /ff \(fetch failed: /)
+})
+
+test('a ratio outside 0 to 1 is not valid criteria', () => {
+  assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 1.5 })).success, false)
+  assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 0 })).success, true)
 })

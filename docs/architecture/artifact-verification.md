@@ -16,7 +16,10 @@ define implemented behavior. Brainstorm may succeed with **no verifier**:
 that means Artifact delivery, not independently validated ideas.
 The current Research citation check validates source references/quotes,
 not whether every report claim is supported; stronger verification
-remains separately configurable future work.
+remains separately configurable future work. It passes when the pinned
+criteria's share of confirmed quotes is reached, so a pass can include
+unconfirmed quotes; their list is in the verdict reason and the evidence
+([verifier rules](../../packages/verifiers/README.md)).
 [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
 establishes immutable Artifact IDs as the durable handoff protocol between
 Workers. Conversation history, transient output paths and model memory are

@@ -42,19 +42,27 @@ checks:
   `pass` when every check exits 0; `fail` when any does not or times out;
   `error` when the commit cannot be checked out.
 
-## `research.citation-check` (version 1)
+## `research.citation-check` (version 2)
 
 - **Accepts:** `file` (the Worker's `sources` output).
 - **Criteria:** `citation-criteria@1`: at least 1 source, quotes of at least
-  8 characters, 20 s fetch timeout, 2 MiB per page.
+  8 characters, 20 s fetch timeout, 2 MiB per page, and `minConfirmedRatio`
+  (0 to 1, default 0.5). Criteria pinned before version 2 lack the field and
+  mean 1.0, so they keep their old meaning.
 - **Format:** `{"sources": [{"id", "url", "quote", "claims": [..]}]}`; the
   Research Workflow's step instructions tell the Worker this shape.
 - **Verify:** fetch each URL and search its text for the quote, ignoring
-  markup, scripts, entities, case and whitespace. One `citation-check@1`
-  evidence Artifact records each URL's status and the hash of the bytes seen.
-  `fail` for a malformed file, too few sources or too-short quotes;
-  `inconclusive` when a page cannot be fetched or its quote is not found;
-  `pass` when every quote is found.
+  markup, scripts, entities, Markdown code/emphasis marks (`` ` ``, `*`, `_`),
+  Markdown link syntax (`[text](url)` reads as `text`), case and whitespace,
+  on both the page and the quote. One `citation-check@1` evidence Artifact
+  records each URL's status and page hash, plus the confirmed ratio and the
+  threshold used.
+  - `fail`: a malformed file, too few sources or too-short quotes.
+  - `pass`: at least `minConfirmedRatio` of the sources are confirmed.
+  - `inconclusive`: fewer are.
+  - **A pass can include unconfirmed quotes.** The verdict reason names each
+    one and why ("HTTP 200, quote not found", "fetch failed: ..."), and the
+    evidence lists every result, so nothing is hidden.
 - **Limit:** this checks the web **as it is at verification time**. It never
   proves what the Worker read; that needs the System `fetch` tool (MVP-1).
   Claims are not checked against quotes.
