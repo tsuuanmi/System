@@ -245,6 +245,8 @@ written first.
   - the thin CLI (reads through the Host; Ctrl-C detaches);
   - `system.service` (plain unit, captured PATH, lingering);
   - removing the old mode;
+  - the CLI picks a Node that DSH accepts (>= 24.9) by itself, or names the
+    fix (an operator ran `bin/system` under Node 22 on 2026-11-06);
   - the operations runbook with its cutover and rollback checklist (`docs/operations/`);
   - the API reference.
   **Release R1.**

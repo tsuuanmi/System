@@ -58,7 +58,18 @@ fallback.
    - The profile is the Account's credential. Like a token, it never
      reaches other Workers.
 3. **One attempt.**
-   1. Open a new chat.
+   1. Open a new **temporary chat** (`https://chatgpt.com/?temporary-chat=true`).
+      This is an Account option, `temporaryChat`, on by default:
+      - the account's memory and history do not leak into the answer, which
+        keeps attempts independent;
+      - the operator's chat history is not filled with Worker chats.
+      System keeps the exchange itself as a `conversation@1`, so the
+      temporary chat's URL is not needed afterwards. The manifest records
+      whether the chat was temporary.
+      **To verify when building:**
+      - whether web search, model choice and cited sources all work in a
+        temporary chat;
+      - whether the operator's custom instructions still apply.
    2. Send one prompt, built as for the CLI Workers: the step and Task
       instructions, the inputs inlined as text with their names, and the
       required outputs.
