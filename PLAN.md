@@ -205,9 +205,9 @@ the code against Charter items 8, 11 and 12.
 - [x] Brainstorm default: put the pragmatist/skeptic stances in
   `workflows/brainstorm.yaml`. Keep the one-shared-prompt version in
   `workflows/experiments/` for comparison.
-- [ ] Quality evaluations use **Sonnet as the evaluator Worker**, blind
+- [x] Quality evaluations use **Sonnet as the evaluator Worker**, blind
   (operator's choice). Record that the judge shares a model family with most
-  writers.
+  writers. *(Applied in B3; the limit is stated in [RES-0008](docs/research/RES-0008-brainstorm-evaluation.md).)*
 - [x] System publishes its own changes: from the next Work, System's
   Software Engineering Workflow pushes `system/<work>` and opens a draft PR
   on the real repository. It never merges. *(PRs #5 and #6, Works `f7170bdb` and `b2f35f9f`, published in parallel.)*
@@ -302,7 +302,7 @@ written first.
 
 ## 4. After Brainstorm — future, not current gates
 
-- [ ] Website Worker for interactive/browser-assisted Research **only when**
+- [x] Website Worker for interactive/browser-assisted Research **only when**
   a real source workflow requires it; keep the same WorkerPort/Artifact IDs.
   *Layer 1 (conversation-to-Artifact ingestion) is being built on PR #3 per
   [PROP-0003](docs/proposals/PROP-0003-conversation-ingestion.md): `system
@@ -316,22 +316,33 @@ written first.
   carried into the repository by hand, with no Artifact recording what was
   asked and what came back. The B2 Brainstorm Work `work:cad623e9…` is a
   first design comparison for this Worker (summary `sha256:c4eb1e20…`).*
-- [ ] Split the Website Worker into three layers (PR #2 review), each its
+  *Decided: layer 1 shipped (PROP-0003); the interactive Worker is milestone W
+  ([PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)).*
+- [x] Split the Website Worker into three layers (PR #2 review), each its
   own step: (1) **conversation-to-Artifact ingestion**: the prompt, the
   response and metadata from a web session become Artifacts with honest
   provenance, with no browser automation (can be tried early); (2) **source
   fetching and snapshots** with content identity (future Research); (3) the
   **interactive Website Worker** with a signed-in session and recovery
   (after B3/B4). System 1 is a reference for session lifecycle only; no
-  persistent team sessions in Work Core.
+  persistent team sessions in Work Core. *(Layer 1: PROP-0003, shipped.
+  Layer 3: milestone W. Layer 2 waits for its trigger, below.)*
 - [ ] Research quality capabilities (source snapshots, citation consistency,
   claim-to-evidence checking) as separately selected verifiers. The **current
   Research flow continues to work**, without mandatory stronger verification.
+  *Trigger: a Research Work whose accepted report the operator finds wrong
+  because a source changed or a claim was not supported. Until then, V1's
+  ratio policy (unconfirmed quotes are listed, not hidden) is the bar the
+  operator chose (2026-11-06).*
 - [ ] Optional Skill, LSP, web-fetch or third Worker adapter only if a
   measured use case requires it and the pinned DSH plugin can satisfy
-  the System contract without duplicating the model loop.
-- [ ] Parallel independent steps, additional provider accounts and adaptive
-  routing only if B3 results justify their overhead.
+  the System contract without duplicating the model loop. *(The third
+  Runtime, `chatgpt-web`, is milestone W. Others: trigger is a Work that fails
+  for want of one.)*
+- [x] Parallel independent steps, additional provider accounts and adaptive
+  routing only if B3 results justify their overhead. *(Parallel steps are
+  H5 (ADR-0007). More Accounts: the profile already takes several (ADR-0005);
+  adaptive routing waits for a measured need, such as quota exhaustion.)*
 
 ## 5. Progress and handoff
 
