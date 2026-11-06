@@ -282,6 +282,18 @@ written first.
   `work.events` cursor, so nothing is lost while it was away.
 - [ ] Later, not in O: an Orchestrator that System spawns on a schedule.
 
+### W — ChatGPT Website Worker (PROP-0005, after H release R1)
+
+- [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
+  (draft). The operator accepted the Terms-of-Use risk for their own account
+  (2026-11-06).
+- [ ] Re-run the three research Works (tokens, existing drivers, risks) after
+  the verifier fix V1, so their verdicts are not formatting artefacts.
+- [ ] Build after R1: the `chatgpt-web` Runtime on Playwright, a dedicated
+  signed-in profile, one prompt per attempt, completion detection, answer
+  and cited links as outputs, each exchange recorded as a `conversation@1`,
+  and deterministic tests on a local fake page.
+
 ## 4. After Brainstorm — future, not current gates
 
 - [ ] Website Worker for interactive/browser-assisted Research **only when**
