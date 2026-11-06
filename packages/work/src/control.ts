@@ -3,7 +3,8 @@
  * files under `$DSH_HOME/system/control`
  * (one lock file per Work holding the running host's pid, published
  * atomically with its pid already in it, a dead pid's lock stale; one cancel
- * file per Work a running host polls).
+ * file per Work a running host polls; one count file per Work holding how
+ * many events the last lock holder wrote).
  */
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
@@ -23,6 +24,10 @@ export interface HostControl {
   requestCancel(workId: string, request: CancelRequest): void
   cancelRequest(workId: string): CancelRequest | undefined
   clearCancel(workId: string): void
+  /** How many events the Work had when a lock holder last wrote it (0 if never noted). */
+  written(workId: string): number
+  /** Note, while holding the lock, how many events the Work now has. */
+  noteWritten(workId: string, events: number): void
 }
 
 export interface CancelRequest {
@@ -141,5 +146,21 @@ export class FileControl implements HostControl {
 
   clearCancel(workId: string): void {
     rmSync(this.file(workId, 'cancel'), { force: true })
+  }
+
+  written(workId: string): number {
+    try {
+      const count = Number(readFileSync(this.file(workId, 'written'), 'utf8'))
+      return Number.isInteger(count) && count > 0 ? count : 0
+    } catch {
+      return 0
+    }
+  }
+
+  noteWritten(workId: string, events: number): void {
+    const file = this.file(workId, 'written')
+    const draft = `${file}.${process.pid}.new`
+    writeFileSync(draft, String(events), { mode: 0o600 })
+    renameSync(draft, file)
   }
 }

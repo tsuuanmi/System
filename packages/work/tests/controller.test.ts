@@ -4,13 +4,13 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { memoryWorkTable } from '../../../test-support/memory.ts'
+import { memoryWorkTable, snapshotWorkTable } from '../../../test-support/memory.ts'
 import { LocalControl } from '../../../test-support/process.ts'
-import { WorkController, type SpecStore } from '../src/controller.ts'
+import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
 import { WorkError } from '../src/errors.ts'
 import { fold, type WorkRecord } from '../src/record.ts'
 import type { Verdict } from '../src/kinds.ts'
-import { Capabilities, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest } from '../src/registry.ts'
+import { Capabilities, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest, type WorkerResult } from '../src/registry.ts'
 import { WorkflowError, directTask, parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -52,8 +52,9 @@ interface Harness {
   specs: ReturnType<typeof memorySpecs>
 }
 
-function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: ReturnType<typeof memoryWorkTable>; specs?: ReturnType<typeof memorySpecs> } = {}): Harness {
-  const table = options.table ?? memoryWorkTable()
+function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: WorkTable; specs?: ReturnType<typeof memorySpecs>; control?: LocalControl } = {}): Harness {
+  // Tests that read `table.rows` pass no table; the snapshot tests read their own `disk`.
+  const table = (options.table ?? memoryWorkTable()) as ReturnType<typeof memoryWorkTable>
   const specs = options.specs ?? memorySpecs()
   const capabilities = new Capabilities()
   const calls: WorkerRequest[] = []
@@ -96,7 +97,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
     async apply(intent) { return { state: 'applied', reason: 'published', detail: { subject: intent.subject } } },
     async reconcile() { return { state: 'absent', reason: 'nothing published' } },
   })
-  return { controller: new WorkController(table, specs, capabilities, new LocalControl()), capabilities, calls, verdicts, table, specs }
+  return { controller: new WorkController(table, specs, capabilities, options.control ?? new LocalControl()), capabilities, calls, verdicts, table, specs }
 }
 
 async function input(h: Harness): Promise<string> {
@@ -443,4 +444,43 @@ test('the verifier is pinned at admission with its version: another version at r
   assert.equal(verified?.type === 'verified' && verified.verdict, 'error')
   assert.match(verified?.type === 'verified' ? verified.reason : '', /pinned fake-verifier@1 at admission; fake-verifier@2 is enabled now/)
   assert.equal(done.state.status, 'failed')
+})
+
+test('a host whose snapshot is older than the Work refuses to run it: no second dispatch, no event overwritten', async () => {
+  const disk = new Map<string, WorkRecord>()
+  const control = new LocalControl()
+  const first = harness({ table: snapshotWorkTable(disk), control })
+  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
+  // A second process opens the store now, then the first runs the Work to the end and releases it.
+  const stale = harness({ table: snapshotWorkTable(disk), control, specs: first.specs })
+  await first.controller.run(admitted.id)
+  const finished = structuredClone(disk.get(admitted.id))
+  await assert.rejects(() => stale.controller.run(admitted.id), /changed since this command started/)
+  assert.equal(stale.calls.length, 0)
+  assert.deepEqual(disk.get(admitted.id), finished)
+})
+
+test('a retry from a host whose snapshot is older than the Work is refused: the Work is not reopened twice', async () => {
+  const disk = new Map<string, WorkRecord>()
+  const control = new LocalControl()
+  const specs = memorySpecs()
+  let fail = true
+  const worker: Partial<WorkerPort> = {
+    async run(request): Promise<WorkerResult> {
+      if (fail) return { status: 'failed', outputs: {}, reason: 'scripted' }
+      const out = id(`${request.attemptId}/result`)
+      specs.stored.add(out)
+      return { status: 'succeeded', outputs: { result: out } }
+    },
+  }
+  const first = harness({ table: snapshotWorkTable(disk), control, specs, worker })
+  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
+  assert.equal((await first.controller.run(admitted.id)).state.status, 'failed')
+  // A second process opens the store while the Work is failed; the first retries it to success.
+  const stale = harness({ table: snapshotWorkTable(disk), control, specs, worker })
+  fail = false
+  assert.equal((await first.controller.retry(admitted.id, { caller, reason: 'again' })).state.status, 'succeeded')
+  const finished = structuredClone(disk.get(admitted.id))
+  await assert.rejects(() => stale.controller.retry(admitted.id, { caller, reason: 'again too' }), /changed since this command started/)
+  assert.deepEqual(disk.get(admitted.id), finished)
 })

@@ -136,20 +136,40 @@ export class WorkController {
 
   /** Advance until the Work is terminal, holding its lock. */
   async run(workId: string): Promise<WorkRecord> {
-    const release = this.control.acquire(workId)
+    const release = this.hold(workId)
     try {
-      let record = await this.recover(this.require(workId))
-      while (!TERMINAL.has(record.state.status)) {
-        const cancel = this.control.cancelRequest(workId)
-        const unknown = Object.values(record.state.effects).find((e) => e.state === 'unknown')
-        if (cancel) record = await this.cancelled(record, cancel)
-        else if (unknown) record = await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`)
-        else record = await this.step(record)
-      }
-      return record
+      return await this.drive(workId)
     } finally {
       release()
     }
+  }
+
+  /**
+   * Take the Work's lock, then check this host's copy is current. Each host
+   * reads the store once when it starts, so a host that started before another
+   * one last wrote the Work would act on, and overwrite, an older record.
+   */
+  private hold(workId: string): () => void {
+    const release = this.control.acquire(workId)
+    const known = this.table.get(workId)?.events.length ?? 0
+    if (known < this.control.written(workId)) {
+      release()
+      throw new WorkError(`${workId} changed since this command started (another process ran it); run the command again`)
+    }
+    return release
+  }
+
+  /** Advance until the Work is terminal; the caller holds the lock. */
+  private async drive(workId: string): Promise<WorkRecord> {
+    let record = await this.recover(this.require(workId))
+    while (!TERMINAL.has(record.state.status)) {
+      const cancel = this.control.cancelRequest(workId)
+      const unknown = Object.values(record.state.effects).find((e) => e.state === 'unknown')
+      if (cancel) record = await this.cancelled(record, cancel)
+      else if (unknown) record = await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`)
+      else record = await this.step(record)
+    }
+    return record
   }
 
   runningElsewhere(workId: string): boolean {
@@ -167,7 +187,7 @@ export class WorkController {
       this.control.requestCancel(workId, request)
       return 'requested'
     }
-    const release = this.control.acquire(workId)
+    const release = this.hold(workId)
     try {
       return await this.cancelled(await this.recover(this.require(workId)), request)
     } finally {
@@ -181,6 +201,16 @@ export class WorkController {
    * `previous`, the partial output the last attempt left. Then run.
    */
   async retry(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }): Promise<WorkRecord> {
+    const release = this.hold(workId)
+    try {
+      await this.reopen(workId, options)
+      return await this.drive(workId)
+    } finally {
+      release()
+    }
+  }
+
+  private async reopen(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }): Promise<void> {
     const record = this.require(workId)
     if (!['failed', 'cancelled', 'held'].includes(record.state.status)) throw new WorkError(`only failed, cancelled or held Work is retried; ${workId} is ${record.state.status}`)
     if (options.worker && !this.capabilities.workerRefs().includes(options.worker)) throw new WorkError(`no enabled Worker ${options.worker}; enabled: ${this.capabilities.workerRefs().join(', ') || 'none'}`)
@@ -193,14 +223,8 @@ export class WorkController {
     if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
     const reset = [step.id, ...dependentsOf(spec, step.id)]
-    const release = this.control.acquire(workId)
-    try {
-      this.control.clearCancel(workId)
-      await this.append(record, { type: 'reopened', caller: options.caller, stepId: step.id, reason: options.reason, worker: options.worker, previous: partial, reset })
-    } finally {
-      release()
-    }
-    return this.run(workId)
+    this.control.clearCancel(workId)
+    await this.append(record, { type: 'reopened', caller: options.caller, stepId: step.id, reason: options.reason, worker: options.worker, previous: partial, reset })
   }
 
   private require(workId: string): WorkRecord {
@@ -211,11 +235,13 @@ export class WorkController {
 
   private async append(record: WorkRecord, event: NewEvent): Promise<WorkRecord> {
     const stepIds = this.specOf(record).steps.map((s) => s.id)
-    return this.table.update(record.id, (current) => {
+    const updated = await this.table.update(record.id, (current) => {
       const next = { ...event, seq: current.events.length, at: this.now() } as WorkEvent
       const events = [...current.events, next]
       return { ...current, events, state: fold(stepIds, events) }
     })
+    this.control.noteWritten(record.id, updated.events.length)
+    return updated
   }
 
   /** Mark attempts that were dispatched but never observed as lost. */
@@ -485,18 +511,17 @@ export class WorkController {
    */
   async decide(workId: string, decision: { decision: 'approved' | 'denied'; caller: Caller; reason: string }): Promise<WorkRecord> {
     if (decision.caller.type !== 'human') throw new WorkError('only a human operator approves; an agent caller cannot decide')
-    const record = this.require(workId)
-    const stepId = record.state.status === 'held' ? record.state.awaiting : undefined
-    if (!stepId) throw new WorkError(`nothing awaits a decision on ${workId} (it is ${record.state.status})`)
-    const release = this.control.acquire(workId)
-    let decided: WorkRecord
+    const release = this.hold(workId)
     try {
-      decided = await this.append(record, { type: 'decided', caller: decision.caller, stepId, decision: decision.decision, reason: decision.reason })
+      const record = this.require(workId)
+      const stepId = record.state.status === 'held' ? record.state.awaiting : undefined
+      if (!stepId) throw new WorkError(`nothing awaits a decision on ${workId} (it is ${record.state.status})`)
+      const decided = await this.append(record, { type: 'decided', caller: decision.caller, stepId, decision: decision.decision, reason: decision.reason })
       if (decision.decision === 'denied') return await this.finish(decided, 'failed', `${stepId} denied by ${decision.caller.operatorId}: ${decision.reason}`)
+      return await this.drive(workId)
     } finally {
       release()
     }
-    return this.run(workId)
   }
 
   private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string, awaiting?: string): Promise<WorkRecord> {

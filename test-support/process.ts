@@ -32,6 +32,7 @@ export const processSpawner: Spawner = {
 export class LocalControl implements HostControl {
   private readonly held = new Set<string>()
   private readonly cancels = new Map<string, CancelRequest>()
+  private readonly counts = new Map<string, number>()
 
   acquire(workId: string): () => void {
     if (this.held.has(workId)) throw new WorkError(`${workId} is already being run`)
@@ -53,5 +54,13 @@ export class LocalControl implements HostControl {
 
   clearCancel(workId: string): void {
     this.cancels.delete(workId)
+  }
+
+  written(workId: string): number {
+    return this.counts.get(workId) ?? 0
+  }
+
+  noteWritten(workId: string, events: number): void {
+    this.counts.set(workId, events)
   }
 }

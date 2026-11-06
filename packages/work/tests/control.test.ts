@@ -43,6 +43,13 @@ test('an empty lock left long ago (a host that died while publishing) is stale a
   control.acquire('work:e')()
 })
 
+test('the count of events written survives the process and starts at 0', () => {
+  const control = new FileControl(dir)
+  assert.equal(control.written('work:g'), 0)
+  control.noteWritten('work:g', 7)
+  assert.equal(new FileControl(dir).written('work:g'), 7)
+})
+
 test('a cancel request is read until cleared', () => {
   const control = new FileControl(dir)
   assert.equal(control.cancelRequest('work:c'), undefined)

@@ -26,12 +26,24 @@ regression coverage and same-Work restart/concurrent-run checks.
 replacement, PID reuse, process interruption and upgrade regression
 cases visible as follow-up tests. This review did not execute them anew.
 
+**Stale host snapshot and retry gap: confirmed and fixed.** DSH
+`storage-domain` loads a table once when a host opens it and then reads
+and updates that in-memory copy, so a host that opened the store before
+another one last wrote a Work, and took the lock after, acted on and
+overwrote an older record. This is the "second host's in-memory cache"
+below. Controller tests with one snapshot per host reproduced it for
+`run` and `retry` (red first). The lock holder now notes the Work's event
+count in `control/<work>.written`, and a host that takes the lock with a
+shorter copy refuses ("changed since this command started"). `retry` and
+`approve` now validate under the lock and keep it through the run, which
+closes the retry gap described below.
+
 ## Two different concurrency problems
 
 | Problem | Current mechanism in draft PR #2 | What has/has not been proved |
 |---|---|---|
 | **SQLite store access / creation** | DSH SQLite pnpm patch: `busy_timeout`, WAL switch retry, and idempotent unit-version insertion | A concurrent-command bootstrap regression and stress report passed; this is **not** a test of two processes executing the **same Work**. |
-| **Single-Work ownership / event consistency** | One Work record/key, atomic storage update, and a PID-named per-Work `FileControl` lock around Work execution | Work replay and cancellation tests passed. Same-Work dispatch exclusivity, stale lock takeover and concurrent retry/approval still need focused cross-process tests. |
+| **Single-Work ownership / event consistency** | One Work record/key, atomic storage update, a per-Work `FileControl` lock published with its PID, and an event-count fence against stale host snapshots | Replay, cancellation, a SIGKILLed host with four concurrent `work run`, and stale-snapshot `run`/`retry` tests pass. |
 
 **Atomicity is scoped.** A serialized update of *one stored Work key*
 protects that key's transition under the storage API's conditions; it

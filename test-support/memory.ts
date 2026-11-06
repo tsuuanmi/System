@@ -71,6 +71,27 @@ export function memoryArtifacts(...kinds: KindSpec[]): { artifacts: Artifacts; r
 }
 
 /** The Work table: one key per Work. */
+/**
+ * A Work table as one DSH host sees it: a snapshot of `disk` taken when the
+ * host opened the store, kept in memory, with writes going to both. Two of
+ * them over one `disk` are two processes.
+ */
+export function snapshotWorkTable(disk: Map<string, WorkRecord>): WorkTable {
+  const rows = new Map([...disk].map(([key, value]) => [key, structuredClone(value)]))
+  return {
+    get: (key) => rows.get(key),
+    keys: () => rows.keys(),
+    async put(key, value) { await turn(); disk.set(key, structuredClone(value)); rows.set(key, structuredClone(value)) },
+    async update(key, fn) {
+      const next = fn(structuredClone(rows.get(key)!))
+      await turn()
+      disk.set(key, structuredClone(next))
+      rows.set(key, next)
+      return structuredClone(next)
+    },
+  }
+}
+
 export function memoryWorkTable(rows = new Map<string, WorkRecord>()): WorkTable & { rows: Map<string, WorkRecord> } {
   return {
     rows,

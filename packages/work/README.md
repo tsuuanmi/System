@@ -34,7 +34,11 @@ Each DSH host caches records in memory, so only the host that holds a Work's
 lock (`$DSH_HOME/system/control/<work>.lock`, its pid, published by linking a
 complete file so it never exists empty; a dead pid's lock is stale, and is
 taken over by an atomic rename that puts back a live one)
-writes that Work. `system work cancel` from another process writes a
+writes that Work. A host reads the store once when it starts, so the lock
+holder also notes how many events the Work has (`<work>.written`); a host
+that takes the lock with an older copy refuses ("changed since this command
+started") instead of acting on it. `retry` and `approve` hold the lock from
+their check to the end of the run. `system work cancel` from another process writes a
 cancel request the running host polls every 250 ms; the host aborts its
 attempt, records `observed` (`cancelled`, with partial output) and `terminal`
 (`cancelled`, with the caller). With no live host, the cancel is recorded
