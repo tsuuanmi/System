@@ -1,0 +1,22 @@
+# B3 baseline: one Worker answers the brief alone, with the sections a
+# Brainstorm summary has, so the three-attempt Workflow can be compared with
+# it. Same role capability as Brainstorm's first proposal (Claude Code).
+schema: system.workflow/v1
+id: brainstorm-single
+version: 1
+steps:
+  - id: answer
+    capabilities: [brainstorm.idea-a]
+    inputs:
+      brief: $work.input
+    outputs: [summary]
+    instructions: |
+      Brainstorm the brief. Write the output "summary" as Markdown with these
+      sections:
+      1. Options: at least two distinct approaches, each with its strongest
+         argument.
+      2. Assumptions: what must be true for each to work.
+      3. Trade-offs and failure modes: what each costs and how it could fail.
+      4. Open questions: what you do not know and would check first.
+      5. Recommendation: what to do next, as concrete experiments or decisions.
+      Do not change any other file.

@@ -17,6 +17,9 @@ changes future admissions only.
   `summary`. No verifier: success means the three outputs exist. The bundle
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
 
+Comparison configurations for the Brainstorm evaluation are in
+[experiments](experiments/README.md).
+
 ```sh
 bin/system work submit --workflow workflows/research.yaml --input <artifactId>
 ```

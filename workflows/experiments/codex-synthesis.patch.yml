@@ -1,0 +1,23 @@
+# B3 profile overlay: the bundle's two accounts with brainstorm.synthesis moved
+# from Claude Code to Codex, so a synthesis can be compared across providers.
+# A copy of the `agents` row in packages/bundle/cordis.patch.yml; keep the two
+# in step. Use: bin/system --patch workflows/experiments/codex-synthesis.patch.yml work submit ...
+- id: agents
+  config:
+    accounts:
+      - ref: claude-code/default
+        runtime: claude-code
+        capabilities: [code-write, research, web-search, brainstorm.idea-a]
+        tokenRef: CLAUDE_CODE_OAUTH_TOKEN
+        models:
+          economy: haiku
+          standard: sonnet
+          frontier: opus
+      - ref: codex/default
+        runtime: codex
+        capabilities: [code-write, brainstorm.idea-b, brainstorm.synthesis]
+        codexHome: codex/default
+        models:
+          economy: gpt-6-luna
+          standard: gpt-6.1-sol
+          frontier: gpt-6-astra
