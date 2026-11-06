@@ -72,7 +72,10 @@ model is recorded for it.
    output slot is the working tree, committed on the base with a private index
    as `git-tree@1` and pinned at `refs/system/artifacts/<commit>`; every other
    slot is the file `out/<slot>` as `file@1`. A missing output fails the attempt.
-5. **Record:** usage from the CLI's own JSON (unknown when absent), the
+5. **Record:** usage from the CLI's own JSON (unknown when absent): the
+   total `inputTokens` plus `cacheReadTokens` and `cacheWriteTokens` when the
+   CLI splits them (Codex reports no cache writes, so it has no write field),
+   so fresh input is the total minus both; then the
    account, CLI path and version (asked once, on first use, never at
    startup), and the bounded stdout as a `local-private` log Artifact. The
    log is never handed to another Worker.

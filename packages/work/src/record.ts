@@ -22,7 +22,7 @@ const executor = z.object({
 
 const usage = z.union([
   z.object({ state: z.literal('unknown') }).strict(),
-  z.object({ state: z.literal('observed'), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), source: z.string() }).strict(),
+  z.object({ state: z.literal('observed'), inputTokens: z.number().int().nonnegative(), cacheReadTokens: z.number().int().nonnegative().optional(), cacheWriteTokens: z.number().int().nonnegative().optional(), outputTokens: z.number().int().nonnegative(), source: z.string() }).strict(),
 ])
 
 export const eventSchema = z.discriminatedUnion('type', [

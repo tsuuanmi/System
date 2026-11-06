@@ -17,7 +17,8 @@ export interface Parsed {
   message: string
   /** Models the CLI says it used, when it says. */
   servedModels?: string[]
-  usage?: { inputTokens: number; outputTokens: number; source: string }
+  /** `inputTokens` is the total; fresh input is it minus the cache fields, which are absent when the CLI did not split them. */
+  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; source: string }
 }
 
 /** Variables kept from the host environment; credentials come only from the account. */
@@ -59,8 +60,12 @@ export function parseClaude(stdout: string): Parsed {
     usage: u && Number.isInteger(u.input_tokens) && Number.isInteger(u.output_tokens)
       ? {
           inputTokens: u.input_tokens! + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0),
+          // The split is reported whole or not at all, so a half-reported one never reads as zero cache.
+          ...(Number.isInteger(u.cache_read_input_tokens) && Number.isInteger(u.cache_creation_input_tokens)
+            ? { cacheReadTokens: u.cache_read_input_tokens!, cacheWriteTokens: u.cache_creation_input_tokens! }
+            : {}),
           outputTokens: u.output_tokens!,
-          source: 'claude-code result.usage (input includes cache reads and writes)',
+          source: 'claude-code result.usage (input_tokens is fresh; total adds cache_creation and cache_read)',
         }
       : undefined,
   }
@@ -79,10 +84,13 @@ export function codexInvocation(command: string, ws: Workspace, prompt: string, 
 
 export function parseCodex(stdout: string): Parsed {
   let input = 0
+  let cached = 0
   let output = 0
   let turns = 0
   /** A turn without both counts makes the total unknown, never a partial sum. */
   let counted = true
+  /** Cache reads are known only if every turn reported them. */
+  let split = true
   let failure: string | undefined
   let message = ''
   for (const line of stdout.split('\n')) {
@@ -99,6 +107,8 @@ export function parseCodex(stdout: string): Parsed {
       if (u && Number.isInteger(u.input_tokens) && Number.isInteger(u.output_tokens)) {
         input += u.input_tokens!
         output += u.output_tokens!
+        if (Number.isInteger(u.cached_input_tokens)) cached += u.cached_input_tokens!
+        else split = false
       } else {
         counted = false
       }
@@ -109,6 +119,13 @@ export function parseCodex(stdout: string): Parsed {
   return {
     ok: turns > 0 && failure === undefined,
     message: failure ?? message,
-    usage: turns && counted ? { inputTokens: input, outputTokens: output, source: `codex turn.completed usage over ${turns} turn(s) (input includes cached)` } : undefined,
+    usage: turns && counted
+      ? {
+          inputTokens: input,
+          ...(split ? { cacheReadTokens: cached } : {}),
+          outputTokens: output,
+          source: `codex turn.completed usage over ${turns} turn(s) (input_tokens includes cached_input_tokens)`,
+        }
+      : undefined,
   }
 }

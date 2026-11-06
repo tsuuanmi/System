@@ -76,7 +76,7 @@ test('a code change is captured from the working tree as one pinned commit on th
   assert.equal(execFileSync('git', ['-C', repository, 'status', '--porcelain'], { encoding: 'utf8' }), '', 'the operator checkout is untouched')
   assert.deepEqual(readdirSync(attempts), [], 'the attempt directory and worktree are removed')
   assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1)
-  assert.deepEqual(result.usage, { inputTokens: 33, outputTokens: 5, source: 'claude-code result.usage (input includes cache reads and writes)' })
+  assert.deepEqual(result.usage, { inputTokens: 33, cacheReadTokens: 20, cacheWriteTokens: 10, outputTokens: 5, source: 'claude-code result.usage (input_tokens is fresh; total adds cache_creation and cache_read)' })
   assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake', servedModels: ['served-default'] })
   assert.equal(artifacts.get(result.log!).state, 'stored')
 })
@@ -185,7 +185,7 @@ test('each Codex attempt gets a fresh CODEX_HOME with only auth.json; a refresh 
   assert.ok(!seen.keys.includes('CLAUDE_CODE_OAUTH_TOKEN'))
   assert.equal(readFileSync(join(codexHome, 'auth.json'), 'utf8'), '{"token":"v1"}\n', 'the refreshed file replaced the account copy')
   assert.deepEqual(readdirSync(codexHome), ['auth.json'], 'no state accumulates in the account directory')
-  assert.deepEqual(result.usage, { inputTokens: 100, outputTokens: 7, source: 'codex turn.completed usage over 1 turn(s) (input includes cached)' })
+  assert.deepEqual(result.usage, { inputTokens: 100, cacheReadTokens: 40, outputTokens: 7, source: 'codex turn.completed usage over 1 turn(s) (input_tokens includes cached_input_tokens)' })
 })
 
 test('an agent error fails the attempt with its message', async () => {

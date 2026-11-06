@@ -192,6 +192,7 @@ budget is either justified in the milestone's row or paid for by removal.
 | Unit check, clean worktree | ~1 min | under 2 min |
 | All required checks (`.system/checks.yaml`) | ~7 min | under 10 min |
 | Flaky tests known | 0 | 0: a flaky test is fixed before features |
+| Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone |
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
