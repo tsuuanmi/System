@@ -13,6 +13,15 @@
   Engineering event sequences, a cancel request while an attempt is held at a
   barrier, and seeds 1 to 50 of random delays (replay matches, no event lost
   or repeated).
+- `host-lock.test.ts` — the Host lock: a second lock on a home refused (also by
+  symlink), another home free, release and a SIGKILLed child freeing it at
+  once, the off-Linux and missing-home errors.
+- `host.test.ts` — the Host over the fixture: the lane (ordering, no
+  overlapping writes, a cancel racing a held attempt, seeds 1 to 20, a closed
+  Host writing nothing), `commandId` receipts (one Work, one dispatch,
+  refusal on different arguments, kept in the record across a restart) and
+  recovery (attempt lost, nothing run by itself, an explicit run continues,
+  effects reconciled).
 - `effects.test.ts` — effect steps with a scripted remote: intent before
   effect, reconciliation after a lost host or a throw, the unknown-outcome
   hold and its resumption, approval and denial, retrying only the effect.

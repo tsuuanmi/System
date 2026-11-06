@@ -8,17 +8,19 @@
  * touches no Work state. There is no domain-specific branch.
  *
  * Recovery: a step whose last attempt was dispatched but never observed lost
- * its process; it is recorded `attempt-lost` and dispatched again as a new
- * attempt with the same recorded inputs. Completed steps are never re-run.
+ * its process; it is recorded `attempt-lost`, and the next run dispatches it
+ * again as a new attempt with the same recorded inputs. Completed steps are
+ * never re-run.
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import type { CancelRequest, HostControl } from './control.ts'
 import { WorkError } from './errors.ts'
+import { noLane, type Lane } from './lane.ts'
 import type { Verdict } from './kinds.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
-import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
+import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, workflowSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
@@ -59,6 +61,25 @@ export interface Admission {
   source: { kind: 'workflow-file' | 'direct-task'; path?: string; fileHash?: string }
 }
 
+/** A command that is to leave a receipt in the Work it changes: its client ID and the hash of its arguments. */
+export interface Command {
+  id: string
+  args: string
+}
+
+/** What one turn of a drive decided: the record now, and, when an attempt was dispatched, how to finish it. */
+interface Turn {
+  record: WorkRecord
+  /** Execute outside the lane, then observe in it. */
+  settle?: () => Promise<WorkRecord>
+}
+
+/** An attempt that was dispatched and never observed. */
+export interface LostAttempt {
+  workId: string
+  stepId: string
+  attemptId: string
+}
 
 /** One host's identity for the stale-snapshot fence: a random ID, and when it began loading the Work store. */
 export interface HostIdentity {
@@ -98,21 +119,29 @@ export class WorkController {
   private readonly capabilities: Capabilities
   private readonly control: HostControl
   private readonly host: HostIdentity
+  private readonly lane: Lane
+  /** Commands whose receipt the next `terminal` event of a Work carries. */
+  private readonly expected = new Map<string, Receipt[]>()
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, control: HostControl, host: HostIdentity = { id: randomUUID(), loadedAt: Date.now() }) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, control: HostControl, host: HostIdentity = { id: randomUUID(), loadedAt: Date.now() }, lane: Lane = noLane) {
     this.table = table
     this.specs = specs
     this.capabilities = capabilities
     this.control = control
     this.host = host
+    this.lane = lane
   }
 
   private now(): string {
     return new Date().toISOString()
   }
 
-  /** Pin the spec and create the Work record; nothing is dispatched yet. */
-  async admit(admission: Admission): Promise<WorkRecord> {
+  /**
+   * Pin the spec and create the Work record; nothing is dispatched yet. A
+   * command's receipt is written with the record. The caller makes sure
+   * `workId` is not taken.
+   */
+  async admit(admission: Admission, options: { workId?: string; command?: Command } = {}): Promise<WorkRecord> {
     const usesInput = admission.spec.steps.some((s) => refsOf(s).includes('$work.input'))
     if (usesInput && !admission.input) throw new WorkError('the workflow uses $work.input, but no input Artifact was given')
     if (admission.input && !this.specs.exists(admission.input)) throw new WorkError(`input ${admission.input} is not a stored Artifact`)
@@ -140,9 +169,12 @@ export class WorkController {
       }
     }
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
-    const id = `work:${randomUUID()}`
+    const id = options.workId ?? `work:${randomUUID()}`
     const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: admission.input, criteria, verifiers, source: admission.source }
-    const record: WorkRecord = { id, events: [admitted], state: fold(admission.spec.steps.map((s) => s.id), [admitted]) }
+    const record: WorkRecord = {
+      id, events: [admitted], state: fold(admission.spec.steps.map((s) => s.id), [admitted]),
+      ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
+    }
     await this.table.put(id, workRecordSchema.parse(record))
     return record
   }
@@ -171,13 +203,32 @@ export class WorkController {
   }
 
   /** Advance until the Work is terminal, holding its lock. */
-  async run(workId: string): Promise<WorkRecord> {
-    const release = this.hold(workId)
+  async run(workId: string, command?: Command): Promise<WorkRecord> {
+    const release = await this.enter(workId, command)
     try {
       return await this.drive(workId)
     } finally {
-      release()
+      this.leave(workId, release)
     }
+  }
+
+  /** In the lane, take the Work's lock, so runs and cancels reach it in the order they were asked. */
+  private enter(workId: string, command?: Command): Promise<() => void> {
+    return this.lane(async () => {
+      const release = this.hold(workId)
+      if (command) this.expect(workId, command)
+      return release
+    })
+  }
+
+  private leave(workId: string, release: () => void): void {
+    this.expected.delete(workId)
+    release()
+  }
+
+  /** The command's receipt is written with the next `terminal` event of the Work. */
+  private expect(workId: string, command: Command): void {
+    this.expected.set(workId, [...(this.expected.get(workId) ?? []), { commandId: command.id, args: command.args, result: { workId, status: 'running' } }])
   }
 
   /**
@@ -197,17 +248,27 @@ export class WorkController {
     return release
   }
 
-  /** Advance until the Work is terminal; the caller holds the lock. */
+  /**
+   * Advance until the Work is terminal; the caller holds the lock. Each
+   * decision is a section of the lane over the latest committed record; an
+   * attempt runs outside it and comes back in to be observed.
+   */
   private async drive(workId: string): Promise<WorkRecord> {
-    let record = await this.recover(this.require(workId))
+    let record = await this.lane(() => this.recover(this.require(workId)))
     while (!TERMINAL.has(record.state.status)) {
-      const cancel = this.control.cancelRequest(workId)
-      const unknown = Object.values(record.state.effects).find((e) => e.state === 'unknown')
-      if (cancel) record = await this.cancelled(record, cancel)
-      else if (unknown) record = await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`)
-      else record = await this.step(record)
+      const turn = await this.lane(() => this.advance(workId))
+      record = turn.settle ? await turn.settle() : turn.record
     }
     return record
+  }
+
+  private async advance(workId: string): Promise<Turn> {
+    const record = this.require(workId)
+    const cancel = this.control.cancelRequest(workId)
+    const unknown = Object.values(record.state.effects).find((e) => e.state === 'unknown')
+    if (cancel) return { record: await this.cancelled(record, cancel) }
+    if (unknown) return { record: await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`) }
+    return this.step(record)
   }
 
   runningElsewhere(workId: string): boolean {
@@ -218,19 +279,24 @@ export class WorkController {
    * Cancel Work. A live host running it is asked to stop its attempt (it
    * records the outcome itself); otherwise the outcome is recorded here.
    */
-  async cancel(workId: string, request: CancelRequest): Promise<'requested' | WorkRecord> {
-    const record = this.require(workId)
-    if (TERMINAL.has(record.state.status)) throw new WorkError(`${workId} is already ${record.state.status}`)
-    if (this.control.heldElsewhere(workId)) {
-      this.control.requestCancel(workId, request)
-      return 'requested'
-    }
-    const release = this.hold(workId)
-    try {
-      return await this.cancelled(await this.recover(this.require(workId)), request)
-    } finally {
-      release()
-    }
+  async cancel(workId: string, request: CancelRequest, command?: Command): Promise<'requested' | WorkRecord> {
+    return this.lane(async () => {
+      const record = this.require(workId)
+      if (TERMINAL.has(record.state.status)) throw new WorkError(`${workId} is already ${record.state.status}`)
+      if (this.control.heldElsewhere(workId)) {
+        this.control.requestCancel(workId, request)
+        // The run that holds the Work records the cancellation; its terminal event carries this receipt too.
+        if (command) this.expect(workId, command)
+        return 'requested'
+      }
+      const release = this.hold(workId)
+      if (command) this.expect(workId, command)
+      try {
+        return await this.cancelled(await this.recover(record), request)
+      } finally {
+        this.leave(workId, release)
+      }
+    })
   }
 
   /**
@@ -238,13 +304,13 @@ export class WorkController {
    * only by `worker`. The new attempt gets the same recorded inputs plus, as
    * `previous`, the partial output the last attempt left. Then run.
    */
-  async retry(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }): Promise<WorkRecord> {
-    const release = this.hold(workId)
+  async retry(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }, command?: Command): Promise<WorkRecord> {
+    const release = await this.enter(workId, command)
     try {
-      await this.reopen(workId, options)
+      await this.lane(() => this.reopen(workId, options))
       return await this.drive(workId)
     } finally {
-      release()
+      this.leave(workId, release)
     }
   }
 
@@ -275,22 +341,41 @@ export class WorkController {
     const stepIds = this.specOf(record).steps.map((s) => s.id)
     // Marked before the write too: a crash between the update and the second mark still leaves one.
     this.control.noteWrite(record.id, { host: this.host.id, at: Date.now() })
+    // The terminal event settles the commands waiting on this Work: their receipts go in the same update.
+    const receipts = event.type === 'terminal' ? (this.expected.get(record.id) ?? []).map((r) => ({ ...r, result: { workId: record.id, status: event.outcome } })) : []
+    if (receipts.length) this.expected.delete(record.id)
     const updated = await this.table.update(record.id, (current) => {
       const next = { ...event, seq: current.events.length, at: this.now() } as WorkEvent
       const events = [...current.events, next]
-      return { ...current, events, state: fold(stepIds, events) }
+      return { ...current, events, state: fold(stepIds, events), ...(receipts.length ? { receipts: [...(current.receipts ?? []), ...receipts] } : {}) }
     })
     this.control.noteWrite(record.id, { host: this.host.id, at: Date.now() })
     return updated
   }
 
+  /**
+   * Host start: mark the attempts of a Work that were dispatched but never
+   * observed as lost, and reconcile its effects by reading the remote. Nothing
+   * is dispatched or applied; only an explicit run or retry goes on.
+   */
+  async interrupt(workId: string): Promise<LostAttempt[]> {
+    const record = this.require(workId)
+    if (TERMINAL.has(record.state.status)) return []
+    const lost = this.runningAttempts(record).map(([stepId, attemptId]) => ({ workId, stepId, attemptId }))
+    await this.recover(record, { resumeEffects: false })
+    return lost
+  }
+
+  /** The steps whose last attempt is dispatched and not observed, with that attempt; an effect step is reconciled instead. */
+  private runningAttempts(record: WorkRecord): [string, string][] {
+    const pendingEffects = new Set(Object.values(record.state.effects).filter((e) => e.state === 'intended' || e.state === 'unknown').map((e) => e.stepId))
+    return Object.entries(record.state.steps).filter(([stepId, s]) => s.state === 'running' && !pendingEffects.has(stepId)).map(([stepId, s]) => [stepId, s.attempts.at(-1)!])
+  }
+
   /** Mark attempts that were dispatched but never observed as lost. */
   private async recover(record: WorkRecord, { resumeEffects = true } = {}): Promise<WorkRecord> {
-    const pendingEffects = new Set(Object.values(record.state.effects).filter((e) => e.state === 'intended' || e.state === 'unknown').map((e) => e.stepId))
-    for (const [stepId, s] of Object.entries(record.state.steps)) {
-      if (s.state !== 'running' || pendingEffects.has(stepId)) continue
-      const attemptId = s.attempts.at(-1)!
-      record = await this.append(record, { type: 'attempt-lost', stepId, attemptId, reason: 'the host stopped before the attempt reported; it is dispatched again as a new attempt' })
+    for (const [stepId, attemptId] of this.runningAttempts(record)) {
+      record = await this.append(record, { type: 'attempt-lost', stepId, attemptId, reason: 'the host stopped before the attempt reported' })
     }
     // An effect whose outcome was not recorded is never applied again blindly: reconcile first.
     for (const [operationId, effect] of Object.entries(record.state.effects)) {
@@ -355,17 +440,17 @@ export class WorkController {
     return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail })
   }
 
-  private async step(record: WorkRecord): Promise<WorkRecord> {
+  private async step(record: WorkRecord): Promise<Turn> {
     const spec = this.specOf(record)
     const done = (stepId: string) => record.state.steps[stepId]!.state === 'succeeded'
     const failed = spec.steps.find((s) => ['failed', 'cancelled'].includes(record.state.steps[s.id]!.state))
-    if (failed) return this.finish(record, 'failed', `step ${failed.id} ${record.state.steps[failed.id]!.state}`)
+    if (failed) return { record: await this.finish(record, 'failed', `step ${failed.id} ${record.state.steps[failed.id]!.state}`) }
     const next = spec.steps.find((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
-    if (!next) return this.finishWithoutAccept(record, spec)
+    if (!next) return { record: await this.finishWithoutAccept(record, spec) }
     if (isWorkerStep(next)) return this.runWorker(record, next)
     if (isVerifyStep(next)) return this.runVerifier(record, next)
     if (isEffectStep(next)) return this.runEffect(record, spec, next)
-    return this.accept(record, next)
+    return { record: await this.accept(record, next) }
   }
 
   /** Resolve a reference to an exact Artifact ID from recorded state. */
@@ -377,10 +462,13 @@ export class WorkController {
     return id
   }
 
-  private async runWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<WorkRecord> {
-    const dispatched = await this.dispatchWorker(record, s)
-    if (!dispatched.attempt) return dispatched.record
-    return this.observeWorker(dispatched.attempt, await this.executeWorker(dispatched.attempt))
+  private async runWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<Turn> {
+    const { record: dispatched, attempt } = await this.dispatchWorker(record, s)
+    if (!attempt) return { record: dispatched }
+    return { record: dispatched, settle: async () => {
+      const execution = await this.executeWorker(attempt)
+      return this.lane(() => this.observeWorker(attempt, execution))
+    } }
   }
 
   /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
@@ -446,10 +534,13 @@ export class WorkController {
     return done
   }
 
-  private async runVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<WorkRecord> {
-    const dispatched = await this.dispatchVerifier(record, s)
-    if (!dispatched.attempt) return dispatched.record
-    return this.observeVerifier(dispatched.attempt, await this.executeVerifier(dispatched.attempt))
+  private async runVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<Turn> {
+    const { record: dispatched, attempt } = await this.dispatchVerifier(record, s)
+    if (!attempt) return { record: dispatched }
+    return { record: dispatched, settle: async () => {
+      const result = await this.executeVerifier(attempt)
+      return this.lane(() => this.observeVerifier(attempt, result))
+    } }
   }
 
   /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
@@ -563,11 +654,14 @@ export class WorkController {
    * Publish the exact subject the required verifiers passed, at most once per
    * operation: intent first, effect second, outcome third.
    */
-  private async runEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<WorkRecord> {
-    const dispatched = await this.dispatchEffect(record, spec, s)
-    if (!dispatched.attempt) return dispatched.record
-    const { provider, intent } = dispatched.attempt
-    return this.observeEffect(record.id, provider, intent, await this.executeEffect(provider, intent))
+  private async runEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<Turn> {
+    const { record: dispatched, attempt } = await this.dispatchEffect(record, spec, s)
+    if (!attempt) return { record: dispatched }
+    const { provider, intent } = attempt
+    return { record: dispatched, settle: async () => {
+      const applied = await this.executeEffect(provider, intent)
+      return this.lane(() => this.observeEffect(record.id, provider, intent, applied))
+    } }
   }
 
   /** In the lane: decide from the committed record and append the intent; `attempt` is absent when the step failed or is held instead. */
@@ -600,18 +694,20 @@ export class WorkController {
    * Record a human operator's decision on held Work; an approval runs it on.
    * Agent callers are refused (ADR-0004 decision 3).
    */
-  async decide(workId: string, decision: { decision: 'approved' | 'denied'; caller: Caller; reason: string }): Promise<WorkRecord> {
+  async decide(workId: string, decision: { decision: 'approved' | 'denied'; caller: Caller; reason: string }, command?: Command): Promise<WorkRecord> {
     if (decision.caller.type !== 'human') throw new WorkError('only a human operator approves; an agent caller cannot decide')
-    const release = this.hold(workId)
+    const release = await this.enter(workId, command)
     try {
-      const record = this.require(workId)
-      const stepId = record.state.status === 'held' ? record.state.awaiting : undefined
-      if (!stepId) throw new WorkError(`nothing awaits a decision on ${workId} (it is ${record.state.status})`)
-      const decided = await this.append(record, { type: 'decided', caller: decision.caller, stepId, decision: decision.decision, reason: decision.reason })
-      if (decision.decision === 'denied') return await this.finish(decided, 'failed', `${stepId} denied by ${decision.caller.operatorId}: ${decision.reason}`)
-      return await this.drive(workId)
+      const denied = await this.lane(async () => {
+        const record = this.require(workId)
+        const stepId = record.state.status === 'held' ? record.state.awaiting : undefined
+        if (!stepId) throw new WorkError(`nothing awaits a decision on ${workId} (it is ${record.state.status})`)
+        const decided = await this.append(record, { type: 'decided', caller: decision.caller, stepId, decision: decision.decision, reason: decision.reason })
+        return decision.decision === 'denied' ? await this.finish(decided, 'failed', `${stepId} denied by ${decision.caller.operatorId}: ${decision.reason}`) : undefined
+      })
+      return denied ?? await this.drive(workId)
     } finally {
-      release()
+      this.leave(workId, release)
     }
   }
 

@@ -12,6 +12,8 @@ Helpers shared by the tests, so each stand-in has one implementation:
   `WorkController` with fake Workers whose attempts are held at named barriers
   (`hold`, `arrived`, `release`) or delayed by a seeded generator
   (`fixture({ seed })`, so a seed reproduces an interleaving), and
+  `startHost(home)` (a `Host` over the same table and Workers, for restarts),
+  `remote` (what the fake publisher's reconcile reports), and
   `assertConsistent`: the stored state equals the fold of the events, and no
   event `seq` is missing or repeated.
 - [cli.ts](cli.ts) — `systemCli`: a throwaway DSH home and a runner for
