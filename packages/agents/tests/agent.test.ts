@@ -76,8 +76,8 @@ test('a code change is captured from the working tree as one pinned commit on th
   assert.equal(execFileSync('git', ['-C', repository, 'status', '--porcelain'], { encoding: 'utf8' }), '', 'the operator checkout is untouched')
   assert.deepEqual(readdirSync(attempts), [], 'the attempt directory and worktree are removed')
   assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1)
-  assert.deepEqual(result.usage, { inputTokens: 33, cacheReadTokens: 20, cacheWriteTokens: 10, outputTokens: 5, costUsd: 0.5, source: 'claude-code result.usage over 1 result(s) (input_tokens is fresh; total adds cache_creation and cache_read)' })
-  assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake', servedModels: ['served-default'] })
+  assert.deepEqual(result.usage, { inputTokens: 258, cacheReadTokens: 120, cacheWriteTokens: 35, outputTokens: 25, costUsd: 0.75, source: 'claude-code modelUsage (includes subagents) over 1 result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate' })
+  assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake', servedModels: ['served-default', 'served-subagent'] })
   assert.equal(artifacts.get(result.log!).state, 'stored')
 })
 
@@ -86,7 +86,7 @@ test('usage sums every result of a stream, from the whole stdout and not the bou
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-followup'))
   const result = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs FAKE:followup FAKE:noise') }, ['report']))
   assert.equal(result.status, 'succeeded', result.reason)
-  assert.deepEqual(result.usage, { inputTokens: 40, cacheReadTokens: 24, cacheWriteTokens: 12, outputTokens: 11, costUsd: 0.75, source: 'claude-code result.usage over 2 result(s) (input_tokens is fresh; total adds cache_creation and cache_read)' })
+  assert.deepEqual(result.usage, { inputTokens: 490, cacheReadTokens: 224, cacheWriteTokens: 62, outputTokens: 51, costUsd: 1.25, source: 'claude-code modelUsage (includes subagents) over 2 result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate' })
   const log = Buffer.from(await artifacts.readBytes(result.log!)).toString()
   assert.ok(log.length <= 256 * 1024, 'the log is bounded')
   assert.ok(!log.includes('"input_tokens":3,'), 'the first result is past the bound, yet it was counted')
@@ -270,7 +270,7 @@ test('a step asking for a tier runs that tier\'s model; no tier runs standard; t
   }
   const frontier = await run(['code-write', 'tier.frontier'])
   assert.equal(frontier.seen, 'opus')
-  assert.deepEqual([frontier.executor?.tier, frontier.executor?.model, frontier.executor?.servedModels], ['frontier', 'opus', ['served-opus']])
+  assert.deepEqual([frontier.executor?.tier, frontier.executor?.model, frontier.executor?.servedModels], ['frontier', 'opus', ['served-opus', 'served-subagent']])
   const plain = await run(['code-write'])
   assert.equal(plain.seen, 'sonnet')
   assert.equal(plain.executor?.tier, undefined)

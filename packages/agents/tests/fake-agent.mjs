@@ -39,8 +39,13 @@ function finish(ok, message) {
       console.log(JSON.stringify({ type: 'turn.failed', error: { message } }))
     }
   } else {
-    const served = { [model ? `served-${model}` : 'served-default']: {} }
-    const result = (usage, cost) => JSON.stringify({ type: 'result', is_error: !ok, result: message, usage, total_cost_usd: cost, modelUsage: served })
+    const main = model ? `served-${model}` : 'served-default'
+    /** `usage` is the main model's alone; `modelUsage` adds a second model standing in for a subagent, as the real CLI does. */
+    const result = (usage, cost) => {
+      const perModel = (u, costUSD) => ({ inputTokens: u.input_tokens, cacheReadInputTokens: u.cache_read_input_tokens, cacheCreationInputTokens: u.cache_creation_input_tokens, outputTokens: u.output_tokens, costUSD })
+      const subagent = { input_tokens: 100, cache_creation_input_tokens: 25, cache_read_input_tokens: 100, output_tokens: 20 }
+      return JSON.stringify({ type: 'result', is_error: !ok, result: message, usage, total_cost_usd: cost + 0.25, modelUsage: { [main]: perModel(usage, cost), 'served-subagent': perModel(subagent, 0.25) } })
+    }
     // `--output-format stream-json` prints every event as a line; the json format prints only the last result.
     const stream = args.includes('stream-json')
     if (stream) console.log(JSON.stringify({ type: 'system', subtype: 'init' }))

@@ -36,7 +36,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   operator touches and usage from a Work's events (`system work report`):
   total, cache read, cache write and fresh input tokens, with attempts that
   did not split their cache use counted in `unsplitAttempts`, never as zero;
-  `costUsd` totals the CLI's own cost over the attempts that report it.
+  `costUsdEstimate` totals the CLI's API-equivalent cost estimate (not what the
+  subscription is billed) over the attempts that report it, from records'
+  `costUsd`, old ones included.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
   a conversation held elsewhere taken in as `file@1` parts under a manifest
   of what the operator asserts and a fixed notice; the preview and its

@@ -20,7 +20,9 @@ test('a Codex turn without token counts makes usage unknown, never zero', () => 
   assert.equal(parseCodex(line({ type: 'turn.completed' })).usage, undefined)
 })
 
-const SOURCE = (n: number) => `claude-code result.usage over ${n} result(s) (input_tokens is fresh; total adds cache_creation and cache_read)`
+const SOURCE = (n: number) => `claude-code usage (excludes subagents) over ${n} result(s) (input_tokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`
+const MODEL_SOURCE = (n: number) => `claude-code modelUsage (includes subagents) over ${n} result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`
+const tokens = (inputTokens: number, cacheReadInputTokens: number, cacheCreationInputTokens: number, outputTokens: number, costUSD?: number) => ({ inputTokens, cacheReadInputTokens, cacheCreationInputTokens, outputTokens, ...(costUSD === undefined ? {} : { costUSD }) })
 const result = (usage: Record<string, number> | undefined, extra: Record<string, unknown> = {}) => line({ type: 'result', is_error: false, result: 'ok', usage, ...extra })
 
 test('Claude Code usage without both token counts is unknown', () => {
@@ -36,6 +38,22 @@ test('Claude Code usage is summed over every result, such as the turn a backgrou
     result({ input_tokens: 1, cache_creation_input_tokens: 2, cache_read_input_tokens: 4, output_tokens: 6 }),
   ].join('\n')
   assert.deepEqual(parseClaude(out).usage, { inputTokens: 40, cacheReadTokens: 24, cacheWriteTokens: 12, outputTokens: 11, source: SOURCE(2) })
+})
+
+test('Claude Code tokens come from modelUsage, so a subagent\'s model is counted though result.usage excludes it', () => {
+  const out = [
+    result({ input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, { modelUsage: { main: tokens(3, 20, 10, 5, 0.5), subagent: tokens(100, 200, 50, 40, 0.25) } }),
+    result({ input_tokens: 1, cache_creation_input_tokens: 2, cache_read_input_tokens: 4, output_tokens: 6 }, { modelUsage: { main: tokens(1, 4, 2, 6, 0.125) } }),
+  ].join('\n')
+  assert.deepEqual(parseClaude(out).usage, { inputTokens: 33 + 350 + 7, cacheReadTokens: 224, cacheWriteTokens: 62, outputTokens: 51, costUsd: 0.875, source: MODEL_SOURCE(2) })
+})
+
+test('Claude Code modelUsage without costUSD in every model leaves cost absent; usage is the fallback only when modelUsage is absent', () => {
+  const usage = { input_tokens: 1, output_tokens: 1 }
+  const noCost = parseClaude(result(usage, { modelUsage: { main: tokens(7, 0, 0, 2), other: tokens(1, 0, 0, 1, 0.5) } })).usage
+  assert.deepEqual(noCost, { inputTokens: 8, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 3, source: MODEL_SOURCE(1) })
+  assert.deepEqual(parseClaude(result(usage, { modelUsage: {} })).usage, { inputTokens: 1, outputTokens: 1, source: SOURCE(1) })
+  assert.deepEqual(parseClaude([result(usage, { modelUsage: { main: tokens(7, 0, 0, 2, 1) } }), result(usage)].join('\n')).usage, { inputTokens: 2, outputTokens: 2, source: SOURCE(2) })
 })
 
 test('Claude Code cost is the sum of every result\'s total_cost_usd, and absent unless every result reports it', () => {
