@@ -6,7 +6,7 @@ reviewed: 2026-11-07
 
 # The Host
 
-**Status:** R1 implemented
+**Status:** R2 implemented
 ([ADR-0007](../decisions/ADR-0007-one-long-lived-host.md) as amended, and
 [PROP-0004](../proposals/PROP-0004-host-design.md)). The Host lock, the commit
 lane, receipts and recovery on start are in `packages/work` (`host-lock.ts`,
@@ -14,8 +14,8 @@ lane, receipts and recovery on start are in `packages/work` (`host-lock.ts`,
 `packages/host` (H3), and the Host as a process with the thin CLI in
 `packages/app` (H4). The old per-command mode, where every `system` command
 booted its own host and coordinated through files, is gone; what it did is in
-[Work ownership and recovery](work-ownership-and-recovery.md). Not yet:
-parallel steps and Account slots (H5, release R2).
+[Work ownership and recovery](work-ownership-and-recovery.md). Parallel steps
+and Account slots (H5) are in `controller.ts`.
 
 ## Why
 
@@ -44,7 +44,7 @@ at the same time.
  │                   reach approve, deny, credentials set, conversation storage) │
  │ commit lane       the only path that changes a Work: each change is one       │
  │                   event appended, with its command receipt, in one write     │
- │ scheduler    (R2) ready steps -> attempts, one slot per Account by default   │
+ │ scheduler         ready steps -> attempts, one slot per Account by default   │
  │ attempt runners   Runtimes, verifiers and effects run outside the lane;      │
  │                   what they return comes back through the lane as events     │
  │ recovery          on start: interrupted attempts, uncertain slots, reconcile │
@@ -162,15 +162,36 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   subject at a terminal, and the Host checks that subject again before it
   records the decision.
 
-### Attempts and slots (R2)
+### Attempts and slots
 
-A ready step becomes an attempt once its Account has a free slot (default 1,
-set in the profile). The slot is reserved in the lane before `dispatched` is
-appended, and released when `observed` or `attempt-lost` is.
+A ready step (pending, every `dependsOn` succeeded) becomes an attempt once its
+Account has a free slot. The slot is reserved in the lane before `dispatched`
+is appended, and released when `observed` or `attempt-lost` is.
 
 Brainstorm's two proposals use different Accounts, so they run at the same
 time. Steps after them in the same Work wait, as their `dependsOn` already
 says.
+
+**Implemented (H5, R2):**
+- **Drive.** A Work's `drive` (`controller.ts`) dispatches every ready step
+  whose Account has a free slot, in Workflow file order, then waits for an
+  attempt to report or a slot to be freed. Works are separate drives. Each
+  decision is still one lane section over the latest committed record.
+- **Account.** A Worker's `ref`. Its limit is `maxConcurrentAttempts` in the
+  `agents` row config (per Account, or one default for all; default 1).
+  Verifier and effect steps take no slot.
+- **Waiting.** Ready steps without a slot wait in memory. A freed slot wakes the
+  waiting Works in admission order. No priorities, fairness tuning or queue on
+  disk.
+- **Stopping.** A cancel, a failed step or an unknown effect stops new
+  dispatches; attempts in flight are aborted (a cancel) or finish and are
+  recorded, then the terminal event follows.
+- **Uncertain attempts.** On start each lost Worker attempt keeps its slot, over
+  the limit if need be (`uncertain()`). `settle()` asks the Account's Worker
+  `gone(attemptId)` and frees the slot if it is true. Start calls it, and so does
+  a waiting Work with nothing of its own running. An agent attempt is gone when
+  its pid file is absent or names no live process; a Worker without `gone` is
+  never confirmed.
 
 ### Start, stop and recovery
 
@@ -178,7 +199,7 @@ On start, before taking any command, the Host recovers:
 
 1. An attempt that was dispatched but never observed is marked interrupted.
 2. If it may still be running, its Account slot stays held until
-   reconciliation settles it.
+   `settle()` confirms its process gone.
 3. Effects are reconciled as they are today, by reading the remote.
 
 **Interrupted Works do not resume by themselves.** The operator, or later an
@@ -187,8 +208,8 @@ Orchestrator, runs them again.
 **Implemented (H2):** `Host.start` marks each unfinished Work's unreported
 attempts `attempt-lost` and reconciles effects left `intended` or `unknown`
 by reading the remote, applying nothing. `interrupted()` lists the Works
-nothing is driving, and `uncertain()` the lost attempts: the place where H5
-keeps their Account slot. `close()` refuses new operations and frees the home.
+nothing is driving, and `uncertain()` the lost Worker attempts that keep
+their Account slot (H5). `close()` refuses new operations and frees the home.
 
 On stop, the Host refuses new runs and exits. Whatever was cut short is the
 next start's recovery.
@@ -239,9 +260,9 @@ before the code (Charter 12, fixture first).
 | The five defects of 2026-11-06 stay fixed | The empty lock, stale-lock removal and the stale snapshot are the first two rows. The SQLite store-creation race and the profile config rewrite are in [tests/README.md](../../tests/README.md#regressions) (`concurrency.test.ts`, run through the Host). |
 | A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `submit sent twice at once gives one Work`, `the same run twice dispatches once`, `the same run sent twice while it runs joins it`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
 | Agents cannot approve | Held (H3): `an agent connection is refused every method flagged agent: false, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
-| Recovery is conservative | Held except for the slot (H2): `a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until reconciled: H5. |
+| Recovery is conservative | Held (H2, and the slot at H5, see the next row): `a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until settled: `a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself` and `a lost attempt whose Worker cannot confirm it gone keeps its slot` (packages/work/tests/slots.test.ts). |
 | Version skew is caught | Held (H3a): `a Host of another version refuses the hello and names the fix` (packages/host/tests/transport.test.ts). |
-| Slots hold (R2) | Two Works contend for one Account: never two attempts at once. Brainstorm's two proposals overlap in time. (H5) |
+| Slots hold (R2) | Held (H5), in packages/work/tests/slots.test.ts: `Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once`, `a synthesis step waits for both proposals`, `two Works on one Account never run two attempts at once with a limit of 1`, `two Works on one Account run two attempts at once with a limit of 2`, `a waiting step goes in Work admission order when its slot frees`, `a cancel while two attempts run records both, then one terminal event`, and `seed 1` to `seed 50: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event` (also never above the limit). Through the process: `the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both` (tests/brainstorm.test.ts). The agent side: `the account's slots are the Host's: the worker offers its limit and never queues attempts itself` and `a lost attempt is gone when its pid file is absent or names no process, and not while the process runs` (packages/agents/tests/agent.test.ts). |
 
 ## Not here
 

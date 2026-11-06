@@ -7,6 +7,14 @@
  * lane and read the latest committed record, execute runs outside it and
  * touches no Work state. There is no domain-specific branch.
  *
+ * Scheduling (PROP-0004 C3): a drive dispatches every ready step (pending, all
+ * `dependsOn` succeeded) whose Account has a free slot, and goes on as each
+ * attempt reports. An Account is a Worker's `ref`; it has `maxConcurrentAttempts`
+ * slots (default 1), reserved in the lane before `dispatched` is appended and
+ * released once `observed` is. Verifier and effect steps take none. Ready steps
+ * that find no slot wait in memory; a freed slot wakes the Works in admission
+ * order, and each takes its steps in Workflow file order.
+ *
  * Recovery: a step whose last attempt was dispatched but never observed lost
  * its process; it is recorded `attempt-lost`, and the next run dispatches it
  * again as a new attempt with the same recorded inputs. Completed steps are
@@ -67,11 +75,15 @@ export interface Command {
   args: string
 }
 
-/** What one turn of a drive decided: the record now, and, when an attempt was dispatched, how to finish it. */
+/** What one turn of a drive decided: the record now, and, for each attempt dispatched, how to finish it. */
 interface Turn {
   record: WorkRecord
   /** Execute outside the lane, then observe in it. */
-  settle?: () => Promise<WorkRecord>
+  settles: (() => Promise<WorkRecord>)[]
+  /** Nothing more can be done until an attempt reports or a slot is freed. */
+  waiting?: boolean
+  /** The slot epoch the decision was made at: a change since means the wait is over. */
+  epoch: number
 }
 
 /** An attempt that was dispatched and never observed. */
@@ -115,6 +127,14 @@ export class WorkController {
   private readonly lane: Lane
   /** Commands whose receipt the next `terminal` event of a Work carries. */
   private readonly expected = new Map<string, Receipt[]>()
+  /** Account -> the attempts holding one of its slots. */
+  private readonly slots = new Map<string, Set<string>>()
+  /** Lost attempts whose process may still run, by attempt ID: they keep their slot until settled. */
+  private readonly uncertain = new Map<string, { account: string; lost: LostAttempt }>()
+  /** Changes whenever a slot is freed or a cancel is asked, so a waiting drive does not miss it. */
+  private epoch = 0
+  /** The drives waiting for such a change, by Work. */
+  private readonly waiters = new Map<string, () => void>()
 
   constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane) {
     this.table = table
@@ -226,24 +246,111 @@ export class WorkController {
   /**
    * Advance until the Work is terminal; the caller holds the lock. Each
    * decision is a section of the lane over the latest committed record; an
-   * attempt runs outside it and comes back in to be observed.
+   * attempt runs outside it and comes back in to be observed. Several attempts
+   * of the Work may be in flight at once.
    */
   private async drive(workId: string): Promise<WorkRecord> {
-    let record = await this.lane(() => this.recover(this.require(workId)))
-    while (!TERMINAL.has(record.state.status)) {
-      const turn = await this.lane(() => this.advance(workId))
-      record = turn.settle ? await turn.settle() : turn.record
+    await this.lane(() => this.recover(this.require(workId)))
+    const flying = new Set<Promise<void>>()
+    const failures: unknown[] = []
+    const fly = (settle: () => Promise<WorkRecord>) => {
+      // A failed attempt is kept, not thrown here: only the drive's own loop rejects.
+      const done: Promise<void> = settle().then(() => undefined, (error) => { failures.push(error) }).finally(() => {
+        flying.delete(done)
+        // A decision made while it was still in flight is out of date.
+        this.epoch++
+      })
+      flying.add(done)
     }
-    return record
+    // An attempt's observation may end the Work, so the record is read again at each turn.
+    while (!TERMINAL.has(this.require(workId).state.status)) {
+      const turn = await this.lane(() => this.advance(workId, flying.size > 0))
+      for (const settle of turn.settles) fly(settle)
+      if (failures.length) throw failures[0]
+      if (TERMINAL.has(turn.record.state.status)) break
+      if (turn.waiting) {
+        // With nothing of its own in flight, the Work asks whether a lost attempt it waits on is gone by now.
+        if (!flying.size && this.uncertain.size && (await this.settle()).length) continue
+        if (this.epoch === turn.epoch) await this.idle(workId, flying)
+      }
+      if (failures.length) throw failures[0]
+    }
+    // A step may fail the Work while others are in flight: they are observed, after the terminal event.
+    await Promise.all(flying)
+    if (failures.length) throw failures[0]
+    return this.require(workId)
   }
 
-  private async advance(workId: string): Promise<Turn> {
+  /** Wait until an attempt of the Work reports, or a slot is freed or a cancel asked. */
+  private async idle(workId: string, flying: Set<Promise<void>>): Promise<void> {
+    const changed = new Promise<void>((wake) => this.waiters.set(workId, wake))
+    try {
+      await Promise.race([...flying, changed])
+    } finally {
+      this.waiters.delete(workId)
+    }
+  }
+
+  /** Wake the waiting drives, in Work admission order. */
+  private notify(): void {
+    this.epoch++
+    const order = [...this.table.keys()]
+    const woken = [...this.waiters.keys()].sort((a, b) => (this.admittedAt(a) < this.admittedAt(b) ? -1 : this.admittedAt(a) > this.admittedAt(b) ? 1 : order.indexOf(a) - order.indexOf(b)))
+    for (const workId of woken) this.waiters.get(workId)?.()
+  }
+
+  private admittedAt(workId: string): string {
+    return this.table.get(workId)?.events[0]?.at ?? ''
+  }
+
+  private limitOf(worker: WorkerPort): number {
+    return worker.maxConcurrentAttempts ?? 1
+  }
+
+  /** In the lane, before `dispatched`: take a slot of the Worker's Account, if one is free. */
+  private reserve(worker: WorkerPort, attemptId: string): boolean {
+    const held = this.slots.get(worker.ref) ?? new Set<string>()
+    if (held.size >= this.limitOf(worker)) return false
+    this.slots.set(worker.ref, held.add(attemptId))
+    return true
+  }
+
+  private release(account: string, attemptId: string): void {
+    if (this.slots.get(account)?.delete(attemptId)) this.notify()
+  }
+
+  /** The lost attempts whose slots are held, in the order they were marked. */
+  uncertainAttempts(): LostAttempt[] {
+    return [...this.uncertain.values()].map((u) => u.lost)
+  }
+
+  /** Ask each Worker whether the process of a lost attempt is confirmed gone; those that are free their slot. Returns them. */
+  async settle(): Promise<LostAttempt[]> {
+    const settled: LostAttempt[] = []
+    for (const [attemptId, { account, lost }] of [...this.uncertain]) {
+      let gone = false
+      try {
+        gone = (await this.capabilities.workerFor(account)?.gone?.(attemptId)) ?? false
+      } catch {
+        gone = false
+      }
+      if (!gone) continue
+      this.uncertain.delete(attemptId)
+      this.release(account, attemptId)
+      settled.push(lost)
+    }
+    return settled
+  }
+
+  private async advance(workId: string, busy: boolean): Promise<Turn> {
     const record = this.require(workId)
     const cancel = this.control.cancelRequest(workId)
     const unknown = Object.values(record.state.effects).find((e) => e.state === 'unknown')
-    if (cancel) return { record: await this.cancelled(record, cancel) }
-    if (unknown) return { record: await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`) }
-    return this.step(record)
+    // Cancelling, or holding on an unknown effect, waits for the attempts in flight: they are aborted or finish, and are recorded first.
+    if (busy && (cancel || unknown)) return { record, settles: [], waiting: true, epoch: this.epoch }
+    if (cancel) return { record: await this.cancelled(record, cancel), settles: [], epoch: this.epoch }
+    if (unknown) return { record: await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`), settles: [], epoch: this.epoch }
+    return this.step(record, busy)
   }
 
   runningElsewhere(workId: string): boolean {
@@ -260,6 +367,7 @@ export class WorkController {
       if (TERMINAL.has(record.state.status)) throw new WorkError(`${workId} is already ${record.state.status}`)
       if (this.control.heldElsewhere(workId)) {
         this.control.requestCancel(workId, request)
+        this.notify()
         // The run that holds the Work records the cancellation; its terminal event carries this receipt too.
         if (command) this.expect(workId, command)
         return 'requested'
@@ -334,6 +442,13 @@ export class WorkController {
     const record = this.require(workId)
     if (TERMINAL.has(record.state.status)) return []
     const lost = this.runningAttempts(record).map(([stepId, attemptId]) => ({ workId, stepId, attemptId }))
+    // A Worker attempt's process may still run: it keeps its Account's slot (over the limit if need be) until settled. A verifier takes no slot.
+    for (const attempt of lost) {
+      const dispatched = record.events.findLast((e) => e.type === 'dispatched' && e.attemptId === attempt.attemptId)
+      if (dispatched?.type !== 'dispatched' || dispatched.executor !== 'worker') continue
+      this.slots.set(dispatched.selected, (this.slots.get(dispatched.selected) ?? new Set()).add(attempt.attemptId))
+      this.uncertain.set(attempt.attemptId, { account: dispatched.selected, lost: attempt })
+    }
     await this.recover(record, { resumeEffects: false })
     return lost
   }
@@ -413,17 +528,52 @@ export class WorkController {
     return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail })
   }
 
-  private async step(record: WorkRecord): Promise<Turn> {
+  /** In the lane: dispatch every ready step that can start now, in Workflow file order. */
+  private async step(record: WorkRecord, busy: boolean): Promise<Turn> {
     const spec = this.specOf(record)
+    const epoch = this.epoch
     const done = (stepId: string) => record.state.steps[stepId]!.state === 'succeeded'
     const failed = spec.steps.find((s) => ['failed', 'cancelled'].includes(record.state.steps[s.id]!.state))
-    if (failed) return { record: await this.finish(record, 'failed', `step ${failed.id} ${record.state.steps[failed.id]!.state}`) }
-    const next = spec.steps.find((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
-    if (!next) return { record: await this.finishWithoutAccept(record, spec) }
-    if (isWorkerStep(next)) return this.runWorker(record, next)
-    if (isVerifyStep(next)) return this.runVerifier(record, next)
-    if (isEffectStep(next)) return this.runEffect(record, spec, next)
-    return { record: await this.accept(record, next) }
+    // A failed step fails the Work once the attempts in flight have reported.
+    if (failed && busy) return { record, settles: [], waiting: true, epoch }
+    if (failed) return { record: await this.finish(record, 'failed', `step ${failed.id} ${record.state.steps[failed.id]!.state}`), settles: [], epoch }
+    const ready = spec.steps.filter((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
+    if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
+    if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }
+    const settles: (() => Promise<WorkRecord>)[] = []
+    let waiting = false
+    for (const next of ready) {
+      let turn: Turn
+      if (isWorkerStep(next)) {
+        const dispatched = await this.dispatchWorker(record, next)
+        if (dispatched.blocked) { waiting = true; continue }
+        const { attempt } = dispatched
+        turn = this.attemptTurn(dispatched.record, attempt && (async () => {
+          try {
+            const execution = await this.executeWorker(attempt)
+            return await this.lane(() => this.observeWorker(attempt, execution))
+          } finally {
+            this.release(attempt.worker.ref, attempt.attemptId)
+          }
+        }))
+      } else if (isVerifyStep(next)) {
+        turn = await this.runVerifier(record, next)
+      } else if (isEffectStep(next)) {
+        turn = await this.runEffect(record, spec, next)
+      } else {
+        // Accepting decides the Work: only when nothing else is running or was started.
+        if (busy || settles.length || waiting) { waiting = true; continue }
+        return { record: await this.accept(record, next), settles, epoch }
+      }
+      record = turn.record
+      settles.push(...turn.settles)
+      if (TERMINAL.has(record.state.status)) return { record, settles, epoch }
+    }
+    return { record, settles, waiting: !settles.length && (waiting || busy), epoch }
+  }
+
+  private attemptTurn(record: WorkRecord, settle: (() => Promise<WorkRecord>) | undefined): Turn {
+    return { record, settles: settle ? [settle] : [], epoch: this.epoch }
   }
 
   /** Resolve a reference to an exact Artifact ID from recorded state. */
@@ -435,17 +585,8 @@ export class WorkController {
     return id
   }
 
-  private async runWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<Turn> {
-    const { record: dispatched, attempt } = await this.dispatchWorker(record, s)
-    if (!attempt) return { record: dispatched }
-    return { record: dispatched, settle: async () => {
-      const execution = await this.executeWorker(attempt)
-      return this.lane(() => this.observeWorker(attempt, execution))
-    } }
-  }
-
-  /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
-  private async dispatchWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<{ record: WorkRecord; attempt?: WorkerAttempt }> {
+  /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead, `blocked` when its Account has no free slot. */
+  private async dispatchWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<{ record: WorkRecord; attempt?: WorkerAttempt; blocked?: boolean }> {
     const inputs = Object.fromEntries(Object.entries(s.inputs ?? {}).map(([name, ref]) => [name, this.resolveRef(record, ref)]))
     const reopened = record.events.findLast((e) => e.type === 'reopened' && e.stepId === s.id)
     const takeover = reopened?.type === 'reopened' ? reopened : undefined
@@ -453,10 +594,16 @@ export class WorkController {
     const route = this.capabilities.routeWorker(s.capabilities, takeover?.worker)
     if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled Worker ${takeover?.worker ? `${takeover.worker} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`) }
     const attemptId = `attempt:${randomUUID()}`
-    record = await this.append(record, {
-      type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
-      selected: route.selected.ref, candidates: route.candidates, inputs,
-    })
+    if (!this.reserve(route.selected, attemptId)) return { record, blocked: true }
+    try {
+      record = await this.append(record, {
+        type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
+        selected: route.selected.ref, candidates: route.candidates, inputs,
+      })
+    } catch (error) {
+      this.release(route.selected.ref, attemptId)
+      throw error
+    }
     return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
   }
 
@@ -488,15 +635,14 @@ export class WorkController {
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
     }
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
-    const record = await this.append(this.require(workId), {
+    // A cancel request is recorded by the drive, once every attempt of the Work has reported.
+    return this.append(this.require(workId), {
       type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason,
       usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
     })
-    const cancel = this.control.cancelRequest(workId)
-    return status === 'cancelled' && cancel ? this.cancelled(record, cancel) : record
   }
 
   /** Record cancellation as terminal; a still-running step is marked lost first. */
@@ -509,11 +655,10 @@ export class WorkController {
 
   private async runVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<Turn> {
     const { record: dispatched, attempt } = await this.dispatchVerifier(record, s)
-    if (!attempt) return { record: dispatched }
-    return { record: dispatched, settle: async () => {
+    return this.attemptTurn(dispatched, attempt && (async () => {
       const result = await this.executeVerifier(attempt)
       return this.lane(() => this.observeVerifier(attempt, result))
-    } }
+    }))
   }
 
   /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
@@ -629,12 +774,10 @@ export class WorkController {
    */
   private async runEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<Turn> {
     const { record: dispatched, attempt } = await this.dispatchEffect(record, spec, s)
-    if (!attempt) return { record: dispatched }
-    const { provider, intent } = attempt
-    return { record: dispatched, settle: async () => {
-      const applied = await this.executeEffect(provider, intent)
-      return this.lane(() => this.observeEffect(record.id, provider, intent, applied))
-    } }
+    return this.attemptTurn(dispatched, attempt && (async () => {
+      const applied = await this.executeEffect(attempt.provider, attempt.intent)
+      return this.lane(() => this.observeEffect(record.id, attempt.provider, attempt.intent, applied))
+    }))
   }
 
   /** In the lane: decide from the committed record and append the intent; `attempt` is absent when the step failed or is held instead. */

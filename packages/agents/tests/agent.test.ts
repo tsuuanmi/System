@@ -181,6 +181,47 @@ test('an agent ignoring SIGTERM is killed when the grace ends', async () => {
   assert.ok(Date.now() - started < 10_000)
 })
 
+test('the account\'s slots are the Host\'s: the worker offers its limit and never queues attempts itself', async () => {
+  const { artifacts } = memory()
+  assert.equal(agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-slots')).maxConcurrentAttempts, undefined, 'default: one, decided by the Host')
+  const worker = agentWorker(account('claude-code', { maxConcurrentAttempts: 2 }), artifacts, processSpawner, join(root, 'attempts-slots'))
+  assert.equal(worker.maxConcurrentAttempts, 2)
+  const first = new AbortController()
+  const marker = join(root, 'overlap-marker')
+  const a = worker.run(request({ question: await task(artifacts, `FAKE:hang=implement:${marker}`) }, ['report'], first.signal))
+  // The second starts while the first still runs: this worker holds nothing back.
+  const second = new AbortController()
+  const b = worker.run(request({ question: await task(artifacts, 'FAKE:sleep') }, ['report'], second.signal))
+  for (let i = 0; i < 100 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 50))
+  assert.ok(existsSync(marker), 'the first attempt is running')
+  second.abort()
+  assert.equal((await b).status, 'cancelled', 'the second ran and was stopped while the first still runs')
+  first.abort()
+  await a
+})
+
+test('a lost attempt is gone when its pid file is absent or names no process, and not while the process runs', async () => {
+  const { artifacts } = memory()
+  const attempts = join(root, 'attempts-gone')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
+  assert.equal(await worker.gone!('attempt:never-started'), true)
+  const abort = new AbortController()
+  const req = request({ question: await task(artifacts, 'FAKE:sleep') }, ['report'], abort.signal)
+  const running = worker.run(req)
+  const file = join(attempts, `${req.attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
+  for (let i = 0; i < 100 && !existsSync(file); i++) await new Promise((r) => setTimeout(r, 50))
+  assert.ok(existsSync(file), 'the pid is kept while the attempt runs')
+  assert.equal(await worker.gone!(req.attemptId), false)
+  abort.abort()
+  await running
+  assert.equal(existsSync(file), false, 'and removed when it ends')
+  assert.equal(await worker.gone!(req.attemptId), true)
+  // A file left by a Host that was killed, naming a process that is not there.
+  writeFileSync(file, '2147483646')
+  assert.equal(await worker.gone!(req.attemptId), true)
+  assert.equal(existsSync(file), false)
+})
+
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 
 test('an attempt over its time limit is stopped like a cancel but fails, naming the limit, and keeps its partial output', async () => {

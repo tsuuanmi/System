@@ -10,7 +10,7 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
-import { agentWorker, type Account, type Spawner } from './agent.ts'
+import { agentWorker, recordingPid, type Account, type Spawner } from './agent.ts'
 import type { Runtime } from './runtimes.ts'
 
 export * from './agent.ts'
@@ -34,11 +34,15 @@ export interface AccountConfig {
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes; overrides the row's. */
   attemptTimeoutMinutes?: number
+  /** How many attempts of this account run at once; overrides the row's. */
+  maxConcurrentAttempts?: number
 }
 
 export interface Config {
   /** Wall-clock limit of one attempt, in minutes (fractions allowed); default 60. */
   attemptTimeoutMinutes?: number
+  /** How many attempts of one account run at once (the Host's slots); default 1. */
+  maxConcurrentAttempts?: number
   accounts?: AccountConfig[]
 }
 
@@ -62,7 +66,7 @@ export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
   return {
     spawn(spec) {
       const handle = subprocess.spawn({
-        argv: spec.argv, cwd: spec.cwd, env: spec.env, signal: spec.signal, graceMs: spec.graceMs,
+        argv: recordingPid(spec), cwd: spec.cwd, env: spec.env, signal: spec.signal, graceMs: spec.graceMs,
         stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
       })
       return {
@@ -110,9 +114,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
       const tiers = TIERS.filter((tier) => account.models?.[tier])
+      const slots = account.maxConcurrentAttempts ?? config.maxConcurrentAttempts
+      if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error(`maxConcurrentAttempts is ${slots}; it must be a whole number of at least 1`)
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
-      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes: account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes }
+      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes: account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes, maxConcurrentAttempts: slots }
       if (account.runtime === 'claude-code') {
         const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
         if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)

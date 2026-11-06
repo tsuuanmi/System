@@ -14,12 +14,14 @@ The `agents` row: each configured agent CLI account becomes a System Worker
 - id: agents
   config:
     attemptTimeoutMinutes: 60           # row-wide default; an account may set its own
+    maxConcurrentAttempts: 1            # row-wide default (1); an account may set its own
     accounts:
       - ref: claude-code/default        # <runtime>/<account>
         runtime: claude-code
         capabilities: [code-write, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
+        maxConcurrentAttempts: 2        # attempts of this account at once; default 1
       - ref: codex/default
         runtime: codex
         capabilities: [code-write]
@@ -102,8 +104,18 @@ with `--ephemeral`, Codex 0.166.0 writes `memories_1.sqlite`, `state_5.sqlite`,
 shell snapshots and logs into `CODEX_HOME`, so a shared directory would carry
 state between attempts. Each attempt therefore gets a fresh `CODEX_HOME` with
 only `auth.json`; a refreshed `auth.json` is copied back to the account
-directory unless that file changed meanwhile. Attempts of one account run one
-at a time.
+directory unless that file changed meanwhile. The Host's slots decide how many
+attempts of an account run at once (`maxConcurrentAttempts`, default 1); the
+worker queues nothing itself. Raise the limit for a Codex account only if its
+`auth.json` refresh can tolerate it: the copy-back keeps the first refresh and
+drops a later one when the file changed meanwhile.
+
+**Lost attempts:** each attempt's CLI is started by a shell that first writes its
+process ID to `$DSH_HOME/system/attempts/<attempt>.pid` (`exec` keeps it) and
+the worker removes the file when the CLI ends. After a Host is killed, the file
+is what `gone(attemptId)` reads: no file, or a pid that no longer exists, means
+the process is gone and the attempt's slot may be freed (`Host.settle`); a live
+pid keeps it held.
 
 ## Verified on this host (2026-11-06)
 

@@ -54,7 +54,6 @@ export class Host {
   private readonly lock: HostLock
   private readonly lane: Lane
   private readonly commands = new Map<string, Seen>()
-  private lost: LostAttempt[] = []
   private closed = false
 
   private constructor(lock: HostLock, options: HostOptions) {
@@ -87,17 +86,23 @@ export class Host {
         this.commands.set(receipt.commandId, { args: receipt.args, result: async () => this.controller.get(record.id), begun: Promise.resolve() })
       }
       if (TERMINAL.has(record.state.status)) continue
-      this.lost.push(...await this.lane(() => this.controller.interrupt(record.id)))
+      await this.lane(() => this.controller.interrupt(record.id))
     }
+    // Those whose process is already gone free their slot now; the rest stay held.
+    await this.controller.settle()
   }
 
   /**
-   * Attempts lost at start, whose process may still be running. Today nothing
-   * holds for them; with Account slots (H5) each keeps its slot until
-   * reconciliation settles it.
+   * Worker attempts lost at start, whose process may still be running: each
+   * keeps its Account's slot until `settle` finds it gone.
    */
   uncertain(): LostAttempt[] {
-    return [...this.lost]
+    return this.controller.uncertainAttempts()
+  }
+
+  /** Ask each Account's Worker whether a lost attempt's process is confirmed gone; those that are free their slot. Returns them. */
+  settle(): Promise<LostAttempt[]> {
+    return this.controller.settle()
   }
 
   /** Stop: refuse every further operation and free the home. Whatever was cut short is the next start's recovery. */

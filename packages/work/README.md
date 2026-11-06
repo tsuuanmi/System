@@ -21,14 +21,15 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/registry.ts](src/registry.ts) — `Capabilities`: register Workers and
   verifiers, route by capability with a reason for every candidate.
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
-  recover, replay. No domain-specific branch.
+  recover, replay, and the scheduler (ready steps, Account slots). No
+  domain-specific branch.
 - [src/control.ts](src/control.ts) — `MemoryControl`: the per-Work lock and cancel request, in memory.
 - [src/host.ts](src/host.ts) — `Host` ([the Host](../../docs/architecture/host.md),
   H2, in process): takes the Host lock, owns the controller, runs every
   Work-changing operation through the commit lane, answers repeated
   `commandId`s from receipts, and recovers on start. `Host.start`,
   `submit`, `run`, `retry`, `cancel`, `decide`, `get`, `list`, `replay`,
-  `interrupted`, `uncertain`, `close`.
+  `interrupted`, `uncertain`, `settle`, `close`.
 - [src/host-lock.ts](src/host-lock.ts) — `acquireHostLock`: an abstract Unix
   socket named after the canonical `DSH_HOME` (Linux only).
 - [src/lane.ts](src/lane.ts) — `commitLane`: sections run one at a time, in order.
@@ -65,7 +66,7 @@ per-command mode were removed in R1; the Host ignores any left over). Each decis
 dispatch, observe, cancel, decision, admission) is a section of the Host's
 commit lane; an attempt's execute phase runs outside it, and its observe
 re-enters it. The Works of a Host are run one `drive` per Work, and Works
-may overlap only in their execute phases (parallel steps are H5).
+and the steps of one Work overlap in their execute phases (below).
 
 A command with a `commandId` leaves a receipt in the optional `receipts` of
 its Work record, in the update of the event it caused; a submitted Work's ID
@@ -73,6 +74,24 @@ derives from the `commandId` (UUIDv5-style). On start the Host marks every
 unreported attempt `attempt-lost`, reconciles effects without applying, and
 runs nothing: unlike `WorkController.run` on its own, which dispatches a lost
 attempt again at once, only an explicit `run` or `retry` continues.
+
+## Scheduling and slots
+
+A `drive` dispatches every ready step (pending, every `dependsOn` succeeded) whose
+Account has a free slot, in Workflow file order, then waits for an attempt to
+report or a slot to be freed. An Account is a Worker's `ref`; a `WorkerPort`
+offers `maxConcurrentAttempts` (default 1, set per Account in the `agents` row)
+and an optional `gone(attemptId)`. A slot is reserved in the lane before
+`dispatched` is appended and released after `observed` is. Verifier and effect
+steps take none. Steps that find no slot wait in memory; a freed slot wakes the
+waiting Works in Work admission order. A cancel, a failed step or an unknown
+effect stops new dispatches, and the Work's terminal event follows once the
+attempts in flight are recorded.
+
+At Host start each lost Worker attempt keeps its Account's slot (`uncertain()`)
+until `settle()` finds its Worker's `gone(attemptId)` true; a Worker without
+`gone` is never confirmed. The `run` of its Work waits for the slot.
+`WorkController.run` on its own, without a Host, applies the same slots.
 
 ## Effects and decisions
 
@@ -112,8 +131,7 @@ never re-run blindly.
 ## Measured (M2, fake Workers)
 
 A three-step Software Engineering record is about 3.9 KB of JSON, and the
-smoke test bounds it at 16 KB. Run one step at a time; there is no
-concurrency, automatic retry or timeout yet.
+smoke test bounds it at 16 KB. There is no automatic retry.
 
 ## Reuse
 

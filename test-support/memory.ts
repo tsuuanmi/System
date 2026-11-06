@@ -70,18 +70,23 @@ export function memoryArtifacts(...kinds: KindSpec[]): { artifacts: Artifacts; r
   return { artifacts, records, blobs }
 }
 
-/** The Work table: one key per Work. */
+/** The Work table: one key per Work. As in DSH, an `update` is atomic: two attempts of one Work reporting together each append to the latest record. */
 export function memoryWorkTable(rows = new Map<string, WorkRecord>()): WorkTable & { rows: Map<string, WorkRecord> } {
+  let tail: Promise<unknown> = Promise.resolve()
   return {
     rows,
     get: (key) => rows.get(key),
     keys: () => rows.keys(),
     async put(key, value) { await turn(); rows.set(key, structuredClone(value)) },
-    async update(key, fn) {
-      const next = fn(structuredClone(rows.get(key)!))
-      await turn()
-      rows.set(key, next)
-      return structuredClone(next)
+    update(key, fn) {
+      const run = tail.then(async () => {
+        const next = fn(structuredClone(rows.get(key)!))
+        await turn()
+        rows.set(key, next)
+        return structuredClone(next)
+      })
+      tail = run.catch(() => undefined)
+      return run
     },
   }
 }

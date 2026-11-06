@@ -4,12 +4,13 @@
  * grace).
  */
 import { spawn } from 'node:child_process'
-import type { Spawner } from '@system/agents'
+import { recordingPid, type Spawner } from '@system/agents'
 
 export const processSpawner: Spawner = {
   spawn(spec) {
+    const argv = recordingPid(spec)
     const env = Object.fromEntries(Object.entries(spec.env).filter(([, value]) => value !== undefined)) as NodeJS.ProcessEnv
-    const child = spawn(spec.argv[0]!, spec.argv.slice(1), { cwd: spec.cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(argv[0]!, argv.slice(1), { cwd: spec.cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (d) => { stdout += d })

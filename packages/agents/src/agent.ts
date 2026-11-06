@@ -7,7 +7,7 @@
  * An attempt past its time limit is stopped the same way but fails: nobody cancelled it.
  */
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
@@ -25,6 +25,13 @@ export interface SpawnSpec {
   env: Record<string, string | undefined>
   signal: AbortSignal
   graceMs: number
+  /** Where the process writes its own ID before it starts the CLI (see `recordingPid`), for a later Host to find. */
+  pidFile?: string
+}
+
+/** The command a spawner runs for `spec`: the CLI itself, started by a shell that first writes its process ID (`exec` keeps it, and the shell's own `PWD` is not passed on) to `spec.pidFile`. */
+export function recordingPid(spec: SpawnSpec): string[] {
+  return spec.pidFile ? ['/bin/sh', '-c', 'echo $$ > "$1" && shift && unset PWD && exec "$@"', 'sh', spec.pidFile, ...spec.argv] : spec.argv
 }
 
 export interface Spawned {
@@ -53,23 +60,39 @@ export interface Account {
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes (fractions allowed). */
   attemptTimeoutMinutes?: number
+  /** How many attempts of this account run at once (the Host's slots); default 1. */
+  maxConcurrentAttempts?: number
 }
 
 const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
 
-/** Every attempt of one account runs after the previous one: Codex refreshes its auth file. */
-const queues = new Map<string, Promise<unknown>>()
+/** Where the CLI's process ID is kept while an attempt runs, so a later Host can tell whether it is gone. */
+const pidFile = (attemptsDir: string, attemptId: string) => join(attemptsDir, `${attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
 
+/** Whether a process is gone: no such process (a reused ID only ever reads as alive). */
+function exited(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+  }
+}
+
+/** The Host's slots limit how many attempts of an account run at once, so none queues here. */
 export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, graceMs = GRACE_MS): WorkerPort {
   return {
     ref: account.ref,
     capabilities: account.capabilities,
-    run(request) {
-      const previous = queues.get(account.ref) ?? Promise.resolve()
-      const run = () => attempt(account, artifacts, spawner, attemptsDir, request, graceMs)
-      const next = previous.then(run, run)
-      queues.set(account.ref, next.catch(() => undefined))
-      return next
+    maxConcurrentAttempts: account.maxConcurrentAttempts,
+    run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs),
+    async gone(attemptId) {
+      const file = pidFile(attemptsDir, attemptId)
+      if (!existsSync(file)) return true
+      const pid = Number(readFileSync(file, 'utf8'))
+      if (Number.isInteger(pid) && pid > 0 && !exited(pid)) return false
+      rmSync(file, { force: true })
+      return true
     },
   }
 }
@@ -111,8 +134,12 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     request.signal.addEventListener('abort', forward, { once: true })
     let timedOut = false
     const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
-    const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs })
-    const outcome = await spawned.done.finally(() => { clearTimeout(timer); request.signal.removeEventListener('abort', forward) })
+    const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs, pidFile: pidFile(attemptsDir, request.attemptId) })
+    const outcome = await spawned.done.finally(() => {
+      clearTimeout(timer)
+      request.signal.removeEventListener('abort', forward)
+      rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
+    })
     const stdout = spawned.stdout()
     const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
     if (codexAuth) keepRefreshedAuth(codexAuth)

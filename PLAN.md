@@ -207,6 +207,14 @@ budget: the Host design, the runbook and the API reference are new, and H4b-2
 rewrote the ownership document to a pointer instead of keeping both. The next
 milestone has to pay for its docs by removal.
 
+**Growth at R2 (H5).** The core is 2,721 lines (+17.4%, inside the +20%
+budget; the scheduler, slots and recovery of held slots are about 170 lines of
+`controller.ts`, the agent worker's queue went). All package source is 5,489
+(+34.5%, recorded only). Docs are 4,333 lines in 43 files (+21.4%, 48 lines over
+the budget): host.md's slot section and guarantee row and the runbook's
+`maxConcurrentAttempts` section are the new facts and have no other home. The
+end-of-milestone simplification pass has to take the 48 lines out.
+
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
 duplicated tests, docs that restate others. The operator reviews it like any
@@ -292,8 +300,16 @@ written first.
   test against the Host in host.md's table; the added one is `no copy of the
   store outlives its Host: a second Host is refused while one runs a Work, and
   the next one starts from what the first wrote` (`host.test.ts`).
-- [ ] H5. Parallel steps and Works with per-Account slots. Barrier tests for
-  shared-Account contention and for restarts. **Release R2.**
+- [x] H5. Parallel steps and Works with per-Account slots. Barrier tests for
+  shared-Account contention and for restarts. **Release R2.** Evidence:
+  `packages/work/tests/slots.test.ts` (the tests are named in the `Slots hold
+  (R2)` row of host.md's guarantees table), `tests/brainstorm.test.ts`, and the
+  agent side in `packages/agents/tests/agent.test.ts`. Found on the way: the
+  in-memory Work table's `update` was not atomic, which two attempts of one Work
+  reporting together exposed; as in DSH it now is (`test-support/memory.ts`).
+  The agent worker's own per-account queue is gone (the Host's slots replace
+  it); each attempt's CLI writes a pid file first, which is what lets a later
+  Host confirm a lost attempt's process gone.
 - [x] Gate R1 (checked 2026-11-07, each item against a test that exists):
   - [x] every existing smoke behaviour passes through the Host: every file of
     `tests/` drives `bin/system` through `systemCli` (`test-support/cli.ts`),
@@ -326,8 +342,25 @@ written first.
   `attemptTimeoutMinutes` in the `agents` row config (per Account, default 60;
   not in the Workflow, ADR-0006); past it the attempt is stopped like a cancel,
   partial output kept, and fails with the limit as its reason.
-- [ ] Gate R2: Brainstorm's two proposals overlap in time, and two Works on
-  one Account never run two attempts at once.
+- [x] Gate R2 (checked 2026-11-07, each item against a test that exists):
+  - [x] Brainstorm's two proposals overlap in time: `Brainstorm: idea-a
+    (Claude) and idea-b (Codex) are in execute at once` (both held at fixture
+    barriers at once) and, through `bin/system` on the real profile with the fake
+    CLI, `the two proposals overlap in time: both are dispatched before either is
+    observed, and the synthesis waits for both` (`tests/brainstorm.test.ts`);
+  - [x] two Works on one Account never run two attempts at once: `two Works on
+    one Account never run two attempts at once with a limit of 1`, and with a
+    limit of 2 `two Works on one Account run two attempts at once with a limit of
+    2` (`slots.test.ts`); `seed 1` to `seed 50` (three concurrent Brainstorms,
+    never above the limit);
+  - [x] restarts: `a Host killed with two attempts in flight: both are lost,
+    their slots are held until settled, and nothing is dispatched by itself`,
+    `a lost attempt whose Worker cannot confirm it gone keeps its slot` and `a
+    lost attempt confirmed gone at the next start frees its slot at once; one
+    confirmed later is settled when its Work waits for the slot`;
+  - [x] replay: `seed 1` to `seed 50` replay exactly with no event lost or
+    repeated (`assertConsistent`), and `a cancel while two attempts run records
+    both, then one terminal event`.
 - [ ] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
   the Standards axis), the simplification pass, and the growth record.
 

@@ -10,6 +10,13 @@
   Engineering event sequences, a cancel request while an attempt is held at a
   barrier, and seeds 1 to 50 of random delays (replay matches, no event lost
   or repeated).
+- `slots.test.ts` — H5, parallel steps and Account slots through a Host:
+  Brainstorm's two proposals in execute at once, the synthesis waiting for both,
+  two Works on one Account with a limit of 1 and of 2, admission order, a cancel
+  with two attempts in flight, a Host killed with two attempts in flight (both
+  lost, slots held until `settle`, nothing re-dispatched), and seeds 1 to 50 of
+  three concurrent Brainstorms (replay matches, no event lost or repeated, never
+  above the limit).
 - `host-lock.test.ts` — the Host lock: a second lock on a home refused (also by
   symlink), another home free, release and a SIGKILLed child freeing it at
   once, the off-Linux and missing-home errors.
