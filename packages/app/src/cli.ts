@@ -40,27 +40,39 @@ export interface CredentialCommands {
 /** The Artifact operations the CLI offers, resolved against the running host. */
 export interface ArtifactCommands {
   putFile(path: string, mediaType: string, classification: string): Promise<Envelope>
-  get(id: string): ReadResult
+  get(id: string): Soon<ReadResult>
   readBytes(id: string): Promise<Uint8Array>
 }
 
+/** What a command that follows a Work accepts: Ctrl-C detaches, or with this cancels the Work and goes on following it. */
+export interface FollowOptions {
+  cancelOnInterrupt?: boolean
+}
+
+/** A Work's record once it is terminal, or `detached` when the operator left it running in the Host. */
+export type Followed = WorkRecord | 'detached'
+
+/** A value now, or when the Host has answered. */
+type Soon<T> = T | Promise<T>
+
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
-  /** Refuses while a Host holds the home: the commands below that change Work run their own controller until the CLI goes through the Host (H4b). */
+  /** Refuses while a Host holds the home: the in-process commands below run their own controller. The thin client has no such rule. */
   noHost(): Promise<void>
   admitFile(path: string, input: string | undefined): Promise<WorkRecord>
   admitTask(capabilities: string[], input: string | undefined): Promise<WorkRecord>
-  run(workId: string): Promise<WorkRecord>
-  get(workId: string): WorkRecord | undefined
-  list(): WorkRecord[]
-  replay(workId: string): { state: WorkState; matches: boolean }
+  /** Run (or, through the Host, start and follow) the Work until it is terminal. */
+  run(workId: string, follow?: FollowOptions): Promise<Followed>
+  get(workId: string): Soon<WorkRecord | undefined>
+  list(): Soon<{ id: string; status: string; specId: string }[]>
+  replay(workId: string): Soon<{ state: WorkState; matches: boolean }>
   cancel(workId: string, reason: string): Promise<'requested' | WorkRecord>
-  decide(workId: string, decision: 'approved' | 'denied', operatorId: string, reason: string): Promise<WorkRecord>
-  retry(workId: string, worker: string | undefined, reason: string, step?: string): Promise<WorkRecord>
-  /** Whether another live host process holds the Work. */
-  runningElsewhere(workId: string): boolean
+  decide(workId: string, decision: 'approved' | 'denied', operatorId: string, reason: string): Promise<Followed>
+  retry(workId: string, worker: string | undefined, reason: string, step: string | undefined, follow?: FollowOptions): Promise<Followed>
+  /** Wait until nothing runs the Work, as after a cancel was requested. */
+  wait(workId: string): Promise<Followed>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
-  addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<Envelope>
+  addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
 
 export interface WorkersView {
@@ -121,7 +133,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .description('print an Artifact envelope and its occurrences as JSON')
     .action((id: string) => {
       select(async () => {
-        const read = host.artifacts().get(id)
+        const read = await host.artifacts().get(id)
         io.out(`${JSON.stringify(read, null, 2)}\n`)
         return read.state === 'stored' ? 0 : 1
       })
@@ -137,12 +149,13 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
   const decide = (decision: 'approved' | 'denied') => (workId: string, options: { reason: string }) => {
     select(async () => {
       await host.work().noHost()
-      const record = host.work().get(workId)
+      const record = await host.work().get(workId)
       if (!record) throw new Error(`no Work ${workId}`)
       io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
       const short = workId.replace(/^work:/, '').slice(0, 8)
-      const operatorId = await io.confirmHuman(`Type ${short} to record "${decision}" for ${record.state.awaiting ?? 'it'}: `, short)
-      return exitCode((await host.work().decide(workId, decision, operatorId, options.reason)).state.status)
+      // On a line of its own, so a pasted command is not taken for the answer.
+      const operatorId = await io.confirmHuman(`Nothing is decided unless you type exactly ${short} to record "${decision}" for ${record.state.awaiting ?? 'it'}\n> `, short)
+      return exitOf(await host.work().decide(workId, decision, operatorId, options.reason))
     })
   }
   program.command('approve <workId>')
@@ -222,7 +235,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .description('print a conversation\'s notice, what the operator asserted, and its parts')
     .action((id: string) => {
       select(async () => {
-        const read = host.artifacts().get(id)
+        const read = await host.artifacts().get(id)
         if (read.state !== 'stored' || read.envelope.kind !== CONVERSATION_KIND.kind) throw new Error(`${id} is not a stored conversation`)
         const content = conversationSchema.parse(read.envelope.content)
         io.out(`${content.notice}\n\n`)
@@ -266,7 +279,8 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
     .option('--no-run', 'admit only')
-    .action((options: { workflow?: string; capability?: string[]; input?: string; run: boolean }) => {
+    .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
+    .action((options: { workflow?: string; capability?: string[]; input?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
@@ -276,7 +290,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
           : await commands.admitTask(options.capability!, options.input)
         io.out(`${admitted.id}\n`)
         if (!options.run) return 0
-        return exitCode((await commands.run(admitted.id)).state.status)
+        return exitOf(await commands.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
   work.command('cancel <workId>')
@@ -293,9 +307,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         }
         io.out(`${workId}: cancellation requested from the running host\n`)
         if (!options.wait) return 0
-        // This process caches records, so it waits for the host to release the Work instead.
-        while (host.work().runningElsewhere(workId)) await new Promise((resolve) => setTimeout(resolve, 250))
-        io.out(`${workId}: the running host has stopped; see system work show\n`)
+        if (await host.work().wait(workId) !== 'detached') io.out(`${workId}: the running host has stopped; see system work show\n`)
         return 0
       })
     })
@@ -304,25 +316,27 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--step <id>', 'the Worker step to run again (default: the first one that did not succeed)')
     .option('--worker <ref>', 'only this Worker may take it over (see system workers)')
     .option('--reason <text>', 'why', 'retried by the operator')
-    .action((workId: string, options: { step?: string; worker?: string; reason: string }) => {
+    .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')
+    .action((workId: string, options: { step?: string; worker?: string; reason: string; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         await host.work().noHost()
-        return exitCode((await host.work().retry(workId, options.worker, options.reason, options.step)).state.status)
+        return exitOf(await host.work().retry(workId, options.worker, options.reason, options.step, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
   work.command('run <workId>')
     .description('advance admitted or interrupted Work until it is terminal')
-    .action((workId: string) => {
+    .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')
+    .action((workId: string, options: { cancelOnInterrupt?: boolean }) => {
       select(async () => {
         await host.work().noHost()
-        return exitCode((await host.work().run(workId)).state.status)
+        return exitOf(await host.work().run(workId, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
   work.command('show <workId>')
     .description('print the Work record (events and state) as JSON')
     .action((workId: string) => {
       select(async () => {
-        const record = host.work().get(workId)
+        const record = await host.work().get(workId)
         if (!record) throw new Error(`no Work ${workId}`)
         io.out(`${JSON.stringify(record, null, 2)}\n`)
         return 0
@@ -332,7 +346,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .description('list Work: id, status, pinned spec')
     .action(() => {
       select(async () => {
-        for (const record of host.work().list()) io.out(`${record.id}  ${record.state.status.padEnd(9)}  ${record.state.specId}\n`)
+        for (const work of await host.work().list()) io.out(`${work.id}  ${work.status.padEnd(9)}  ${work.specId}\n`)
         return 0
       })
     })
@@ -340,7 +354,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .description('duration, attempts, operator touches and usage of a Work, from its events')
     .action((workId: string) => {
       select(async () => {
-        const record = host.work().get(workId)
+        const record = await host.work().get(workId)
         if (!record) throw new Error(`no Work ${workId}`)
         io.out(`${JSON.stringify(summarize(record), null, 2)}\n`)
         return 0
@@ -350,13 +364,16 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .description('fold the recorded events again and compare with the stored state; runs nothing')
     .action((workId: string) => {
       select(async () => {
-        const replayed = host.work().replay(workId)
+        const replayed = await host.work().replay(workId)
         io.out(`${JSON.stringify(replayed, null, 2)}\n`)
         return replayed.matches ? 0 : 1
       })
     })
   return program
 }
+
+/** The exit code of a followed Work; leaving it running in the Host is not a failure. */
+const exitOf = (followed: Followed): number => (followed === 'detached' ? 0 : exitCode(followed.state.status))
 
 /** succeeded 0, failed 1, held for the operator 3, not terminal 4, cancelled 5. */
 export function exitCode(status: string): number {

@@ -27,7 +27,9 @@ const FAKES_ON = `- id: verifiers
 `
 
 
-const system = (args: string[], env: Record<string, string> = {}) => cli.run(args, { env: { SYSTEM_FAKE_LOG: log, ...env } })
+const system = (args: string[]) => cli.run(args)
+/** The Host of the home, with the fake Workers' hooks in its environment. */
+const host = (env: Record<string, string> = {}) => cli.start({ env: { SYSTEM_FAKE_LOG: log, ...env } })
 
 const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : [])
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as {
@@ -37,16 +39,18 @@ const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).std
 
 let input = ''
 
-before(() => {
+before(async () => {
   assert.equal(system(['init']).status, 0)
   writeFileSync(patch, FAKES_ON)
+  await host()
   const task = join(home, 'task.txt')
   writeFileSync(task, 'make the tests pass\n')
   input = system(['artifact', 'put', task, '--media-type', 'text/plain']).stdout.trim()
   assert.match(input, /^sha256:/)
 })
 
-after(() => {
+after(async () => {
+  await cli.stop()
   rmSync(home, { recursive: true, force: true })
 })
 
@@ -78,14 +82,16 @@ test('an invalid Workflow is refused before any Worker runs, and no Work is crea
   assert.equal(system(['work', 'list']).stdout, before)
 })
 
-test('the pinned spec survives a Workflow file edit and a killed host; done steps never re-run', () => {
+test('the pinned spec survives a Workflow file edit and a killed host; done steps never re-run', { timeout: 120_000 }, async () => {
   rmSync(log, { force: true })
   const file = join(home, 'se.yaml')
   copyFileSync(join(repo, 'workflows', 'software-engineering.yaml'), file)
-  const crashed = system(['work', 'submit', '--workflow', file, '--input', input], { SYSTEM_FAKE_CRASH_AT: 'implement' })
-  assert.equal(crashed.signal, null, 'the wrapper survives; the DSH host child was killed')
+  await host({ SYSTEM_FAKE_CRASH_AT: 'implement' })
+  const crashed = system(['work', 'submit', '--workflow', file, '--input', input])
+  assert.equal(crashed.signal, null, 'the CLI survives; the Host was killed')
   assert.notEqual(crashed.status, 0)
   const workId = crashed.stdout.trim()
+  await host()
   const pinned = show(workId).state.specId
   assert.equal(show(workId).state.status, 'running')
 
@@ -106,9 +112,10 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   assert.match(fresh.stderr, /needs Worker capability teleport/)
 })
 
-test('with the fakes row disabled by config, admission names the missing capability', () => {
+test('with the fakes row disabled by config, admission names the missing capability', async () => {
   writeFileSync(patch, '[]\n')
   try {
+    await host()
     const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'research.yaml'), '--input', input])
     assert.equal(ran.status, 1)
     assert.match(ran.stderr, /needs Worker capability research, which no enabled Worker provides/)
@@ -116,13 +123,17 @@ test('with the fakes row disabled by config, admission names the missing capabil
     assert.doesNotMatch(ran.stderr, /needs verifier/)
   } finally {
     writeFileSync(patch, FAKES_ON)
+    await host()
   }
 })
 
-test('a held Work exits 3 and a failed verification exits 1', () => {
+test('a held Work exits 3 and a failed verification exits 1', async () => {
   const research = join(repo, 'workflows', 'research.yaml')
-  assert.equal(system(['work', 'submit', '--workflow', research, '--input', input], { SYSTEM_FAKE_VERDICT: 'inconclusive' }).status, 3)
-  assert.equal(system(['work', 'submit', '--workflow', research, '--input', input], { SYSTEM_FAKE_VERDICT: 'fail' }).status, 1)
+  await host({ SYSTEM_FAKE_VERDICT: 'inconclusive' })
+  assert.equal(system(['work', 'submit', '--workflow', research, '--input', input]).status, 3)
+  await host({ SYSTEM_FAKE_VERDICT: 'fail' })
+  assert.equal(system(['work', 'submit', '--workflow', research, '--input', input]).status, 1)
+  await host()
 })
 
 test('SQLite commits are durable: WAL with synchronous FULL (DSH sets neither pragma but the journal)', async () => {

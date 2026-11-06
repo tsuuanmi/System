@@ -12,8 +12,12 @@
   and `loginctl enable-linger`, and prints the command that enables it (it never
   enables or starts it). `--no-service` or `SYSTEM_NO_SERVICE=1` skips that; any
   other home is told to run `system host` in the foreground.
-- Every other command runs `dsh --profile system <args>`; SIGTERM sent to the
+- `system host` and `system doctor` (and any command led by a DSH flag, such as
+  `--patch f host`) run `dsh --profile system <args>`; SIGTERM sent to the
   wrapper reaches DSH, and its exit status is the wrapper's.
+- Every other command runs in the thin client of the Host
+  ([client.ts](../packages/app/src/client.ts)): it does not boot DSH and needs
+  no profile, only a Host on `$DSH_HOME/system/host.sock`.
 - [service.mjs](service.mjs) (typed by [service.d.mts](service.d.mts)) holds the
   decisions that need no DSH: the unit text, whether init installs it, and the
   Node choice.

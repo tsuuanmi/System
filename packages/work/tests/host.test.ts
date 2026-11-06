@@ -366,6 +366,8 @@ test('an effect found absent on start is published only by an explicit run', asy
   const done = await second.run(id)
   assert.equal(done.state.status, 'succeeded')
   assert.equal(Object.values(done.state.effects)[0]!.state, 'applied')
+  assert.deepEqual(done.events.filter((e) => e.type === 'attempt-lost'), [], 'an effect step has no attempt to lose')
+  workRecordSchema.parse(done)
   assertConsistent(f, id)
   await second.close()
 })

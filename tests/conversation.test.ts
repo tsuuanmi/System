@@ -18,7 +18,7 @@ const file = (name: string, text: string) => {
   return path
 }
 
-before(() => {
+before(async () => {
   assert.equal(system(['init']).status, 0)
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
   config:
@@ -29,11 +29,17 @@ before(() => {
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 `)
-  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
   mkdirSync(join(home, 'chat'))
+  // The Host reads its credentials when it starts: store the token, then start it again.
+  await cli.start()
+  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
+  await cli.start()
 })
 
-after(() => rmSync(home, { recursive: true, force: true }))
+after(async () => {
+  await cli.stop()
+  rmSync(home, { recursive: true, force: true })
+})
 
 const conversationArgs = () => [
   'conversation', 'add',

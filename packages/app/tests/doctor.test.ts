@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ROWS, formatReport, runDoctor, type DoctorHost, type StorageStatus } from '../src/doctor.ts'
+import { ROWS, formatReport, runDoctor, type DoctorHost, type HostStatus, type StorageStatus } from '../src/doctor.ts'
 
 const okStorage: StorageStatus = { ok: true, backend: 'sqlite', detail: 'durable write and read back' }
 
-function host(missing: string[] = [], storage: StorageStatus = okStorage): DoctorHost & { probes: number } {
+function host(missing: string[] = [], storage: StorageStatus = okStorage, answering: HostStatus = { answering: true, detail: 'version 0.0.0, pid 42' }): DoctorHost & { probes: number } {
   const fake = {
     probes: 0,
     hasService: (name: string) => !missing.includes(name),
     dshVersion: () => '0.2.2-rc.1',
+    probeHost: async () => answering,
     probeStorage: async () => {
       fake.probes += 1
       return storage
@@ -52,4 +53,13 @@ test('a failed storage probe fails the report', async () => {
   const report = await runDoctor(host([], { ok: false, backend: 'sqlite', detail: 'read back a different record' }))
   assert.equal(report.ok, false)
   assert.deepEqual(report.problems, ['storage probe failed: read back a different record'])
+})
+
+test('the report says whether a Host answers; none answering does not fail it', async () => {
+  const up = await runDoctor(host())
+  assert.deepEqual(up.host, { answering: true, detail: 'version 0.0.0, pid 42' })
+  assert.match(formatReport(up), /host\s+answering: version 0.0.0, pid 42/)
+  const down = await runDoctor(host([], okStorage, { answering: false, detail: 'the System Host is not running for /h: systemctl --user start system (or run: system host)' }))
+  assert.equal(down.ok, true)
+  assert.match(formatReport(down), /host\s+not answering: the System Host is not running for \/h/)
 })

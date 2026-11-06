@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { fixture } from '../../../test-support/fixture.ts'
-import { MAX_FRAME, VERSION, connect, serve, type Methods, type Served } from '../src/index.ts'
+import { MAX_FRAME, NotAnswering, NotRunning, VERSION, connect, serve, type Methods, type Served } from '../src/index.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-host-api-'))
 // A socket path is limited to about 100 bytes, and tmpdir() may be longer.
@@ -128,7 +128,7 @@ test('the caller of the connection reaches the handler', async () => {
 })
 
 test('with no socket the client says the Host is not running', async () => {
-  await assert.rejects(connect(join(sockets, 'none.sock')), /not running/)
+  await assert.rejects(connect(join(sockets, 'none.sock')), (error) => error instanceof NotRunning && /not running/.test(error.message))
 })
 
 test('a call times out against a server that never answers', async () => {
@@ -138,6 +138,6 @@ test('a call times out against a server that never answers', async () => {
   await new Promise<void>((resolve) => silent.listen(path, resolve))
   after(() => { silent.close() })
   const client = await connect(path, { timeout: 50 })
-  await assert.rejects(client.call('host.ping'), /not answering/)
+  await assert.rejects(client.call('host.ping'), (error) => error instanceof NotAnswering && /not answering/.test(error.message))
   client.close()
 })
