@@ -3,12 +3,14 @@
  * web as it is at verification time (ADR-0004 decision 13).
  *
  * Format: `{"sources": [{"id", "url", "quote", "claims": [..]}]}`. Each URL
- * is fetched and its text searched for the quote, ignoring markup, case and
- * whitespace. Verdict: `fail` for a malformed file or too few sources;
- * `inconclusive` when any source cannot be fetched or its quote is not found
- * (the page may have changed: this never proves what the Worker read);
- * `pass` when every quote is found. Evidence records each URL's status and
- * the hash of the bytes seen.
+ * is fetched and its text searched for the quote, ignoring markup, Markdown
+ * marks, case and whitespace. Verdict: `fail` for a malformed file or too few
+ * sources; `pass` when at least `minConfirmedRatio` of the sources are
+ * confirmed; `inconclusive` when fewer are (the page may have changed: this
+ * never proves what the Worker read). A pass can include unconfirmed quotes:
+ * the reason names each with why, and the evidence lists every result with
+ * the ratio and threshold used. Criteria pinned without `minConfirmedRatio`
+ * mean 1.0: every quote must be found, as before version 2.
  */
 import { createHash } from 'node:crypto'
 import type { Artifacts } from '@system/artifacts'
@@ -22,10 +24,11 @@ export const citationCriteriaSchema = z.object({
   minQuoteChars: z.number().int().positive(),
   fetchTimeoutMs: z.number().int().positive(),
   maxBytes: z.number().int().positive(),
+  minConfirmedRatio: z.number().min(0).max(1).optional(),
 }).strict()
 export type CitationCriteria = z.infer<typeof citationCriteriaSchema>
 
-const DEFAULT_CRITERIA: Omit<CitationCriteria, 'name'> = { minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 2 * 1024 * 1024 }
+const DEFAULT_CRITERIA: Omit<CitationCriteria, 'name'> = { minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 2 * 1024 * 1024, minConfirmedRatio: 0.5 }
 
 export const sourcesSchema = z.object({
   sources: z.array(z.object({
@@ -39,6 +42,8 @@ export const sourcesSchema = z.object({
 export const CITATION_CHECK_KIND = { kind: 'citation-check', schemaVersion: 1 } as const
 export const citationCheckSchema = z.object({
   problems: z.array(z.string()),
+  minConfirmedRatio: z.number().optional(),
+  confirmedRatio: z.number().optional(),
   results: z.array(z.object({
     id: z.string(), url: z.string(), status: z.number().int().nullable(), found: z.boolean(),
     contentHash: z.string().optional(), error: z.string().optional(),
@@ -46,9 +51,11 @@ export const citationCheckSchema = z.object({
 }).strict()
 type CheckResult = z.infer<typeof citationCheckSchema>['results'][number]
 
-/** Text for matching: tags, scripts and styles removed, common entities decoded, case and whitespace folded. */
+/** Text for matching: tags, scripts and styles removed, Markdown links reduced to their text and code/emphasis marks dropped, common entities decoded, case and whitespace folded. */
 export function normalize(text: string): string {
   return text
+    .replace(/\[([^\]]*)\]\([^)\s]*\)/g, '$1')
+    .replace(/[`*_]/g, '')
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -77,7 +84,7 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
   const producer = { type: 'verifier' as const, ref: 'research.citation-check' }
   return {
     ref: 'research.citation-check',
-    version: '1',
+    version: '2',
     capabilities: ['research.citation-check'],
     accepts: ['file'],
     async criteria({ name }) {
@@ -108,19 +115,24 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
             const found = page.status < 400 && normalize(page.text).includes(normalize(source.quote))
             results.push({ id: source.id, url: source.url, status: page.status, found, contentHash: page.contentHash })
           } catch (error) {
-            results.push({ id: source.id, url: source.url, status: null, found: false, error: (error as Error).message })
+            results.push({ id: source.id, url: source.url, status: null, found: false, error: `fetch failed: ${(error as Error).message}` })
           }
         }
       }
+      const minConfirmedRatio = criteria.minConfirmedRatio ?? 1
+      const confirmed = results.filter((r) => r.found).length
+      const confirmedRatio = results.length ? confirmed / results.length : undefined
       const evidence = (await artifacts.put({
-        ...CITATION_CHECK_KIND, content: { problems, results }, inputs: [request.subject, request.criteria],
+        ...CITATION_CHECK_KIND, content: { problems, minConfirmedRatio, confirmedRatio, results }, inputs: [request.subject, request.criteria],
         classification: 'local-private', producer,
       })).id
       const result = (verdict: VerifyResult['verdict'], reason: string): VerifyResult => ({ verdict, reason, subject: request.subject, criteria: request.criteria, evidence: [evidence] })
       if (problems.length) return result('fail', `the sources file is not acceptable: ${problems.join('; ')}`)
       const unconfirmed = results.filter((r) => !r.found)
-      if (unconfirmed.length) return result('inconclusive', `not confirmed now: ${unconfirmed.map((r) => `${r.id} (${r.error ?? `HTTP ${r.status}, quote ${r.status !== null && r.status < 400 ? 'not found' : 'unreadable'}`})`).join(', ')}`)
-      return result('pass', `all ${results.length} quote(s) found at their URLs`)
+      const why = unconfirmed.map((r) => `${r.id} (${r.error ?? `HTTP ${r.status}, quote ${r.status !== null && r.status < 400 ? 'not found' : 'unreadable'}`})`).join(', ')
+      const tally = `${confirmed} of ${results.length} confirmed (needs ${minConfirmedRatio})`
+      if (confirmedRatio !== undefined && confirmedRatio < minConfirmedRatio) return result('inconclusive', `${tally}; not confirmed now: ${why}`)
+      return result('pass', unconfirmed.length ? `${tally}; accepted with unconfirmed: ${why}` : `all ${results.length} quote(s) found at their URLs`)
     },
   }
 }
