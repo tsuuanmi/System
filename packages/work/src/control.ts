@@ -4,8 +4,8 @@
  * (one lock file per Work holding the running host's `<pid> <start time>`, published
  * atomically with it already in it, a dead or reused pid's lock stale, removed
  * only under a `<work>.takeover` mutex; one cancel
- * file per Work a running host polls; one count file per Work holding how
- * many events the last lock holder wrote).
+ * file per Work a running host polls; one JSON file per Work holding the
+ * host and time of the last write, noted before and after it).
  */
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
@@ -25,10 +25,16 @@ export interface HostControl {
   requestCancel(workId: string, request: CancelRequest): void
   cancelRequest(workId: string): CancelRequest | undefined
   clearCancel(workId: string): void
-  /** How many events the Work had when a lock holder last wrote it (0 if never noted). */
-  written(workId: string): number
-  /** Note, while holding the lock, how many events the Work now has. */
-  noteWritten(workId: string, events: number): void
+  /** The last write a lock holder noted for the Work: which host, and when (undefined if never noted). */
+  lastWrite(workId: string): WriteMark | undefined
+  /** Note, while holding the lock, that `write.host` is writing the Work at `write.at`. */
+  noteWrite(workId: string, write: WriteMark): void
+}
+
+/** A host's write to a Work: the host's identity and the wall-clock time in ms. */
+export interface WriteMark {
+  host: string
+  at: number
 }
 
 export interface CancelRequest {
@@ -197,19 +203,19 @@ export class FileControl implements HostControl {
     rmSync(this.file(workId, 'cancel'), { force: true })
   }
 
-  written(workId: string): number {
+  lastWrite(workId: string): WriteMark | undefined {
     try {
-      const count = Number(readFileSync(this.file(workId, 'written'), 'utf8'))
-      return Number.isInteger(count) && count > 0 ? count : 0
+      const mark = JSON.parse(readFileSync(this.file(workId, 'written'), 'utf8')) as Partial<WriteMark> | null
+      return typeof mark?.host === 'string' && typeof mark.at === 'number' && Number.isFinite(mark.at) ? { host: mark.host, at: mark.at } : undefined
     } catch {
-      return 0
+      return undefined
     }
   }
 
-  noteWritten(workId: string, events: number): void {
+  noteWrite(workId: string, write: WriteMark): void {
     const file = this.file(workId, 'written')
     const draft = `${file}.${process.pid}.new`
-    writeFileSync(draft, String(events), { mode: 0o600 })
+    writeFileSync(draft, JSON.stringify(write), { mode: 0o600 })
     renameSync(draft, file)
   }
 }

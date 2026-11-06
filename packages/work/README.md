@@ -42,10 +42,16 @@ one whose pid a different process now has; a stale lock is removed only
 under the `<work>.takeover` mutex, published the same way, after reading it
 again, so a live host's lock is never moved away; a fresh acquire never takes
 the mutex, and a mutex left by a dead host for over 10 s is removed once)
-writes that Work. A host reads the store once when it starts, so the lock
-holder also notes how many events the Work has (`<work>.written`); a host
-that takes the lock with an older copy refuses ("changed since this command
-started") instead of acting on it. `retry` and `approve` hold the lock from
+writes that Work. A host reads the store once when it starts, so each
+controller has a host identity (a random ID and the time just before it opened
+the store) and marks every write in `<work>.written` (its ID and the time),
+before the table update and after it; a host that takes the lock when another
+host's mark is not older than its own load refuses ("changed since this
+command started") instead of acting on a stale copy. A host's own marks never
+fence it, and a Work with no mark is not fenced. The fence compares wall-clock
+times of one machine; a host that loads its copy in the few milliseconds
+between a crashed host's first mark and its database commit is not caught.
+`retry` and `approve` hold the lock from
 their check to the end of the run. `system work cancel` from another process writes a
 cancel request the running host polls every 250 ms; the host aborts its
 attempt, records `observed` (`cancelled`, with partial output) and `terminal`

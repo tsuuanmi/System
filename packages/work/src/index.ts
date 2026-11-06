@@ -3,6 +3,7 @@
  * registry) and `ctx.work` (admission and the Work Controller) over the DSH
  * storage domain `system_work`, one key per Work (ADR-0004 decision 9).
  */
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
@@ -129,6 +130,8 @@ export function systemPath(ctx: Context, ...segments: string[]): string {
 
 export async function apply(ctx: Context): Promise<void> {
   const domains = ctx.get('storageDomain') as DomainFacility
+  // Before the store is opened: its snapshot is no newer than this.
+  const loadedAt = Date.now()
   const domain = await domains.open(workDomain)
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
   const artifacts = ctx.get('artifacts') as Artifacts
@@ -138,7 +141,7 @@ export async function apply(ctx: Context): Promise<void> {
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
   const capabilities = new Capabilities()
   const control = new FileControl(systemPath(ctx, 'control'))
-  const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(artifacts), capabilities, control)
+  const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(artifacts), capabilities, control, { id: randomUUID(), loadedAt })
   ctx.provide('capabilities', capabilities)
   ctx.provide('work', new WorkService(controller, capabilities, artifacts))
 }

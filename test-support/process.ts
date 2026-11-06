@@ -5,7 +5,7 @@
  */
 import { spawn } from 'node:child_process'
 import type { Spawner } from '@system/agents'
-import { WorkError, type CancelRequest, type HostControl } from '@system/work'
+import { WorkError, type CancelRequest, type HostControl, type WriteMark } from '@system/work'
 
 export const processSpawner: Spawner = {
   spawn(spec) {
@@ -32,7 +32,7 @@ export const processSpawner: Spawner = {
 export class LocalControl implements HostControl {
   private readonly held = new Set<string>()
   private readonly cancels = new Map<string, CancelRequest>()
-  private readonly counts = new Map<string, number>()
+  private readonly writes = new Map<string, WriteMark>()
 
   acquire(workId: string): () => void {
     if (this.held.has(workId)) throw new WorkError(`${workId} is already being run`)
@@ -56,11 +56,11 @@ export class LocalControl implements HostControl {
     this.cancels.delete(workId)
   }
 
-  written(workId: string): number {
-    return this.counts.get(workId) ?? 0
+  lastWrite(workId: string): WriteMark | undefined {
+    return this.writes.get(workId)
   }
 
-  noteWritten(workId: string, events: number): void {
-    this.counts.set(workId, events)
+  noteWrite(workId: string, write: WriteMark): void {
+    this.writes.set(workId, write)
   }
 }

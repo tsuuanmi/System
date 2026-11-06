@@ -44,11 +44,13 @@ test('an empty lock left long ago (a host that died while publishing) is stale a
   control.acquire('work:e')()
 })
 
-test('the count of events written survives the process and starts at 0', () => {
+test('the last write of a Work survives the process, starts unset, and an unparsable mark reads as unset', () => {
   const control = new FileControl(dir)
-  assert.equal(control.written('work:g'), 0)
-  control.noteWritten('work:g', 7)
-  assert.equal(new FileControl(dir).written('work:g'), 7)
+  assert.equal(control.lastWrite('work:g'), undefined)
+  control.noteWrite('work:g', { host: 'a', at: 7 })
+  assert.deepEqual(new FileControl(dir).lastWrite('work:g'), { host: 'a', at: 7 })
+  writeFileSync(join(dir, 'work_g.written'), 'not json')
+  assert.equal(control.lastWrite('work:g'), undefined)
 })
 
 test('a cancel request is read until cleared', () => {
