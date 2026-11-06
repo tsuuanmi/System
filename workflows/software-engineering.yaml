@@ -1,0 +1,29 @@
+# Software Engineering (MVP-0). A coding Worker changes the repository, the
+# required checks verify the exact result, System pushes that exact commit to
+# system/<work> and opens a draft pull request (never merges), and Work is
+# accepted on the verdict.
+schema: system.workflow/v1
+id: software-engineering
+version: 1
+steps:
+  - id: implement
+    capabilities: [code-write]
+    inputs:
+      task: $work.input
+    outputs: [change]
+  - id: checks
+    dependsOn: [implement]
+    verify:
+      capability: code.required-checks
+      subject: $steps.implement.change
+      criteria: repo-checks-v1
+  - id: publish
+    dependsOn: [checks]
+    effect:
+      capability: git.publish
+      subject: $steps.implement.change
+      requires: [checks]
+  - id: accept
+    dependsOn: [publish]
+    accept:
+      requires: [checks]

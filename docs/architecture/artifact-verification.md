@@ -3,6 +3,7 @@ type: architecture
 status: active
 reviewed: 2026-11-05
 decided-by: [ADR-0003]
+covers: [packages/artifacts/src/envelope.ts, packages/artifacts/src/canonical.ts, packages/work/src/kinds.ts]
 ---
 
 # Artifact-ID handoff and pluggable verification
@@ -53,14 +54,23 @@ time or producer identity. Provenance can vary between distinct production
 events that yield the same content; record occurrences/lineage separately.
 Do not merge confidentiality or authorization solely because hashes match.
 
-The exact canonicalization, content-versus-envelope hash boundary, blob
-storage, retention and transaction model are implementation decisions to
-test before declaring a stable public schema.
+**Implemented rule, `artifact-id/v1`** ([`@system/artifacts`](../../packages/artifacts/README.md)):
+the ID is `sha256` over the domain tag `system.artifact/v1`, a newline, and the
+canonical JSON (sorted keys, RFC 8785 key order) of `kind`, `schemaVersion`,
+inline `content` or `blob.{attachmentId, mediaType}`, the sorted set of
+`inputs`, `subject` and `lineage.supersedes`. Classification, producer, time
+and byte count are outside it. Each record holds the envelope and its list of
+occurrences under one storage key; bytes are written to the DSH attachment
+store before the record. A change to this rule is a new domain tag, never an
+edit of `v1`. Lineage `invalidates`, retention and garbage collection are not
+implemented yet.
 
 A derived artifact cannot have a lower data classification than its most
 restricted input without a separately authorized declassification decision.
 A Worker sees only authorized referenced content, never arbitrary artifacts
-merely because it knows their IDs.
+merely because it knows their IDs. *MVP-0:* there is one operator and no
+per-caller read check; Workers receive only the Artifacts the controller hands
+to an attempt (M3).
 
 ## Determinism: three separate questions
 
@@ -100,6 +110,16 @@ VerdictArtifact:
   evidenceArtifactIds[]
   provenance (including provider/observations where used)
 ```
+
+**Implemented (M4):** the contract is `VerifierPort` in
+[`@system/work`](../../packages/work/src/registry.ts): criteria are pinned
+per Work at admission as an Artifact (a verifier that cannot pin them refuses
+the Work), and the controller stores the `verdict@1` Artifact itself after
+refusing, as `error`, a verdict about another subject or other criteria, a
+`pass` without evidence, unstored evidence, or a subject kind the verifier
+does not accept. A verdict whose subject has since been replaced counts as
+`stale`. The two verifiers are described in
+[`@system/verifiers`](../../packages/verifiers/README.md).
 
 **No single review algorithm is mandatory.** The Work Controller checks
 that the configured required verifier capability is available, its subject

@@ -1,0 +1,33 @@
+{
+  "name": "@system/bundle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The system profile's only bundle: an explicit minimal Cordis tree, no dsh-base (ADR-0001, ADR-0004)",
+  "type": "module",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-attachment-local": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-credentials-local": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-sqlite": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.2-rc.1",
+    "@system/agents": "workspace:*",
+    "@system/app": "workspace:*",
+    "@system/artifacts": "workspace:*",
+    "@system/effects": "workspace:*",
+    "@system/fakes": "workspace:*",
+    "@system/verifiers": "workspace:*",
+    "@system/work": "workspace:*"
+  }
+}

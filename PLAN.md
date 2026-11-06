@@ -3,7 +3,7 @@
 > **Status:** draft execution handoff for the next iteration, updated 2026-11-06.
 > **Implementation target:** [PR #2](https://github.com/tsuuanmi/System/pull/2)
 > (`mvp0/implementation`, observed at `7099428`), **not PR #1**.
-> **No code for the next iteration has been implemented by this docs update.**
+> **B0–B4 are done on PR #2 (B3 scored by a model judge, see RES-0008).**
 > This checklist is not a new ADR or an alternate source of product requirements.
 
 ## 0. Read and align
@@ -55,36 +55,39 @@ parallelism is explicitly not a release requirement.
 
 ### B0 — Confirm the MVP-0 baseline (short)
 
-- [ ] Check the current PR #2 head, clean local working tree and pinned DSH
+- [x] Check the current PR #2 head, clean local working tree and pinned DSH
   version. Do not overwrite local uncommitted work or rebase without consent.
-- [ ] Run existing offline build/unit/smoke tests and `system doctor`;
+  *(PR #1 merged into `mvp0/implementation` at `41d2e0a`, no rebase; tree clean; DSH `0.2.2-rc.1`.)*
+- [x] Run existing offline build/unit/smoke tests and `system doctor`;
   record command, exit status, source SHA and enabled Worker accounts.
-- [ ] Inspect `packages/work/src/workflow.ts`, `controller.ts`,
+  *(`corepack pnpm check` at `41d2e0a`, Node 24.21.0: exit 1, unit 114/114, smoke 33/36 with 2 skipped and 1 failure: `tests/concurrency.test.ts`, "entries did not activate"; fixed under B4. `system doctor` exit 0; `system workers`: `claude-code/default` (2.1.311) and `codex/default` (0.166.0) available.)*
+- [x] Inspect `packages/work/src/workflow.ts`, `controller.ts`,
   `registry.ts`, `packages/agents/src/index.ts`, `workspace.ts`
   before changing anything. Existing `system.workflow/v1` can express B1.
-- [ ] Keep existing Software Engineering and Research workflows passing.
+  *(Confirmed: file inputs reach a step as read-only files, a Workflow without `accept` ends "every step succeeded", ready steps run in file order, and submit already refuses a capability no enabled Worker provides.)*
+- [x] Keep existing Software Engineering and Research workflows passing.
   No verifier rewrite or independent DSH plugin framework.
 
 **Gate:** baseline documented, both existing workflow fixtures preserved.
 
 ### B1 — Brainstorm YAML, reuse Claude and Codex (next feature)
 
-- [ ] Add `workflows/brainstorm.yaml` using current strict
+- [x] Add `workflows/brainstorm.yaml` using current strict
   `system.workflow/v1`: `idea-a`, `idea-b`, `synthesis` Worker steps.
   Each produces a named file Artifact; no `verify` or `accept` required.
-- [ ] Add account capability labels via DSH composition/profile config:
+- [x] Add account capability labels via DSH composition/profile config:
   `brainstorm.idea-a` for Claude, `brainstorm.idea-b` for Codex, and
   `brainstorm.synthesis` for one existing account. Retain provider-neutral
   `WorkerPort`; no new Worker or domain-specific Controller branch.
-- [ ] Ensure `idea-b` has no input reference to `idea-a`; synthesis
+- [x] Ensure `idea-b` has no input reference to `idea-a`; synthesis
   declares `dependsOn: [idea-a, idea-b]` and inputs both proposal slots.
-- [ ] Write concise role instructions asking for distinct alternatives,
+- [x] Write concise role instructions asking for distinct alternatives,
   assumptions, trade-offs, failure modes and unresolved questions. Synthesis
   compares arguments and proposes next experiments; no false consensus.
-- [ ] Add fake Worker tests: exactly three attempts, expected provider refs,
+- [x] Add fake Worker tests: exactly three attempts, expected provider refs,
   two independent inputs, Artifact ID handoff, distinct provenance, pinned
   spec, failed capability preflight and no required verifier.
-- [ ] Make result Artifact IDs and step statuses inspectable using existing
+- [x] Make result Artifact IDs and step statuses inspectable using existing
   CLI. Do not build a new UI or transcript-chat layer.
 
 **Gate:** fake Brainstorm run completes with three stored Artifact outputs,
@@ -92,14 +95,19 @@ correct independent/synthesis inputs and no Work Core modifications.
 
 ### B2 — Real run and recovery
 
-- [ ] Run a real credential-gated brief: Claude proposal, Codex proposal,
+- [x] Run a real credential-gated brief: Claude proposal, Codex proposal,
   third synthesis. Record provider/model/tier actually served, attempts,
-  input/output Artifact IDs and elapsed time.
-- [ ] Inject stop/crash after first idea; restart and confirm the completed
+  input/output Artifact IDs and elapsed time. *(Evidence in the table below.)*
+- [x] Inject stop/crash after first idea; restart and confirm the completed
   Artifact is reused, not generated again. `work replay` matches.
-- [ ] Test cancellation, unavailable Codex account and changed Workflow file:
+  *(Stop: `tests/brainstorm.test.ts` cancels from another process while
+  `idea-b` runs; `work retry` reruns only `idea-b` and `synthesis`, and
+  `proposal-a` stays the same Artifact. A killed host is the generic takeover
+  already covered by the controller and agents tests; not repeated with real
+  models.)*
+- [x] Test cancellation, unavailable Codex account and changed Workflow file:
   route refusal explicit; old Work retains admitted spec and output IDs.
-- [ ] Re-run existing code and research smoke tests after adding account
+- [x] Re-run existing code and research smoke tests after adding account
   capability labels.
 
 **Gate:** real three-attempt run and recovery pass; no accidental
@@ -107,25 +115,40 @@ same-provider substitution for the two independent perspectives.
 
 ### B3 — Brainstorm daily-driver evaluation
 
-- [ ] Try at least five varied briefs (architecture, tradeoffs, feature
-  design, failure analysis and open-ended ideation).
-- [ ] Compare a single-Worker baseline to the three-role workflow. Record
+- [x] Try at least five varied briefs (architecture, tradeoffs, feature
+  design, failure analysis and open-ended ideation). *(Five open questions
+  about System itself; table below.)*
+- [x] Compare a single-Worker baseline to the three-role workflow. Record
   operator usefulness, novelty, diversity, actual disagreements, latency,
   usage observations (or `unknown`) and manual interventions.
-- [ ] Capture operator feedback as evidence Artifacts where useful. A model
+- [x] Capture operator feedback as evidence Artifacts where useful. A model
   self-scoring quality is not sufficient evidence of better decisions.
-- [ ] Only optimize role/tier selection or add optional critique on observed
+- [x] Only optimize role/tier selection or add optional critique on observed
   limitations. No team ballots or debate rounds without demonstrated need.
+- [x] Compare, as the PR #2 review suggested, a stance per proposal
+  (pragmatist, skeptic) with one shared prompt, and a Codex synthesis with a
+  Claude one, using the config in
+  [workflows/experiments](workflows/experiments/README.md). Score blind:
+  the operator reads outputs without knowing the arm or the provider.
+  Criteria, 1 to 5 each: usefulness for a decision, diversity of the
+  proposals, critical thinking (wrong assumptions, blind spots),
+  actionability, and whether the extra attempts were worth their time and
+  tokens. *(Scored blind by a Claude Sonnet subagent at the operator's
+  request, not by the operator; see [RES-0008](docs/research/RES-0008-brainstorm-evaluation.md).)*
 
 **Gate:** a report of real tasks and measured trade-offs, not just a demo.
 
 ### B4 — Focused reliability (may run alongside B1–B3)
 
-- [ ] Keep and extend multi-CLI same-Work concurrency regression tests
+- [x] Keep and extend multi-CLI same-Work concurrency regression tests
   for the DSH SQLite `busy_timeout` patch. Test lost updates, duplicate
-  dispatch and replay after forced termination.
-- [ ] Avoid new process daemon/lease framework unless a minimal reproducer
-  demonstrates a correctness defect. Record fixes independently.
+  dispatch and replay after forced termination. *(`tests/concurrency.test.ts`
+  also creates the store from scratch every round; `tests/brainstorm.test.ts`
+  kills the host mid-step and starts four `work run` at once.)*
+- [x] Avoid new process daemon/lease framework unless a minimal reproducer
+  demonstrates a correctness defect. Record fixes independently. *(Two
+  fixes, each with a red test first: `c9fc13b` store creation, `ccc5dd5` the
+  Work lock. No daemon, no OS lock.)*
 
 **Gate:** no known Work state correctness regression from the Brainstorm
 feature and retained tests for the SQLite patch.
@@ -151,6 +174,19 @@ at `tsuuanmi/system_1@f199a277`:
 
 - [ ] Website Worker for interactive/browser-assisted Research **only when**
   a real source workflow requires it; keep the same WorkerPort/Artifact IDs.
+  *Observed need (2026-11-06): the System 1 audit and this roadmap update
+  (PR #1 `2dcfe48`) were produced by the operator in ChatGPT on the web and
+  carried into the repository by hand, with no Artifact recording what was
+  asked and what came back. The B2 Brainstorm Work `work:cad623e9…` is a
+  first design comparison for this Worker (summary `sha256:c4eb1e20…`).*
+- [ ] Split the Website Worker into three layers (PR #2 review), each its
+  own step: (1) **conversation-to-Artifact ingestion**: the prompt, the
+  response and metadata from a web session become Artifacts with honest
+  provenance, with no browser automation (can be tried early); (2) **source
+  fetching and snapshots** with content identity (future Research); (3) the
+  **interactive Website Worker** with a signed-in session and recovery
+  (after B3/B4). System 1 is a reference for session lifecycle only; no
+  persistent team sessions in Work Core.
 - [ ] Research quality capabilities (source snapshots, citation consistency,
   claim-to-evidence checking) as separately selected verifiers. The **current
   Research flow continues to work**, without mandatory stronger verification.
@@ -164,11 +200,11 @@ at `tsuuanmi/system_1@f199a277`:
 
 | Stage | Status | Commit / PR | Test/evidence |
 |---|---|---|---|
-| B0 MVP-0 baseline | not started | — | — |
-| B1 Brainstorm YAML | not started | — | — |
-| B2 Real three Worker attempts | not started | — | — |
-| B3 Daily driver evaluation | not started | — | — |
-| B4 Concurrency regression | not started | — | — |
+| B0 MVP-0 baseline | done | `41d2e0a` (merge of PR #1) | See the B0 checklist: one concurrency failure at baseline, fixed in B4. |
+| B1 Brainstorm YAML | done | `b74f97e` | No Work Core change. `corepack pnpm check`: unit 115/115, smoke 40/42 (2 credential-gated skipped); with `SYSTEM_REAL_AGENTS=1` both pass (a real Claude change; a cancelled Claude attempt taken over by Codex, 132 s). Fake run: three attempts (Claude, Codex, Claude), `idea-a` and `idea-b` inputs are the brief only, `synthesis` inputs the two exact proposal IDs, provenance per Artifact, no verifier, `work replay` matches; refused at submit without Codex; a pinned spec survives an edited file. |
+| B2 Real three Worker attempts | done (economy tier) | Work `work:cad623e9-4a65-45ab-bb2d-eb473044811d` | Brief: design a Website Worker. `idea-a` Claude Code 2.1.311 `claude-haiku-5-5` (31 s, 42,940 in / 4,881 out) → proposal `sha256:e0e6c883…`; `idea-b` Codex 0.166.0 `gpt-6-luna` requested (the served model is not reported by Codex; 43 s, 30,148 / 1,783) → `sha256:d2c72a35…`; `synthesis` Claude `claude-haiku-5-5` (53 s, 99,560 / 9,616) → `sha256:c4eb1e20…`, inputs exactly those two IDs. 3 attempts, 0 operator touches, 127 s, `work replay` matches. The synthesis named six real disagreements (session expiry, automatic publish versus operator confirmation, screenshots, partial transcripts, CDP exposure, account check) with the evidence that would settle each. |
+| B3 Daily driver evaluation | done (model judge) | `6dc0244` (arms) | 15 Works, all succeeded, 5 hosts in parallel, 35 attempts, 0 operator touches. Tier standard everywhere: Claude `claude-sonnet-5-5`, Codex `gpt-6.1-sol` requested. Arms per brief: S = one Claude attempt (`brainstorm-single`), B = `brainstorm.yaml`, R = `brainstorm-roles.yaml` (Codex synthesis on *failure* and *openended*). Mean per Work: S 37 s, 40k input / 3.4k output tokens; B 157 s, 164k / 10.0k; R 162 s, 152k / 8.9k (about 4× S). Proposal similarity (word cosine of A and B, lower = more different): B 0.52 / 0.59 / 0.57 / 0.48 / 0.36, R 0.53 / 0.50 / 0.44 / 0.43 / 0.39 (mean 0.50 vs 0.46): the stances add a little diversity in 3 of 5 briefs. Blind scores (Sonnet subagent, operator's choice; key kept apart), mean of U/D/C/A: S 3.60, B 4.65, R 4.45. S was never best; R was best on the three briefs with a Claude synthesis, and B beat R where Codex synthesised. Caveats: a model judge from the same family as most writers, five briefs and one run each. Report and recommendation: [RES-0008](docs/research/RES-0008-brainstorm-evaluation.md). |
+| B4 Concurrency regression | done | `c9fc13b`, `ccc5dd5`, stale-snapshot fence | Baseline failure reproduced: commands that all find the store missing raced in DSH storage-sqlite (WAL switch "database is locked" despite `busy_timeout`; `UNIQUE constraint failed: units.name`). Patch extended; new test red 9/12 rounds, green 3/3; 300 parallel commands on fresh stores, 0 failures. Review finding (PR #2, P1): `FileControl` created the lock before writing its pid, so a host could read it empty, take it as stale and also acquire the Work. Red test with an empty lock; fixed by linking a complete file (a recent pid-less lock counts as held). Same-Work test: a host SIGKILLed during `idea-b`, then four `work run` at once: exactly one runs, `idea-b` is dispatched once more, every event `seq` kept in order, replay matches; 3/3 runs. A free-lock race between processes did not reproduce the window (microseconds) and stays as a regression test. `corepack pnpm check`: unit 118/118, smoke 41/43 (2 credential-gated skipped). Then (PR #1 review RES-0007, hypotheses confirmed): DSH `storage-domain` serves each host an in-memory snapshot taken at start, so a host that took the lock after another wrote acted on an older record; `retry` also checked before locking and released between reopening and running. Red controller tests (one snapshot per host) for `run` and `retry`; fixed by an event-count fence in `FileControl` and by holding the lock through `retry`/`approve`. `corepack pnpm check`: unit 122/122, smoke 41/43. |
 
 Update this table *after executing tests*. Each implementation milestone
 should be a small reviewable commit on the chosen implementation branch.

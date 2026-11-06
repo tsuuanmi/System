@@ -1,0 +1,32 @@
+{
+  "name": "@system/verifiers",
+  "version": "0.0.0",
+  "private": true,
+  "description": "code.required-checks and research.citation-check verifier capabilities (ADR-0003, ADR-0004)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.1",
+    "@system/agents": "workspace:*",
+    "@system/artifacts": "workspace:*",
+    "@system/work": "workspace:*",
+    "yaml": "2.9.1",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0"
+  }
+}

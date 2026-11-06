@@ -2,14 +2,15 @@
 type: architecture
 status: active
 reviewed: 2026-11-05
+covers: [packages/bundle/cordis.patch.yml]
 ---
 
 # System control-plane architecture
 
-**Status: accepted responsibility architecture.** An implemented MVP-0,
-three-attempt Brainstorm and B4 concurrency fixes exist on stacked draft
-[PR #2](https://github.com/tsuuanmi/System/pull/2), not on this
-documentation-only branch. Refer to exact PR #2 source and tests for
+**Status: selected architecture; MVP-0, three-attempt Brainstorm and the B4
+concurrency fixes are implemented** (see [packages](../../packages/README.md),
+the evidence in the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)
+and [PLAN.md](../../PLAN.md)). Source and tests are the authority for exact
 implementation behavior.
 System is a durable AI work **control plane** hosted on **DSH/Cordis**.
 Its execution plane is existing agent/model/tool/Worker capabilities mounted
@@ -91,7 +92,9 @@ An MVP profile mounts only what is required to run the two
 the System work services and the DSH hosting/execution capabilities needed
 to satisfy their contracts. Every additional plugin has an explicit reason and
 dependency. The complete list is determined by an actual profile dependency
-audit, **not** by copying a reference bundle.
+audit, **not** by copying a reference bundle. The current tree is
+[`@system/bundle`](../../packages/bundle/README.md): thirteen rows (one, `fakes`, disabled), no `dsh-base`,
+checked by `system doctor` and the offline smoke test.
 
 **Configuration-first plugin lifecycle:**
 

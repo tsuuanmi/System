@@ -1,0 +1,29 @@
+{
+  "name": "@system/effects",
+  "version": "0.0.0",
+  "private": true,
+  "description": "System-owned external effects: git.publish pushes a verified commit to system/<work> and opens a draft GitHub pull request (ADR-0004 decision 10)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
+    "@system/artifacts": "workspace:*",
+    "@system/work": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0"
+  }
+}

@@ -7,7 +7,7 @@ into the target project.
 
 ## Create-only scaffold
 
-With Python 3.11+ and a checkout of System available:
+With Python 3.8+ and a checkout of System available:
 
     python3 <system-checkout>/tools/bootstrap_docs.py \
       --out <target-repository> --name "My Project"

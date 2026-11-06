@@ -2,9 +2,9 @@
 
 This index separates **current product intent and accepted architectural
 direction** from implementation claims, proposals and exploratory evidence.
-System is a fresh product. This **PR #1 branch** contains documentation only;
-MVP-0 implementation and its tests are in the stacked, draft
-[PR #2](https://github.com/tsuuanmi/System/pull/2), not in this tree.
+System is a fresh product. MVP-0 and Brainstorm are implemented in this
+tree ([packages](../packages/README.md), [workflows](../workflows/README.md));
+source and tests are the authority for implementation behavior.
 
 | Question | Canonical home | Authority |
 |---|---|---|

@@ -3,7 +3,7 @@
 
 The normative standard is docs/governance/documentation-architecture.md.
 This checker implements level 1 plus limited graph and generator checks; it
-does not claim complete level 2/3 conformance. Run from any directory with Python 3.11+.
+does not claim complete level 2/3 conformance. Run from any directory with Python 3.8+.
 """
 from __future__ import annotations
 
@@ -170,6 +170,24 @@ class Graph:
                 linked.add(resolved.rel)
         return linked
 
+    @staticmethod
+    def source_directories(source: Path) -> list[Path]:
+        """Directories under a source root that hold files git does not ignore."""
+        try:
+            listed = subprocess.run(
+                ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", str(source)],
+                cwd=ROOT, check=True, capture_output=True, text=True,
+            ).stdout.splitlines()
+        except (OSError, subprocess.CalledProcessError):
+            return [source, *(p for p in source.rglob("*") if p.is_dir())]
+        directories = {source}
+        for file in listed:
+            parent = (ROOT / file).parent
+            while parent != source and source in parent.parents:
+                directories.add(parent)
+                parent = parent.parent
+        return sorted(directories)
+
     def check_structure(self) -> None:
         for name in ("README.md", "AGENTS.md", "docs/README.md"):
             if not (ROOT / name).is_file():
@@ -194,7 +212,7 @@ class Graph:
                 self.errors.append(f"DOC-STR-002 unmatched source-root: {root}")
             for source in roots:
                 if source.is_dir():
-                    for directory in [source, *(p for p in source.rglob("*") if p.is_dir())]:
+                    for directory in self.source_directories(source):
                         if not (directory / "README.md").exists():
                             self.errors.append(
                                 f"DOC-STR-002 missing {directory.relative_to(ROOT)}/README.md"
@@ -210,7 +228,8 @@ class Graph:
                 if not target or re.match(r"^[A-Za-z]+:", target):
                     continue
                 path = (file.parent / target).resolve()
-                if not path.is_relative_to(ROOT) or not path.exists():
+                inside_root = path == ROOT or ROOT in path.parents
+                if not inside_root or not path.exists():
                     self.errors.append(
                         f"DOC-LNK-001 {file.relative_to(ROOT)}: broken link {raw}"
                     )

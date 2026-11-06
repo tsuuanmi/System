@@ -1,0 +1,60 @@
+# B3 variant of ../brainstorm.yaml: the same brief and independence, but each
+# proposal takes a different stance (cognitive role) instead of the same
+# prompt, to see whether diversity comes from the roles or only from the two
+# providers. The synthesis is unchanged.
+schema: system.workflow/v1
+id: brainstorm-roles
+version: 1
+steps:
+  - id: idea-a
+    capabilities: [brainstorm.idea-a]
+    inputs:
+      brief: $work.input
+    outputs: [proposal]
+    instructions: |
+      Brainstorm the brief on your own: you cannot see any other proposal.
+      Your stance is the pragmatist: favour the simplest approach that could
+      be built and tested soon with what exists, and say what you would leave
+      out on purpose.
+      Write the output "proposal" as Markdown with these sections:
+      1. Proposal: the approach you recommend, concretely.
+      2. Alternatives: at least two other approaches you rejected, and why.
+      3. Assumptions: what must be true for the proposal to work.
+      4. Trade-offs and failure modes: what it costs and how it could fail.
+      5. Open questions: what you do not know and would check first.
+      Do not change any other file.
+  - id: idea-b
+    capabilities: [brainstorm.idea-b]
+    inputs:
+      brief: $work.input
+    outputs: [proposal]
+    instructions: |
+      Brainstorm the brief on your own: you cannot see any other proposal.
+      Your stance is the skeptic: look for the assumptions in the brief most
+      likely to be wrong, and for an approach most people would not try
+      first. Recommend it only if you can argue for it.
+      Write the output "proposal" as Markdown with these sections:
+      1. Proposal: the approach you recommend, concretely.
+      2. Alternatives: at least two other approaches you rejected, and why.
+      3. Assumptions: what must be true for the proposal to work.
+      4. Trade-offs and failure modes: what it costs and how it could fail.
+      5. Open questions: what you do not know and would check first.
+      Do not change any other file.
+  - id: synthesis
+    dependsOn: [idea-a, idea-b]
+    capabilities: [brainstorm.synthesis]
+    inputs:
+      brief: $work.input
+      proposal-a: $steps.idea-a.proposal
+      proposal-b: $steps.idea-b.proposal
+    outputs: [summary]
+    instructions: |
+      Two independent proposals answer the brief: the inputs "proposal-a" and
+      "proposal-b". Write the output "summary" as Markdown with these sections:
+      1. Agreement: what both proposals hold, with each one's reasons.
+      2. Disagreement: where they differ, the strongest argument on each side,
+         and what evidence would settle it. Do not invent a consensus.
+      3. Gaps: risks or options neither proposal considered.
+      4. Recommendation: what to do next, as concrete experiments or decisions,
+         and which proposal (or combination) it follows.
+      Refer to the proposals as A and B. Do not change any other file.

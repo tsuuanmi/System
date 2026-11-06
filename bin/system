@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+// The `system` wrapper (ADR-0004 decision 2): `system init` creates or refreshes
+// the `system` DSH profile; every other command runs `dsh --profile system "$@"`.
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const PROFILE = 'system'
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const home = process.env.DSH_HOME || join(homedir(), '.dsh')
+const profileDir = join(home, 'profiles', PROFILE)
+const dshBin = join(repo, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+
+function fail(message) {
+  process.stderr.write(`system: ${message}\n`)
+  process.exit(1)
+}
+
+const [major, minor] = process.versions.node.split('.').map(Number)
+if (major < 24 || (major === 24 && minor < 9)) fail(`DSH 0.2.2-rc.1 needs Node >=24.9.0; this is ${process.version}`)
+if (!existsSync(dshBin)) fail(`DSH is not installed at ${dshBin}: run \`corepack pnpm install\` in ${repo}`)
+if (!existsSync(join(repo, 'packages', 'app', 'lib', 'index.js'))) fail(`the System app is not built: run \`corepack pnpm build\` in ${repo}`)
+
+function dsh(args) {
+  // `dsh plugin` runs pnpm from PATH: use the workspace's pinned copy.
+  const path = [join(repo, 'node_modules', '.bin'), process.env.PATH].filter(Boolean).join(':')
+  const ran = spawnSync(process.execPath, [dshBin, ...args], { stdio: 'inherit', env: { ...process.env, DSH_HOME: home, PATH: path } })
+  if (ran.error) fail(ran.error.message)
+  return ran.status ?? 1
+}
+
+function init() {
+  const manifestPath = join(profileDir, 'package.json')
+  const current = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : {}
+  // The bundle list is exactly the System bundle; other manifest fields are kept.
+  const manifest = {
+    ...current,
+    name: `dsh-profile-${PROFILE}`,
+    private: true,
+    dependencies: { ...current.dependencies, '@system/bundle': `link:${join(repo, 'packages', 'bundle')}` },
+    dsh: { ...current.dsh, profile: { ...current.dsh?.profile, bundles: ['@system/bundle'] } },
+  }
+  mkdirSync(profileDir, { recursive: true, mode: 0o700 })
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  try {
+    // The operator's patch layer is created once and never overwritten.
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), '# Operator overrides for the system profile.\n[]\n', { flag: 'wx' })
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+  }
+  const status = dsh(['plugin', '--profile', PROFILE, 'install'])
+  if (status !== 0) fail(`dsh plugin install failed with status ${status}`)
+  process.stdout.write(`profile ready: ${profileDir}\n`)
+}
+
+const args = process.argv.slice(2)
+if (args[0] === 'init') init()
+else {
+  if (!existsSync(join(profileDir, 'package.json'))) fail(`no ${PROFILE} profile under ${home}/profiles: run \`system init\` first`)
+  process.exit(dsh(['--profile', PROFILE, ...args]))
+}

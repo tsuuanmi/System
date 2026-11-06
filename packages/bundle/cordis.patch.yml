@@ -1,0 +1,95 @@
+# The system profile lists ONLY this bundle: no dsh-base, no agent loop, no
+# model adapters (ADR-0001 point 3, ADR-0004). Every row is mounted because a
+# System contract needs it; packages/bundle/README.md names the reason for each.
+- insert:
+    # Storage hub, SQLite backend and the domain facility (ADR-0004 decision 9).
+    - id: storage
+      name: '@deepseek-ai/dsh-storage'
+
+    - id: storage-sqlite
+      name: '@deepseek-ai/dsh-storage-sqlite'
+      config:
+        path: !!js dshHomePath('system', 'state.sqlite')
+
+    - id: storage-domain
+      name: '@deepseek-ai/dsh-storage-domain'
+      config:
+        backend: sqlite
+
+    # Content-addressed blob store for Artifact bytes (ADR-0003, ADR-0004).
+    - id: attachment-local
+      name: '@deepseek-ai/dsh-attachment-local'
+
+    # Immutable, content-addressed Artifacts over the two rows above (ADR-0003).
+    - id: artifacts
+      name: '@system/artifacts'
+
+    # Durable Work, the capability registry and the Work Controller (ADR-0002, ADR-0004).
+    - id: work
+      name: '@system/work'
+
+    # Scripted Worker and verifier for offline tests. Off: a profile patch
+    # turns it on with `disabled: false` and its capability lists.
+    - id: fakes
+      name: '@system/fakes'
+      disabled: true
+      config:
+        workers: [code-write, research, web-search]
+        verifiers: [code.required-checks, research.citation-check]
+        effects: [git.publish]
+
+    # Process spawning for Worker adapters and verifiers (ADR-0004 decisions 5, 12).
+    - id: subprocess
+      name: '@deepseek-ai/dsh-subprocess-local'
+
+    # Verifier capabilities: code.required-checks, research.citation-check (ADR-0003).
+    - id: verifiers
+      name: '@system/verifiers'
+
+    # System-owned external effects: git.publish pushes a verified commit to
+    # system/<work> and opens one draft pull request; never merges (ADR-0004 decision 10).
+    # The token is the credential GITHUB_TOKEN (system credentials set GITHUB_TOKEN).
+    - id: effects
+      name: '@system/effects'
+      config:
+        remote: origin
+        base: main
+        apiUrl: https://api.github.com
+        tokenRef: GITHUB_TOKEN
+
+    # Agent CLI accounts as Workers (ADR-0004, ADR-0005). An account whose CLI
+    # or credential is missing is skipped with its reason (`system workers`).
+    # One entry per account; routing takes the first capable one. Brainstorm
+    # roles (workflows/brainstorm.yaml) are capabilities too: the two
+    # independent proposals go to different providers.
+    - id: agents
+      name: '@system/agents'
+      config:
+        accounts:
+          - ref: claude-code/default
+            runtime: claude-code
+            capabilities: [code-write, research, web-search, brainstorm.idea-a, brainstorm.synthesis]
+            tokenRef: CLAUDE_CODE_OAUTH_TOKEN
+            # A step asks for a tier with the capability tier.<name>.
+            models:
+              economy: haiku
+              standard: sonnet
+              frontier: opus
+          - ref: codex/default
+            runtime: codex
+            capabilities: [code-write, brainstorm.idea-b]
+            codexHome: codex/default
+            # From the models Codex 0.166.0 lists for this account, by their descriptions.
+            models:
+              economy: gpt-6-luna
+              standard: gpt-6.1-sol
+              frontier: gpt-6-astra
+
+    # Optional: Worker tokens (`system credentials`, ADR-0005). Only real
+    # Workers read it, so it may be disabled by a profile patch.
+    - id: credentials
+      name: '@deepseek-ai/dsh-credentials-local'
+
+    # The System CLI app: parses `system <command>` and exits.
+    - id: system-app
+      name: '@system/app'

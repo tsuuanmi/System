@@ -1,0 +1,25 @@
+{
+  "name": "system-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.9.1",
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "scripts": {
+    "build": "tsc -p packages/artifacts/tsconfig.build.json && tsc -p packages/work/tsconfig.build.json && tsc -p packages/fakes/tsconfig.build.json && tsc -p packages/agents/tsconfig.build.json && tsc -p packages/verifiers/tsconfig.build.json && tsc -p packages/effects/tsconfig.build.json && tsc -p packages/app/tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test 'packages/*/tests/*.test.ts'",
+    "smoke": "node --test --test-concurrency=1 'tests/*.test.ts'",
+    "check": "\"$npm_execpath\" run build && \"$npm_execpath\" run typecheck && \"$npm_execpath\" run test && \"$npm_execpath\" run smoke"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.2.2-rc.1",
+    "@system/agents": "workspace:*",
+    "@system/artifacts": "workspace:*",
+    "@system/work": "workspace:*",
+    "@types/node": "24.19.2",
+    "pnpm": "12.9.1",
+    "typescript": "6.0.3"
+  }
+}

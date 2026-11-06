@@ -1,0 +1,49 @@
+# Brainstorm. Two Workers on different providers propose independently from
+# the same brief; a third attempt compares the two exact proposals. Routing is
+# by role capability (brainstorm.idea-a, brainstorm.idea-b,
+# brainstorm.synthesis), which the profile gives to one account each. There is
+# no verifier: a finished Work means the three outputs exist, not that their
+# content is right. Same schema and controller as the other Workflows.
+schema: system.workflow/v1
+id: brainstorm
+version: 1
+steps:
+  - id: idea-a
+    capabilities: [brainstorm.idea-a]
+    inputs:
+      brief: $work.input
+    outputs: [proposal]
+    instructions: &propose |
+      Brainstorm the brief on your own: you cannot see any other proposal.
+      Write the output "proposal" as Markdown with these sections:
+      1. Proposal: the approach you recommend, concretely.
+      2. Alternatives: at least two other approaches you rejected, and why.
+      3. Assumptions: what must be true for the proposal to work.
+      4. Trade-offs and failure modes: what it costs and how it could fail.
+      5. Open questions: what you do not know and would check first.
+      Prefer a distinct, well-argued position over covering everything.
+      Do not change any other file.
+  - id: idea-b
+    capabilities: [brainstorm.idea-b]
+    inputs:
+      brief: $work.input
+    outputs: [proposal]
+    instructions: *propose
+  - id: synthesis
+    dependsOn: [idea-a, idea-b]
+    capabilities: [brainstorm.synthesis]
+    inputs:
+      brief: $work.input
+      proposal-a: $steps.idea-a.proposal
+      proposal-b: $steps.idea-b.proposal
+    outputs: [summary]
+    instructions: |
+      Two independent proposals answer the brief: the inputs "proposal-a" and
+      "proposal-b". Write the output "summary" as Markdown with these sections:
+      1. Agreement: what both proposals hold, with each one's reasons.
+      2. Disagreement: where they differ, the strongest argument on each side,
+         and what evidence would settle it. Do not invent a consensus.
+      3. Gaps: risks or options neither proposal considered.
+      4. Recommendation: what to do next, as concrete experiments or decisions,
+         and which proposal (or combination) it follows.
+      Refer to the proposals as A and B. Do not change any other file.
