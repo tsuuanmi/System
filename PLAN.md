@@ -331,7 +331,10 @@ written first.
 - [ ] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
   the Standards axis), the simplification pass, and the growth record.
 
-### O — Orchestrator and Goal (future ADR)
+### O — Orchestrator and Goal ([ADR-0009](docs/decisions/ADR-0009-goals-and-orchestrators.md))
+
+Steps: O1 `goal@1`, admission with a Goal and the budget fold; O2 `system mcp`
+and orchestrator scope; O3 completion notices.
 
 - [ ] **Goal**: the operator's aim, scope and budget (attempts and observed
   tokens; once spent, new Works for that Goal are refused and running Works

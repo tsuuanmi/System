@@ -53,8 +53,14 @@ fallback.
    - The browser profile is dedicated, under
      `$DSH_HOME/system/chatgpt-web/<account>/`, with owner-only permissions
      and outside any sync.
-   - The operator signs in once, in a visible window:
-     `system workers login chatgpt-web/default`.
+   - The operator signs in once:
+     `system workers login chatgpt-web/default`. Where a display exists, a
+     visible window opens. The operator's machine has no display (checked
+     2026-11-07), so login also accepts **a session cookie export** from the
+     operator's own browser (`--cookies <file>`, JSON or Netscape format). The
+     file is read once into the profile and never stored elsewhere.
+   - Pinned dependency: `playwright-core` 1.64.1 (Apache-2.0), driving the
+     installed Google Chrome. No browser download.
    - The profile is the Account's credential. Like a token, it never
      reaches other Workers.
 3. **One attempt.**
