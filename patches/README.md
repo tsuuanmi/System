@@ -15,3 +15,9 @@ in [pnpm-workspace.yaml](../pnpm-workspace.yaml)) on every install.
   unit's version row is inserted with `INSERT OR IGNORE` and read back instead
   of failing with `UNIQUE constraint failed: units.name`. Drop the patch when
   DSH fixes these itself (upstream discussion deepseek-ai/deepseek-harness#718).
+- `@deepseek-ai__dsh@0.2.2-rc.1.patch` — every DSH boot rewrote
+  `profiles/<name>/cordis.yml` (truncate, then write), so a host booting
+  alongside could read it empty and fail ("config file must be a top-level
+  array"; seen once in `tests/concurrency.test.ts`). It is now written only
+  when it differs, and then atomically. The test that a boot leaves the file
+  untouched was red before. Drop the patch when DSH does the same.

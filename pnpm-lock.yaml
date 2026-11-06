@@ -164,6 +164,7 @@ settings:
 
 patchedDependencies:
   '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1': 18fbd5991a9e93a432e0d5a971732daa603276e11ff20463d16d765792ec442e
+  '@deepseek-ai/dsh@0.2.2-rc.1': b6f44a691c4b037bf837ae3e84be4785b8d2e3a43475b98202f6afc9e4dadfbc
 
 importers:
 
@@ -171,7 +172,7 @@ importers:
     devDependencies:
       '@deepseek-ai/dsh':
         specifier: 0.2.2-rc.1
-        version: 0.2.2-rc.1(a82e36c603574ba498963dd3068e7c52)
+        version: 0.2.2-rc.1(patch_hash=b6f44a691c4b037bf837ae3e84be4785b8d2e3a43475b98202f6afc9e4dadfbc)(a82e36c603574ba498963dd3068e7c52)
       '@system/agents':
         specifier: workspace:*
         version: link:packages/agents
@@ -8169,7 +8170,7 @@ snapshots:
       '@deepseek-ai/dsh-typert-protocol': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       zod: 4.4.3
 
-  '@deepseek-ai/dsh@0.2.2-rc.1(a82e36c603574ba498963dd3068e7c52)':
+  '@deepseek-ai/dsh@0.2.2-rc.1(patch_hash=b6f44a691c4b037bf837ae3e84be4785b8d2e3a43475b98202f6afc9e4dadfbc)(a82e36c603574ba498963dd3068e7c52)':
     dependencies:
       '@deepseek-ai/cordis': 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
       '@deepseek-ai/cordis-plugin-include': 1.1.0(@deepseek-ai/cordis-plugin-loader@1.1.0)(@deepseek-ai/cordis@4.1.0)

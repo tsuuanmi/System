@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { rmSync, writeFileSync } from 'node:fs'
+import { rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
@@ -56,4 +56,17 @@ test('parallel commands that all find the store missing create it together witho
   const store = join(cli.home, 'system', 'state.sqlite')
   const fresh = () => { for (const suffix of ['', '-wal', '-shm']) rmSync(store + suffix, { force: true }) }
   assert.deepEqual(await rounds(12, fresh), [])
+})
+
+test('a boot does not rewrite the profile root config another booting host may be reading', async () => {
+  // DSH rewrote profiles/system/cordis.yml (truncate, then write) on every
+  // boot, so a host booting alongside could read it empty and fail.
+  const config = join(cli.home, 'profiles', 'system', 'cordis.yml')
+  assert.equal((await runAsync(['doctor'])).status, 0, 'a first boot writes it')
+  const before = statSync(config)
+  await new Promise((r) => setTimeout(r, 20))
+  const ran = await runAsync(['doctor'])
+  assert.equal(ran.status, 0, ran.stderr)
+  const after = statSync(config)
+  assert.deepEqual([after.ino, after.mtimeMs], [before.ino, before.mtimeMs])
 })
