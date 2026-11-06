@@ -76,9 +76,13 @@ output that step does not declare, an accept step on a non-verify step, more
 than one accept step, and any Worker or verifier capability the **effective**
 composition does not provide.
 
-The repository's two files are [`workflows/software-engineering.yaml`](../../workflows/software-engineering.yaml)
-and [`workflows/research.yaml`](../../workflows/research.yaml). They differ
-only in capabilities, output slots and verifier. Compared with the earlier
+The repository's files are [`workflows/software-engineering.yaml`](../../workflows/software-engineering.yaml),
+[`workflows/research.yaml`](../../workflows/research.yaml) and
+[`workflows/brainstorm.yaml`](../../workflows/brainstorm.yaml). They differ
+only in capabilities, output slots, instructions and verifier; Brainstorm has
+none, and routes its two independent proposals to different providers through
+role capabilities (`brainstorm.idea-a`, `brainstorm.idea-b`) that the profile
+gives to one account each. Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
 `approval: operator` replaces `operator-merge`, because System never merges
 (ADR-0004 decision 10).

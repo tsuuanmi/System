@@ -3,6 +3,8 @@
 // markers in the prompt's instructions:
 //   FAKE:edit     write NOTE.md in the working directory
 //   FAKE:outputs  write every listed output file
+//   FAKE:sign     with FAKE:outputs, each file names its runtime and quotes every input file read
+//   FAKE:hang=STEP:FILE  at step STEP, unless FILE exists: create it and wait (until SIGTERM, then exit 143)
 //   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below
 //   FAKE:sleep    unless PARTIAL.md exists: wait; on SIGTERM write PARTIAL.md and exit 143
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
@@ -10,7 +12,7 @@
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
 // The model given with --model / -m is written into ENV.json and reported as served.
-import { appendFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
@@ -42,17 +44,28 @@ function finish(ok, message) {
 
 if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
 if (has('edit')) writeFileSync(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
+/** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
+function signed(slot) {
+  const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)
+  return [`# ${slot} by ${codex ? 'codex' : 'claude'}`, ...read].join('\n')
+}
 const QUOTE = 'System verifies citations exactly'
 const cited = /FAKE:cite=(\S+)/.exec(prompt)?.[1]
 if (has('outputs')) {
   for (const [, slot, path] of prompt.matchAll(/^- ([a-z][a-z0-9-]*) \(the file (\/[^)]+)\)$/gm)) {
     const sources = { sources: cited ? [{ id: 's1', url: cited, quote: QUOTE, claims: ['System checks quotes'] }] : [] }
-    writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : `# ${slot} [s1]\n`)
+    writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : has('sign') ? signed(slot) : `# ${slot} [s1]\n`)
   }
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')
 if (has('fail')) finish(false, 'scripted failure')
-if ((has('sleep') && !existsSync(join(cwd, 'PARTIAL.md'))) || has('stubborn')) {
+const hang = /FAKE:hang=([a-z0-9-]+):(\S+)/.exec(prompt)
+if (hang && prompt.includes(`Step: ${hang[1]}\n`) && !existsSync(hang[2])) {
+  writeFileSync(hang[2], '')
+  process.on('SIGTERM', () => process.exit(143))
+  setTimeout(() => process.exit(1), 120_000)
+  setInterval(() => {}, 1000)
+} else if ((has('sleep') && !existsSync(join(cwd, 'PARTIAL.md'))) || has('stubborn')) {
   process.on('SIGTERM', () => {
     if (has('stubborn')) return
     writeFileSync(join(cwd, 'PARTIAL.md'), 'half done\n')

@@ -11,6 +11,11 @@ changes future admissions only.
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`) → `accept`.
+- [brainstorm.yaml](brainstorm.yaml) — `idea-a` (`brainstorm.idea-a`) and
+  `idea-b` (`brainstorm.idea-b`) each write a `proposal` from the brief alone;
+  `synthesis` (`brainstorm.synthesis`) reads both exact proposals and writes a
+  `summary`. No verifier: success means the three outputs exist. The bundle
+  gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
 
 ```sh
 bin/system work submit --workflow workflows/research.yaml --input <artifactId>

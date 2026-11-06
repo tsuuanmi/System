@@ -91,6 +91,10 @@ bin/system work retry <work> [--step implement] [--worker codex/default]
 
 Research takes a question as its input
 (`bin/system task new --text "<question>"`, then `--workflow workflows/research.yaml`).
+Brainstorm takes a brief the same way (`--workflow workflows/brainstorm.yaml`):
+Claude Code and Codex each write a proposal, then a synthesis compares them;
+`bin/system work show <work>` lists the three output Artifact IDs and
+`bin/system artifact cat <id>` prints one.
 A step asks for a model tier with the capability `tier.economy`,
 `tier.standard` or `tier.frontier`.
 

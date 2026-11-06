@@ -14,6 +14,10 @@ GitHub credentials. Run with `corepack pnpm smoke`.
   takeover, `retry` refusals.
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts.
+- [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
+  accounts (CLI pointed at the fake): two proposals by different providers
+  from the brief alone, a synthesis of both exact proposal Artifacts, refusal
+  without Codex, a stop after the first proposal reusing it, and a pinned spec.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
   writing one store all succeed (no "database is locked"), also when they
   all find the store missing and create it together.

@@ -38,6 +38,22 @@ test('both repository Workflow files parse and resolve with the same schema', ()
   assert.deepEqual(se.workflow, { id: 'software-engineering', version: 1 })
 })
 
+test('the Brainstorm file: two proposals from the brief alone, then a synthesis of both exact proposals', () => {
+  const roles: AvailableCapabilities = { ...available, workers: new Set(['brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']) }
+  const spec = resolve(parseWorkflow(fixture('brainstorm.yaml')), roles)
+  const step = (id: string) => spec.steps.find((s) => s.id === id) as { capabilities: string[]; inputs: Record<string, string>; dependsOn?: string[]; outputs: string[]; instructions?: string }
+  assert.deepEqual(spec.steps.map((s) => s.id), ['idea-a', 'idea-b', 'synthesis'])
+  assert.deepEqual([step('idea-a').inputs, step('idea-b').inputs], [{ brief: '$work.input' }, { brief: '$work.input' }])
+  assert.deepEqual(step('idea-b').dependsOn ?? [], [])
+  assert.deepEqual(step('synthesis').dependsOn, ['idea-a', 'idea-b'])
+  assert.deepEqual(step('synthesis').inputs, { brief: '$work.input', 'proposal-a': '$steps.idea-a.proposal', 'proposal-b': '$steps.idea-b.proposal' })
+  assert.deepEqual(['idea-a', 'idea-b', 'synthesis'].map((id) => step(id).capabilities), [['brainstorm.idea-a'], ['brainstorm.idea-b'], ['brainstorm.synthesis']])
+  assert.equal(step('idea-a').instructions, step('idea-b').instructions)
+  assert.ok(spec.steps.every((s) => 'capabilities' in s), 'no verify, effect or accept step')
+  const noCodex = { ...roles, workers: new Set(['brainstorm.idea-a', 'brainstorm.synthesis']) }
+  assert.deepEqual(problems(fixture('brainstorm.yaml'), noCodex), ['step idea-b needs Worker capability brainstorm.idea-b, which no enabled Worker provides'])
+})
+
 test('steps resolve in dependency order, file order among ready steps, with sorted dependsOn', () => {
   const spec = resolve(parseWorkflow(`${base}  - id: c
     dependsOn: [b, a]
