@@ -18,7 +18,7 @@ export interface Parsed {
   /** Models the CLI says it used, when it says. */
   servedModels?: string[]
   /** `inputTokens` is the total; fresh input is it minus the cache fields, which are absent when the CLI did not split them. */
-  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; /** List-price cost the CLI computed itself, summed over its results; absent when it did not report one. */ costUsd?: number; source: string }
+  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; /** API-equivalent cost the CLI estimated client-side, summed over its results; absent when it did not report one. */ costUsd?: number; source: string }
 }
 
 /** Variables kept from the host environment; credentials come only from the account. */
@@ -54,7 +54,24 @@ interface ClaudeResult {
   modelUsage?: Record<string, unknown>
 }
 
-/** `stream-json` prints one `result` per turn, so a follow-up turn (a background command's notification) adds one; usage is summed over all of them. */
+interface Counts { input?: number; read?: number; write?: number; output?: number; cost?: number }
+
+const count = (n: unknown) => (Number.isInteger(n) ? (n as number) : undefined)
+const price = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? n : undefined)
+
+/** One model's entry of a result's `modelUsage`, which includes the models of subagents. */
+function modelCounts(m: unknown): Counts {
+  const u = (m ?? {}) as Record<string, unknown>
+  return { input: count(u.inputTokens), read: count(u.cacheReadInputTokens), write: count(u.cacheCreationInputTokens), output: count(u.outputTokens), cost: price(u.costUSD) }
+}
+
+/** A result's `usage`, which excludes subagents; its cost, `total_cost_usd`, includes them. */
+function usageCounts(r: ClaudeResult): Counts {
+  const u = r.usage ?? {}
+  return { input: count(u.input_tokens), read: count(u.cache_read_input_tokens), write: count(u.cache_creation_input_tokens), output: count(u.output_tokens), cost: price(r.total_cost_usd) }
+}
+
+/** `stream-json` prints one `result` per turn, so a follow-up turn (a background command's notification) adds one; usage is summed over all of them, and over every model in each. */
 export function parseClaude(stdout: string): Parsed {
   const results: ClaudeResult[] = []
   for (const line of stdout.split('\n')) {
@@ -67,6 +84,8 @@ export function parseClaude(stdout: string): Parsed {
   }
   const last = results.at(-1)
   if (!last) return { ok: false, message: `unreadable Claude Code output: ${stdout.slice(0, 200)}` }
+  /** `modelUsage` counts subagents, `usage` does not; use it when every result has it (a result that has none leaves the whole stream on `usage`). */
+  const byModel = results.every((r) => r.modelUsage && Object.keys(r.modelUsage).length > 0)
   let input = 0
   let read = 0
   let write = 0
@@ -76,23 +95,26 @@ export function parseClaude(stdout: string): Parsed {
   let counted = true
   let split = true
   let priced = true
-  for (const { usage: u, total_cost_usd: c } of results) {
-    if (u && Number.isInteger(u.input_tokens) && Number.isInteger(u.output_tokens)) {
-      input += u.input_tokens!
-      output += u.output_tokens!
+  for (const r of results) {
+    const parts: Counts[] = byModel ? Object.values(r.modelUsage!).map(modelCounts) : [usageCounts(r)]
+    for (const p of parts) {
+      if (p.input === undefined || p.output === undefined) {
+        counted = false
+        continue
+      }
+      input += p.input
+      output += p.output
       // The split is reported whole or not at all, so a half-reported one never reads as zero cache.
-      if (Number.isInteger(u.cache_read_input_tokens) && Number.isInteger(u.cache_creation_input_tokens)) {
-        read += u.cache_read_input_tokens!
-        write += u.cache_creation_input_tokens!
+      if (p.read !== undefined && p.write !== undefined) {
+        read += p.read
+        write += p.write
       } else {
         split = false
       }
-      input += (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
-    } else {
-      counted = false
+      input += (p.read ?? 0) + (p.write ?? 0)
+      if (p.cost === undefined) priced = false
+      else cost += p.cost
     }
-    if (typeof c === 'number' && Number.isFinite(c)) cost += c
-    else priced = false
   }
   return {
     ok: last.is_error === false,
@@ -104,7 +126,9 @@ export function parseClaude(stdout: string): Parsed {
           ...(split ? { cacheReadTokens: read, cacheWriteTokens: write } : {}),
           outputTokens: output,
           ...(priced ? { costUsd: cost } : {}),
-          source: `claude-code result.usage over ${results.length} result(s) (input_tokens is fresh; total adds cache_creation and cache_read)`,
+          source: byModel
+            ? `claude-code modelUsage (includes subagents) over ${results.length} result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`
+            : `claude-code usage (excludes subagents) over ${results.length} result(s) (input_tokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`,
         }
       : undefined,
   }

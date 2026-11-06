@@ -75,11 +75,15 @@ model is recorded for it.
 5. **Record:** usage from the CLI's own output (unknown when absent), summed
    over every turn: a background command's completion notification starts a
    second turn, and Claude Code's `stream-json` prints a `result` for each,
-   where its `json` format prints only the last. Fields: the total
+   where its `json` format prints only the last. Claude Code's tokens come
+   from each result's `modelUsage`, summed over its models, because that counts
+   subagents while `usage` does not; `usage` is the fallback only when a result
+   has no `modelUsage`, and `source` says which was used. Fields: the total
    `inputTokens` plus `cacheReadTokens` and `cacheWriteTokens` when the CLI
    splits them (Codex reports no cache writes, so it has no write field), so
    fresh input is the total minus both; and, for Claude Code only, `costUsd`,
-   the list-price `total_cost_usd` the CLI computes itself, present only when
+   the CLI's client-side API-equivalent estimate (`costUSD` per model, or
+   `total_cost_usd`), not what the subscription is billed, present only when
    every result reports one. The last result decides success and the message;
    lines that are not results are ignored. Then the account, CLI path and
    version (asked once, on first use, never at startup), and the stdout's last

@@ -17,8 +17,8 @@ export interface WorkSummary {
   usage: {
     inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; freshInputTokens: number; outputTokens: number
     observedAttempts: number; unsplitAttempts: number; unknownAttempts: number
-    /** The CLI's own list-price cost, over the attempts that report it; absent when none does. */
-    costUsd?: number
+    /** The CLI's client-side API-equivalent cost estimate (not what a subscription is billed), over the attempts that report it, old records' `costUsd` included; absent when none does. */
+    costUsdEstimate?: number
   }
 }
 
@@ -33,7 +33,7 @@ export function summarize(record: WorkRecord): WorkSummary {
         usage.inputTokens += event.usage.inputTokens
         usage.outputTokens += event.usage.outputTokens
         usage.observedAttempts += 1
-        if (event.usage.costUsd !== undefined) usage.costUsd = (usage.costUsd ?? 0) + event.usage.costUsd
+        if (event.usage.costUsd !== undefined) usage.costUsdEstimate = (usage.costUsdEstimate ?? 0) + event.usage.costUsd
         const { cacheReadTokens, cacheWriteTokens = 0 } = event.usage
         if (cacheReadTokens === undefined) {
           usage.unsplitAttempts += 1

@@ -69,7 +69,7 @@ test('a direct Task runs Claude Code in its own worktree and records the exact r
   assert.equal(ran.status, 0, ran.stderr)
   const record = show(ran.stdout.trim())
   const observed = record.events.find((e) => e.type === 'observed')!
-  assert.deepEqual(observed.worker, { ref: 'claude-code/default', account: 'default', command: fakeAgent, version: '0.0.0-fake (Claude Code)', servedModels: ['served-default'] })
+  assert.deepEqual(observed.worker, { ref: 'claude-code/default', account: 'default', command: fakeAgent, version: '0.0.0-fake (Claude Code)', servedModels: ['served-default', 'served-subagent'] })
   const result = tree(record.state.steps.task.outputs.result!)
   assert.equal(execFileSync('git', ['-C', gitRepo, 'show', `${result.commit}:NOTE.md`], { encoding: 'utf8' }), 'edited by claude\n')
   assert.equal(execFileSync('git', ['-C', gitRepo, 'status', '--porcelain'], { encoding: 'utf8' }), '')
