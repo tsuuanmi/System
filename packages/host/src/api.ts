@@ -32,7 +32,7 @@ function paramsOf(shape: Shape | undefined): string {
 }
 
 /** `host.hello` is answered by the connection itself, before the table. */
-const HELLO = { agent: true, params: '`version: string`, `caller: { type: "human" | "agent", operatorId: string }`', summary: 'The first request of a connection: `{ version }`.' }
+const HELLO = { agent: true, params: '`version: string`, `caller: { type: "human" | "agent", operatorId: string }`', summary: 'The first request of a connection: `{ version, packageVersion }`.' }
 
 /** One table row per method: its agent flag, its params and what it does. */
 export function apiReference(methods: Methods): string {

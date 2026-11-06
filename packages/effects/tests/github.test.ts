@@ -35,7 +35,7 @@ before(async () => {
       const headSha = (branch: string) => {
         try { return execFileSync('git', ['-C', bareOf, 'rev-parse', `refs/heads/${branch}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
       }
-      const view = (p: Pull) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, head: { ref: p.head, sha: headSha(p.head) }, merged_at: p.merged ? '2026-11-06T00:00:00Z' : null, merge_commit_sha: p.mergeCommit ?? null })
+      const view = (p: Pull) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, base: { ref: p.base }, head: { ref: p.head, sha: headSha(p.head) }, merged_at: p.merged ? '2026-11-06T00:00:00Z' : null, merge_commit_sha: p.mergeCommit ?? null })
       if (req.method === 'GET' && url.pathname === '/repos/tester/scratch/pulls') {
         const head = url.searchParams.get('head')!.split(':')[1]
         const state = url.searchParams.get('state') ?? 'open'
@@ -371,4 +371,44 @@ test('reconcile with merge: true is applied only when merged at the commit, abse
   assert.equal((await publisher.reconcile(later)).state, 'absent')
   const dead = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig({ apiUrl: 'http://127.0.0.1:1' }))
   assert.equal((await dead.reconcile(i)).state, 'unknown')
+})
+
+/** A pull request for the System branch that someone opened against another base. */
+const foreignPull = (extra: Partial<Pull> = {}): Pull => ({ number: 1, head: 'system/1111-aaaa', base: 'other', draft: false, title: 'by hand', node_id: 'PR_1', ...extra })
+
+test('an open pull request for the branch that targets another base fails, naming both, and is neither merged nor retargeted', async () => {
+  for (const params of [merging, {}]) {
+    fresh()
+    const artifacts = store()
+    const { work } = setup()
+    pulls.push(foreignPull())
+    const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
+    const outcome = await publisher.apply(intent(await subjectOf(artifacts, work), params))
+    assert.equal(outcome.state, 'failed', outcome.reason)
+    assert.match(outcome.reason, /#1/)
+    assert.match(outcome.reason, /other/)
+    assert.match(outcome.reason, /main/)
+    assert.equal(mergeCalls().length, 0)
+    assert.equal(pulls.length, 1)
+    assert.deepEqual([pulls[0]!.base, pulls[0]!.merged], ['other', undefined])
+    assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0)
+  }
+})
+
+test('a pull request merged into another base is not taken for a merge into the configured one', async () => {
+  fresh()
+  const artifacts = store()
+  const { work } = setup()
+  const subject = await subjectOf(artifacts, work)
+  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
+  await publisher.apply(intent(subject, merging))
+  pulls[0]!.base = 'other'
+  const i = intent(subject, merging)
+  assert.equal((await publisher.reconcile(i)).state, 'absent')
+  calls.length = 0
+  const outcome = await publisher.apply(i)
+  assert.equal(outcome.state, 'applied', outcome.reason)
+  assert.equal(pulls.length, 2)
+  assert.equal(pulls[1]!.base, 'main')
+  assert.equal(pulls[1]!.merged, true)
 })

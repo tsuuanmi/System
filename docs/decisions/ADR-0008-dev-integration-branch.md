@@ -36,6 +36,15 @@ decision about what reaches `main` for themselves.
    or System effect does it. This replaces "System never merges" in ADR-0004
    decision 10 for `dev`, and keeps it for every other branch.
 
+## Clarification (2026-11-07)
+
+"The required checks" in decision 2 means System's own verifier:
+`code.required-checks` over `.system/checks.yaml`, passed on the exact commit.
+System does **not** wait for GitHub's CI. GitHub branch protection, if
+configured, can still refuse the merge (HTTP 405); that is recorded as
+`failed` and not retried. A pull request for the `system/<work>` branch that
+targets any other base is never merged or retargeted: the outcome is `failed`.
+
 ## Consequences
 
 - System's verified changes reach `dev` without waiting. The operator

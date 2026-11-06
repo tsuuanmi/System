@@ -26,8 +26,11 @@ await serving.stop()                                // server, then the Host cor
   `-32600` with `id: null`, and the Host closes the connection.
 - **Handshake.** The first request must be `host.hello` with
   `{ version, caller: { type: "human" | "agent", operatorId } }`. `version` is
-  the CLI package version; another version is refused with an error that says
-  `restart the Host: systemctl --user restart system`. The caller is kept for
+  the code version (`VERSION`): a short sha256 over the built `lib/**/*.js`
+  of the System packages, computed once when the Host starts and by each
+  client for its own files. Another version is refused with an error that says
+  `restart the Host: systemctl --user restart system` (or restart `system host`).
+  The reply carries `packageVersion`, the `package.json` version, for display only. The caller is kept for
   the connection and passed to every handler. Until a hello succeeds, any other
   method is refused.
 - **Methods.** A table `method -> { params, handler, agent }`: `params` is a
@@ -58,7 +61,7 @@ await serving.stop()                                // server, then the Host cor
 
 | Method | Agent | Params | Result |
 | --- | --- | --- | --- |
-| `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string }` | The first request of a connection: `{ version }`. |
+| `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string }` | The first request of a connection: `{ version, packageVersion }`. |
 | `host.ping` | yes | none | Whether the Host answers: `{ version, pid, works, recordBytes }`. |
 | `host.status` | yes | none | The memory report (C18), counted from the records: the same `{ version, pid, works, recordBytes }`, for the growth budget. |
 | `work.submit` | yes | `workflow?: string`, `capabilities?: string[]`, `input?: string`, `commandId?: string` | Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. |

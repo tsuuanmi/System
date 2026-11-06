@@ -363,6 +363,10 @@ written first.
     both, then one terminal event`.
 - [ ] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
   the Standards axis), the simplification pass, and the growth record.
+  *(Spec review 2026-11-07, three defects fixed: `git.publish` now matches a
+  pull request by head and base and fails on one aimed elsewhere; the version
+  handshake is a hash of the built code, not the package version; ADR-0008
+  "required checks" clarified as System's own verifier.)*
 
 ### O — Orchestrator and Goal ([ADR-0009](docs/decisions/ADR-0009-goals-and-orchestrators.md))
 

@@ -1,6 +1,6 @@
 /**
  * The Host core (PROP-0004 C1, C2, C8, C11): the one process that owns every
- * Work of a home, in-process for now (the socket is H3). It takes the Host
+ * Work of a home, in-process (the socket is served by `packages/host`). It takes the Host
  * lock, owns the `WorkController`, and runs each Work-changing operation
  * through one commit lane, so two operations never interleave their decisions.
  * Attempts execute outside the lane and come back through it to be observed.
