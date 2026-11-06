@@ -35,6 +35,26 @@ IDs** (plus the original brief). This tests divergent perspectives without
 conversation handoff. Each role is a **Workflow step**, not a new singleton
 component. A future critique step or review capability remains optional.
 
+## System 1 as a reference: what to copy conceptually
+
+This section is **a source audit of a different product**, not an instruction
+to migrate its engine or import its packages. Reference version:
+[`system_1` at `f199a277`](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7).
+
+| System 1 mechanism | Evidence | Adapt for System Brainstorm |
+|---|---|---|
+| Independent team members propose before seeing others' proposals | [Team design](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/docs/design/teams.md), [`brainstorm` template](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/docs/reference/workflow-templates.md) | **Adopt principle**: the two idea steps receive only the initial brief. Never pass the first output to the second; the third step receives two immutable proposal Artifact IDs. |
+| Family/account diversity, recorded fallback | [ADR-0035](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/docs/decisions/adr/0035-one-family-teams-keep-distinct-accounts.md), [team account tests](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/workflow/tests/team-accounts.spec.ts) | **Adapt small**: use one Claude account and one Codex account for different perspectives. Record the actual route. If distinct providers cannot run, report/fail for the first proof rather than silently execute both as Claude. No generic team routing framework yet. |
+| Strict typed proposal/ballot contracts and evidence | [`teams.ts`](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/workflow/src/teams.ts) | **Borrow tests and output format ideas**: ask for alternatives, rationale, assumptions, objections; store the files and source attempts. Do **not** introduce required `VerifierPort` for idea quality in V0. |
+| Sealed ballots, deterministic tally, bounded debate | [Team design](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/docs/design/teams.md), [brainstorm template](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/docs/reference/workflow-templates.md) | **Defer**: useful after measured cases needing consensus or adversarial critique. A vote is advice, not truth or permission to accept/publish. |
+| Persistent conversations and team session-affinity | [Team design](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/docs/design/teams.md), [worker sessions](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/worker-sessions/README.md) | **Do not port**: System's canonical handoff is Artifact IDs; each current native agent attempt is fresh. |
+| Two independent literature reviews, evidence table, independent critique, conclusion | [Scientific Research profile](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/profile-scientific-research/src/index.ts) | **Future Research reference**: valuable composition template when Website Worker and structured research evaluation are in scope. Keep the graph in YAML, not TypeScript plugin registration. |
+
+**Most portable insight:** independent proposals + immutable inputs + explicit
+synthesis + provenance. This yields a useful three-attempt flow without
+porting `workflow/src/teams.ts`, persistent sessions, member ballots,
+dynamic DAG growth, team voting, or a new plugin manager.
+
 ## What the current implementation actually supports
 
 | Existing implementation | Evidence | Implication |
@@ -125,18 +145,14 @@ Add a new Worker provider only when a real workflow requires a missing
 modality/tool/API/provider or measurable diversity unavailable through
 existing runtimes, and a compatibility/credential/usage contract is proven.
 
-Likewise, **do not port** System 1's monolithic agent-workers / team voting
-or DSH's Agent Teams just to coordinate three Artifact-bound steps.
-For comparison, upstream [DSH Agent Teams](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/team/README.md)
-has its own Session/shared-task authority and model-facing tools; the
-[experimental variant](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/experimental/agent-team/README.md)
-uses one shared checkout and one process. It is **not** a drop-in for
-the pinned DSH `66491b0` or System's external Claude/Codex artifact contract.
+Likewise, **do not port** System 1's monolithic team/agent-workers engine
+just to coordinate three Artifact-bound steps. The audited System 1 team
+requires persistent session affinity, ballot/tally contracts and dynamic
+round management; none is required for the first System Brainstorm.
 [OpenAI Agents SDK orchestration patterns](https://openai.github.io/openai-agents-python/multi_agent/)
-show that explicit code-driven composition is a viable alternative to
-building a chat-based agent-team runtime. [Anthropic's research system](https://www.anthropic.com/engineering/multi-agent-research-system)
-is a later, parallel research comparison, not a requirement for three
-workers to message each other.
+and [Anthropic's research system](https://www.anthropic.com/engineering/multi-agent-research-system)
+are external comparison patterns, not dependencies or proof of a need for
+another provider.
 
 ## Research workflow versus future Website research
 

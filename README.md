@@ -32,8 +32,12 @@ stacked [draft PR #2](https://github.com/tsuuanmi/System/pull/2) (not merged).
   — upstream sources, risks and experiments.
 - [Current MVP-0 plugin audit](docs/research/RES-0005-plugin-reuse-audit.md)
   — source-backed reuse/adapt/keep/defer assessment against PR #2 and pinned DSH.
+- [Brainstorm feasibility and System 1 reference](docs/research/RES-0006-brainstorm-workflow-feasibility.md)
+  — three Worker attempts on the existing Claude/Codex runtimes.
 - [Draft post-MVP roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md)
-  — staged experiments, gates and possible plugin additions; not an accepted ADR.
+  — Brainstorm first; Research quality verification and Website Worker later.
+- [Next implementation plan](PLAN.md) — local-agent checklist and test gates;
+  implementation belongs on PR #2 or a separately chosen code branch.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
   and [bootstrap guide](docs/governance/bootstrap.md) — reuse this governance

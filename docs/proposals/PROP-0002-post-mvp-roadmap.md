@@ -43,6 +43,15 @@ third Worker/provider or more complex engine.**
   Verifier and Effect capabilities. Do not create an Agent Team or new Work
   authority for the first three-step Brainstorm.
 
+## Reference guidance from System 1
+
+[RES-0006](../research/RES-0006-brainstorm-workflow-feasibility.md#system-1-as-a-reference-what-to-copy-conceptually)
+audits System 1's built-in Brainstorm team, account-family diversity, ballots,
+debate and scientific-research profile. **Adopt independent proposals,
+provenance, and explicit synthesis; defer votes, session-affinity, persistent
+team members and full team orchestration.** The current System Work Controller
+and Workflow YAML remain authoritative.
+
 ## Ordered implementation roadmap
 
 | Stage | Scope and output | Required gate | Priority |
