@@ -8,6 +8,11 @@
   snapshot is older than the Work (`run`, `retry`, `cancel` and `decide`
   refused, also after a host died between its update and its second mark; a
   Work with no mark, and a host retrying its own Work, run).
+- `seam.test.ts` — the controller's dispatch, execute and observe phases
+  with the [fixture](../../../test-support/README.md): Brainstorm and Software
+  Engineering event sequences, a cancel request while an attempt is held at a
+  barrier, and seeds 1 to 50 of random delays (replay matches, no event lost
+  or repeated).
 - `effects.test.ts` — effect steps with a scripted remote: intent before
   effect, reconciliation after a lost host or a throw, the unknown-outcome
   hold and its resumption, approval and denial, retrying only the effect.
