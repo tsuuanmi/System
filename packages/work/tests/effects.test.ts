@@ -11,7 +11,6 @@ import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { memoryWorkTable, until } from '../../../test-support/memory.ts'
-import { LocalControl } from '../../../test-support/process.ts'
 import { WorkController, type SpecStore } from '../src/controller.ts'
 import type { Verdict } from '../src/kinds.ts'
 import type { Caller, WorkRecord } from '../src/record.ts'
@@ -78,7 +77,7 @@ function controller(w: ReturnType<typeof world>, options: Options = {}) {
       return found ? { state: 'applied', reason: 'found on the remote', detail: found } : { state: 'absent', reason: 'not on the remote' }
     }))(intent, w.remote),
   })
-  return new WorkController(w.table, w.specStore, capabilities, new LocalControl())
+  return new WorkController(w.table, w.specStore, capabilities)
 }
 
 async function admit(c: WorkController, w: ReturnType<typeof world>, yaml = SE) {

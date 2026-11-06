@@ -6,8 +6,7 @@ Helpers shared by the tests, so each stand-in has one implementation:
   store and Work table in memory (durable before visible, like DSH), and
   `until` for bounded waits.
 - [process.ts](process.ts) — `processSpawner` (the DSH subprocess contract:
-  process group, SIGTERM, SIGKILL after the grace) and `LocalControl` (one
-  process, no other host).
+  process group, SIGTERM, SIGKILL after the grace).
 - [fixture.ts](fixture.ts) — the deterministic concurrency fixture: a
   `WorkController` with fake Workers whose attempts are held at named barriers
   (`hold`, `arrived`, `release`) or delayed by a seeded generator

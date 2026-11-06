@@ -2,11 +2,11 @@
  * The Host lock (PROP-0004 C9): an abstract Unix socket named after the
  * canonical `DSH_HOME`. Whoever binds it is the Host for that home; the kernel
  * releases it when the process dies, so no lock file can be left behind.
- * Linux only. It does not replace `FileControl` before the cutover (H4).
+ * Linux only.
  */
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { createConnection, createServer } from 'node:net'
+import { createServer } from 'node:net'
 import { WorkError } from './errors.ts'
 
 export interface HostLock {
@@ -17,7 +17,7 @@ export interface HostLock {
 }
 
 /** The abstract socket name for a canonical home: a NUL byte first, so no file exists. */
-export function hostSocketName(canonicalHome: string): string {
+function hostSocketName(canonicalHome: string): string {
   return `\0system-host:${createHash('sha256').update(canonicalHome).digest('hex')}`
 }
 
@@ -42,19 +42,4 @@ export async function acquireHostLock(home: string, options: { platform?: NodeJS
     home: canonical,
     release: () => new Promise<void>((closed) => { server.close(() => closed()) }),
   }
-}
-
-/** Whether a Host holds `home` now: a connection to its lock is answered. It takes nothing, so it cannot make a starting Host fail. */
-export function hostHeld(home: string): Promise<boolean> {
-  let canonical: string
-  try {
-    canonical = realpathSync(home)
-  } catch {
-    return Promise.resolve(false)
-  }
-  return new Promise((answer) => {
-    const socket = createConnection({ path: hostSocketName(canonical) })
-    socket.once('connect', () => { socket.destroy(); answer(true) })
-    socket.once('error', () => answer(false))
-  })
 }

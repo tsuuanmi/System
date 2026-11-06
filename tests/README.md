@@ -13,7 +13,8 @@ GitHub credentials. Run with `corepack pnpm smoke`.
   child process: `host.hello` and `host.ping` on `host.sock`, a second Host
   refused, the Work commands reaching the running Host, SIGTERM and SIGINT
   stop it with exit 0 and free the home, a killed Host's stale socket is
-  replaced, and what `init` says about the service.
+  replaced, leftover control files of the old mode ignored and left in place, and
+  what `init` says about the service.
 - [cli-host.test.ts](cli-host.test.ts) — H4b-1: the thin client: no Host is one
   line and exit 1, a Host that does not answer is named, an error is one line
   (a stack only with `SYSTEM_DEBUG=1`), Ctrl-C detaches while the Work finishes
@@ -58,17 +59,12 @@ The five defects of 2026-11-06 stay where their tests were written:
 - SQLite store creation (processes all finding the store missing): `parallel
   commands that all find the store missing create it together without failing`
   in [concurrency.test.ts](concurrency.test.ts).
-- The empty lock (a host that died while publishing): `an empty lock left long
-  ago (a host that died while publishing) is stale and taken over` in
-  [control.test.ts](../packages/work/tests/control.test.ts).
-- Stale-lock removal (taking over a lock a live holder had replaced): `a stale
-  lock replaced by a live holder before the takeover reads it again survives`
-  and `two hosts racing for a stale lock never both win`, in
-  [control.test.ts](../packages/work/tests/control.test.ts).
-- The stale snapshot (a host acting on an older copy of a Work): `a host whose
-  snapshot is older than the Work refuses to run it: no second dispatch, no
-  event overwritten`, and its `retry`, `cancel` and `decide` siblings, in
-  [controller.test.ts](../packages/work/tests/controller.test.ts).
+- The empty lock, stale-lock removal and the stale snapshot went with the
+  per-Work files (R1). One Host per home replaces them: the tests are named in
+  the [Host's guarantees table](../docs/architecture/host.md#guarantees-and-the-tests-that-hold-them)
+  (`one Host per home`, `no change from a stale copy`), and
+  [host-process.test.ts](host-process.test.ts) shows the Host ignoring the old
+  control files.
 - The profile config (a boot rewriting a file another host reads): `a boot
   does not rewrite the profile root config another booting host may be reading`
   in [concurrency.test.ts](concurrency.test.ts).

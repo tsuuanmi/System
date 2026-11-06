@@ -57,11 +57,9 @@ type Soon<T> = T | Promise<T>
 
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
-  /** Refuses while a Host holds the home: the in-process commands below run their own controller. The thin client has no such rule. */
-  noHost(): Promise<void>
   admitFile(path: string, input: string | undefined): Promise<WorkRecord>
   admitTask(capabilities: string[], input: string | undefined): Promise<WorkRecord>
-  /** Run (or, through the Host, start and follow) the Work until it is terminal. */
+  /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
   list(): Soon<{ id: string; status: string; specId: string }[]>
@@ -148,7 +146,6 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     })
   const decide = (decision: 'approved' | 'denied') => (workId: string, options: { reason: string }) => {
     select(async () => {
-      await host.work().noHost()
       const record = await host.work().get(workId)
       if (!record) throw new Error(`no Work ${workId}`)
       io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
@@ -284,7 +281,6 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
-        await commands.noHost()
         const admitted = options.workflow
           ? await commands.admitFile(options.workflow, options.input)
           : await commands.admitTask(options.capability!, options.input)
@@ -299,7 +295,6 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--wait', 'wait until the running host has recorded the cancellation')
     .action((workId: string, options: { reason: string; wait?: boolean }) => {
       select(async () => {
-        await host.work().noHost()
         const outcome = await host.work().cancel(workId, options.reason)
         if (outcome !== 'requested') {
           io.out(`${workId} cancelled\n`)
@@ -319,7 +314,6 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')
     .action((workId: string, options: { step?: string; worker?: string; reason: string; cancelOnInterrupt?: boolean }) => {
       select(async () => {
-        await host.work().noHost()
         return exitOf(await host.work().retry(workId, options.worker, options.reason, options.step, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
@@ -328,7 +322,6 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')
     .action((workId: string, options: { cancelOnInterrupt?: boolean }) => {
       select(async () => {
-        await host.work().noHost()
         return exitOf(await host.work().run(workId, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })

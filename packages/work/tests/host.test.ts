@@ -25,6 +25,30 @@ test('a second Host on the same home is refused; another home is not; a closed H
   await (await f.startHost(home)).close()
 })
 
+test('no copy of the store outlives its Host: a second Host is refused while one runs a Work, and the next one starts from what the first wrote', async () => {
+  const f = fixture()
+  const home = newHome()
+  const first = await f.startHost(home)
+  const { id } = await first.submit(f.admission('brainstorm.yaml'))
+  f.hold('idea-b')
+  const running = first.run(id)
+  await f.arrived('idea-b')
+  // The refused Host never loads the store, so it has no copy to act on.
+  await assert.rejects(f.startHost(home), /another Host already runs/)
+  f.release('idea-b')
+  const done = await running
+  const attempts = [...f.attempts]
+  assertConsistent(f, id)
+  await first.close()
+
+  const next = await f.startHost(home)
+  assert.deepEqual(next.get(id), done)
+  assert.deepEqual(next.interrupted(), [])
+  assert.deepEqual(types(await next.run(id)), types(done))
+  assert.deepEqual(f.attempts, attempts, 'a Work the first Host finished is not run again')
+  await next.close()
+})
+
 test('the lane runs one section at a time, in order, and a failure does not block the next', async () => {
   const lane = commitLane()
   const log: string[] = []

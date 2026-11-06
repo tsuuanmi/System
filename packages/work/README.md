@@ -6,7 +6,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 [architecture](../../docs/architecture/workflow-composition.md)).
 
 - **Injects:** `storageDomain`, `artifacts`. **Provides:** `ctx.capabilities`
-  (the Worker and verifier registry) and `ctx.work` (admission and the controller).
+  (the Worker and verifier registry) and `ctx.work` (the Host core's storage).
 - **Storage:** DSH storage domain `system_work` (version 1, SQLite), table
   `work`, one key per Work. A record holds the append-only events and the
   state they fold to; every change is one atomic `update(workId, fn)`.
@@ -22,7 +22,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   verifiers, route by capability with a reason for every candidate.
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay. No domain-specific branch.
-- [src/control.ts](src/control.ts) — `FileControl`: the per-Work lock and cancel request; `MemoryControl`, the same in memory for a Host.
+- [src/control.ts](src/control.ts) — `MemoryControl`: the per-Work lock and cancel request, in memory.
 - [src/host.ts](src/host.ts) — `Host` ([the Host](../../docs/architecture/host.md),
   H2, in process): takes the Host lock, owns the controller, runs every
   Work-changing operation through the commit lane, answers repeated
@@ -30,7 +30,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   `submit`, `run`, `retry`, `cancel`, `decide`, `get`, `list`, `replay`,
   `interrupted`, `uncertain`, `close`.
 - [src/host-lock.ts](src/host-lock.ts) — `acquireHostLock`: an abstract Unix
-  socket named after the canonical `DSH_HOME` (Linux only); `hostHeld` asks whether one is held, without taking it.
+  socket named after the canonical `DSH_HOME` (Linux only).
 - [src/lane.ts](src/lane.ts) — `commitLane`: sections run one at a time, in order.
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
   operator touches and usage from a Work's events (`system work report`):
@@ -44,41 +44,24 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   of what the operator asserts and a fixed notice; the preview and its
   secret warnings, over the parts, their names and the asserted fields.
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
-  add a conversation, admit a file or a direct Task, and `startHost`: the `Host` over the row's own table, specs and capabilities).
+  add a conversation, and `startHost`: the `Host` over the row's own table, specs and capabilities).
 
-## Cancel, takeover and one host per Work
+## Cancel and retry
 
-Each DSH host caches records in memory, so only the host that holds a Work's
-lock (`$DSH_HOME/system/control/<work>.lock`, its `<pid> <start time>` token
-(the start time from `/proc` where it exists), published by linking a
-complete file so it never exists empty; a dead pid's lock is stale, and so is
-one whose pid a different process now has; a stale lock is removed only
-under the `<work>.takeover` mutex, published the same way, after reading it
-again, so a live host's lock is never moved away; a fresh acquire never takes
-the mutex, and a mutex left by a dead host for over 10 s is removed once)
-writes that Work. A host reads the store once when it starts, so each
-controller has a host identity (a random ID and the time just before it opened
-the store) and marks every write in `<work>.written` (its ID and the time),
-before the table update and after it; a host that takes the lock when another
-host's mark is not older than its own load refuses ("changed since this
-command started") instead of acting on a stale copy. A host's own marks never
-fence it, and a Work with no mark is not fenced. The fence compares wall-clock
-times of one machine; a host that loads its copy in the few milliseconds
-between a crashed host's first mark and its database commit is not caught.
-`retry` and `approve` hold the lock from
-their check to the end of the run. `system work cancel` from another process writes a
-cancel request the running host polls every 250 ms; the host aborts its
-attempt, records `observed` (`cancelled`, with partial output) and `terminal`
-(`cancelled`, with the caller). With no live host, the cancel is recorded
-directly. `system work retry` appends `reopened` (caller, reason, optional
-Worker, the partial output as `previous`) and runs the step again as a new
-attempt: the Work keeps one history.
+The Host owns every Work, so a Work's lock and its cancel request live in
+memory (`MemoryControl`). A cancel of a running Work is a request its run polls
+every 250 ms: the run aborts its attempt, records `observed` (`cancelled`, with
+partial output) and `terminal` (`cancelled`, with the caller). With no run, the
+cancel is recorded directly. `system work retry` appends `reopened` (caller,
+reason, optional Worker, the partial output as `previous`) and runs the step
+again as a new attempt: the Work keeps one history. `retry` and `decide` hold
+the Work's lock from their check to the end of the run.
 
 ## Under the Host
 
-A `Host` is the one process that owns a home, so it needs neither
-`FileControl` nor the write fence; the old CLI path keeps them until the
-cutover (H4). Each decision of the controller (taking a Work's lock,
+A `Host` is the one process that owns a home, so no file lock or write fence
+is needed (the per-Work lock files, takeover mutex and write marks of the old
+per-command mode were removed in R1; the Host ignores any left over). Each decision of the controller (taking a Work's lock,
 dispatch, observe, cancel, decision, admission) is a section of the Host's
 commit lane; an attempt's execute phase runs outside it, and its observe
 re-enters it. The Works of a Host are run one `drive` per Work, and Works

@@ -10,7 +10,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Host, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
 import { memoryWorkTable } from './memory.ts'
-import { LocalControl } from './process.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
 const turn = () => new Promise((resolve) => setImmediate(resolve))
@@ -32,7 +31,6 @@ export function seeded(seed: number): () => number {
 
 export interface Fixture {
   controller: WorkController
-  control: LocalControl
   capabilities: Capabilities
   table: ReturnType<typeof memoryWorkTable>
   /** The step IDs of attempts started, in order. */
@@ -113,10 +111,9 @@ export function fixture(options: { seed?: number } = {}): Fixture {
   })
 
   const table = memoryWorkTable()
-  const control = new LocalControl()
-  const controller = new WorkController(table, specStore, capabilities, control)
+  const controller = new WorkController(table, specStore, capabilities)
   return {
-    controller, control, capabilities, table, attempts, remote,
+    controller, capabilities, table, attempts, remote,
     hold: (stepId) => { held.add(stepId) },
     arrived: (stepId) => (arrived.has(stepId) ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, go))),
     release: (stepId) => { held.delete(stepId); waiting.get(stepId)?.(); waiting.delete(stepId) },

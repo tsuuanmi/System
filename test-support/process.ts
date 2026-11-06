@@ -1,11 +1,10 @@
 /**
  * Process and host stand-ins shared by tests: a `Spawner` with the DSH
  * subprocess contract (a process group, SIGTERM on abort, SIGKILL after the
- * grace) and a `HostControl` for a single process.
+ * grace).
  */
 import { spawn } from 'node:child_process'
 import type { Spawner } from '@system/agents'
-import { WorkError, type CancelRequest, type HostControl, type WriteMark } from '@system/work'
 
 export const processSpawner: Spawner = {
   spawn(spec) {
@@ -26,41 +25,4 @@ export const processSpawner: Spawner = {
       stderr: () => stderr,
     }
   },
-}
-
-/** One process, no other host: a concurrent run in this process holds the Work. */
-export class LocalControl implements HostControl {
-  private readonly held = new Set<string>()
-  private readonly cancels = new Map<string, CancelRequest>()
-  private readonly writes = new Map<string, WriteMark>()
-
-  acquire(workId: string): () => void {
-    if (this.held.has(workId)) throw new WorkError(`${workId} is already being run`)
-    this.held.add(workId)
-    return () => { this.held.delete(workId) }
-  }
-
-  heldElsewhere(workId: string): boolean {
-    return this.held.has(workId)
-  }
-
-  requestCancel(workId: string, request: CancelRequest): void {
-    this.cancels.set(workId, request)
-  }
-
-  cancelRequest(workId: string): CancelRequest | undefined {
-    return this.cancels.get(workId)
-  }
-
-  clearCancel(workId: string): void {
-    this.cancels.delete(workId)
-  }
-
-  lastWrite(workId: string): WriteMark | undefined {
-    return this.writes.get(workId)
-  }
-
-  noteWrite(workId: string, write: WriteMark): void {
-    this.writes.set(workId, write)
-  }
 }

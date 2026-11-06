@@ -40,7 +40,7 @@ ADR-0008); `system approve` is for a human at a terminal.
 - [Current MVP-0 plugin audit](docs/research/RES-0005-plugin-reuse-audit.md)
   — source-backed reuse/adapt/keep/defer assessment against PR #2 and pinned DSH.
 - [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff and no new Team engine.
-- [Work ownership and recovery](docs/architecture/work-ownership-and-recovery.md) — B4 regression and fixes.
+- [Work ownership and recovery](docs/architecture/work-ownership-and-recovery.md) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
 - [PR #2 source review](docs/research/RES-0007-brainstorm-and-concurrency-review.md) — Brainstorm, concurrency hypotheses and the next evaluation.
 - [Brainstorm evaluation](docs/research/RES-0008-brainstorm-evaluation.md) — B3: five briefs, three arms, blind scores by a model judge.
 - [Brainstorm feasibility and System 1 reference](docs/research/RES-0006-brainstorm-workflow-feasibility.md)

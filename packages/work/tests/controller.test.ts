@@ -4,9 +4,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { memoryWorkTable, snapshotWorkTable } from '../../../test-support/memory.ts'
-import { LocalControl } from '../../../test-support/process.ts'
-import { WorkController, type HostIdentity, type SpecStore, type WorkTable } from '../src/controller.ts'
+import { memoryWorkTable } from '../../../test-support/memory.ts'
+import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
 import { WorkError } from '../src/errors.ts'
 import { fold, type WorkRecord } from '../src/record.ts'
 import type { Verdict } from '../src/kinds.ts'
@@ -52,7 +51,7 @@ interface Harness {
   specs: ReturnType<typeof memorySpecs>
 }
 
-function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: WorkTable; specs?: ReturnType<typeof memorySpecs>; control?: LocalControl; host?: HostIdentity } = {}): Harness {
+function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: WorkTable; specs?: ReturnType<typeof memorySpecs> } = {}): Harness {
   // Tests that read `table.rows` pass no table; the snapshot tests read their own `disk`.
   const table = (options.table ?? memoryWorkTable()) as ReturnType<typeof memoryWorkTable>
   const specs = options.specs ?? memorySpecs()
@@ -97,7 +96,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
     async apply(intent) { return { state: 'applied', reason: 'published', detail: { subject: intent.subject } } },
     async reconcile() { return { state: 'absent', reason: 'nothing published' } },
   })
-  return { controller: new WorkController(table, specs, capabilities, options.control ?? new LocalControl(), options.host), capabilities, calls, verdicts, table, specs }
+  return { controller: new WorkController(table, specs, capabilities), capabilities, calls, verdicts, table, specs }
 }
 
 async function input(h: Harness): Promise<string> {
@@ -242,7 +241,7 @@ test('a Worker that disappears after admission fails the Work with a missing-cap
   const h = harness()
   const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
-  const bare = new WorkController(h.table, h.specs, new Capabilities(), new LocalControl())
+  const bare = new WorkController(h.table, h.specs, new Capabilities())
   const done = await bare.run(admitted.id)
   assert.equal(done.state.status, 'failed')
   assert.match(done.state.reason!, /no enabled Worker provides research, web-search/)
@@ -444,119 +443,4 @@ test('the verifier is pinned at admission with its version: another version at r
   assert.equal(verified?.type === 'verified' && verified.verdict, 'error')
   assert.match(verified?.type === 'verified' ? verified.reason : '', /pinned fake-verifier@1 at admission; fake-verifier@2 is enabled now/)
   assert.equal(done.state.status, 'failed')
-})
-
-test('a host whose snapshot is older than the Work refuses to run it: no second dispatch, no event overwritten', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const control = new LocalControl()
-  const first = harness({ table: snapshotWorkTable(disk), control })
-  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  // A second process opens the store now, then the first runs the Work to the end and releases it.
-  const stale = harness({ table: snapshotWorkTable(disk), control, specs: first.specs })
-  await first.controller.run(admitted.id)
-  const finished = structuredClone(disk.get(admitted.id))
-  await assert.rejects(() => stale.controller.run(admitted.id), /changed since this command started/)
-  assert.equal(stale.calls.length, 0)
-  assert.deepEqual(disk.get(admitted.id), finished)
-})
-
-test('a retry from a host whose snapshot is older than the Work is refused: the Work is not reopened twice', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const control = new LocalControl()
-  const specs = memorySpecs()
-  let fail = true
-  const worker: Partial<WorkerPort> = {
-    async run(request): Promise<WorkerResult> {
-      if (fail) return { status: 'failed', outputs: {}, reason: 'scripted' }
-      const out = id(`${request.attemptId}/result`)
-      specs.stored.add(out)
-      return { status: 'succeeded', outputs: { result: out } }
-    },
-  }
-  const first = harness({ table: snapshotWorkTable(disk), control, specs, worker })
-  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  assert.equal((await first.controller.run(admitted.id)).state.status, 'failed')
-  // A second process opens the store while the Work is failed; the first retries it to success.
-  const stale = harness({ table: snapshotWorkTable(disk), control, specs, worker })
-  fail = false
-  assert.equal((await first.controller.retry(admitted.id, { caller, reason: 'again' })).state.status, 'succeeded')
-  const finished = structuredClone(disk.get(admitted.id))
-  await assert.rejects(() => stale.controller.retry(admitted.id, { caller, reason: 'again too' }), /changed since this command started/)
-  assert.deepEqual(disk.get(admitted.id), finished)
-})
-
-test('a host that crashes between the table update and the second mark still fences a host loaded before the write', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const control = new LocalControl()
-  const first = harness({ table: snapshotWorkTable(disk), control })
-  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  const stale = harness({ table: snapshotWorkTable(disk), control, specs: first.specs })
-  // The first host dies after its first write reached the store, before the mark that follows it.
-  const noteWrite = control.noteWrite.bind(control)
-  const before = disk.get(admitted.id)!.events.length
-  control.noteWrite = (workId, write) => {
-    if (disk.get(workId)!.events.length > before) throw new Error('host lost')
-    noteWrite(workId, write)
-  }
-  await assert.rejects(() => first.controller.run(admitted.id), /host lost/)
-  control.noteWrite = noteWrite
-  const written = structuredClone(disk.get(admitted.id))
-  assert.ok(written!.events.length > 1)
-  await assert.rejects(() => stale.controller.run(admitted.id), /changed since this command started/)
-  assert.equal(stale.calls.length, 0)
-  assert.deepEqual(disk.get(admitted.id), written)
-})
-
-test('a host whose snapshot is older than the Work refuses to cancel it: the record is unchanged', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const control = new LocalControl()
-  const first = harness({ table: snapshotWorkTable(disk), control })
-  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  const stale = harness({ table: snapshotWorkTable(disk), control, specs: first.specs })
-  // The first host cancels the Work after the second one loaded its copy.
-  await first.controller.cancel(admitted.id, { reason: 'first', caller })
-  const cancelled = structuredClone(disk.get(admitted.id))
-  await assert.rejects(() => stale.controller.cancel(admitted.id, { reason: 'second', caller }), /changed since this command started/)
-  assert.deepEqual(disk.get(admitted.id), cancelled)
-})
-
-test('a host whose snapshot is older than the Work refuses to decide on it: the record is unchanged', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const control = new LocalControl()
-  const first = harness({ table: snapshotWorkTable(disk), control, verdict: 'inconclusive' })
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), first.capabilities.available())
-  const admitted = await first.controller.admit({ spec, input: await input(first), caller, source: { kind: 'workflow-file' } })
-  const stale = harness({ table: snapshotWorkTable(disk), control, specs: first.specs })
-  const held = await first.controller.run(admitted.id)
-  assert.equal(held.state.status, 'held')
-  const stored = structuredClone(disk.get(admitted.id))
-  await assert.rejects(() => stale.controller.decide(admitted.id, { decision: 'approved', caller, reason: 'lgtm' }), /changed since this command started/)
-  assert.deepEqual(disk.get(admitted.id), stored)
-})
-
-test('a Work with no mark runs normally', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const first = harness({ table: snapshotWorkTable(disk) })
-  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  // A host with a fresh control, so no host has marked the Work.
-  const fresh = harness({ table: snapshotWorkTable(disk), specs: first.specs })
-  assert.equal((await fresh.controller.run(admitted.id)).state.status, 'succeeded')
-})
-
-test('one controller runs, fails and retries its own Work without fencing itself', async () => {
-  const specs = memorySpecs()
-  let fail = true
-  const worker: Partial<WorkerPort> = {
-    async run(request): Promise<WorkerResult> {
-      if (fail) return { status: 'failed', outputs: {}, reason: 'scripted' }
-      const out = id(`${request.attemptId}/result`)
-      specs.stored.add(out)
-      return { status: 'succeeded', outputs: { result: out } }
-    },
-  }
-  const h = harness({ table: snapshotWorkTable(new Map()), specs, worker })
-  const admitted = await h.controller.admit({ spec: directTask(['code-write'], false, h.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  assert.equal((await h.controller.run(admitted.id)).state.status, 'failed')
-  fail = false
-  assert.equal((await h.controller.retry(admitted.id, { caller, reason: 'again' })).state.status, 'succeeded')
 })

@@ -3,7 +3,8 @@
  * with the client of @system/host; no model or GitHub credentials.
  */
 import assert from 'node:assert/strict'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { VERSION, connect } from '../packages/host/src/index.ts'
 import { systemCli } from '../test-support/cli.ts'
@@ -106,4 +107,17 @@ test('init on a home that is not ~/.dsh writes no unit and says to run `system h
     assert.equal(ran.status, 0, ran.stderr)
     assert.doesNotMatch(ran.stdout, /service/)
   }
+})
+
+test('the Host ignores the control files of the old mode and leaves them where they are; it makes no control directory', { timeout: 60_000 }, async () => {
+  const control = join(cli.home, 'system', 'control')
+  assert.equal(existsSync(control), false, 'nothing creates the old control directory')
+  mkdirSync(control, { recursive: true })
+  const left = { 'work_x.lock': `${process.pid} 1`, 'work_x.takeover': '', 'work_x.written': '{"host":"old","at":9999999999999}', 'work_x.cancel': '{}' }
+  for (const [file, text] of Object.entries(left)) writeFileSync(join(control, file), text)
+  const host = await cli.start()
+  assert.equal(cli.run(['work', 'list']).status, 0)
+  host.child.kill('SIGTERM')
+  assert.equal((await host.exited).code, 0)
+  for (const [file, text] of Object.entries(left)) assert.equal(readFileSync(join(control, file), 'utf8'), text, `${file} is neither read nor deleted`)
 })
