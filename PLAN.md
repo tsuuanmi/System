@@ -124,16 +124,29 @@ same-provider substitution for the two independent perspectives.
   self-scoring quality is not sufficient evidence of better decisions.
 - [ ] Only optimize role/tier selection or add optional critique on observed
   limitations. No team ballots or debate rounds without demonstrated need.
+- [ ] Compare, as the PR #2 review suggested, a stance per proposal
+  (pragmatist, skeptic) with one shared prompt, and a Codex synthesis with a
+  Claude one, using the config in
+  [workflows/experiments](workflows/experiments/README.md). Score blind:
+  the operator reads outputs without knowing the arm or the provider.
+  Criteria, 1 to 5 each: usefulness for a decision, diversity of the
+  proposals, critical thinking (wrong assumptions, blind spots),
+  actionability, and whether the extra attempts were worth their time and
+  tokens.
 
 **Gate:** a report of real tasks and measured trade-offs, not just a demo.
 
 ### B4 — Focused reliability (may run alongside B1–B3)
 
-- [ ] Keep and extend multi-CLI same-Work concurrency regression tests
+- [x] Keep and extend multi-CLI same-Work concurrency regression tests
   for the DSH SQLite `busy_timeout` patch. Test lost updates, duplicate
-  dispatch and replay after forced termination.
-- [ ] Avoid new process daemon/lease framework unless a minimal reproducer
-  demonstrates a correctness defect. Record fixes independently.
+  dispatch and replay after forced termination. *(`tests/concurrency.test.ts`
+  also creates the store from scratch every round; `tests/brainstorm.test.ts`
+  kills the host mid-step and starts four `work run` at once.)*
+- [x] Avoid new process daemon/lease framework unless a minimal reproducer
+  demonstrates a correctness defect. Record fixes independently. *(Two
+  fixes, each with a red test first: `c9fc13b` store creation, `ccc5dd5` the
+  Work lock. No daemon, no OS lock.)*
 
 **Gate:** no known Work state correctness regression from the Brainstorm
 feature and retained tests for the SQLite patch.
@@ -164,6 +177,14 @@ at `tsuuanmi/system_1@f199a277`:
   carried into the repository by hand, with no Artifact recording what was
   asked and what came back. The B2 Brainstorm Work `work:cad623e9…` is a
   first design comparison for this Worker (summary `sha256:c4eb1e20…`).*
+- [ ] Split the Website Worker into three layers (PR #2 review), each its
+  own step: (1) **conversation-to-Artifact ingestion**: the prompt, the
+  response and metadata from a web session become Artifacts with honest
+  provenance, with no browser automation (can be tried early); (2) **source
+  fetching and snapshots** with content identity (future Research); (3) the
+  **interactive Website Worker** with a signed-in session and recovery
+  (after B3/B4). System 1 is a reference for session lifecycle only; no
+  persistent team sessions in Work Core.
 - [ ] Research quality capabilities (source snapshots, citation consistency,
   claim-to-evidence checking) as separately selected verifiers. The **current
   Research flow continues to work**, without mandatory stronger verification.
@@ -181,7 +202,7 @@ at `tsuuanmi/system_1@f199a277`:
 | B1 Brainstorm YAML | done | `b74f97e` | No Work Core change. `corepack pnpm check`: unit 115/115, smoke 40/42 (2 credential-gated skipped); with `SYSTEM_REAL_AGENTS=1` both pass (a real Claude change; a cancelled Claude attempt taken over by Codex, 132 s). Fake run: three attempts (Claude, Codex, Claude), `idea-a` and `idea-b` inputs are the brief only, `synthesis` inputs the two exact proposal IDs, provenance per Artifact, no verifier, `work replay` matches; refused at submit without Codex; a pinned spec survives an edited file. |
 | B2 Real three Worker attempts | done (economy tier) | Work `work:cad623e9-4a65-45ab-bb2d-eb473044811d` | Brief: design a Website Worker. `idea-a` Claude Code 2.1.311 `claude-haiku-5-5` (31 s, 42,940 in / 4,881 out) → proposal `sha256:e0e6c883…`; `idea-b` Codex 0.166.0 `gpt-6-luna` requested (the served model is not reported by Codex; 43 s, 30,148 / 1,783) → `sha256:d2c72a35…`; `synthesis` Claude `claude-haiku-5-5` (53 s, 99,560 / 9,616) → `sha256:c4eb1e20…`, inputs exactly those two IDs. 3 attempts, 0 operator touches, 127 s, `work replay` matches. The synthesis named six real disagreements (session expiry, automatic publish versus operator confirmation, screenshots, partial transcripts, CDP exposure, account check) with the evidence that would settle each. |
 | B3 Daily driver evaluation | not started | — | — |
-| B4 Concurrency regression | in progress | `c9fc13b` | Baseline failure reproduced: commands that all find the store missing raced in DSH storage-sqlite (WAL switch "database is locked" despite `busy_timeout`; `UNIQUE constraint failed: units.name`). Patch extended; new test red 9/12 rounds, green 3/3; 300 parallel commands on fresh stores, 0 failures. Lost-update and duplicate-dispatch probes not yet extended. |
+| B4 Concurrency regression | done | `c9fc13b`, `ccc5dd5` | Baseline failure reproduced: commands that all find the store missing raced in DSH storage-sqlite (WAL switch "database is locked" despite `busy_timeout`; `UNIQUE constraint failed: units.name`). Patch extended; new test red 9/12 rounds, green 3/3; 300 parallel commands on fresh stores, 0 failures. Review finding (PR #2, P1): `FileControl` created the lock before writing its pid, so a host could read it empty, take it as stale and also acquire the Work. Red test with an empty lock; fixed by linking a complete file (a recent pid-less lock counts as held). Same-Work test: a host SIGKILLed during `idea-b`, then four `work run` at once: exactly one runs, `idea-b` is dispatched once more, every event `seq` kept in order, replay matches; 3/3 runs. A free-lock race between processes did not reproduce the window (microseconds) and stays as a regression test. `corepack pnpm check`: unit 118/118, smoke 41/43 (2 credential-gated skipped). |
 
 Update this table *after executing tests*. Each implementation milestone
 should be a small reviewable commit on the chosen implementation branch.
