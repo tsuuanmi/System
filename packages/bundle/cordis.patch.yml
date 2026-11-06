@@ -47,13 +47,15 @@
       name: '@system/verifiers'
 
     # System-owned external effects: git.publish pushes a verified commit to
-    # system/<work> and opens one draft pull request; never merges (ADR-0004 decision 10).
+    # system/<work> and opens one pull request; it merges only into the mergeInto
+    # allowlist (ADR-0004 decision 10, ADR-0008).
     # The token is the credential GITHUB_TOKEN (system credentials set GITHUB_TOKEN).
     - id: effects
       name: '@system/effects'
       config:
         remote: origin
         base: dev  # System's changes integrate into dev; only the operator merges dev into main (ADR-0008)
+        mergeInto: [dev]  # the base branches System may merge into; any other base refuses a Workflow that merges
         apiUrl: https://api.github.com
         tokenRef: GITHUB_TOKEN
 

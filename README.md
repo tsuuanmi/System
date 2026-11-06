@@ -17,8 +17,9 @@ Brainstorm, is planned in [PLAN.md](PLAN.md). The `system` DSH profile boots,
 Artifacts by ID, and `system work` admits Workflow files or direct Tasks and
 runs them durably, with Claude Code and Codex accounts as Workers (cancel and
 takeover included), verifies results with the repository's pinned checks or
-citation checks, and publishes a checked commit as one draft pull request
-(never merging); `system approve` is for a human at a terminal.
+citation checks, and publishes a checked commit as one pull request (a draft, or merged when its
+base is on the `mergeInto` allowlist, `dev`; `main` stays the operator's,
+ADR-0008); `system approve` is for a human at a terminal.
 
 ## Read and contribute
 

@@ -1,7 +1,8 @@
 /**
  * M5 gate on the real profile: the Software Engineering Workflow publishes the
- * exact checked commit as one draft pull request, and a host killed on either
- * side of the remote effect is reconciled without a duplicate. Remote: a real
+ * exact checked commit as one draft pull request (or, with `merge: true` onto
+ * an allowlisted base, merges it), and a host killed on either side of the
+ * remote effect is reconciled without a duplicate. Remote: a real
  * bare git repository (file://) and a fake GitHub API in its own process.
  * Workers run on the fake CLI. Approval needs a human at a real terminal.
  */
@@ -15,13 +16,15 @@ import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 const cli = systemCli('system-publish')
 const { home, env } = cli
 const control = join(home, 'system', 'control')
-const SE = join(repo, 'workflows', 'software-engineering.yaml')
+const SE_MERGE = join(repo, 'workflows', 'software-engineering.yaml')
+/** The Software Engineering Workflow publishing a draft pull request: its `merge: true` removed. */
+const SE = join(home, 'software-engineering-draft.yaml')
 const servers: ChildProcess[] = []
 
 
 const system = (args: string[]) => cli.run(args)
 
-async function github(...args: string[]): Promise<{ url: string; state: () => Promise<{ pulls: { number: number; head: string; draft: boolean }[]; calls: string[] }> }> {
+async function github(...args: string[]): Promise<{ url: string; state: () => Promise<{ pulls: { number: number; head: string; draft: boolean; merged?: boolean; mergeCommit?: string }[]; calls: string[] }> }> {
   const server = spawn(process.execPath, [join(repo, 'tests', 'fake-github.mjs'), ...args], { stdio: ['ignore', 'pipe', 'inherit'] })
   servers.push(server)
   const port = await new Promise<string>((r) => server.stdout!.once('data', (d) => r(String(d).trim())))
@@ -29,7 +32,7 @@ async function github(...args: string[]): Promise<{ url: string; state: () => Pr
   return { url, state: async () => (await fetch(`${url}/_state`)).json() as never }
 }
 
-function profile(apiUrl: string) {
+function profile(apiUrl: string, mergeInto = '[]') {
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
   config:
     accounts:
@@ -42,6 +45,7 @@ function profile(apiUrl: string) {
   config:
     remote: origin
     base: main
+    mergeInto: ${mergeInto}
     apiUrl: ${apiUrl}
     repository: tester/scratch
     tokenRef: GITHUB_TOKEN
@@ -71,6 +75,9 @@ const commitOf = (artifactId: string) => (JSON.parse(system(['artifact', 'show',
 
 before(() => {
   assert.equal(system(['init']).status, 0)
+  const merging = readFileSync(SE_MERGE, 'utf8')
+  assert.ok(merging.includes('      params: { merge: true }\n'))
+  writeFileSync(SE, merging.replace('      params: { merge: true }\n', ''))
   for (const [name, value] of [['CLAUDE_CODE_OAUTH_TOKEN', 'fake'], ['GITHUB_TOKEN', 'ghs_test']]) {
     assert.equal(cli.run(['credentials', 'set', name!], { input: `${value}\n` }).status, 0)
   }
@@ -100,6 +107,58 @@ test('the exact checked commit is pushed to system/<work> and one draft pull req
   assert.equal(show(workId).events.length, events)
   assert.equal((await gh.state()).pulls.length, 1)
   assert.ok((await gh.state()).calls.every((c) => !/merge/i.test(c)))
+})
+
+test('a Work with merge: true ends with one pull request merged at the checked commit; running again changes nothing', async () => {
+  const p = project()
+  const gh = await github('--bare', p.bare)
+  profile(gh.url, '[main]')
+  const ran = system(['work', 'submit', '--workflow', SE_MERGE, '--input', p.task])
+  assert.equal(ran.status, 0, ran.stderr)
+  const workId = ran.stdout.trim()
+  const record = show(workId)
+  const commit = commitOf(record.events.find((e) => e.type === 'verified')!.subject!)
+  const published = record.events.find((e) => e.type === 'effect-observed')!
+  assert.equal(published.state, 'applied')
+  assert.equal(p.branchOf(workId), commit)
+  const { pulls, calls } = await gh.state()
+  assert.deepEqual(pulls.map((pr) => [pr.head, pr.draft, pr.merged]), [[`system/${workId.replace('work:', '')}`, false, true]])
+  assert.equal(published.detail!.merged, 'true')
+  assert.equal(published.detail!.mergeCommit, pulls[0]!.mergeCommit)
+  assert.equal(calls.filter((c) => c.startsWith('PUT ')).length, 1)
+  const events = record.events.length
+  assert.equal(system(['work', 'run', workId]).status, 0)
+  assert.equal(show(workId).events.length, events)
+  assert.equal((await gh.state()).calls.filter((c) => c.startsWith('PUT ')).length, 1)
+})
+
+test('a profile whose base is not in mergeInto refuses a Workflow that merges, at admission', async () => {
+  const gh = await github()
+  profile(gh.url)
+  const p = project()
+  const refused = system(['work', 'submit', '--workflow', SE_MERGE, '--input', p.task])
+  assert.notEqual(refused.status, 0)
+  assert.match(refused.stdout + refused.stderr, /base main is not in mergeInto \[\]/)
+  assert.equal((await gh.state()).pulls.length, 0)
+})
+
+test('a host killed after the merge call but before it heard back is reconciled as applied: no second merge', async () => {
+  const p = project()
+  const gh = await github('--bare', p.bare, '--kill-host-on-merge', control)
+  profile(gh.url, '[main]')
+  const crashed = system(['work', 'submit', '--workflow', SE_MERGE, '--input', p.task])
+  assert.notEqual(crashed.status, 0)
+  const workId = crashed.stdout.trim()
+  assert.deepEqual(show(workId).events.at(-1)?.type, 'effect-intended')
+  const resumed = system(['work', 'run', workId])
+  assert.equal(resumed.status, 0, resumed.stderr)
+  const observed = show(workId).events.filter((e) => e.type === 'effect-observed')
+  assert.deepEqual(observed.map((e) => e.state), ['applied'])
+  assert.match(observed[0]!.reason!, /merged/)
+  const { pulls, calls } = await gh.state()
+  assert.deepEqual(pulls.map((pr) => pr.merged), [true])
+  assert.equal(calls.filter((c) => c.startsWith('PUT ')).length, 1)
+  assert.equal(p.branchOf(workId), commitOf(show(workId).state.steps.implement!.outputs.change!))
 })
 
 test('a host killed after the pull request was created but before it heard back is reconciled: no second pull request', async () => {
