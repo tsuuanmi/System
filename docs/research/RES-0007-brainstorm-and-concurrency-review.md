@@ -1,0 +1,95 @@
+---
+id: RES-0007
+type: research
+status: active
+summary: Review PR #2 Brainstorm B0-B2 and SQLite startup patch; isolate source-derived Work-lock hypotheses, B3 evaluations and future Website conversation provenance.
+related: [RES-0005, RES-0006, ADR-0002, ADR-0003, ADR-0004]
+---
+
+# PR #2 source review: Brainstorm, concurrency and next evaluation
+
+**Snapshot: 2026-11-06.** Sources examined from
+[`tsuuanmi/System` PR #2 at `4a71c79`](https://github.com/tsuuanmi/System/commit/4a71c79f5fc9ed4857bd027625eda8b56f854bb8),
+still a **draft, stacked PR** on documentation PR #1. This is a **read-only
+source/CI review**, not a re-execution of the operator's local credentialed
+Claude/Codex runs. The reference System 1 continues to be an external
+audit source only.
+
+## Confirmed from source and CI
+
+- [`brainstorm.yaml`](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/workflows/brainstorm.yaml)
+  is a three-step declarative config. Two proposals have the same brief
+  input and no dependency on one another; synthesis depends on and reads
+  both proposal Artifact IDs. No required verifier/accept stage.
+- [`brainstorm.test.ts`](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/tests/brainstorm.test.ts)
+  asserts Claude/Codex role routing, three attempts, exact input refs,
+  producer provenance, missing-Codex refusal, cancellation and retry
+  reusing proposal A, pinned spec despite file edits, and replay.
+- The Work Controller remains one domain-independent, **sequential**
+  interpreter. No Agent Team, third Worker implementation, speculative
+  parallel scheduler or mandatory brainstorm verifier was added.
+- [`c9fc13b` pnpm patch](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/patches/@deepseek-ai__dsh-storage-sqlite@0.2.2-rc.1.patch)
+  configures SQLite busy timeout, retries WAL journal mode under
+  startup contention, and uses `INSERT OR IGNORE` with read-back for
+  concurrent unit stamping. [`tests/concurrency.test.ts`](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/tests/concurrency.test.ts)
+  checks simultaneous Artifact puts and `doctor` calls, including
+  concurrent **fresh store creation**. It is **not** same-Work scheduling
+  or lost-update coverage.
+- **GitHub Actions at `4a71c79`:** Build and Documentation completed
+  successfully. [PR #2 description](https://github.com/tsuuanmi/System/pull/2)
+  reports 115/115 unit tests and 40/42 smoke tests (2 skipped because
+  credentials are needed); operator-run real-agent tests report 2/2 pass.
+
+## Reported by the operator, not independently rerun here
+
+- Real Work `work:cad623e9-4a65-45ab-bb2d-eb473044811d` used
+  Claude Haiku for proposal A, Codex for proposal B and Claude Haiku for
+  synthesis. Total 127 seconds, 0 operator touches, `work replay` matches.
+- The synthesis identified **six material disagreements** and suggested
+  evidence to arbitrate them. This is qualitative output, not an
+  established gain over a one-Worker baseline.
+- Codex's model identifier `gpt-6-luna` was **requested**;
+  the actual served model was not reported by the Codex CLI in that
+  observed run. Never re-label a requested model as independently verified.
+
+## Unverified risks and proposed test gates
+
+| Finding | Evidence | Confidence / next proof |
+|---|---|---|
+| Incomplete PID lock is stealable | [`FileControl.acquire()`](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/work/src/control.ts) creates empty lock via `openSync('wx')`, writes PID later; `holder()` returns undefined on empty content and stale cleanup can move/remove the path | **Source-derived P1 hypothesis**: deterministically pause between create/write while a second process acquires. Prove one owner before fixing. |
+| Reopen/run is not one lock interval | [`WorkController.retry()`](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/work/src/controller.ts) releases lock after `reopened`, then calls `run` | **Possible race**: test concurrent retry/run/cancel event ordering and no duplicate Worker dispatch. |
+| Patch solves lock waiting, not Work ownership | [SQLite patch](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/patches/README.md) and [concurrency test](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/tests/concurrency.test.ts) | **Confirmed test-scope limitation**: add same-Work concurrency, stale lock and effect reconciliation fixtures. |
+| Model diversity is not measured quality | Two providers; the current YAML reuses one proposer prompt via YAML anchor | **Product question**: compare one Worker against independent proposal synthesis and role-diverse prompts across five briefs, with operator assessment. |
+| Web conversation handoff is not yet Artifact-backed | Operator's web brainstorming and research were copied into PR docs manually, unlike Work artifacts produced in System | **Valid workflow gap, not proof browser automation is necessary**: first compare explicit conversation-to-Artifact import with Website Worker implementation when scoped. |
+
+## B3 experiment recommended before new providers
+
+At least five varied briefs. For each, keep original brief and
+proposal A/B/summary Artifacts, and run a single-Worker comparator.
+The operator evaluates usefulness, conceptual diversity, valid
+disagreements, next-action quality and whether the synthesis actually
+adds new decision value. Measure elapsed time, usage when observed,
+number of interventions, failure/retry and summary bias; do not rely
+on models rating themselves. A config-only **different-cognitive-role**
+pair and alternating synthesis provider are useful second variants.
+Never require fact-checking a brainstorm to mark its Artifact delivery
+complete.
+
+## Boundary recommendation
+
+**Keep existing System components:** `@system/work`, `artifacts`,
+`agents`, `verifiers`, `effects`, DSH/Cordis host and current
+two Worker providers. Do not port System 1 voting/Team sessions or
+add a third provider just to fill three roles. B4 correctness probes and
+B3 comparison yield better decisions than plugin expansion now.
+
+**Future:** a provenance-only conversation-to-Artifact import may be
+worth a small spike before a browser-driven Website Worker. A genuine
+Website Worker can follow later for interactive/authenticated sources;
+it must still produce exact input/output Artifact IDs. Research
+claim-level verification and mandatory security isolation are not
+near-term Brainstorm acceptance gates.
+
+Architecture ownership: [Brainstorm composition](../architecture/brainstorm-composition.md),
+[draft Work integrity design](../architecture/work-ownership-and-recovery.md).
+Detailed priorities remain in [PROP-0002](../proposals/PROP-0002-post-mvp-roadmap.md).
