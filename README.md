@@ -10,8 +10,9 @@ the active service composition is deliberately small, while optional
 capabilities and community plugins can be enabled or disabled by configuration
 without deleting their source.
 
-**Current state:** product charter and selected architecture are documented;
-the MVP implementation has **not** been built or validated in this repository.
+**Current branches:** this documentation branch contains no executable product
+code. A **working MVP-0 implementation is documented and tested** on the
+stacked [draft PR #2](https://github.com/tsuuanmi/System/pull/2) (not merged).
 
 ## Read and contribute
 
@@ -29,11 +30,15 @@ the MVP implementation has **not** been built or validated in this repository.
   decision and alternatives.
 - [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)
   — upstream sources, risks and experiments.
+- [Current MVP-0 plugin audit](docs/research/RES-0005-plugin-reuse-audit.md)
+  — source-backed reuse/adapt/keep/defer assessment against PR #2 and pinned DSH.
+- [Draft post-MVP roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md)
+  — staged experiments, gates and possible plugin additions; not an accepted ADR.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
   and [bootstrap guide](docs/governance/bootstrap.md) — reuse this governance
   in an unrelated repository.
 - [Agent instructions](AGENTS.md).
 
-No product installation command is published until an implementation and
-verified build exist.
+This documentation-only branch does not publish a product installation command.
+The working setup and test commands are in [draft PR #2](https://github.com/tsuuanmi/System/pull/2).

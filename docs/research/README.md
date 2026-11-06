@@ -11,4 +11,5 @@ The generated index below is the authoritative list of current research.
 - [RES-0002 — MVP selection assessment](RES-0002-mvp-assessment.md) — active — Evaluate candidate MVP capabilities against reliability, autonomy, metering and workflow-agnostic evidence without selecting System's architecture.
 - [RES-0003 — DSH-hosted control plane: evidence and experiments](RES-0003-dsh-control-plane-evaluation.md) — active — Evaluate DSH/Cordis as the selected host for a minimal System control plane, plugin composition, lifecycle safety and cross-domain MVP proofs.
 - [RES-0004 — Reference audit: workflows, artifacts, verification and plugins](RES-0004-reference-workflow-artifact-audit.md) — active — Audit reference workflow, artifact, Worker and plugin implementations; identify transferable mechanisms and pitfalls for config-defined workflows and exact-artifact verification.
+- [RES-0005 — MVP-0 plugin and component reuse audit](RES-0005-plugin-reuse-audit.md) — active — Audit MVP-0 plugin seams against pinned DSH and System 1 source; rank reuse, adaptation, extensions and deferred components for the post-MVP roadmap.
 <!-- docs:end index:research -->
