@@ -33,6 +33,7 @@ export function seeded(seed: number): () => number {
 export interface Fixture {
   controller: WorkController
   control: LocalControl
+  capabilities: Capabilities
   table: ReturnType<typeof memoryWorkTable>
   /** The step IDs of attempts started, in order. */
   attempts: string[]
@@ -115,7 +116,7 @@ export function fixture(options: { seed?: number } = {}): Fixture {
   const control = new LocalControl()
   const controller = new WorkController(table, specStore, capabilities, control)
   return {
-    controller, control, table, attempts, remote,
+    controller, control, capabilities, table, attempts, remote,
     hold: (stepId) => { held.add(stepId) },
     arrived: (stepId) => (arrived.has(stepId) ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, go))),
     release: (stepId) => { held.delete(stepId); waiting.get(stepId)?.(); waiting.delete(stepId) },

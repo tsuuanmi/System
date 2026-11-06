@@ -236,7 +236,7 @@ written first.
   `packages/work/tests/host-lock.test.ts` and `host.test.ts` (lock incl. a
   SIGKILLed child, lane, receipts, recovery); the slot itself is H5, so
   `Host.uncertain()` only lists the attempts that will keep one.
-- [ ] H3. API on a temporary socket (H3a transport done: `packages/host`, `host.hello` and `host.ping`). Includes:
+- [x] H3. API on a temporary socket (`packages/host`: transport, then the operation table). Evidence: `packages/host/tests/` (`transport`, `operations`, `api`). Includes:
   - the operation table with its `agent` flag and the exclusion test;
   - the version handshake and the caller;
   - `work.events` with a cursor;
