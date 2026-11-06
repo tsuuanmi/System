@@ -29,6 +29,8 @@ export const eventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('admitted'), seq: z.number().int(), at, caller,
     specId: artifactId, input: artifactId.optional(),
+    /** The Goal the Work was admitted for, and whose spend it counts toward (absent without a Goal, and in records written before ADR-0009). */
+    goal: artifactId.optional(),
     /** Each verify step's criteria Artifact, pinned at admission. */
     criteria: z.record(z.string(), artifactId).optional(),
     /** Each verify step's verifier and version, pinned at admission (absent in records written before M6). */

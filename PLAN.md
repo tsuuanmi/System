@@ -369,7 +369,7 @@ written first.
 Steps: O1 `goal@1`, admission with a Goal and the budget fold; O2 `system mcp`
 and orchestrator scope; O3 completion notices.
 
-- [ ] **Goal**: the operator's aim, scope and budget (attempts and observed
+- [x] **Goal** (O1): the operator's aim, scope and budget (attempts and observed
   tokens; once spent, new Works for that Goal are refused and running Works
   finish; only the operator raises it). Every Work an Orchestrator creates
   names its Goal. A Goal carries the Charter principles as context for its

@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import type { Asserted, ConversationParts, WorkRecord, WorkState } from '@system/work'
+import type { Asserted, ConversationParts, GoalView, WorkRecord, WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { MAX_FRAME, NotAnswering, type Client } from '../../host/lib/index.js'
 import type { AppHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
@@ -85,14 +85,25 @@ export function remoteHost(remote: Remote): AppHost {
   }
 
   const work: WorkCommands = {
-    admitFile: (path, input) => change('work.submit', { workflow: readFileSync(path, 'utf8'), input }),
-    admitTask: (capabilities, input) => change('work.submit', { capabilities, input }),
+    admitFile: (path, input, goal) => change('work.submit', { workflow: readFileSync(path, 'utf8'), input, goal }),
+    admitTask: (capabilities, input, goal) => change('work.submit', { capabilities, input, goal }),
     async run(workId, options) {
       await change('work.run', { workId })
       return follow(workId, options)
     },
     get: (workId) => read('work.show', { workId }) as Promise<WorkRecord>,
     list: () => read('work.list'),
+    report: (workId) => read('work.report', { workId }),
+    async newGoal(goal, supersedes, operator) {
+      // Like a decision, a Goal is a human's: its own connection says so.
+      const human = await remote.open({ type: 'human', operatorId: operator })
+      try {
+        return await human.call('goal.new', { ...goal, supersedes }) as { id: string }
+      } finally {
+        human.close()
+      }
+    },
+    goal: (goalId) => read('goal.show', { goal: goalId }) as Promise<GoalView>,
     replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,
     cancel: (workId, reason) => change('work.cancel', { workId, reason }),
     async decide(workId, decision, operator, reason) {

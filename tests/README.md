@@ -37,6 +37,9 @@ GitHub credentials. Run with `corepack pnpm smoke`.
   the lost step is dispatched once more; no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
+- [goal.test.ts](goal.test.ts) — ADR-0009 O1: `system goal new` behind a terminal
+  confirmation (refused to a pipe or an agent), the Goal's context reaching the
+  Worker, the budget refusal, `work report` with the spend, and a raise.
 - [conversation.test.ts](conversation.test.ts) — PROP-0003: a conversation
   previewed (nothing stored, secrets named not printed), `--yes` refused on a
   warning unless `--accept-warnings`, `--product-context`, stored, shown, and

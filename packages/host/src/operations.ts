@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { WorkError, assertedSchema, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type WorkRecord } from '@system/work'
+import { WorkError, assertedSchema, goalSchema, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Goal, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -18,6 +18,8 @@ export interface Services {
   artifact(id: string): unknown
   readBytes(id: string): Promise<Uint8Array>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller): Promise<{ task: string; base?: string }>
+  /** Store a `goal@1`; without `context`, the Charter is stored and used. `supersedes` is the Goal it raises or changes. */
+  newGoal(goal: Omit<Goal, 'context'> & { context?: string[] }, supersedes: string | undefined, caller: Caller): Promise<{ id: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<{ id: string }>
   credentials: {
     set(name: string, value: string): Promise<void>
@@ -63,14 +65,14 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it.',
-      params: z.object({ workflow: z.string().min(1).optional(), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), commandId }).strict()
+      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent.',
+      params: z.object({ workflow: z.string().min(1).optional(), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
         const available = services.capabilities.available()
         const admission: Admission = p.workflow
-          ? { spec: resolve(parseWorkflow(p.workflow), available), input: p.input, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
-          : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, caller, source: { kind: 'direct-task' } }
+          ? { spec: resolve(parseWorkflow(p.workflow), available), input: p.input, goal: p.goal, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
+          : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId })
       },
     },
@@ -112,9 +114,15 @@ export function operations(services: Services): Methods {
     },
     'work.report': {
       agent: true,
-      summary: 'Duration, attempts, operator touches and usage of a Work, from its events.',
+      summary: 'Duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also the Goal, its budget and its spend.',
       params: z.object({ workId }).strict(),
-      handler: (host, p) => summarize(known(host, p.workId)),
+      handler(host, p) {
+        const record = known(host, p.workId)
+        const admitted = record.events[0]
+        if (admitted?.type !== 'admitted' || !admitted.goal) return summarize(record)
+        const { id, current, spend } = host.goal(admitted.goal)
+        return { ...summarize(record), goal: { id, current: current.id, budget: current.goal.budget, spend } }
+      },
     },
     'work.events': {
       agent: true,
@@ -133,6 +141,21 @@ export function operations(services: Services): Methods {
         if (caller.type !== 'human') throw new RpcError(NOT_ALLOWED, 'approval.decide: needs a human caller')
         return started(host, p.workId, (go) => host.decide(p.workId, { decision: p.decision, reason: p.reason, caller, commandId: p.commandId, started: go }))
       },
+    },
+    'goal.new': {
+      agent: false,
+      summary: 'Store a `goal@1` the operator wrote: `{ id }`. `supersedes` names the Goal it raises or changes; without `context` the Charter is the context. Only a human caller; the CLI sends it after its terminal confirmation.',
+      params: z.object({ aim: goalSchema.shape.aim, scope: goalSchema.shape.scope, budget: goalSchema.shape.budget.default({}), context: goalSchema.shape.context.optional(), supersedes: artifactId.optional() }).strict(),
+      handler(_host, { supersedes, ...goal }, caller) {
+        if (caller.type !== 'human') throw new RpcError(NOT_ALLOWED, 'goal.new: needs a human caller')
+        return services.newGoal(goal, supersedes, caller)
+      },
+    },
+    'goal.show': {
+      agent: true,
+      summary: 'A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`.',
+      params: z.object({ goal: artifactId }).strict(),
+      handler: (host, p) => host.goal(p.goal),
     },
     'task.new': {
       agent: true,

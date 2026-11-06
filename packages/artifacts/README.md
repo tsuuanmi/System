@@ -25,6 +25,7 @@ content-addressed Artifacts
 | `put(input)` | validate inline content, store, return the envelope (the stored one on deduplication) |
 | `putBytes(input)` | save the bytes, then the record |
 | `get(id)` | `{ state: 'stored', envelope, occurrences }` or `{ state: 'missing' }`; a copy |
+| `supersededBy(id)` | the IDs whose lineage supersedes `id`, found by reading every record |
 | `readBytes(id)` | the exact bytes, or `ArtifactError('unavailable')` when the record outlived them |
 
 Refusals are `ArtifactError` with a `code`: `unknown-kind`, `invalid-content`,

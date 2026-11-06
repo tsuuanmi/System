@@ -2,6 +2,7 @@
  * The Artifact kinds Work admits as inputs, registered by the `work` row.
  *
  * - `task@1`: what to do, and optionally the exact repository commit to do it on.
+ * - `goal@1`: an aim, its scope and its budget, written by the operator (ADR-0009).
  * - `git-tree@1`: one commit in one repository, with its tree; the subject of
  *   a code change (ADR-0003: a branch name or path is never the identity).
  */
@@ -19,6 +20,17 @@ export const taskSchema = z.object({
   context: z.array(artifactId).min(1).max(16).optional(),
 }).strict()
 export type Task = z.infer<typeof taskSchema>
+
+export const GOAL_KIND = { kind: 'goal', schemaVersion: 1 } as const
+export const goalSchema = z.object({
+  aim: z.string().min(1).max(16 * 1024),
+  scope: z.string().min(1).max(16 * 1024),
+  /** What the Goal's Works may spend: attempts, and tokens (fresh input plus output). Absent means no limit. */
+  budget: z.object({ attempts: z.number().int().positive().optional(), tokens: z.number().int().positive().optional() }).strict(),
+  /** Artifacts every Work of the Goal receives as Task context. */
+  context: z.array(artifactId).min(1).max(16),
+}).strict()
+export type Goal = z.infer<typeof goalSchema>
 
 export const GIT_TREE_KIND = { kind: 'git-tree', schemaVersion: 1 } as const
 export const gitTreeSchema = z.object({

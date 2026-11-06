@@ -203,6 +203,25 @@ exits 0; the Work is not touched. With `--cancel-on-interrupt` Ctrl-C sends
 detaches. Closing the terminal or killing the CLI never cancels a Work: only
 `system work cancel` does. Read what happened with `system work show <id>`.
 
+## Goals and their budget
+
+A Goal bounds what an agent session may spend. Write one at a terminal:
+
+```
+system goal new --aim "..." --scope "..." --attempts 10 --tokens 2000000
+```
+
+It prints the Goal's ID after you type the code it shows. Submit Works under it
+with `system work submit ... --goal <id>`; each gets the Goal's context (the
+Charter by default) as Task context. `system goal show <id>` and
+`system work report <work>` show the spend: attempts, tokens (fresh input plus
+output), and how many attempts had unknown usage.
+
+Once the spend reaches the budget, `work submit --goal` fails with `the budget
+of Goal ... is used up`; running Works finish. To go on, write a new Goal with
+`--supersedes <old id>` and the raised budget; the old ID then resolves to it,
+and the spend of the old versions still counts.
+
 ## Errors
 
 An error is one line, `system: <message>`, never a stack. `SYSTEM_DEBUG=1`
