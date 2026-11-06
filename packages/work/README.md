@@ -25,8 +25,12 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/control.ts](src/control.ts) — `FileControl`: the per-Work lock and cancel request.
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
   operator touches and usage from a Work's events (`system work report`).
+- [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
+  a conversation held elsewhere taken in as `file@1` parts under a manifest
+  of what the operator asserts and a fixed notice; the preview and its
+  secret warnings.
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
-  admit a file or a direct Task).
+  add a conversation, admit a file or a direct Task).
 
 ## Cancel, takeover and one host per Work
 
@@ -64,7 +68,9 @@ reruns the Work, a denial fails it.
 
 ## Input kinds
 
-[src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`) and
+[src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`,
+optional `context`: Artifacts the Worker reads as data, also listed as the
+task's inputs) and
 `git-tree@1` (`repository`, `commit`, `tree`, `parent`), registered by this
 row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 

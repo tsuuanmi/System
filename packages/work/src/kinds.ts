@@ -15,6 +15,8 @@ export const taskSchema = z.object({
   instructions: z.string().min(1).max(64 * 1024),
   /** A `git-tree@1` Artifact the Worker starts from. */
   base: artifactId.optional(),
+  /** Artifacts the Worker reads as data, such as an ingested conversation (PROP-0003). */
+  context: z.array(artifactId).min(1).max(16).optional(),
 }).strict()
 export type Task = z.infer<typeof taskSchema>
 

@@ -13,6 +13,9 @@
   still being published (no pid yet) never taken as stale, cancel requests,
   processes racing for a free or a stale lock, and the count of events
   written that fences stale hosts.
+- `conversation.test.ts` — `conversation@1`: a manifest over stored parts,
+  stable IDs, corrections, the preview and its secret warnings, and a task's
+  context.
 - `summary.test.ts` — operator touches and usage from a Work's events.
 
 Shared stand-ins come from [test-support](../../../test-support/README.md).

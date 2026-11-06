@@ -8,9 +8,10 @@ import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { sha256, type Artifacts } from '@system/artifacts'
+import { sha256, type Artifacts, type Envelope } from '@system/artifacts'
 import { FileControl } from './control.ts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, WorkController, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import { CONVERSATION_KIND, addConversation, conversationSchema, type Asserted, type ConversationParts } from './conversation.ts'
 import { snapshot } from './git.ts'
 import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema } from './kinds.ts'
 import type { Caller, WorkRecord } from './record.ts'
@@ -20,6 +21,7 @@ import { directTask, parseWorkflow, resolve, type ResolvedSpec } from './workflo
 
 export * from './control.ts'
 export * from './controller.ts'
+export * from './conversation.ts'
 export * from './errors.ts'
 export * from './git.ts'
 export * from './kinds.ts'
@@ -53,7 +55,7 @@ export class WorkService {
    * Store a `task@1` input; with a repository, first snapshot `ref` there as a
    * `git-tree@1` Artifact the task starts from.
    */
-  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller): Promise<{ task: string; base?: string }> {
+  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = []): Promise<{ task: string; base?: string }> {
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     let base: string | undefined
     if (repository) {
@@ -64,10 +66,15 @@ export class WorkService {
       })).id
     }
     const task = await this.artifacts.put({
-      ...TASK_KIND, content: { instructions, ...(base ? { base } : {}) }, inputs: base ? [base] : [],
+      ...TASK_KIND, content: { instructions, ...(base ? { base } : {}), ...(context.length ? { context } : {}) }, inputs: [...(base ? [base] : []), ...context],
       classification: 'local-private', producer,
     })
     return { task: task.id, base }
+  }
+
+  /** Store a conversation the operator had elsewhere (PROP-0003). */
+  addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<Envelope> {
+    return addConversation(this.artifacts, parts, asserted, { producer: { type: 'operator', ref: caller.operatorId }, supersedes })
   }
 
   /** Read, preflight and pin a Workflow file; the file is never read again for this Work. */
@@ -128,6 +135,7 @@ export async function apply(ctx: Context): Promise<void> {
   artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
+  artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
   const capabilities = new Capabilities()
   const control = new FileControl(systemPath(ctx, 'control'))
   const controller = new WorkController(domain.table('work') as unknown as WorkTable, specStore(artifacts), capabilities, control)

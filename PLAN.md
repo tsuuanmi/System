@@ -174,6 +174,13 @@ at `tsuuanmi/system_1@f199a277`:
 
 - [ ] Website Worker for interactive/browser-assisted Research **only when**
   a real source workflow requires it; keep the same WorkerPort/Artifact IDs.
+  *Layer 1 (conversation-to-Artifact ingestion) is being built on PR #3 per
+  [PROP-0003](docs/proposals/PROP-0003-conversation-ingestion.md): `system
+  conversation add|show`, `task new --context`. Dogfood: the operator's
+  ChatGPT review of PR #2 stored as a conversation (`selection: excerpts`)
+  and given as context to Brainstorm Work `work:cc9a38a7…` (roles, standard
+  tier, 3 attempts, 176 s); the synthesis treated it as operator-supplied
+  data and named its uncheckable claims.*
   *Observed need (2026-11-06): the System 1 audit and this roadmap update
   (PR #1 `2dcfe48`) were produced by the operator in ChatGPT on the web and
   carried into the repository by hand, with no Artifact recording what was

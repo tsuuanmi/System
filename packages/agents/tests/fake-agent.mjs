@@ -3,7 +3,7 @@
 // markers in the prompt's instructions:
 //   FAKE:edit     write NOTE.md in the working directory
 //   FAKE:outputs  write every listed output file
-//   FAKE:sign     with FAKE:outputs, each file names its runtime and quotes every input file read
+//   FAKE:sign     with FAKE:outputs, each file names its runtime, repeats the prompt's Context header and quotes every input file listed
 //   FAKE:hang=STEP:FILE  at step STEP, unless FILE exists: create it and wait (until SIGTERM, then exit 143)
 //   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below
 //   FAKE:sleep    unless PARTIAL.md exists: wait; on SIGTERM write PARTIAL.md and exit 143
@@ -47,7 +47,8 @@ if (has('edit')) writeFileSync(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {
   const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)
-  return [`# ${slot} by ${codex ? 'codex' : 'claude'}`, ...read].join('\n')
+  const context = prompt.split('\n').find((line) => line.startsWith('Context ('))
+  return [`# ${slot} by ${codex ? 'codex' : 'claude'}`, ...(context ? [context] : []), ...read].join('\n')
 }
 const QUOTE = 'System verifies citations exactly'
 const cited = /FAKE:cite=(\S+)/.exec(prompt)?.[1]
