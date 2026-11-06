@@ -9,6 +9,8 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
   immutable content-addressed Artifacts.
 - [work](work/README.md) — `@system/work`, the `work` row: Work records, the
   Workflow compiler and the Work Controller.
+- [host](host/README.md) — `@system/host`, the Host's transport: JSON-RPC
+  over a Unix socket, the version handshake and the caller.
 - [fakes](fakes/README.md) — `@system/fakes`, a scripted Worker and verifier,
   off by default.
 - [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code

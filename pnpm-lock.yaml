@@ -340,6 +340,12 @@ importers:
         specifier: 4.1.0
         version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
 
+  packages/host:
+    dependencies:
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+
   packages/verifiers:
     dependencies:
       '@deepseek-ai/dsh-subprocess':
