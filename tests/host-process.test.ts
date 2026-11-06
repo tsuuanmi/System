@@ -14,8 +14,13 @@ import { repo, systemCli } from '../test-support/cli.ts'
 const cli = systemCli('system-host-process', { SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human', SYSTEM_NO_SERVICE: '1' }, mkdtempSync('/tmp/sh-hp-'))
 const socket = join(cli.home, 'system', 'host.sock')
 const hosts: ChildProcess[] = []
-after(() => {
-  for (const host of hosts) host.kill('SIGKILL')
+after(async () => {
+  // Stop what a failed test left running; SIGKILL only if SIGTERM is not enough.
+  await Promise.all(hosts.filter((host) => host.exitCode === null && host.signalCode === null).map((host) => new Promise<void>((done) => {
+    const force = setTimeout(() => host.kill('SIGKILL'), 10_000)
+    host.once('exit', () => { clearTimeout(force); done() })
+    host.kill('SIGTERM')
+  })))
   rmSync(cli.home, { recursive: true, force: true })
 })
 
@@ -52,7 +57,7 @@ async function reach(host: Running) {
 
 const human = { type: 'human', operatorId: 'tester' }
 
-test('system host serves hello and ping on host.sock, and logs its start', async () => {
+test('system host serves hello and ping on host.sock, and logs its start', { timeout: 60_000 }, async () => {
   const host = startHost()
   const client = await reach(host)
   try {
@@ -69,7 +74,7 @@ test('system host serves hello and ping on host.sock, and logs its start', async
   await host.exited
 })
 
-test('while a Host runs: a second Host fails at once, and old-path Work commands refuse', async () => {
+test('while a Host runs: a second Host fails at once, and old-path Work commands refuse', { timeout: 60_000 }, async () => {
   const host = startHost()
   const client = await reach(host)
   client.close()
@@ -97,7 +102,7 @@ test('while a Host runs: a second Host fails at once, and old-path Work commands
   await host.exited
 })
 
-test('SIGTERM stops the Host with exit 0, releases the lock and the socket, and a new Host starts', async () => {
+test('SIGTERM stops the Host with exit 0, releases the lock and the socket, and a new Host starts', { timeout: 60_000 }, async () => {
   const first = startHost()
   ;(await reach(first)).close()
   first.child.kill('SIGTERM')
@@ -112,7 +117,7 @@ test('SIGTERM stops the Host with exit 0, releases the lock and the socket, and 
   assert.deepEqual(await second.exited, { code: 0, signal: null })
 })
 
-test('a stale socket file left by a killed Host is replaced once the lock is taken', async () => {
+test('a stale socket file left by a killed Host is replaced once the lock is taken', { timeout: 60_000 }, async () => {
   const first = startHost()
   const client = await reach(first)
   await client.call('host.hello', { version: VERSION, caller: human })
@@ -131,7 +136,7 @@ test('a stale socket file left by a killed Host is replaced once the lock is tak
 })
 
 
-test('init on a home that is not ~/.dsh writes no unit and says to run `system host` in the foreground; --no-service and SYSTEM_NO_SERVICE=1 say nothing', () => {
+test('init on a home that is not ~/.dsh writes no unit and says to run `system host` in the foreground; --no-service and SYSTEM_NO_SERVICE=1 say nothing', { timeout: 60_000 }, () => {
   const foreground = cli.run(['init'], { env: { SYSTEM_NO_SERVICE: '0' } })
   assert.equal(foreground.status, 0, foreground.stderr)
   assert.match(foreground.stdout, /no service for \S+ \(only ~\/\.dsh gets one\): run `system host` in the foreground/)

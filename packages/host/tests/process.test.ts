@@ -22,7 +22,7 @@ async function started(home: string) {
   return { host, serving, lines }
 }
 
-test('the Host answers on $DSH_HOME/system/host.sock, logs a start and a stop, and frees the socket and the home', async () => {
+test('the Host answers on $DSH_HOME/system/host.sock, logs a start and a stop, and frees the socket and the home', { timeout: 60_000 }, async () => {
   const home = fresh()
   const { serving, lines } = await started(home)
   const client = await connect(socketPath(home))
@@ -39,7 +39,7 @@ test('the Host answers on $DSH_HOME/system/host.sock, logs a start and a stop, a
   await (await started(home)).serving.stop()
 })
 
-test('a stale socket file is removed once the lock is held', async () => {
+test('a stale socket file is removed once the lock is held', { timeout: 60_000 }, async () => {
   const home = fresh()
   mkdirSync(join(home, 'system'))
   // A killed process leaves its file behind but no listener.
@@ -56,7 +56,7 @@ test('a stale socket file is removed once the lock is held', async () => {
   await serving.stop()
 })
 
-test('something that is not a socket at the path is not removed', async () => {
+test('something that is not a socket at the path is not removed', { timeout: 60_000 }, async () => {
   const home = fresh()
   mkdirSync(join(home, 'system'))
   writeFileSync(socketPath(home), 'mine')
@@ -66,7 +66,7 @@ test('something that is not a socket at the path is not removed', async () => {
   await host.close()
 })
 
-test('a home whose socket path is too long for a Unix socket is refused with the fix', async () => {
+test('a home whose socket path is too long for a Unix socket is refused with the fix', { timeout: 60_000 }, async () => {
   const home = join(fresh(), 'x'.repeat(100))
   mkdirSync(home)
   const host = await fixture().startHost(home)
