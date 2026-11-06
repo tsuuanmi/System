@@ -230,8 +230,11 @@ written first.
   seeded delays), with one regression per defect of 2026-11-06. Evidence:
   `packages/work/tests/seam.test.ts` (characterization, barrier cancel,
   seeds 1 to 50) passes before and after the dispatch/execute/observe split.
-- [ ] H2. Host lock (abstract socket), commit lane, recovery (interrupted
-  attempts, uncertain slots, no auto-resume), `commandId` receipts.
+- [x] H2. Host lock (abstract socket), commit lane, recovery (interrupted
+  attempts, uncertain slots, no auto-resume), `commandId` receipts. Evidence:
+  `packages/work/tests/host-lock.test.ts` and `host.test.ts` (lock incl. a
+  SIGKILLed child, lane, receipts, recovery); the slot itself is H5, so
+  `Host.uncertain()` only lists the attempts that will keep one.
 - [ ] H3. API on a temporary socket. Includes:
   - the operation table with its `agent` flag and the exclusion test;
   - the version handshake and the caller;

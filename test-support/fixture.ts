@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { WorkController, Capabilities, parseWorkflow, resolve, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
+import { Host, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
 import { memoryWorkTable } from './memory.ts'
 import { LocalControl } from './process.ts'
 
@@ -44,6 +44,12 @@ export interface Fixture {
   release(stepId: string): void
   /** Admit a Workflow file from workflows/ with a stored input. */
   admit(file: string): Promise<WorkRecord>
+  /** The same admission, not yet submitted: what `Host.submit` takes. */
+  admission(file: string): Admission
+  /** What the fake publisher's `reconcile` reports about the remote. */
+  remote: { state: 'applied' | 'absent' | 'unknown' }
+  /** Start a Host over this fixture's table, Artifacts and Workers, locked to `home`. */
+  startHost(home: string): Promise<Host>
 }
 
 /** With a `seed`, every attempt first yields a seeded number (0 to 8) of event-loop turns. */
@@ -66,6 +72,7 @@ export function fixture(options: { seed?: number } = {}): Fixture {
   const attempts: string[] = []
   const delay = async () => { for (let n = Math.floor((random?.() ?? 0) * 9); n > 0; n--) await turn() }
 
+  const remote: Fixture['remote'] = { state: 'absent' }
   const capabilities = new Capabilities()
   capabilities.registerWorker({
     ref: 'fake',
@@ -101,23 +108,27 @@ export function fixture(options: { seed?: number } = {}): Fixture {
     ref: 'fake-publisher', version: '1', capabilities: ['git.publish'], accepts: ['output'],
     validate: () => undefined, approval: () => undefined,
     async apply(intent) { await delay(); return { state: 'applied', reason: 'published', detail: { subject: intent.subject } } },
-    async reconcile() { return { state: 'absent', reason: 'nothing published' } },
+    async reconcile() { return remote.state === 'applied' ? { state: 'applied', reason: 'scripted: applied', detail: {} } : { state: remote.state, reason: `scripted: ${remote.state}` } },
   })
 
   const table = memoryWorkTable()
   const control = new LocalControl()
   const controller = new WorkController(table, specStore, capabilities, control)
   return {
-    controller, control, table, attempts,
+    controller, control, table, attempts, remote,
     hold: (stepId) => { held.add(stepId) },
     arrived: (stepId) => (arrived.has(stepId) ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, go))),
     release: (stepId) => { held.delete(stepId); waiting.get(stepId)?.(); waiting.delete(stepId) },
-    async admit(file) {
+    admission(file) {
       const spec = resolve(parseWorkflow(readFileSync(join(repo, 'workflows', file), 'utf8')), capabilities.available())
       const input = id('the task')
       stored.add(input)
-      return controller.admit({ spec, input, caller, source: { kind: 'workflow-file', path: file } })
+      return { spec, input, caller, source: { kind: 'workflow-file', path: file } }
     },
+    admit(file) {
+      return controller.admit(this.admission(file))
+    },
+    startHost: (home) => Host.start({ home, table, specs: specStore, capabilities }),
   }
 }
 

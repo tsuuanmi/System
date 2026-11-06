@@ -138,13 +138,26 @@ export const stateSchema = z.object({
 export type WorkState = z.infer<typeof stateSchema>
 export type StepState = z.infer<typeof stepState>
 
+/**
+ * What a command left in the Work it changed (PROP-0004 C8): its client ID,
+ * a hash of its canonical arguments, and its result. Written in the same
+ * update as the event that caused it; absent from records written before.
+ */
+const receipt = z.object({
+  commandId: z.string().min(1),
+  args: z.string(),
+  result: z.object({ workId: z.string(), status: z.enum(['running', 'succeeded', 'failed', 'held', 'cancelled']) }).strict(),
+}).strict()
+
 export const workRecordSchema = z.object({
   id: z.string(),
   events: z.array(eventSchema).min(1),
   state: stateSchema,
+  receipts: z.array(receipt).optional(),
 }).strict()
 
 export type WorkRecord = z.infer<typeof workRecordSchema>
+export type Receipt = z.infer<typeof receipt>
 
 export const TERMINAL = new Set<WorkState['status']>(['succeeded', 'failed', 'held', 'cancelled'])
 
