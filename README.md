@@ -98,6 +98,23 @@ Brainstorm takes a brief the same way (`--workflow workflows/brainstorm.yaml`):
 Claude Code and Codex each write a proposal, then a synthesis compares them;
 `bin/system work show <work>` lists the three output Artifact IDs and
 `bin/system artifact cat <id>` prints one.
+A conversation held elsewhere (such as in a web chat) becomes Artifacts and
+then a task's context:
+
+```sh
+bin/system conversation add --response chat.md [--prompt asked.md] [--attach export.json] \
+  [--provider ChatGPT] [--url <url>] [--selection complete|excerpts|summary] \
+  [--product-context browsing]                         # preview only
+bin/system conversation add ... --yes                # store; prints the conversation ID
+bin/system conversation add ... --yes --accept-warnings   # store although the preview warns
+bin/system conversation show <id>
+bin/system task new --text "<what to do>" --context <id>
+```
+
+The preview warns when the files, their names or the stated fields (a URL
+with a token in it) look like a credential; `--yes` then refuses unless
+`--accept-warnings` is given. System stores the bytes as given and labels them operator-supplied and
+unverified ([PROP-0003](docs/proposals/PROP-0003-conversation-ingestion.md)).
 A step asks for a model tier with the capability `tier.economy`,
 `tier.standard` or `tier.frontier`.
 

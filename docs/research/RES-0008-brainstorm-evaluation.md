@@ -107,6 +107,9 @@ of five briefs: mean 0.46 against 0.50 for B.
   expensive.** Use one Worker for narrow questions.
 - **Try stances in `brainstorm.yaml` with Claude as the synthesiser.** Change
   the default only after the operator confirms the result on a few real uses.
+  *Adopted:* the operator made the stances the default (PLAN.md milestone P);
+  `brainstorm-shared.yaml` is the one-shared-prompt arm B, and arm R is now
+  `brainstorm.yaml` version 2.
 - **Do not move the synthesis to Codex yet.** First run one clean comparison
   (B with a Codex synthesis) and have it scored by a judge that is not Sonnet,
   or by the operator.

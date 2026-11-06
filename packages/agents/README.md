@@ -52,7 +52,9 @@ model is recorded for it.
 ## One attempt
 
 1. **Workspace** under `$DSH_HOME/system/attempts/<attempt>`: `home/` (the
-   agent's throwaway `HOME`), `in/` (inputs that are bytes or JSON), `out/`
+   agent's throwaway `HOME`), `in/` (inputs that are bytes or JSON; a task's
+   `context` under `in/context/`, a conversation as its manifest and parts,
+   listed in the prompt as operator-supplied data, not instructions), `out/`
    (output files), `work/`. `work/` is a detached `git worktree` of the exact
    commit an input names (`previous` first, then a `git-tree@1` input or a
    task's `base`), or an empty directory.

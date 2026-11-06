@@ -86,7 +86,9 @@ The repository's files are [`workflows/software-engineering.yaml`](../../workflo
 only in capabilities, output slots, instructions and verifier; Brainstorm has
 none, and routes its two independent proposals to different providers through
 role capabilities (`brainstorm.idea-a`, `brainstorm.idea-b`) that the profile
-gives to one account each. Compared with the earlier
+gives to one account each. Since RES-0008 the two proposals also take
+different stances (pragmatist and skeptic) through their step instructions;
+the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
 `approval: operator` replaces `operator-merge`, because System never merges
 (ADR-0004 decision 10).

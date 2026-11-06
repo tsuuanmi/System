@@ -4,3 +4,14 @@ checks:
   - name: docs
     run: python3 tools/docs.py check && python3 tools/docs.py sync --check
     timeoutSeconds: 120
+  - name: unit
+    # A clean install in the fresh worktree (the verifier gives it its own
+    # HOME), then build, typecheck and the unit tests; the smoke tests boot
+    # DSH hosts and stay with `corepack pnpm check`.
+    run: corepack pnpm install --frozen-lockfile && corepack pnpm build && corepack pnpm typecheck && corepack pnpm test
+    timeoutSeconds: 600
+  - name: smoke
+    # The booted-profile smoke tests (bin/system against throwaway DSH homes);
+    # they caught what the unit tests missed when the lock format changed.
+    run: corepack pnpm install --frozen-lockfile && corepack pnpm build && corepack pnpm smoke
+    timeoutSeconds: 900

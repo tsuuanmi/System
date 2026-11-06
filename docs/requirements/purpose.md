@@ -1,7 +1,7 @@
 ---
 type: requirement
 status: active
-reviewed: 2026-11-05
+reviewed: 2026-11-06
 ---
 
 # System Product Charter
@@ -64,14 +64,29 @@ evade policy.
    configuration and can remain installed but inactive.
 7. **Reliability before feature breadth:** prioritize safe recovery, effects,
    authority and accounting over the number of services and plugins.
-8. **Reuse before build:** DSH/Cordis is the chosen host and composition
-   foundation; reuse its mechanisms and community ecosystem instead of
-   recreating them without evidence.
+8. **Reuse standards and DSH before building:** DSH/Cordis is the chosen host
+   and composition foundation. Reuse its mechanisms and community ecosystem,
+   and established standards (git, JSON Schema, MCP, systemd), before
+   inventing anything. What System records is deterministic, artifact-based
+   and explainable by logic: a new format or mechanism names the standard it
+   considered first.
 9. **Complexity must earn its place:** every required module needs a measurable
    guarantee or use case. A small *active composition* is the target, not
    deleting code merely to reduce its directory size.
 10. **Humans govern exceptions and high-stakes decisions:** automatic
    execution is bounded and explainable, not unconditionally autonomous.
+11. **Stay changeable as it grows:** growth is expected; losing the ability
+   to change is not. Over time, systems, docs and research swell, drift from
+   their first intent and become hard to change (System 1 still runs, but
+   its code and docs grew too large to change safely). System manages growth
+   with measures it tests: the size of the active core and of the docs is
+   recorded at every milestone, growth beyond the agreed budget is justified
+   or paid for by removal, and every milestone ends with a pass that proposes
+   deletions and simplifications.
+12. **Fast, accurate, testable feedback loops:** a change is checked quickly
+   and exactly enough to iterate many times. The required checks stay within
+   their time budget, every behavior has a test that can fail, and a flaky
+   test is a defect fixed before new features.
 
 ## Success means
 

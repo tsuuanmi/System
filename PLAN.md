@@ -170,10 +170,89 @@ at `tsuuanmi/system_1@f199a277`:
   once Website Worker/research evaluation is in scope. Do not port its coded
   research template directly.
 
+## 3b. Next milestones (decided 2026-11-06)
+
+These follow a grilling session on architecture and roadmap. The terms are
+in [GLOSSARY.md](GLOSSARY.md), the host decision in
+[ADR-0007](docs/decisions/ADR-0007-one-long-lived-host.md), and the
+principles in [Charter philosophy](docs/requirements/purpose.md#philosophy)
+items 8, 11 and 12.
+
+### Growth and feedback budgets (Charter 11 and 12)
+
+Growth is expected. The budgets make it visible and justified; they do not
+forbid it. Record the measures at the end of every milestone. Growth above
+budget is either justified in the milestone's row or paid for by removal.
+
+| Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone |
+|---|---|---|
+| Active core: `packages/work/src` + `packages/artifacts/src`, lines | 2,317 | +20% |
+| All package source, lines | 4,081 | recorded |
+| Docs under `docs/`: lines (files) | 3,571 (37) | +20%, and no fact stated twice |
+| Unit check, clean worktree | ~1 min | under 2 min |
+| All required checks (`.system/checks.yaml`) | ~7 min | under 10 min |
+| Flaky tests known | 0 | 0: a flaky test is fixed before features |
+
+Every milestone ends with a **simplification pass**. A System Work (Sonnet)
+proposes deletions and simplifications: dead code, unused abstractions,
+duplicated tests, docs that restate others. The operator reviews it like any
+PR. After each milestone, the Sonnet code review's Standards axis also checks
+the code against Charter items 8, 11 and 12.
+
+### P — Finish PR #3 and small decided items
+
+- [x] Brainstorm default: put the pragmatist/skeptic stances in
+  `workflows/brainstorm.yaml`. Keep the one-shared-prompt version in
+  `workflows/experiments/` for comparison.
+- [ ] Quality evaluations use **Sonnet as the evaluator Worker**, blind
+  (operator's choice). Record that the judge shares a model family with most
+  writers.
+- [ ] System publishes its own changes: from the next Work, System's
+  Software Engineering Workflow pushes `system/<work>` and opens a draft PR
+  on the real repository. It never merges.
+- [ ] A System Work resolves the Dependabot alerts on `main` (9 high,
+  2 moderate), verified by the required checks.
+
+### H — One long-lived Host (ADR-0007)
+
+- [ ] Host process owning every Work. Unix-socket API. CLI as a thin
+  client. `system mcp` (stdio MCP adapter): every operation except
+  approve/deny, `credentials set` and storing a conversation.
+- [ ] `system init` installs the user-systemd unit `system.service` with
+  socket activation.
+- [ ] Ready, independent steps and separate Works run in parallel, limited
+  per Account (default 1).
+- [ ] Remove the one-host-per-command mode, and the per-Work lock, takeover
+  mutex and write fence. Keep one lock per `DSH_HOME`.
+- [ ] Gate:
+  - the existing smoke behaviours pass through the Host;
+  - Brainstorm's two proposals run concurrently;
+  - a Host killed mid-step recovers on restart with replay matching;
+  - an agent drives a Work through MCP but cannot approve.
+
+### O — Orchestrator and Goal (future ADR)
+
+- [ ] **Goal**: the operator's aim, scope and budget (attempts and observed
+  tokens; once spent, new Works for that Goal are refused and running Works
+  finish; only the operator raises it). Every Work an Orchestrator creates
+  names its Goal. A Goal carries the Charter principles as context for its
+  Works.
+- [ ] **Orchestrator**: an agent connected through MCP, a caller scoped to
+  one Goal. It may submit, run, cancel and retry, and read Artifacts. It may
+  never approve, mark a PR ready, accept an inconclusive verdict or merge.
+- [ ] Later, not in O: an Orchestrator that System spawns on a schedule.
+
 ## 4. After Brainstorm — future, not current gates
 
 - [ ] Website Worker for interactive/browser-assisted Research **only when**
   a real source workflow requires it; keep the same WorkerPort/Artifact IDs.
+  *Layer 1 (conversation-to-Artifact ingestion) is being built on PR #3 per
+  [PROP-0003](docs/proposals/PROP-0003-conversation-ingestion.md): `system
+  conversation add|show`, `task new --context`. Dogfood: the operator's
+  ChatGPT review of PR #2 stored as a conversation (`selection: excerpts`)
+  and given as context to Brainstorm Work `work:cc9a38a7…` (roles, standard
+  tier, 3 attempts, 176 s); the synthesis treated it as operator-supplied
+  data and named its uncheckable claims.*
   *Observed need (2026-11-06): the System 1 audit and this roadmap update
   (PR #1 `2dcfe48`) were produced by the operator in ChatGPT on the web and
   carried into the repository by hand, with no Artifact recording what was

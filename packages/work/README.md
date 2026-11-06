@@ -25,19 +25,33 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/control.ts](src/control.ts) — `FileControl`: the per-Work lock and cancel request.
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
   operator touches and usage from a Work's events (`system work report`).
+- [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
+  a conversation held elsewhere taken in as `file@1` parts under a manifest
+  of what the operator asserts and a fixed notice; the preview and its
+  secret warnings, over the parts, their names and the asserted fields.
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
-  admit a file or a direct Task).
+  add a conversation, admit a file or a direct Task).
 
 ## Cancel, takeover and one host per Work
 
 Each DSH host caches records in memory, so only the host that holds a Work's
-lock (`$DSH_HOME/system/control/<work>.lock`, its pid, published by linking a
-complete file so it never exists empty; a dead pid's lock is stale, and is
-taken over by an atomic rename that puts back a live one)
-writes that Work. A host reads the store once when it starts, so the lock
-holder also notes how many events the Work has (`<work>.written`); a host
-that takes the lock with an older copy refuses ("changed since this command
-started") instead of acting on it. `retry` and `approve` hold the lock from
+lock (`$DSH_HOME/system/control/<work>.lock`, its `<pid> <start time>` token
+(the start time from `/proc` where it exists), published by linking a
+complete file so it never exists empty; a dead pid's lock is stale, and so is
+one whose pid a different process now has; a stale lock is removed only
+under the `<work>.takeover` mutex, published the same way, after reading it
+again, so a live host's lock is never moved away; a fresh acquire never takes
+the mutex, and a mutex left by a dead host for over 10 s is removed once)
+writes that Work. A host reads the store once when it starts, so each
+controller has a host identity (a random ID and the time just before it opened
+the store) and marks every write in `<work>.written` (its ID and the time),
+before the table update and after it; a host that takes the lock when another
+host's mark is not older than its own load refuses ("changed since this
+command started") instead of acting on a stale copy. A host's own marks never
+fence it, and a Work with no mark is not fenced. The fence compares wall-clock
+times of one machine; a host that loads its copy in the few milliseconds
+between a crashed host's first mark and its database commit is not caught.
+`retry` and `approve` hold the lock from
 their check to the end of the run. `system work cancel` from another process writes a
 cancel request the running host polls every 250 ms; the host aborts its
 attempt, records `observed` (`cancelled`, with partial output) and `terminal`
@@ -64,7 +78,9 @@ reruns the Work, a denial fails it.
 
 ## Input kinds
 
-[src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`) and
+[src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`,
+optional `context`: Artifacts the Worker reads as data, also listed as the
+task's inputs) and
 `git-tree@1` (`repository`, `commit`, `tree`, `parent`), registered by this
 row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 

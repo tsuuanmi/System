@@ -32,9 +32,15 @@ and updates that in-memory copy, so a host that opened the store before
 another one last wrote a Work, and took the lock after, acted on and
 overwrote an older record. This is the "second host's in-memory cache"
 below. Controller tests with one snapshot per host reproduced it for
-`run` and `retry` (red first). The lock holder now notes the Work's event
-count in `control/<work>.written`, and a host that takes the lock with a
-shorter copy refuses ("changed since this command started"). `retry` and
+`run` and `retry` (red first). Each controller now has a host identity (a
+random ID and the time just before it opened the store), and the writer
+marks the Work (its ID and the time) in `control/<work>.written` before its
+table update and after it, so a crash in between still leaves a mark. A host
+that takes the lock when another host's mark is not older than its own load
+refuses ("changed since this command started"); `run`, `retry`, `cancel`
+and `decide` are tested. Residual case: a host that loads its snapshot in
+the few milliseconds between a crashed host's first mark and its database
+commit is not fenced. The fence compares the wall clock of one machine. `retry` and
 `approve` now validate under the lock and keep it through the run, which
 closes the retry gap described below.
 
@@ -43,7 +49,7 @@ closes the retry gap described below.
 | Problem | Current mechanism in draft PR #2 | What has/has not been proved |
 |---|---|---|
 | **SQLite store access / creation** | DSH SQLite pnpm patch: `busy_timeout`, WAL switch retry, and idempotent unit-version insertion | A concurrent-command bootstrap regression and stress report passed; this is **not** a test of two processes executing the **same Work**. |
-| **Single-Work ownership / event consistency** | One Work record/key, atomic storage update, a per-Work `FileControl` lock published with its PID, and an event-count fence against stale host snapshots | Replay, cancellation, a SIGKILLed host with four concurrent `work run`, and stale-snapshot `run`/`retry` tests pass. |
+| **Single-Work ownership / event consistency** | One Work record/key, atomic storage update, a per-Work `FileControl` lock published with its PID, and a host-and-time write fence against stale host snapshots | Replay, cancellation, a SIGKILLed host with four concurrent `work run`, and stale-snapshot `run`/`retry`/`cancel`/`decide` tests pass. |
 
 **Atomicity is scoped.** A serialized update of *one stored Work key*
 protects that key's transition under the storage API's conditions; it
@@ -79,6 +85,26 @@ calls `run(workId)` to reacquire it. Concurrent `run`/`retry`/
 active attempt and coherent terminal status. This also is **not yet
 a confirmed defect**. Prefer a narrow fix within existing control
 boundaries before proposing a persistent daemon or lease service.
+
+**Fix.** `FileControl` publishes the lock by linking a complete draft
+holding the token `<pid> <start time>` (field 22 of `/proc/<pid>/stat`
+where /proc exists). A holder is alive only if its pid is alive and, when
+both sides have a start time, they match, so a reused pid does not keep a
+dead host's lock live; a pid-only lock written by older versions keeps the
+pid rule. A stale lock is unlinked only while holding the takeover mutex
+`<work>.takeover` (published the same way; `EEXIST` refuses), after reading
+the lock again: a live or still-publishing lock is left alone and the
+takeover refuses. Nothing is renamed aside, a fresh acquire never takes the
+mutex, and `release()` removes the lock only if it holds this process's
+token. A mutex whose holder is dead and older than 10 s is a crash leftover
+and is removed once. Tests: a lock replaced by a live holder before the
+re-read, three processes racing for a stale lock, a reused pid and
+leftover mutexes.
+
+**Remaining case.** Two hosts removing the same crashed `.takeover` within
+microseconds of each other: the slower unlink can remove the faster host's
+new mutex, so two hosts may then read and remove the lock at once. Only
+that window is open.
 
 ## Crash/recovery invariant map
 

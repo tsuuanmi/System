@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
+import { WorkError } from '../src/errors.ts'
 import { FileControl } from '../src/control.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-control-'))
@@ -43,11 +44,13 @@ test('an empty lock left long ago (a host that died while publishing) is stale a
   control.acquire('work:e')()
 })
 
-test('the count of events written survives the process and starts at 0', () => {
+test('the last write of a Work survives the process, starts unset, and an unparsable mark reads as unset', () => {
   const control = new FileControl(dir)
-  assert.equal(control.written('work:g'), 0)
-  control.noteWritten('work:g', 7)
-  assert.equal(new FileControl(dir).written('work:g'), 7)
+  assert.equal(control.lastWrite('work:g'), undefined)
+  control.noteWrite('work:g', { host: 'a', at: 7 })
+  assert.deepEqual(new FileControl(dir).lastWrite('work:g'), { host: 'a', at: 7 })
+  writeFileSync(join(dir, 'work_g.written'), 'not json')
+  assert.equal(control.lastWrite('work:g'), undefined)
 })
 
 test('a cancel request is read until cleared', () => {
@@ -97,4 +100,66 @@ test('hosts racing for a free lock never both win', async () => {
 test('two hosts racing for a stale lock never both win', async () => {
   const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
   assert.equal(await race(2, 15, (raceDir) => writeFileSync(join(raceDir, 'work_race.lock'), dead)), 0)
+})
+
+test('three hosts racing for a stale lock never more than one wins', async () => {
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
+  assert.equal(await race(3, 15, (raceDir) => writeFileSync(join(raceDir, 'work_race.lock'), dead)), 0)
+})
+
+/** The lock's holder token for this process, as `FileControl` writes it. */
+function liveToken(): string {
+  const stat = readFileSync('/proc/self/stat', 'utf8')
+  return `${process.pid} ${stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]}`
+}
+
+test('a stale lock replaced by a live holder before the takeover reads it again survives', () => {
+  const lock = join(dir, 'work_h.lock')
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
+  writeFileSync(lock, dead)
+  // Another host replaces the stale lock after this one decided it was stale.
+  class Replaced extends FileControl {
+    protected override beforeRecheck(file: string): void {
+      rmSync(file)
+      writeFileSync(file, liveToken())
+    }
+  }
+  assert.throws(() => new Replaced(dir).acquire('work:h'), WorkError)
+  assert.equal(readFileSync(lock, 'utf8'), liveToken(), 'the live lock stays')
+  assert.equal(existsSync(join(dir, 'work_h.takeover')), false, 'the mutex is released')
+  assert.throws(() => new FileControl(dir).acquire('work:h'), WorkError)
+})
+
+test('a dead pid reused by a live process (wrong start time) is stale and taken over', { skip: !existsSync('/proc/self/stat') }, () => {
+  const control = new FileControl(dir)
+  writeFileSync(join(dir, 'work_i.lock'), `${process.pid} 1`)
+  assert.equal(control.heldElsewhere('work:i'), false)
+  const release = control.acquire('work:i')
+  assert.equal(readFileSync(join(dir, 'work_i.lock'), 'utf8'), liveToken())
+  release()
+  assert.equal(existsSync(join(dir, 'work_i.lock')), false)
+})
+
+test('a pid-only lock of a live process stays held; release keeps a lock that is not ours', () => {
+  const control = new FileControl(dir)
+  writeFileSync(join(dir, 'work_j.lock'), String(process.pid))
+  assert.equal(control.heldElsewhere('work:j'), true)
+  rmSync(join(dir, 'work_j.lock'))
+  const release = control.acquire('work:j')
+  writeFileSync(join(dir, 'work_j.lock'), `${process.ppid} `)
+  release()
+  assert.equal(existsSync(join(dir, 'work_j.lock')), true)
+})
+
+test('a takeover mutex left by a dead process long ago does not block; a fresh one does', () => {
+  const control = new FileControl(dir)
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' }).stdout
+  writeFileSync(join(dir, 'work_k.lock'), dead)
+  const takeover = join(dir, 'work_k.takeover')
+  writeFileSync(takeover, dead)
+  assert.throws(() => control.acquire('work:k'), /is being run by another process/)
+  const old = new Date(Date.now() - 60_000)
+  utimesSync(takeover, old, old)
+  control.acquire('work:k')()
+  assert.equal(existsSync(takeover), false)
 })

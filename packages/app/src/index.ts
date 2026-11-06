@@ -103,7 +103,8 @@ function workCommands(ctx: Context): WorkCommands {
     decide: (workId, decision, operator, reason) => work.controller.decide(workId, { decision, reason, caller: { type: 'human', operatorId: operator } }),
     retry: (workId, worker, reason, step) => work.controller.retry(workId, { worker, step, reason, caller: caller() }),
     runningElsewhere: (workId) => work.controller.runningElsewhere(workId),
-    newTask: (instructions, repository, ref) => work.newTask(instructions, repository, ref, caller()),
+    newTask: (instructions, repository, ref, context) => work.newTask(instructions, repository, ref, caller(), context),
+    addConversation: (parts, asserted, supersedes) => work.addConversation(parts, asserted, supersedes, caller()),
   }
 }
 
@@ -180,7 +181,7 @@ export function apply(ctx: Context): void {
     workers: () => workersView(ctx),
   }
   let selected: Run | undefined
-  const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
+  const io = { out: (text: string) => { process.stdout.write(text) }, err: (text: string) => { process.stderr.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
   const program = buildProgram(host, io, (run) => { selected = run })
   parseCmdline(ctx, program)
   const run = selected

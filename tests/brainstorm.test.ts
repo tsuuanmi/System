@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -105,6 +105,8 @@ test('a stop after the first proposal reuses it: the retry runs only the second 
   }
   assert.ok(workId, 'the submit printed its Work ID')
   for (let i = 0; i < 300 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 300 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
+  assert.ok(existsSync(marker), 'idea-b started')
   const first = show(workId).state.steps['idea-a']!.outputs.proposal!
   assert.ok(first, 'idea-a finished before idea-b started')
 
@@ -138,8 +140,12 @@ test('after a host is killed mid-step, four hosts resuming at once dispatch the 
   }
   assert.ok(workId, 'the submit printed its Work ID')
   for (let i = 0; i < 300 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
+  // Kill only once the agent is inside idea-b: it creates the marker when it starts to hang.
+  for (let i = 0; i < 300 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
+  assert.ok(existsSync(marker), 'idea-b started')
   const lock = join(home, 'system', 'control', `${workId.replace(/[^a-z0-9-]/gi, '_')}.lock`)
-  process.kill(Number(readFileSync(lock, 'utf8')), 'SIGKILL')
+  // The lock holds `<pid> <start time>`.
+  process.kill(Number(readFileSync(lock, 'utf8').split(' ')[0]), 'SIGKILL')
   assert.notEqual(await exited, 0, 'the killed host did not finish the Work')
 
   const runs = await Promise.all([0, 1, 2, 3].map(() => new Promise<{ status: number | null; stderr: string }>((resolve) => {

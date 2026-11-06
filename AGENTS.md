@@ -50,6 +50,20 @@ test stand-ins. Changes to this repository are checked by
 - **Evidence over claims:** verification applies to the exact artifact.
   Never assert tested reliability or active plugins from configuration
   documentation alone.
+- **Stay changeable** ([Charter](docs/requirements/purpose.md#philosophy)
+  11): growth is fine, but losing the ability to change is not.
+  - Prefer deleting or simplifying to adding a layer.
+  - Record growth of the active core and the docs at each milestone in
+    [PLAN.md](PLAN.md), and justify growth beyond its budget.
+  - Never let docs restate what code, tests or another doc already say.
+- **Fast, testable feedback** (Charter 12):
+  - Every behavior change comes with a test that failed first.
+  - Keep `.system/checks.yaml` within its time budget.
+  - Treat a flaky test as a defect to fix before new features.
+- **Standards and determinism** (Charter 8): before inventing a format or
+  mechanism, name the existing standard you considered (git, JSON Schema,
+  MCP, systemd...). What System records stays deterministic and
+  artifact-based.
 
 ## Documentation change rules
 

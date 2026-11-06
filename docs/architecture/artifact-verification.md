@@ -54,6 +54,13 @@ time or producer identity. Provenance can vary between distinct production
 events that yield the same content; record occurrences/lineage separately.
 Do not merge confidentiality or authorization solely because hashes match.
 
+Material from outside System keeps this split. A `conversation@1` manifest
+([PROP-0003](../proposals/PROP-0003-conversation-ingestion.md)) records only
+what the operator asserts, plus its parts as `file@1` inputs, so the same
+files give the same ID; who added it and when are occurrences. A `task@1`
+may list `context` Artifacts, which are also its inputs, so their
+classification floors the task's.
+
 **Implemented rule, `artifact-id/v1`** ([`@system/artifacts`](../../packages/artifacts/README.md)):
 the ID is `sha256` over the domain tag `system.artifact/v1`, a newline, and the
 canonical JSON (sorted keys, RFC 8785 key order) of `kind`, `schemaVersion`,
