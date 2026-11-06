@@ -226,8 +226,10 @@ deferral triggers: [PROP-0004](docs/proposals/PROP-0004-host-design.md).
 Every step is a System Work (Sonnet) merged into `dev`, with its tests
 written first.
 
-- [ ] H1. Controller seam and the deterministic concurrency fixture (barriers,
-  seeded delays), with one regression per defect of 2026-11-06.
+- [x] H1. Controller seam and the deterministic concurrency fixture (barriers,
+  seeded delays), with one regression per defect of 2026-11-06. Evidence:
+  `packages/work/tests/seam.test.ts` (characterization, barrier cancel,
+  seeds 1 to 50) passes before and after the dispatch/execute/observe split.
 - [ ] H2. Host lock (abstract socket), commit lane, recovery (interrupted
   attempts, uncertain slots, no auto-resume), `commandId` receipts.
 - [ ] H3. API on a temporary socket. Includes:

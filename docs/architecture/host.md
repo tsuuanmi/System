@@ -152,8 +152,8 @@ before the code (Charter 12, fixture first).
 | Guarantee | Test (planned) |
 |---|---|
 | One Host per home | A second `system host` on the same home exits at once. A killed Host's home can be taken immediately. |
-| No change from a stale copy | A deterministic fixture (barriers, seeded delays) in which two commands race on one Work: the events equal the fold, and none are lost. |
-| The five defects of 2026-11-06 stay fixed | One regression per defect, run against the Host. |
+| No change from a stale copy | A deterministic fixture (barriers, seeded delays) in which two commands race on one Work: the events equal the fold, and none are lost. Covered by H1: `a cancel request while an attempt is held at a barrier is recorded after the attempt` and `seed 1` to `seed 50` (packages/work/tests/seam.test.ts); the Host's command race itself comes with H2. |
+| The five defects of 2026-11-06 stay fixed | One regression per defect, run against the Host. Held by H1 against the controller, in the tests named in [tests/README.md](../../tests/README.md#regressions). |
 | A lost reply is safe | Each command is sent twice with the same `commandId`: one Work, one event. With different arguments it is refused. |
 | Agents cannot approve | Every operation not flagged `agent` is refused to an agent caller. |
 | Recovery is conservative | The Host is killed mid-attempt. On restart, the Work is interrupted, the slot is held until reconciled, and nothing is re-dispatched by itself. |

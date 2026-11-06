@@ -3,7 +3,9 @@
  * decision 3). It admits Work against the effective capabilities, pins the
  * resolved spec as an Artifact, and advances one step at a time, persisting a
  * `dispatched` event before calling a Worker or verifier and the observation
- * after. There is no domain-specific branch.
+ * after. Each attempt is three phases: dispatch and observe run in the commit
+ * lane and read the latest committed record, execute runs outside it and
+ * touches no Work state. There is no domain-specific branch.
  *
  * Recovery: a step whose last attempt was dispatched but never observed lost
  * its process; it is recorded `attempt-lost` and dispatched again as a new
@@ -15,7 +17,7 @@ import { z } from 'zod'
 import type { CancelRequest, HostControl } from './control.ts'
 import { WorkError } from './errors.ts'
 import type { Verdict } from './kinds.ts'
-import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifyResult } from './registry.ts'
+import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, workflowSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
@@ -62,6 +64,32 @@ export interface Admission {
 export interface HostIdentity {
   id: string
   loadedAt: number
+}
+
+/** A dispatched Worker attempt: what `execute` needs and `observe` reports on. */
+interface WorkerAttempt {
+  workId: string
+  attemptId: string
+  step: Extract<Step, { capabilities: string[] }>
+  worker: WorkerPort
+  inputs: Record<string, string>
+}
+
+/** What a Worker run produced, and whether a cancel request stopped it. */
+interface WorkerExecution {
+  result: WorkerResult
+  aborted: boolean
+}
+
+/** A dispatched verifier attempt; `refusal` is why it is not asked at all. */
+interface VerifierAttempt {
+  workId: string
+  attemptId: string
+  step: Extract<Step, { verify: unknown }>
+  verifier: VerifierPort
+  subject: string
+  criteria: string
+  refusal?: string
 }
 
 export class WorkController {
@@ -300,18 +328,31 @@ export class WorkController {
     return found.state === 'absent' && then === 'apply-if-absent' ? this.applyEffect(record, provider, intent) : record
   }
 
+  /** Execute and observe an effect whose intent is recorded. */
   private async applyEffect(record: WorkRecord, provider: EffectPort, intent: EffectIntent): Promise<WorkRecord> {
-    let outcome: EffectOutcome
+    return this.observeEffect(record.id, provider, intent, await this.executeEffect(provider, intent))
+  }
+
+  /** Outside the lane: apply the effect, touching no Work state. */
+  private async executeEffect(provider: EffectPort, intent: EffectIntent): Promise<EffectOutcome | Error> {
     try {
-      outcome = await provider.apply(intent)
+      return await provider.apply(intent)
     } catch (error) {
+      return error as Error
+    }
+  }
+
+  /** In the lane: read the committed record again and append the outcome. */
+  private async observeEffect(workId: string, provider: EffectPort, intent: EffectIntent, applied: EffectOutcome | Error): Promise<WorkRecord> {
+    const record = this.require(workId)
+    if (applied instanceof Error) {
       // The remote may or may not have changed: read it, and never retry here.
       const after = await this.reconcile(record, provider, intent, 'record-only')
       const effect = after.state.effects[intent.operationId]!
-      if (effect.state === 'absent') return this.finish(after, 'failed', `${intent.stepId} failed: ${(error as Error).message}; the remote shows nothing published`)
+      if (effect.state === 'absent') return this.finish(after, 'failed', `${intent.stepId} failed: ${applied.message}; the remote shows nothing published`)
       return after
     }
-    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: outcome.state, reason: outcome.reason, detail: outcome.detail })
+    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail })
   }
 
   private async step(record: WorkRecord): Promise<WorkRecord> {
@@ -337,31 +378,48 @@ export class WorkController {
   }
 
   private async runWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<WorkRecord> {
+    const dispatched = await this.dispatchWorker(record, s)
+    if (!dispatched.attempt) return dispatched.record
+    return this.observeWorker(dispatched.attempt, await this.executeWorker(dispatched.attempt))
+  }
+
+  /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
+  private async dispatchWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<{ record: WorkRecord; attempt?: WorkerAttempt }> {
     const inputs = Object.fromEntries(Object.entries(s.inputs ?? {}).map(([name, ref]) => [name, this.resolveRef(record, ref)]))
     const reopened = record.events.findLast((e) => e.type === 'reopened' && e.stepId === s.id)
     const takeover = reopened?.type === 'reopened' ? reopened : undefined
     if (takeover?.previous) inputs.previous = takeover.previous
     const route = this.capabilities.routeWorker(s.capabilities, takeover?.worker)
-    if (!route.selected) return this.finish(record, 'failed', `no enabled Worker ${takeover?.worker ? `${takeover.worker} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`)
+    if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled Worker ${takeover?.worker ? `${takeover.worker} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`) }
     const attemptId = `attempt:${randomUUID()}`
     record = await this.append(record, {
       type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
       selected: route.selected.ref, candidates: route.candidates, inputs,
     })
+    return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
+  }
+
+  /** Outside the lane: run the Worker, touching no Work state. */
+  private async executeWorker(attempt: WorkerAttempt): Promise<WorkerExecution> {
+    const { workId, attemptId, step: s, inputs } = attempt
     const abort = new AbortController()
-    const poll = setInterval(() => { if (this.control.cancelRequest(record.id)) abort.abort() }, CANCEL_POLL_MS)
+    const poll = setInterval(() => { if (this.control.cancelRequest(workId)) abort.abort() }, CANCEL_POLL_MS)
     // A poll never keeps the process alive by itself.
     poll.unref()
-    let result
     try {
-      result = await route.selected.run({ workId: record.id, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, instructions: s.instructions, signal: abort.signal })
+      return { result: await attempt.worker.run({ workId, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, instructions: s.instructions, signal: abort.signal }), aborted: abort.signal.aborted }
     } catch (error) {
-      result = { status: abort.signal.aborted ? 'cancelled' as const : 'failed' as const, outputs: {}, reason: `the Worker threw: ${(error as Error).message}` }
+      return { result: { status: abort.signal.aborted ? 'cancelled' : 'failed', outputs: {}, reason: `the Worker threw: ${(error as Error).message}` }, aborted: abort.signal.aborted }
     } finally {
       clearInterval(poll)
     }
+  }
+
+  /** In the lane: read the committed record again and append the outcome. */
+  private async observeWorker(attempt: WorkerAttempt, { result, aborted }: WorkerExecution): Promise<WorkRecord> {
+    const { workId, attemptId, step: s } = attempt
     let { status, reason } = result
-    if (abort.signal.aborted) status = 'cancelled'
+    if (aborted) status = 'cancelled'
     const outputs = status === 'succeeded' ? result.outputs : {}
     if (status === 'succeeded') {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
@@ -369,14 +427,14 @@ export class WorkController {
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
     }
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
-    record = await this.append(record, {
+    const record = await this.append(this.require(workId), {
       type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason,
       usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
     })
-    const cancel = this.control.cancelRequest(record.id)
+    const cancel = this.control.cancelRequest(workId)
     return status === 'cancelled' && cancel ? this.cancelled(record, cancel) : record
   }
 
@@ -389,38 +447,51 @@ export class WorkController {
   }
 
   private async runVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<WorkRecord> {
+    const dispatched = await this.dispatchVerifier(record, s)
+    if (!dispatched.attempt) return dispatched.record
+    return this.observeVerifier(dispatched.attempt, await this.executeVerifier(dispatched.attempt))
+  }
+
+  /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
+  private async dispatchVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<{ record: WorkRecord; attempt?: VerifierAttempt }> {
     const subject = this.resolveRef(record, s.verify.subject)
     const criteria = record.state.criteria[s.id]
-    if (!criteria) return this.finish(record, 'failed', `step ${s.id} has no pinned criteria`)
+    if (!criteria) return { record: await this.finish(record, 'failed', `step ${s.id} has no pinned criteria`) }
     const route = this.capabilities.routeVerifier(s.verify.capability)
-    if (!route.selected) return this.finish(record, 'failed', `no enabled verifier provides ${s.verify.capability} for step ${s.id}`)
+    if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled verifier provides ${s.verify.capability} for step ${s.id}`) }
     const verifier = route.selected
     const attemptId = `attempt:${randomUUID()}`
+    const kind = this.specs.kindOf(subject)
+    const admitted = record.events[0]
+    const pinned = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
+    let refusal: string | undefined
+    if (pinned && (pinned.ref !== verifier.ref || pinned.version !== verifier.version)) refusal = `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`
+    else if (!kind || !verifier.accepts.includes(kind)) refusal = `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`
     record = await this.append(record, {
       type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
       selected: verifier.ref, candidates: route.candidates, inputs: { subject, criteria },
     })
-    const kind = this.specs.kindOf(subject)
-    const admitted = record.events[0]
-    const pinned = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
-    let result: VerifyResult
-    if (pinned && (pinned.ref !== verifier.ref || pinned.version !== verifier.version)) {
-      result = { verdict: 'error', reason: `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`, subject, criteria, evidence: [] }
-    } else if (!kind || !verifier.accepts.includes(kind)) {
-      result = { verdict: 'error', reason: `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`, subject, criteria, evidence: [] }
-    } else {
-      try {
-        result = await verifier.verify({ workId: record.id, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria })
-      } catch (error) {
-        result = { verdict: 'error', reason: `the verifier threw: ${(error as Error).message}`, subject, criteria, evidence: [] }
-      }
+    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, refusal } }
+  }
+
+  /** Outside the lane: ask the verifier, touching no Work state. */
+  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, refusal }: VerifierAttempt): Promise<VerifyResult> {
+    if (refusal) return { verdict: 'error', reason: refusal, subject, criteria, evidence: [] }
+    try {
+      return await verifier.verify({ workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria })
+    } catch (error) {
+      return { verdict: 'error', reason: `the verifier threw: ${(error as Error).message}`, subject, criteria, evidence: [] }
     }
+  }
+
+  /** In the lane: read the committed record again and append the verdict. */
+  private async observeVerifier({ workId, attemptId, step: s, verifier, subject, criteria }: VerifierAttempt, result: VerifyResult): Promise<WorkRecord> {
     const bound = this.bind(result, subject, criteria)
     const verdictId = await this.specs.putVerdict({
       subject, criteria, capability: s.verify.capability, verifier: { ref: verifier.ref, version: verifier.version },
       verdict: bound.verdict, reason: bound.reason, evidence: bound.evidence,
     })
-    return this.append(record, {
+    return this.append(this.require(workId), {
       type: 'verified', stepId: s.id, attemptId, subject, criteria,
       verdict: bound.verdict, reason: bound.reason, verdictId, evidence: bound.evidence,
       verifier: { ref: verifier.ref, version: verifier.version },
@@ -493,28 +564,36 @@ export class WorkController {
    * operation: intent first, effect second, outcome third.
    */
   private async runEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<WorkRecord> {
+    const dispatched = await this.dispatchEffect(record, spec, s)
+    if (!dispatched.attempt) return dispatched.record
+    const { provider, intent } = dispatched.attempt
+    return this.observeEffect(record.id, provider, intent, await this.executeEffect(provider, intent))
+  }
+
+  /** In the lane: decide from the committed record and append the intent; `attempt` is absent when the step failed or is held instead. */
+  private async dispatchEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<{ record: WorkRecord; attempt?: { provider: EffectPort; intent: EffectIntent } }> {
     const subject = this.resolveRef(record, s.effect.subject)
     const decided = this.decisionOf(record, s.id)
     // ADR-0004 decision 12: only a pass on this exact subject allows the effect; no decision overrides it.
     const notPass = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const).filter(([, verdict]) => verdict !== 'pass')
     if (notPass.length) {
-      return this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
+      return { record: await this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`) }
     }
     const provider = this.capabilities.routeEffect(s.effect.capability).selected
-    if (!provider) return this.finish(record, 'failed', `no enabled provider offers ${s.effect.capability} for step ${s.id}`)
+    if (!provider) return { record: await this.finish(record, 'failed', `no enabled provider offers ${s.effect.capability} for step ${s.id}`) }
     const kind = this.specs.kindOf(subject)
-    if (!kind || !provider.accepts.includes(kind)) return this.finish(record, 'failed', `${provider.ref} publishes ${provider.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`)
+    if (!kind || !provider.accepts.includes(kind)) return { record: await this.finish(record, 'failed', `${provider.ref} publishes ${provider.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`) }
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
       workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params },
     }
     const why = provider.approval(intent)
-    if (why && !decided) return this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id)
+    if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id) }
     record = await this.append(record, {
       type: 'effect-intended', stepId: s.id, operationId: intent.operationId, capability: intent.capability, subject,
       params: intent.params, provider: { ref: provider.ref, version: provider.version },
     })
-    return this.applyEffect(record, provider, intent)
+    return { record, attempt: { provider, intent } }
   }
 
   /**
