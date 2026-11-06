@@ -12,7 +12,8 @@ changes future admissions only.
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`) → `accept`.
 - [brainstorm.yaml](brainstorm.yaml) — `idea-a` (`brainstorm.idea-a`) and
-  `idea-b` (`brainstorm.idea-b`) each write a `proposal` from the brief alone;
+  `idea-b` (`brainstorm.idea-b`) each write a `proposal` from the brief alone,
+  with a stance each (pragmatist, skeptic);
   `synthesis` (`brainstorm.synthesis`) reads both exact proposals and writes a
   `summary`. No verifier: success means the three outputs exist. The bundle
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.

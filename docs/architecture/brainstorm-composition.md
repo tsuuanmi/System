@@ -79,9 +79,11 @@ ideation), compare against a one-Worker baseline, and collect human
 judgments of usefulness, diversity, disagreement quality, actionability,
 time, known usage and interventions.
 
-A **config-only** alternative worth testing: distinct cognitive roles.
-For instance, one proposal optimizes simplicity and practical feasibility
-while the other looks for missing assumptions and disconfirming cases.
+A **config-only** alternative was tested and adopted as the default:
+distinct cognitive roles. One proposal (`idea-a`) optimizes simplicity and
+practical feasibility while the other (`idea-b`) looks for missing
+assumptions and disconfirming cases. The one-shared-prompt version is kept
+as `workflows/experiments/brainstorm-shared.yaml`.
 Both still receive only the original brief, and the prompts should not
 script fake disagreements. Keep both proposals visible beside the
 synthesis so the operator can disagree with the synthesizer. Test a

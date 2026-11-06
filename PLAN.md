@@ -201,7 +201,7 @@ the code against Charter items 8, 11 and 12.
 
 ### P — Finish PR #3 and small decided items
 
-- [ ] Brainstorm default: put the pragmatist/skeptic stances in
+- [x] Brainstorm default: put the pragmatist/skeptic stances in
   `workflows/brainstorm.yaml`. Keep the one-shared-prompt version in
   `workflows/experiments/` for comparison.
 - [ ] Quality evaluations use **Sonnet as the evaluator Worker**, blind

@@ -48,22 +48,22 @@ test('the Brainstorm file: two proposals from the brief alone, then a synthesis 
   assert.deepEqual(step('synthesis').dependsOn, ['idea-a', 'idea-b'])
   assert.deepEqual(step('synthesis').inputs, { brief: '$work.input', 'proposal-a': '$steps.idea-a.proposal', 'proposal-b': '$steps.idea-b.proposal' })
   assert.deepEqual(['idea-a', 'idea-b', 'synthesis'].map((id) => step(id).capabilities), [['brainstorm.idea-a'], ['brainstorm.idea-b'], ['brainstorm.synthesis']])
-  assert.equal(step('idea-a').instructions, step('idea-b').instructions)
+  assert.notEqual(step('idea-a').instructions, step('idea-b').instructions, 'a stance per proposal')
   assert.ok(spec.steps.every((s) => 'capabilities' in s), 'no verify, effect or accept step')
   const noCodex = { ...roles, workers: new Set(['brainstorm.idea-a', 'brainstorm.synthesis']) }
   assert.deepEqual(problems(fixture('brainstorm.yaml'), noCodex), ['step idea-b needs Worker capability brainstorm.idea-b, which no enabled Worker provides'])
 })
 
-test('the B3 experiment files resolve: a one-step baseline, and Brainstorm with a stance per proposal', () => {
+test('the B3 experiment files resolve: a one-step baseline, and Brainstorm with one shared prompt', () => {
   const roles: AvailableCapabilities = { ...available, workers: new Set(['brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']) }
   const single = resolve(parseWorkflow(fixture('experiments/brainstorm-single.yaml')), roles)
   assert.deepEqual(single.steps.map((s) => s.id), ['answer'])
-  const stance = resolve(parseWorkflow(fixture('experiments/brainstorm-roles.yaml')), roles)
-  const plain = resolve(parseWorkflow(fixture('brainstorm.yaml')), roles)
-  const strip = (spec: typeof plain) => spec.steps.map((s) => ({ ...s, instructions: undefined }))
-  assert.deepEqual(strip(stance), strip(plain), 'only the instructions differ')
-  const [a, b] = stance.steps as { instructions?: string }[]
-  assert.notEqual(a!.instructions, b!.instructions)
+  const shared = resolve(parseWorkflow(fixture('experiments/brainstorm-shared.yaml')), roles)
+  const stance = resolve(parseWorkflow(fixture('brainstorm.yaml')), roles)
+  const strip = (spec: typeof stance) => spec.steps.map((s) => ({ ...s, instructions: undefined }))
+  assert.deepEqual(strip(shared), strip(stance), 'only the instructions differ')
+  const [a, b] = shared.steps as { instructions?: string }[]
+  assert.equal(a!.instructions, b!.instructions)
 })
 
 test('steps resolve in dependency order, file order among ready steps, with sorted dependsOn', () => {
