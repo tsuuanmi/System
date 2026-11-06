@@ -254,6 +254,7 @@ written first.
   - the operations runbook with its cutover and rollback checklist (`docs/operations/`);
   - the API reference.
   **Release R1.**
+  H4a: `system host`, unit, Node selection.
 - [ ] H5. Parallel steps and Works with per-Account slots. Barrier tests for
   shared-Account contention and for restarts. **Release R2.**
 - [ ] Gate R1:

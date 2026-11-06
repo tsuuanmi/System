@@ -8,6 +8,7 @@
   "exports": {
     ".": "./lib/index.js",
     "./operations": "./lib/operations.js",
+    "./process": "./lib/process.js",
     "./package.json": "./package.json"
   },
   "files": [

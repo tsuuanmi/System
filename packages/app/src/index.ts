@@ -12,10 +12,12 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import { z } from 'zod'
 import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
 import type { AgentsService } from '@system/agents'
-import type { Caller, Capabilities, WorkService } from '@system/work'
+import { WorkError, dshHome, hostHeld, type Caller, type Capabilities, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildProgram, type AppHost, type ArtifactCommands, type CredentialCommands, type Run, type WorkCommands, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type StorageStatus } from './doctor.ts'
+// By path, not by package: declaring @system/host here would change the lockfile.
+import { serveHost } from '../../host/lib/process.js'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -88,10 +90,21 @@ export function caller(): Caller {
   return { type, operatorId: operatorId() }
 }
 
+/**
+ * Until the CLI goes through the Host's socket (H4b), a command that changes
+ * Work runs its own controller: refuse while a Host holds the home, so there is
+ * one writer.
+ */
+async function noHostHolds(ctx: Context): Promise<void> {
+  const home = dshHome(ctx)
+  if (await hostHeld(home)) throw new WorkError(`a Host is running for ${home}; stop it first (systemctl --user stop system)`)
+}
+
 function workCommands(ctx: Context): WorkCommands {
   const work = ctx.get('work') as WorkService | undefined
   if (!work) throw new Error('the work row is not mounted (run `system doctor`)')
   return {
+    noHost: () => noHostHolds(ctx),
     admitFile: (path, input) => work.admitFile(path, input, caller()),
     admitTask: (capabilities, input) => work.admitTask(capabilities, input, caller()),
     run: (workId) => work.controller.run(workId),
@@ -170,6 +183,45 @@ async function confirmHuman(prompt: string, expected: string): Promise<string> {
   return operatorId()
 }
 
+/** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT. */
+async function runHost(ctx: Context): Promise<void> {
+  const work = ctx.get('work') as WorkService | undefined
+  const artifacts = ctx.get('artifacts') as Artifacts | undefined
+  const capabilities = ctx.get('capabilities') as Capabilities | undefined
+  if (!work || !artifacts || !capabilities) throw new Error('the work row is not mounted (run `system doctor`)')
+  const home = dshHome(ctx)
+  const host = await work.startHost(home)
+  const credentials = credentialCommands(ctx)
+  const serving = await serveHost({
+    host, home,
+    log: (line) => { process.stderr.write(`system host: ${line}\n`) },
+    services: {
+      capabilities,
+      putFile: (data, mediaType, classification, who) => artifacts.putBytes({
+        kind: 'file', schemaVersion: 1, data, mediaType,
+        classification: classification as Classification, producer: { type: 'operator', ref: who.operatorId },
+      }),
+      artifact: (id) => artifacts.get(id),
+      readBytes: (id) => artifacts.readBytes(id),
+      newTask: (instructions, repository, ref, context, who) => work.newTask(instructions, repository, ref, who, context),
+      addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
+      credentials,
+      workers: () => workersView(ctx),
+    },
+  }).catch(async (error: unknown) => {
+    await host.close()
+    throw error
+  })
+  // The launcher stops its tree on a signal and exits 130 for SIGINT; the Host stops itself and exits 0.
+  await new Promise<void>((stopped) => {
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+      process.removeAllListeners(signal)
+      // A repeat while stopping (systemd also signals the wrapper's child) is ignored.
+      process.on(signal, () => { void serving.stop().then(stopped) })
+    }
+  })
+}
+
 export function apply(ctx: Context): void {
   const host: AppHost = {
     hasService: (service) => ctx.get(service as never) !== undefined,
@@ -179,6 +231,7 @@ export function apply(ctx: Context): void {
     work: () => workCommands(ctx),
     credentials: () => credentialCommands(ctx),
     workers: () => workersView(ctx),
+    runHost: () => runHost(ctx),
   }
   let selected: Run | undefined
   const io = { out: (text: string) => { process.stdout.write(text) }, err: (text: string) => { process.stderr.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
@@ -189,7 +242,8 @@ export function apply(ctx: Context): void {
   const exit = ctx.get('appExit')!
   const start = (): void => {
     run().then(exit, (error: unknown) => {
-      process.stderr.write(`system: ${(error as Error).stack ?? String(error)}\n`)
+      // A refusal is a line to read; anything else is a defect worth its stack.
+      process.stderr.write(`system: ${error instanceof WorkError ? error.message : (error as Error).stack ?? String(error)}\n`)
       exit(1)
     })
   }

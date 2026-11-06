@@ -10,6 +10,10 @@ const server = await serve(host, { path, methods: operations(services) })  // Un
 const client = await connect(path, { timeout })     // { call(method, params), close() }
 await client.call('host.hello', { version, caller: { type: 'human', operatorId } })
 await client.call('host.ping')
+
+// as a process (`system host`): lock taken, then the socket at $DSH_HOME/system/host.sock
+const serving = await serveHost({ host, home, services, log })
+await serving.stop()                                // server, then the Host core and its lock
 ```
 
 ## Protocol
@@ -31,7 +35,7 @@ await client.call('host.ping')
   runs. A caller of type `agent` may call only rows with `agent: true`.
   `operations(services)` (`src/operations.ts`) builds the rows of the Work
   operations; `Services` is what they need besides the `Host`: Artifacts,
-  credentials and the Workers view. The CLI of H4 brings the DSH-backed ones.
+  credentials and the Workers view; `system host` brings the DSH-backed ones.
 - **Authority.** The caller of the connection is passed to every handler and is
   the `caller` recorded on each Work event the call causes. An agent calling a
   row flagged `agent: false` gets `-32001`, "not allowed for agents".

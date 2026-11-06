@@ -187,9 +187,26 @@ PLAN's growth budget.
 
 Credentials still come from the DSH store.
 
+**Implemented (H4a):**
+- `system host` builds the Host core in the DSH composition (`WorkService.startHost`),
+  serves the operation table on `$DSH_HOME/system/host.sock` (a stale file is
+  removed once the lock is held), and logs one line per start and stop to
+  stderr. On SIGTERM or SIGINT it closes the server, then the core (which
+  releases the lock), and exits 0.
+- `system init` writes the unit, runs `daemon-reload` and enables lingering,
+  and prints the commands to enable and start it; it never does either.
+  `--no-service` or `SYSTEM_NO_SERVICE=1` skips it, and a `DSH_HOME` other than
+  `~/.dsh` gets no unit.
+- `bin/system` runs the newest Node 24 (>= 24.9) under `~/.nvm/versions/node/`
+  when the running one is older, or names `nvm install 24`.
+- Until H4b, the old per-command path refuses to change Work while a Host holds
+  the home: `submit`, `run`, `retry`, `cancel`, `approve`, `deny`.
+
+The commands are in the [operations runbook](../operations/runbook.md).
+
 The CLI pings the Host with a timeout and says which case it hit:
 - not running: run `systemctl --user start system`;
-- not answering: see the operations runbook, written with R1.
+- not answering: see the [operations runbook](../operations/runbook.md).
 
 Other homes (tests, experiments) run `system host` in the foreground.
 
@@ -200,7 +217,7 @@ before the code (Charter 12, fixture first).
 
 | Guarantee | Test |
 |---|---|
-| One Host per home | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts); `a second Host on the same home is refused; another home is not; a closed Host frees its home` (host.test.ts). The `system host` command is H4. |
+| One Host per home | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts); `a second Host on the same home is refused; another home is not; a closed Host frees its home` (host.test.ts). `system host` (H4a): `host-process.test.ts`. |
 | No change from a stale copy | Held for the Host's commands (H2): `a cancel and the report of a held attempt in the same turn: both are recorded, in order, and the record replays`, `run and cancel submitted together: the cancel is decided first, so nothing is dispatched`, `two runs of one Work together: one drives it, the other is refused, nothing interleaves`, `writes of different Works never overlap: every change goes through the one lane`, `seed 1` to `seed 20: run, cancel and run again at random moments lose and repeat no event`, `the lane runs one section at a time, in order, and a failure does not block the next`, `a closed Host writes nothing, even when its attempt reports late` (host.test.ts); the controller itself by H1 in packages/work/tests/seam.test.ts. |
 | The five defects of 2026-11-06 stay fixed | One regression per defect, run against the Host. Held by H1 against the controller, in the tests named in [tests/README.md](../../tests/README.md#regressions). |
 | A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `submit sent twice at once gives one Work`, `the same run twice dispatches once`, `the same run sent twice while it runs joins it`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
