@@ -53,7 +53,7 @@
       name: '@system/effects'
       config:
         remote: origin
-        base: main
+        base: dev  # System's changes integrate into dev; only the operator merges dev into main (ADR-0008)
         apiUrl: https://api.github.com
         tokenRef: GITHUB_TOKEN
 

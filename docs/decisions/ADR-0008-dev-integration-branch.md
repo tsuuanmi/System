@@ -1,0 +1,48 @@
+---
+id: ADR-0008
+type: decision
+status: accepted
+date: 2026-11-06
+summary: System's own changes integrate into a `dev` branch that System may update and merge into once the required checks pass; only the operator merges `dev` into `main`.
+related: [ADR-0004, ADR-0007]
+---
+
+# A `dev` integration branch System may merge into
+
+## Context
+
+[ADR-0004](ADR-0004-mvp-0-operating-decisions.md) decision 10 says System
+never merges; merging stays a human action. Once System began changing
+itself, every change of its own became a draft PR waiting for the operator,
+even when the repository's required checks had passed on its exact commit.
+The operator wants System's work to flow without waiting, and to keep the
+decision about what reaches `main` for themselves.
+
+## Decision
+
+1. The repository has a long-lived **`dev`** branch. System's Software
+   Engineering Work publishes against `dev`. It pushes `system/<work>` and
+   opens a PR with base `dev`.
+2. System **may merge into `dev`**, and only into `dev`, when all of these
+   hold:
+   - the required checks passed on the exact commit it published;
+   - the PR's head is still that commit;
+   - the merge is clean.
+   The merge is an effect like the push. It records an intent before it acts
+   and the outcome after, and an unknown outcome is reconciled by reading
+   GitHub, never by merging blindly again. Any other target branch is
+   refused.
+3. **Only the operator merges `dev` into `main`.** No Worker, Orchestrator
+   or System effect does it. This replaces "System never merges" in ADR-0004
+   decision 10 for `dev`, and keeps it for every other branch.
+
+## Consequences
+
+- System's verified changes reach `dev` without waiting. The operator
+  reviews `dev` against `main` in batches.
+- `dev` can hold changes the operator has not read. The required checks are
+  what gate it, so their coverage (docs, unit, smoke) matters more. Gaps
+  found there are fixed in the checks, not by reviewing each PR.
+- The `git.publish` provider needs a merge step limited to an allowlist of
+  target branches (`dev`). Until it exists, System's PRs into `dev` are
+  opened and merged by the operator's agent after review.

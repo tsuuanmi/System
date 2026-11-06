@@ -22,7 +22,7 @@ The controller records `effect-intended` before `apply` and
 - id: effects
   config:
     remote: origin                   # the remote of the subject's repository
-    base: main                       # what pull requests target
+    base: dev                        # what pull requests target (ADR-0008)
     apiUrl: https://api.github.com
     repository: owner/name           # optional; parsed from a github.com remote
     tokenRef: GITHUB_TOKEN           # system credentials set GITHUB_TOKEN

@@ -207,11 +207,17 @@ the code against Charter items 8, 11 and 12.
 - [ ] Quality evaluations use **Sonnet as the evaluator Worker**, blind
   (operator's choice). Record that the judge shares a model family with most
   writers.
-- [ ] System publishes its own changes: from the next Work, System's
+- [x] System publishes its own changes: from the next Work, System's
   Software Engineering Workflow pushes `system/<work>` and opens a draft PR
-  on the real repository. It never merges.
-- [ ] A System Work resolves the Dependabot alerts on `main` (9 high,
-  2 moderate), verified by the required checks.
+  on the real repository. It never merges. *(PRs #5 and #6, Works `f7170bdb` and `b2f35f9f`, published in parallel.)*
+- [x] A System Work resolves the Dependabot alerts on `main` (9 high,
+  2 moderate), verified by the required checks. *(Work `b2f35f9f`, PR #6.)*
+- [ ] `dev` integration branch ([ADR-0008](docs/decisions/ADR-0008-dev-integration-branch.md)):
+  - publish against `dev`;
+  - a merge step in `git.publish`, allowed only for an allowlist (`dev`), only
+    when the checks passed on the exact head, and recorded as an effect with
+    reconciliation;
+  - only the operator merges `dev` into `main`.
 
 ### H — One long-lived Host (ADR-0007)
 
