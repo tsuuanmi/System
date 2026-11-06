@@ -2,7 +2,7 @@
  * A Work's measurements, derived from its events (mvp.md failure test 8,
  * MVP-06): duration, attempts, the operator's touches, and usage. Submitting
  * Work is the request itself, not a touch; a human cancel, retry or decision
- * is. Usage an attempt did not report is counted apart, never as zero.
+ * is. Usage an attempt did not report, or did not split into cache and fresh input, is counted apart, never as zero.
  */
 import type { WorkRecord } from './record.ts'
 
@@ -13,12 +13,16 @@ export interface WorkSummary {
   attempts: number
   operatorTouches: number
   touches: string[]
-  usage: { inputTokens: number; outputTokens: number; observedAttempts: number; unknownAttempts: number }
+  /** `inputTokens` is the total; fresh input counts only attempts that split their cache use. */
+  usage: {
+    inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; freshInputTokens: number; outputTokens: number
+    observedAttempts: number; unsplitAttempts: number; unknownAttempts: number
+  }
 }
 
 export function summarize(record: WorkRecord): WorkSummary {
   const touches: string[] = []
-  const usage = { inputTokens: 0, outputTokens: 0, observedAttempts: 0, unknownAttempts: 0 }
+  const usage = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
   let attempts = 0
   for (const event of record.events) {
     if (event.type === 'dispatched' && event.executor === 'worker') attempts += 1
@@ -27,6 +31,14 @@ export function summarize(record: WorkRecord): WorkSummary {
         usage.inputTokens += event.usage.inputTokens
         usage.outputTokens += event.usage.outputTokens
         usage.observedAttempts += 1
+        const { cacheReadTokens, cacheWriteTokens = 0 } = event.usage
+        if (cacheReadTokens === undefined) {
+          usage.unsplitAttempts += 1
+        } else {
+          usage.cacheReadTokens += cacheReadTokens
+          usage.cacheWriteTokens += cacheWriteTokens
+          usage.freshInputTokens += event.usage.inputTokens - cacheReadTokens - cacheWriteTokens
+        }
       } else {
         usage.unknownAttempts += 1
       }

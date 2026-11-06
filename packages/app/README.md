@@ -24,7 +24,7 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system work run <workId>` | advance admitted or interrupted Work until terminal |
 | `system work show <workId>` | the record (events and state) as JSON |
 | `system work list` | ID, status and pinned spec of every Work |
-| `system work report <workId>` | duration, attempts, operator touches (human cancels, retries, decisions) and usage, with unreported usage counted apart |
+| `system work report <workId>` | duration, attempts, operator touches (human cancels, retries, decisions) and usage (fresh input, cache read, cache write, output), with unreported usage counted apart |
 | `system work replay <workId>` | fold the events again and compare with the stored state; runs nothing; exit 1 on mismatch |
 | `system --help` | help, exit 0 |
 

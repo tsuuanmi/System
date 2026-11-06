@@ -33,7 +33,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   socket named after the canonical `DSH_HOME` (Linux only).
 - [src/lane.ts](src/lane.ts) — `commitLane`: sections run one at a time, in order.
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
-  operator touches and usage from a Work's events (`system work report`).
+  operator touches and usage from a Work's events (`system work report`):
+  total, cache read, cache write and fresh input tokens, with attempts that
+  did not split their cache use counted in `unsplitAttempts`, never as zero.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
   a conversation held elsewhere taken in as `file@1` parts under a manifest
   of what the operator asserts and a fixed notice; the preview and its
