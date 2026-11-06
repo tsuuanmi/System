@@ -166,3 +166,12 @@ test('reads by malformed IDs are refused', () => {
   const { artifacts } = store()
   assert.throws(() => artifacts.get('../../etc/passwd'), ArtifactError)
 })
+
+test('supersededBy finds the Artifacts that name an ID in their lineage', async () => {
+  const { artifacts } = store()
+  const first = await artifacts.put(note('one'))
+  const second = await artifacts.put(note('two', { supersedes: [first.id] }))
+  const third = await artifacts.put(note('three', { supersedes: [first.id] }))
+  assert.deepEqual(artifacts.supersededBy(first.id).sort(), [second.id, third.id].sort())
+  assert.deepEqual(artifacts.supersededBy(second.id), [])
+})

@@ -115,6 +115,7 @@ async function runHost(ctx: Context): Promise<void> {
       artifact: (id) => artifacts.get(id),
       readBytes: (id) => artifacts.readBytes(id),
       newTask: (instructions, repository, ref, context, who) => work.newTask(instructions, repository, ref, who, context),
+      newGoal: (goal, supersedes, who) => work.newGoal(goal, supersedes, who),
       addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
       credentials,
       workers: () => workersView(ctx),

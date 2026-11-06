@@ -29,6 +29,10 @@
 - `effects.test.ts` — effect steps with a scripted remote: intent before
   effect, reconciliation after a lost host or a throw, the unknown-outcome
   hold and its resumption, approval and denial, retrying only the effect.
+- `goal.test.ts` — `goal@1`: strict content, a raise that supersedes, admission
+  with and without a Goal and the Task wrapped with its context, the budget
+  refusal at the limit, a raise that lets admission continue, unknown usage,
+  running Works unstopped, and the spend equal to the fold of the records;
 - `conversation.test.ts` — `conversation@1`: a manifest over stored parts,
   stable IDs, corrections, the preview and its secret warnings, and a task's
   context.

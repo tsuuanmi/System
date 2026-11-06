@@ -25,6 +25,7 @@ export function memoryRecordTable(): RecordTable & { rows: Map<string, ArtifactR
     rows,
     failNextPut: false,
     get: (key: string) => rows.get(key),
+    keys: () => rows.keys(),
     async put(key: string, value: ArtifactRecord) {
       if (table.failNextPut) {
         table.failNextPut = false

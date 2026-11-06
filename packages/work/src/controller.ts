@@ -25,6 +25,7 @@ import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import { MemoryControl, type CancelRequest } from './control.ts'
 import { WorkError } from './errors.ts'
+import { overBudget, resolveGoal, spendOf, type GoalStore, type GoalView } from './goal.ts'
 import { noLane, type Lane } from './lane.ts'
 import type { Verdict } from './kinds.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
@@ -48,6 +49,8 @@ export interface SpecStore {
   kindOf(id: string): string | undefined
   /** Store a `verdict@1` Artifact; returns its ID. */
   putVerdict(verdict: Verdict): Promise<string>
+  /** Goals, when this store has them: a Host without them refuses a Work that names one. */
+  goals?: GoalStore
 }
 
 /** How often a running attempt checks for a cancel request. */
@@ -65,6 +68,8 @@ export const resolvedSpecSchema = z.object({
 export interface Admission {
   spec: ResolvedSpec
   input?: string
+  /** The Goal to admit under: its budget must have room, and its context goes to the Task. */
+  goal?: string
   caller: Caller
   source: { kind: 'workflow-file' | 'direct-task'; path?: string; fileHash?: string }
 }
@@ -156,6 +161,14 @@ export class WorkController {
     const usesInput = admission.spec.steps.some((s) => refsOf(s).includes('$work.input'))
     if (usesInput && !admission.input) throw new WorkError('the workflow uses $work.input, but no input Artifact was given')
     if (admission.input && !this.specs.exists(admission.input)) throw new WorkError(`input ${admission.input} is not a stored Artifact`)
+    let input = admission.input
+    if (admission.goal) {
+      const { current, spend } = this.goalView(admission.goal)
+      const used = overBudget(current.goal.budget, spend)
+      if (used) throw new WorkError(`the budget of Goal ${current.id} is used up (${used}); a raise is a new Goal that supersedes it`)
+      // With no Task there is nothing to carry the context.
+      if (input) input = await this.specs.goals!.wrapTask(input, current.goal.context, admission.caller)
+    }
     // Pin every verify step's criteria now: later edits to a repository or a verifier's defaults cannot change them.
     const criteria: Record<string, string> = {}
     const verifiers: Record<string, { ref: string; version: string }> = {}
@@ -181,7 +194,7 @@ export class WorkController {
     }
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = options.workId ?? `work:${randomUUID()}`
-    const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: admission.input, criteria, verifiers, source: admission.source }
+    const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input, ...(admission.goal ? { goal: admission.goal } : {}), criteria, verifiers, source: admission.source }
     const record: WorkRecord = {
       id, events: [admitted], state: fold(admission.spec.steps.map((s) => s.id), [admitted]),
       ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
@@ -192,6 +205,13 @@ export class WorkController {
 
   get(workId: string): WorkRecord | undefined {
     return this.table.get(workId)
+  }
+
+  /** A Goal, its newest version and the spend of its chain, folded from the Works recorded now. */
+  goalView(goalId: string): GoalView {
+    if (!this.specs.goals) throw new WorkError('this Host has no Goals')
+    const { view, chain } = resolveGoal(this.specs.goals, goalId)
+    return { ...view, spend: spendOf(this.list(), chain) }
   }
 
   list(): WorkRecord[] {

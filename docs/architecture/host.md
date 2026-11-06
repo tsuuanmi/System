@@ -248,6 +248,26 @@ The CLI says which case it hit (H4b-1):
 
 Other homes (tests, experiments) run `system host` in the foreground.
 
+## Goals (O1)
+
+A Goal ([ADR-0009](../decisions/ADR-0009-goals-and-orchestrators.md)) is a
+`goal@1` Artifact the operator writes with `goal.new`: a human only, behind
+the terminal confirmation of `approve`. The Host adds no table for it:
+- **Admission.** `work.submit` takes an optional `goal`. The `admitted` event
+  records its ID, the Task is wrapped in a new `task@1` with the Goal's
+  `context` added to its own, and admission is refused once the spend reached
+  the budget of the newest version of the Goal. Running Works are never
+  stopped. A submit without a Task input carries no context.
+- **Versions.** A raise is a new `goal@1` superseding the old one. The newest
+  version, found through `lineage` (`Artifacts.supersededBy`), is the one
+  that counts, whichever version a caller names.
+- **Spend.** `goal.show` and `work.report` fold it from the records at the
+  time: the attempts (`dispatched` Worker attempts) and the tokens (fresh
+  input plus output) of the Works that name the newest version or any it
+  supersedes. Attempts of unknown usage add to the attempts and are counted
+  in `unknownAttempts`; attempts that did not split their cache use count
+  their output only and are in `unsplitAttempts`.
+
 ## Guarantees and the tests that hold them
 
 Each guarantee has a test that would fail without it. The tests are written
@@ -261,6 +281,7 @@ before the code (Charter 12, fixture first).
 | A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `submit sent twice at once gives one Work`, `the same run twice dispatches once`, `the same run sent twice while it runs joins it`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
 | Agents cannot approve | Held (H3): `an agent connection is refused every method flagged agent: false, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
 | Recovery is conservative | Held (H2, and the slot at H5, see the next row): `a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until settled: `a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself` and `a lost attempt whose Worker cannot confirm it gone keeps its slot` (packages/work/tests/slots.test.ts). |
+| A Goal's budget holds | `admission is refused once the spend reached the budget, at the limit and not before`, `a raise lets admission continue...`, `a running Work is never stopped by the budget`, `the spend is a fold of the records...` (packages/work/tests/goal.test.ts); `goal.new is refused to an agent connection, and nothing is stored` (packages/host/tests/operations.test.ts); `a Goal's context reaches the Worker...` (packages/agents/tests/agent.test.ts); through the CLI, tests/goal.test.ts. |
 | Version skew is caught | Held (H3a): `a Host of another version refuses the hello and names the fix` (packages/host/tests/transport.test.ts). |
 | Slots hold (R2) | Held (H5), in packages/work/tests/slots.test.ts: `Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once`, `a synthesis step waits for both proposals`, `two Works on one Account never run two attempts at once with a limit of 1`, `two Works on one Account run two attempts at once with a limit of 2`, `a waiting step goes in Work admission order when its slot frees`, `a cancel while two attempts run records both, then one terminal event`, and `seed 1` to `seed 50: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event` (also never above the limit). Through the process: `the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both` (tests/brainstorm.test.ts). The agent side: `the account's slots are the Host's: the worker offers its limit and never queues attempts itself` and `a lost attempt is gone when its pid file is absent or names no process, and not while the process runs` (packages/agents/tests/agent.test.ts). |
 

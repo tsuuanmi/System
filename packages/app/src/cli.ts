@@ -2,11 +2,12 @@
  * The `system` command line. Each action returns an exit code; the plugin
  * runs it once the host has started and then asks the launcher to exit.
  */
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, summarize, type Asserted, type ConversationParts, type WorkRecord, type WorkState } from '@system/work'
+import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type Goal, type GoalView, type WorkRecord, type WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 /** A repeatable option's values, in order. */
@@ -57,8 +58,8 @@ type Soon<T> = T | Promise<T>
 
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
-  admitFile(path: string, input: string | undefined): Promise<WorkRecord>
-  admitTask(capabilities: string[], input: string | undefined): Promise<WorkRecord>
+  admitFile(path: string, input: string | undefined, goal?: string): Promise<WorkRecord>
+  admitTask(capabilities: string[], input: string | undefined, goal?: string): Promise<WorkRecord>
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
@@ -69,6 +70,11 @@ export interface WorkCommands {
   retry(workId: string, worker: string | undefined, reason: string, step: string | undefined, follow?: FollowOptions): Promise<Followed>
   /** Wait until nothing runs the Work, as after a cancel was requested. */
   wait(workId: string): Promise<Followed>
+  /** A Work's measurements, and for a Work of a Goal the Goal's budget and spend. */
+  report(workId: string): Promise<unknown>
+  /** Store a Goal on the human's own connection, as the operator who confirmed it; `supersedes` is the Goal it raises or changes. */
+  newGoal(goal: Omit<Goal, 'context'> & { context?: string[] }, supersedes: string | undefined, operatorId: string): Promise<{ id: string }>
+  goal(goalId: string): Promise<GoalView>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
@@ -193,6 +199,40 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         return 0
       })
     })
+  const positive = (name: string) => (text: string): number => {
+    const value = Number(text)
+    if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} is a whole number above zero, not ${text}`)
+    return value
+  }
+  const goal = program.command('goal').description('Goals: an aim, its scope and its budget, which Works are admitted under')
+  goal.command('new')
+    .description('store a goal@1 Artifact and print its ID; a human at a terminal only. A raise or a change supersedes the old Goal')
+    .requiredOption('--aim <text>', 'what to achieve')
+    .requiredOption('--scope <text>', 'what is in and out')
+    .option('--attempts <n>', 'the most Worker attempts its Works may spend', positive('--attempts'))
+    .option('--tokens <n>', 'the most tokens (fresh input plus output) its Works may spend', positive('--tokens'))
+    .option('--supersedes <id>', 'the Goal this raises or changes')
+    .option('--context <id>', 'an Artifact every Work of the Goal reads as data (repeatable; default: the Charter)', collect, [])
+    .action((options: { aim: string; scope: string; attempts?: number; tokens?: number; supersedes?: string; context: string[] }) => {
+      select(async () => {
+        const budget = { ...(options.attempts ? { attempts: options.attempts } : {}), ...(options.tokens ? { tokens: options.tokens } : {}) }
+        const content = { aim: options.aim, scope: options.scope, budget, ...(options.context.length ? { context: options.context } : {}) }
+        io.out(`${JSON.stringify({ ...content, ...(options.supersedes ? { supersedes: options.supersedes } : {}) }, null, 2)}\n`)
+        const short = createHash('sha256').update(JSON.stringify([content, options.supersedes])).digest('hex').slice(0, 8)
+        // On a line of its own, so a pasted command is not taken for the answer.
+        const operatorId = await io.confirmHuman(`Nothing is stored unless you type exactly ${short} to write this Goal\n> `, short)
+        io.out(`${(await host.work().newGoal(content, options.supersedes, operatorId)).id}\n`)
+        return 0
+      })
+    })
+  goal.command('show <id>')
+    .description('a Goal, its current version (the newest that supersedes it) and the spend of its Works')
+    .action((id: string) => {
+      select(async () => {
+        io.out(`${JSON.stringify(await host.work().goal(id), null, 2)}\n`)
+        return 0
+      })
+    })
   const conversation = program.command('conversation').description('take in a conversation held elsewhere, such as in a web chat, as operator-supplied Artifacts')
   conversation.command('add')
     .description('preview a conversation, or with --yes store it and print its ID')
@@ -275,15 +315,16 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--workflow <file>', 'a system.workflow/v1 YAML file')
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
+    .option('--goal <id>', 'count the Work toward this Goal: its context goes to the Task and its budget limits admission')
     .option('--no-run', 'admit only')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
-    .action((options: { workflow?: string; capability?: string[]; input?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
+    .action((options: { workflow?: string; capability?: string[]; input?: string; goal?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
         const admitted = options.workflow
-          ? await commands.admitFile(options.workflow, options.input)
-          : await commands.admitTask(options.capability!, options.input)
+          ? await commands.admitFile(options.workflow, options.input, options.goal)
+          : await commands.admitTask(options.capability!, options.input, options.goal)
         io.out(`${admitted.id}\n`)
         if (!options.run) return 0
         return exitOf(await commands.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))
@@ -344,12 +385,10 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
       })
     })
   work.command('report <workId>')
-    .description('duration, attempts, operator touches and usage of a Work, from its events')
+    .description('duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also its spend')
     .action((workId: string) => {
       select(async () => {
-        const record = await host.work().get(workId)
-        if (!record) throw new Error(`no Work ${workId}`)
-        io.out(`${JSON.stringify(summarize(record), null, 2)}\n`)
+        io.out(`${JSON.stringify(await host.work().report(workId), null, 2)}\n`)
         return 0
       })
     })

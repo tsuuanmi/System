@@ -19,18 +19,20 @@ prints `system: the System Host is not running for <home>: ...` and exits 1.
 | `system approve <workId> [--reason r]` | approve what held Work awaits (an effect needing approval, an inconclusive verdict, `approval: operator`) and run it on; a human at a terminal must type the Work ID's first 8 characters |
 | `system deny <workId> --reason r` | deny it; the Work fails. Same terminal confirmation |
 | `system task new (--text t \| --file f) [--repo path [--ref r]] [--context id...]` | store a `task@1` input; with `--repo`, first the exact base commit as `git-tree@1`; each `--context` is a stored Artifact (such as a conversation) the Worker reads as data, not instructions |
+| `system goal new --aim t --scope t [--attempts n] [--tokens n] [--supersedes id] [--context id...]` | store a `goal@1` and print its ID; a human at a terminal must type the 8-character code printed with the Goal. `--supersedes` raises or changes an earlier Goal; without `--context` the Charter is stored and used |
+| `system goal show <id>` | the Goal, its current version (the newest that supersedes it) and the spend of its Works, as JSON |
 | `system conversation add --response f [--prompt f] [--attach f...] [--provider p] [--url u] [--model m] [--captured-at t] [--selection s] [--product-context c...] [--supersedes id...] [--yes [--accept-warnings]]` | preview a conversation held elsewhere (sizes, first lines, secret warnings; nothing stored); with `--yes`, store it as `conversation@1` and print its ID, but refuse (exit 1) when the preview has warnings unless `--accept-warnings` is also given |
 | `system conversation show <id>` | the notice, what the operator asserted, and the parts; exit 1 when it is not a stored conversation |
 | `system workers` | registered Workers, and each agent account with its CLI version or why it is unavailable |
 | `system credentials set <NAME>` | read a value without echo (or from piped stdin) and store it in `$DSH_HOME/.credentials.yaml` through the DSH credential API; other entries are kept |
 | `system credentials status <NAME...>` | `configured (<source>)` or `not configured` per name, never the value; exit 1 if any is missing |
-| `system work submit (--workflow <file> \| --capability <name...>) [--input <id>] [--no-run] [--cancel-on-interrupt]` | admit Work from a Workflow file (read here, sent as contents) or as a direct Task, print its ID, then follow it in the Host until terminal |
+| `system work submit (--workflow <file> \| --capability <name...>) [--input <id>] [--goal <id>] [--no-run] [--cancel-on-interrupt]` | admit Work from a Workflow file (read here, sent as contents) or as a direct Task, print its ID, then follow it in the Host until terminal |
 | `system work cancel <workId> [--reason r] [--wait]` | stop Work: a running attempt gets SIGTERM, SIGKILL after 30 s, and the Host records the outcome (with `--wait`, follow it until then). Partial output is kept, unaccepted |
 | `system work retry <workId> [--step id] [--worker ref] [--reason r] [--cancel-on-interrupt]` | run a Worker step of failed, cancelled or held Work again as a new attempt (default: the first that did not succeed), optionally by one named Worker, starting from the last attempt's partial output; every later step is reset |
 | `system work run <workId> [--cancel-on-interrupt]` | advance admitted or interrupted Work in the Host, following it until terminal |
 | `system work show <workId>` | the record (events and state) as JSON |
 | `system work list` | ID, status and pinned spec of every Work |
-| `system work report <workId>` | duration, attempts, operator touches (human cancels, retries, decisions) and usage (fresh input, cache read, cache write, output), with unreported usage counted apart |
+| `system work report <workId>` | duration, attempts, operator touches (human cancels, retries, decisions) and usage (fresh input, cache read, cache write, output), with unreported usage counted apart; for a Work of a Goal also the Goal's budget and spend |
 | `system work replay <workId>` | fold the events again and compare with the stored state; runs nothing; exit 1 on mismatch |
 | `system --help` | help, exit 0 |
 

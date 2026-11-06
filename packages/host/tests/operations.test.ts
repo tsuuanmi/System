@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import type { Artifacts } from '@system/artifacts'
+import { GOAL_KIND, TASK_KIND, goalSchema, taskSchema } from '@system/work'
 import { fixture, type Fixture } from '../../../test-support/fixture.ts'
+import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { NOT_ALLOWED, VERSION, connect, serve, tableOf, type Client } from '../src/index.ts'
 import { operations, type Services } from '../src/operations.ts'
 
@@ -19,9 +22,9 @@ const workflow = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..'
 const b64 = (text: string) => Buffer.from(text).toString('base64')
 
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
-function services(f: Fixture): Services & { seen: Record<string, unknown[]> } {
+function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
-  const seen: Record<string, unknown[]> = { credentials: [], conversations: [] }
+  const seen: Record<string, unknown[]> = { credentials: [], conversations: [], goals: [] }
   return {
     seen,
     capabilities: f.capabilities,
@@ -37,6 +40,13 @@ function services(f: Fixture): Services & { seen: Record<string, unknown[]> } {
       return data
     },
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
+    async newGoal(goal, supersedes, caller) {
+      seen.goals!.push({ goal, supersedes, caller })
+      const producer = { type: 'operator', ref: caller.operatorId } as const
+      const charter = await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: new TextEncoder().encode('charter'), mediaType: 'text/markdown', classification: 'public', producer })
+      const stored = await artifacts.put({ ...GOAL_KIND, content: { context: [charter.id], ...goal }, inputs: [charter.id], supersedes: supersedes ? [supersedes] : [], classification: 'public', producer })
+      return { id: stored.id }
+    },
     async addConversation(parts, asserted, supersedes, caller) { seen.conversations!.push({ parts, asserted, supersedes, caller }); return { id: 'conversation:1' } },
     credentials: {
       async set(name, value) { seen.credentials!.push([name, value]) },
@@ -47,11 +57,12 @@ function services(f: Fixture): Services & { seen: Record<string, unknown[]> } {
 }
 
 async function started(options: { f?: Fixture } = {}) {
-  const f = options.f ?? fixture()
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema })
+  const f = options.f ?? fixture({ goals: artifacts })
   const home = join(dir, `n${count++}`)
   mkdirSync(home)
   const host = await f.startHost(home)
-  const svc = services(f)
+  const svc = services(f, artifacts)
   const table = operations(svc)
   const path = join(sockets, `${count++}.sock`)
   const server = await serve(host, { path, methods: table })
@@ -62,7 +73,7 @@ async function started(options: { f?: Fixture } = {}) {
     after(() => client.close())
     return client
   }
-  return { f, host, svc, table, open, path }
+  return { f, host, svc, table, open, path, artifacts }
 }
 
 const input = (f: Fixture) => f.admission('brainstorm.yaml').input!
@@ -80,7 +91,7 @@ const terminal = async (client: Client, workId: string) => {
 }
 
 test('every method of the table round-trips over the socket', async () => {
-  const { f, table, open } = await started()
+  const { f, table, open, artifacts } = await started()
   const client = await open()
   const called = new Set<string>()
   const call = (method: string, params?: unknown) => { called.add(method); return client.call(method, params) }
@@ -105,6 +116,22 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('approval.decide', { workId: work.id, decision: 'approved', reason: 'ok' }), /nothing awaits a decision/)
   assert.deepEqual(await call('work.events', { workId: work.id, after: 1000 }), { events: [], status: 'succeeded' })
 
+  const goal = await call('goal.new', { aim: 'ship', scope: 'the host', budget: { attempts: 1 } }) as { id: string }
+  const goalTask = await artifacts.put({ ...TASK_KIND, content: { instructions: 'do it' }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })
+  const goaled = await call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id }) as { id: string; events: { type: string; goal?: string }[] }
+  assert.equal(goaled.events[0]!.goal, goal.id)
+  await call('work.run', { workId: goaled.id })
+  assert.equal((await terminal(client, goaled.id)).status, 'succeeded')
+  const shownGoal = await call('goal.show', { goal: goal.id }) as { id: string; current: { id: string }; spend: { attempts: number } }
+  assert.deepEqual([shownGoal.id, shownGoal.current.id, shownGoal.spend.attempts], [goal.id, goal.id, 1])
+  const goalReport = await call('work.report', { workId: goaled.id }) as { goal: { id: string; spend: { attempts: number }; budget: unknown } }
+  assert.deepEqual([goalReport.goal.id, goalReport.goal.spend.attempts, goalReport.goal.budget], [goal.id, 1, { attempts: 1 }])
+  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id }), /budget/)
+  const raised = await call('goal.new', { aim: 'ship', scope: 'the host', budget: { attempts: 2 }, supersedes: goal.id }) as { id: string }
+  assert.equal((await call('goal.show', { goal: goal.id }) as { current: { id: string } }).current.id, raised.id)
+  await call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id })
+  await assert.rejects(call('goal.show', { goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
+
   const second = await call('work.submit', { capabilities: ['code-write'], input: input(f) }) as { id: string }
   await call('work.run', { workId: second.id })
   assert.equal((await terminal(client, second.id)).status, 'succeeded')
@@ -117,9 +144,9 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake/claude', 'fake/codex'])
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
-  assert.equal((await call('host.ping') as { works: number }).works, 2)
+  assert.equal((await call('host.ping') as { works: number }).works, 4)
   const status = await call('host.status') as { works: number; recordBytes: number }
-  assert.equal(status.works, 2)
+  assert.equal(status.works, 4)
   assert.ok(status.recordBytes > 0)
 
   assert.deepEqual([...called].sort(), Object.keys(tableOf(table)).sort(), 'a method of the table has no round trip in this test')
@@ -138,6 +165,16 @@ test('an agent connection is refused every method flagged agent: false, and only
       assert.match(outcome!.message, /not allowed for agents/)
     }
   }
+})
+
+test('goal.new is refused to an agent connection, and nothing is stored', async () => {
+  const { open, svc } = await started()
+  const client = await open(agent)
+  await assert.rejects(client.call('goal.new', { aim: 'a', scope: 's', budget: {} }), (error: { code: number }) => error.code === NOT_ALLOWED)
+  assert.deepEqual(svc.seen.goals, [])
+  // The row is open to a human, and its handler checks again.
+  const { host, table } = await started()
+  await assert.rejects(async () => table['goal.new']!.handler(host, { aim: 'a', scope: 's', budget: {} }, agent), /human/)
 })
 
 test('approval.decide needs a human even when its row is opened to agents', async () => {

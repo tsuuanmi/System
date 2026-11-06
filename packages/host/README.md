@@ -61,16 +61,18 @@ await serving.stop()                                // server, then the Host cor
 | `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string }` | The first request of a connection: `{ version }`. |
 | `host.ping` | yes | none | Whether the Host answers: `{ version, pid, works, recordBytes }`. |
 | `host.status` | yes | none | The memory report (C18), counted from the records: the same `{ version, pid, works, recordBytes }`, for the growth budget. |
-| `work.submit` | yes | `workflow?: string`, `capabilities?: string[]`, `input?: string`, `commandId?: string` | Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. |
+| `work.submit` | yes | `workflow?: string`, `capabilities?: string[]`, `input?: string`, `goal?: string`, `commandId?: string` | Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent. |
 | `work.run` | yes | `workId: string`, `commandId?: string` | Start admitted or interrupted Work and return its record once it is running; follow it with `work.events`. |
 | `work.retry` | yes | `workId: string`, `step?: string`, `worker?: string`, `reason?: string`, `commandId?: string` | Run a Worker step of failed, cancelled or held Work again as a new attempt, and return its record once it is running. |
 | `work.cancel` | yes | `workId: string`, `reason?: string`, `commandId?: string` | Stop Work: its record once cancelled, or `"requested"` while a run is stopping its attempt. |
 | `work.show` | yes | `workId: string` | The Work record: events and state. |
 | `work.list` | yes | none | Every Work as `{ id, status, specId }`. |
 | `work.replay` | yes | `workId: string` | Fold the recorded events again: `{ state, matches }`. Runs nothing. |
-| `work.report` | yes | `workId: string` | Duration, attempts, operator touches and usage of a Work, from its events. |
+| `work.report` | yes | `workId: string` | Duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also the Goal, its budget and its spend. |
 | `work.events` | yes | `workId: string`, `after?: integer` | The events with `seq` above `after` (all when omitted) and the current status: `{ events, status }`. Poll it to follow a Work. |
 | `approval.decide` | no | `workId: string`, `decision: "approved" \| "denied"`, `reason: string`, `commandId?: string` | Record a human's decision on what held Work awaits, and continue it. Only a human caller; the CLI sends it after its terminal confirmation. |
+| `goal.new` | no | `aim: string`, `scope: string`, `budget?: { attempts?: integer, tokens?: integer }`, `context?: string[]`, `supersedes?: string` | Store a `goal@1` the operator wrote: `{ id }`. `supersedes` names the Goal it raises or changes; without `context` the Charter is the context. Only a human caller; the CLI sends it after its terminal confirmation. |
+| `goal.show` | yes | `goal: string` | A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`. |
 | `task.new` | yes | `instructions: string`, `repository?: string`, `ref?: string`, `context?: string[]` | Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. |
 | `artifact.put` | yes | `data: string`, `mediaType?: string`, `classification?: "public" \| "operator-shared" \| "local-private"` | Store bytes (base64, within the frame limit) as a `file@1` Artifact: its envelope. |
 | `artifact.show` | yes | `id: string` | An Artifact's envelope and occurrences, or why it is not stored. |
