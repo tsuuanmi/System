@@ -52,6 +52,14 @@ audit source only.
   the actual served model was not reported by the Codex CLI in that
   observed run. Never re-label a requested model as independently verified.
 
+## Follow-up: PR #2 after the initial review
+
+The table below is a **historical audit of `4a71c79`**, not a claim that the original defects remain unresolved.
+
+- [`ccc5dd5`](https://github.com/tsuuanmi/System/commit/ccc5dd56390f3b6d54f7f58291f8fb77cac573e5) fixes the PID-lock publication gap: the lock is prepared with a PID before atomic publication; a regression test first reproduced the failure. [`40c6815`](https://github.com/tsuuanmi/System/commit/40c681507080bccdac7c45342f4b85f9c22586f5) records B4 completion, including a killed host plus four competing `work run` commands, one resumed attempt, ordered event IDs and matching replay. These are local-worker results read from source/PLAN, not tests re-executed in this audit.
+- [`6dc0244`](https://github.com/tsuuanmi/System/commit/6dc0244f37e7b5505f9df2da875daedee2cb1030) adds single-Worker and stance-prompt comparison arms. [`973cea6`](https://github.com/tsuuanmi/System/commit/973cea6c9e00359519569e3b43a7f809215e518f) records **15 successful Works, five briefs and three arms**. Mean observed durations were **37 s** for single-Worker, **157 s** for three-attempt baseline and **162 s** for cognitive-role variant, with zero operator interventions. Reported proposal word-cosine similarity was 0.50 vs 0.46: lower lexical overlap is **not proof of better decision quality**.
+- **B3 blind operator scoring remains outstanding.** Quality and value relative to the approximately fourfold elapsed-time overhead are not proven yet. No new Worker provider or Team engine should be selected on the basis of lexical diversity alone.
+
 ## Unverified risks and proposed test gates
 
 | Finding | Evidence | Confidence / next proof |

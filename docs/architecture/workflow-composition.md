@@ -7,7 +7,13 @@ decided-by: [ADR-0002]
 
 # Work primitive and declarative Workflow composition
 
-**Accepted architecture direction, not implemented file format.** Work/Task
+**Accepted architecture; concrete YAML v1 is implemented on draft PR #2.**
+The [workflow compiler](https://github.com/tsuuanmi/System/blob/973cea6c9e00359519569e3b43a7f809215e518f/packages/work/src/workflow.ts)
+and [executable configs](https://github.com/tsuuanmi/System/tree/973cea6c9e00359519569e3b43a7f809215e518f/workflows)
+are the authority for exact v1 syntax. The examples below are
+conceptual sketches, **not runnable v1 examples**. The [Brainstorm
+composition](brainstorm-composition.md) adds a third domain without a
+new controller, and currently executes ready steps sequentially. Work/Task
 is the basic durable unit. A Workflow is a versioned **config file** interpreted
 by a single generic Work Controller; it is not a code module per use case.
 The decision is [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md).

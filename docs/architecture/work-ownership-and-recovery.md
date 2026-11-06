@@ -14,6 +14,18 @@ and [ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md).
 Source and observed tests are pinned in
 [RES-0007](../research/RES-0007-brainstorm-and-concurrency-review.md).
 
+## Follow-up after B4 fixes
+
+The findings below were documented for the **earlier `4a71c79` snapshot**.
+The initial incomplete-lock-publication race was fixed in PR #2 at
+[`ccc5dd5`](https://github.com/tsuuanmi/System/commit/ccc5dd56390f3b6d54f7f58291f8fb77cac573e5).
+The implementation now writes a complete PID into a draft file before
+publishing the lock with `linkSync`. The local worker reports test-first
+regression coverage and same-Work restart/concurrent-run checks.
+**B4 is reported complete**, not an unpatched P1. Keep rare stale-lock
+replacement, PID reuse, process interruption and upgrade regression
+cases visible as follow-up tests. This review did not execute them anew.
+
 ## Two different concurrency problems
 
 | Problem | Current mechanism in draft PR #2 | What has/has not been proved |

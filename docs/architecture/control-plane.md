@@ -6,7 +6,11 @@ reviewed: 2026-11-05
 
 # System control-plane architecture
 
-**Status: selected target architecture, not an implemented system.**
+**Status: accepted responsibility architecture.** An implemented MVP-0,
+three-attempt Brainstorm and B4 concurrency fixes exist on stacked draft
+[PR #2](https://github.com/tsuuanmi/System/pull/2), not on this
+documentation-only branch. Refer to exact PR #2 source and tests for
+implementation behavior.
 System is a durable AI work **control plane** hosted on **DSH/Cordis**.
 Its execution plane is existing agent/model/tool/Worker capabilities mounted
 as DSH plugins or reached through adapters. See
@@ -147,6 +151,17 @@ tool choices and validation rules.
 
 Do not create a second engine just because the research workflow uses
 different tools and result formats. This is a release-blocking MVP proof.
+
+## Proven third-domain composition and remaining integrity work
+
+The [Brainstorm Workflow](brainstorm-composition.md) uses Claude and
+Codex to generate two separate proposal Artifacts and a third synthesis
+Artifact through the same Work Controller; no domain engine, new Worker
+type, Team plugin or verifier is mandatory. The B4 review and fixes for
+SQLite bootstrap and PID-lock publication are documented in
+[Work ownership and recovery](work-ownership-and-recovery.md).
+B3 value evaluation is still in progress and does not change this
+ownership contract.
 
 ## Unfixed implementation details
 
