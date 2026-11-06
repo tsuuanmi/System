@@ -1,19 +1,19 @@
 ---
 id: PROP-0004
 type: proposal
-status: draft
+status: accepted
 created: 2026-11-06
-summary: The design of milestone H (one long-lived Host, ADR-0007), as components each justified by a milestone goal, with decisions H1-H12 from the grilling and an explicit cut list; under a necessity review before implementation.
+summary: The design of milestone H (one long-lived Host, ADR-0007), as components each justified by a milestone goal; after a necessity review the operator accepted a serial Host first (R1) and parallelism second (R2), MCP moved to milestone O, and each deferral has a trigger.
 evidence: [RES-0008]
 related: [ADR-0007, ADR-0008, ADR-0004, ADR-0001]
 ---
 
 # Proposal: the Host (milestone H)
 
-**Status:** draft. The operator agreed decisions H1-H12. Each component
-below still has to pass a necessity review: is it really needed for a goal
-of this milestone? Components that fail are cut or deferred before any code
-is written.
+**Status:** accepted on 2026-11-06, after a necessity review. A Brainstorm
+(Work `work:5e9141d7…`) reviewed every component against the goals, and the
+operator decided points N1-N12. The architecture this milestone builds is
+described in [Host architecture](../architecture/host.md).
 
 ## Goals of the milestone
 
@@ -26,7 +26,8 @@ Every component must serve at least one of these:
   proposals) and separate Works at the same time, limited per Account,
   towards the operator's target of 20 Workers.
 - **G3, an agent interface.** A stable interface for agents (MCP), which
-  milestone O's Orchestrator needs, that can never approve.
+  milestone O's Orchestrator needs, that can never approve. **Moved to
+  milestone O (N1).** H keeps only what makes G3 a small step later.
 
 Non-goals: remote access, multiple users, sandboxing, a durable scheduler
 queue, live plugin reload, auto-resume after a crash, an Orchestrator or
@@ -34,71 +35,90 @@ Goal (milestone O).
 
 ## Architecture
 
-```text
- operator shell                        agent (Claude Code, ...)
-   system <cmd>  (thin CLI)              system mcp  (stdio MCP adapter)
-        \                                    /
-         \  JSON-RPC 2.0, one message per line (NDJSON)
-          \                                /
-       Unix socket  $DSH_HOME/system/host.sock   (systemd socket activation)
-                          |
-   ┌──────────────── Host: one DSH host, one process per DSH_HOME ───────────────┐
-   │ operation registry   one table of operations; CLI and MCP surfaces derived │
-   │ command receipts     commandId -> result, stored with the Work write       │
-   │ commit lane          the only path that changes a Work (event append)      │
-   │ scheduler            ready steps -> attempts, per-Account slots            │
-   │ attempt runners      Runtimes, verifiers, effects run OUTSIDE the lane;    │
-   │                      their results come back as events through the lane    │
-   │ recovery             on start: interrupted attempts, held slots, reconcile │
-   │ DSH composition      storage, artifacts, agents, verifiers, effects (as now)│
-   └─────────────────────────────────────────────────────────────────────────────┘
-   lock: abstract Unix socket "\0system-host:<hash of DSH_HOME>" held while alive
-```
+Described once, in [Host architecture](../architecture/host.md): the
+diagram, the components below in place, and the guarantees with their tests.
 
-Human approval never crosses MCP. `system approve` runs in a terminal. It
-shows the exact subject, and the Host checks that subject again before
-recording the decision.
+## Decisions (operator, 2026-11-06)
 
-## Components and why each exists
+- **First grilling.**
+  - **H1** JSON-RPC 2.0 framed as NDJSON on a Unix socket.
+  - **H2** One socket, with an agent allowlist; resisting a same-uid adversary is out of scope.
+  - **H3** One commit lane.
+  - **H4** `commandId` receipts.
+  - **H5** An abstract-socket lock.
+  - **H6** An uncertain attempt keeps its slot; no auto-resume.
+  - **H7** Ctrl-C detaches.
+  - **H8** systemd only for the default home.
+  - **H9** The unit's PATH is captured at init, and the CLI sends file contents.
+  - **H10** `doctor --offline`, later deferred by N10.
+  - **H11** Cutover.
+  - **H12** Fixture first.
+- **Necessity review.**
+  - **N1** MCP moves to milestone O.
+  - **N2** A plain unit: no socket activation, with lingering and a ping timeout.
+  - **N3** The old mode is removed in the cutover change.
+  - **N4** Releases R1 (serial) and R2 (parallel).
+  - **N5** Keep receipts.
+  - **N6** Keep one lane.
+  - **N7** Cursor polling.
+  - **N8** Version handshake and caller.
+  - **N9** Reads go through the Host.
+  - **N10** Defer `doctor --offline`.
+  - **N11** A memory report.
+  - **N12** The documents listed below.
 
-| # | Component | Serves | Without it | Initial call |
+## Components: final verdicts
+
+| # | Component | Serves | Verdict | Trigger for a deferral |
 |---|---|---|---|---|
-| C1 | Host process owning every Work (single writer) | G1 | The cross-process races stay | must |
-| C2 | Commit lane: every Work change appended through one ordered path; decisions read the latest committed state, never a snapshot taken before an `await` | G1, G2 | Concurrent attempts interleave inside one Work's decision | must |
-| C3 | Scheduler with per-Account slots (default 1) | G2 | No parallel steps; or Accounts overcommitted | must |
-| C4 | Operation registry: one table, from which the CLI and the MCP allowlist are derived | G3 | Two hand-kept surfaces drift; the MCP exclusions are untestable | must |
-| C5 | Transport: JSON-RPC 2.0 framed as NDJSON on a Unix socket (H1). DSH's webserver is TCP-only; its own JSON-RPC server uses stdio framing | G1, G3 | No way to reach the Host | must |
-| C6 | Thin CLI client; sends Workflow file contents, not paths (H9) | G1 | The CLI keeps owning Work | must |
-| C7 | `system mcp` stdio adapter over the registry allowlist (H2) | G3 | No agent interface | must for G3 |
-| C8 | `commandId` receipts on submit, run, retry, cancel, approve (H4) | G1, G3 | A lost reply plus a retry admits a second Work | review: needed now, or with MCP only? |
-| C9 | Host lock as an abstract Unix socket per `DSH_HOME` (H5) | G1 | Two Hosts on one home | must |
-| C10 | `system.service` with socket activation for the default home; `system host` in the foreground for others (H8, H9) | G1 | The operator starts and stops the Host by hand | review: is socket activation needed, or is a plain unit enough? |
-| C11 | Recovery: interrupted attempts marked, uncertain attempts hold their slot until reconciled, no auto-resume (H6) | G1, G2 | Overcommit, or blind re-dispatch after a crash | must |
-| C12 | Drain on stop: refuse new runs, finish in-flight attempts up to a budget, record the rest as interrupted | G1 | A stop loses attempts silently | review: is "record as interrupted" enough? |
-| C13 | Waiting without streaming: `work.wait` and `work.events` with a cursor; Ctrl-C detaches (H7) | G1, G3 | Clients cannot follow a Work | must, minimal |
-| C14 | `system doctor --offline`: read-only store access while the Host lock is free (H10) | operations | A wedged Host leaves no way to look | review |
-| C15 | Cutover: the first start ignores and deletes the old lock, mutex and fence files; old-code removal in a separate PR (H11) | G1 | Old files confuse the new Host | must, small |
-| C16 | A deterministic concurrency fixture (barriers, seeded delays) from the first step (H12) | G1, G2 (Charter 12) | Parallelism is tested last, or not at all | must |
+| C1 | Host process owning every Work (the single writer) | G1 | keep; stop sets a flag to refuse new runs, then exits (C12 folded in) | — |
+| C2 | One commit lane: every Work change goes through one ordered path; decisions read the latest committed state | G1, G2 | keep (H3, N6). The only writer of the Work table is `WorkController`, and DSH's domain write chain is already serial | per-Work lanes if a 20-Work run shows the lane is busy |
+| C3 | Scheduler: readiness, plus a slot per Account (default 1) | G2 | shrink: no priorities, no fairness tuning, no persisted queue; ships in R2 | — |
+| C4 | Operation table: one dispatch table with an `agent` flag | G1 (and G3 later) | shrink: no generated schemas; a test that agents cannot reach approve, deny, `credentials set` or conversation storage | — |
+| C5 | Transport: JSON-RPC 2.0, NDJSON framing, Unix socket | G1 | keep, minimal (H1); bounded frame size | — |
+| C6 | Thin CLI; sends Workflow file contents | G1 | keep; read commands also go through the Host (N9) | — |
+| C7 | `system mcp` adapter | G3 | **deferred to milestone O** (N1) | an agent must drive System before O |
+| C8 | `commandId` receipts on submit, run, retry, cancel and approve | G1 | keep (N5). A receipt is stored in the same Work write; a submitted Work's ID derives from its `commandId` | — |
+| C9 | Host lock: an abstract Unix socket per canonical `DSH_HOME` | G1 | keep (H5) | — |
+| C10 | `system.service` | G1 | shrink: a plain unit with `Restart=on-failure`, the captured PATH and lingering; no socket activation (N2); the CLI pings with a timeout | starting the Host by hand becomes a recurring cost |
+| C11 | Recovery: interrupted attempts marked, uncertain attempts keep their slot until reconciled, no auto-resume | G1, G2 | keep (H6) | — |
+| C12 | Drain | G1 | folded into C1: refuse new runs, then exit; anything cut short is C11's job on the next start | — |
+| C13 | Following a Work: `work.events` with a cursor; the CLI polls every second; Ctrl-C detaches | G1 | keep, minimal (N7, H7) | a long poll if a 20-Work run shows polling costs |
+| C14 | `system doctor --offline` | operations | **deferred** (N10) | the first wedged or unstartable Host that existing tools cannot diagnose |
+| C15 | Cutover | G1 | shrink: the Host ignores the old lock, mutex and fence files; the old mode is removed in the cutover change, with a cutover and rollback checklist (N3) | — |
+| C16 | Deterministic concurrency fixture (barriers, seeded delays) from the first step | G1, G2 | keep (H12), starting with regressions for the five defects of 2026-11-06 | — |
+| C17 | Version handshake, and a caller recorded on every call | G1 | added (N8): a long-lived Host can outlive the code a new CLI expects | — |
+| C18 | Memory report: Work count and record size in `host.status` | Charter 11 | added (N11): recorded in PLAN's growth budget | compaction when the report exceeds its budget |
 
-## Decisions already taken (operator, 2026-11-06)
+## Build order and releases (N4)
 
-- **H1** JSON-RPC 2.0 over NDJSON on a Unix socket.
-- **H2** One socket, with an MCP allowlist derived from the registry. Resisting a same-uid adversary is out of scope.
-- **H3** One commit lane.
-- **H4** `commandId` receipts.
-- **H5** An abstract-socket lock.
-- **H6** Slots held while an attempt is uncertain; no auto-resume.
-- **H7** Ctrl-C detaches.
-- **H8** systemd only for the default home.
-- **H9** The unit's PATH is captured at init; the CLI sends file contents.
-- **H10** `doctor --offline`.
-- **H11** Cutover rules.
-- **H12** Test order:
-  1. extract the seam, with the fixture;
-  2. API on a temporary socket;
-  3. CLI cutover and systemd;
-  4. MCP;
-  5. parallelism.
+1. The controller seam and the deterministic fixture, with regressions for
+   the five defects. Writers inventory (done: `WorkController` is the only
+   Work writer).
+2. Host lock, commit path, recovery, `commandId` receipts.
+3. The API on a temporary socket, with the version handshake and caller.
+4. Cutover: thin CLI, `system.service`, old mode removed, cutover and
+   rollback checklist. **Release R1** (G1, serial).
+5. Parallel steps and Works with per-Account slots, with barrier tests for
+   shared-Account contention and for restarts. **Release R2** (G2).
+
+## Documents the milestone leaves (N12)
+
+- This proposal (accepted) and the amended
+  [ADR-0007](../decisions/ADR-0007-one-long-lived-host.md).
+- [Host architecture](../architecture/host.md): the diagram, ownership and
+  lock, the commit lane, the attempt lifecycle, the read path, and a map from
+  each guarantee to a test that would fail without it.
+- The API reference, derived from the operation table, in the Host package
+  README.
+- An operations runbook under `docs/operations/`:
+  - starting and stopping;
+  - "host not running" and "host not answering";
+  - upgrading;
+  - approving while the Host is down;
+  - logs;
+  - the cutover and rollback checklist.
+- The PLAN gate, with evidence and the growth measures.
 
 ## Cut list (deferred)
 
@@ -112,11 +132,16 @@ recording the decision.
 - Compaction.
 - Orchestrator and Goal scopes.
 
-## Open questions for the necessity review
+## Answered by the review
 
-- Which of C8, C10, C12 and C14 can wait for a later milestone without
-  risking G1-G3?
-- Is every "must" truly needed for its goal, or is there a smaller way to
-  reach the goal?
-- What does the Host make worse (a single point of failure, start-up
-  dependence, operations) and what is the smallest mitigation?
+- **Which of C8, C10, C12 and C14 can wait?**
+  - C8 stays, because it costs almost nothing.
+  - C10 shrinks.
+  - C12 is folded into C1.
+  - C14 is deferred.
+- **What the Host makes worse, and the mitigation:**
+  - it is a single point of failure (supervised unit, `Restart=on-failure`,
+    conservative recovery);
+  - the CLI depends on it starting (a clear "not running" or "not
+    answering", never a silent fallback);
+  - it may run old code after an upgrade (the version handshake).

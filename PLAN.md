@@ -219,22 +219,41 @@ the code against Charter items 8, 11 and 12.
     reconciliation;
   - only the operator merges `dev` into `main`.
 
-### H — One long-lived Host (ADR-0007)
+### H — One long-lived Host (ADR-0007 as amended, PROP-0004 accepted)
 
-- [ ] Host process owning every Work. Unix-socket API. CLI as a thin
-  client. `system mcp` (stdio MCP adapter): every operation except
-  approve/deny, `credentials set` and storing a conversation.
-- [ ] `system init` installs the user-systemd unit `system.service` with
-  socket activation.
-- [ ] Ready, independent steps and separate Works run in parallel, limited
-  per Account (default 1).
-- [ ] Remove the one-host-per-command mode, and the per-Work lock, takeover
-  mutex and write fence. Keep one lock per `DSH_HOME`.
-- [ ] Gate:
-  - the existing smoke behaviours pass through the Host;
-  - Brainstorm's two proposals run concurrently;
-  - a Host killed mid-step recovers on restart with replay matching;
-  - an agent drives a Work through MCP but cannot approve.
+Architecture: [Host](docs/architecture/host.md). Components, verdicts and
+deferral triggers: [PROP-0004](docs/proposals/PROP-0004-host-design.md).
+Every step is a System Work (Sonnet) merged into `dev`, with its tests
+written first.
+
+- [ ] H1. Controller seam and the deterministic concurrency fixture (barriers,
+  seeded delays), with one regression per defect of 2026-11-06.
+- [ ] H2. Host lock (abstract socket), commit lane, recovery (interrupted
+  attempts, uncertain slots, no auto-resume), `commandId` receipts.
+- [ ] H3. API on a temporary socket. Includes:
+  - the operation table with its `agent` flag and the exclusion test;
+  - the version handshake and the caller;
+  - `work.events` with a cursor;
+  - `host.status` with the memory report.
+- [ ] H4. Cutover. Includes:
+  - the thin CLI (reads through the Host; Ctrl-C detaches);
+  - `system.service` (plain unit, captured PATH, lingering);
+  - removing the old mode;
+  - the operations runbook with its cutover and rollback checklist (`docs/operations/`);
+  - the API reference.
+  **Release R1.**
+- [ ] H5. Parallel steps and Works with per-Account slots. Barrier tests for
+  shared-Account contention and for restarts. **Release R2.**
+- [ ] Gate R1:
+  - every existing smoke behaviour passes through the Host;
+  - a Host killed mid-step recovers on restart, conservatively, and replay matches;
+  - an agent caller cannot approve;
+  - the guarantees table in host.md has a passing test per row;
+  - growth measures are recorded.
+- [ ] Gate R2: Brainstorm's two proposals overlap in time, and two Works on
+  one Account never run two attempts at once.
+- [ ] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
+  the Standards axis), the simplification pass, and the growth record.
 
 ### O — Orchestrator and Goal (future ADR)
 
@@ -243,6 +262,8 @@ the code against Charter items 8, 11 and 12.
   finish; only the operator raises it). Every Work an Orchestrator creates
   names its Goal. A Goal carries the Charter principles as context for its
   Works.
+- [ ] **`system mcp`** (moved from H, ADR-0007 amendment): the agent client
+  of the Host's socket, offering only operations flagged `agent`.
 - [ ] **Orchestrator**: an agent connected through MCP, a caller scoped to
   one Goal. It may submit, run, cancel and retry, and read Artifacts. It may
   never approve, mark a PR ready, accept an inconclusive verdict or merge.

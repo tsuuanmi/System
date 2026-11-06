@@ -75,3 +75,31 @@ CLI to scrape.
 - Deferred to a later milestone:
   - the Orchestrator as a scoped caller tied to a Goal (a future ADR);
   - an Orchestrator that System spawns on a schedule.
+
+## Amendment (2026-11-06, before implementation)
+
+A necessity review ([PROP-0004](../proposals/PROP-0004-host-design.md),
+Brainstorm Work `work:5e9141d7…`) and the operator changed the following.
+The rest of this decision stands.
+
+- **Point 2:** a plain user unit `system.service` with `Restart=on-failure`
+  and the PATH captured at `system init`, plus lingering so it runs after
+  logout. **No socket activation.** The CLI pings the Host with a timeout and
+  says whether it is not running or not answering. Trigger to revisit:
+  starting the Host by hand becomes a recurring cost.
+- **Point 3:** **`system mcp` moves to milestone O** (Orchestrator), its first
+  real agent caller. H keeps the operation table with an `agent` flag, and a
+  test that agents cannot reach approve, deny, `credentials set` or
+  conversation storage. Trigger to bring it forward: an agent must drive
+  System before O.
+- **Point 4:** the old mode is removed in the cutover change itself, with a
+  cutover and rollback checklist, instead of in a later change.
+- **Point 5:** parallelism ships as a second release of H (R2), after the
+  serial Host (R1) is correct.
+- **Added:**
+  - every mutating call carries a client `commandId`, whose receipt is stored
+    in the same Work write;
+  - client and Host check each other's version when they connect;
+  - every call records its caller;
+  - read commands also go through the Host.
+
