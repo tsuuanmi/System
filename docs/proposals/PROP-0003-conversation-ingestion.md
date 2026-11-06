@@ -63,8 +63,11 @@ Checking the platform answers its open questions:
    **Observed** facts (the ingest time and the operator) live in the
    Artifact's occurrence. They are kept out of the content, so adding the
    same files twice gives the same ID. Without `--yes`, the command only
-   previews: sizes, the first lines, and warnings for secret-like strings.
-   It stores nothing. `--supersedes <id>` records a correction.
+   previews: sizes, the first lines, and warnings for secret-like strings in
+   the files, their names and the asserted fields (a URL can carry a token).
+   It stores nothing. With `--yes`, a warning refuses unless
+   `--accept-warnings` is also given. `--product-context <flag>` (repeatable)
+   sets `asserted.context`. `--supersedes <id>` records a correction.
 2. **`system conversation show <id>`** prints the manifest with each part's
    size, and the notice.
 3. **`system task new --context <id>`** (repeatable) adds Artifact IDs to the

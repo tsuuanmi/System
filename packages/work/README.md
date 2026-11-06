@@ -28,7 +28,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
   a conversation held elsewhere taken in as `file@1` parts under a manifest
   of what the operator asserts and a fixed notice; the preview and its
-  secret warnings.
+  secret warnings, over the parts, their names and the asserted fields.
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
   add a conversation, admit a file or a direct Task).
 

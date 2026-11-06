@@ -21,7 +21,8 @@ GitHub credentials. Run with `corepack pnpm smoke`.
   mid-step then four hosts resuming at once (one wins; the lost step is
   dispatched once more; no event lost), and a pinned spec.
 - [conversation.test.ts](conversation.test.ts) — PROP-0003: a conversation
-  previewed (nothing stored, secrets named not printed), stored, shown, and
+  previewed (nothing stored, secrets named not printed), `--yes` refused on a
+  warning unless `--accept-warnings`, `--product-context`, stored, shown, and
   given to a Worker as a task's context under the operator-supplied notice.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
   writing one store all succeed (no "database is locked"), also when they

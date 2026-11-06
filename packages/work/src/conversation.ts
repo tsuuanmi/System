@@ -64,8 +64,8 @@ function rolesOf(parts: ConversationParts): { role: Role; part: Part }[] {
   ]
 }
 
-/** Strings that look like credentials; a warning names the kind, never the value. */
-const SECRETS: { name: string; pattern: RegExp }[] = [
+/** Strings that look like credentials; a warning names the kind, never the value. The global form is compiled once, to redact and to find every match. */
+const SECRETS = ([
   { name: 'an OpenAI API key', pattern: /\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{20,}/ },
   { name: 'an Anthropic API key', pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/ },
   { name: 'a GitHub token', pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})/ },
@@ -73,23 +73,32 @@ const SECRETS: { name: string; pattern: RegExp }[] = [
   { name: 'a Slack token', pattern: /\bxox[abpors]-[A-Za-z0-9-]{10,}/ },
   { name: 'a private key', pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   { name: 'a password assignment', pattern: /\bpassword\s*[:=]\s*\S{6,}/i },
-]
+  { name: 'a credential in a URL', pattern: /[?&;](?:token|key|secret|password|sig|signature)=[^&\s#]{8,}|\/\/[^\s/@?#]+:[^\s/@?#]+@/i },
+] satisfies { name: string; pattern: RegExp }[]).map((s) => ({ name: s.name, global: new RegExp(s.pattern.source, `${s.pattern.flags}g`) }))
+
+/** The kinds of secret in `text`, by name. */
+function secretsIn(text: string): string[] {
+  return SECRETS.filter((s) => { s.global.lastIndex = 0; return s.global.test(text) }).map((s) => s.name)
+}
 
 export interface Preview {
   parts: { role: Role; name: string; bytes: number; firstLine: string }[]
   warnings: string[]
 }
 
-/** What would be stored, and what looks like a secret, without storing anything. */
-export function previewConversation(parts: ConversationParts): Preview {
+/** What would be stored, and what looks like a secret in the parts, their names and the assertions, without storing anything. */
+export function previewConversation(parts: ConversationParts, asserted: Asserted = {}): Preview {
   const preview: Preview = { parts: [], warnings: [] }
-  for (const { role, part } of rolesOf(parts)) {
+  for (const [i, { role, part }] of rolesOf(parts).entries()) {
     const text = Buffer.from(part.data).toString('utf8')
-    const firstLine = SECRETS.reduce((line, s) => line.replace(new RegExp(s.pattern.source, `${s.pattern.flags}g`), '[redacted]'), text.split('\n').find((l) => l.trim()) ?? '')
-    preview.parts.push({ role, name: part.name, bytes: part.data.byteLength, firstLine: firstLine.slice(0, 120) })
-    for (const secret of SECRETS) {
-      if (secret.pattern.test(text)) preview.warnings.push(`${part.name}: looks like ${secret.name}`)
-    }
+    const firstLine = SECRETS.reduce((line, s) => line.replace(s.global, '[redacted]'), text.split('\n').find((l) => l.trim()) ?? '')
+    const name = SECRETS.reduce((n, s) => n.replace(s.global, '[redacted]'), part.name)
+    preview.parts.push({ role, name, bytes: part.data.byteLength, firstLine: firstLine.slice(0, 120) })
+    for (const kind of secretsIn(part.name)) preview.warnings.push(`part ${i + 1} name: looks like ${kind}`)
+    for (const kind of secretsIn(text)) preview.warnings.push(`${name}: looks like ${kind}`)
+  }
+  for (const [field, value] of Object.entries(asserted)) {
+    for (const kind of secretsIn(Array.isArray(value) ? value.join('\n') : String(value))) preview.warnings.push(`${field}: looks like ${kind}`)
   }
   return preview
 }

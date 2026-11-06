@@ -181,24 +181,26 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .option('--model <name>', 'the model the product showed, as you state it')
     .option('--captured-at <time>', 'when you copied it')
     .option('--selection <how>', 'complete, excerpts or summary')
-    .option('--context-flag <flag>', 'context the product used that the files do not show, such as browsing or memory (repeatable)', collect, [])
+    .option('--product-context <flag>', 'context the product used that the files do not show, such as browsing or memory (repeatable)', collect, [])
     .option('--supersedes <id>', 'a conversation this one corrects (repeatable)', collect, [])
     .option('--yes', 'store it (without it, nothing is stored)')
-    .action((options: { response: string; prompt?: string; attach: string[]; provider?: string; url?: string; model?: string; capturedAt?: string; selection?: string; contextFlag: string[]; supersedes: string[]; yes?: boolean }) => {
+    .option('--accept-warnings', 'with --yes, store it although the preview has warnings')
+    .action((options: { response: string; prompt?: string; attach: string[]; provider?: string; url?: string; model?: string; capturedAt?: string; selection?: string; productContext: string[]; supersedes: string[]; yes?: boolean; acceptWarnings?: boolean }) => {
       select(async () => {
         const part = (path: string) => ({ name: basename(path), data: readFileSync(path), mediaType: mediaTypeOf(path) })
         const parts: ConversationParts = { response: part(options.response), ...(options.prompt ? { prompt: part(options.prompt) } : {}), attachments: options.attach.map(part) }
         const asserted = assertedSchema.parse({
           provider: options.provider, url: options.url, model: options.model, capturedAt: options.capturedAt,
-          selection: options.selection, context: options.contextFlag.length ? options.contextFlag : undefined,
+          selection: options.selection, context: options.productContext.length ? options.productContext : undefined,
         })
-        const preview = previewConversation(parts)
+        const preview = previewConversation(parts, asserted)
         for (const warning of preview.warnings) io.err(`warning: ${warning}\n`)
         if (!options.yes) {
           for (const p of preview.parts) io.out(`${p.role.padEnd(10)} ${p.name}  ${p.bytes} bytes  ${p.firstLine}\n`)
           io.out('nothing stored; run again with --yes to store it (it cannot be changed or deleted afterwards)\n')
           return 0
         }
+        if (preview.warnings.length && !options.acceptWarnings) throw new Error('the preview has warnings; nothing stored. Remove what it names, or add --accept-warnings to store it anyway')
         io.out(`${(await host.work().addConversation(parts, asserted, options.supersedes)).id}\n`)
         return 0
       })

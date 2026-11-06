@@ -86,3 +86,30 @@ test('a Task carries context Artifacts as inputs, so they must be stored and the
   assert.ok(taskSchema.safeParse({ instructions: 'x' }).success, 'context is optional: older tasks stay valid')
   assert.equal(taskSchema.safeParse({ instructions: 'x', context: ['not-an-id'] }).success, false)
 })
+
+test('the asserted fields and the part names are checked too; the warning names the field, never the value', () => {
+  const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789'
+  const preview = previewConversation(
+    { response: { name: `${token}.md`, data: bytes('fine\n'), mediaType: 'text/markdown' } },
+    { provider: 'sk-proj-abcdefghijklmnopqrstuvwx', url: 'https://example.com/c/1?token=abcdef123456', model: 'gpt', context: ['browsing', 'password: hunter2hunter2'] },
+  )
+  assert.deepEqual(preview.warnings, [
+    'part 1 name: looks like a GitHub token',
+    'provider: looks like an OpenAI API key',
+    'url: looks like a credential in a URL',
+    'context: looks like a password assignment',
+  ])
+  const printed = JSON.stringify(preview)
+  for (const value of ['ghp_abcdef', 'sk-proj-abcdef', 'abcdef123456', 'hunter2']) assert.ok(!printed.includes(value), `the preview never repeats ${value}`)
+})
+
+test('a credential in a URL is a sensitive query parameter of 8 or more characters, or user:password@', () => {
+  const warns = (url: string) => previewConversation({ response: parts.response }, { url }).warnings
+  for (const name of ['token', 'key', 'secret', 'password', 'sig', 'signature']) {
+    assert.ok(warns(`https://example.com/c?a=1&${name}=12345678`).includes('url: looks like a credential in a URL'), name)
+  }
+  assert.deepEqual(warns('https://tan:hunter2@example.com/c'), ['url: looks like a credential in a URL'])
+  assert.deepEqual(warns('https://example.com/c?token=short'), [])
+  assert.deepEqual(warns('https://example.com/c?monkey=12345678'), [])
+  assert.deepEqual(warns('https://chatgpt.com/c/123'), [])
+})

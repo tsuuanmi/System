@@ -12,7 +12,9 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system artifact cat <id>` | the bytes; exit 1 when unavailable |
 | `system approve <workId> [--reason r]` | approve what held Work awaits (an effect needing approval, an inconclusive verdict, `approval: operator`) and run it on; a human at a terminal must type the Work ID's first 8 characters |
 | `system deny <workId> --reason r` | deny it; the Work fails. Same terminal confirmation |
-| `system task new (--text t \| --file f) [--repo path [--ref r]]` | store a `task@1` input; with `--repo`, first the exact base commit as `git-tree@1` |
+| `system task new (--text t \| --file f) [--repo path [--ref r]] [--context id...]` | store a `task@1` input; with `--repo`, first the exact base commit as `git-tree@1`; each `--context` is a stored Artifact (such as a conversation) the Worker reads as data, not instructions |
+| `system conversation add --response f [--prompt f] [--attach f...] [--provider p] [--url u] [--model m] [--captured-at t] [--selection s] [--product-context c...] [--supersedes id...] [--yes [--accept-warnings]]` | preview a conversation held elsewhere (sizes, first lines, secret warnings; nothing stored); with `--yes`, store it as `conversation@1` and print its ID, but refuse (exit 1) when the preview has warnings unless `--accept-warnings` is also given |
+| `system conversation show <id>` | the notice, what the operator asserted, and the parts; exit 1 when it is not a stored conversation |
 | `system workers` | registered Workers, and each agent account with its CLI version or why it is unavailable |
 | `system credentials set <NAME>` | read a value without echo (or from piped stdin) and store it in `$DSH_HOME/.credentials.yaml` through the DSH credential API; other entries are kept |
 | `system credentials status <NAME...>` | `configured (<source>)` or `not configured` per name, never the value; exit 1 if any is missing |
@@ -24,11 +26,11 @@ once the host has started (`ctx.appReady`), and exits through `ctx.appExit`.
 | `system work list` | ID, status and pinned spec of every Work |
 | `system work report <workId>` | duration, attempts, operator touches (human cancels, retries, decisions) and usage, with unreported usage counted apart |
 | `system work replay <workId>` | fold the events again and compare with the stored state; runs nothing; exit 1 on mismatch |
+| `system --help` | help, exit 0 |
 
 Work exit codes: `0` succeeded, `1` failed or refused, `3` held for the
 operator, `4` not terminal, `5` cancelled. Each call records its caller: `human` when stdin is
 a terminal, otherwise `agent`, unless `SYSTEM_CALLER` says `human` or `agent`.
-| `system --help` | help, exit 0 |
 
 - [src/index.ts](src/index.ts) — the Cordis plugin: wiring to DSH services.
 - [src/cli.ts](src/cli.ts) — the commander program.

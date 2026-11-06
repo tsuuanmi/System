@@ -70,7 +70,6 @@ export function memoryArtifacts(...kinds: KindSpec[]): { artifacts: Artifacts; r
   return { artifacts, records, blobs }
 }
 
-/** The Work table: one key per Work. */
 /**
  * A Work table as one DSH host sees it: a snapshot of `disk` taken when the
  * host opened the store, kept in memory, with writes going to both. Two of
@@ -92,6 +91,7 @@ export function snapshotWorkTable(disk: Map<string, WorkRecord>): WorkTable {
   }
 }
 
+/** The Work table: one key per Work. */
 export function memoryWorkTable(rows = new Map<string, WorkRecord>()): WorkTable & { rows: Map<string, WorkRecord> } {
   return {
     rows,

@@ -36,6 +36,10 @@ export interface Workspace {
 
 const MAX_INPUT_BYTES = 16 * 1024 * 1024
 
+function checkSize(what: string, bytes: number): void {
+  if (bytes > MAX_INPUT_BYTES) throw new Error(`${what} is ${bytes} bytes; at most ${MAX_INPUT_BYTES}`)
+}
+
 function envelopeOf(artifacts: Artifacts, id: string): Envelope {
   const read = artifacts.get(id)
   if (read.state !== 'stored') throw new Error(`input ${id} is not stored`)
@@ -61,7 +65,7 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
       ws.listed.push({ name, where: 'the instructions above' })
       for (const [i, id] of (task.context ?? []).entries()) await writeContext(artifacts, ws, `context-${i + 1}`, envelopeOf(artifacts, id))
     } else if (envelope.blob) {
-      if (envelope.blob.bytes > MAX_INPUT_BYTES) throw new Error(`input ${name} is ${envelope.blob.bytes} bytes; at most ${MAX_INPUT_BYTES}`)
+      checkSize(`input ${name}`, envelope.blob.bytes)
       const path = join(ws.inputs, name)
       writeFileSync(path, await artifacts.readBytes(envelope.id), { mode: 0o400 })
       ws.listed.push({ name, where: path })
@@ -81,7 +85,7 @@ async function writeContext(artifacts: Artifacts, ws: Workspace, name: string, e
   const dir = join(ws.inputs, 'context')
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const write = (file: string, data: Uint8Array | string) => {
-    if (Buffer.byteLength(data) > MAX_INPUT_BYTES) throw new Error(`context ${file} is ${Buffer.byteLength(data)} bytes; at most ${MAX_INPUT_BYTES}`)
+    checkSize(`context ${file}`, Buffer.byteLength(data))
     const path = join(dir, file)
     writeFileSync(path, data, { mode: 0o400 })
     return path
