@@ -32,6 +32,9 @@ stacked [draft PR #2](https://github.com/tsuuanmi/System/pull/2) (not merged).
   — upstream sources, risks and experiments.
 - [Current MVP-0 plugin audit](docs/research/RES-0005-plugin-reuse-audit.md)
   — source-backed reuse/adapt/keep/defer assessment against PR #2 and pinned DSH.
+- [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff and no new Team engine.
+- [Work ownership and recovery](docs/architecture/work-ownership-and-recovery.md) — B4 regression and fixes.
+- [PR #2 source review](docs/research/RES-0007-brainstorm-and-concurrency-review.md) — B3 results pending human scores.
 - [Brainstorm feasibility and System 1 reference](docs/research/RES-0006-brainstorm-workflow-feasibility.md)
   — three Worker attempts on the existing Claude/Codex runtimes.
 - [Draft post-MVP roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md)

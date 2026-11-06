@@ -9,6 +9,8 @@ boundary contracts. Selection is not the same as a working implementation.
   declarative config with dependencies and capability-based steps.
 - [Artifact IDs and verification](artifact-verification.md) — immutable
   handoff, replay boundaries and configurable verifier capabilities.
+- [Brainstorm composition](brainstorm-composition.md) — three Worker attempts and Artifact ID handoff.
+- [Work ownership and recovery](work-ownership-and-recovery.md) — B4 fixes and correctness test boundaries.
 - [Boundary and failure questions](boundaries.md) — draft interface sketches,
   risks and implementation questions not yet proven in code.
 
