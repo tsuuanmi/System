@@ -14,3 +14,8 @@ allowBuilds:
 patchedDependencies:
   '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1': patches/@deepseek-ai__dsh-storage-sqlite@0.2.2-rc.1.patch
   '@deepseek-ai/dsh@0.2.2-rc.1': patches/@deepseek-ai__dsh@0.2.2-rc.1.patch
+# Transitive security fixes, scoped to the vulnerable ranges: patches/README.md.
+overrides:
+  '@modelcontextprotocol/client@>=2.0.0 <2.3.0': 2.3.0
+  'undici@>=8.0.0 <8.12.2': 8.12.2
+  'zod@<4.6.6': 4.6.6

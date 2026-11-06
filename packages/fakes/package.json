@@ -18,7 +18,7 @@
   "dependencies": {
     "@system/artifacts": "workspace:*",
     "@system/work": "workspace:*",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0"
