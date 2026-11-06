@@ -212,7 +212,7 @@ the code against Charter items 8, 11 and 12.
   on the real repository. It never merges. *(PRs #5 and #6, Works `f7170bdb` and `b2f35f9f`, published in parallel.)*
 - [x] A System Work resolves the Dependabot alerts on `main` (9 high,
   2 moderate), verified by the required checks. *(Work `b2f35f9f`, PR #6.)*
-- [ ] `dev` integration branch ([ADR-0008](docs/decisions/ADR-0008-dev-integration-branch.md)):
+- [x] `dev` integration branch ([ADR-0008](docs/decisions/ADR-0008-dev-integration-branch.md)):
   - publish against `dev`;
   - a merge step in `git.publish`, allowed only for an allowlist (`dev`), only
     when the checks passed on the exact head, and recorded as an effect with

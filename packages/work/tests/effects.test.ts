@@ -192,7 +192,7 @@ test('an apply that throws is reconciled, never retried blindly', async () => {
 
 test('an effect needing approval holds the Work; only a human approves; a denial fails it', async () => {
   const approval = (intent: EffectIntent) => (intent.params.ready ? 'marking the pull request ready for review' : undefined)
-  const yaml = `${SE.replace('      requires: [checks]\n', '      requires: [checks]\n      params:\n        ready: true\n')}`
+  const yaml = `${SE.replace('params: { merge: true }', 'params: { ready: true }')}`
   const w = world()
   const c = controller(w, { approval })
   const held = await c.run((await admit(c, w, yaml)).id)
@@ -231,7 +231,7 @@ test('an inconclusive verdict is accepted only by a human decision', async () =>
 test('parameters the provider refuses refuse admission; no Work is created', async () => {
   const w = world()
   const c = controller(w, { validate: (_, params) => { if ('base' in params) throw new Error('base is not configurable here') } })
-  await assert.rejects(() => admit(c, w, SE.replace('      requires: [checks]\n', '      requires: [checks]\n      params:\n        base: dev\n')), /publish: publisher refuses its params: base is not configurable here/)
+  await assert.rejects(() => admit(c, w, SE.replace('params: { merge: true }', 'params: { base: dev }')), /publish: publisher refuses its params: base is not configurable here/)
   assert.equal(w.rows.size, 0)
 })
 

@@ -23,6 +23,7 @@ The controller records `effect-intended` before `apply` and
   config:
     remote: origin                   # the remote of the subject's repository
     base: dev                        # what pull requests target (ADR-0008)
+    mergeInto: [dev]                 # the bases System may merge into; default none
     apiUrl: https://api.github.com
     repository: owner/name           # optional; parsed from a github.com remote
     tokenRef: GITHUB_TOKEN           # system credentials set GITHUB_TOKEN
@@ -35,20 +36,33 @@ The controller records `effect-intended` before `apply` and
   `refs/system/artifacts/` when an attempt was captured); any other commit
   there is refused, never overwritten.
 - **Reconcile:** `applied` when the branch holds the commit and its pull
-  request is open (and ready, if asked); `absent` otherwise; `unknown` when
-  the remote or the API cannot be read.
-- **Parameters:** only `ready: true|false`. `ready: true` marks the pull
-  request ready for review and needs an operator's approval.
+  request is open (and ready, if asked) or, with `merge: true`, merged at the
+  commit; `absent` otherwise (an open, unmerged pull request included, so the
+  controller may apply again); `unknown` when the remote or the API cannot be
+  read. It only reads.
+- **Parameters:** `ready: true|false` and `merge: true|false`. `ready: true`
+  marks the pull request ready for review and needs an operator's approval.
+  `merge: true` needs none (ADR-0008 authorises it), but `validate` refuses it
+  unless `base` is in `mergeInto`, and refuses it together with `ready`.
 - **Token:** git receives it through `GIT_CONFIG_*` environment variables (an
   `http.extraHeader`), never in its arguments; the API through the
   Authorization header.
-- **It never merges.** There is no merge call.
+- **Merge (`merge: true`):** the pull request is opened ready, not as a draft
+  (a reused draft is marked ready), then merged with
+  `PUT /pulls/{n}/merge` carrying `sha`, the exact verified commit, and
+  `merge_method: merge`; GitHub refuses if the head moved. The outcome detail
+  adds `merged: "true"` and `mergeCommit`. A 405 (not mergeable) or 409 (head
+  changed) is `failed` with GitHub's message and is never retried; a pull
+  request already merged at the commit is `applied` without a second call.
+  Without `merge: true` there is no merge call. Only the operator merges `dev`
+  into `main`.
 
 ## Verified
 
 Against a real bare git remote (`file://`) and a fake GitHub API, in unit
 tests and on the booted profile (`tests/publish.test.ts`), including a host
-killed after the pull request was created and one killed during the push.
+killed after the pull request was created, one killed during the push and one
+killed after the merge call.
 **Not yet run against github.com**: that needs a throwaway repository and a
 token the operator authorises.
 

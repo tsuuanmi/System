@@ -16,6 +16,6 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
 - [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
   `code.required-checks` and `research.citation-check`.
 - [effects](effects/README.md) — `@system/effects`, the `effects` row:
-  `git.publish`, push and one draft pull request, never a merge.
+  `git.publish`, push and one pull request, merged only into the `mergeInto` allowlist.
 - [app](app/README.md) — `@system/app`, the CLI app row (`system doctor`,
   `system artifact`, `system work`).

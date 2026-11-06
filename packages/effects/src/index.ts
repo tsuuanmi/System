@@ -26,7 +26,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const publisher = githubPublisher(
     ctx.get('artifacts') as Artifacts,
     { token: async () => (await credentials.resolve(ref))?.value },
-    { remote: config.remote ?? 'origin', base: config.base ?? 'main', apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository },
+    { remote: config.remote ?? 'origin', base: config.base ?? 'main', mergeInto: config.mergeInto ?? [], apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository },
   )
   const dispose = capabilities.registerEffect(publisher)
   ctx.effect(() => dispose, 'effect registrations')

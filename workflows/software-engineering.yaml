@@ -23,6 +23,7 @@ steps:
       capability: git.publish
       subject: $steps.implement.change
       requires: [checks]
+      params: { merge: true }
   - id: accept
     dependsOn: [publish]
     accept:
