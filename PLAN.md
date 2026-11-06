@@ -262,6 +262,10 @@ written first.
   - an agent caller cannot approve;
   - the guarantees table in host.md has a passing test per row;
   - growth measures are recorded.
+- [ ] Attempt time limit (found 2026-11-07): an attempt that hung on a test
+  ran for 2 hours with nothing to stop it (Work `38ff51c3`). Add a per-step
+  wall-clock budget, after which the attempt is cancelled like an operator
+  cancel (partial output kept), with a default per Workflow.
 - [ ] Gate R2: Brainstorm's two proposals overlap in time, and two Works on
   one Account never run two attempts at once.
 - [ ] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
@@ -293,8 +297,11 @@ written first.
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
   (draft). The operator accepted the Terms-of-Use risk for their own account
   (2026-11-06).
-- [ ] Re-run the three research Works (tokens, existing drivers, risks) after
-  the verifier fix V1, so their verdicts are not formatting artefacts.
+- [x] Re-run the three research Works (tokens, existing drivers, risks) after
+  the verifier fix V1. *(2026-11-07, verifier v2, ratio 0.5: tokens `851ec77c`
+  5/8 quotes confirmed, drivers `12143a0f` 5/7, risks `8aaea4d6` 8/9 (one
+  page 403); all accepted, the unconfirmed listed in each verdict; 82-108 s
+  and about $0.22-0.29 (estimate) each.)*
 - [ ] Build after R1: the `chatgpt-web` Runtime on Playwright, a dedicated
   signed-in profile, one prompt per attempt, completion detection, answer
   and cited links as outputs, each exchange recorded as a `conversation@1`,
