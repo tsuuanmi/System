@@ -21,3 +21,20 @@ in [pnpm-workspace.yaml](../pnpm-workspace.yaml)) on every install.
   array"; seen once in `tests/concurrency.test.ts`). It is now written only
   when it differs, and then atomically. The test that a boot leaves the file
   untouched was red before. Drop the patch when DSH does the same.
+
+## Overrides
+
+Transitive dependencies pinned by DSH at a vulnerable version are raised with
+`overrides` in [pnpm-workspace.yaml](../pnpm-workspace.yaml), each scoped to
+the vulnerable range so a newer resolution is never downgraded.
+
+- `undici` `>=8.0.0 <8.12.2` → `8.12.2` — DoS, TLS validation bypass and cache
+  poisoning (Dependabot).
+- `@modelcontextprotocol/client` `>=2.0.0 <2.3.0` → `2.3.0` — medium alert
+  (Dependabot).
+- `zod` `<4.6.6` → `4.6.6` — memory exhaustion validating oversized collections
+  (Dependabot). The packages depend on 4.6.6 directly; DSH's own zod 4.4.3 would
+  otherwise be a second copy, and `tsc` runs out of memory comparing the two
+  versions' types in `domainTable(recordSchema)`.
+
+Drop an override when DSH depends on a patched version itself.
