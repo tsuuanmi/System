@@ -1,5 +1,5 @@
 diff --git a/lib/index.js b/lib/index.js
-index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..08292ab6413907f311469d729557ddf5be734acd 100644
+index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..dcab42ee7fb1e0d5bb1ba70a048fa6b32d5230ef 100644
 --- a/lib/index.js
 +++ b/lib/index.js
 @@ -51,6 +51,8 @@ async function openDatabase(path, journalMode) {
@@ -11,3 +11,38 @@ index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..08292ab6413907f311469d729557ddf5
  	try {
  		configureDatabase(db, actual, journalMode);
  		return db;
+@@ -61,7 +63,17 @@ async function openDatabase(path, journalMode) {
+ }
+ function configureDatabase(db, path, journalMode) {
+ 	db.exec("PRAGMA foreign_keys = ON");
+-	db.exec(`PRAGMA journal_mode = ${journalMode.toUpperCase()}`);
++	// System patch: switching a new file to WAL needs an exclusive lock and returns
++	// SQLITE_BUSY without consulting busy_timeout, so retry while another process
++	// creates the same database; skip the switch once it is already in place.
++	for (let waited = 0;; waited += 25) try {
++		const mode = String(db.prepare("PRAGMA journal_mode").get().journal_mode).toUpperCase();
++		if (mode !== journalMode.toUpperCase()) db.exec(`PRAGMA journal_mode = ${journalMode.toUpperCase()}`);
++		break;
++	} catch (error) {
++		if (!/database is locked/.test(String(error?.message)) || waited >= 5e3) throw error;
++		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
++	}
+ 	const { user_version: onDisk } = db.prepare("PRAGMA user_version").get();
+ 	if (onDisk !== 0 && onDisk !== 1) throw new StorageError("version-mismatch", `storage database at "${path}" has schema version ${onDisk}, incompatible with this build (1)`);
+ 	db.exec(`
+@@ -311,9 +323,12 @@ var SqliteStorageBackend = class {
+ 	async materializeUnit(descriptor) {
+ 		const db = await this.ready;
+ 		this.ensureUsable();
+-		const row = db.prepare("SELECT version FROM units WHERE name = ?").get(descriptor.name);
+-		if (row === void 0) db.prepare("INSERT INTO units (name, version) VALUES (?, ?)").run(descriptor.name, descriptor.version);
+-		else if (row.version !== descriptor.version && !descriptor.compatibleVersions?.includes(row.version)) throw new StorageError("version-mismatch", `kv unit '${descriptor.name}' is stamped version ${row.version} on the medium, incompatible with descriptor version ${descriptor.version}`);
++		const select = db.prepare("SELECT version FROM units WHERE name = ?");
++		let row = select.get(descriptor.name);
++		// System patch: another process may stamp the same unit between the read and
++		// the insert; keep its row and check that version like any existing one.
++		if (row === void 0 && db.prepare("INSERT OR IGNORE INTO units (name, version) VALUES (?, ?)").run(descriptor.name, descriptor.version).changes === 0) row = select.get(descriptor.name);
++		if (row !== void 0 && row.version !== descriptor.version && !descriptor.compatibleVersions?.includes(row.version)) throw new StorageError("version-mismatch", `kv unit '${descriptor.name}' is stamped version ${row.version} on the medium, incompatible with descriptor version ${descriptor.version}`);
+ 		for (const table of descriptor.tables) db.exec(`
+         CREATE TABLE IF NOT EXISTS "${recordTableName(descriptor.name, table)}" (
+           key   TEXT PRIMARY KEY,

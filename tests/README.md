@@ -15,7 +15,8 @@ GitHub credentials. Run with `corepack pnpm smoke`.
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
-  writing one store all succeed (no "database is locked").
+  writing one store all succeed (no "database is locked"), also when they
+  all find the store missing and create it together.
 - [publish.test.ts](publish.test.ts) — M5 gate: the whole Software
   Engineering file publishes one draft pull request to a bare remote and the
   fake GitHub in [fake-github.mjs](fake-github.mjs); a host killed after the

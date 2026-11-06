@@ -163,7 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1': 27c8cd4b873fffe51d0af06fd985c4da30448a2d32c17d04b52abea4c164c2c9
+  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1': 18fbd5991a9e93a432e0d5a971732daa603276e11ff20463d16d765792ec442e
 
 importers:
 
@@ -276,7 +276,7 @@ importers:
         version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
       '@deepseek-ai/dsh-storage-sqlite':
         specifier: 0.2.2-rc.1
-        version: 0.2.2-rc.1(patch_hash=27c8cd4b873fffe51d0af06fd985c4da30448a2d32c17d04b52abea4c164c2c9)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
+        version: 0.2.2-rc.1(patch_hash=18fbd5991a9e93a432e0d5a971732daa603276e11ff20463d16d765792ec442e)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
       '@deepseek-ai/dsh-subprocess-local':
         specifier: 0.2.2-rc.1
         version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-subprocess@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-http-proxy@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)))(@deepseek-ai/dsh-timeout@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
@@ -7336,7 +7336,7 @@ snapshots:
       '@deepseek-ai/dsh-storage': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/schemastery': 3.19.0
 
-  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1(patch_hash=27c8cd4b873fffe51d0af06fd985c4da30448a2d32c17d04b52abea4c164c2c9)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))':
+  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1(patch_hash=18fbd5991a9e93a432e0d5a971732daa603276e11ff20463d16d765792ec442e)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))':
     dependencies:
       '@deepseek-ai/cordis': 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
       '@deepseek-ai/dsh-storage': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
