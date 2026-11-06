@@ -1,9 +1,9 @@
 ---
-id: RES-0007
+id: RES-0008
 type: research
 status: active
 summary: Evaluate Brainstorm (PLAN.md B3) on five real briefs against a one-Worker baseline, with a stance per proposal and a Codex synthesis as variants; blind scores by a model judge.
-related: [RES-0006, ADR-0002, ADR-0003]
+related: [RES-0006, RES-0007, ADR-0002, ADR-0003]
 ---
 
 # Brainstorm evaluation (B3): five briefs, three arms

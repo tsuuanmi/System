@@ -52,6 +52,24 @@ provenance, and explicit synthesis; defer votes, session-affinity, persistent
 team members and full team orchestration.** The current System Work Controller
 and Workflow YAML remain authoritative.
 
+## Observed progress and next priority
+
+[PR #2](https://github.com/tsuuanmi/System/pull/2) has now implemented
+Brainstorm B0–B2, fixed B4's SQLite and PID-lock races, and executed B3's
+**15 Works across five briefs and three comparison arms**. The blind
+operator scores are **still pending**, so do not claim three Workers are
+more useful than one. Locally reported mean elapsed times were 37 seconds
+for the single-Worker arm versus 157–162 seconds for three-attempt arms.
+This is a meaningful cost to weigh against usefulness, disagreements
+and actionable options; details are in [RES-0007](../research/RES-0007-brainstorm-and-concurrency-review.md).
+
+**Next:** score B3 results blind; inspect the original proposals, not just
+the synthesis; choose whether role-specific prompts or a different
+synthesizer improve outcomes. Keep B4 regression tests. Research
+claim-level verification and Website Worker remain future capabilities,
+not gates for Brainstorm. The milestone table below is the **original
+staged plan**, not a list of features still missing from PR #2.
+
 ## Ordered implementation roadmap
 
 | Stage | Scope and output | Required gate | Priority |

@@ -2,9 +2,9 @@
 
 This index separates **current product intent and accepted architectural
 direction** from implementation claims, proposals and exploratory evidence.
-System is a fresh product. This **PR #1 branch** contains documentation only;
-MVP-0 implementation and its tests are in the stacked, draft
-[PR #2](https://github.com/tsuuanmi/System/pull/2), not in this tree.
+System is a fresh product. MVP-0 and Brainstorm are implemented in this
+tree ([packages](../packages/README.md), [workflows](../workflows/README.md));
+source and tests are the authority for implementation behavior.
 
 | Question | Canonical home | Authority |
 |---|---|---|
@@ -19,6 +19,8 @@ MVP-0 implementation and its tests are in the stacked, draft
 | What are the candidate priorities after MVP-0? | [Post-MVP roadmap](proposals/PROP-0002-post-mvp-roadmap.md) | Brainstorm-first draft, not accepted requirements |
 | How can three Worker roles reuse Claude/Codex, and what can System 1 teach us? | [Brainstorm feasibility / System 1 reference](research/RES-0006-brainstorm-workflow-feasibility.md) | Source-backed hypothesis |
 | What should a local coding agent implement next? | [PLAN.md](../PLAN.md) | Execution checklist, not a decision |
+| How does Brainstorm reuse Workers? | [Brainstorm architecture](architecture/brainstorm-composition.md) | Accepted boundary, implementation in PR #2 |
+| What changed in the Work concurrency review? | [Work ownership](architecture/work-ownership-and-recovery.md) / [Research review](research/RES-0007-brainstorm-and-concurrency-review.md) | B4 fixes, B3 evaluation |
 | What design work remains proposed? | [Proposals](proposals/README.md) | Unaccepted details |
 | How is documentation organized and retired? | [Governance](governance/README.md) | Local documentation policy |
 | How can another repo bootstrap governance? | [Portable bootstrap](governance/bootstrap.md) | Reusable, product-agnostic |

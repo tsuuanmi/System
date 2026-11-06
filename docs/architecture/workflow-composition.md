@@ -9,8 +9,12 @@ covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*
 # Work primitive and declarative Workflow composition
 
 **Accepted architecture; `system.workflow/v1` is implemented** by
-[`@system/work`](../../packages/work/README.md) and exercised with fake Workers
-(M2); real Workers and verifiers arrive in M3 and M4. Work/Task
+[`@system/work`](../../packages/work/README.md); its compiler and the
+[executable configs](../../workflows/README.md) are the authority for exact
+v1 syntax. The examples below are conceptual sketches, **not runnable v1
+examples**. The [Brainstorm composition](brainstorm-composition.md) adds a
+third domain without a new controller, and currently executes ready steps
+sequentially. Work/Task
 is the basic durable unit. A Workflow is a versioned **config file** interpreted
 by a single generic Work Controller; it is not a code module per use case.
 The decision is [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md).

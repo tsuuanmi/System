@@ -8,7 +8,15 @@ covers: [packages/artifacts/src/envelope.ts, packages/artifacts/src/canonical.ts
 
 # Artifact-ID handoff and pluggable verification
 
-**Accepted architecture semantics, not an implemented schema.**
+**Accepted architecture semantics; concrete contracts run in draft PR #2.**
+The fields and examples in this page include future interface concepts.
+The [current artifact package](https://github.com/tsuuanmi/System/tree/973cea6c9e00359519569e3b43a7f809215e518f/packages/artifacts)
+and [verifier registry](https://github.com/tsuuanmi/System/blob/973cea6c9e00359519569e3b43a7f809215e518f/packages/work/src/registry.ts)
+define implemented behavior. Brainstorm may succeed with **no verifier**:
+that means Artifact delivery, not independently validated ideas.
+The current Research citation check validates source references/quotes,
+not whether every report claim is supported; stronger verification
+remains separately configurable future work.
 [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
 establishes immutable Artifact IDs as the durable handoff protocol between
 Workers. Conversation history, transient output paths and model memory are

@@ -7,8 +7,11 @@ covers: [packages/bundle/cordis.patch.yml]
 
 # System control-plane architecture
 
-**Status: selected architecture; MVP-0 is implemented** (see
-[packages](../../packages/README.md) and the evidence in the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)).
+**Status: selected architecture; MVP-0, three-attempt Brainstorm and the B4
+concurrency fixes are implemented** (see [packages](../../packages/README.md),
+the evidence in the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)
+and [PLAN.md](../../PLAN.md)). Source and tests are the authority for exact
+implementation behavior.
 System is a durable AI work **control plane** hosted on **DSH/Cordis**.
 Its execution plane is existing agent/model/tool/Worker capabilities mounted
 as DSH plugins or reached through adapters. See
@@ -151,6 +154,17 @@ tool choices and validation rules.
 
 Do not create a second engine just because the research workflow uses
 different tools and result formats. This is a release-blocking MVP proof.
+
+## Proven third-domain composition and remaining integrity work
+
+The [Brainstorm Workflow](brainstorm-composition.md) uses Claude and
+Codex to generate two separate proposal Artifacts and a third synthesis
+Artifact through the same Work Controller; no domain engine, new Worker
+type, Team plugin or verifier is mandatory. The B4 review and fixes for
+SQLite bootstrap and PID-lock publication are documented in
+[Work ownership and recovery](work-ownership-and-recovery.md).
+B3 value evaluation is still in progress and does not change this
+ownership contract.
 
 ## Unfixed implementation details
 

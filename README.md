@@ -38,12 +38,15 @@ citation checks, and publishes a checked commit as one draft pull request
   — upstream sources, risks and experiments.
 - [Current MVP-0 plugin audit](docs/research/RES-0005-plugin-reuse-audit.md)
   — source-backed reuse/adapt/keep/defer assessment against PR #2 and pinned DSH.
+- [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff and no new Team engine.
+- [Work ownership and recovery](docs/architecture/work-ownership-and-recovery.md) — B4 regression and fixes.
+- [PR #2 source review](docs/research/RES-0007-brainstorm-and-concurrency-review.md) — Brainstorm, concurrency hypotheses and the next evaluation.
+- [Brainstorm evaluation](docs/research/RES-0008-brainstorm-evaluation.md) — B3: five briefs, three arms, blind scores by a model judge.
 - [Brainstorm feasibility and System 1 reference](docs/research/RES-0006-brainstorm-workflow-feasibility.md)
   — three Worker attempts on the existing Claude/Codex runtimes.
 - [Draft post-MVP roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md)
   — Brainstorm first; Research quality verification and Website Worker later.
-- [Next implementation plan](PLAN.md) — local-agent checklist and test gates;
-  implementation belongs on PR #2 or a separately chosen code branch.
+- [Next implementation plan](PLAN.md) — local-agent checklist and test gates.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
   and [bootstrap guide](docs/governance/bootstrap.md) — reuse this governance
