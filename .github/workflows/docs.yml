@@ -1,0 +1,32 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate documentation
+        run: python3 tools/docs.py check
+      - name: Verify generated indexes
+        run: python3 tools/docs.py sync --check
+      - name: Smoke test portable bootstrap
+        run: |
+          tmp="$(mktemp -d)"
+          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
+          (cd "$tmp/independent" && python3 tools/docs.py check && python3 tools/docs.py sync --check)
+          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
+      - name: Check covered-path impact
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tools/docs.py impact "origin/${{ github.base_ref }}"
