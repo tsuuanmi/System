@@ -11,7 +11,8 @@ The MVP is the **smallest running DSH-hosted System control plane** that proves
 not a committed implementation schedule, package inventory or release date.
 **MVP-0 is implemented** on the `mvp0/implementation` branch; the evidence
 for each milestone, including one live publish to a throwaway github.com
-repository, is in [PLAN.md](../../PLAN.md). MVP-1 is not started.
+repository, is in the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md). MVP-1 is not started;
+the next iteration (Brainstorm) is planned in [PLAN.md](../../PLAN.md).
 
 ## Required common path
 

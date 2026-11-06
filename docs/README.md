@@ -2,7 +2,9 @@
 
 This index separates **current product intent and accepted architectural
 direction** from implementation claims, proposals and exploratory evidence.
-System is a fresh project with no running product code in this repository.
+System is a fresh product. This **PR #1 branch** contains documentation only;
+MVP-0 implementation and its tests are in the stacked, draft
+[PR #2](https://github.com/tsuuanmi/System/pull/2), not in this tree.
 
 | Question | Canonical home | Authority |
 |---|---|---|
@@ -13,6 +15,10 @@ System is a fresh project with no running product code in this repository.
 | How do Workers exchange and verify results? | [Artifact-ID and verifier contracts](architecture/artifact-verification.md) | Accepted target, not implemented |
 | Why was the control-plane/DSH choice made? | [ADR index](decisions/README.md) | Accepted rationale |
 | What external evidence or open tests inform the MVP? | [Research](research/README.md) | Exploratory, non-normative |
+| Is the current plugin layout sufficient, and which DSH services can be reused? | [MVP-0 plugin audit](research/RES-0005-plugin-reuse-audit.md) | Source-backed research on draft PR #2 |
+| What are the candidate priorities after MVP-0? | [Post-MVP roadmap](proposals/PROP-0002-post-mvp-roadmap.md) | Brainstorm-first draft, not accepted requirements |
+| How can three Worker roles reuse Claude/Codex, and what can System 1 teach us? | [Brainstorm feasibility / System 1 reference](research/RES-0006-brainstorm-workflow-feasibility.md) | Source-backed hypothesis |
+| What should a local coding agent implement next? | [PLAN.md](../PLAN.md) | Execution checklist, not a decision |
 | What design work remains proposed? | [Proposals](proposals/README.md) | Unaccepted details |
 | How is documentation organized and retired? | [Governance](governance/README.md) | Local documentation policy |
 | How can another repo bootstrap governance? | [Portable bootstrap](governance/bootstrap.md) | Reusable, product-agnostic |

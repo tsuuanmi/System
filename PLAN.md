@@ -1,175 +1,183 @@
-# PLAN.md — System MVP-0 implementation handoff
+# PLAN.md — System next implementation: Brainstorm first
 
-> **Status:** MVP-0 done: M0 to M6 complete (local, CI and real agents on this host, PR #2). github.com was exercised once on an authorised throwaway repository (M5 row); MVP-1 is not started. Worker auth uses subscription tokens (ADR-0005). This is an execution checklist for a local coding agent, **not** a new source of product requirements.
-> **Updated:** 2026-11-05. Target: **MVP-0 only** on the current System branch.
+> **Status:** draft execution handoff for the next iteration, updated 2026-11-06.
+> **Implementation target:** [PR #2](https://github.com/tsuuanmi/System/pull/2)
+> (`mvp0/implementation`, observed at `7099428`), **not PR #1**.
+> **No code for the next iteration has been implemented by this docs update.**
+> This checklist is not a new ADR or an alternate source of product requirements.
 
-## Goal and rules
+## 0. Read and align
 
-Build the **smallest running DSH/Cordis-hosted System control plane** that proves:
-- **Work/Task is primitive.** A simple Task runs with no public DAG or mandatory Workflow file.
-- **Workflow is external declarative configuration**, initially minimal YAML (\`steps\`, \`dependsOn\`, \`capabilities\`, \`outputs\`, \`verify\`, \`accept\`); software and research differ by config, adapters and verifier capabilities, not a second controller.
-- **Immutable Artifact IDs** are the only durable handoff between Workers. A separate attempt may use another provider with no previous chat context.
-- **Verification is a typed, versioned capability**, bound to the exact subject Artifact and frozen criteria; no universal model-review stage.
-- **Deterministic replay of recorded state**, not deterministic LLM output or blind retry of external effects.
-- **One DSH-based runtime**, small active bundle; reuse infrastructure and community mechanisms before writing equivalents.
+- [Product Charter](docs/requirements/purpose.md), [accepted ADRs](docs/decisions/README.md)
+  and [MVP scope](docs/requirements/mvp.md) define product/architecture truth.
+- [PROP-0002 roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md) is the
+  **canonical draft priority proposal**. [RES-0006](docs/research/RES-0006-brainstorm-workflow-feasibility.md)
+  explains implementation feasibility and what to learn from System 1.
+- The earlier M0–M6 implementation checklist is in the Git history and
+  [PR #2's PLAN.md](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md).
+  Do not reset MVP-0 progress or repeat its completed work. At the observed
+  PR #2 commit, tests and authorized throwaway GitHub publish were reported
+  complete; recheck the actual current local state before modifying code.
+- **Research now:** keep the existing end-to-end Research flow operational.
+  Claim-level checking and more rigorous citation verification are **future
+  capabilities**, not blockers for this Brainstorm iteration.
+- **Website Worker:** research that needs interactive/login-gated websites
+  comes **after** the Brainstorm milestone, not before.
+- **Security isolation:** not the goal of this iteration; do not expand scope
+  into container/egress infrastructure merely to ship Brainstorm.
 
-**Source of truth (read before implementation):**
-1. [Product Charter](docs/requirements/purpose.md); [MVP contract including MVP-0/MVP-1 split](docs/requirements/mvp.md).
-2. [ADR-0001: DSH control plane](docs/decisions/ADR-0001-control-plane-on-dsh.md).
-3. [ADR-0002: Work vs Workflow](docs/decisions/ADR-0002-work-primitive-configured-workflows.md).
-4. [ADR-0003: Artifact/verification](docs/decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
-5. **[ADR-0004: MVP-0 operating decisions](docs/decisions/ADR-0004-mvp-0-operating-decisions.md)** — controlling MVP-0 choices.
-6. [Workflow architecture](docs/architecture/workflow-composition.md); [Artifact/verification architecture](docs/architecture/artifact-verification.md); [control-plane boundary](docs/architecture/control-plane.md).
-7. [DSH source evaluation](docs/research/RES-0003-dsh-control-plane-evaluation.md), [System 1 audit](docs/research/RES-0004-reference-workflow-artifact-audit.md), [AGENTS.md](AGENTS.md), [docs governance](docs/governance/documentation.md).
+## 1. What we are shipping
 
-**Operator instructions to local agent:**
-- Implement in **small, reviewable commits**; after every milestone, run specified tests and record evidence in the progress table. A checkbox is not test evidence.
-- Never silently alter accepted ADRs, replace the agreed storage strategy, or adopt a new workflow engine.
-- Start by validating DSH composition and contracts. **Do not port entire System 1 packages**, especially \`workflow\` (~1.3 MiB plugin source) or \`agent-workers\` (~0.85 MiB); extract reusable algorithms/contracts/tests.
-- **MVP-0 does not include security isolation or egress restriction**; do not introduce Docker, proxy, broad credential subsystem, MCP endpoint, UI or Website Workers now. Clean process env/worktrees are operational hygiene, **not a sandbox**.
-- Only System's effect executor does authorized Git push and draft PR creation. No automatic merges. Do not let real automated tests push to a production repository.
-- Every new source directory gets an ownership README and the documentation profile's \`source-roots\` must be updated when product code appears. Keep canonical specs updated separately; PLAN.md is only a handoff/checklist.
+**Outcome:** a user submits one Brainstorm brief and receives **three
+immutable Worker output Artifacts**: two independent alternative proposals
+from **Claude Code + Codex** and one synthesis from either existing Worker.
+The same `WorkController` executes the externally configured Workflow.
+No additional provider type, new Work authority, domain engine or required
+VerifierPort. Three *executions/roles* are sufficient; not three provider
+implementations. Completion means output delivery, **not** factual approval.
 
-## Evidence baseline — pin exact versions before coding
+```text
+brief Artifact ID
+    ├── idea-a (Claude) → proposal-a Artifact ID ─┐
+    └── idea-b (Codex)  → proposal-b Artifact ID ─┤
+                                                      ↓
+                                       synthesis (Claude or Codex)
+                                                      ↓
+                                            summary Artifact ID
+```
 
-**New System repository:** work on the checked-out branch without clobbering local uncommitted work. \`System_1\` is **external reference evidence**, not a predecessor to migrate or a source tree to copy wholesale.
+The two idea steps have only the initial brief as input. The synthesis
+step receives the two exact proposal IDs and brief. **Scheduling is
+sequential** in current code even if dependencies are independent;
+parallelism is explicitly not a release requirement.
 
-**DSH:** pin release \`dsh-v0.2.2-rc.1\` and verify the tag/installed package integrity. GitHub's tag target on 2026-11-05 is **\`66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db\`**. ADR-0004 mistakenly cites **\`fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159\`**, a distinct master merge. **Verify and correct this discrepancy in a separate ADR/docs commit before locking dependencies**. Do not assume both commits are equivalent.
+## 2. Execution checklist and gates
 
-Relevant pinned DSH APIs:
-- [subagent contract](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/subagent/subagent/src/types.ts): \`SubagentStartRequest\` supports \`cwd\` but requires parent \`Agent\`; \`SubagentResult\` has output/structured/stopReason/diagnostic, **not** usage or workspace changes. Compare before choosing wrapper vs direct SDK adapter.
-- [Claude Code provider](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/subagent/subagent-claude-code/README.md) and [Codex provider](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/subagent/subagent-codex/README.md).
-- [storage-domain](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/storage/storage-domain/README.md) with durable *record-level* writes, not cross-table transactions; [sdk-minimal composition](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/bundle/sdk-minimal/cordis.patch.yml).
+### B0 — Confirm the MVP-0 baseline (short)
 
-**System 1 source baseline:** [\`tsuuanmi/system_1\`](https://github.com/tsuuanmi/system_1) \`main\` at **\`f199a277b2634f8995a499601cbf03616aa639f7\`**. Read code at pinned paths and check LICENSE/attribution before verbatim copying; repository visibility alone is not permission to reuse source.
+- [ ] Check the current PR #2 head, clean local working tree and pinned DSH
+  version. Do not overwrite local uncommitted work or rebase without consent.
+- [ ] Run existing offline build/unit/smoke tests and `system doctor`;
+  record command, exit status, source SHA and enabled Worker accounts.
+- [ ] Inspect `packages/work/src/workflow.ts`, `controller.ts`,
+  `registry.ts`, `packages/agents/src/index.ts`, `workspace.ts`
+  before changing anything. Existing `system.workflow/v1` can express B1.
+- [ ] Keep existing Software Engineering and Research workflows passing.
+  No verifier rewrite or independent DSH plugin framework.
 
-## Milestones — execute in order
+**Gate:** baseline documented, both existing workflow fixtures preserved.
 
-### M0: Reproducible DSH boot and CLI
+### B1 — Brainstorm YAML, reuse Claude and Codex (next feature)
 
-- [x] Verify/pin DSH exact tag and runtime dependencies, correct ADR-0004 upstream hash in a small docs commit. *(\`d02fa55\`: tag is \`66491b05\`; \`fcc0ad4\` is 811 commits ahead; cited facts rechecked at the tag.)*
-- [x] Create **minimal System profile/bundle** on Cordis; inspect effective active plugin rows and dependency closure. **Do not inherit full \`dsh-base\`** unless an actual required dependency forces it. *(\`@system/bundle\`: 7 rows, no \`dsh-base\`; \`--dump-config\` asserted by the smoke test.)*
-- [x] Implement thin \`system\` wrapper for \`dsh --profile system "$@"\`; expose at least \`system doctor\` or equivalent health and \`system work\` namespace.
-- [x] Enable/reuse DSH storage hub/domain, attachment/content store, subprocess and credentials only as actually needed; document which are mounted. *(packages/bundle/README.md; attachments and subprocess are mounted but first exercised in M1/M3.)*
-- [x] Add reproducible build, typecheck, unit-test commands and offline smoke tests (no model credentials). One optional plugin can be disabled by config without deleting its source; in-flight toggling is MVP-1.
-- [x] Record exact package versions, commands and limitations in source README.
+- [ ] Add `workflows/brainstorm.yaml` using current strict
+  `system.workflow/v1`: `idea-a`, `idea-b`, `synthesis` Worker steps.
+  Each produces a named file Artifact; no `verify` or `accept` required.
+- [ ] Add account capability labels via DSH composition/profile config:
+  `brainstorm.idea-a` for Claude, `brainstorm.idea-b` for Codex, and
+  `brainstorm.synthesis` for one existing account. Retain provider-neutral
+  `WorkerPort`; no new Worker or domain-specific Controller branch.
+- [ ] Ensure `idea-b` has no input reference to `idea-a`; synthesis
+  declares `dependsOn: [idea-a, idea-b]` and inputs both proposal slots.
+- [ ] Write concise role instructions asking for distinct alternatives,
+  assumptions, trade-offs, failure modes and unresolved questions. Synthesis
+  compares arguments and proposes next experiments; no false consensus.
+- [ ] Add fake Worker tests: exactly three attempts, expected provider refs,
+  two independent inputs, Artifact ID handoff, distinct provenance, pinned
+  spec, failed capability preflight and no required verifier.
+- [ ] Make result Artifact IDs and step statuses inspectable using existing
+  CLI. Do not build a new UI or transcript-chat layer.
 
-**Gate M0:** profile boots, CLI health works, CI/offline test passes; no second model loop/plugin manager.
+**Gate:** fake Brainstorm run completes with three stored Artifact outputs,
+correct independent/synthesis inputs and no Work Core modifications.
 
-### M1: Artifact Foundation (first port target)
+### B2 — Real run and recovery
 
-- [x] Define minimal typed Artifact envelope: \`artifactId\`, kind/version, content or blob ref, input Artifact IDs, classification, producer provenance and separate producer occurrence/attempt identity. *(packages/artifacts/src/envelope.ts; occurrences carry producer, workId, attemptId, time.)*
-- [x] Port/adapt the **small** canonical JSON/SHA-256 utility and tests from [System 1 canonical.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/libs/src/canonical.ts) **only if copying is permitted**; otherwise reimplement behavior. Freeze versioned canonicalization and hash domain separation. *(Ported with the owner's permission; {B}artifact-id/v1{B} with domain tag {B}system.artifact/v1{B}, documented in artifact-verification.md.)*
-- [x] Adapt [System 1 artifact invariants](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/artifacts) and [conformance tests](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/ledger-core/conformance) to DSH storage/attachment APIs; **do not add a second full SQLite ledger** by default. *(DSH storage domain {B}system_artifacts{B} plus attachments; no own database.)*
-- [x] Enforce immutable content, schema validation, missing-input refusal, lineage and stable ID; persist metadata separately from content. Define how partial write/orphaned blob is reconciled. *(Bytes before record; an orphan blob is reused by the retry; deleted bytes read as {B}unavailable{B}. Orphan GC is not implemented.)*
-- [x] Tests: same canonical content -> same Artifact ID despite different producer/time; different content -> different ID; producer events remain distinct; changed/invalid input refused; restart -> read by ID succeeds.
+- [ ] Run a real credential-gated brief: Claude proposal, Codex proposal,
+  third synthesis. Record provider/model/tier actually served, attempts,
+  input/output Artifact IDs and elapsed time.
+- [ ] Inject stop/crash after first idea; restart and confirm the completed
+  Artifact is reused, not generated again. `work replay` matches.
+- [ ] Test cancellation, unavailable Codex account and changed Workflow file:
+  route refusal explicit; old Work retains admitted spec and output IDs.
+- [ ] Re-run existing code and research smoke tests after adding account
+  capability labels.
 
-**Gate M1:** Artifact stored and read after process restart **by ID only**, stable digest and provenance verified.
+**Gate:** real three-attempt run and recovery pass; no accidental
+same-provider substitution for the two independent perspectives.
 
-### M2: Durable Work/Task + minimal Workflow file compiler
+### B3 — Brainstorm daily-driver evaluation
 
-- [x] Define Work ID, Attempt ID, lifecycle/state events, terminal outcome and explicit decision reasons. *(\`work:<uuid>\`, \`attempt:<uuid>\`; events \`admitted\`, \`dispatched\` with every routing candidate and reason, \`observed\`, \`verified\`, \`attempt-lost\`, \`terminal\` with reason.)*
-- [x] **Implement ADR-0004 storage literally:** \`ctx.storageDomain\` table \`work\`, **one key per Work**; each atomic \`update(workId, fn)\` stores Work's events, current state and effect intents/results. Artifact metadata is a separate content-keyed table; bytes use attachment store. Measure Work record size and handle cross-table crash boundaries. *(Domain \`system_work\`; a 3-step record is about 3.9 KB, bounded at 16 KB by a test; crash boundaries in packages/work/README.md. Effect intent/result events join the same record in M5.)*
-- [x] Implement direct **single Task with no YAML**, fake Worker and persisted result Artifact.
-- [x] Parse **external versioned YAML**, only \`steps\`, \`dependsOn\`, \`capabilities\`, \`outputs\`, \`verify\`, \`accept\`; keep code/research Workflow files as **data files** (proposed \`workflows/software-engineering.yaml\`, \`workflows/research.yaml\`). *(Also \`inputs\`, the Artifact-ID binding MVP-09 requires, and a required \`version\`; \`approval: operator\` replaces the sketch's \`operator-merge\`.)*
-- [x] Preflight unique steps, cycles, missing refs/outputs, unknown Worker/verifier capability, invalid fields and versions **before any execution**.
-- [x] Canonicalize/persist accepted resolved Workflow spec as Artifact ID. Editing/removing YAML changes future admissions **only**. Translate symbolic output slots to exact Artifact IDs before Worker handoff.
-- [x] Persist dispatch/observations and recover Work state after restart **without replaying nondeterministic agent calls or remote effects**.
+- [ ] Try at least five varied briefs (architecture, tradeoffs, feature
+  design, failure analysis and open-ended ideation).
+- [ ] Compare a single-Worker baseline to the three-role workflow. Record
+  operator usefulness, novelty, diversity, actual disagreements, latency,
+  usage observations (or `unknown`) and manual interventions.
+- [ ] Capture operator feedback as evidence Artifacts where useful. A model
+  self-scoring quality is not sufficient evidence of better decisions.
+- [ ] Only optimize role/tier selection or add optional critique on observed
+  limitations. No team ballots or debate rounds without demonstrated need.
 
-**Gate M2:** direct Task and both YAML fixtures execute through one fake controller; invalid YAML dispatches zero Workers; spec hash survives mid-run file edit and restart.
+**Gate:** a report of real tasks and measured trade-offs, not just a demo.
 
-### M3: Worker registry + Claude Code / Codex
+### B4 — Focused reliability (may run alongside B1–B3)
 
-- [x] Define tiny Worker contract: capability descriptor, admit/reject reason, input Artifact IDs, per-attempt ID/cwd, cancel, output Artifact IDs, provider usage observation, terminal status. *(\`WorkerRequest\`/\`WorkerResult\` in packages/work/src/registry.ts: abort signal, \`cancelled\`, unaccepted \`partial\`, log Artifact, executor account/path/version.)*
-- [x] Build capability-based registry and fake adapter first; record routing decisions and unavailable reasons. No hardcoded domain-specific branches.
-- [x] Compare pinned DSH native \`subagent-*\` APIs with System needs. Use DSH subprocess/credentials and official Claude/Codex SDKs or **small, evidenced System-owned adapter** where DSH seam cannot expose required usage/worktree/result details. *(At the tag \`SubagentResult\` lacks usage and changes and needs a parent Agent, so \`@system/agents\` runs the CLIs through DSH \`subprocess\` (user-systemd scope ownership) and DSH \`credentials\`.)*
-- [x] Create **new git worktree per attempt** from frozen input Artifact (not one shared worktree per whole Workflow), throwaway HOME, minimal selected provider credential environment; the adapter captures output tree/changes as Artifact.
-- [x] Extract only needed Git helpers from [System 1 worktrees.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/agent-workers/src/worktrees.ts); do not inherit its worktree-per-run ownership or landing system.
-- [x] \`system work cancel\`: process-group SIGTERM, 30 s, SIGKILL, persist reason/caller, retain partial output as **unaccepted** Artifact and reconcile pending effects.
-- [x] Record bounded agent output and usage provenance; unobserved usage = **unknown**, not zero. Verify Claude -> Codex takeover from Artifact ID without transcript handoff.
-- [x] *Operator-requested addition (2026-11-06):* model tiers as capabilities (\`tier.economy\`, \`tier.standard\`, \`tier.frontier\`, System 1's names); an account maps tiers to models; each attempt records tier, model and served models. *(Real check: Claude \`haiku\`/\`sonnet\`/\`opus\` served \`claude-haiku-5-5\`/\`claude-sonnet-5-5\`/\`claude-opus-5-5\`. Codex has no tier models configured.)*
+- [ ] Keep and extend multi-CLI same-Work concurrency regression tests
+  for the DSH SQLite `busy_timeout` patch. Test lost updates, duplicate
+  dispatch and replay after forced termination.
+- [ ] Avoid new process daemon/lease framework unless a minimal reproducer
+  demonstrates a correctness defect. Record fixes independently.
 
-**Gate M3:** fake tests + separately flagged real provider smoke tests show takeover, cancellation and output persistence. Credentials are optional for offline CI.
+**Gate:** no known Work state correctness regression from the Brainstorm
+feature and retained tests for the SQLite patch.
 
-### M4: Verifier capability contract + two domains
+## 3. System 1 reference: adopt only the small mechanisms
 
-- [x] Implement verifier registry: versioned capability, accepted Artifact kinds, exact subjectArtifactId, criteria Artifact ID, verdict \`pass | fail | inconclusive | error\`, evidence Artifact IDs and provenance. *(\`VerifierPort\`: version, accepted kinds, criteria pinned at admission; the controller stores \`verdict@1\` and refuses mis-bound or evidence-less verdicts as \`error\`.)*
-- [x] Aggregate **only required verifiers selected by Workflow YAML**, not universal model review.
-- [x] Code verifier: snapshot repo \`.system/checks.yaml\` at admission as criteria Artifact, run commands on **fresh worktree for the exact result tree Artifact**, record check/exit/evidence. Adapt exact-subject logic from [System 1 subjects.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/libs/src/subjects.ts) and [checks.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/agent-workers/src/checks.ts).
-- [x] Research verifier: agent produces **\`report.md\` + structured \`sources.json\`** with URL, quote and supported claims. Verify source fetchability and quote presence at verification time; report inaccessible/changed sources as \`inconclusive\`. **Do not claim this proves what the agent originally read** (full source snapshot/fetch tool is MVP-1).
-- [x] Tests: wrong/stale subject, changed criteria, missing verifier/evidence and failed checks do **not** pass; two very different domains use the **identical Work Controller code**.
+See the [pinned source audit](docs/research/RES-0006-brainstorm-workflow-feasibility.md#system-1-as-a-reference-what-to-copy-conceptually)
+at `tsuuanmi/system_1@f199a277`:
 
-**Gate M4:** code-tree check and research citation check produce typed verdict Artifacts against exact IDs; no domain-specific engine branch.
+- **Adopt:** independent proposals, distinct provider/account perspectives,
+  immutable member results, explicit synthesis, candidate objections and
+  decision provenance.
+- **Adapt:** use role capability labels and current Artifact-ID bindings in
+  external YAML; track which provider *actually* handled each role.
+- **Defer:** sealed ballots, majority vote, debate rounds, persistent team
+  conversations, a monolithic team engine, cross-member peer messaging.
+- **Future Research reference:** two independent literature reviews,
+  structured evidence table, independent critique and conclusion are useful
+  once Website Worker/research evaluation is in scope. Do not port its coded
+  research template directly.
 
-### M5: System-owned push/PR effects and operator approval
+## 4. After Brainstorm — future, not current gates
 
-- [x] Implement Effect intent/outcome records with stable operation ID in Work record. **Persist intent first**, invoke remote operation second, then record result; an unknown state triggers read-only reconciliation before retry.
-- [x] Effect provider can push verified code to \`system/<workId>\` and open **draft GitHub PR once**; only System receives Git/GitHub credentials. **Never auto-merge**.
-- [x] Verify exact tree Artifact passed required checks **before push**.
-- [x] Human-only approval at CLI for actions beyond allowed \`system/*\` push/draft PR, marking PR ready, or accepting inconclusive result; store \`operatorId\` and caller source. **MVP-0 caller labels are not an OS-level anti-bypass guarantee**.
-- [x] Automated tests use fake GitHub/git effect backend. Manually authorized live smoke tests use only a throwaway repo. *(Automated: real bare git remotes and a fake GitHub API. Live, authorised by the operator on 2026-11-06: private throwaway repository \`tsuuanmi/system-smoke-scratch\`, evidence in the M5 row.)*
-- [x] Crash tests around intent, remote effect success before receipt, and reconciliation: no blind duplicate push/PR.
+- [ ] Website Worker for interactive/browser-assisted Research **only when**
+  a real source workflow requires it; keep the same WorkerPort/Artifact IDs.
+- [ ] Research quality capabilities (source snapshots, citation consistency,
+  claim-to-evidence checking) as separately selected verifiers. The **current
+  Research flow continues to work**, without mandatory stronger verification.
+- [ ] Optional Skill, LSP, web-fetch or third Worker adapter only if a
+  measured use case requires it and the pinned DSH plugin can satisfy
+  the System contract without duplicating the model loop.
+- [ ] Parallel independent steps, additional provider accounts and adaptive
+  routing only if B3 results justify their overhead.
 
-**Gate M5:** verified code produces **one** draft PR; restart/repeat reconciles its identity, never opens a duplicate.
+## 5. Progress and handoff
 
-### M6: MVP-0 end-to-end verification and handoff
-
-- [x] Run **Software Engineering YAML** end-to-end: Work -> Worker -> code Artifact -> exact-tree checks -> System push -> draft PR. *(Dogfood: Work \`work:6bd9748e-e55f-45a6-a3c0-6545e54373dd\` fixed System's own \`tools/docs.py\` for Python 3.8 with Claude Code \`claude-haiku-5-5\`; the pinned \`.system/checks.yaml\` failed on the base and passed on \`aed1a25\`; System pushed it to \`system/6bd9748e…\` on a local mirror and opened draft PR #1 on the fake GitHub API; taken in as \`e99996b\`.)*
-- [x] Run **Research YAML** end-to-end: Work -> Worker -> report/source Artifacts -> configured verifier -> accepted/inconclusive outcome. *(Work \`work:5b956495-bc74-40e2-9c38-9de71b2b15f9\`: Claude Code \`claude-haiku-5-5\` answered what MCP is with 2 sources (anthropic.com, modelcontextprotocol.io); both quotes were found on the live pages; accepted in 28 s.)*
-- [x] Show Claude -> Codex takeover using Artifact IDs, no previous conversation, one Work history. *(Real, economy tier: {B}claude-haiku-5-5{B} cancelled mid-attempt, {B}gpt-6-luna{B} took over from the partial tree in the same Work; {B}tests/real-agents.test.ts{B}.)*
-- [x] Test restart during admission/execution, artifact persistence and effect boundary; cancellation/partial Artifact; spec edit pinning; invalid config; stale verifier; direct Task without Workflow.
-- [x] Document commands, environment variables by **name only**, example config, known limitations and observed outputs. Add per-package README and update canonical docs/ADRs for tested details.
-- [x] Run \`python3 tools/docs.py check\`, \`python3 tools/docs.py sync --check\`, all relevant package build/typecheck/tests and CI. Add genuine test evidence and note any skipped credential-gated integrations.
-
-**Gate M6:** both domains complete using **one controller**; work/artifacts survive restart; effects reconcile without blind retry; verifier evidence is exact-subject. A skipped/broken mandatory test is a blocker, not a pass.
-
-## Port / reuse shortlist
-
-| Component/source | Choice | Keep out |
-|---|---|---|
-| [System 1 canonical.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/libs/src/canonical.ts) | **Selective port** utility + tests, subject to license | rest of libs |
-| [System 1 subjects.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/libs/src/subjects.ts) | **Selective port** exact tree capture | large host/sandbox |
-| [System 1 artifacts and conformance](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/artifacts) | **Adapt semantic contract and tests** to DSH store | duplicate SQLite owner |
-| [System 1 workflow/spec.ts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/workflow/src/spec.ts) | **Extract** validation/spec hashing | giant Workflow engine, team/vote/remediation |
-| [System 1 workers](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/workers) | **Adapt** capability matching and refusal reasons | quota fleet scheduler |
-| [System 1 worktrees/checks](https://github.com/tsuuanmi/system_1/tree/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/agent-workers/src) | **Extract** Git/check mechanisms | huge agent-workers plugin |
-| [System 1 turn receipts](https://github.com/tsuuanmi/system_1/blob/f199a277b2634f8995a499601cbf03616aa639f7/packages/plugins/turn-receipts/README.md) | **Learn** intent/reconcile tests | browser account model |
-| DSH/Cordis host/storage/attachment/subprocess/credentials | **Reuse first** at verified version | second host or general model loop |
-| Board, browser Website Workers, team voting, UI, gateways, advanced quota/memory | **Defer** | entire dependency closures |
-
-**Package guidance:** logical components may be consolidated into fewer packages. Suggested seams: \`work\`, \`artifacts\`, \`workers\`, \`verification\`, \`effects\`. Workflow loader is a **pure library**; Workflow definitions are external files, **not plugins**. Split only when lifecycle/config demands it.
-
-## After MVP-0 — explicitly deferred
-
-- [ ] **MVP-1:** Docker/egress boundaries and stronger operator identity.
-- [ ] **MVP-1:** System fetch tool with immutable URL/source snapshots as citable Artifacts.
-- [ ] **MVP-1:** hot-disable/reload plugin with in-flight Work.
-- [ ] **MVP-1:** usage oracle comparison and resource/cold-start benchmarks.
-- [ ] **MVP-1:** MCP entry point and wider workflow syntax when justified.
-- [ ] **Post MVP-1:** Website Worker / browser-driven brainstorming and research behind the same Worker contract.
-- [ ] **After MVP-0:** align the capability vocabulary with System 1 (\`develop\`, \`research\`, \`review\`, \`plan\`, \`web-search\`) and migrate the two Workflow files.
-- [ ] **After MVP-0:** tier bounds on a step (\`min\`/\`max\`, lowest open tier served, as System 1's work requirement) instead of one exact \`tier.*\` capability.
-- [ ] **After MVP-0:** Codex model names per tier, verified against the installed CLI.
-- [ ] **After MVP-0:** choose among several accounts by quota, cooldown or rotation (today: the first capable account).
-- [ ] **After MVP-0:** schema evolution for stored records: one invalid stored record makes DSH refuse to open the whole domain, so every new field must be optional or defaulted until a migration runner exists.
-- [ ] **After MVP-0:** consider an ACP runtime (DSH \`subagent-acp\` or a System one) for agents other than Claude Code and Codex.
-
-## Status / evidence log (update after each milestone)
-
-| Milestone | Status | Commit/PR | Test command and result / blocker |
+| Stage | Status | Commit / PR | Test/evidence |
 |---|---|---|---|
-| M0 DSH bootstrap | done | \`d02fa55\`, \`8b2d797\` on \`mvp0/implementation\` | \`corepack pnpm install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: build + typecheck ok, unit 5/5, offline smoke 7/7 (boot; exact 7-row composition; optional \`credentials\` disabled gives ok; required \`storage-sqlite\` disabled gives exit 1; init idempotent). \`system doctor\` about 1.05 s, 89 MB RSS. GitHub Actions on PR #2: \`build\` pass (19 s), \`docs\` pass. |
-| M1 Artifacts | done | \`26d91c0\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 23/23 (18 new: canonical form, ID independence from producer/time, each content field changes the ID, distinct occurrences, input set order, refusals store nothing, classification floor, no relabel on dedup, immutable reads, crash between blob and record, unavailable bytes, concurrent equal puts, malformed IDs); smoke 10/10 (3 new: read by ID after a process restart, missing/malformed IDs, deleted bytes). Mutation check: putting the producer into the ID fails 2 tests; removing the per-ID lock fails 1. \`system doctor\` about 1.08 s, 91 MB RSS. GitHub Actions on PR #2 at \`b3c7ae6\`: \`build\` and \`docs\` pass. |
-| M2 Work + YAML | done | \`77cf8e2\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 49/49 (26 new), smoke 17/17 (7 new). Gate on the real profile with \`fakes\` enabled by patch: direct Task, Software Engineering and Research succeed through one controller; an invalid Workflow is refused with zero Worker calls and no Work; host SIGKILLed mid-attempt, file edited, \`work run\` keeps the pinned spec ID, re-runs only the lost step (2 \`implement\` attempts, 1 \`checks\`) and succeeds; \`work replay\` matches; fakes disabled gives the missing-capability reason; SQLite WAL with \`synchronous=2\` (FULL) asserted. Bugs found by tests and fixed: dependency-order hash instability, \`\$steps\` reference parsing, replay comparison under storage key reordering. \`system doctor\` about 1.1 s, 93 MB RSS. GitHub Actions at \`77cf8e2\`: \`build\` and \`docs\` pass. |
-| M3 Workers | done | \`e72a761\` (ADR-0005), \`a42f329\`, \`d111da4\` on \`mvp0/implementation\` | Clean install exit 0; \`corepack pnpm check\`: unit 64/64, smoke 22/22 (2 credential-gated skipped in CI). Fake-CLI tests: exact pinned commit on the base, file outputs, env stripped to PATH/LANG/LC_ALL/TZ plus the account credential, SIGTERM cancel with partial tree, SIGKILL after grace, per-attempt \`CODEX_HOME\` with refresh copy-back, cross-process \`work cancel --wait\` (exit 5), contested \`work run\` refused, Codex takeover from the partial commit with \`replay\` matching. **Real, on this host** (\`SYSTEM_REAL_AGENTS=1\`): Claude Code 2.1.311 made a real change captured as a commit with observed usage (15 s); Claude cancelled mid-\`sleep 45\`, Codex 0.166.0 took over from its partial tree in the same Work (59 s), usage observed for Codex and recorded unknown for the killed Claude attempt. Probe finding: Codex writes memories/state into a shared \`CODEX_HOME\` even with \`--ephemeral\`. Bugs fixed: cancel poll kept a hung process alive; in-process cancel was refused. GitHub Actions at \`d111da4\`: \`build\` and \`docs\` pass. |
-| M4 Verifiers | done | \`32d5cee\` (tiers), \`51a3991\` on \`mvp0/implementation\` | Clean install exit 0; \`corepack pnpm check\`: unit 81/81, smoke 28/28 (2 credential-gated skipped in CI). Gate on the real profile (\`tests/verify.test.ts\`): both repository Workflow files through one controller with real verifiers; SE change passes the base commit's pinned checks, a failing change fails with the check named, a base without \`.system/checks.yaml\` is refused at admission; Research quotes found at a local site pass, unconfirmable ones hold (exit 3), an empty sources file fails; verdict Artifacts carry the exact subject and criteria IDs. Unit: wrong subject, other criteria, pass without evidence, unstored evidence, unaccepted kind → \`error\`; \`retry --step\` re-verifies the new subject; static check that the controller names no domain. Real (\`SYSTEM_REAL_AGENTS=1\`, economy tier): Claude Code \`haiku\` change, then Haiku cancelled and \`gpt-6-luna\` took over. Found and fixed: the M4 state field broke opening the real profile's M3 records (now defaulted, with a compatibility test); a test site blocked by \`spawnSync\`. GitHub Actions at \`51a3991\`: \`build\` and \`docs\` pass. |
-| M5 GitHub effects | done | \`9a0fe20\` on \`mvp0/implementation\` | Clean install exit 0; \`corepack pnpm check\`: unit 102/102, smoke 33/33 (2 credential-gated skipped). TDD: effect-step compiler, controller effects (10 scenarios) and the GitHub publisher (9) were written red first. Gate on the real profile (\`tests/publish.test.ts\`): the SE file publishes the exact checked commit to \`system/<work>\` on a bare remote and opens one draft PR; running again adds nothing; host SIGKILLed by the fake API right after it created the PR is reconciled as applied (1 PR); host SIGKILLed by a pre-receive hook during the push is reconciled as absent and published once; \`ready: true\` holds the Work, a pipe or \`SYSTEM_CALLER=human\` cannot approve, a typed confirmation on a pseudo-terminal approves, \`deny\` fails it; no merge call. Branch moves only from System-pinned commits. Refactor: host control and \`WorkError\` moved out of the controller. GitHub Actions at \`9a0fe20\`: \`build\` and \`docs\` pass. Not run: github.com. **Live on github.com** (2026-11-06, operator-authorised private throwaway repository \`tsuuanmi/system-smoke-scratch\`, HTTPS remote, \`GITHUB_TOKEN\` in the DSH store only): Work \`work:c30b95fb-0483-4f41-8e59-b71eeabb9f24\`, Claude Code at \`tier.economy\` added \`GREETING.md\`; the repository's check passed on \`c2b68ea\`; System pushed exactly that commit to \`system/c30b95fb-…\` and opened draft pull request #1; accepted in 11 s. \`work run\` again: no new event, still one pull request. |
-| M6 MVP-0 E2E | done | \`a4007c9\`, \`e99996b\` (made by System), \`40058f3\` on \`mvp0/implementation\` | Clean \`install --frozen-lockfile\` exit 0; \`corepack pnpm check\`: unit 105/105, smoke 33/33 + 2 credential-gated skipped in CI; docs check, sync, impact and the bootstrap smoke pass on Python 3.8. Real, on this host: SE dogfood and Research end to end (above); \`SYSTEM_REAL_AGENTS=1\` 2/2 on the final code (Claude change 11 s; Claude→Codex takeover 130 s). Restart during admission (characterised), execution, effects, cancel, spec pinning, invalid config, stale verdicts and direct Tasks are covered by the M2–M5 tests. Found and fixed: agent version probes cost 0.9 s per command (now lazy). **Anomaly resolved:** one real takeover run recorded the cancel directly (\`attempt-lost\`, exit 5). The user-systemd journal showed the host's Claude scope ended at 01:41:26 and the cancel's own host booted in the same second. Root cause, reproduced: DSH's SQLite connection had no busy timeout, so a second process writing the store (every \`system\` command boots a host that opens and writes it) failed at once with "database is locked"; a stress run had 2/15 Work admissions and 10 \`doctor\` boots fail that way. A host whose event write fails throws out of \`run()\` and exits. Fix: a pinned pnpm patch sets \`PRAGMA busy_timeout = 5000\` (\`patches/\`); regression test \`tests/concurrency.test.ts\` (red before, green 3/3 after); the stress run then had 0 failures, and real agents passed 2/2. GitHub Actions at \`40058f3\`: \`build\` and \`docs\` pass. Not run: github.com. |
+| B0 MVP-0 baseline | not started | — | — |
+| B1 Brainstorm YAML | not started | — | — |
+| B2 Real three Worker attempts | not started | — | — |
+| B3 Daily driver evaluation | not started | — | — |
+| B4 Concurrency regression | not started | — | — |
 
-### Independent review (2026-11-06)
+Update this table *after executing tests*. Each implementation milestone
+should be a small reviewable commit on the chosen implementation branch.
+If YAML role routing cannot ensure Claude + Codex, provide a failing
+reproducer before proposing a schema change. **Do not silently add another
+runtime, change a decided ADR, or mutate the documentation-only PR into a
+code PR.**
 
-A two-axis review (repository standards; this plan and the ADRs) of \`c83be98...HEAD\` found, and TDD fixed: a Work held on an unknown effect never resumed; an approved inconclusive verdict could publish; usage could be recorded as observed zero; two hosts could both take a stale lock (reproduced, 1 in 15 rounds); verifier versions were not pinned; an effect step could not be retried alone; operator touches were not counted (\`system work report\`); nine test files duplicated stand-ins (now \`test-support/\`); test-only \`LocalControl\` lived in production code; AGENTS.md and READMEs were stale; Workflow fields beyond ADR-0004's list were unrecorded (ADR-0006). After the fixes: \`corepack pnpm check\` unit 114/114, smoke 33/33 (2 skipped), real agents 2/2. The github.com live run was done later (M5 row). The takeover anomaly is resolved (M6 row).
-
-**Stop and report** if: pinned DSH APIs are incompatible; accepted ADR conflicts with reproducible source; single-key Work size or crash behavior is inadequate; an external effect cannot be reconciled; a second domain needs controller branching; or a license prevents porting source. Provide the smallest reproducer and propose a measured fix. **Do not silently redesign the architecture**.
-
-**Definition of done:** reproducible local MVP-0 with two workflows, restart and takeover proofs, exact Artifact-ID verification, reconciled effects, a small DSH composition, and recorded test evidence. Until then this plan is **not** a claim that System is implemented.
+**Done =** one System Work containing two independently authored proposal
+Artifacts and one synthesized Artifact, replayable after restart, with
+provider provenance and no need for an additional Worker type. The
+research/verifier/browser expansions remain future work.

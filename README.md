@@ -10,8 +10,9 @@ the active service composition is deliberately small, while optional
 capabilities and community plugins can be enabled or disabled by configuration
 without deleting their source.
 
-**Current state:** MVP-0 is being built milestone by milestone
-([PLAN.md](PLAN.md)). M0 to M2 exist: the `system` DSH profile boots,
+**Current state:** MVP-0 is implemented (its milestones and evidence are in
+the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)); the next iteration,
+Brainstorm, is planned in [PLAN.md](PLAN.md). The `system` DSH profile boots,
 `system doctor` checks it, `system artifact` stores and reads immutable
 Artifacts by ID, and `system work` admits Workflow files or direct Tasks and
 runs them durably, with Claude Code and Codex accounts as Workers (cancel and
@@ -35,6 +36,14 @@ citation checks, and publishes a checked commit as one draft pull request
   decision and alternatives.
 - [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)
   — upstream sources, risks and experiments.
+- [Current MVP-0 plugin audit](docs/research/RES-0005-plugin-reuse-audit.md)
+  — source-backed reuse/adapt/keep/defer assessment against PR #2 and pinned DSH.
+- [Brainstorm feasibility and System 1 reference](docs/research/RES-0006-brainstorm-workflow-feasibility.md)
+  — three Worker attempts on the existing Claude/Codex runtimes.
+- [Draft post-MVP roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md)
+  — Brainstorm first; Research quality verification and Website Worker later.
+- [Next implementation plan](PLAN.md) — local-agent checklist and test gates;
+  implementation belongs on PR #2 or a separately chosen code branch.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
   and [bootstrap guide](docs/governance/bootstrap.md) — reuse this governance
@@ -95,5 +104,5 @@ before the command, such as `bin/system --patch overlay.yml work submit ...`.
 this repository's own required checks. Commit `e99996b` was made by System
 through its Software Engineering Workflow (Work `work:6bd9748e…`; Claude Code
 at the economy tier; checks passed; published as a draft pull request to a
-local mirror) and taken in after review. See [PLAN.md](PLAN.md) for the
+local mirror) and taken in after review. See the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md) for the
 evidence of every milestone and the known limits.

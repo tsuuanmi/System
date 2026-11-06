@@ -8,7 +8,7 @@ covers: [packages/bundle/cordis.patch.yml]
 # System control-plane architecture
 
 **Status: selected architecture; MVP-0 is implemented** (see
-[packages](../../packages/README.md) and the evidence in [PLAN.md](../../PLAN.md)).
+[packages](../../packages/README.md) and the evidence in the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)).
 System is a durable AI work **control plane** hosted on **DSH/Cordis**.
 Its execution plane is existing agent/model/tool/Worker capabilities mounted
 as DSH plugins or reached through adapters. See

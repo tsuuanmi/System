@@ -1,7 +1,7 @@
 # Packages
 
 System's source packages, one pnpm workspace member each. Packages are split
-only when lifecycle or configuration demands it (PLAN.md package guidance).
+only when lifecycle or configuration demands it (the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md) package guidance).
 
 - [bundle](bundle/README.md) — `@system/bundle`, the only bundle of the
   `system` DSH profile: the explicit Cordis tree.

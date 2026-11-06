@@ -1,7 +1,8 @@
 # Agent instructions
 
 System is a DSH-hosted **durable work control plane**, not a new agent runtime.
-MVP-0 is implemented in [packages](packages/README.md) (see the evidence in
+MVP-0 is implemented in [packages](packages/README.md) (see the evidence in the
+[MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md); the next iteration is
 [PLAN.md](PLAN.md)); [test-support](test-support/README.md) holds the shared
 test stand-ins. Changes to this repository are checked by
 [`.system/checks.yaml`](.system/checks.yaml).
