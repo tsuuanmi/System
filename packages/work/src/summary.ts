@@ -17,12 +17,14 @@ export interface WorkSummary {
   usage: {
     inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; freshInputTokens: number; outputTokens: number
     observedAttempts: number; unsplitAttempts: number; unknownAttempts: number
+    /** The CLI's own list-price cost, over the attempts that report it; absent when none does. */
+    costUsd?: number
   }
 }
 
 export function summarize(record: WorkRecord): WorkSummary {
   const touches: string[] = []
-  const usage = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
+  const usage: WorkSummary['usage'] = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
   let attempts = 0
   for (const event of record.events) {
     if (event.type === 'dispatched' && event.executor === 'worker') attempts += 1
@@ -31,6 +33,7 @@ export function summarize(record: WorkRecord): WorkSummary {
         usage.inputTokens += event.usage.inputTokens
         usage.outputTokens += event.usage.outputTokens
         usage.observedAttempts += 1
+        if (event.usage.costUsd !== undefined) usage.costUsd = (usage.costUsd ?? 0) + event.usage.costUsd
         const { cacheReadTokens, cacheWriteTokens = 0 } = event.usage
         if (cacheReadTokens === undefined) {
           usage.unsplitAttempts += 1

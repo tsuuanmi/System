@@ -64,7 +64,7 @@ model is recorded for it.
    a copy of the account's `auth.json`.
 3. **Run** through the DSH subprocess service, which owns the process range in
    a user-systemd scope:
-   - `claude -p <prompt> --output-format json [--model <tier's model>] --permission-mode acceptEdits
+   - `claude -p <prompt> --output-format stream-json --verbose [--model <tier's model>] --permission-mode acceptEdits
      --allowedTools Bash WebSearch WebFetch --disallowedTools "Bash(git push:*)" "Bash(gh:*)"`
    - `codex exec --json --ephemeral --ignore-user-config --skip-git-repo-check [-m <model>]
      -s workspace-write -C work --add-dir out <prompt>`
@@ -72,13 +72,20 @@ model is recorded for it.
    output slot is the working tree, committed on the base with a private index
    as `git-tree@1` and pinned at `refs/system/artifacts/<commit>`; every other
    slot is the file `out/<slot>` as `file@1`. A missing output fails the attempt.
-5. **Record:** usage from the CLI's own JSON (unknown when absent): the
-   total `inputTokens` plus `cacheReadTokens` and `cacheWriteTokens` when the
-   CLI splits them (Codex reports no cache writes, so it has no write field),
-   so fresh input is the total minus both; then the
-   account, CLI path and version (asked once, on first use, never at
-   startup), and the bounded stdout as a `local-private` log Artifact. The
-   log is never handed to another Worker.
+5. **Record:** usage from the CLI's own output (unknown when absent), summed
+   over every turn: a background command's completion notification starts a
+   second turn, and Claude Code's `stream-json` prints a `result` for each,
+   where its `json` format prints only the last. Fields: the total
+   `inputTokens` plus `cacheReadTokens` and `cacheWriteTokens` when the CLI
+   splits them (Codex reports no cache writes, so it has no write field), so
+   fresh input is the total minus both; and, for Claude Code only, `costUsd`,
+   the list-price `total_cost_usd` the CLI computes itself, present only when
+   every result reports one. The last result decides success and the message;
+   lines that are not results are ignored. Then the account, CLI path and
+   version (asked once, on first use, never at startup), and the stdout's last
+   256 KiB as a `local-private` log Artifact. The log is never handed to
+   another Worker, and is only a bounded copy: usage is parsed from the whole
+   stdout (kept to its last 64 MiB), never from the log.
 6. **Clean up:** the worktree registration and the attempt directory are removed.
 
 **Cancel:** the controller aborts the attempt; DSH sends SIGTERM to the range

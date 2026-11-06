@@ -10,6 +10,8 @@
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
 //   FAKE:fail     report an error
 //   FAKE:env      write the environment's variable names to ENV.json
+//   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
+//   FAKE:noise    with FAKE:followup, print 300 KB of other events between the results
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
 // The model given with --model / -m is written into ENV.json and reported as served.
 import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -37,9 +39,22 @@ function finish(ok, message) {
       console.log(JSON.stringify({ type: 'turn.failed', error: { message } }))
     }
   } else {
-    console.log(JSON.stringify({ type: 'result', is_error: !ok, result: message, usage: { input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, modelUsage: { [model ? `served-${model}` : 'served-default']: {} } }))
+    const served = { [model ? `served-${model}` : 'served-default']: {} }
+    const result = (usage, cost) => JSON.stringify({ type: 'result', is_error: !ok, result: message, usage, total_cost_usd: cost, modelUsage: served })
+    // `--output-format stream-json` prints every event as a line; the json format prints only the last result.
+    const stream = args.includes('stream-json')
+    if (stream) console.log(JSON.stringify({ type: 'system', subtype: 'init' }))
+    if (has('followup')) {
+      const first = result({ input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, 0.5)
+      if (stream) console.log(first)
+      if (stream && has('noise')) console.log(JSON.stringify({ type: 'assistant', text: 'x'.repeat(300 * 1024) }))
+      console.log(result({ input_tokens: 1, cache_creation_input_tokens: 2, cache_read_input_tokens: 4, output_tokens: 6 }, 0.25))
+    } else {
+      console.log(result({ input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, 0.5))
+    }
   }
-  process.exit(ok ? 0 : 1)
+  // Exit only once stdout is flushed: a pipe takes a large write asynchronously.
+  process.stdout.write('', () => process.exit(ok ? 0 : 1))
 }
 
 if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
