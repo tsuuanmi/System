@@ -595,16 +595,52 @@ by the Development session, apart from the Website Worker programme on
 `web-workers` (whose PLAN records milestone WW). Each step with a test that
 failed first; the acceptance list is in PROP-0006.
 
-- [ ] OC1. `decision@1`, `system decision add|list` (`decision.add` agent,
+- [x] OC1. `decision@1`, `system decision add|list` (`decision.add` agent,
   Goal-scoped).
-- [ ] OC2. Live attempt progress in the Host (`work show`), and the stall
+- [x] OC2. Live attempt progress in the Host (`work show`), and the stall
   notice after `stallMinutes`.
-- [ ] OC3. `system goal brief` / `goal.brief`, generated from records.
-- [ ] OC4. Sub-workflows in the Workflow compiler (ADR-0002 amendment).
-- [ ] OC5. `workflows/code-checks.yaml`, used by `software-engineering.yaml`,
+- [x] OC3. `system goal brief` / `goal.brief`, generated from records.
+- [x] OC4. Sub-workflows in the Workflow compiler (ADR-0002 amendment).
+- [x] OC5. `workflows/code-checks.yaml`, used by `software-engineering.yaml`,
   and `work retry --step` on a verify step ("verify again").
-- [ ] Growth recorded (core lines, docs, check time) and a simplification
+- [x] Growth recorded (core lines, docs, check time) and a simplification
   pass, as for every milestone.
+
+**Growth at OC** (measured from `orchestrator-continuity` at `a4862d7`, the
+same line counts before and after; all checks with `env -i PATH LANG
+HOME=<fresh> CI=1`, the machine at a load average of about 270):
+
+| Measure | Before OC | OC, before → after the pass |
+|---|---|---|
+| Active core (`packages/work/src`, `packages/artifacts/src`), lines | 3,076 | 3,403 → 3,403 (+327, +10.6%; +46.9% over the PR #3 baseline) |
+| All package source, lines | 10,505 | 11,069 → 11,062 |
+| Tests, lines | 9,162 | 9,540 → 9,540 |
+| Docs under `docs/`, lines (files) | 4,786 (46) | 4,821 (46) → 4,821 (46) (+35) |
+| Required checks | not measured | docs 0.4 s, install 12 s, build 33 s, typecheck 10 s, unit 3 min 14 s (463 pass, 1 fail, see below), smoke 1 min 32 s (73 pass): 5 min 44 s |
+
+- **Core: over budget, justified.** The +327 lines are behaviour asked for
+  by PROP-0006, none of it duplication: Sub-workflows in the compiler (about
+  110 lines of `workflow.ts`), live progress and the stall timer (`live.ts`,
+  88), decisions in the Goal store with their kind and `Artifacts.ofKind`
+  (about 80), and the `work` row's config, the verify-step retry and the
+  controller's dotted step IDs (about 50). The brief lives in `packages/host`,
+  outside the core. The debt recorded at O stays open.
+- **Docs: +35 lines**, the new facts only (the `uses` step, verify again,
+  `live` and stalls, replacing the Orchestrator); the package READMEs carry
+  the rest. Docs were over the 4,285-line limit before OC (the WW programme's
+  documents); OC does not pay that down.
+- **Check time: over the 3-minute goal on this machine.** The unit check took
+  3 min 14 s against 38 s at F, with the machine at a load average of about
+  270 (other users' sessions). The same commands measured 2 min 28 s at F.
+  It has to be measured again on a quiet machine before the time is trusted.
+- **One flaky test, outside OC:** `packages/agents/tests/chatgpt.test.ts`
+  "a page that is neither signed in nor signed out" failed once in the full
+  run (Chrome did not start within its 1.5 s launch timeout under load) and
+  passed 24/24 alone. It belongs to the web Runtime (WW) and is a defect to
+  fix there (Charter 12).
+- **Simplification pass:** the orchestrator scopes of the Goal rows became
+  two helpers (`ownGoal`, `inChain`); `goal.brief` uses `inScope`. No
+  feature was dropped.
 
 ## 4. After Brainstorm — future, not current gates
 
