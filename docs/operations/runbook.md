@@ -278,10 +278,9 @@ state fails after the `load` timeout with that reason and a screenshot.
 
 ## The dev branch
 
-Parallel Works each pass their own checks, but their merge can still break `dev`, so `dev` is re-checked after a batch of merges.
-
-System merges a Work's change into an allowlisted base (`mergeInto`) only
-through its merge queue: `dev` moves to exactly a commit whose required checks
+Parallel Works each pass their own checks; their merges no longer break `dev`
+together, because System merges a Work's change into an allowlisted base
+(`mergeInto`) only through its merge queue: `dev` moves to exactly a commit whose required checks
 passed, the change's merge with the current tip when `dev` has moved, by a
 push with a lease. A conflict fails the publish step naming the files; a
 check that fails on the merge names it in the reason. Do not require pull
