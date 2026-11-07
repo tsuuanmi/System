@@ -143,6 +143,7 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('goal.show', { goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
   const decided = await call('decision.add', { goal: goal.id, question: 'which?', options: ['a', 'b'], choice: 'a', reason: 'cheaper' }) as { id: string }
   assert.deepEqual((await call('decision.list', { goal: goal.id }) as { id: string }[]).map((d) => d.id), [decided.id])
+  assert.match((await call('goal.brief', { goal: goal.id }) as { text: string }).text, new RegExp(decided.id))
 
   const second = await call('work.submit', { capabilities: ['code-write'], input: input(f) }) as { id: string }
   await call('work.run', { workId: second.id })
