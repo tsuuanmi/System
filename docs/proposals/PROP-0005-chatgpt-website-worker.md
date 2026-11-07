@@ -10,7 +10,7 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1).
+**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1 and the review of WW1 in WW1c).
 
 ## Decision context
 
@@ -227,7 +227,40 @@ fallback.
   Chrome's launch; the test never asserted the timeout. Chrome has its own
   `timeouts.launch` (30 s).
 - **Evidence.** Each attempt writes a stage chain as it happens, before Chrome
-  starts, with `promptSubmitted`, and keeps it as partial output.
+  starts, with `promptSendAttempted` and `promptSubmitted`, and keeps it as
+  partial output.
+
+## Review findings of WW1, fixed in WW1c (2026-11-07)
+
+A second opinion (`chatgpt-web/second`, Work `work:d72ce675`) reviewed the WW1 diff.
+Fixed, each with a test that failed first:
+
+- **D1, the failure DOM kept text.** The snapshot is now structure only: every text
+  node and every attribute value but `role`, `aria-label` and `data-testid` is its
+  length.
+- **D2, a timed-out launch left Chrome running.** The process group that took the
+  profile's lock is killed.
+- **D3, a held profile was launched.** `launch` fails naming the live Chrome and
+  leaves it alone.
+- **D4, D5, the mode wait.** Bounded by its deadline as a whole, sampled every poll
+  (a change that comes back restarts the hold), and the mode is read again right
+  before the send.
+- **D6, D7, D8, D9.** `close` is `ok` only when the browser process exited (one that
+  outlives it is killed and the stage fails); `promptSendAttempted` is apart from
+  `promptSubmitted`, which needs a user turn on the page; the conversation binding
+  read belongs to the `read` stage, and the first failed stage stays the failed
+  stage; closed pages are counted when confirmed, and a page that will not close
+  fails the attempt.
+- **Questions answered in the READMEs:** `close()` is the Playwright context's, and the
+  process's exit is now checked (agents README); stages are in the evidence list.
+- **Also found (WW1c):** typing a 66 KB prompt took 5.5 min, so the composer takes one
+  paste event ([web-driver README](../../packages/web-driver/README.md)), recorded as
+  the `insert` stage; and a Runtime waited for a Worker's pipes to close, which two
+  leaked Xvfb held open for 33 min: the attempt now ends on process exit
+  ([agents README](../../packages/agents/README.md)).
+- **Not fixed, as risks:** the lock check is not atomic; the `page` handler closes
+  legitimate pop-ups; evidence writes that fail are silent; `skip`-gated headed tests
+  depend on the environment.
 
 ## Tests and what is still to verify
 

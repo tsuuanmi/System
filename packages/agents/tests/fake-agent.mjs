@@ -10,6 +10,7 @@
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
 //   FAKE:grandchild=FILE  start a process in the agent's own group that waits, and write its pid to FILE
 //   FAKE:escaped=FILE     the same, but in a session of its own (setsid), as a `system host` a test started might be
+//   FAKE:holdstdout=FILE  with FAKE:outputs, leave a process in the agent's group that holds stdout open (as a leaked Xvfb does) and write its pid to FILE
 //   FAKE:delay=MS finish only after MS milliseconds, so attempts can be seen to overlap
 //   FAKE:fail     report an error
 //   FAKE:env      write the environment's variable names to ENV.json
@@ -84,6 +85,8 @@ if (has('outputs')) {
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')
 if (has('fail')) finish(false, 'scripted failure')
+const held = /FAKE:holdstdout=(\S+)/.exec(prompt)?.[1]
+if (held) writeFileSync(held, String(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).pid))
 for (const [marker, detached] of [['grandchild', false], ['escaped', true]]) {
   const pidFile = new RegExp(`FAKE:${marker}=(\\S+)`).exec(prompt)?.[1]
   if (pidFile) writeFileSync(pidFile, String(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached, stdio: 'ignore' }).pid))

@@ -26,9 +26,11 @@ export interface EvidenceData {
   uiMap: { revision: string; hash: string }
   launchTimeoutSeconds: number
   viewport?: { width: number; height: number }
-  /** The pages Chrome came up with, how many were open before the first navigation, and how many were closed since (inherited, then late). */
-  pages?: { initial: number; beforeNavigation: number; closedInherited: number; closedLate: number }
+  /** The pages Chrome came up with, how many were open before the first navigation, and how many were confirmed closed since (inherited, then late), and how many late ones would not close. */
+  pages?: { initial: number; beforeNavigation: number; closedInherited: number; closedLate: number; closeFailed: number }
   /** True from the moment the send is attempted: a click that threw may still have sent, so a retry must not assume it did not. */
+  promptSendAttempted: boolean
+  /** True only once the page shows a user turn for the prompt: the site has it. False with `promptSendAttempted` is unknown, not "not sent". */
   promptSubmitted: boolean
   stages: StageRecord[]
   lastCompleted?: string
@@ -46,9 +48,9 @@ export interface Evidence {
   json(): string
 }
 
-export function createEvidence(file: string, initial: Omit<EvidenceData, 'schema' | 'promptSubmitted' | 'stages'>, now: () => number = Date.now): Evidence {
+export function createEvidence(file: string, initial: Omit<EvidenceData, 'schema' | 'promptSendAttempted' | 'promptSubmitted' | 'stages'>, now: () => number = Date.now): Evidence {
   const origin = now()
-  const data: EvidenceData = { schema: 'chatgpt-web-evidence@1', ...initial, promptSubmitted: false, stages: [] }
+  const data: EvidenceData = { schema: 'chatgpt-web-evidence@1', ...initial, promptSendAttempted: false, promptSubmitted: false, stages: [] }
   const flush = (): void => {
     try {
       writeFileSync(`${file}.tmp`, JSON.stringify(data), { mode: 0o600 })
@@ -73,7 +75,7 @@ export function createEvidence(file: string, initial: Omit<EvidenceData, 'schema
         if (error !== undefined) record.error = error
       }
       if (error === undefined) data.lastCompleted = stage
-      else data.failedStage = stage
+      else data.failedStage ??= stage
       flush()
     },
     set(facts) {

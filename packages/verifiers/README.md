@@ -42,7 +42,11 @@ checks:
   The checks run in order in that one worktree with one `HOME`, so a later
   check reuses what an earlier one built (`install` and `build` once, not per
   check); name one check per part so a failure says which part failed.
-  `pass` when every check exits 0; `fail` when any does not or times out;
+  A check that leaves an Xvfb or Chrome running fails, naming it (`left running:
+  Xvfb pid 123`, also in the `check-run@1`'s `leftovers`): after each check the
+  processes of this user named Xvfb or Chrome whose environment has the check's
+  `HOME` are killed. Leaked ones hold a Worker's pipes and profile (2026-11-07).
+  `pass` when every check exits 0 and leaves nothing; `fail` when any does not or times out;
   `error` when the commit cannot be checked out.
 
 ## `research.citation-check` (version 2)

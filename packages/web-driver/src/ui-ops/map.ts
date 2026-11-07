@@ -51,7 +51,7 @@ export type SideEffect = 'none' | 'reversible' | 'irreversible'
 
 export interface ActionSpec {
   description?: string
-  do: 'click' | 'insertText' | 'clearText' | 'press' | 'setFiles' | 'select'
+  do: 'click' | 'insertText' | 'pasteText' | 'clearText' | 'press' | 'setFiles' | 'select'
   target: string
   key?: string
   require?: Array<'enabled' | 'editable'>

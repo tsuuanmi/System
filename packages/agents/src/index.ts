@@ -10,7 +10,7 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
-import { agentWorker, recordingPid, type Account, type Spawner } from './agent.ts'
+import { DRAIN_MS, agentWorker, recordingPid, type Account, type Spawner } from './agent.ts'
 import { webDefaults, type WebConfig } from './chatgpt.ts'
 import { discoverChrome } from './chrome.ts'
 import { webLogin, type LoginReport } from './chatgpt-login.ts'
@@ -97,9 +97,11 @@ export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
         stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
       })
       return {
-        // Settle only once the whole process range is gone, not just the direct child.
+        // The agent's exit ends the attempt. Its range gets a bounded time to empty (and its output to arrive); what a leaked
+        // process (an Xvfb of its own tests) still holds after that is terminated, never waited for: 33 min on 2026-11-07.
         done: handle.done.then(async (outcome) => {
-          await handle.waitForExit().catch(() => false)
+          const drained = await handle.waitForExit(AbortSignal.timeout(spec.drainMs ?? DRAIN_MS)).catch(() => false)
+          if (!drained) handle.terminate()
           return { exitCode: outcome.exitCode, signal: outcome.signal }
         }),
         stdout: () => handle.collected.stdout?.readFrom(0).text ?? '',

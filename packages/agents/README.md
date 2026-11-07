@@ -100,6 +100,14 @@ model is recorded for it.
 and SIGKILL after 30 s. Whatever the attempt left is captured as unaccepted
 partial output; `system work retry` hands it to the next attempt as `previous`.
 
+**Exit ends the attempt (WW1c):** the attempt ends when the agent process exits,
+never when its pipes close. Its output is then drained and its process range given
+`DRAIN_MS` (5 s) to empty; after that the pipes are closed and what is left is
+terminated. On 2026-11-07 two Xvfb leaked by a Worker's own tests held a finished
+attempt "running" for 33 min, because the Runtime waited for the whole range and its
+output to end. [agent.test.ts](tests/agent.test.ts) tests it with a fake agent that
+leaves a child holding stdout open.
+
 **Codex auth** (ADR-0005 decision 4, decided by test on 2026-11-06): even
 with `--ephemeral`, Codex 0.166.0 writes `memories_1.sqlite`, `state_5.sqlite`,
 shell snapshots and logs into `CODEX_HOME`, so a shared directory would carry
@@ -158,7 +166,8 @@ One attempt:
    profile's startup preference to a new tab page, marks its last exit clean and
    removes its tab sessions (`Default/Sessions`); Cookies, Login Data, Local
    Storage, Session Storage and IndexedDB are never touched, and a profile a
-   running Chrome holds is left alone. The preferences alone do not stop the
+   running Chrome holds is left alone, and `launch` refuses one: the attempt fails
+   saying which Chrome (pid) holds it, and that Chrome is never touched. The preferences alone do not stop the
    restore, because the launch keeps `--restore-last-session` (it outranks them),
    and the flag has to stay: without it Chrome drops the profile's session-only
    cookies (measured on Chrome for Testing 155, 2026-11-07: preferences without
@@ -171,7 +180,12 @@ One attempt:
    other page is closed, and so is any that arrives later (the context's `page`
    event), before the first navigation. Chrome gets its own clock, `timeouts.launch`
    (30 s unless set), apart from the page clocks: a short page clock in a
-   test measured the host's load, not the driver.
+   test measured the host's load, not the driver. A launch that fails, times out
+   or is abandoned does not leave Chrome running: the process group that took
+   the profile's lock since the launch began is killed (never one that held it
+   before), and a context that comes up late is closed. A page that will not
+   close fails the attempt: the one-tab invariant is not claimed when it does
+   not hold.
 2. **Open and send** with System 1's ChatGPT web driver, ported whole into
    [`@system/web-driver`](../web-driver/README.md): `open` loads the site's home
    and reads the page's state (`checkAuth`: up to `load` seconds; a visible
@@ -207,22 +221,26 @@ One attempt:
 
 On any failure the page's screenshot is kept as partial output `screenshot`, with
 `snapshot`: its URL (no query), the viewport, the UI map's revision and hash and
-the DOM, bounded to 20,000 characters and with scripts, styles, input values,
-editable text, query strings and long text taken out; no cookie or storage is
-read. **Evidence (WW1):** each attempt makes a small JSON record before Chrome
+the DOM's structure, bounded to 20,000 characters: tags, attribute names, `role`,
+`aria-label` and `data-testid` values, and every text node and other attribute
+value replaced by its length (`[text:42]`); no cookie or storage is read. **Evidence (WW1):** each attempt makes a small JSON record before Chrome
 launches ([evidence.ts](src/evidence.ts)) and rewrites it, atomically, as each stage
-starts and ends: `launch`, `open`, `auth`, `mode`, `send`, `wait`, `read`,
-`close`, in the order they run, with elapsed times, `promptSubmitted` (true from
+starts and ends: `launch`, `open`, `auth`, `mode`, `insert` (the prompt into the composer: one
+paste, so a 60 KB prompt takes about a second), `send`, `wait`, `read`,
+`close`, in the order they run, with elapsed times, `promptSendAttempted` (true from
 the moment the send is tried, so a retry never assumes the prompt was not sent),
-the launch timeout, the page counts (initial, before the first navigation, closed
-inherited and late), the viewport, Chrome's version, the UI map's revision and hash,
+`promptSubmitted` (true only once the page shows a user turn for it), the launch
+timeout, the page counts (initial, before the first navigation, and confirmed
+closed inherited and late, and late ones that would not close), the viewport, Chrome's version, the UI map's revision and hash,
 the failed stage and the last completed one. It is partial output `evidence` of
 every failed or cancelled attempt, and the last line of the log of every attempt.
 The `mode` stage waits for the Chat/Work switch (bounded by `timeouts.mode`, else the
 map's `settings.modeReadyMs`) and fails closed as `signed out`, `challenge` or
 `mode unknown`.
 Cancel and `attemptTimeoutMinutes` close the browser (`context.close()`, a clean
-exit, never a kill), as they stop a CLI; the record names that `close` stage. A UI
+exit), as they stop a CLI; the record names that `close` stage, which is `ok` only
+once the browser process (the one in Chrome's `SingletonLock`) has exited. One
+that outlives `close()` for 3 s is killed and the stage fails, saying so. A UI
 change is a change to the driver's map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
 not to this Runtime. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.

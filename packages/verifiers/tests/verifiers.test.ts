@@ -3,7 +3,7 @@
  * real Artifact store over in-memory tables.
  */
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -238,4 +238,25 @@ test('the reason names every unconfirmed source with why: quote not found, or fe
 test('a ratio outside 0 to 1 is not valid criteria', () => {
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 1.5 })).success, false)
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 0 })).success, true)
+})
+
+// 2026-11-07: Xvfb processes leaked by a Worker's own tests held a finished attempt "running" for 33 min.
+test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftover is stopped', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: leaky\n    run: ln -s "$(command -v sleep)" Xvfb && (setsid ./Xvfb 120 >/dev/null 2>&1 &) ; sleep 0.3\n  - name: clean\n    run: echo fine\n')
+  const { task, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  try {
+    const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
+    assert.equal(result.verdict, 'fail')
+    assert.match(result.reason, /leaky \(left running: Xvfb pid \d+\)/)
+    assert.doesNotMatch(result.reason, /clean/)
+    const run = artifacts.get(result.evidence[0]!)
+    assert.match(JSON.stringify(run.state === 'stored' && (run.envelope.content as { leftovers: string[] }).leftovers), /Xvfb pid \d+/)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.equal(spawnSync('pgrep', ['-f', '^\\./Xvfb 120$']).status, 1, 'the leftover is stopped')
+  } finally {
+    spawnSync('pkill', ['-f', '^\\./Xvfb 120$'])
+  }
 })

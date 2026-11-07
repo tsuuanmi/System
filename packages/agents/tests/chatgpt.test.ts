@@ -6,6 +6,7 @@
  * is the driver's; these tests are what the Runtime does around it.
  */
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -408,7 +409,7 @@ test('the worker tab is opened first, every other page is closed, and a page tha
 })
 
 // The stage chain of one attempt (evidence.ts): written as it happens, kept as partial output, and in the log on success.
-const STAGES = ['launch', 'open', 'auth', 'mode', 'send', 'wait', 'read', 'close']
+const STAGES = ['launch', 'open', 'auth', 'mode', 'insert', 'send', 'wait', 'read', 'close']
 const evidenceOf = async (artifacts: Artifacts, result: WorkerResult) => JSON.parse(await text(artifacts, result.partial!.evidence!))
 
 test('a launch that never returns fails at its own clock, and the evidence names the launch stage', { timeout: 30_000 }, async () => {
@@ -495,7 +496,94 @@ test('a cancel and the time limit end Chrome with a close, and leave the evidenc
     const evidence = await evidenceOf(artifacts, result)
     assert.equal(evidence.stages.find((stage: { stage: string }) => stage.stage === 'close').status, 'ok')
     // The record says what the page received: the time limit may come before or after the send.
-    assert.equal(evidence.promptSubmitted, fake.sent.length > 0)
+    if (fake.sent.length) assert.equal(evidence.promptSendAttempted, true)
+    if (evidence.promptSubmitted) assert.ok(fake.sent.length > 0)
   }
   assert.equal(cancelled.fake.sent.length, 1)
+})
+
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+
+/** A stand-in for a Chrome the launcher started: a process of its own group that holds the profile's lock, as Chrome's SingletonLock does. */
+function standInChrome(profileDir: string): number {
+  const child = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' })
+  child.unref()
+  mkdirSync(profileDir, { recursive: true })
+  symlinkSync(`host-${child.pid}`, join(profileDir, 'SingletonLock'))
+  return child.pid!
+}
+
+test('a launch that times out leaves no Chrome running: the process group it started is killed', { timeout: 30_000 }, async () => {
+  const fake = await site()
+  const config = web(fake, { timeouts: { load: 10, answer: 20, stable: 0.5, launch: 0.2 } })
+  const { artifacts } = memory()
+  let chrome = 0
+  try {
+    const result = await webAttempt(account(config), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), () => { chrome = standInChrome(config.profileDir); return new Promise(() => {}) })
+    assert.equal(result.status, 'failed')
+    assert.match(result.reason!, /launch stage timed out/)
+    await sleep(200)
+    assert.ok(!alive(chrome), 'the Chrome of the abandoned launch is gone')
+  } finally {
+    try { process.kill(chrome, 'SIGKILL') } catch { /* gone */ }
+  }
+})
+
+test('a profile that another live Chrome holds is never launched, and that Chrome is left alone', { timeout: 30_000 }, async () => {
+  const config = webDefaults(join(root, 'profile-held'))
+  mkdirSync(config.profileDir, { recursive: true })
+  symlinkSync(`host-${process.pid}`, join(config.profileDir, 'SingletonLock'))
+  await assert.rejects(launch(config, undefined as never), new RegExp(`held by a running Chrome \\(pid ${process.pid}\\)`))
+  const fake = await site()
+  const { artifacts } = memory()
+  const held = web(fake)
+  const chrome = standInChrome(held.profileDir)
+  try {
+    const result = await webAttempt(account(held), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']))
+    assert.equal(result.status, 'failed')
+    assert.match(result.reason!, /held by a running Chrome/)
+    assert.ok(alive(chrome), 'the other Chrome was not touched')
+  } finally {
+    process.kill(chrome, 'SIGKILL')
+  }
+})
+
+test('the close stage is ok only when the browser process has exited', { timeout: 30_000 }, async () => {
+  const fake = await site()
+  const config = web(fake)
+  const { artifacts } = memory()
+  let chrome = 0
+  // A context whose close() returns while its process lives on.
+  const context = { close: async () => {}, pages: () => [], on: () => {}, newPage: async () => { throw new Error('no page') } }
+  try {
+    const result = await webAttempt(account(config), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), async () => { chrome = standInChrome(config.profileDir); return context as never })
+    assert.equal(result.status, 'failed')
+    const evidence = await evidenceOf(artifacts, result)
+    const close = evidence.stages.find((stage: { stage: string }) => stage.stage === 'close')
+    assert.equal(close.status, 'failed')
+    assert.match(close.error, /did not exit/)
+    await sleep(200)
+    assert.ok(!alive(chrome), 'the browser that outlived close() was killed')
+  } finally {
+    try { process.kill(chrome, 'SIGKILL') } catch { /* gone */ }
+  }
+})
+
+test('a send is an attempt first and a submission only once the page shows the user turn', { skip, timeout: 60_000 }, async () => {
+  const good = await run()
+  const line = (await text(good.artifacts, good.result.log!)).trim().split('\n').at(-1)!
+  const evidence = JSON.parse(line.slice(line.indexOf('{')))
+  assert.deepEqual([evidence.promptSendAttempted, evidence.promptSubmitted], [true, true])
+  // A launch that fails before any send: neither is claimed.
+  const fake = await site()
+  const { artifacts } = memory()
+  const failed = await webAttempt(account(web(fake)), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), async () => { throw new Error('no chrome') })
+  const before = await evidenceOf(artifacts, failed)
+  assert.deepEqual([before.promptSendAttempted, before.promptSubmitted], [false, false])
+})
+
+test('a page that cannot be closed breaks the one-tab invariant loudly, and a late page counts only once closed', async () => {
+  const stuck = { close: async () => { throw new Error('stuck') } }
+  const context = { pages: () => [stuck], newPage: async () => ({ close: async () => {} }), on: () => {} }
+  await assert.rejects(singleTab(context as never), /1 other page\(s\) could not be closed/)
 })

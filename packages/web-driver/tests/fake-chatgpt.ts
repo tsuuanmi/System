@@ -58,6 +58,8 @@ export interface FakeOptions {
   modeSwitchDelayMs?: number
   /** This long after the switch appears the site flips the mode to Work (a late restore of the last mode; 0: never). */
   modeFlipToWorkMs?: number
+  /** The composer takes a pasted text/plain as the live editor does (default true); false: the paste is ignored, only typed text goes in. */
+  pasteTaken?: boolean
   /** This long after load the app turns into the logged-out home (a session that ended; 0: never). */
   signOutAfterMs?: number
   /** This long after load a challenge heading appears (0: never). */
@@ -394,6 +396,13 @@ $('mode-work').onclick = () => { mode = 'work'; render() }
 $('temp').onclick = () => { temporary = true; history.pushState({}, '', '/?temporary-chat=true'); render() }
 $('temp-off').onclick = () => { temporary = false; history.pushState({}, '', '/'); render() }
 $('input').addEventListener('input', render)
+// Like the live editor: a paste is handled by the page (the default is prevented), as one insertion of its text/plain.
+$('input').addEventListener('paste', (e) => {
+  if (!options.pasteTaken) return
+  e.preventDefault()
+  $('input').dataset.pasted = String(Number($('input').dataset.pasted || 0) + 1)
+  document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
+})
 $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!running && $('input').textContent.trim()) send() } })
 async function send() {
   const deepResearch = !!$('input').querySelector('[data-prompt-link-href="app://connector_openai_deep_research"]')
@@ -546,7 +555,7 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, modeSwitch: true, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, modeSwitch: true, pasteTaken: true, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
       researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',
