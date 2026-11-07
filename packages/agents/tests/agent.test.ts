@@ -287,6 +287,8 @@ test('the time limit stops what the agent spawned in its process group, but not 
   assert.equal(result.status, 'failed')
   const [grandchild, runaway] = [child, escaped].map((file) => Number(readFileSync(file, 'utf8')))
   try {
+    // A killed process takes a moment to exit under load: wait for it, with a deadline, instead of looking once.
+    for (const deadline = Date.now() + 5000; alive(grandchild!) && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50))
     assert.ok(!alive(grandchild!), 'a grandchild in the agent group is gone')
     // The gap of the process-group kill, which is also DSH's fallback without user-systemd: a
     // setsid descendant survives. DSH's systemd scope owns such descendants, so the gap is a host without one.
