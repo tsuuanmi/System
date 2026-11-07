@@ -694,6 +694,12 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      awaited (map `settings.modeReadyMs`, 15 s) and failures are named; no
      selector changed. Each attempt keeps a stage-chain evidence record as
      partial output.
+  1c. [ ] Found while running WW1 (2026-11-07): a Runtime waits for the
+     Worker's output pipe to close, so two Xvfb leaked by the Worker's own
+     tests held a finished attempt "running" for 33 min (end the attempt on
+     process exit, then drain briefly; required checks fail on leftover
+     processes); `tests/host-process.test.ts` "SIGTERM stops the Host ..."
+     timed out once at a host load average of about 200 (flaky under load).
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [ ] Canary.
@@ -701,10 +707,38 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      attempt id, JSON.
   6. [ ] Account supervision: preflight, spacing, cooldown, an
      `AUTH_REQUIRED` notice for re-login.
+- **What Website Workers do** (operator, 2026-11-07): `research` (web search
+  with citations, checked by the citation verifier), `brainstorm.idea-*`,
+  `review.second-opinion` (a diff or document given as text; a reference
+  Artifact) and `critique` (rebutting another proposal). Not: code, work that
+  needs files or tools, inputs over 200 KB, latency-bound work, verification.
+  Deep research later.
+- **Debate** ([GLOSSARY](GLOSSARY.md)): Rounds unrolled as steps of a fixed
+  Workflow (`debate.yaml`, 2 Rounds by default; each side reads the other's
+  previous Artifact; every attempt a temporary chat), then a Claude synthesis.
+  No persistent chats across Rounds and no run-until-agreement loop now.
+- **Digest.** No economy-tier (Haiku) step between Website Workers and Sonnet
+  for Brainstorm or Debate: a strict output contract checked
+  deterministically instead (step 5). A `digest` step only where many sources
+  are merged (about ≥5 inputs or >50 KB, the research phase), and Sonnet then
+  gets the digest and the original Artifact IDs; measured by Sonnet tokens
+  saved against quality.
+- **Research fan-out.** Claude splits the question into k sub-questions, k
+  fixed in the Workflow and equal to the web Accounts (2 now); k Website
+  Workers search in parallel; citations are checked per sub-question; an
+  optional digest; a Sonnet synthesis. A dynamic k waits for a need.
+- **Sub-workflows** ([ADR-0002 amendment](docs/decisions/ADR-0002-work-primitive-configured-workflows.md)):
+  a step `uses:` another Workflow, expanded at admission into the pinned
+  spec; the controller is unchanged. The WW loop itself becomes a Workflow
+  (`brainstorm`, then `software-engineering`, then `second-opinion`).
+- **Order of the new Workflows.** 1b. `second-opinion.yaml` right after WW1
+  (the loop needs it). 2c. Sub-workflows in the compiler. 2b. `debate.yaml`,
+  built from Sub-workflows, after 2c. 7. research fan-out (`research.yaml`
+  used k times) and `digest` after step 6.
 - **Gate to merge into `dev`.** Canary ≥95% over ≥50 attempts across both
   Accounts; zero wrong-Account, wrong-mode or malformed-output acceptances;
   operator touches other than re-login under 5%; no flaky test; required
-  checks within budget.
+  checks within budget; each new Workflow has run once for real.
 - **Evidence so far.** Brainstorm Work `work:a8aeee38` (this programme's own
   brief) ran `idea-a` on `default` and `idea-b` on `second` (one launch
   timeout, retried), synthesis on Claude: every step succeeded.

@@ -54,6 +54,21 @@ An aim the operator writes down, with its scope and budget, that an
 Orchestrator works toward; every Work it creates names its Goal.
 _Avoid_: project, charter, epic, campaign
 
+**Sub-workflow**:
+A Workflow used as one step of another Workflow; its steps are joined into
+the using Workflow's spec when the Work is admitted.
+_Avoid_: child Work, nested run, subroutine
+
+**Round**:
+One pass of a Debate in which each side answers having read the other
+sides' answers of the previous Round.
+_Avoid_: turn, iteration
+
+**Debate**:
+A Workflow of several Rounds between independent Workers, ended by a
+synthesis; the number of Rounds is fixed in the Workflow.
+_Avoid_: discussion, conversation (a Conversation is outside material)
+
 **Release**:
 The operator merging `dev` into `main` after reading a release report. System
 never makes a Release.
