@@ -1,7 +1,7 @@
 /**
  * The `chatgpt-web` Runtime (PROP-0005): one attempt is one prompt sent in the
  * operator's own signed-in ChatGPT web session, driven by Playwright through
- * the installed Google Chrome. The profile on disk is the Account's
+ * the installed Google Chrome, always headed, on a display the attempt owns. The profile on disk is the Account's
  * credential and is reused by every attempt. The answer is read from the page
  * as Markdown; each output slot is a labelled fenced block of it. The
  * exchange is stored as a `conversation@1` whose producer is the attempt.
@@ -14,6 +14,7 @@ import { chromium, type BrowserContext, type Page } from 'playwright-core'
 import type { Artifacts } from '@system/artifacts'
 import { addConversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import type { Account } from './agent.ts'
+import { acquireDisplay, type Display } from './display.ts'
 import { cleanup, mediaTypeOf, prepare, type Workspace } from './workspace.ts'
 
 export interface WebConfig {
@@ -23,13 +24,12 @@ export interface WebConfig {
   temporaryChat: boolean
   url: string
   executablePath: string
-  headless: boolean
   /** Seconds per stage; `stable` is how long the answer's text must stay unchanged once it can be complete. */
   timeouts: { load: number; send: number; answer: number; stable: number }
 }
 
 export function webDefaults(profileDir: string): WebConfig {
-  return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', executablePath: '/usr/bin/google-chrome', headless: true, timeouts: { load: 60, send: 30, answer: 900, stable: 3 } }
+  return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', executablePath: '/usr/bin/google-chrome', timeouts: { load: 60, send: 30, answer: 900, stable: 3 } }
 }
 
 /** Everything the page is read by, in one place: a UI change is a visible fix here, with the version bumped. */
@@ -172,9 +172,10 @@ export function profileLockPid(profileDir: string): number | undefined {
   }
 }
 
-export const launch = (web: WebConfig, headless: boolean): Promise<BrowserContext> => {
+/** Chrome on the profile, headed, on `display`. There is no headless mode: a real window is closer to the operator's own browser and is challenged less. */
+export const launch = (web: WebConfig, display: Display): Promise<BrowserContext> => {
   ensureProfile(web.profileDir)
-  return chromium.launchPersistentContext(web.profileDir, { executablePath: web.executablePath, headless, viewport: { width: 1280, height: 900 }, timeout: web.timeouts.load * 1000 })
+  return chromium.launchPersistentContext(web.profileDir, { executablePath: web.executablePath, headless: false, env: { ...process.env, ...display.env } as Record<string, string>, viewport: { width: 1280, height: 900 }, timeout: web.timeouts.load * 1000 })
 }
 
 /** Run one of the scripts above in the page, with the selector table as its argument (a string is evaluated as an expression, so it is called here). */
@@ -302,6 +303,7 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   const check = () => stop.signal.throwIfAborted()
   let context: BrowserContext | undefined
   let page: Page | undefined
+  let display: Display | undefined
   const ws = await prepare(artifacts, request, join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')))
   const finish = async (result: Omit<WorkerResult, 'executor' | 'log'>): Promise<WorkerResult> => {
     const logId = await putFile(Buffer.from(`${log.join('\n')}\n`), 'text/plain')
@@ -319,7 +321,9 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   }
   try {
     const prompt = webPrompt(ws, request)
-    context = await launch(web, web.headless)
+    display = await acquireDisplay()
+    check()
+    context = await launch(web, display)
     stop.signal.addEventListener('abort', () => { void context?.close().catch(() => {}) }, { once: true })
     check()
     page = context.pages()[0] ?? await context.newPage()
@@ -382,6 +386,7 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     clearTimeout(timer)
     request.signal.removeEventListener('abort', forward)
     await context?.close().catch(() => {})
+    await display?.stop()
     await cleanup(ws)
   }
 }
