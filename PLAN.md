@@ -624,7 +624,9 @@ HOME=<fresh> CI=1`, the machine at a load average of about 270):
   88), decisions in the Goal store with their kind and `Artifacts.ofKind`
   (about 80), and the `work` row's config, the verify-step retry and the
   controller's dotted step IDs (about 50). The brief lives in `packages/host`,
-  outside the core. The debt recorded at O stays open.
+  outside the core. The operator then measured the budget from here
+  ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)): 3,403
+  lines, +10% per milestone, paid back within the milestone.
 - **Docs: +35 lines**, the new facts only (the `uses` step, verify again,
   `live` and stalls, replacing the Orchestrator); the package READMEs carry
   the rest. Docs were over the 4,285-line limit before OC (the WW programme's
@@ -632,15 +634,39 @@ HOME=<fresh> CI=1`, the machine at a load average of about 270):
 - **Check time: over the 3-minute goal on this machine.** The unit check took
   3 min 14 s against 38 s at F, with the machine at a load average of about
   270 (other users' sessions). The same commands measured 2 min 28 s at F.
-  It has to be measured again on a quiet machine before the time is trusted.
+  It is measured again on a quiet machine once OC is on `dev`, and the row
+  above corrected; a unit check still over 1 minute is then a defect of the
+  next milestone (operator, 2026-11-07). The merge does not wait for it.
 - **One flaky test, outside OC:** `packages/agents/tests/chatgpt.test.ts`
   "a page that is neither signed in nor signed out" failed once in the full
   run (Chrome did not start within its 1.5 s launch timeout under load) and
   passed 24/24 alone. It belongs to the web Runtime (WW) and is a defect to
   fix there (Charter 12).
+- **Default tests have no Website Worker and no browser** (operator,
+  2026-11-07): the unit and smoke checks run without headed Chrome or Xvfb;
+  those tests run apart (`test:web`, introduced on `web-workers`).
+- **Review fixes before the merge** (operator, 2026-11-07): the human's
+  approval type is `Approval`, apart from `decision@1`; only a human verifies
+  a step again (an agent would otherwise keep the luckiest run, so it records
+  a decision and tells the operator); `code.required-checks` pins its checks
+  only from a task's base commit, never from the change itself.
 - **Simplification pass:** the orchestrator scopes of the Goal rows became
   two helpers (`ownGoal`, `inChain`); `goal.brief` uses `inScope`. No
   feature was dropped.
+
+### Core debt ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md))
+
+After OC and WW are on `dev`, so it does not compete with them for code:
+
+- [ ] A System Work (Sonnet) reads `packages/work/src` and
+  `packages/artifacts/src` and proposes cuts, each with its line count and
+  what would stop working. First look: `controller.ts` (945 lines; its
+  effect and reconcile part, about 150, apart), `conversation.ts` (120, if
+  `conversation@1` is no longer used).
+- [ ] The operator decides each: drop the feature, or keep it.
+- [ ] Each cut is its own pull request, with tests showing the rest behaves
+  the same.
+- [ ] The core's line count is recorded after each.
 
 ## 4. After Brainstorm — future, not current gates
 
