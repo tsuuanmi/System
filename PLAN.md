@@ -642,6 +642,21 @@ HOME=<fresh> CI=1`, the machine at a load average of about 270):
   two helpers (`ownGoal`, `inChain`); `goal.brief` uses `inScope`. No
   feature was dropped.
 
+### CQ — Worker policy, faster and clearer checks, and a merge queue ([PROP-0007](docs/proposals/PROP-0007-worker-policy-checks-and-merge-queue.md))
+
+Decided by the operator on 2026-11-07, built from `dev` after OC (PR #39) by
+the Development session; moved out of milestone WW, which keeps only what is
+Website-Worker-specific. Acceptance in PROP-0007.
+
+- [ ] CQ1. Worker policy (no background tasks or monitors for `code-write`
+  Accounts) and the per-attempt budget.
+- [ ] CQ2. Checks run on the repository's Node; one-line failure reasons.
+- [ ] CQ3. Checks selected by `paths`; the verdict lists run and skipped.
+- [ ] CQ4. The merge queue for `mergeInto` branches.
+- [ ] CQ5. The Host resolves Sub-workflows for `work.submit`; the flaky
+  host-process test.
+- [ ] Growth recorded and a simplification pass.
+
 ## 4. After Brainstorm — future, not current gates
 
 - [x] Website Worker for interactive/browser-assisted Research **only when**
