@@ -211,6 +211,9 @@ importers:
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@system/web-driver':
+        specifier: workspace:*
+        version: link:../web-driver
       '@system/work':
         specifier: workspace:*
         version: link:../work
@@ -379,6 +382,18 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 4.1.0
         version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+
+  packages/web-driver:
+    dependencies:
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      patchright-core:
+        specifier: 1.63.0
+        version: 1.63.0
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   packages/work:
     dependencies:

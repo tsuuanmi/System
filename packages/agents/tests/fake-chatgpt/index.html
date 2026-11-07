@@ -2,12 +2,8 @@
 <html>
 <head><meta charset="utf-8"><title>ChatGPT (fake)</title></head>
 <body>
-  <!-- The same selector roles as the real page (SELECTORS in src/chatgpt.ts); scenarios come from the query string, see chat.js. -->
-  <main id="turns"></main>
-  <div role="group" aria-label="Composer mode"><button id="mode-chat" type="button" aria-pressed="true">Chat</button><button id="mode-work" type="button" aria-pressed="false">Work</button></div>
   <form id="composer-form" onsubmit="return false">
     <div id="prompt-textarea" contenteditable="true" role="textbox" data-composer-markdown aria-label="Chat with ChatGPT"></div>
-    <button type="button" data-testid="send-button" disabled>Send</button>
   </form>
   <script src="/chat.js"></script>
 </body>

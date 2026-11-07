@@ -7,7 +7,9 @@
  */
 import type { BrowserContext, Cookie } from 'patchright-core'
 import { startXvfb, type Display } from './display.ts'
-import { WHY, launch, pageState, settle, sleep, type WebConfig } from './chatgpt.ts'
+import { authState, chatGptDriver, launch, type WebConfig } from './chatgpt.ts'
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 /** How long an imported session cookie lives in the profile. */
 const SESSION_COOKIE_DAYS = 30
@@ -86,8 +88,7 @@ export async function checkSignedIn(web: WebConfig, display: Display): Promise<L
   try {
     const page = context.pages()[0] ?? await context.newPage()
     await page.goto(web.url, { waitUntil: 'domcontentloaded', timeout: web.timeouts.load * 1000 })
-    const state = await settle(page, web.timeouts.load * 1000, () => {})
-    return state === 'ready' ? { signedIn: true, detail: 'signed in' } : { signedIn: false, detail: WHY[state] }
+    return await authState(chatGptDriver(web), page)
   } finally {
     await context.close().catch(() => {})
   }
@@ -110,15 +111,17 @@ export async function webLogin(web: WebConfig, options: LoginOptions = {}): Prom
     const deadline = Date.now() + (parsed ? 0 : options.waitMs ?? 10 * 60_000)
     let closed = false
     context.on('close', () => { closed = true })
-    let state = await settle(page, web.timeouts.load * 1000, () => {})
-    while (!parsed && state !== 'ready' && !closed && Date.now() < deadline) {
+    const driver = chatGptDriver(web)
+    let state = await authState(driver, page)
+    while (!parsed && !state.signedIn && !closed && Date.now() < deadline) {
       await sleep(1000)
-      state = await pageState(page)
+      // Only a composer sends the page to the driver's full check: it loads the site's home, which would pull the operator off a sign-in page.
+      if (await driver.engine(page).state('auth.signed-in').catch(() => false)) state = await authState(driver, page).catch(() => state)
     }
     // Let the session reach the profile before the window closes.
-    if (state === 'ready' && !parsed) await sleep(3000)
+    if (state.signedIn && !parsed) await sleep(3000)
     const imported = parsed ? { imported: parsed.cookies.length, skipped: parsed.skipped } : {}
-    return state === 'ready' ? { signedIn: true, detail: 'signed in', ...imported } : { signedIn: false, detail: WHY[state], ...imported }
+    return { ...state, ...imported }
   } finally {
     await context?.close().catch(() => {})
     await display.stop()

@@ -21,6 +21,7 @@
     "@deepseek-ai/dsh-subprocess": "0.2.2-rc.1",
     "@puppeteer/browsers": "3.2.3",
     "@system/artifacts": "workspace:*",
+    "@system/web-driver": "workspace:*",
     "@system/work": "workspace:*",
     "patchright-core": "1.63.0"
   },

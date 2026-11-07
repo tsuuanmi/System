@@ -7,7 +7,7 @@
     "node": ">=24.9.0"
   },
   "scripts": {
-    "build": "tsc -p packages/artifacts/tsconfig.build.json && tsc -p packages/work/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && tsc -p packages/fakes/tsconfig.build.json && tsc -p packages/agents/tsconfig.build.json && tsc -p packages/verifiers/tsconfig.build.json && tsc -p packages/effects/tsconfig.build.json && tsc -p packages/app/tsconfig.build.json",
+    "build": "tsc -p packages/artifacts/tsconfig.build.json && tsc -p packages/work/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && tsc -p packages/fakes/tsconfig.build.json && tsc -p packages/web-driver/tsconfig.build.json && tsc -p packages/agents/tsconfig.build.json && tsc -p packages/verifiers/tsconfig.build.json && tsc -p packages/effects/tsconfig.build.json && tsc -p packages/app/tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test 'packages/*/tests/*.test.ts'",
     "smoke": "node --test --test-timeout=300000 --test-concurrency=16 'tests/*.test.ts'",
