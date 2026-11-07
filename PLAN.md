@@ -757,6 +757,7 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      and the CLI Runtimes do not depend on it; a smoke test runs the main
      path with the web row off.
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
+     Inspection of the driver, its callers and the engine: [RES-0009](docs/research/RES-0009-web-driver-inspection.md).
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [ ] Canary.
   6. [ ] Account supervision: preflight, spacing, cooldown, an
