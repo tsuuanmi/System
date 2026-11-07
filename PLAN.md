@@ -853,7 +853,23 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      page it cited answered 403 to the verifier (WW4b: the canary cites
      Wikipedia; the report separates Worker, site and verifier).
   6. [ ] Account supervision: preflight, spacing, cooldown, an
-     `AUTH_REQUIRED` notice for re-login.
+     `AUTH_REQUIRED` notice for re-login. Done so far (2026-11-08):
+     6a the Site's error answer "This response couldn't load" fails fast as
+     a retryable site error (`work:ca2b4eec`); 6b leaked control tokens
+     `<escape>` / `</escape>` stripped at an output's edges, from the UI map
+     (`work:38df4c9e` and `212c8ec`); 6c a successful attempt keeps its
+     evidence and conversation (`work:24864619`). The rest was designed by
+     System's first real Debate (`work:3a6ac1f1`, two Rounds between the two
+     ChatGPT Accounts, Claude synthesis): PR 1 is a per-Account circuit
+     breaker with an operator `recheck` (6d, `work:a67065df`); PR 2 retries,
+     the send marker, a richer canary.
+     Found tonight, generic, handed to the Development session: the Host
+     printed "exiting 75" and did not exit (down 04:03-05:16; PR #59 into dev
+     adds a backstop exit with the open resources logged, supervisor
+     retries and no upgrade mid-build; not reproduced in isolation). Flaky
+     under load, to fix here: `tests/chatgpt-web.test.ts` "login imports a
+     cookie file ..." failed once in a merge re-check (passed 2/2 alone and
+     on the retried publish).
 - **What Website Workers do** (operator, 2026-11-07): `research` (web search
   with citations, checked by the citation verifier), `brainstorm.idea-*`,
   `review.second-opinion` (a diff or document given as text; a reference
@@ -883,8 +899,9 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
   decisions as Artifacts, the Goal brief, live attempt progress and stall
   notices, Sub-workflows, `code-checks.yaml` and retrying a verify step.
 - **Order of the new Workflows.** 1b. `second-opinion.yaml` right after WW1
-  (the loop needs it; done). Sub-workflows come with OC. 2b. `debate.yaml`,
-  built from Sub-workflows, after OC is merged into `web-workers`. 7. research fan-out (`research.yaml`
+  (the loop needs it; done). Sub-workflows come with OC. 2b. `debate.yaml`
+  (done, WW2b `work:db784215`; first real run `work:3a6ac1f1`: 2 Rounds on the
+  two ChatGPT Accounts and a Claude synthesis in about 3.5 min). 7. research fan-out (`research.yaml`
   used k times) and `digest` after step 6.
 - **Gate to merge into `dev`.** Canary ≥95% over ≥50 attempts across both
   Accounts; zero wrong-Account, wrong-mode or malformed-output acceptances;
