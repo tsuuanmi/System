@@ -6,7 +6,7 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
 import { DECISION_KIND, GOAL_KIND, TASK_KIND, decisionSchema, goalSchema, goalStore, taskSchema } from '@system/work'
-import { fixture, type Fixture } from '../../../test-support/fixture.ts'
+import { fixture, workflowFile, type Fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { NOT_ALLOWED, VERSION, connect, serve, tableOf, type Client } from '../src/index.ts'
 import { operations, type Services } from '../src/operations.ts'
@@ -411,7 +411,8 @@ const settled = async (what: string, ok: () => boolean) => {
   assert.fail(`timed out waiting for ${what}`)
 }
 
-const heldWorkflow = `${readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'workflows', 'software-engineering.yaml'), 'utf8')}      approval: operator\n`
+const heldWorkflow = `${workflowFile('software-engineering.yaml')}      approval: operator\n`
+const seUses = { 'code-checks.yaml': workflowFile('code-checks.yaml') }
 
 test('work.watch sends one work.changed when the Work finishes, and one when it is held', { timeout: 60_000 }, async () => {
   const { f, open } = await started()
@@ -423,7 +424,7 @@ test('work.watch sends one work.changed when the Work finishes, and one when it 
   const last = (await events(client, done.id)).events.at(-1)!
   assert.deepEqual(notices, [{ workId: done.id, status: 'succeeded', seq: last.seq }])
 
-  const held = await client.call('work.submit', { workflow: heldWorkflow, input: input(f) }) as { id: string }
+  const held = await client.call('work.submit', { workflow: heldWorkflow, uses: seUses, input: input(f) }) as { id: string }
   await client.call('work.watch', { workId: held.id })
   await client.call('work.run', { workId: held.id })
   await settled('the held notice', () => notices.length > 1)
@@ -604,7 +605,7 @@ test('goal.brief prints the Goal, its budget left, its running, failed and held 
 
   const failed = await submit({ capabilities: ['fail-work'], input: await task('two'), goal })
   await human.call('work.run', { workId: failed.id })
-  const held = await submit({ workflow: heldWorkflow, input: await task('three'), goal })
+  const held = await submit({ workflow: heldWorkflow, uses: seUses, input: await task('three'), goal })
   await human.call('work.run', { workId: held.id })
   await submit({ capabilities: ['code-write'], input: await task('not ours'), goal: other })
   for (const id of [failed.id, held.id]) await terminal(human, id)
@@ -666,4 +667,33 @@ test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and
   const deep = { 'l1.yaml': using('l1', 'l2.yaml'), 'l2.yaml': using('l2', 'l3.yaml'), 'l3.yaml': using('l3', 'l4.yaml'), 'l4.yaml': checks }
   await assert.rejects(client.call('work.submit', { workflow: using('top', 'l1.yaml'), uses: deep, input: input(f) }), /deeper than 3/)
   await assert.rejects(client.call('work.submit', { workflow: outer, input: input(f) }), /checks\.yaml/)
+})
+
+test('software-engineering.yaml checks through code-checks.yaml: a failed check, retried on its own, passes on the same subject and the Work is accepted; the failed verdict is kept', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const client = await open()
+  const se = f.files('software-engineering.yaml')
+  assert.match(se, /uses: code-checks\.yaml/)
+  f.verdicts.push('fail')
+  const work = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f) }) as { id: string; state: { steps: Record<string, unknown> } }
+  assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
+  await client.call('work.run', { workId: work.id })
+  assert.equal((await terminal(client, work.id)).status, 'failed')
+  type Shown = { events: { type: string; stepId?: string; subject?: string; verdict?: string; reset?: string[] }[]; state: { status: string; reason?: string; steps: Record<string, { verdict?: string; state: string; attempts: string[] }> } }
+  const failed = await client.call('work.show', { workId: work.id }) as Shown
+  assert.match(failed.state.reason!, /checks\.checks=fail/)
+  const implemented = failed.state.steps.implement!.attempts
+
+  // The environment is fixed; the same change is verified again, with the same pinned criteria.
+  await assert.rejects(client.call('work.retry', { workId: work.id, step: 'checks.checks', worker: 'fake/claude' }), /verify step/)
+  await client.call('work.retry', { workId: work.id, step: 'checks.checks', reason: 'the Host had Node 22 on its PATH' })
+  assert.equal((await terminal(client, work.id)).status, 'succeeded')
+  const done = await client.call('work.show', { workId: work.id }) as Shown
+  const verdicts = done.events.filter((e) => e.type === 'verified')
+  assert.deepEqual(verdicts.map((e) => [e.stepId, e.verdict]), [['checks.checks', 'fail'], ['checks.checks', 'pass']])
+  assert.equal(verdicts[0]!.subject, verdicts[1]!.subject, 'the same subject')
+  assert.deepEqual(done.state.steps.implement!.attempts, implemented, 'no new implement attempt')
+  assert.deepEqual(done.events.find((e) => e.type === 'reopened')!.reset, ['checks.checks', 'publish', 'accept'])
+  assert.equal(done.state.steps['checks.checks']!.verdict, 'pass')
+  assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
 })

@@ -22,7 +22,7 @@ steps:
 
 function problems(yaml: string, caps: AvailableCapabilities = available): string[] {
   try {
-    resolve(parseWorkflow(yaml), caps)
+    resolve(parseWorkflow(yaml), caps, fixture)
   } catch (error) {
     assert.ok(error instanceof WorkflowError, String(error))
     return error.problems
@@ -31,9 +31,9 @@ function problems(yaml: string, caps: AvailableCapabilities = available): string
 }
 
 test('both repository Workflow files parse and resolve with the same schema', () => {
-  const se = resolve(parseWorkflow(fixture('software-engineering.yaml')), available)
+  const se = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
   const research = resolve(parseWorkflow(fixture('research.yaml')), available)
-  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks', 'publish', 'accept'])
+  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks.checks', 'publish', 'accept'])
   assert.deepEqual(research.steps.map((s) => s.id), ['investigate', 'citations', 'accept'])
   assert.deepEqual(se.workflow, { id: 'software-engineering', version: 1 })
 })
@@ -127,7 +127,7 @@ test('capabilities no enabled Worker or verifier provides are refused before any
   const found = problems(fixture('software-engineering.yaml'), none)
   assert.deepEqual(found, [
     'step implement needs Worker capability code-write, which no enabled Worker provides',
-    'step checks needs verifier code.required-checks, which no enabled verifier provides',
+    'step checks.checks needs verifier code.required-checks, which no enabled verifier provides',
     'step publish needs effect git.publish, which no enabled effect provider offers',
   ])
 })

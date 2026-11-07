@@ -1,0 +1,16 @@
+# The required checks of a code change (PROP-0006): the repository's
+# .system/checks.yaml, pinned from the base commit at admission, run on the
+# exact change. One verify step runs every check on one build. Used by
+# software-engineering.yaml as a Sub-workflow (its step checks.checks); on its
+# own, its input is the change (a git-tree@1). `system work retry --step
+# checks.checks` verifies the same change again, as after fixing the Host's
+# environment.
+schema: system.workflow/v1
+id: code-checks
+version: 1
+steps:
+  - id: checks
+    verify:
+      capability: code.required-checks
+      subject: $work.input
+      criteria: repo-checks-v1

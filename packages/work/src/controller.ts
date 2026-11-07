@@ -460,7 +460,9 @@ export class WorkController {
   /**
    * Take over a failed or cancelled Worker step with a new attempt, optionally
    * only by `worker`. The new attempt gets the same recorded inputs plus, as
-   * `previous`, the partial output the last attempt left. Then run.
+   * `previous`, the partial output the last attempt left. A verify step is
+   * asked again on the same subject with the same pinned criteria; its last
+   * verdict stays recorded and no longer counts. Then run.
    */
   async retry(workId: string, options: RetryOptions, command?: Command, started?: () => void): Promise<WorkRecord> {
     const release = await this.enter(workId, command)
@@ -479,10 +481,10 @@ export class WorkController {
     if (options.worker && !this.capabilities.workerRefs().includes(options.worker)) throw new WorkError(`no enabled Worker ${options.worker}; enabled: ${this.capabilities.workerRefs().join(', ') || 'none'}`)
     const spec = this.specOf(record)
     const step = options.step
-      ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isEffectStep(s)))
+      ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isVerifyStep(s) || isEffectStep(s)))
       : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded'))
-    if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
-    if (isEffectStep(step) && options.worker) throw new WorkError(`${step.id} is an effect step; --worker names Workers only`)
+    if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker, verify or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
+    if (!isWorkerStep(step) && options.worker) throw new WorkError(`${step.id} is ${isVerifyStep(step) ? 'a verify' : 'an effect'} step; --worker names Workers only`)
     if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
     const reset = [step.id, ...dependentsOf(spec, step.id)]

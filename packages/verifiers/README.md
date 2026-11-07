@@ -26,7 +26,8 @@ accept. A verdict about a subject that has since been replaced counts as
 - **Accepts:** `git-tree`.
 - **Criteria:** `.system/checks.yaml` read **from the task's base commit** at
   admission, stored as `checks@1`. A Worker editing that file cannot change
-  the pinned checks. No file, or an invalid one, refuses admission.
+  the pinned checks. No file, or an invalid one, refuses admission. When the
+  Work's input is the change itself (`code-checks.yaml` on its own), it is read from that commit.
 
 ```yaml
 checks:

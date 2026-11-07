@@ -78,7 +78,10 @@ every 250 ms: the run aborts its attempt, records `observed` (`cancelled`, with
 partial output) and `terminal` (`cancelled`, with the caller). With no run, the
 cancel is recorded directly. `system work retry` appends `reopened` (caller,
 reason, optional Worker, the partial output as `previous`) and runs the step
-again as a new attempt: the Work keeps one history. `retry` and `decide` hold
+again as a new attempt: the Work keeps one history. On a verify step (`--step
+checks.checks`) the verifier is asked again on the same subject and pinned
+criteria; `reopened` clears the step's verdict in the state, and the earlier
+`verified` event stays. `retry` and `decide` hold
 the Work's lock from their check to the end of the run.
 
 ## Under the Host
