@@ -83,8 +83,9 @@ same load. Unit took 178 s on `dev` against 40 s on F. Without the three
 headed-browser test files of WW (`chatgpt`, `remote-login`, `driver`) it takes
 20 s; those three alone take 181 s. So the overrun is WW's browser tests, which
 `web-workers` moves to a separate `test:web`. Once that is on `dev`, the
-required checks are back under 3 minutes. Smoke took 85 s against 75 s on F
-(PLAN, the growth at OC).
+required checks are back under 3 minutes. Smoke took 85 s against 75 s on F.
+On a quiet machine at dawn `dev` took 4 min 20 s, and about 2 min 20 s without
+the browser tests (unit 13.5 s instead of 133 s; PLAN, the growth at OC).
 
 **The merge queue on github.com:** on `web-workers` System merged Works by a
 leased push. `work:a62a77b5` (c92698f) and `work:12dc89aa` (17e8e31) already
