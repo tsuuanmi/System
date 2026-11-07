@@ -11,7 +11,7 @@
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, matchesGlob } from 'node:path'
 import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult } from '@system/work'
@@ -28,6 +28,8 @@ export const checksFileSchema = z.object({
     name: z.string().regex(/^[a-z][a-z0-9-]*$/),
     run: z.string().min(1),
     timeoutSeconds: z.number().int().positive().max(3600).default(600),
+    /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one; without it, always. */
+    paths: z.array(z.string().min(1)).min(1).optional(),
   }).strict()).min(1).max(20),
 }).strict()
 export const checksSchema = z.object({
@@ -49,6 +51,10 @@ export const checkRunSchema = z.object({
   stdoutTail: z.string(),
   stderrTail: z.string(),
 }).strict()
+
+/** Whether a check runs for a change touching `touched` (paths relative to the repository): always without `paths`. */
+export const selected = (check: { paths?: string[] }, touched: readonly string[]): boolean =>
+  !check.paths || touched.some((file) => check.paths!.some((glob) => matchesGlob(file, glob)))
 
 const tail = (text: string) => (text.length > TAIL ? text.slice(-TAIL) : text)
 
@@ -101,6 +107,8 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       }
       const evidence: string[] = []
       const failed: string[] = []
+      const ran: string[] = []
+      const skipped: string[] = []
       try {
         // The repository's Node first on PATH, whatever the Host's PATH has (PROP-0007 decision 3).
         let bin: string | undefined
@@ -110,7 +118,13 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           return verdict('error', (error as Error).message, [])
         }
         const path = [bin, process.env.PATH].filter(Boolean).join(':')
+        // What the change touches against the base its checks were pinned from (PROP-0007 decision 5).
+        const touched = (await git(tree.repository, ['diff', '--name-only', checks.source.commit, tree.commit])).split('\n').filter(Boolean)
         for (const check of checks.checks) {
+          if (!selected(check, touched)) {
+            skipped.push(check.name)
+            continue
+          }
           const started = now()
           // `timeout` interrupts the whole group first, so a test runner says what it was running; the abort is the backstop.
           const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
@@ -126,6 +140,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()),
           }
           evidence.push((await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id)
+          ran.push(`${check.name} ${(run.durationMs / 1000).toFixed(1)} s`)
           if (run.timedOut) {
             const running = interrupted(output)
             failed.push(running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`)
@@ -138,9 +153,10 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         await removeWorktree(tree.repository, worktree)
         rmSync(scratch, { recursive: true, force: true })
       }
+      const which = `run: ${ran.join(', ')}${skipped.length ? `; skipped: ${skipped.join(', ')}` : ''}`
       return failed.length
-        ? verdict('fail', `failed: ${failed.join('; ')}`, evidence)
-        : verdict('pass', `all ${checks.checks.length} check(s) passed on ${tree.commit}`, evidence)
+        ? verdict('fail', `failed: ${failed.join('; ')}${skipped.length ? ` (skipped: ${skipped.join(', ')})` : ''}`, evidence)
+        : verdict('pass', `all ${ran.length} check(s) run passed on ${tree.commit}; ${which}`, evidence)
     },
   }
 }
