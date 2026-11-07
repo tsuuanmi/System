@@ -250,9 +250,12 @@ elements:
   answer.code:
     description: >-
       A code block's text in an answer, its rows kept (the answer's Copy loses them). Live since
-      2026-10-11 code blocks are pre > code; the editable "Edit code" block is the fallback.
+      2026-10-11 code blocks are pre > code; the editable "Edit code" block is the fallback. Live on
+      2026-11-07 (System, W8) a block has no pre: [data-code-block] holds a header bar
+      ([data-markdown-copy="exclude"], the language) and the text in [data-code-block-source] code.
     cardinality: many
     candidates:
+      - { css: '[data-code-block="true"] [data-code-block-source] code' }
       - { css: 'pre code' }
       - { role: textbox, name: { en: '^Edit code$' } }
 

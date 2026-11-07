@@ -769,15 +769,14 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       const [fenced, rest] = splitAfterLastFence(markdown)
       const fences = [...fenced.matchAll(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm)]
       if (!fences.length) return markdown.trim()
-      const answer = (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..')
-      const code = await engine.findIn('answer.code', answer)
-      const blocks = code ? await code.locator.evaluateAll((els) => els.map((el) => {
-        ;(el as HTMLElement).style.whiteSpace = 'pre-wrap'
-        return (el as HTMLElement).innerText.replace(/\n$/, '')
-      })) : []
+      const blocks = await this.renderedBlocks(engine)
       if (blocks.length !== fences.length) return rendered
       let index = 0
-      return `${fenced.replace(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm, (_, open: string) => `${open}\n${blocks[index++]}\n\`\`\``)}${rest}`.trim()
+      // The live Copy (2026-11-07) drops a block's info string: the block's own header names it.
+      return `${fenced.replace(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm, (_, open: string) => {
+        const block = blocks[index++]!
+        return `${open === '```' && block.label ? `\`\`\`${block.label}` : open}\n${block.code}\n\`\`\``
+      })}${rest}`.trim()
     }, async () => (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
     return /^```/m.test(text) ? text : this.withFencedBlocks(engine, text)
   }
@@ -789,13 +788,27 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
    * Not in System 1's driver as such: it kept Markdown fences only when Copy worked (W8).
    */
   private async withFencedBlocks(engine: UiEngine, text: string): Promise<string> {
+    const blocks = await this.renderedBlocks(engine)
+    let result = text
+    for (const { label, code: body } of blocks) {
+      const fenced = `\`\`\`${label}\n${body}\n\`\`\``
+      const where = new RegExp(`${label ? `${escapeRegExp(label)}[ \\t]*\\n+` : ''}${escapeRegExp(body)}`)
+      result = where.test(result) ? result.replace(where, () => fenced) : `${result}\n\n${fenced}`
+    }
+    return result
+  }
+
+  /** The final answer's rendered code blocks: each one's text, rows kept, and its header's label as the info string. */
+  private async renderedBlocks(engine: UiEngine): Promise<Array<{ label: string; code: string }>> {
     const answer = (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..')
     const code = await engine.findIn('answer.code', answer).catch(() => undefined)
-    if (!code) return text
-    const blocks = await code.locator.evaluateAll((els) => els.map((el) => {
-      // The header sits before the block's `pre`, in it or in one of its wrappers.
-      let label = ''
-      for (let node: Element | null = el.closest('pre') ?? el; node && !label && node.tagName !== 'MAIN'; node = node.parentElement) {
+    if (!code) return []
+    return code.locator.evaluateAll((els) => els.map((el) => {
+      // The live code widget (2026-11-07) names its language in its own header bar.
+      const bar = el.closest('[data-code-block]')?.querySelector('[data-markdown-copy="exclude"]')
+      let label = bar ? ((bar as HTMLElement).innerText ?? '').trim().split('\n')[0]!.trim() : ''
+      // Otherwise the header sits before the block's `pre`, in it or in one of its wrappers.
+      if (!bar) for (let node: Element | null = el.closest('pre') ?? el; node && !label && node.tagName !== 'MAIN'; node = node.parentElement) {
         const header = node.previousElementSibling
         const line = header && !header.querySelector('pre') ? (header.textContent ?? '').trim() : ''
         if (line && line.length <= 40 && !line.includes('\n')) label = line
@@ -804,13 +817,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       ;(el as HTMLElement).style.whiteSpace = 'pre-wrap'
       return { label, code: (el as HTMLElement).innerText.replace(/\n$/, '') }
     })).catch(() => [])
-    let result = text
-    for (const { label, code: body } of blocks) {
-      const fenced = `\`\`\`${label}\n${body}\n\`\`\``
-      const where = new RegExp(`${label ? `${escapeRegExp(label)}[ \\t]*\\n+` : ''}${escapeRegExp(body)}`)
-      result = where.test(result) ? result.replace(where, () => fenced) : `${result}\n\n${fenced}`
-    }
-    return result
   }
 
   private async waitForAnswer(page: Page, before: number, signal: AbortSignal | undefined, deadlines: AskOptions['deadlines'], onBinding?: (binding: string) => void): Promise<string> {

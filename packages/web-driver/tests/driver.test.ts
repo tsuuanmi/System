@@ -81,3 +81,19 @@ for (const [name, copied] of [
     assert.match(result.text, /^```sources\n\{"sources":\[\{"id":"s1","url":"https:\/\/example\.test\/paris"\}\]\}\n```$/m)
   })
 }
+
+// The live site (2026-11-07) renders a code block with no `pre`: the language in its header bar, the text in `[data-code-block-source] code`.
+test("an answer's code blocks keep their fences when the site renders them as code widgets", { skip, timeout: 60_000 }, async () => {
+  const { page, driver } = await start({ answer: FENCED, copied: () => '', codeWidget: true })
+  const result = await driver.ask(page, 'Report.', { conversation: 'temporary' })
+  assert.match(result.text, /^```report\nThe capital of France is Paris\. \[s1\]\n```$/m)
+  assert.match(result.text, /^```sources\n\{"sources":\[\{"id":"s1","url":"https:\/\/example\.test\/paris"\}\]\}\n```$/m)
+})
+
+// The live Copy (2026-11-07) keeps the fences but drops their info strings ("```\nhello\n```").
+test("an answer's code blocks get their names back from the widget headers when Copy drops them", { skip, timeout: 60_000 }, async () => {
+  const { page, driver } = await start({ answer: FENCED, copied: (markdown) => markdown.replace(/```[a-z]+\n/g, '```\n'), codeWidget: true })
+  const result = await driver.ask(page, 'Report.', { conversation: 'temporary' })
+  assert.match(result.text, /^```report\nThe capital of France is Paris\. \[s1\]\n```$/m)
+  assert.match(result.text, /^```sources\n\{"sources":\[\{"id":"s1","url":"https:\/\/example\.test\/paris"\}\]\}\n```$/m)
+})

@@ -46,6 +46,12 @@ function totpValid(secret: string, token: string): boolean {
 export interface FakeOptions {
   /** Start on the Work tab (the trap the driver must avoid). Default true. */
   startOnWork?: boolean
+  /**
+   * Code blocks as the live site renders them (checked 2026-11-07): no `pre`; a
+   * `[data-code-block]` with the language in its header bar and the text in
+   * `[data-code-block-source] code`. Default: System 1's `pre > code` with a header before it.
+   */
+  codeWidget?: boolean
   /** Clicking Chat does nothing (the driver must refuse to send). */
   chatToggleBroken?: boolean
   signedIn?: boolean
@@ -463,7 +469,9 @@ async function send() {
 }
 function renderMarkdown(text) {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\x60\x60\x60([^\\n]*)\\n([\\s\\S]*?)\\n\x60\x60\x60/g, (_, lang, code) => '<div>' + (lang || 'Code') + '</div><pre><code>' + code + '</code></pre>')
+    .replace(/\x60\x60\x60([^\\n]*)\\n([\\s\\S]*?)\\n\x60\x60\x60/g, (_, lang, code) => options.codeWidget
+      ? '<div data-client-defined-widget="code_block"><div data-code-block="true" data-markdown-copy="code-block"><div data-markdown-copy="exclude" contenteditable="false"><div class="min-w-0 truncate flex-1">' + (lang || 'Code') + '</div><button type="button" aria-label="Copy code"></button></div><div data-code-block-source="true"><code><span><span>' + code + '</span></span></code></div></div></div>'
+      : '<div>' + (lang || 'Code') + '</div><pre><code>' + code + '</code></pre>')
   return escaped.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>').replace(/\x60([^\x60]+)\x60/g, '<code>$1</code>')
     .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>')
 }
@@ -517,7 +525,7 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
       researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',

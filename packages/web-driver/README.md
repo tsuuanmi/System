@@ -86,6 +86,14 @@ changed but the header line.
   else after the text. A Copy whose blocks do not pair with the page's was
   silent in System 1 (it kept the rendered text, with no `onCopyRefused`);
   that is how the real site's attempt got an unfenced answer. Still silent.
+- **The live code widget (2026-11-07).** The real site renders a code block
+  with no `pre`: `[data-code-block]` holds a header bar
+  (`[data-markdown-copy="exclude"]`, the language) and the text in
+  `[data-code-block-source] code`, now the first `answer.code` candidate. Its
+  Copy keeps the fences but drops their info strings, so the copy path and
+  `withFencedBlocks` share `renderedBlocks`, and a bare fence takes its
+  block's header as its name. Checked on the real site: a Research Work on
+  `chatgpt-web/default` was accepted with its citation found.
 - **Tests:** vitest became `node:test` and `node:assert/strict`
   (`toMatchObject` is `assert.partialDeepStrictEqual`); the assertions are the
   same.
