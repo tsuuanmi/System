@@ -69,8 +69,16 @@ export interface Account {
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes (fractions allowed). */
   attemptTimeoutMinutes?: number
+  /** What one attempt may spend before it is stopped and fails "over budget" (PROP-0007 decision 2). */
+  attemptBudget?: AttemptBudget
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
+}
+
+/** Input tokens (cache reads included) and minutes; either may be absent. */
+export interface AttemptBudget {
+  inputTokens?: number
+  minutes?: number
 }
 
 const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
@@ -127,7 +135,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     if (account.runtime === 'claude-code') {
       const token = await account.token?.()
       if (!token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
-      invocation = claudeInvocation(account.command, ws, text, token, model)
+      invocation = claudeInvocation(account.command, ws, text, token, model, request.capabilities.includes('code-write'))
     } else {
       const home = join(ws.root, 'codex-home')
       mkdirSync(home, { mode: 0o700 })
@@ -149,6 +157,11 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     request.signal.addEventListener('abort', forward, { once: true })
     let timedOut = false
     const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
+    // Over budget is stopped through the same abort, and fails with what was spent.
+    const budget = account.attemptBudget
+    let overBudget: string | undefined
+    const spend = (what: string) => { overBudget ??= what; forward() }
+    const budgetTimer = budget?.minutes === undefined ? undefined : setTimeout(() => spend(`${budget.minutes} minutes`), budget.minutes * 60_000)
     const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
     // Output that grew is activity: what it says so far is the attempt's progress.
     const read = progressReader(account.runtime)
@@ -157,12 +170,15 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const out = spawned.stdout()
       if (out.length === seen) return
       seen = out.length
-      request.progress?.(read(out))
+      const progress = read(out)
+      request.progress?.(progress)
+      if (budget?.inputTokens !== undefined && (progress.inputTokens ?? 0) > budget.inputTokens) spend(`input tokens (${progress.inputTokens} of ${budget.inputTokens})`)
     }, PROGRESS_MS)
     watch.unref()
     const outcome = await spawned.done.finally(() => {
       clearInterval(watch)
       clearTimeout(timer)
+      clearTimeout(budgetTimer)
       request.signal.removeEventListener('abort', forward)
       rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
     })
@@ -179,6 +195,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     const common = { log, usage: parsed.usage, executor }
     // A stopped agent's output is incomplete, so its usage is unknown rather than a partial count.
     if (request.signal.aborted) return { status: 'cancelled', outputs: {}, partial: captured.outputs, reason: 'cancelled; the agent was stopped', log, executor }
+    if (overBudget) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `over budget: ${overBudget}`, log, executor }
     if (timedOut) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `attempt exceeded its time limit of ${limit} minutes`, log, executor }
     if (outcome.exitCode !== 0 || !parsed.ok) {
       const why = outcome.signal ? `signal ${outcome.signal}` : `exit ${outcome.exitCode}`

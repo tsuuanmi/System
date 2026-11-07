@@ -13,6 +13,7 @@
 //   FAKE:holdstdout=FILE  with FAKE:outputs, leave a process in the agent's group that holds stdout open (as a leaked Xvfb does) and write its pid to FILE
 //   FAKE:delay=MS finish only after MS milliseconds, so attempts can be seen to overlap
 //   FAKE:turns    (claude, stream-json) first print two assistant messages that use tools, as progress
+//   FAKE:background=FILE  (claude) start a background job (its pid in FILE), unless background tasks are disabled and Monitor is disallowed
 //   FAKE:fail     report an error
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
@@ -71,6 +72,9 @@ function finish(ok, message) {
 if (!codex && has('turns') && args.includes('stream-json')) {
   for (const [id, tool] of [['m1', 'Bash'], ['m2', 'Read']]) console.log(JSON.stringify({ type: 'assistant', message: { id, content: [{ type: 'tool_use', name: tool }], usage: { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 3 } } }))
 }
+const background = /FAKE:background=(\S+)/.exec(prompt)?.[1]
+const refused = process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === '1' && args.slice(args.indexOf('--disallowedTools')).includes('Monitor')
+if (!codex && background && !refused) writeFileSync(background, String(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], { detached: true, stdio: 'ignore' }).pid))
 if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
 if (has('edit')) writeFileSync(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */

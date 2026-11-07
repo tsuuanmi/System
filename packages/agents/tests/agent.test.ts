@@ -166,7 +166,7 @@ test('the agent sees a throwaway HOME, its own token and nothing else from the h
     const result = await worker.run(request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']))
     const tree = treeOf(artifacts, result.outputs.change!)
     const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${tree.commit}:ENV.json`], { encoding: 'utf8' })) as { keys: string[]; home: string }
-    assert.deepEqual(seen.keys.filter((k) => !['PATH', 'LANG', 'LC_ALL', 'TZ'].includes(k)), ['CLAUDE_CODE_OAUTH_TOKEN', 'HOME', 'TMPDIR'])
+    assert.deepEqual(seen.keys.filter((k) => !['PATH', 'LANG', 'LC_ALL', 'TZ'].includes(k)), ['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', 'CLAUDE_CODE_OAUTH_TOKEN', 'HOME', 'TMPDIR'], 'a code-write attempt also has its background tasks disabled')
     assert.match(seen.home, /attempts-3\/attempt_[0-9a-f]+\/home$/)
   } finally {
     delete process.env.SSH_AUTH_SOCK
@@ -211,7 +211,33 @@ test('a running Claude Code attempt reports its progress from the stream as it g
   await reported
   abort.abort()
   assert.equal((await running).status, 'cancelled')
-  assert.deepEqual(reports.at(-1), { turns: 2, lastTool: 'Read', tokens: 36 })
+  assert.deepEqual(reports.at(-1), { turns: 2, lastTool: 'Read', tokens: 36, inputTokens: 230 })
+})
+
+test('a code-write attempt may not start background jobs or monitors, and is told to run in the foreground under timeout', async () => {
+  const { artifacts } = memory()
+  const marker = join(root, 'background.pid')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-background'))
+  try {
+    const result = await worker.run(request({ task: await task(artifacts, `FAKE:edit FAKE:background=${marker}`, repo()) }, ['change']))
+    assert.equal(result.status, 'succeeded', result.reason)
+    assert.equal(existsSync(marker), false, 'the background job was refused')
+  } finally {
+    if (existsSync(marker)) process.kill(Number(readFileSync(marker, 'utf8')))
+  }
+})
+
+test('an attempt over its budget is stopped and fails "over budget", its partial output kept', { timeout: 30_000 }, async () => {
+  const { artifacts } = memory()
+  const tokens = agentWorker(account('claude-code', { attemptBudget: { inputTokens: 100 } }), artifacts, processSpawner, join(root, 'attempts-budget'))
+  const spent = await tokens.run(request({ task: await task(artifacts, 'FAKE:turns FAKE:sleep', repo()) }, ['change']))
+  assert.equal(spent.status, 'failed')
+  assert.match(spent.reason!, /^over budget: input tokens \(\d+ of 100\)/)
+  assert.ok(spent.partial?.change, 'the partial output is kept')
+  const minutes = agentWorker(account('claude-code', { attemptBudget: { minutes: 0.005 } }), artifacts, processSpawner, join(root, 'attempts-budget-min'))
+  const slow = await minutes.run(request({ task: await task(artifacts, 'FAKE:sleep', repo()) }, ['change']))
+  assert.equal(slow.status, 'failed')
+  assert.match(slow.reason!, /^over budget: 0\.005 minutes/)
 })
 
 test('an agent ignoring SIGTERM is killed when the grace ends', async () => {

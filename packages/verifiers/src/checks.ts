@@ -11,11 +11,12 @@
  */
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, matchesGlob } from 'node:path'
 import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult } from '@system/work'
 import { parse } from 'yaml'
+import { firstFailure, interrupted, nodeBin } from './reasons.ts'
 import { z } from 'zod'
 
 export const CHECKS_FILE = '.system/checks.yaml'
@@ -27,6 +28,8 @@ export const checksFileSchema = z.object({
     name: z.string().regex(/^[a-z][a-z0-9-]*$/),
     run: z.string().min(1),
     timeoutSeconds: z.number().int().positive().max(3600).default(600),
+    /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one; without it, always. */
+    paths: z.array(z.string().min(1)).min(1).optional(),
   }).strict()).min(1).max(20),
 }).strict()
 export const checksSchema = z.object({
@@ -73,6 +76,10 @@ export function stopLeftovers(home: string): string[] {
   }
   return found
 }
+
+/** Whether a check runs for a change touching `touched` (paths relative to the repository): always without `paths`. */
+export const selected = (check: { paths?: string[] }, touched: readonly string[]): boolean =>
+  !check.paths || touched.some((file) => check.paths!.some((glob) => matchesGlob(file, glob)))
 
 const tail = (text: string) => (text.length > TAIL ? text.slice(-TAIL) : text)
 
@@ -125,32 +132,58 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       }
       const evidence: string[] = []
       const failed: string[] = []
+      const ran: string[] = []
+      const skipped: string[] = []
       try {
+        // The repository's Node first on PATH, whatever the Host's PATH has (PROP-0007 decision 3).
+        let bin: string | undefined
+        try {
+          bin = nodeBin(worktree)
+        } catch (error) {
+          return verdict('error', (error as Error).message, [])
+        }
+        const path = [bin, process.env.PATH].filter(Boolean).join(':')
+        // What the change touches against the base its checks were pinned from (PROP-0007 decision 5); a commit checked as it is runs them all.
+        const asItIs = tree.commit === checks.source.commit
+        const touched = asItIs ? [] : (await git(tree.repository, ['diff', '--name-only', checks.source.commit, tree.commit])).split('\n').filter(Boolean)
         for (const check of checks.checks) {
+          if (!asItIs && !selected(check, touched)) {
+            skipped.push(check.name)
+            continue
+          }
           const started = now()
-          const timeout = AbortSignal.timeout(check.timeoutSeconds * 1000)
+          // `timeout` interrupts the whole group first, so a test runner says what it was running; the abort is the backstop.
+          const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
           const spawned = spawner.spawn({
-            argv: ['/bin/sh', '-c', check.run], cwd: worktree, signal: timeout, graceMs: 5000,
-            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), PATH: process.env.PATH, LANG: process.env.LANG, HOME: scratch, CI: '1' },
+            argv: ['timeout', '-s', 'INT', '-k', '10', String(check.timeoutSeconds), '/bin/sh', '-c', check.run], cwd: worktree, signal: backstop, graceMs: 5000,
+            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), PATH: path, LANG: process.env.LANG, HOME: scratch, CI: '1' },
           })
           const outcome = await spawned.done
           const leftovers = stopLeftovers(scratch)
+          const output = `${spawned.stdout()}\n${spawned.stderr()}`
           const run = {
             name: check.name, run: check.run, commit: tree.commit, exitCode: outcome.exitCode, signal: outcome.signal,
-            timedOut: timeout.aborted, durationMs: Math.max(0, Math.round(now() - started)),
+            timedOut: backstop.aborted || outcome.exitCode === 124, durationMs: Math.max(0, Math.round(now() - started)),
             stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}),
           }
           evidence.push((await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id)
-          if (run.exitCode !== 0 || run.timedOut) failed.push(run.timedOut ? `${check.name} (timed out after ${check.timeoutSeconds} s)` : `${check.name} (exit ${run.exitCode ?? run.signal})`)
-          else if (leftovers.length) failed.push(`${check.name} (left running: ${leftovers.join(', ')})`)
+          ran.push(`${check.name} ${(run.durationMs / 1000).toFixed(1)} s`)
+          if (run.timedOut) {
+            const running = interrupted(output)
+            failed.push(running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`)
+          } else if (run.exitCode !== 0) {
+            const first = firstFailure(output)
+            failed.push(first ? `${check.name}: ${first}` : `${check.name} (exit ${run.exitCode ?? run.signal})`)
+          } else if (leftovers.length) failed.push(`${check.name} (left running: ${leftovers.join(', ')})`)
         }
       } finally {
         await removeWorktree(tree.repository, worktree)
         rmSync(scratch, { recursive: true, force: true })
       }
+      const which = `run: ${ran.join(', ')}${skipped.length ? `; skipped: ${skipped.join(', ')}` : ''}`
       return failed.length
-        ? verdict('fail', `failed: ${failed.join(', ')}`, evidence)
-        : verdict('pass', `all ${checks.checks.length} check(s) passed on ${tree.commit}`, evidence)
+        ? verdict('fail', `failed: ${failed.join('; ')}${skipped.length ? ` (skipped: ${skipped.join(', ')})` : ''}`, evidence)
+        : verdict('pass', `all ${ran.length} check(s) run passed on ${tree.commit}; ${which}`, evidence)
     },
   }
 }

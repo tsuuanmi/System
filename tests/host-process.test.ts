@@ -67,7 +67,7 @@ test('while a Host runs: a second Host fails at once, and the Work commands reac
   await host.exited
 })
 
-test('SIGTERM stops the Host with exit 0, releases the lock and the socket, and a new Host starts', { timeout: 60_000 }, async () => {
+test('SIGTERM stops the Host with exit 0, releases the lock and the socket, and a new Host starts', async () => {
   const first = await cli.start()
   first.child.kill('SIGTERM')
   assert.deepEqual(await first.exited, { code: 0, signal: null })

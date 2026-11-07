@@ -10,7 +10,7 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
-import { DRAIN_MS, agentWorker, recordingPid, type Account, type Spawner } from './agent.ts'
+import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
 import { webDefaults, type WebConfig } from './chatgpt.ts'
 import { discoverChrome } from './chrome.ts'
 import { webLogin, type LoginReport } from './chatgpt-login.ts'
@@ -55,6 +55,8 @@ export interface AccountConfig {
   attemptTimeoutMinutes?: number
   /** How many attempts of this account run at once; overrides the row's. */
   maxConcurrentAttempts?: number
+  /** What one attempt may spend (input tokens, minutes) before it is stopped as over budget; overrides the row's. */
+  attemptBudget?: AttemptBudget
 }
 
 export interface Config {
@@ -62,6 +64,8 @@ export interface Config {
   attemptTimeoutMinutes?: number
   /** How many attempts of one account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
+  /** What one attempt may spend before it is stopped as over budget; default none. */
+  attemptBudget?: AttemptBudget
   accounts?: AccountConfig[]
 }
 
@@ -157,7 +161,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error(`maxConcurrentAttempts is ${slots}; it must be a whole number of at least 1`)
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
-      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes: account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes, maxConcurrentAttempts: slots }
+      const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes: account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots }
       if (web) {
         const profile = account.profileDir ?? `chatgpt-web/${account.ref.split('/')[1] ?? 'default'}`
         const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile))

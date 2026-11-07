@@ -57,6 +57,26 @@ While it runs, `dev` takes no changes and the Host runs `web-workers`.
 - **Only the operator merges `web-workers` into `dev`**, when milestone WW's
   gate holds. The base for System's Work goes back to `dev` with that merge.
 
+## Amendment (2026-11-07): the merge queue
+
+PROP-0007 decision 6, chosen by the operator over GitHub's merge endpoint.
+Four changes that each passed their checks broke `dev` together, because each
+was checked against a tip that had moved. Decision 2 now reads:
+
+- System merges one change at a time per base, and **`dev` moves only to a
+  commit whose required checks passed**: the change itself when it already
+  holds `dev`'s tip, otherwise its merge with the tip, checked again with
+  the same pinned criteria. A conflict fails the publish step, naming the
+  files.
+- `dev` moves by a push with a lease on the tip that was checked (bors' "not
+  rocket science" rule, as GitHub's merge queue does). If `dev` moved
+  meanwhile, the change is merged and checked again on the new tip. GitHub's
+  merge endpoint is no longer used: it merges onto whatever the tip is then.
+  GitHub marks the pull request merged when `dev` holds its head.
+- A branch protection that requires pull requests refuses the push; the
+  publish step then fails with that message. The outcome is reconciled by
+  reading whether `dev` holds the change.
+
 ## Consequences
 
 - System's verified changes reach `dev` without waiting. The operator

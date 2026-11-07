@@ -31,7 +31,12 @@ function baseEnv(ws: Workspace): Record<string, string> {
   return env
 }
 
-export function claudeInvocation(command: string, ws: Workspace, prompt: string, token: string, model?: string): Invocation {
+/**
+ * `codeWrite`: the attempt changes a repository (PROP-0007 decision 1), so it
+ * may not start background tasks or monitors: a wait on one re-reads the whole
+ * context at every wake.
+ */
+export function claudeInvocation(command: string, ws: Workspace, prompt: string, token: string, model?: string, codeWrite = false): Invocation {
   return {
     argv: [
       command, '-p', prompt, '--output-format', 'stream-json', '--verbose',
@@ -40,9 +45,9 @@ export function claudeInvocation(command: string, ws: Workspace, prompt: string,
       '--add-dir', ws.inputs, '--add-dir', ws.outputs,
       '--allowedTools', 'Bash', 'WebSearch', 'WebFetch',
       // Deny wins over allow: no Worker pushes or uses the GitHub CLI (ADR-0004 decision 10).
-      '--disallowedTools', 'Bash(git push:*)', 'Bash(gh:*)',
+      '--disallowedTools', 'Bash(git push:*)', 'Bash(gh:*)', ...(codeWrite ? ['Monitor'] : []),
     ],
-    env: { ...baseEnv(ws), CLAUDE_CODE_OAUTH_TOKEN: token },
+    env: { ...baseEnv(ws), CLAUDE_CODE_OAUTH_TOKEN: token, ...(codeWrite ? { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' } : {}) },
   }
 }
 
@@ -188,9 +193,10 @@ export function parseCodex(stdout: string): Parsed {
  */
 export function progressReader(runtime: 'claude-code' | 'codex'): (stdout: string) => Progress {
   let consumed = 0
-  const messages = new Map<string, number>()
+  const messages = new Map<string, { tokens: number; input: number }>()
   let turns = 0
   let tokens = 0
+  let input = 0
   let lastTool: string | undefined
   const n = (value: unknown) => (Number.isInteger(value) ? (value as number) : 0)
   return (stdout) => {
@@ -200,17 +206,24 @@ export function progressReader(runtime: 'claude-code' | 'codex'): (stdout: strin
       try { event = JSON.parse(line) } catch { continue }
       if (runtime === 'claude-code' && event?.type === 'assistant' && event.message) {
         const u = event.message.usage ?? {}
-        messages.set(String(event.message.id ?? messages.size), n(u.input_tokens) + n(u.cache_creation_input_tokens) + n(u.output_tokens))
+        messages.set(String(event.message.id ?? messages.size), {
+          tokens: n(u.input_tokens) + n(u.cache_creation_input_tokens) + n(u.output_tokens),
+          input: n(u.input_tokens) + n(u.cache_creation_input_tokens) + n(u.cache_read_input_tokens),
+        })
         for (const part of event.message.content ?? []) if (part?.type === 'tool_use' && typeof part.name === 'string') lastTool = part.name
       }
       if (runtime === 'codex' && event?.type === 'turn.completed') {
         turns += 1
         tokens += n(event.usage?.input_tokens) - n(event.usage?.cached_input_tokens) + n(event.usage?.output_tokens)
+        input += n(event.usage?.input_tokens)
       }
       if (runtime === 'codex' && event?.type === 'item.completed' && typeof event.item?.type === 'string' && event.item.type !== 'agent_message') lastTool = event.item.type
     }
     consumed = Math.max(consumed, end)
-    const counted = runtime === 'claude-code' ? { turns: messages.size, tokens: [...messages.values()].reduce((a, b) => a + b, 0) } : { turns, tokens }
-    return { turns: counted.turns, ...(lastTool ? { lastTool } : {}), tokens: counted.tokens }
+    const all = [...messages.values()]
+    const counted = runtime === 'claude-code'
+      ? { turns: messages.size, tokens: all.reduce((a, m) => a + m.tokens, 0), inputTokens: all.reduce((a, m) => a + m.input, 0) }
+      : { turns, tokens, inputTokens: input }
+    return { turns: counted.turns, ...(lastTool ? { lastTool } : {}), tokens: counted.tokens, inputTokens: counted.inputTokens }
   }
 }

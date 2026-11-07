@@ -16,6 +16,7 @@ the operator's ChatGPT website session) becomes a System Worker
   config:
     attemptTimeoutMinutes: 60           # row-wide default; an account may set its own
     maxConcurrentAttempts: 1            # row-wide default (1); an account may set its own
+    attemptBudget: {inputTokens: 30000000, minutes: 45}  # row-wide default (none); an account may set its own
     accounts:
       - ref: claude-code/default        # <runtime>/<account>
         runtime: claude-code
@@ -29,6 +30,20 @@ the operator's ChatGPT website session) becomes a System Worker
         codexHome: codex/default        # under $DSH_HOME/system unless absolute
       # A second account is another entry with its own ref and credential.
 ```
+
+## Software Engineering policy and the attempt budget
+
+A `code-write` attempt runs every command in the foreground (PROP-0007
+decision 1): Claude Code gets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and
+`Monitor` among its disallowed tools, and every Runtime's prompt says to run
+each command under `timeout` and wait for it. A wait on a background job
+re-reads the whole context at each wake: 183M input tokens in one attempt.
+
+`attemptBudget` (decision 2) stops an attempt through the same abort as a
+cancel, and fails it with `over budget: input tokens (<n> of <limit>)` or
+`over budget: <m> minutes`; its partial output is kept. Input tokens count
+cache reads, from the progress read off the stream (`inputTokens`), checked
+each time the stream grows. `attemptTimeoutMinutes` stays the hard limit.
 
 ## Model tiers
 

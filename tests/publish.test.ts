@@ -128,7 +128,9 @@ test('the exact checked commit is pushed to system/<work> and one draft pull req
   assert.ok((await gh.state()).calls.every((c) => !/merge/i.test(c)))
 })
 
-test('a Work with merge: true ends with one pull request merged at the checked commit; running again changes nothing', async () => {
+const mainOf = (bare: string) => execFileSync('git', ['-C', bare, 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' }).trim()
+
+test('a Work with merge: true moves main to exactly the checked commit through the merge queue; running again changes nothing', async () => {
   const p = project()
   const gh = await github('--bare', p.bare)
   profile(gh.url, '[main]')
@@ -141,15 +143,15 @@ test('a Work with merge: true ends with one pull request merged at the checked c
   const published = record.events.find((e) => e.type === 'effect-observed')!
   assert.equal(published.state, 'applied')
   assert.equal(p.branchOf(workId), commit)
+  assert.equal(mainOf(p.bare), commit, 'main is the checked commit: it already held the tip, so nothing new to check')
+  assert.deepEqual([published.detail!.merged, published.detail!.mergeCommit], ['true', commit])
   const { pulls, calls } = await gh.state()
-  assert.deepEqual(pulls.map((pr) => [pr.head, pr.draft, pr.merged]), [[`system/${workId.replace('work:', '')}`, false, true]])
-  assert.equal(published.detail!.merged, 'true')
-  assert.equal(published.detail!.mergeCommit, pulls[0]!.mergeCommit)
-  assert.equal(calls.filter((c) => c.startsWith('PUT ')).length, 1)
+  assert.deepEqual(pulls.map((pr) => [pr.head, pr.draft]), [[`system/${workId.replace('work:', '')}`, false]])
+  assert.equal(calls.filter((c) => c.startsWith('PUT ')).length, 0, 'GitHub\'s merge endpoint is not used')
   const events = record.events.length
   assert.equal(system(['work', 'run', workId]).status, 0)
   assert.equal(show(workId).events.length, events)
-  assert.equal((await gh.state()).calls.filter((c) => c.startsWith('PUT ')).length, 1)
+  assert.equal(mainOf(p.bare), commit)
 })
 
 test('a profile whose base is not in mergeInto refuses a Workflow that merges, at admission', async () => {
@@ -163,25 +165,27 @@ test('a profile whose base is not in mergeInto refuses a Workflow that merges, a
   assert.equal((await gh.state()).pulls.length, 0)
 })
 
-test('a host killed after the merge call but before it heard back is reconciled as applied: no second merge', async () => {
+test('a host killed once main moved but before it heard back is reconciled as applied: nothing merged twice', async () => {
   const p = project()
-  const gh = await github('--bare', p.bare, '--kill-host-on-merge', hostPid)
+  // The remote kills the Host as soon as main moves, before the push returns.
+  writeFileSync(join(p.bare, 'hooks', 'post-receive'), `#!/bin/sh\nwhile read old new ref; do [ "$ref" = refs/heads/main ] && kill -9 "$(cat ${hostPid})"; done\nexit 0\n`, { mode: 0o755 })
+  const gh = await github('--bare', p.bare)
   profile(gh.url, '[main]')
   await restart()
   const crashed = system(['work', 'submit', '--workflow', SE_MERGE, '--input', p.task])
   assert.notEqual(crashed.status, 0)
   const workId = crashed.stdout.trim()
+  rmSync(join(p.bare, 'hooks', 'post-receive'))
+  const moved = mainOf(p.bare)
   await restart()
   assertRecovered(workId)
   const resumed = system(['work', 'run', workId])
   assert.equal(resumed.status, 0, resumed.stderr)
   const observed = show(workId).events.filter((e) => e.type === 'effect-observed')
   assert.deepEqual(observed.map((e) => e.state), ['applied'])
-  assert.match(observed[0]!.reason!, /merged/)
-  const { pulls, calls } = await gh.state()
-  assert.deepEqual(pulls.map((pr) => pr.merged), [true])
-  assert.equal(calls.filter((c) => c.startsWith('PUT ')).length, 1)
-  assert.equal(p.branchOf(workId), commitOf(show(workId).state.steps.implement!.outputs.change!))
+  assert.match(observed[0]!.reason!, /main holds/)
+  assert.equal(mainOf(p.bare), moved, 'main did not move again')
+  assert.equal(moved, commitOf(show(workId).state.steps.implement!.outputs.change!))
 })
 
 test('a host killed after the pull request was created but before it heard back is reconciled: no second pull request', async () => {
