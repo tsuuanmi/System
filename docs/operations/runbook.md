@@ -187,6 +187,14 @@ bundle's accounts plus this one):
 With the row off, `system workers` shows the account `unavailable` with the reason
 "the web-worker row is disabled", and `system workers login` says the same.
 
+**Switching the page logic.** An account runs the legacy ChatGPT driver unless it sets
+`procedures: generic` in its `accounts` entry (the generic Procedures bound to the ChatGPT map;
+what changes is in the [web-worker README](../../packages/web-worker/README.md)). To compare
+both on the real site, add a second account with its own profile and the other value, or edit the
+value and restart the Host; the evidence of every attempt says `procedures: legacy` or
+`generic`. Back out by removing the line (or `procedures: legacy`) and restarting. A value
+other than the two makes the account `unavailable` with the reason.
+
 It needs `Xvfb` (`apt install xvfb`) and a recent Chrome (and for `--remote`
 a VNC server, see below). System picks the
 Chrome like System 1: `executablePath`, then `CHROME_PATH`, then a system Chrome

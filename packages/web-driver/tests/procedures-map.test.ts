@@ -96,6 +96,23 @@ describe('ui-map@1.7 kinds for the Procedures', () => {
     assert.throws(() => loadUiMap(full().replace('answer.finished: { visible: status.done }', 'answer.finished: { countAtLeast: { of: status.done, as: turn.nope } }')), /unknown element turn\.nope/)
   })
 
+  it('binds the attachment chip: its element, the one while it is added, and where its label is read', () => {
+    const attach = "attach:\n  chip: status.done\n  adding: answer.error\n  label: text\n"
+    const map = loadUiMap(full(attach))
+    assert.deepEqual(map.attach, { chip: 'status.done', adding: 'answer.error', label: 'text' })
+    assert.equal(loadUiMap(full()).attach, undefined)
+    const bad = (from: string, to: string, why: RegExp): void => assert.throws(() => loadUiMap(full(attach).replace(from, to)), why)
+    bad('chip: status.done', 'chip: status.nope', /unknown element status\.nope/)
+    bad('adding: answer.error', 'adding: answer.nope', /unknown element answer\.nope/)
+    bad('label: text', 'label: title', /ui-map@1\.0/)
+  })
+
+  it('has the attr condition with a pattern, for a label that names a mode', () => {
+    const map = loadUiMap(full().replace('mode.work-selected: {', "mode.work-composer: { attr: { of: composer.input, name: aria-label, matches: '\\bWork\\b' } }\n  mode.work-selected: {"))
+    assert.deepEqual(map.states['mode.work-composer'], { attr: { of: 'composer.input', name: 'aria-label', matches: '\\bWork\\b' } })
+    assert.throws(() => loadUiMap(full().replace('mode.work-selected: {', "mode.work-composer: { attr: { of: composer.input, name: aria-label, matches: '(' } }\n  mode.work-selected: {")), /matches/)
+  })
+
   it('the shipped maps and the hostile Site bind every Procedure', () => {
     for (const file of ['chatgpt-web.ui.yaml', 'fake-other.ui.yaml']) assert.deepEqual(bindingProblems(loadUiMap(read(file))), [], file)
   })

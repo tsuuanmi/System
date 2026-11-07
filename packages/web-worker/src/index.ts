@@ -9,7 +9,7 @@ import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { lazyVersion, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { systemPath, type Capabilities } from '@system/work'
-import { webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
+import { checkProcedures, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
 import { webLogin } from './chatgpt-login.ts'
 import { discoverChrome } from './chrome.ts'
 import { XVFB_MISSING, findXvfb } from './display.ts'
@@ -40,6 +40,7 @@ export function apply(ctx: Context): void {
     const web: WebConfig = {
       ...defaults, ...(account.executablePath ? { executablePath: account.executablePath } : {}), managedDir: browsers, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,
       url: account.url ?? defaults.url, timeouts: { ...defaults.timeouts, ...account.timeouts }, maxOutsideChars: account.maxOutsideChars ?? defaults.maxOutsideChars,
+      procedures: checkProcedures(account.procedures),
     }
     new URL(web.url)
     for (const [stage, seconds] of Object.entries(web.timeouts)) {

@@ -26,7 +26,7 @@ export type Condition =
   | { visible: string } | { hidden: string } | { countIncreased: string }
   /** `ui-map@1.7`: at least as many matches of `of` as of `as`. */
   | { countAtLeast: { of: string; as: string } }
-  | { attr: { of: string; name: string; equals?: string; present?: boolean } }
+  | { attr: { of: string; name: string; equals?: string; matches?: string; present?: boolean } }
   | { url: string } | { network: string } | { state: string }
   | { stableTextMs: number; of: string }
   | { anyOf: Condition[] } | { allOf: Condition[] } | { not: Condition }
@@ -135,6 +135,16 @@ export interface UiModes {
   select?: string
 }
 
+/** How a pasted text that the site turns into an attachment shows (`ui-map@1.7`); absent, the engine's defaults (see `attachBinding`). */
+export interface UiAttach {
+  /** The element of one finished attachment, one match each. */
+  chip: string
+  /** The element that shows while one is being added. */
+  adding?: string
+  /** Where a chip's label (the start of the pasted text) is read: its `aria-label` (default) or its own text. */
+  label?: 'aria-label' | 'text'
+}
+
 /** How an answer is found and read (`ui-map@1.7`); a map without `answer` lists nothing. */
 export interface UiAnswer {
   turn?: string
@@ -161,6 +171,7 @@ export interface UiMap {
   answer: UiAnswer
   site?: UiSite
   modes?: UiModes
+  attach?: UiAttach
   elements: Record<string, ElementSpec>
   actions: Record<string, ActionSpec>
   network: Record<string, NetworkPattern>
@@ -198,12 +209,19 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
   const element = (id: string, where: string): void => {
     if (!map.elements[id]) missing.push(`${where}: unknown element ${id}`)
   }
+  const pattern = (source: string | undefined, where: string): void => {
+    try {
+      if (source) new RegExp(source)
+    } catch {
+      missing.push(`${where}: not a regular expression`)
+    }
+  }
   const walk = (c: Condition, where: string): void => {
     if ('visible' in c) element(c.visible, where)
     else if ('hidden' in c) element(c.hidden, where)
     else if ('countIncreased' in c) element(c.countIncreased, where)
     else if ('countAtLeast' in c) { element(c.countAtLeast.of, where); element(c.countAtLeast.as, where) }
-    else if ('attr' in c) element(c.attr.of, where)
+    else if ('attr' in c) { element(c.attr.of, where); pattern(c.attr.matches, `${where}.attr.matches`) }
     else if ('stableTextMs' in c) element(c.of, where)
     else if ('network' in c) { if (!map.network[c.network]) missing.push(`${where}: unknown network signal ${c.network}`) }
     else if ('state' in c) { if (!map.states[c.state]) missing.push(`${where}: unknown state ${c.state}`) }
@@ -225,13 +243,6 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
   const state = (id: string | undefined, where: string): void => {
     if (id && !map.states[id]) missing.push(`${where}: unknown state ${id}`)
   }
-  const pattern = (source: string | undefined, where: string): void => {
-    try {
-      if (source) new RegExp(source)
-    } catch {
-      missing.push(`${where}: not a regular expression`)
-    }
-  }
   action(map.site?.temporaryChat?.action, 'site.temporaryChat')
   pattern(map.site?.conversationUrl, 'site.conversationUrl')
   if (map.modes) {
@@ -239,6 +250,10 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
     state(map.modes.required, 'modes.required')
     for (const id of map.modes.forbidden ?? []) state(id, 'modes.forbidden')
     action(map.modes.select, 'modes.select')
+  }
+  if (map.attach) {
+    element(map.attach.chip, 'attach.chip')
+    if (map.attach.adding) element(map.attach.adding, 'attach.adding')
   }
   const { answer } = map
   for (const [key, id] of [['turn', answer.turn], ['userTurn', answer.userTurn], ['code', answer.code], ['codeLabel', answer.codeLabel]] as const) if (id) element(id, `answer.${key}`)
@@ -256,7 +271,7 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
 export function loadUiMap(text: string, overlayText?: string): UiMap {
   const raw = parse(text) as Record<string, unknown>
   assertMap(raw)
-  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'answer' | 'site' | 'modes' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
+  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'answer' | 'site' | 'modes' | 'attach' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
   const elements: Record<string, ElementSpec> = {}
   let overlayErrors: ErrorRule[] = []
   for (const [id, e] of Object.entries(shipped.elements)) {
@@ -280,6 +295,7 @@ export function loadUiMap(text: string, overlayText?: string): UiMap {
     answer: { ...DEFAULT_ANSWER, ...shipped.answer },
     ...(shipped.site ? { site: shipped.site } : {}),
     ...(shipped.modes ? { modes: shipped.modes } : {}),
+    ...(shipped.attach ? { attach: shipped.attach } : {}),
     elements,
     actions: shipped.actions ?? {},
     network: shipped.network ?? {},
@@ -317,4 +333,9 @@ export function appendOverlay(path: string, element: string, candidate: Candidat
   doc.addIn(['elements', element, 'candidates'], node)
   writeFileDurable(path, doc.toString(), 0o600)
   return true
+}
+
+/** The elements and the label source an attachment chip is read by: the map's `attach`, else the ChatGPT-shaped defaults. */
+export function attachBinding(map: Pick<UiMap, 'attach'>): { chip: string; adding: string; label: 'aria-label' | 'text' } {
+  return { chip: map.attach?.chip ?? 'composer.attachment', adding: map.attach?.adding ?? 'composer.attachment-adding', label: map.attach?.label ?? 'aria-label' }
 }

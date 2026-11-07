@@ -24,6 +24,8 @@ export interface EvidenceData {
   /** Chrome's version as the Account reports it. */
   chrome: string | undefined
   uiMap: { revision: string; hash: string }
+  /** The page logic that ran the attempt: System 1's ChatGPT driver, or the generic Procedures (WW2-iii). */
+  procedures: 'legacy' | 'generic'
   launchTimeoutSeconds: number
   viewport?: { width: number; height: number }
   /** The pages Chrome came up with, how many were open before the first navigation, and how many were confirmed closed since (inherited, then late), and how many late ones would not close. */

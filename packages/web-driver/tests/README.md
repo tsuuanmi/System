@@ -13,5 +13,5 @@ tested in [packages/web-worker/tests](../../web-worker/tests/README.md).
 fake page; [conformance.test.ts](conformance.test.ts) runs it (headed Chrome, `test:web`) on
 [fake-other.ts](fake-other.ts), an invented hostile Site (no temporary chat, no mode switch,
 a plain textarea, a status element instead of a Stop button, its error inside the answer, the
-code label above the code), and on ChatGPT's map and fake. [procedures-map.test.ts](procedures-map.test.ts)
+code label above the code, a long paste kept as a file chip labelled by its text), and on ChatGPT's map and fake. [procedures-map.test.ts](procedures-map.test.ts)
 (unit, no Chrome) is the `ui-map@1.7` schema and validation.

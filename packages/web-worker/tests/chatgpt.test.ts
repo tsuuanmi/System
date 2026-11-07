@@ -16,16 +16,22 @@ import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatg
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLeaked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, checkProcedures, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
 const skip = skipHeaded
+/** Which page logic runs the attempts of this file: chatgpt-generic.test.ts sets it and loads this file again, so every test here runs on both. */
+const PROCEDURES = process.env.WEB_PROCEDURES === 'generic' ? 'generic' : 'legacy'
+const generic = PROCEDURES === 'generic'
 const root = mkdtempSync(join(tmpdir(), 'system-chatgpt-'))
 const fakes: FakeChatGpt[] = []
-/** The fake site with these options, stopped after the file's tests. The clipboard holds the answer's Markdown exactly unless a test says otherwise. */
+/**
+ * The fake site with these options, stopped after the file's tests. The clipboard holds the answer's Markdown exactly unless a test says
+ * otherwise. The generic Procedures never press Copy: their page shows the code widget with its labelled header, as the live site does.
+ */
 async function site(options: FakeOptions = {}): Promise<FakeChatGpt> {
-  const fake = new FakeChatGpt({ thinkMs: 100, copied: (markdown) => markdown, ...options })
+  const fake = new FakeChatGpt({ thinkMs: 100, copied: (markdown) => markdown, ...(generic ? { codeWidget: true } : {}), ...options })
   await fake.start()
   fakes.push(fake)
   return fake
@@ -42,7 +48,7 @@ let count = 0
 const memory = () => memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...CONVERSATION_KIND, content: conversationSchema })
 
 function web(fake: FakeChatGpt, extra: Partial<WebConfig> = {}): WebConfig {
-  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, ...extra }
+  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, procedures: PROCEDURES, ...extra }
 }
 const account = (config: WebConfig, extra: Partial<WebAccount> = {}): WebAccount => ({
   ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
@@ -70,6 +76,13 @@ const conversationOf = (artifacts: Artifacts, result: WorkerResult, slot: 'outpu
   if (read.state !== 'stored') throw new Error('not stored')
   return { occurrences: read.occurrences, content: read.envelope.content as Conversation }
 }
+
+test('the procedures option is legacy or generic, legacy unless set', () => {
+  assert.equal(webDefaults('/p').procedures, 'legacy')
+  assert.equal(checkProcedures(undefined), 'legacy')
+  assert.equal(checkProcedures('generic'), 'generic')
+  for (const bad of ['Generic', '', 'both', true, 1, null]) assert.throws(() => checkProcedures(bad), /procedures is .*; it must be "legacy" or "generic"/)
+})
 
 test('parseBlocks reads labelled fenced blocks, with longer fences around shorter ones', () => {
   const markdown = ['intro', '', '```report', 'a', '```', '', '````sources', '```js', 'x', '```', '````', '', '```other', 'z', '```'].join('\n')
@@ -101,6 +114,15 @@ test('stripLeaked removes a listed token at the very start or end of an output, 
   assert.deepEqual(stripLeaked('<escape>x <escape> y', ['<escape>']), { content: 'x <escape> y', removed: ['<escape>'] })
   assert.deepEqual(stripLeaked(' a\n', ['<escape>']), { content: ' a\n', removed: [] })
   assert.deepEqual(stripLeaked('<escape>x', []), { content: '<escape>x', removed: [] })
+})
+
+test('unblocked counts the page text outside the label and the code of the blocks that fill outputs', () => {
+  const text = 'Done, here it is.\nreview\nthe review\nAnd a closing remark.'
+  assert.equal(unblocked(text, [{ label: 'review', code: 'the review' }]), 'Done,hereitis.Andaclosingremark.'.length)
+  assert.equal(unblocked(text, []), text.replace(/\s/g, '').length)
+  // A label that is not shown, or code that is not in the text, takes nothing out.
+  assert.equal(unblocked('x y', [{ label: '', code: 'y' }]), 1)
+  assert.equal(unblocked('x y', [{ label: 'a', code: 'nope' }]), 2)
 })
 
 test('webPrompt asks for each output in a four-tilde fence and nothing after the last', () => {
@@ -199,7 +221,8 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.deepEqual(occurrences.map((o) => o.producer), [{ type: 'worker', ref: 'chatgpt-web/default' }])
   assert.equal(content.asserted.provider, 'ChatGPT')
   assert.match(content.asserted.url!, /^http:\/\/127\.0\.0\.1:\d+\/c\/[0-9a-f-]{36}\?temporary-chat=true$/, 'the site\'s own address of a temporary chat')
-  assert.equal(content.asserted.model, 'Latest', 'the model the page read back as selected')
+  // The generic Procedures read no model: its record has none, never a guess.
+  assert.equal(content.asserted.model, generic ? undefined : 'Latest', 'the model the page read back as selected')
   assert.deepEqual(content.asserted.context, ['ui-map:2026-10-11', 'temporary-chat'])
   const [prompt, response] = content.parts
   assert.deepEqual([prompt!.role, response!.role], ['prompt', 'response'])
@@ -207,8 +230,9 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.match(sent, /Explain the fake topic\./)
   assert.match(sent, /"~~~~report"/)
   const answer = await text(artifacts, response!.artifact)
-  assert.match(answer, /Here is the \*\*answer\*\*\./)
-  assert.match(answer, /```report\ncontent of report\nsecond line\n```/)
+  // The response is Copy's Markdown (legacy), or the page's rendered text: its words, with the block as the page shows it.
+  assert.match(answer, generic ? /^Here is the answer\.\n[\s\S]*report\ncontent of report\nsecond line$/ : /Here is the \*\*answer\*\*\./)
+  if (!generic) assert.match(answer, /```report\ncontent of report\nsecond line\n```/)
 })
 
 // WW1g: a prompt with inputs is a header typed in the composer and a body pasted after it, which the site may turn into an attachment.
@@ -274,7 +298,8 @@ test('webPrompt splits a prompt into its header and its fenced body, and keeps a
   assert.equal(webPrompt({ ...ws, context: [] }, req, 0).body, undefined)
 })
 
-test('a page with no model picker is refused before anything is sent', { skip, timeout: 60_000 }, async () => {
+// The model picker is not bound by the generic Procedures (RES-0009 section 6): no model is selected or read back.
+test('a page with no model picker is refused before anything is sent', { skip: skip || generic, timeout: 60_000 }, async () => {
   const { result, fake } = await run({ modelPicker: false })
   assert.equal(result.status, 'failed')
   assert.equal(fake.sent.length, 0)
@@ -298,7 +323,8 @@ test('links inside the answer are kept as an attachment of the conversation', { 
   const links = content.parts.find((p) => p.role === 'attachment')!
   assert.equal(links.name, 'links.json')
   assert.deepEqual(JSON.parse(await text(artifacts, links.artifact)), ['https://example.org/a', 'https://example.org/b?x=1'])
-  assert.match(await text(artifacts, content.parts.find((p) => p.role === 'response')!.artifact), /\[source A\]\(https:\/\/example\.org\/a\)/)
+  // The Markdown form of a link is the Copy text's; the generic turn keeps its targets in links.json only.
+  if (!generic) assert.match(await text(artifacts, content.parts.find((p) => p.role === 'response')!.artifact), /\[source A\]\(https:\/\/example\.org\/a\)/)
 })
 
 test('a sign-in wall fails the attempt with a screenshot as partial output', { skip, timeout: 60_000 }, async () => {
@@ -338,7 +364,10 @@ test('the site\'s own error page is loaded once more before anything is typed', 
 })
 
 test('Work is never used: a switch that stays on Work, or a composer that names Work, ends the attempt before anything is sent', { skip, timeout: 60_000 }, async () => {
-  for (const [options, reason] of [[{ chatToggleBroken: true }, /mode\.select-chat did not reach its postcondition/], [{ startOnWork: false, workComposer: true }, /refusing to use Work/]] as const) {
+  for (const [options, reason] of [
+    [{ chatToggleBroken: true }, generic ? /a forbidden mode holds \(mode\.work-selected\)/ : /mode\.select-chat did not reach its postcondition/],
+    [{ startOnWork: false, workComposer: true }, generic ? /a forbidden mode holds \(mode\.work-composer\)/ : /refusing to use Work/],
+  ] as const) {
     const { artifacts, result, fake } = await run(options)
     assert.equal(result.status, 'failed', JSON.stringify(options))
     assert.match(result.reason!, reason)
@@ -548,7 +577,8 @@ test('an output is filled verbatim from the rendered block that carries its name
   assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { review: 'block' })
 })
 
-test('an output with no block of its name is filled from the Markdown text, and the evidence says so', { skip, timeout: 120_000 }, async () => {
+// Copy's Markdown is the legacy driver's; the generic Procedures read the rendered page only.
+test('an output with no block of its name is filled from the Markdown text, and the evidence says so', { skip: skip || generic, timeout: 120_000 }, async () => {
   // The page's block has no name (`Code`); Copy gives the fence with the name.
   const { artifacts, result } = await run({ answer: '```\nsame words\n```', copied: () => '```report\nsame words\n```' }, ['report'])
   assert.equal(result.status, 'succeeded', result.reason)
@@ -593,7 +623,7 @@ for (const [name, options] of [
   ['the rendered block', { copied: () => '', codeWidget: true }],
   ['the Markdown text', { copied: (markdown: string) => markdown }],
 ] as const) {
-  test(`a tilde-fenced review holding code fences fills its output verbatim through ${name}`, { skip, timeout: 120_000 }, async () => {
+  test(`a tilde-fenced review holding code fences fills its output verbatim through ${name}`, { skip: skip || (generic && name === 'the Markdown text'), timeout: 120_000 }, async () => {
     const { artifacts, result } = await run({ answer: '~~~~review\n' + REVIEW + '\n~~~~', ...options }, ['review'])
     assert.equal(result.status, 'succeeded', result.reason)
     assert.equal(await text(artifacts, result.outputs.review!), REVIEW)
@@ -606,7 +636,7 @@ for (const [name, options] of [
   ['the rendered block', { copied: () => '', codeWidget: true }],
   ['the Markdown text', { copied: (markdown: string) => markdown }],
 ] as const) {
-  test(`an answer that continues outside its output block fails and is kept as partial output (${name})`, { skip, timeout: 120_000 }, async () => {
+  test(`an answer that continues outside its output block fails and is kept as partial output (${name})`, { skip: skip || (generic && name === 'the Markdown text'), timeout: 120_000 }, async () => {
     const { artifacts, result } = await run({ answer: CUT, ...options }, ['review'])
     assert.equal(result.status, 'failed')
     assert.match(result.reason!, /the answer continues outside its output blocks \(\d+ characters\): an output may be cut short/)
@@ -661,6 +691,25 @@ test('a launch that fails is recorded as such; the record exists before Chrome s
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /Chrome exited/)
   assert.equal((await evidenceOf(artifacts, result)).stages[0].error, 'Chrome exited')
+})
+
+test('the evidence says which page logic ran the attempt', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result } = await run({}, ['report'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  assert.equal(JSON.parse(line.slice(line.indexOf('{'))).procedures, PROCEDURES)
+})
+
+// Generic only: the legacy driver confirms nothing after the click. The Procedures never send a prompt that may have been sent again.
+test('a send the page never shows is unknown: the attempt fails and nothing is resent', { skip: skip || !generic, timeout: 60_000 }, async () => {
+  const { artifacts, result, fake } = await run({ dropSend: true }, ['report'])
+  assert.equal(result.status, 'failed')
+  assert.equal(result.reason, 'send outcome unknown: not resent')
+  assert.equal(fake.sent.length, 1)
+  const evidence = await evidenceOf(artifacts, result)
+  assert.equal(evidence.failedStage, 'send')
+  assert.equal(evidence.promptSendAttempted, true)
+  assert.equal(evidence.promptSubmitted, false)
 })
 
 test('a good attempt records every stage in order, with times, page counts, viewport and that the prompt was submitted', { skip, timeout: 60_000 }, async () => {

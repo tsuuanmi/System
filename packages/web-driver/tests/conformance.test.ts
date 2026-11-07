@@ -43,7 +43,7 @@ const other: Fixture = {
   name: 'fake-other (hostile)',
   map: loadUiMap(readFileSync(new URL('../ui/fake-other.ui.yaml', import.meta.url), 'utf8')),
   async start(scenario: Scenario) {
-    const fake = new FakeOther({ ...(scenario.slow ? { thinkMs: 1500 } : {}), signedIn: !scenario.signedOut, challenge: scenario.challenge ?? false, failAnswer: scenario.siteError ?? false, dropSend: scenario.loseSend ?? false, ...(scenario.answer ? { answer: scenario.answer } : {}) })
+    const fake = new FakeOther({ ...(scenario.slow ? { thinkMs: 1500 } : {}), signedIn: !scenario.signedOut, challenge: scenario.challenge ?? false, failAnswer: scenario.siteError ?? false, dropSend: scenario.loseSend ?? false, ...(scenario.attachChip ? { attachOver: 100 } : {}), ...(scenario.plainBlocks ? { plainBlocks: true } : {}), ...(scenario.answer ? { answer: scenario.answer } : {}) })
     await fake.start()
     opened.push(() => fake.stop())
     return { origin: fake.origin, stop: () => fake.stop(), sent: () => fake.sent.length }
@@ -55,17 +55,15 @@ const chatgpt: Fixture = {
   map: shippedMap(),
   async start(scenario: Scenario) {
     const fake = new FakeChatGpt({
-      thinkMs: scenario.slow ? 1500 : 300, copied: (markdown) => markdown, codeWidget: true,
-      signedIn: !scenario.signedOut, captcha: scenario.challenge ?? false, loadFailure: scenario.siteError ?? false,
-      chatToggleBroken: scenario.forbiddenMode ?? false, modeSwitch: !scenario.noModeSwitch,
+      thinkMs: scenario.slow ? 1500 : 300, copied: (markdown) => markdown, codeWidget: !scenario.plainBlocks,
+      signedIn: !scenario.signedOut, captcha: scenario.challenge ?? false, loadFailure: scenario.siteError ?? false, dropSend: scenario.loseSend ?? false,
+      ...(scenario.attachChip ? { attachOver: 100, attachAddingMs: 300 } : {}),
+      chatToggleBroken: scenario.forbiddenMode ?? false, ...(scenario.workComposer ? { startOnWork: false, workComposer: true } : {}), modeSwitch: !scenario.noModeSwitch, ...(scenario.noModeSwitch ? { startOnWork: false } : {}),
       ...(scenario.answer ? { answer: scenario.answer } : {}),
     })
     await fake.start()
     opened.push(() => fake.stop())
     return { origin: fake.origin, stop: () => fake.stop(), sent: () => fake.sent.length }
-  },
-  unsupported: {
-    'unknown send': 'the fake always shows the user turn the moment it is sent, and has no way to lose the acknowledgement',
   },
 }
 

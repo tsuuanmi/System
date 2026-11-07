@@ -29,7 +29,7 @@ site:
 modes:
   switch: mode.group
   required: mode.chat-selected
-  forbidden: [mode.work-selected]
+  forbidden: [mode.work-selected, mode.work-composer]
   select: mode.select-chat
 
 # WW6b: ChatGPT sometimes leaks a model control token into the visible text, inside a rendered code block
@@ -558,6 +558,8 @@ states:
   # Every answer has its Copy: finished when the Copy buttons are as many as the answers.
   answer.finished: { countAtLeast: { of: turn.assistant.done, as: turn.assistant } }
   mode.chat-selected: { anyOf: [{ attr: { of: mode.chat, name: aria-pressed, equals: 'true' } }, { visible: temporary.off }] }
+  # The composer's own label names Work (Codex quota) whatever the switch shows: the check that was code in the driver.
+  mode.work-composer: { attr: { of: composer.input, name: aria-label, matches: '\bWork\b' } }
   mode.work-selected: { attr: { of: mode.work, name: aria-pressed, equals: 'true' } }
   turn.running: { visible: composer.stop }
   # Nothing generating and nothing open: the page can be kept for the session's next turn.

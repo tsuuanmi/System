@@ -40,6 +40,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
         url: https://chatgpt.com/
         executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
         timeouts: {load: 60, answer: 900, stable: 3}   # seconds; also launch (30) and mode (the UI map's own, 15)
+        procedures: legacy                     # or generic: the page logic of an attempt (see below)
 ```
 
 ## Accounts and attempts
@@ -170,6 +171,32 @@ that outlives `close()` for 3 s is killed and the stage fails, saying so. A UI
 change is a change to the driver's map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
 not to this Runtime. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.
+
+**Which page logic (`procedures`, WW2-iii).** `legacy` (the default) is System 1's ChatGPT
+driver, as above. `generic` runs the same attempt through the generic Procedures
+([web-driver](../web-driver/README.md#generic-procedures-ww2-ii-new-here)) bound to the ChatGPT map:
+`checkAuth`, `openChat` (a temporary chat when `temporaryChat`), `ensureMode`,
+`insertInstructions`, `attachText` (the body, when the prompt has two parts), `send`,
+`waitForAnswer`, `readAnswer`, so the two can be compared on the real site. Anything but
+`legacy` or `generic` makes the account `unavailable`. Everything around the page logic is
+the same: launch, profile preparation, the one-tab invariant, the stages and their names
+(the evidence adds `procedures: generic`), the outputs filled from labelled rendered blocks
+and then the rendered text, leaked tokens, the `maxOutsideChars` guard, the
+`conversation@1` record, cancel and the time limit. What `generic` does differently:
+- A `send` the page never shows is `unknown`: the attempt fails as "send outcome unknown:
+  not resent" and nothing is sent again (the legacy driver counts a click that threw as
+  submitted and goes on to wait). A site error keeps "site error: the answer did not load
+  (retryable)".
+- There is no Markdown: the Procedures never press Copy, so the text is the page's rendered
+  text, an output comes from a rendered block that carries its name or from fences in that
+  text, `response.md` is that text, and `links.json` holds the links' targets.
+- No model is selected or read back (the `conversation@1` has none), and the wait has no
+  stall clock, only its deadline (`timeouts.answer`).
+- `outsideChars` counts the page text outside the label and code of the blocks that fill
+  outputs.
+`chatgpt.test.ts` runs for both values (`chatgpt-generic.test.ts` sets `generic` and loads
+it again); the few tests that need Copy's Markdown or the model picker are skipped for
+`generic`, each saying why. The legacy path stays until the two have been compared live.
 
 **Login** (`system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
 operator-only operations `workers.login`, `workers.loginRemote` and
