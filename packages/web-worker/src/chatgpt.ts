@@ -648,7 +648,8 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     evidence.end('close', await survivor())
     note(`evidence ${evidence.json()}`)
     const logId = await putFile(Buffer.from(`${log.join('\n')}\n`), 'text/plain')
-    if (result.status !== 'succeeded') result.partial = { ...result.partial, evidence: await putFile(Buffer.from(evidence.json()), 'application/json') }
+    // Kept whatever the status: a succeeded attempt reports it beside its outputs (the controller records `partial` for it too).
+    result.partial = { ...result.partial, evidence: await putFile(Buffer.from(evidence.json()), 'application/json') }
     return { ...result, log: logId, executor }
   }
   /** The limit each stage runs under, in seconds; none known for the stages that have no clock of their own. */
@@ -779,7 +780,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     if (outside > web.maxOutsideChars) {
       return finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref}: the answer continues outside its output blocks (${outside} characters): an output may be cut short` })
     }
-    return finish({ status: 'succeeded', outputs: { ...outputs, conversation: conversation.id } })
+    return finish({ status: 'succeeded', outputs: { ...outputs, conversation: conversation.id }, partial: { conversation: conversation.id } })
   } catch (error) {
     if (request.signal.aborted) return finish({ status: 'cancelled', outputs: {}, reason: 'cancelled; the browser was closed' })
     if (timedOut) return finish({ status: 'failed', outputs: {}, reason: `attempt exceeded its time limit of ${limit} minutes` })

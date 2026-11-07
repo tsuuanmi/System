@@ -695,6 +695,16 @@ test('a launch that fails is recorded as such; the record exists before Chrome s
   assert.equal((await evidenceOf(artifacts, result)).stages[0].error, 'Chrome exited')
 })
 
+test('a succeeded attempt reports its evidence and conversation beside its outputs', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result } = await run({}, ['report'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.deepEqual(Object.keys(result.partial ?? {}).sort(), ['conversation', 'evidence'])
+  assert.equal(result.partial!.conversation, result.outputs.conversation)
+  const evidence = await evidenceOf(artifacts, result)
+  assert.ok(evidence.stages.some((stage: { stage: string }) => stage.stage === 'launch'))
+  assert.equal(conversationOf(artifacts, result, 'partial').content.parts.length, 2)
+})
+
 test('the evidence says which page logic ran the attempt', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result } = await run({}, ['report'])
   assert.equal(result.status, 'succeeded', result.reason)

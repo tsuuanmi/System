@@ -6,7 +6,7 @@
 //
 //   tools/web-canary                       run it on every chatgpt-web Account, one at a time
 //   tools/web-canary --task                store the canary Task and print its Artifact ID
-//   tools/web-canary --report [--since T]  each run classified, the Worker step rate and the WW gate (exit 3: not holding)
+//   tools/web-canary --report [--since T]  each run classified, the Worker step rate, the launch and wait times per Account and the WW gate (exit 3: not holding)
 import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -136,9 +136,37 @@ function runsOf(input, since) {
     const admitted = record.events[0]
     if (admitted.input !== input || record.state.status === 'running') continue
     if (since && Date.parse(admitted.at) < since) continue
-    runs.push({ workId, at: admitted.at, account: admitted.worker ?? 'unknown', ...classify(record) })
+    runs.push({ workId, at: admitted.at, account: admitted.worker ?? 'unknown', evidence: record.state.steps[WORKER_STEP]?.partial?.evidence, ...classify(record) })
   }
   return runs.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+}
+
+/** The value at fraction `q` of the sorted `values` (nearest rank). */
+const quantile = (values, q) => values[Math.max(0, Math.ceil(q * values.length) - 1)]
+
+/** Median and p95 of the launch and wait stages per Account, from the evidence each attempt reports; runs without evidence are counted apart. */
+function stageTimes(runs) {
+  const times = new Map()
+  const without = new Map()
+  for (const run of runs) {
+    if (!run.evidence) {
+      without.set(run.account, (without.get(run.account) ?? 0) + 1)
+      continue
+    }
+    const read = sys(['artifact', 'cat', run.evidence])
+    if (read.status !== 0) continue
+    const evidence = JSON.parse(read.stdout)
+    const byStage = times.get(run.account) ?? { launch: [], wait: [] }
+    for (const stage of evidence.stages ?? []) if (stage.stage in byStage && typeof stage.elapsedMs === 'number') byStage[stage.stage].push(stage.elapsedMs / 1000)
+    times.set(run.account, byStage)
+  }
+  process.stdout.write('stage times (s, median / p95 of runs with evidence)\n')
+  for (const name of [...new Set([...times.keys(), ...without.keys()])].sort()) {
+    const byStage = times.get(name) ?? { launch: [], wait: [] }
+    const cell = (list) => (list.length ? `${quantile([...list].sort((a, b) => a - b), 0.5).toFixed(1)} / ${quantile([...list].sort((a, b) => a - b), 0.95).toFixed(1)} (n ${list.length})` : '-')
+    const missing = without.get(name) ? `  (${without.get(name)} without evidence)` : ''
+    process.stdout.write(`  ${name.padEnd(18)} launch ${cell(byStage.launch)}  wait ${cell(byStage.wait)}${missing}\n`)
+  }
 }
 
 function report(since) {
@@ -146,6 +174,7 @@ function report(since) {
   const older = OLDER_QUESTIONS.map((text) => runsOf(taskFor(text), since)).flat()
   process.stdout.write('canary (current)\n')
   const { names, total } = section(current)
+  stageTimes(current)
   if (older.length) {
     process.stdout.write('\nolder canary version (not in the gate)\n')
     section(older)
