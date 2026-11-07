@@ -93,7 +93,7 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
     assert.equal(tool.inputSchema.type, 'object')
   }
   const submit = tools.find((t) => t.name === 'work.submit')!
-  assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'goal', 'input', 'uses', 'workflow'])
+  assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'goal', 'input', 'uses', 'worker', 'workflow'])
   for (const closed of ['approval.decide', 'credentials.set', 'conversation.add', 'goal.new']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
 })
 

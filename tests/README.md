@@ -44,6 +44,10 @@ nothing else.
   producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).
 - [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
   one Research Work on the operator's signed-in `chatgpt-web/default` profile.
+- [web-canary.test.ts](web-canary.test.ts) — WW4: the canary Task has the same
+  Artifact ID every time, `work submit --worker` refuses an unregistered Worker, and
+  `tools/web-canary` runs and reports (counts, first failing stage, the WW gate)
+  through a fake `system` (`SYSTEM_BIN`) with scripted records; the timer units' fields.
 - [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
   accounts (CLI pointed at the fake): two proposals by different providers
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal

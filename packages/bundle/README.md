@@ -31,6 +31,15 @@ when it provides a service and is on by default (`web-worker` is off, so it is n
 there), and to `EXPECTED_ROWS` in the [smoke test](../../tests/smoke.test.ts). `web-worker`
 is listed before `agents`, which reads its service when it starts.
 
+## Web canary units
+
+[`system-web-canary.service`](system-web-canary.service) and
+[`.timer`](system-web-canary.timer) are templates (`@NODE@`, `@REPO@`, `@PATH@`)
+for a systemd user timer that runs [`tools/web-canary`](../../tools/web-canary)
+every six hours, with a random delay and a catch-up after downtime. They are not
+part of the profile and `system init` does not install them; the
+[runbook](../../docs/operations/runbook.md#the-web-canary) says how.
+
 ## Disabling a row
 
 Rows are disabled in the profile's own patch, `$DSH_HOME/profiles/system/cordis.patch.yml`,

@@ -150,6 +150,11 @@ test('every method of the table round-trips over the socket', async () => {
   await call('work.run', { workId: second.id })
   assert.equal((await terminal(client, second.id)).status, 'succeeded')
 
+  const pinned = await call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/claude' }) as { id: string; events: { type: string; worker?: string }[] }
+  assert.equal(pinned.events[0]!.worker, 'fake/claude')
+  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'nobody/default' }), /no enabled Worker nobody\/default/)
+  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/codex' }), /fake\/codex does not provide code-write/)
+
   const parts = { response: { name: 'r.md', data: b64('an answer'), mediaType: 'text/markdown' }, attachments: [] }
   const preview = await call('conversation.preview', { parts }) as { parts: { role: string }[]; warnings: string[] }
   assert.deepEqual(preview.parts.map((p) => p.role), ['response'])
@@ -165,7 +170,7 @@ test('every method of the table round-trips over the socket', async () => {
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   const status = await call('host.status') as { works: number; recordBytes: number }
-  assert.equal(status.works, 4)
+  assert.equal(status.works, 5)
   assert.ok(status.recordBytes > 0)
 
   assert.deepEqual([...called].sort(), Object.keys(tableOf(table)).sort(), 'a method of the table has no round trip in this test')

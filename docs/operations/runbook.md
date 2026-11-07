@@ -300,6 +300,49 @@ it to another machine or hand it to another Worker, and delete the directory to
 sign the account out of System. An attempt that finds the page in an unknown
 state fails after the `load` timeout with that reason and a screenshot.
 
+## The web canary
+
+`tools/web-canary` is the reliability gate of the `chatgpt-web` Workers read from
+System's own records: it stores the fixed Research question ("What is the capital
+of France? Cite one page that says so.") as a `task@1` (the same Artifact ID every
+time) and runs `workflows/research.yaml` on it, citation check included, once on
+each registered `chatgpt-web` Account, one after the other, with
+`system work submit --worker <ref>`. It prints one line per Work: Account, Work
+ID, status, seconds. Nothing is stored outside System's records.
+
+```
+tools/web-canary                              # run it now
+tools/web-canary --task                       # the canary Task's Artifact ID
+tools/web-canary --report [--since <ISO>]     # read the records
+```
+
+`--report` reads the finished Works whose input is the canary Task and prints,
+per Account and in total, `runs`, `accepted`, `failed` (with the first failing
+stage and its reason) and the pass rate, then `gate: holds` or `gate: does not
+hold (...)`: at least 50 runs over both Accounts and at least 95% accepted. It
+exits 3 when the gate does not hold. Run it after each merge into `web-workers`
+(`tools/web-canary`), and the timer does so every six hours.
+
+Install the timer as a user unit (it needs the Host running; it is not installed
+by `system init`):
+
+```
+mkdir -p ~/.config/systemd/user
+for u in service timer; do
+  sed -e "s|@REPO@|$PWD|g" -e "s|@NODE@|$(command -v node)|" -e "s|@PATH@|$PATH|" \
+    packages/bundle/system-web-canary.$u > ~/.config/systemd/user/system-web-canary.$u
+done
+systemctl --user daemon-reload
+systemctl --user enable --now system-web-canary.timer
+```
+
+Read it: `systemctl --user list-timers system-web-canary`, `journalctl --user -u
+system-web-canary` for the lines of the last runs, and `tools/web-canary --report`
+for the numbers. Start a run now with `systemctl --user start system-web-canary`;
+stop the series with `systemctl --user disable --now system-web-canary.timer`.
+A Work that fails stays a record: the report counts it, and `system work show <id>`
+says why. Changing the question's text starts a new series (a new Task ID).
+
 ## The dev branch
 
 Parallel Works each pass their own checks; their merges no longer break `dev`

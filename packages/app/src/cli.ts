@@ -68,8 +68,8 @@ type Soon<T> = T | Promise<T>
 
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
-  admitFile(path: string, input: string | undefined, goal?: string): Promise<WorkRecord>
-  admitTask(capabilities: string[], input: string | undefined, goal?: string): Promise<WorkRecord>
+  admitFile(path: string, input: string | undefined, goal?: string, worker?: string): Promise<WorkRecord>
+  admitTask(capabilities: string[], input: string | undefined, goal?: string, worker?: string): Promise<WorkRecord>
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
@@ -109,7 +109,7 @@ export interface RemoteLoginView {
 
 export interface WorkersView {
   registered: string[]
-  accounts: { ref: string; available: boolean; reason: string; version?: string }[]
+  accounts: { ref: string; runtime: string; available: boolean; reason: string; version?: string }[]
 }
 
 /** What the thin client's commands run against: the Host, over its socket. */
@@ -220,7 +220,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         const { registered, accounts } = await host.workers()
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
-          io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}\n`)
+          io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`} (${a.runtime})\n`)
         }
         return 0
       })
@@ -410,15 +410,16 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
     .option('--goal <id>', 'count the Work toward this Goal: its context goes to the Task and its budget limits admission')
+    .option('--worker <ref>', 'only this Worker may take its Worker steps (see system workers)')
     .option('--no-run', 'admit only')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
-    .action((options: { workflow?: string; capability?: string[]; input?: string; goal?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
+    .action((options: { workflow?: string; capability?: string[]; input?: string; goal?: string; worker?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
         const admitted = options.workflow
-          ? await commands.admitFile(options.workflow, options.input, options.goal)
-          : await commands.admitTask(options.capability!, options.input, options.goal)
+          ? await commands.admitFile(options.workflow, options.input, options.goal, options.worker)
+          : await commands.admitTask(options.capability!, options.input, options.goal, options.worker)
         io.out(`${admitted.id}\n`)
         if (!options.run) return 0
         return exitOf(await commands.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))

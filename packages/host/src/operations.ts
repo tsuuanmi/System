@@ -154,14 +154,14 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent.',
-      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), commandId }).strict()
+      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step.',
+      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), worker: z.string().min(1).optional(), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
         const available = services.capabilities.available()
         const admission: Admission = p.workflow
-          ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses, (name) => services.workflowFile(name, p.input))), input: p.input, goal: p.goal, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
-          : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, caller, source: { kind: 'direct-task' } }
+          ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses, (name) => services.workflowFile(name, p.input))), input: p.input, goal: p.goal, worker: p.worker, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
+          : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, worker: p.worker, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId })
       },
       scope: ownGoal('work.submit'),

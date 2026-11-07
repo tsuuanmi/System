@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+// The Website Worker canary (PLAN milestone WW, step 4): the same fixed Research
+// question on each registered chatgpt-web Account, and a report read from System's
+// own Work records. It uses only `bin/system` (SYSTEM_BIN overrides it, for tests)
+// and stores nothing of its own.
+//
+//   tools/web-canary                       run it on every chatgpt-web Account, one at a time
+//   tools/web-canary --task                store the canary Task and print its Artifact ID
+//   tools/web-canary --report [--since T]  runs, accepted, failed and the WW gate (exit 3: not holding)
+import { spawnSync } from 'node:child_process'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const system = process.env.SYSTEM_BIN || join(repo, 'bin', 'system')
+const workflow = join(repo, 'workflows', 'research.yaml')
+
+// A question with a stable answer and one public page that states it. The text is
+// the Task's identity: `system task new` stores it content-addressed, so the
+// Artifact ID is the same every time. Changing a word starts a new series.
+const QUESTION = 'What is the capital of France? Cite one page that says so.'
+// The WW gate: at least this many runs over both Accounts, at least this share accepted.
+const GATE_RUNS = 50
+const GATE_RATE = 0.95
+const GATE_ACCOUNTS = 2
+const SUBMIT_TIMEOUT_MS = 30 * 60 * 1000
+
+function fail(message) {
+  process.stderr.write(`web-canary: ${message}\n`)
+  process.exit(1)
+}
+
+function sys(args, timeout = 120_000) {
+  const ran = spawnSync(system, args, { encoding: 'utf8', timeout })
+  if (ran.error) fail(`cannot run ${system}: ${ran.error.message}`)
+  return ran
+}
+
+function ok(args) {
+  const ran = sys(args)
+  if (ran.status !== 0) fail(`system ${args.join(' ')} failed: ${(ran.stderr || ran.stdout).trim()}`)
+  return ran.stdout
+}
+
+const canaryTask = () => ok(['task', 'new', '--text', QUESTION]).trim().split('\n').at(-1)
+
+/** The Accounts of the chatgpt-web runtime that are registered Workers, from `system workers`. */
+function accounts() {
+  const lines = ok(['workers']).split('\n')
+  const registered = (lines.find((l) => l.startsWith('registered:')) ?? '').slice('registered:'.length).split(',').map((r) => r.trim()).filter(Boolean)
+  return lines.flatMap((line) => {
+    const [ref] = line.trim().split(/\s+/)
+    return /\(chatgpt-web\)\s*$/.test(line) && registered.includes(ref) ? [ref] : []
+  })
+}
+
+const show = (workId) => JSON.parse(ok(['work', 'show', workId]))
+const seconds = (record) => (Date.parse(record.events.at(-1).at) - Date.parse(record.events[0].at)) / 1000
+
+function runAll() {
+  const refs = accounts()
+  if (!refs.length) fail('no registered chatgpt-web Account (see system workers)')
+  const input = canaryTask()
+  for (const ref of refs) {
+    const submitted = sys(['work', 'submit', '--workflow', workflow, '--input', input, '--worker', ref], SUBMIT_TIMEOUT_MS)
+    const workId = submitted.stdout.trim().split('\n')[0]
+    if (!workId?.startsWith('work:')) {
+      process.stdout.write(`${ref}  -  refused  0.0\n`)
+      process.stderr.write(`web-canary: ${ref}: ${(submitted.stderr || submitted.stdout).trim()}\n`)
+      continue
+    }
+    const record = show(workId)
+    process.stdout.write(`${ref}  ${workId}  ${record.state.status}  ${seconds(record).toFixed(1)}\n`)
+  }
+}
+
+/** Where a Work stopped: its first failed step, else its status, and why. */
+function failure(record) {
+  const stage = Object.entries(record.state.steps).find(([, s]) => s.state === 'failed')?.[0] ?? record.state.status
+  return record.state.reason ? `${stage}: ${record.state.reason}` : stage
+}
+
+function report(since) {
+  const input = canaryTask()
+  const listed = ok(['work', 'list']).split('\n').filter(Boolean).map((line) => line.split(/\s+/)[0])
+  const runs = []
+  for (const workId of listed) {
+    const record = show(workId)
+    const admitted = record.events[0]
+    if (admitted.input !== input || record.state.status === 'running') continue
+    if (since && Date.parse(admitted.at) < since) continue
+    runs.push({ at: admitted.at, account: admitted.worker ?? 'unknown', accepted: record.state.status === 'succeeded', failure: record.state.status === 'succeeded' ? undefined : failure(record) })
+  }
+  runs.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  const line = (name, set) => {
+    const accepted = set.filter((r) => r.accepted).length
+    const failed = set.filter((r) => !r.accepted)
+    const rate = set.length ? `${((accepted / set.length) * 100).toFixed(1)}%` : '-'
+    const first = failed[0] ? ` (${failed[0].failure})` : ''
+    process.stdout.write(`${name.padEnd(18)} runs ${set.length}  accepted ${accepted}  failed ${failed.length}${first}  ${rate}\n`)
+    return { accepted, rate: set.length ? accepted / set.length : 0 }
+  }
+  const names = [...new Set(runs.map((r) => r.account))].sort()
+  for (const name of names) line(name, runs.filter((r) => r.account === name))
+  const total = line('total', runs)
+  const problems = []
+  if (runs.length < GATE_RUNS) problems.push(`${runs.length} of ${GATE_RUNS} runs`)
+  if (total.rate < GATE_RATE) problems.push(`${(total.rate * 100).toFixed(1)}% accepted, needs ${GATE_RATE * 100}%`)
+  if (names.length < GATE_ACCOUNTS) problems.push(`only ${names.length} Account${names.length === 1 ? '' : 's'}`)
+  process.stdout.write(problems.length ? `gate: does not hold (${problems.join('; ')})\n` : 'gate: holds\n')
+  process.exit(problems.length ? 3 : 0)
+}
+
+const args = process.argv.slice(2)
+if (args[0] === '--task') process.stdout.write(`${canaryTask()}\n`)
+else if (args[0] === '--report') {
+  const at = args.indexOf('--since')
+  const since = at < 0 ? undefined : Date.parse(args[at + 1] ?? '')
+  if (at >= 0 && Number.isNaN(since)) fail('--since needs an ISO date, such as 2026-11-08T00:00:00Z')
+  report(since)
+} else if (args.length) fail('usage: web-canary [--task | --report [--since <ISO>]]')
+else runAll()

@@ -1,0 +1,11 @@
+# The Website Worker canary (PLAN milestone WW, step 4): one run of tools/web-canary.
+# A template: the runbook's `sed` fills the @...@ marks; do not install it as it is.
+[Unit]
+Description=System web canary: the fixed Research Task on each chatgpt-web Account
+
+[Service]
+Type=oneshot
+ExecStart=@NODE@ @REPO@/tools/web-canary
+Environment=PATH=@PATH@
+# Two Works one after the other, each within its own 30 minute limit.
+TimeoutStartSec=2h

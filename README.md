@@ -92,6 +92,7 @@ bin/system work show <work>          # events, verdicts, the published branch an
 bin/system approve <work>            # held Work: a human at a terminal only
 bin/system work cancel <work> --wait
 bin/system work retry <work> [--step implement] [--worker codex/default]
+bin/system work submit ... --worker codex/default   # only that Worker takes its Worker steps
 ```
 
 Research takes a question as its input

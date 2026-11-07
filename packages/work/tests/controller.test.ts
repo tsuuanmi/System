@@ -286,6 +286,35 @@ test('retry is refused for running or succeeded Work and for an unknown Worker',
   await assert.rejects(() => fresh.controller.retry(failed.id, { worker: 'nobody', caller, reason: 'x' }), /no enabled Worker nobody/)
 })
 
+test('a Work submitted for one Worker runs its Worker steps only there, and is refused for one that cannot', async () => {
+  const h = harness()
+  const ran: string[] = []
+  const register = (ref: string, capabilities: string[]) => h.capabilities.registerWorker({
+    ref, capabilities,
+    async run(request) {
+      ran.push(ref)
+      const out = id(`${ref}/${request.attemptId}`)
+      h.specs.stored.add(out)
+      return { status: 'succeeded', outputs: Object.fromEntries(request.outputs.map((slot) => [slot, out])) }
+    },
+  })
+  register('first', ['research', 'web-search'])
+  register('plain', ['code-write'])
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
+  const base = { spec, input: await input(h), caller, source: { kind: 'workflow-file' as const } }
+  await assert.rejects(() => h.controller.admit({ ...base, worker: 'nobody' }), /no enabled Worker nobody/)
+  await assert.rejects(() => h.controller.admit({ ...base, worker: 'plain' }), /plain does not provide research, web-search for step investigate/)
+  const admitted = await h.controller.admit({ ...base, worker: 'first' })
+  assert.equal(admitted.events[0]!.type === 'admitted' && admitted.events[0]!.worker, 'first')
+  const done = await h.controller.run(admitted.id)
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(ran, ['first'], 'the Worker "fake", registered first, did not take the step')
+  assert.equal(h.controller.replay(admitted.id).matches, true)
+  // Without the pin the first registered Worker that fits takes the step.
+  const free = await h.controller.run((await h.controller.admit(base)).id)
+  assert.equal(free.events.find((e) => e.type === 'dispatched')?.type === 'dispatched' && free.events.find((e) => e.type === 'dispatched')!.selected, 'fake')
+})
+
 test('a cancel during an attempt keeps its partial output, and retry hands it on as previous', async () => {
   const h = harness({
     worker: {

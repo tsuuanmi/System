@@ -72,6 +72,12 @@ Artifact when no `context` is given.
 
 ## Cancel and retry
 
+`system work submit --worker <ref>` pins the Work to one Worker: `admit` refuses
+a Worker that is not registered or lacks a Worker step's capabilities, and
+records it in the `admitted` event, so replay and `work show` say it. Every
+Worker step is then routed only there; `retry --worker` names another for the
+step it takes over.
+
 The Host owns every Work, so a Work's lock and its cancel request live in
 memory (`MemoryControl`). A cancel of a running Work is a request its run polls
 every 250 ms: the run aborts its attempt, records `observed` (`cancelled`, with

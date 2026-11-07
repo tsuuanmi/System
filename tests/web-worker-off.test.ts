@@ -51,7 +51,8 @@ test('system workers reports a chatgpt-web account unavailable because the row i
   assert.equal(out.status, 0, out.stderr)
   assert.match(out.stdout, /registered: claude-code\/default, codex\/default\n/)
   assert.match(out.stdout, /chatgpt-web\/default\s+unavailable\s+- the web-worker row is disabled/)
-  assert.match(out.stdout, /claude-code\/default\s+available/)
+  assert.match(out.stdout, /claude-code\/default\s+available.*\(claude-code\)\n/)
+  assert.match(out.stdout, /chatgpt-web\/default\s+unavailable.*\(chatgpt-web\)\n/, 'the runtime ends each account line: tools/web-canary reads it')
 })
 
 test('login and the remote viewer say the row is disabled', () => {
