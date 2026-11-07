@@ -86,11 +86,12 @@ headed-browser test files of WW (`chatgpt`, `remote-login`, `driver`) it takes
 required checks are back under 3 minutes. Smoke took 85 s against 75 s on F
 (PLAN, the growth at OC).
 
-**The merge queue on github.com:** on `web-workers` System merged two Works by a
-leased push, `work:a62a77b5` as c92698f and `work:12dc89aa` as 17e8e31. Both
-already held the tip, so they went in as they were. The path that merges with
-a moved tip and checks again has run only against a local remote
-(`packages/effects/tests/github.test.ts`), not against GitHub.
+**The merge queue on github.com:** on `web-workers` System merged Works by a
+leased push. `work:a62a77b5` (c92698f) and `work:12dc89aa` (17e8e31) already
+held the tip and went in as they were. `work:6503fb30` was checked on bbc0cfb
+while the branch had moved to 17e8e31: System merged the two, checked the merge
+and pushed it as 38b1d71, whose parents are 17e8e31 and bbc0cfb ("checked on
+its merge with 17e8e31a502c"). Both paths have run against GitHub.
 
 **Defects found and fixed in this range** (besides those of the first report):
 - a parallel merge of three passing changes turned `dev` red (L1, #33): two
@@ -159,7 +160,6 @@ content is on `dev`.
   accepted that risk for your own account. System stops at a sign-in wall or a
   CAPTCHA.
 - **Not exercised for real:**
-  - the merge queue's merge-and-check-again path against GitHub;
   - the attempt budget against a real Claude Code attempt;
   - live progress reported by a real Claude Code attempt to the live Host;
   - an Orchestrator driven by a real agent over `system mcp`.
