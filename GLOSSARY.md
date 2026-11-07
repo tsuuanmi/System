@@ -54,6 +54,11 @@ An aim the operator writes down, with its scope and budget, that an
 Orchestrator works toward; every Work it creates names its Goal.
 _Avoid_: project, charter, epic, campaign
 
+**Release**:
+The operator merging `dev` into `main` after reading a release report. System
+never makes a Release.
+_Avoid_: deploy, ship; checkpoint (a milestone's internal gate)
+
 ### Outside material
 
 **Conversation**:
@@ -70,3 +75,18 @@ _Avoid_: citation, scrape
 **Website Worker**:
 A Worker that System drives on a website where the operator is signed in.
 _Avoid_: browser agent, conversation import
+
+**Site**:
+A web product a Website Worker uses, such as chatgpt.com; each Site belongs to
+a Provider.
+_Avoid_: provider (for the product), website type
+
+**UI map**:
+The configuration of one Site: its elements, its page states, and how each
+Procedure is done on its interface. A new Site is a new UI map, not new code.
+_Avoid_: selectors file, driver
+
+**Procedure**:
+An operation every Site has, such as opening a chat, sending, waiting for the
+answer or reading it; the UI map says how it is done on a given Site.
+_Avoid_: action, step (a step is part of a Workflow)

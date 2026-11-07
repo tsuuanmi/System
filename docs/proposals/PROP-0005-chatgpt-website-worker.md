@@ -3,7 +3,7 @@ id: PROP-0005
 type: proposal
 status: accepted
 created: 2026-11-06
-summary: A Website Worker that runs a step in the operator's signed-in ChatGPT web session through a genuine headed Chrome (patchright-core), returns the answer and its cited links as Artifacts, and records each exchange as a conversation; built on the Host after milestone H's release R1.
+summary: A Website Worker that runs a step in the operator's signed-in ChatGPT web session through a genuine headed Chrome (patchright-core), returns the answer and its cited links as Artifacts, and records each exchange as a conversation; built on the Host after milestone H's checkpoint R1.
 evidence: [RES-0008]
 related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 ---
@@ -32,6 +32,9 @@ fix V1; their content is used here as reference.
   Other risks are Cloudflare bot checks, UI changes, and a signed-in browser
   profile that must be guarded like a password. **The operator accepted these
   risks for their own account.**
+  On 2026-11-07 the operator extended this to both accounts
+  (`chatgpt-web/default` and `chatgpt-web/second`) and to regular unattended
+  use, scheduled canaries included (milestone WW).
 
 Because the ChatGPT-specific drivers have no license, System does not copy
 their code. It may learn from their approach, such as recognising that an

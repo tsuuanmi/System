@@ -6,7 +6,7 @@ reviewed: 2026-11-07
 
 # Runtime integrity: Work ownership, storage and recovery
 
-**Status: the old mechanisms are gone (R1).** Until release R1 every `system`
+**Status: the old mechanisms are gone (R1).** Until checkpoint R1 every `system`
 command booted its own DSH host, and the hosts coordinated through files: a
 per-Work lock with a takeover mutex, and a write fence against stale store
 snapshots. Five defects came from that model on 2026-11-06 (an empty lock,

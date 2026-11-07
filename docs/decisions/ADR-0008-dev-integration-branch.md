@@ -45,6 +45,18 @@ configured, can still refuse the merge (HTTP 405); that is recorded as
 `failed` and not retried. A pull request for the `system/<work>` branch that
 targets any other base is never merged or retargeted: the outcome is `failed`.
 
+## Amendment (2026-11-07): a feature integration branch
+
+The operator opened `web-workers` for the Website Worker programme, where
+System develops Website Workers using Website Workers (PLAN milestone WW).
+While it runs, `dev` takes no changes and the Host runs `web-workers`.
+
+- `mergeInto` is `[dev, web-workers]`. System's Work for the programme
+  publishes with base `web-workers` and may merge into it under decision 2's
+  conditions, unchanged.
+- **Only the operator merges `web-workers` into `dev`**, when milestone WW's
+  gate holds. The base for System's Work goes back to `dev` with that merge.
+
 ## Consequences
 
 - System's verified changes reach `dev` without waiting. The operator

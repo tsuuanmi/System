@@ -376,7 +376,7 @@ written first.
     waits for a human at a terminal; an agent or a pipe cannot approve`
     (`tests/publish.test.ts`);
   - [x] the guarantees table in host.md has a passing test per row, but the
-    last: `Slots hold (R2)` belongs to H5 and release R2, not R1. The rows the
+    last: `Slots hold (R2)` belongs to H5 and checkpoint R2, not R1. The rows the
     deleted tests held are now `One Host per home` and `No change from a stale
     copy`;
   - [x] growth measures are recorded: the budget table above. The core grew
@@ -445,7 +445,7 @@ and orchestrator scope; O3 completion notices.
   growth table, column "O, before → after the pass").
 - [ ] Later, not in O: an Orchestrator that System spawns on a schedule.
 
-### W — ChatGPT Website Worker (PROP-0005, after H release R1)
+### W — ChatGPT Website Worker (PROP-0005, after H checkpoint R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
   (accepted 2026-11-07). The operator accepted the Terms-of-Use risk for their own account
@@ -629,6 +629,75 @@ and orchestrator scope; O3 completion notices.
   variant in `workflows/experiments/` routes `idea-a` and `idea-b` to the two
   ChatGPT accounts through role capabilities. Compare it with the Claude/Codex
   default on real briefs, judged by the Sonnet evaluator (B3's method).
+
+### Decisions of 2026-11-07 (grilling after the parallel batch)
+
+- **Merge queue.** System merges into an integration branch only when the
+  required checks passed on the merge result with the branch's current tip,
+  one merge at a time through the commit lane; a branch that moved after the
+  checks is rebased and checked again (the bors "not rocket science" rule, as
+  GitHub's merge queue does). Until it exists, one Work runs at a time.
+- **Core budget.** The +29.8% core overage is behaviour (receipts, slots,
+  scheduler, Goal folds), justified at O. The baseline moves to O's 3,008
+  lines, and +20% per milestone counts from there.
+- **Website Workers first:** real-site run, selectors, then additive Account
+  config (B), then W3. Done through milestone WW below.
+- **Dogfood the Orchestrator** with a `goal@1` per milestone, through
+  `system mcp --goal`, once WW's loop is running.
+- **Release** (GLOSSARY): the operator merges `dev` into `main` after each
+  milestone, reading a release report; H's R1 and R2 are now called
+  checkpoints.
+
+### WW — Website Workers that work, built with Website Workers (branch `web-workers`)
+
+The operator's decisions (2026-11-07). The branch `web-workers` is where
+System develops Website Workers by using them; `dev` takes no changes
+meanwhile, the Host runs `web-workers`, and only the operator merges it into
+`dev` ([ADR-0008 amendment](docs/decisions/ADR-0008-dev-integration-branch.md)).
+Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
+
+- **Loop for each step.** (1) Brainstorm: `idea-a` on `chatgpt-web/default`,
+  `idea-b` on `chatgpt-web/second`, Claude synthesis; the operator's agent
+  chooses. (2) Implement: Claude Sonnet, required checks, merge into
+  `web-workers`. (3) Second opinion: a ChatGPT account reviews the diff, as a
+  reference Artifact, never a verifier.
+- **Design.**
+  - One Runtime `web` for every Site. Accounts are `web/<site>/<name>`
+    with `site: chatgpt`; the old names go.
+  - Code holds the generic Procedures (check-auth, open, ensure-mode,
+    new-temporary-chat, insert, send, wait-complete, read-answer, read-links)
+    and the UI engine; everything Site-specific is in the Site's UI map:
+    selectors, the mode to select and the mode refused (ChatGPT's Work), how
+    a temporary chat starts, what "done" looks like, the code-block shape, how
+    a challenge shows. One Site (ChatGPT) now; Gemini later.
+  - Resources: no restored tabs; one long-lived Chrome per Account in the
+    Host, a tab per attempt; one shared Xvfb; Chrome closed after an idle
+    time. One attempt per Account at a time; more Accounts for more
+    parallelism, and two tabs per Account only after measuring.
+  - Self-heal stays off: fail fast with evidence. A deliberate difference
+    from System 1 (web-driver README).
+- **Canary.** A `canary` Workflow (a Research question with a known answer)
+  runs on each Account after each merge into `web-workers` and every six
+  hours (a systemd user timer).
+- **Steps.**
+  1. [ ] Known defects: restored tabs (14 tabs and 5.5 GB on `default`,
+     measured 2026-11-07); the Chat/Work switch sometimes not found; the
+     1.5 s Chrome launch timeout in `chatgpt.test.ts` (flaky under load); the
+     Worker rules no longer forbid the lockfile.
+  2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
+  3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
+  4. [ ] Canary.
+  5. [ ] Output contract bake-off: fences, per-output sentinels with the
+     attempt id, JSON.
+  6. [ ] Account supervision: preflight, spacing, cooldown, an
+     `AUTH_REQUIRED` notice for re-login.
+- **Gate to merge into `dev`.** Canary ≥95% over ≥50 attempts across both
+  Accounts; zero wrong-Account, wrong-mode or malformed-output acceptances;
+  operator touches other than re-login under 5%; no flaky test; required
+  checks within budget.
+- **Evidence so far.** Brainstorm Work `work:a8aeee38` (this programme's own
+  brief) ran `idea-a` on `default` and `idea-b` on `second` (one launch
+  timeout, retried), synthesis on Claude: every step succeeded.
 
 ## 4. After Brainstorm — future, not current gates
 

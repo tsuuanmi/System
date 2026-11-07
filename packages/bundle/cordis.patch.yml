@@ -55,7 +55,7 @@
       config:
         remote: origin
         base: dev  # System's changes integrate into dev; only the operator merges dev into main (ADR-0008)
-        mergeInto: [dev]  # the base branches System may merge into; any other base refuses a Workflow that merges
+        mergeInto: [dev, web-workers]  # the base branches System may merge into; any other base refuses a Workflow that merges
         apiUrl: https://api.github.com
         tokenRef: GITHUB_TOKEN
 

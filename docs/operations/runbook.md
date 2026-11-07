@@ -10,7 +10,7 @@ covers: [bin/system, bin/service.mjs, packages/app/src/index.ts, packages/app/sr
 How to run the Host of the default home (`~/.dsh`) as a user service, and
 what to do when it does not. The design is in [Host](../architecture/host.md#running-it).
 
-**Status:** release R1. The Host runs as a process and the CLI is its thin
+**Status:** checkpoint R1. The Host runs as a process and the CLI is its thin
 client: every command but `init`, `host` and `doctor` talks to the Host on
 `$DSH_HOME/system/host.sock`, so a Host must run for them. The old mode, where
 each command ran Work in its own process, is gone.
