@@ -3,7 +3,7 @@
  * real Artifact store over in-memory tables.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -254,17 +254,20 @@ test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftove
   const { task, treeId } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  // The leftover is known by the pid the verifier names, never by its name: this machine is shared.
+  let leftover = 0
   try {
     const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
     assert.equal(result.verdict, 'fail')
     assert.match(result.reason, /leaky \(left running: Xvfb pid \d+\)/)
+    leftover = Number(/Xvfb pid (\d+)/.exec(result.reason)![1])
     assert.doesNotMatch(result.reason, /clean/)
     const run = artifacts.get(result.evidence[0]!)
     assert.match(JSON.stringify(run.state === 'stored' && (run.envelope.content as { leftovers: string[] }).leftovers), /Xvfb pid \d+/)
     await new Promise((resolve) => setTimeout(resolve, 300))
-    assert.equal(spawnSync('pgrep', ['-f', '^\\./Xvfb 120$']).status, 1, 'the leftover is stopped')
+    assert.throws(() => process.kill(leftover, 0), 'the leftover is stopped')
   } finally {
-    spawnSync('pkill', ['-f', '^\\./Xvfb 120$'])
+    if (leftover) try { process.kill(leftover, 'SIGKILL') } catch { /* stopped */ }
   }
 })
 

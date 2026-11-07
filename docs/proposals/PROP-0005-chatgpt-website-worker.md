@@ -288,6 +288,13 @@ Fixed, each with a test that failed first:
   `attach`; the evidence records the outcome and the chip count
   ([web-driver README](../../packages/web-driver/README.md),
   [agents README](../../packages/agents/README.md)).
+- **Also found (WW1h, second opinion of WW1c, `work:ce23f210`):** fixed: a failed launch
+  kills only a Chrome this process started (1); a close with no identified process is not
+  `ok` (2); only a known mode can settle (3); each page operation of the mode wait ends at
+  its deadline (4); a late page that will not close fails the one-tab invariant (5); the
+  binding is checked inside the one `read` stage (6); the Xvfb leak test signals only the
+  pid the verifier names (7). A failure names the stage that failed and its own limit
+  ("open: page.goto timed out after 60 s"), not the answer clock.
 - **Not fixed, as risks:** the lock check is not atomic; the `page` handler closes
   legitimate pop-ups; evidence writes that fail are silent; `skip`-gated headed tests
   depend on the environment.

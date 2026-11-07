@@ -263,22 +263,19 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       }
     })
     const reply = await this.staged('wait', () => this.waitForAnswer(page, before, options.signal, options.deadlines, options.conversation === 'persistent' && !options.binding ? options.onBinding : undefined))
-    const { text, blocks } = await this.staged('read', async () => {
+    // The binding is part of the read stage's one record: a failure there is where the attempt failed.
+    const { text, blocks, binding } = await this.staged('read', async () => {
       // Deep research answers with an acknowledgement; the report arrives later in its frame.
       const read = feature === 'deep-research' ? { text: await this.waitForResearch(page, reply, options.signal, options.deadlines), blocks: [] } : await this.markdownOf(page, reply)
       // The site answered with its own usage limit (a map rule `on: answer`, ADR-0034): sent, never
       // resent. Only this answer is looked at, never an earlier one of the conversation.
       if ((await engine.count('turn.assistant')) > 0) await engine.answerErrors((await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
-      return read
-    })
-    if (options.conversation === 'temporary') return { text, blocks, binding: undefined, mode }
-    // Part of the read stage's record: a failure here is where the attempt failed.
-    const binding = await this.staged('read', async () => {
+      if (options.conversation === 'temporary') return { ...read, binding: undefined }
       const found = await this.binding(page)
       if (options.binding !== undefined && found !== options.binding) {
         throw new ProviderError('session_broken', `chatgpt-web: conversation moved from ${options.binding} to ${found}`)
       }
-      return found
+      return { ...read, binding: found }
     })
     return { text, blocks, binding, mode }
   }
@@ -399,20 +396,28 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     const settleMs = this.timeouts.modeSettleMs ?? this.map.settings.modeSettleMs
     const deadline = Date.now() + readyMs
     // The mode is sampled every poll: any change (or the switch going) starts the hold again; the whole wait ends at the deadline.
-    let seen: string | null | undefined
+    let seen: string | undefined
     let since = 0
-    while (Date.now() < deadline) {
-      if ((await engine.count('mode.group')) > 0) {
-        const now = await this.pressed(engine)
-        if (seen === undefined || now !== seen) { seen = now; since = Date.now() }
-        else if (Date.now() - since >= settleMs && Date.now() <= deadline) return
-      } else {
-        seen = undefined
+    // Each page operation ends at the deadline too: one that hangs is a sample that never came (`undefined`). Naming the page's state afterwards gets a one-second window of its own.
+    const bounded = async <T>(run: Promise<T>, until = deadline): Promise<T | undefined> => {
+      let timer: NodeJS.Timeout | undefined
+      try {
+        return await Promise.race([run.catch(() => undefined), new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), Math.max(0, until - Date.now())) })])
+      } finally {
+        clearTimeout(timer)
       }
+    }
+    while (Date.now() < deadline) {
+      const shown = ((await bounded(engine.count('mode.group'))) ?? 0) > 0
+      // Only a mode that is known (pressed or not) can hold: an unreadable one is as good as no switch.
+      const now = shown ? await bounded(this.pressed(engine)) : undefined
+      if (now !== 'true' && now !== 'false') seen = undefined
+      else if (seen === undefined || now !== seen) { seen = now; since = Date.now() }
+      else if (Date.now() - since >= settleMs && Date.now() <= deadline) return
       await sleep(Math.max(0, Math.min(this.timeouts.pollMs, deadline - Date.now())))
     }
-    if (await engine.state('auth.challenge')) throw new ProviderError('challenge', 'chatgpt-web: the site shows a challenge while the Chat/Work switch is awaited; nothing was sent')
-    if (await engine.state('auth.signed-out')) throw new ProviderError('reauth_required', 'chatgpt-web: signed out while the Chat/Work switch was awaited')
+    if (await bounded(engine.state('auth.challenge'), Date.now() + 1000)) throw new ProviderError('challenge', 'chatgpt-web: the site shows a challenge while the Chat/Work switch is awaited; nothing was sent')
+    if (await bounded(engine.state('auth.signed-out'), Date.now() + 1000)) throw new ProviderError('reauth_required', 'chatgpt-web: signed out while the Chat/Work switch was awaited')
     throw new ProviderError('ui_drift', `chatgpt-web: mode unknown: the Chat/Work switch did not appear within ${readyMs / 1000} s (or its mode kept changing); refusing to start a conversation in an unknown mode`)
   }
 

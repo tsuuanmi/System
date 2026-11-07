@@ -151,7 +151,7 @@ changed but the header line.
   waits for the switch, bounded by the map's new `settings.modeReadyMs` (`ui-map@1.5`;
   15 s) and requires the mode it shows to hold for `settings.modeSettleMs`, sampled
   every poll (a site that restores its mode late changes it; a change, even one that
-  comes back, starts the hold again). The whole wait ends at the deadline, and the
+  comes back, starts the hold again; a mode that cannot be read does not count). The whole wait ends at the deadline, each page operation in it too (WW1h), and the
   mode is read again right before the send, after the insert. At the
   deadline the failure says what the page is: `challenge`, `signed out` (positive
   evidence only) or `mode unknown`. No selector changed: no real failing page has
@@ -163,7 +163,7 @@ changed but the header line.
   (`open`, `auth`, `mode`, `insert`, `attach`, `send`, `wait`, `read`) for the Runtime's evidence
   record; `send` is only the click, so a started `send` means the prompt may be out,
   and `onSubmitted` fires once the page shows the new user turn (the confirmed case).
-  A failure to find the conversation binding after the read is the `read` stage's.
+  A failure to find the conversation binding after the read is the `read` stage's, which is reported once.
   `ask` runs `open` as `reach` (load, sign-in) then `enterMode`; `open` is both.
 - **Tests:** vitest became `node:test` and `node:assert/strict`
   (`toMatchObject` is `assert.partialDeepStrictEqual`); the assertions are the
