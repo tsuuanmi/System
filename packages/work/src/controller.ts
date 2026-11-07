@@ -563,7 +563,18 @@ export class WorkController {
   private intentOf(record: WorkRecord, operationId: string): EffectIntent {
     const event = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === operationId)
     if (event?.type !== 'effect-intended') throw new WorkError(`no recorded intent for ${operationId}`)
-    return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params }
+    const step = this.specOf(record).steps.find((s) => s.id === event.stepId)
+    return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [] }
+  }
+
+  /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
+  private requiredOf(record: WorkRecord, s: Extract<Step, { effect: unknown }>): { capability: string; criteria: string }[] {
+    const spec = this.specOf(record)
+    return s.effect.requires.flatMap((id) => {
+      const verify = spec.steps.find((t) => t.id === id)
+      const criteria = record.state.criteria[id]
+      return verify && isVerifyStep(verify) && criteria ? [{ capability: verify.verify.capability, criteria }] : []
+    })
   }
 
   /** Read the remote; apply only when it shows the effect absent and `then` allows it. */
@@ -880,7 +891,7 @@ export class WorkController {
     if (!kind || !provider.accepts.includes(kind)) return { record: await this.finish(record, 'failed', `${provider.ref} publishes ${provider.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`) }
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
-      workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params },
+      workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params }, required: this.requiredOf(record, s),
     }
     const why = provider.approval(intent)
     if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id) }

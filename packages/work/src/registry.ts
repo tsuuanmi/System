@@ -126,6 +126,8 @@ export interface EffectIntent {
   /** The exact Artifact ID the effect publishes. */
   subject: string
   params: Record<string, string | number | boolean>
+  /** The verify steps the effect requires, with their pinned criteria: what a provider runs again on a commit it makes, such as a merge. */
+  required?: { capability: string; criteria: string }[]
 }
 
 export interface EffectOutcome {

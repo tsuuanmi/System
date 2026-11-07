@@ -272,3 +272,19 @@ test('retry --step publish redoes only the effect: the Worker and the checks are
   assert.equal(w.remote.applies, 1)
   assert.equal(c.replay(failed.id).matches, true)
 })
+
+test('an effect is told the checks it requires, with their pinned criteria, also when rebuilt after a lost host', async () => {
+  const w = world()
+  const told: EffectIntent[] = []
+  const first = controller(w, { apply: (intent) => { told.push(intent); return new Promise(() => {}) } })
+  const admitted = await admit(first, w)
+  void first.run(admitted.id)
+  await until(() => told.length === 1, 'the first apply')
+  const criteria = w.rows.get(admitted.id)!.state.criteria
+  const required = Object.keys(criteria).map((id) => ({ capability: 'code.required-checks', criteria: criteria[id]! }))
+  assert.ok(required.length > 0)
+  assert.deepEqual(told[0]!.required, required)
+  const done = await controller(w, { apply: async (intent, remote) => { told.push(intent); remote.applies++; remote.published.set(intent.operationId, { branch: 'b', commit: intent.subject }); return { state: 'applied', reason: 'done', detail: {} } } }).run(admitted.id)
+  assert.equal(done.state.status, 'succeeded', done.state.reason)
+  assert.deepEqual(told.at(-1)!.required, required, 'rebuilt from the record after the host was lost')
+})

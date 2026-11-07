@@ -4,19 +4,16 @@
 // pull requests. With --kill-host-on-create <pidFile>, the first pull
 // request it creates is followed by SIGKILL to the Host whose process ID is in
 // that file, before the response: a remote effect applied, never received.
-// --kill-host-on-merge <pidFile> does the same after the first merge. The
-// merge endpoint needs --bare <dir>, the remote the branches are pushed to, to
-// compare `sha` with the head.
+// --bare <dir>, the remote the branches are pushed to, gives each pull
+// request its head's sha.
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 
 const flag = (name) => process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined
 const killFile = flag('--kill-host-on-create')
-const mergeKillFile = flag('--kill-host-on-merge')
 const bare = flag('--bare')
 let killed = false
-let mergeKilled = false
 const killHost = (pidFile) => {
   try { process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL') } catch { /* gone */ }
 }
@@ -39,21 +36,6 @@ const server = createServer((req, res) => {
     if (req.method === 'GET' && match) {
       const all = url.searchParams.get('state') === 'all'
       return send(200, pulls.filter((p) => p.head === url.searchParams.get('head').split(':')[1] && (all || !p.merged)).map(view))
-    }
-    const merge = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/merge$/.exec(url.pathname)
-    if (req.method === 'PUT' && merge) {
-      const pull = pulls.find((p) => p.number === Number(merge[2]))
-      const input = JSON.parse(body)
-      if (pull.merged || pull.draft) return send(405, { message: 'Pull Request is not mergeable' })
-      if (input.sha !== headSha(pull.head)) return send(409, { message: 'Head branch was modified. Review and try the merge again.' })
-      pull.merged = true
-      pull.mergeCommit = execFileSync('git', ['-C', bare, 'commit-tree', '-p', input.sha, '-m', 'merge', `${input.sha}^{tree}`], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim()
-      if (mergeKillFile && !mergeKilled) {
-        mergeKilled = true
-        killHost(mergeKillFile)
-        return res.destroy()
-      }
-      return send(200, { sha: pull.mergeCommit, merged: true, message: 'Pull Request successfully merged' })
     }
     if (req.method === 'POST' && match) {
       const input = JSON.parse(body)

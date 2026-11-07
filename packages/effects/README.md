@@ -36,10 +36,9 @@ The controller records `effect-intended` before `apply` and
   `refs/system/artifacts/` when an attempt was captured); any other commit
   there is refused, never overwritten.
 - **Reconcile:** `applied` when the branch holds the commit and its pull
-  request is open (and ready, if asked) or, with `merge: true`, merged at the
-  commit; `absent` otherwise (an open, unmerged pull request included, so the
-  controller may apply again); `unknown` when the remote or the API cannot be
-  read. It only reads.
+  request is open (and ready, if asked) or, with `merge: true`, when the base
+  holds the change; `absent` otherwise; `unknown` when the remote or the API
+  cannot be read. It only reads the remote.
 - **Parameters:** `ready: true|false` and `merge: true|false`. `ready: true`
   marks the pull request ready for review and needs an operator's approval.
   `merge: true` needs none (ADR-0008 authorises it), but `validate` refuses it
@@ -47,18 +46,23 @@ The controller records `effect-intended` before `apply` and
 - **Token:** git receives it through `GIT_CONFIG_*` environment variables (an
   `http.extraHeader`), never in its arguments; the API through the
   Authorization header.
-- **Merge (`merge: true`):** the pull request is opened ready, not as a draft
-  (a reused draft is marked ready), then merged with
-  `PUT /pulls/{n}/merge` carrying `sha`, the exact verified commit, and
-  `merge_method: merge`; GitHub refuses if the head moved. The outcome detail
-  adds `merged: "true"` and `mergeCommit`. A 405 (not mergeable) or 409 (head
-  changed) is `failed` with GitHub's message and is never retried; a pull
-  request already merged at the commit is `applied` without a second call.
-  Without `merge: true` there is no merge call.
+- **Merge (`merge: true`), the merge queue** ([ADR-0008 amendment](../../docs/decisions/ADR-0008-dev-integration-branch.md)):
+  one change at a time per base. A change that holds the base's tip goes in
+  as it is. Any other is merged with the tip by `git merge-tree` (a conflict
+  is `failed`, naming the files); the merge commit is pinned, stored as a
+  `git-tree@1` and checked with the effect's `required` checks and their
+  pinned criteria (the `effects` row runs them through the verifier
+  registry); a verdict other than `pass` is `failed`. The commit goes to
+  `system/<work>`, the pull request is opened ready, and the base moves to
+  exactly that commit by a push with a lease on the checked tip; if the base
+  moved, the change is merged and checked again (three rounds at most). The
+  outcome detail adds `merged: "true"`, `mergeCommit` and, after a merge,
+  `checkedOn` (the tip it was checked with). GitHub's merge endpoint is not
+  used. A branch protection requiring pull requests refuses the push, which
+  is `failed` with git's message.
 - **Required checks (ADR-0008, clarified 2026-11-07):** System merges once its
   own verifier (`code.required-checks` over `.system/checks.yaml`) has passed
-  on the exact commit. It does not wait for GitHub's CI; branch protection, if
-  configured, can still refuse the merge with 405, recorded as `failed`.
+  on the exact commit it moves the base to. It does not wait for GitHub's CI.
 - **Base:** a pull request is the branch's only when its `base` is the
   configured one. An open pull request for the branch that targets another
   base makes `apply` `failed`, naming both bases; it is never merged or
@@ -70,7 +74,9 @@ The controller records `effect-intended` before `apply` and
 Against a real bare git remote (`file://`) and a fake GitHub API, in unit
 tests and on the booted profile (`tests/publish.test.ts`), including a host
 killed after the pull request was created, one killed during the push and one
-killed after the merge call.
+killed once the base moved (a `post-receive` hook of the remote). The merge
+queue's rounds (a change merged with a tip that has another, a conflict, a
+failed check on the merge, a tip moving while it is checked) are unit tests.
 **Not yet run against github.com**: that needs a throwaway repository and a
 token the operator authorises.
 

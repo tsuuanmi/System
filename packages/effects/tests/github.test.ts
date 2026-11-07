@@ -20,8 +20,6 @@ const calls: string[] = []
 let pulls: Pull[] = []
 let api = ''
 let bareOf = ''
-/** When set, the merge endpoint answers with this status instead of merging. */
-let mergeRefusal: { status: number; message: string } | undefined
 let server: Server
 
 before(async () => {
@@ -40,17 +38,6 @@ before(async () => {
         const head = url.searchParams.get('head')!.split(':')[1]
         const state = url.searchParams.get('state') ?? 'open'
         return send(200, pulls.filter((p) => p.head === head && (state === 'all' || !p.merged)).map(view))
-      }
-      const merge = /^\/repos\/tester\/scratch\/pulls\/(\d+)\/merge$/.exec(url.pathname)
-      if (req.method === 'PUT' && merge) {
-        const pull = pulls.find((p) => p.number === Number(merge[1]))!
-        const input = JSON.parse(body) as { sha: string; merge_method: string }
-        if (mergeRefusal) return send(mergeRefusal.status, { message: mergeRefusal.message })
-        if (pull.merged || pull.draft) return send(405, { message: 'Pull Request is not mergeable' })
-        if (input.sha !== headSha(pull.head)) return send(409, { message: 'Head branch was modified. Review and try the merge again.' })
-        pull.merged = true
-        pull.mergeCommit = execFileSync('git', ['-C', bareOf, 'commit-tree', '-p', input.sha, '-m', 'merge', `${input.sha}^{tree}`], { env, encoding: 'utf8' }).trim()
-        return send(200, { sha: pull.mergeCommit, merged: true, message: 'Pull Request successfully merged' })
       }
       if (req.method === 'POST' && url.pathname === '/repos/tester/scratch/pulls') {
         const input = JSON.parse(body) as { head: string; base: string; draft: boolean; title: string }
@@ -111,7 +98,6 @@ const intent = (subject: string, params: EffectIntent['params'] = {}, workId = '
 function fresh() {
   calls.length = 0
   pulls = []
-  mergeRefusal = undefined
 }
 
 test('apply pushes the exact commit to system/<work> and opens one draft pull request', async () => {
@@ -271,105 +257,141 @@ test('merge needs no approval; ready still does', async () => {
   assert.equal(publisher.approval(intent('sha256:' + '0'.repeat(64), { ready: true })), 'marking the pull request ready for review')
 })
 
-test('merge: true opens a non-draft pull request and merges it with the exact commit as sha', async () => {
+/** A publisher whose merge queue checks a merge commit with `verdicts` in turn (pass when used up); what it checked is in `checked`. */
+function queue(artifacts: Artifacts, verdicts: { verdict: 'pass' | 'fail'; reason: string }[] = [], during?: () => void) {
+  const checked: { commit: string; parent?: string }[] = []
+  const publisher = githubPublisher(artifacts, {
+    token: async () => undefined,
+    async check(subject) {
+      const read = artifacts.get(subject)
+      const tree = read.state === 'stored' ? read.envelope.content as { commit: string; parent?: string } : { commit: '' }
+      checked.push({ commit: tree.commit, parent: tree.parent })
+      during?.()
+      return { ...(verdicts.shift() ?? { verdict: 'pass', reason: 'all checks passed' }), evidence: [] }
+    },
+  }, mergeConfig())
+  return { publisher, checked }
+}
+const parents = (bare: string, commit: string) => execFileSync('git', ['-C', bare, 'rev-list', '--parents', '-n', '1', commit], { encoding: 'utf8' }).trim().split(' ').slice(1)
+
+test('merge: a change that already contains the tip moves main to it, with no merge call and no check again', async () => {
   fresh()
   const artifacts = store()
   const { work, remoteRef } = setup()
-  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
+  const { publisher, checked } = queue(artifacts)
   const outcome = await publisher.apply(intent(await subjectOf(artifacts, work), merging))
   const commit = (await snapshot(work)).commit
   assert.equal(outcome.state, 'applied', outcome.reason)
-  assert.equal(pulls[0]!.draft, false)
-  assert.equal(pulls[0]!.merged, true)
-  assert.deepEqual(mergeCalls().map((c) => c.split(' ')[1]), ['/repos/tester/scratch/pulls/1/merge'])
+  assert.equal(remoteRef('main'), commit, 'main is exactly the checked commit')
   assert.equal(remoteRef('system/1111-aaaa'), commit)
-  assert.equal(outcome.detail.merged, 'true')
-  assert.equal(outcome.detail.mergeCommit, pulls[0]!.mergeCommit)
-  assert.equal(outcome.detail.draft, 'false')
-})
-
-test('merge: true marks a reused draft pull request ready, then merges it', async () => {
-  fresh()
-  const artifacts = store()
-  const { work } = setup()
-  const subject = await subjectOf(artifacts, work)
-  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
-  await publisher.apply(intent(subject))
-  assert.equal(pulls[0]!.draft, true)
+  assert.deepEqual([outcome.detail.merged, outcome.detail.mergeCommit, outcome.detail.draft], ['true', commit, 'false'])
+  assert.deepEqual([checked, mergeCalls()], [[], []])
+  assert.equal(pulls[0]!.draft, false)
+  // Again: main already holds it; nothing is pushed or checked.
   calls.length = 0
-  const outcome = await publisher.apply(intent(subject, merging))
-  assert.equal(outcome.state, 'applied', outcome.reason)
-  assert.deepEqual(calls.map((c) => c.split(' auth')[0]!).filter((c) => /graphql|merge/.test(c)), ['POST /graphql', 'PUT /repos/tester/scratch/pulls/1/merge'])
-  assert.equal(pulls.length, 1)
-  assert.equal(pulls[0]!.merged, true)
-})
-
-test('a pull request already merged at the commit is applied without a second merge call', async () => {
-  fresh()
-  const artifacts = store()
-  const { work } = setup()
-  const i = intent(await subjectOf(artifacts, work), merging)
-  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
-  await publisher.apply(i)
-  calls.length = 0
-  const again = await publisher.apply(i)
+  const again = await publisher.apply(intent(await subjectOf(artifacts, work), merging))
   assert.equal(again.state, 'applied', again.reason)
-  assert.equal(again.detail.merged, 'true')
-  assert.equal(again.detail.mergeCommit, pulls[0]!.mergeCommit)
-  assert.equal(mergeCalls().length, 0)
-  assert.equal(pulls.length, 1)
+  assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0)
 })
 
-test('a head that moved (409) or a pull request that is not mergeable (405) fails with GitHub\'s message, never retried', async () => {
-  for (const [status, message] of [[409, 'Head branch was modified. Review and try the merge again.'], [405, 'Pull Request is not mergeable']] as const) {
-    fresh()
-    const artifacts = store()
-    const { work } = setup()
-    mergeRefusal = { status, message }
-    const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
-    const outcome = await publisher.apply(intent(await subjectOf(artifacts, work), merging))
-    assert.equal(outcome.state, 'failed')
-    assert.ok(outcome.reason.includes(message), outcome.reason)
-    assert.equal(mergeCalls().length, 1)
-    assert.equal(pulls[0]!.merged, undefined)
+test('merge: two changes on the same tip; the second is merged only after its checks pass on a merge with the tip that has the first', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, bare, remoteRef } = setup()
+  const first = await subjectOf(artifacts, work)
+  const firstCommit = run('rev-parse', 'HEAD')
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'OTHER.md'), 'other\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'other')
+  const second = await subjectOf(artifacts, work)
+  const secondCommit = run('rev-parse', 'HEAD')
+  const { publisher, checked } = queue(artifacts)
+  // Both at once: the queue takes them one at a time.
+  const [a, b] = await Promise.all([publisher.apply(intent(first, merging, 'work:1111-aaaa')), publisher.apply(intent(second, merging, 'work:2222-bbbb'))])
+  assert.equal(a.state, 'applied', a.reason)
+  assert.equal(b.state, 'applied', b.reason)
+  // Whichever the queue took first went in as it is; the other was merged with it, checked, then pushed.
+  const [ahead, after] = a.detail.checkedOn ? [b, a] : [b.detail.checkedOn ? a : b, a.detail.checkedOn ? a : b]
+  assert.equal(ahead.detail.checkedOn, undefined)
+  assert.deepEqual(checked, [{ commit: after.detail.mergeCommit, parent: ahead.detail.mergeCommit }], 'the later was checked on its merge with the earlier')
+  assert.deepEqual(parents(bare, after.detail.mergeCommit!).sort(), [firstCommit, secondCommit].sort(), 'the merge commit joins exactly the two changes')
+  assert.equal(parents(bare, after.detail.mergeCommit!)[0], ahead.detail.mergeCommit)
+  assert.equal(remoteRef('main'), after.detail.mergeCommit)
+  assert.equal(after.detail.checkedOn, ahead.detail.mergeCommit)
+})
+
+test('merge: a conflict with the tip fails naming the files; a failed check on the merge fails; main does not move', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, remoteRef } = setup()
+  const first = await subjectOf(artifacts, work)
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'CHANGE.md'), 'a different change\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'conflicting')
+  const conflicting = await subjectOf(artifacts, work)
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'THIRD.md'), 'third\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'third')
+  const third = await subjectOf(artifacts, work)
+  const { publisher } = queue(artifacts, [{ verdict: 'fail', reason: 'failed: unit: a.test.ts "x": 1 !== 2' }])
+  const merged = await publisher.apply(intent(first, merging, 'work:1111-aaaa'))
+  const tip = remoteRef('main')
+  const conflict = await publisher.apply(intent(conflicting, merging, 'work:2222-bbbb'))
+  assert.equal(conflict.state, 'failed')
+  assert.match(conflict.reason, /merge conflict with main at [0-9a-f]{12}: CHANGE\.md/)
+  const failed = await publisher.apply(intent(third, merging, 'work:3333-cccc'))
+  assert.equal(failed.state, 'failed')
+  assert.match(failed.reason, /checks on the merge with main at [0-9a-f]{12}: fail: failed: unit: a\.test\.ts "x": 1 !== 2/)
+  assert.equal(remoteRef('main'), tip)
+  assert.equal(merged.detail.mergeCommit, tip)
+})
+
+test('merge: main moving while the merge is checked is caught by the lease; the change is merged and checked again on the new tip', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, bare, remoteRef } = setup()
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'MINE.md'), 'mine\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'mine')
+  const mine = await subjectOf(artifacts, work)
+  // main is ahead of the change's base, so the change needs a merge; then someone merges by hand once while System checks it.
+  const other = mkdtempSync(join(root, 'other-'))
+  execFileSync('git', ['clone', '--quiet', '-b', 'main', `file://${bare}`, other], { env })
+  const commitOther = (file: string) => {
+    writeFileSync(join(other, file), `${file}\n`)
+    for (const args of [['add', '.'], ['commit', '--quiet', '-m', file], ['push', '--quiet', 'origin', 'HEAD:main']]) execFileSync('git', ['-C', other, ...args], { env })
   }
+  commitOther('AHEAD.md')
+  let moved = false
+  const byHand = () => { if (!moved) { moved = true; commitOther('HAND.md') } }
+  const { publisher, checked } = queue(artifacts, [], byHand)
+  const outcome = await publisher.apply(intent(mine, merging))
+  assert.equal(outcome.state, 'applied', outcome.reason)
+  assert.equal(checked.length, 2, 'checked again on the tip that moved')
+  assert.equal(checked[1]!.parent, execFileSync('git', ['-C', other, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim())
+  assert.equal(remoteRef('main'), outcome.detail.mergeCommit)
 })
 
-test('another GitHub error while merging still throws, so the controller reconciles', async () => {
+test('reconcile with merge: true is applied once main holds the change, absent before, unknown when unreadable', async () => {
   fresh()
   const artifacts = store()
   const { work } = setup()
-  mergeRefusal = { status: 502, message: 'bad gateway' }
-  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
   const i = intent(await subjectOf(artifacts, work), merging)
-  await assert.rejects(() => publisher.apply(i), /HTTP 502/)
-})
-
-test('reconcile with merge: true is applied only when merged at the commit, absent while open, unknown when unreadable', async () => {
-  fresh()
-  const artifacts = store()
-  const { work, run } = setup()
-  const i = intent(await subjectOf(artifacts, work), merging)
-  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
-  assert.equal((await publisher.reconcile(i)).state, 'absent')
-  await publisher.apply(intent(i.subject))
-  const open = await publisher.reconcile(i)
-  assert.equal(open.state, 'absent')
-  assert.match(open.reason, /not merged/)
-  calls.length = 0
+  const { publisher } = queue(artifacts)
+  const before = await publisher.reconcile(i)
+  assert.equal(before.state, 'absent')
+  assert.match(before.reason, /main does not hold/)
   await publisher.apply(i)
   calls.length = 0
   const merged = await publisher.reconcile(i)
-  assert.equal(merged.state, 'applied')
+  assert.equal(merged.state, 'applied', merged.reason)
   assert.equal(merged.state === 'applied' && merged.detail.merged, 'true')
-  assert.equal(merged.state === 'applied' && merged.detail.mergeCommit, pulls[0]!.mergeCommit)
   assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0, 'reconcile only reads')
-  // The branch moved on after the merge: the commit is no longer what the branch holds.
-  writeFileSync(join(work, 'CHANGE.md'), 'later\n')
-  run('commit', '--quiet', '-am', 'later')
-  const later = intent(await subjectOf(artifacts, work), merging)
-  assert.equal((await publisher.reconcile(later)).state, 'absent')
-  const dead = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig({ apiUrl: 'http://127.0.0.1:1' }))
+  const dead = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig({ remote: 'nowhere' }))
   assert.equal((await dead.reconcile(i)).state, 'unknown')
 })
 
@@ -393,22 +415,4 @@ test('an open pull request for the branch that targets another base fails, namin
     assert.deepEqual([pulls[0]!.base, pulls[0]!.merged], ['other', undefined])
     assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0)
   }
-})
-
-test('a pull request merged into another base is not taken for a merge into the configured one', async () => {
-  fresh()
-  const artifacts = store()
-  const { work } = setup()
-  const subject = await subjectOf(artifacts, work)
-  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
-  await publisher.apply(intent(subject, merging))
-  pulls[0]!.base = 'other'
-  const i = intent(subject, merging)
-  assert.equal((await publisher.reconcile(i)).state, 'absent')
-  calls.length = 0
-  const outcome = await publisher.apply(i)
-  assert.equal(outcome.state, 'applied', outcome.reason)
-  assert.equal(pulls.length, 2)
-  assert.equal(pulls[1]!.base, 'main')
-  assert.equal(pulls[1]!.merged, true)
 })
