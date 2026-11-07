@@ -5,13 +5,13 @@
  * SSH tunnel, sees the tab as a CDP screencast over Server-Sent Events, and
  * their clicks, scrolls and keys go back as POSTs. Nothing here solves or
  * clicks a challenge: the human does, in the viewer. Pure Node: no VNC, no
- * CDP port (Playwright talks to Chrome over a pipe).
+ * CDP port (the engine talks to Chrome over a pipe).
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { hostname, userInfo } from 'node:os'
-import type { BrowserContext, CDPSession, Page } from 'playwright-core'
+import type { BrowserContext, CDPSession, Page } from 'patchright-core'
 import { checkSignedIn, keepSessionCookies, type LoginReport } from './chatgpt-login.ts'
 import { launch, type WebConfig } from './chatgpt.ts'
 import { startXvfb } from './display.ts'

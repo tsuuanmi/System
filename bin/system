@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { constants, homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { MIN_NODE, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
+import { MIN_NODE, hostCommand, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
 
 const PROFILE = 'system'
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -107,7 +107,7 @@ else if (thin(args)) {
   process.exit(await main(args, home))
 } else {
   if (!existsSync(join(profileDir, 'package.json'))) fail(`no ${PROFILE} profile under ${home}/profiles: run \`system init\` first`)
-  if (args[0] === 'host' && args.includes('--supervise')) {
+  if (hostCommand(args) && args.includes('--supervise')) {
     // The development setup, without systemd: stay small, and run the Host again after it stopped for new code.
     let stopped = false
     for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { stopped = true })

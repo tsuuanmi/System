@@ -1,6 +1,10 @@
-// A fake ChatGPT page. Query: scenario=normal|late-copy|early-copy|links|signin|captcha|blank|session|forever,
+// A fake ChatGPT page. Query: scenario=normal|late-copy|early-copy|links|signin|captcha|blank|session|forever|slow-session|logged-out-home|hidden-challenge,
 // slots=a,b (the fenced blocks it answers with), omit=a (leave one out), delay=ms between chunks,
 // model=none (show no model label). scenario=remote: a sign-in wall whose "Log in" button (top left) sets the session cookie.
+// mode=work: the page starts on Work (the switch pressed on Work, the composer reads "Work with ChatGPT") and Chat switches it back;
+// mode=stuck: the same, but Chat does nothing; mode=label: no switch, the composer reads "Work with ChatGPT".
+// scenario=slow-session: the logged-out shell for 1.5 s, then the signed-in app; scenario=logged-out-home: that shell for good; scenario=hidden-challenge: a signed-in page with a
+// challenge frame and a sign-in button that are only in the DOM (hidden), as on the real site.
 // Every page reports what it saw to POST /event, for tests that watch a real click arrive.
 const q = new URLSearchParams(location.search)
 const scenario = q.get('scenario') ?? 'normal'
@@ -16,16 +20,34 @@ const report = (event) => navigator.sendBeacon('/event', JSON.stringify(event))
 report({ type: 'load', ua: navigator.userAgent, scenario })
 document.addEventListener('click', (e) => report({ type: 'click', x: e.clientX, y: e.clientY, id: e.target.id || null }))
 document.addEventListener('keydown', (e) => report({ type: 'key', key: e.key }))
-const signedIn = scenario !== 'signin' && ((scenario !== 'session' && scenario !== 'remote') || document.cookie.includes('session=ok'))
+const mode = q.get('mode')
+const form = document.querySelector('#composer-form')
+const chatButton = document.querySelector('#mode-chat')
+const workButton = document.querySelector('#mode-work')
+const showMode = (m) => {
+  chatButton.setAttribute('aria-pressed', String(m === 'chat'))
+  workButton.setAttribute('aria-pressed', String(m === 'work'))
+  composer.setAttribute('aria-label', m === 'work' ? 'Work with ChatGPT' : 'Chat with ChatGPT')
+}
+if (mode === 'work' || mode === 'stuck') showMode('work')
+if (mode === 'label') { document.querySelector('[role="group"]').remove(); composer.setAttribute('aria-label', 'Work with ChatGPT') }
+chatButton.addEventListener('click', () => { if (mode !== 'stuck') showMode('chat') })
+const signedIn = scenario !== 'signin' && scenario !== 'slow-session' && scenario !== 'logged-out-home' && ((scenario !== 'session' && scenario !== 'remote') || document.cookie.includes('session=ok'))
 
 if (scenario === 'blank') {
   document.body.innerHTML = '<p>Something went wrong.</p>'
 } else if (scenario === 'captcha') {
-  document.title = 'Just a moment...'
   document.body.innerHTML = '<form id="challenge-form"><p>Verify you are human</p><input type="checkbox"></form>'
 } else {
   if (model !== 'none') document.body.insertAdjacentHTML('afterbegin', '<button data-testid="model-switcher-dropdown-button">Fake GPT 5</button>')
-  if (!signedIn) document.body.insertAdjacentHTML('afterbegin', '<button id="login" data-testid="login-button">Log in</button>')
+  if (!signedIn) {
+    // The logged-out home: an anonymous composer in a marked form, and a sign-in button.
+    form.dataset.loggedOut = ''
+    // On the real logged-out home the buttons' names vary: only the slow session shows one that is not "Log in", so it is held rather than read as the login page.
+    document.body.insertAdjacentHTML('afterbegin', scenario === 'slow-session' || scenario === 'logged-out-home' ? '<button id="login" data-login-button>Sign in</button>' : '<button id="login" data-testid="login-button">Log in</button>')
+  }
+  if (scenario === 'slow-session') setTimeout(() => { delete form.dataset.loggedOut; document.querySelector('#login').remove() }, 1500)
+  if (scenario === 'hidden-challenge') document.body.insertAdjacentHTML('beforeend', '<form id="challenge-form" hidden><p>Verify you are human</p></form><button data-testid="login-button" style="display:none">Log in</button>')
   if (!signedIn && scenario === 'remote') {
     document.querySelector('#login').addEventListener('click', () => { document.cookie = 'session=ok; max-age=86400; path=/'; location.reload() })
   }

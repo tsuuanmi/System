@@ -7,8 +7,8 @@ a real git repository, including a Codex takeover of cancelled Claude work.
 
 [chatgpt.test.ts](chatgpt.test.ts) runs the `chatgpt-web` Runtime against the
 fake ChatGPT page in [fake-chatgpt/](fake-chatgpt) (static HTML plus `chat.js`; scenarios by
-query string; the installed Chrome, headed on a private Xvfb; skipped, with
-the reason, where it cannot start). [remote-login.test.ts](remote-login.test.ts)
+query string; the Chrome the Runtime chooses, headed on a private Xvfb; a Chrome that cannot start fails them, see [test-support](../../../test-support/README.md)).
+[chrome.test.ts](chrome.test.ts) covers the Chrome choice and its install with an injected installer. [remote-login.test.ts](remote-login.test.ts)
 runs the remote sign-in against the same page (token, a screencast frame over
 SSE, a click and a key reaching the page, Save, Cancel, expiry and cleanup of
 Xvfb and the browser), an attempt on its own Xvfb, Xvfbs started together from one display number, and the `unavailable` account

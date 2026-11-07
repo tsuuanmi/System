@@ -3,14 +3,14 @@ id: PROP-0005
 type: proposal
 status: accepted
 created: 2026-11-06
-summary: A Website Worker that runs a step in the operator's signed-in ChatGPT web session through Playwright, returns the answer and its cited links as Artifacts, and records each exchange as a conversation; built on the Host after milestone H's release R1.
+summary: A Website Worker that runs a step in the operator's signed-in ChatGPT web session through a genuine headed Chrome (patchright-core), returns the answer and its cited links as Artifacts, and records each exchange as a conversation; built on the Host after milestone H's release R1.
 evidence: [RES-0008]
 related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 ---
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1 and W2, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1, W2 and W5, 2026-11-07).
 
 ## Decision context
 
@@ -44,9 +44,14 @@ fallback.
    `packages/agents/src/chatgpt.ts`: an Account `chatgpt-web/<name>` of the
    `agents` row (default `chatgpt-web/default`) with the capabilities
    `research`, `brainstorm.idea-*` (by role) and `web-search`. It drives the
-   page with `playwright-core` 1.64.1 (Apache-2.0) on the installed Google
-   Chrome, launched per attempt on the persistent profile, with no browser
-   download and no ChatGPT-specific dependency. It runs in the Host: a
+   page with `patchright-core` 1.63.0 (Apache-2.0, the version System 1 pins;
+   W5 replaced `playwright-core`) on a Chrome chosen as in System 1
+   (`packages/agents/src/chrome.ts`): the configured `executablePath`, then
+   `CHROME_PATH`, then a system Chrome no older than the engine's Chromium,
+   then the pinned Chrome for Testing (`chrome.lock.json`), installed with
+   `@puppeteer/browsers` under `$DSH_HOME/system/browsers` the first time it is
+   needed. It is launched per attempt on the persistent profile, with no
+   ChatGPT-specific dependency. It runs in the Host: a
    browser is a long-lived resource the Host can keep between attempts.
    **Not enabled in the bundle**; the runbook says how to add it.
    **Never headless** (operator, 2026-11-07). System always runs a real,
@@ -77,7 +82,7 @@ fallback.
    **The remote flow, as built** (`packages/agents/src/remote-login.ts`; the
    idea is System 1's "remote" flow, in pure Node):
    1. The Host starts a private Xvfb and opens the account's profile headed on
-      it, with Playwright's default pipe (no CDP port exists), and loads
+      it, with the engine's default pipe (no CDP port exists), and loads
       chatgpt.com.
    2. It serves a viewer on `127.0.0.1` on a random port, under a random
       32-byte token in the path; a request without the token gets 403.
@@ -98,6 +103,12 @@ fallback.
    a VNC server adds an extra listener and another password to guard. The
    screencast needs only Node and the Chrome already in use, and the token
    plus the loopback bind plus SSH are the whole access control.
+   System 1's remote login does use VNC (noVNC over a VNC server on the
+   display), so the operator's clicks are real X input events. Here they are
+   CDP-dispatched (`Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`):
+   **that is the remaining difference** from System 1 if a Cloudflare
+   challenge still loops after W5, and the next step would then be a VNC
+   server on the private display behind the same token and tunnel.
 3. **One attempt.**
    1. Open a **temporary chat** (`https://chatgpt.com/?temporary-chat=true`),
       the Account option `temporaryChat`, on by default: the account's memory
@@ -125,9 +136,36 @@ fallback.
    a CAPTCHA or an unknown page state fails the attempt with that reason and
    keeps a screenshot as partial output; it never hangs and never tries to get
    round a check. Selectors live in one versioned table, `SELECTORS`, and the
-   page is read with scripts instead of Playwright's `fill`, `click` and
-   `waitForSelector`, which need a Chrome newer than the 95 installed on the
-   operator's machine.
+   page is read with a few `evaluate` scripts (not the engine's `fill` or
+   `click`), ported from System 1's `ui/chatgpt-web.ui.yaml` and driver.
+6. **A genuine browser (W5, 2026-11-07).** Evidence from the real site: an
+   account that was signed in was reported as challenged (a false positive of
+   a check that looked at the DOM, not at what shows), and on another account
+   Cloudflare Turnstile ("Verify you are human") looped however often the
+   operator ticked it. The first launch used Playwright's defaults, so the
+   browser advertised automation (`--enable-automation`, `navigator.webdriver`)
+   and ran with `--no-sandbox`, `--password-store=basic` and
+   `--use-mock-keychain`, on a Chromium 136 build of 2025. System 1 does not,
+   and works. W5 ports its principle (`docs/design/browser-runtime.md`, "a
+   genuine browser, headed but invisible"): remove automation leaks only; no
+   user-agent override, no fingerprint spoofing, never solve a challenge. So
+   `patchright-core` launches Chrome headed, on the private Xvfb, with
+   System 1's `CHROME_ARGS` and `ignoreDefaultArgs` (`--no-sandbox`,
+   `--password-store=basic`, `--use-mock-keychain`, `--enable-automation`),
+   a real 1280x900 window instead of an emulated viewport, and the last
+   session restored. Page state follows System 1's `checkAuth`: signed in is a
+   **visible** composer (`[contenteditable="true"][data-composer-markdown]`
+   first, never the logged-out home's own); a challenge counts only while it is
+   **visible** (or the URL is under `/cdn-cgi/challenge-platform/`); the page is
+   waited on, up to `load` seconds, for signed in, signed out, challenge or the
+   site's error page; the logged-out shell is held 3 s before it counts as
+   signed out. Before typing, **Chat** is pressed in the "Composer mode" group,
+   and a composer whose label names Work is refused: Work spends the Codex
+   quota. Save in the remote viewer stops Chrome cleanly and checks the sign-in
+   in the same profile (a session is bound to it: never a copy).
+   `SELECTORS.version` is 2. Not verified against the real site from here: the
+   operator runs it. If a challenge still loops, the difference left is the
+   input (above).
 
 ## Tests and what is still to verify
 
@@ -137,8 +175,11 @@ covers send, wait and extract, completion detection, a sign-in wall, a CAPTCHA
 page, a missing output block and cancel mid-answer, deterministically and
 without an account. `packages/agents/tests/remote-login.test.ts` covers the
 remote flow (token, frames, input, Save, Cancel, expiry, cleanup) and the
-private Xvfb. Those tests are skipped, with the reason, where a headed Chrome
-cannot start on an Xvfb (`test-support/headed.ts`). A real run, gated by `SYSTEM_REAL_WEB=1`
+private Xvfb. A headed Chrome that cannot start is a failure of these tests,
+not a skip (`test-support/headed.ts`; `SYSTEM_SKIP_HEADED=1` skips them on a
+host with no Xvfb): they were skipped when `dev` went red, because Chrome
+aborts with "Socket path too long" when `TMPDIR` is deep, as it is in the
+verifier's throwaway HOME, and the check passed without running them. A real run, gated by `SYSTEM_REAL_WEB=1`
 (`tests/real-web.test.ts`), is a Research Work on `chatgpt-web/default` whose
 sources the citation verifier checks.
 

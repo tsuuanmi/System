@@ -2,7 +2,7 @@
  * The remote sign-in and the private display (PROP-0005), against the local
  * fake ChatGPT page: `startRemoteLogin` serves the viewer, forwards input and
  * saves; an attempt runs headed on its own Xvfb. No network and no account.
- * Skipped, with the reason, when a headed Chrome cannot start on an Xvfb. Every test stops what it starts.
+ * A headed Chrome that cannot start fails it (test-support/headed.ts). Every test stops what it starts.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -13,13 +13,13 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright-core'
+import { chromium } from 'patchright-core'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { TASK_KIND, CONVERSATION_KIND, conversationSchema, taskSchema, type WorkerRequest } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
-import { profileLockPid, webDefaults, type WebConfig } from '../src/chatgpt.ts'
+import { chromeTmpdir, profileLockPid, webDefaults, type WebConfig } from '../src/chatgpt.ts'
 import { apply } from '../src/index.ts'
 import { startXvfb, findXvfb } from '../src/display.ts'
 import { startRemoteLogin, type RemoteSession } from '../src/remote-login.ts'
@@ -134,7 +134,7 @@ test('a POSTed click reaches the page, a keystroke reaches it, and a malformed i
 test('a click on the viewer lands where the operator pointed, at any scale', { skip, timeout: 90_000 }, async () => {
   events.length = 0
   await withSession(web('scenario=remote'), async (session) => {
-    const browser = await chromium.launch({ executablePath: CHROME, headless: true })
+    const browser = await chromium.launch({ executablePath: CHROME, headless: true, env: { ...process.env, TMPDIR: chromeTmpdir() } as Record<string, string> })
     try {
       // A small window makes the canvas smaller than the page, so the click has to be scaled.
       const viewer = await (await browser.newContext({ viewport: { width: 700, height: 500 } })).newPage()

@@ -2,7 +2,7 @@
  * The chatgpt-web Runtime through the real Host and `bin/system`, against the
  * local fake ChatGPT page of packages/agents/tests/fake-chatgpt: login by
  * cookie file, then a Work whose answer fills the output slot and is stored as
- * a conversation. No network and no account. Skipped, with the reason, when a headed Chrome cannot start on an Xvfb.
+ * a conversation. No network and no account. A headed Chrome that cannot start fails it (test-support/headed.ts).
  */
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

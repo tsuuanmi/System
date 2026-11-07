@@ -12,6 +12,7 @@ import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { agentWorker, recordingPid, type Account, type Spawner } from './agent.ts'
 import { webDefaults, type WebConfig } from './chatgpt.ts'
+import { discoverChrome } from './chrome.ts'
 import { webLogin, type LoginReport } from './chatgpt-login.ts'
 import { XVFB_MISSING, findXvfb } from './display.ts'
 import { startRemoteLogin, type RemoteSession } from './remote-login.ts'
@@ -44,7 +45,7 @@ export interface AccountConfig {
   temporaryChat?: boolean
   /** chatgpt-web: the page to open (default https://chatgpt.com/). */
   url?: string
-  /** chatgpt-web: the Google Chrome to drive (default /usr/bin/google-chrome). */
+  /** chatgpt-web: the Chrome to drive; default `CHROME_PATH`, a system Chrome as new as the engine's Chromium, else the pinned Chrome for Testing, installed under $DSH_HOME/system/browsers on first use. */
   executablePath?: string
   /** chatgpt-web: seconds per stage (`load`, `send`, `answer`) and how long the answer's text must stay unchanged (`stable`). */
   timeouts?: Partial<WebConfig['timeouts']>
@@ -113,9 +114,14 @@ export function lazyVersion(subprocess: SubprocessRuntime, command: string): () 
   let asked: Promise<string> | undefined
   return () => {
     asked ??= (async () => {
-      const handle = subprocess.spawn({ argv: [command, '--version'], cwd: process.cwd(), graceMs: 2000, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } } })
-      await handle.done
-      return (handle.collected.stdout?.readFrom(0).text ?? '').trim().split('\n')[0] ?? ''
+      try {
+        const handle = subprocess.spawn({ argv: [command, '--version'], cwd: process.cwd(), graceMs: 2000, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } } })
+        await handle.done
+        return (handle.collected.stdout?.readFrom(0).text ?? '').trim().split('\n')[0] ?? ''
+      } catch {
+        // A managed Chrome that is not installed yet has no version to report.
+        return ''
+      }
     })()
     return asked
   }
@@ -138,7 +144,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const web = account.runtime === 'chatgpt-web'
       if (web && 'headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
       if (web && !findXvfb()) throw new Error(XVFB_MISSING)
-      const command = await subprocess.resolveExecutable(web ? account.executablePath ?? webDefaults('').executablePath : account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
+      const browsers = systemPath(ctx, 'browsers')
+      const command = web ? discoverChrome(account.executablePath, { managedDir: browsers }).path : await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
       status.command = command
       const askVersion = lazyVersion(subprocess, command)
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
@@ -153,7 +160,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const profile = account.profileDir ?? `chatgpt-web/${account.ref.split('/')[1] ?? 'default'}`
         const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile))
         const config: WebConfig = {
-          ...defaults, executablePath: command, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,
+          ...defaults, ...(account.executablePath ? { executablePath: account.executablePath } : {}), managedDir: browsers, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,
           url: account.url ?? defaults.url, timeouts: { ...defaults.timeouts, ...account.timeouts },
         }
         new URL(config.url)

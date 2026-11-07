@@ -5,7 +5,7 @@
  * (remote-login.ts). The browser is always headed, on a display this owns. A
  * cookie value is never stored outside the profile or reported.
  */
-import type { BrowserContext, Cookie } from 'playwright-core'
+import type { BrowserContext, Cookie } from 'patchright-core'
 import { startXvfb, type Display } from './display.ts'
 import { WHY, launch, pageState, settle, sleep, type WebConfig } from './chatgpt.ts'
 
