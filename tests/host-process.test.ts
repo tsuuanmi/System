@@ -80,6 +80,46 @@ test('SIGTERM stops the Host with exit 0, releases the lock and the socket, and 
   assert.deepEqual(await second.exited, { code: 0, signal: null })
 })
 
+test('SIGTERM stops the Host within seconds while a client holds an idle connection open', { timeout: 30_000 }, async () => {
+  const host = await cli.start()
+  const client = await connect(socket)
+  try {
+    await client.call('host.hello', { version: VERSION, caller: human })
+    const started = Date.now()
+    host.child.kill('SIGTERM')
+    assert.deepEqual(await host.exited, { code: 0, signal: null })
+    assert.equal(Date.now() - started < 8_000, true, 'the Host did not wait for the client')
+    assert.equal(existsSync(socket), false)
+    await assert.rejects(client.call('host.status'), /closed the connection/)
+  } finally {
+    client.close()
+  }
+  const next = await cli.start()
+  next.child.kill('SIGTERM')
+  assert.equal((await next.exited).code, 0)
+})
+
+test('SIGTERM stops the Host within seconds while a client loops on work.events', { timeout: 30_000 }, async () => {
+  const host = await cli.start()
+  const client = await connect(socket)
+  let running = true
+  try {
+    await client.call('host.hello', { version: VERSION, caller: human })
+    // The loop ends when the Host closes the connection.
+    const loop = (async () => { while (running) { try { await client.call('work.events', { workId: 'work:none' }) } catch { if (!running || await client.call('host.status').then(() => false, () => true)) return } } })()
+    const started = Date.now()
+    host.child.kill('SIGTERM')
+    assert.deepEqual(await host.exited, { code: 0, signal: null })
+    assert.equal(Date.now() - started < 8_000, true, 'the Host did not wait for the client')
+    assert.equal(existsSync(socket), false)
+    running = false
+    await loop
+  } finally {
+    running = false
+    client.close()
+  }
+})
+
 test('a stale socket file left by a killed Host is replaced once the lock is taken', { timeout: 60_000 }, async () => {
   const first = await cli.start()
   const client = await connect(socket)

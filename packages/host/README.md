@@ -14,6 +14,7 @@ await client.call('host.status')
 // as a process (`system host`): lock taken, then the socket at $DSH_HOME/system/host.sock
 const serving = await serveHost({ host, home, services, log })
 await serving.stop()                                // server, then the Host core and its lock
+// `served.close()` stops accepting, lets admitted calls finish for `grace` (2 s), then drops every connection
 ```
 
 ## Protocol
@@ -92,6 +93,9 @@ and `-32001` (`NOT_ALLOWED`). `src/index.ts` names each constant and says when
 it is sent.
 
 ## Client
+
+A connection the Host closes (it stopped) rejects the calls in flight and later
+ones with `NotRunning`.
 
 `call` rejects after `timeout` ms (default 10 s, `CALL_TIMEOUT`) with
 `NotAnswering`, "the Host is not answering"; `connect` rejects with `NotRunning`,

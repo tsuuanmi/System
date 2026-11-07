@@ -15,11 +15,11 @@ let count = 0
 const fresh = () => { const path = join(dir, `n${count++}`); mkdirSync(path); return path }
 const human = { type: 'human', operatorId: 'tan' }
 
-async function served(methods?: Methods, version?: string): Promise<{ path: string; server: Served }> {
+async function served(methods?: Methods, version?: string, grace?: number): Promise<{ path: string; server: Served }> {
   const home = fresh()
   const host = await fixture().startHost(home)
   const path = join(sockets, `${count++}.sock`)
-  const server = await serve(host, { path, methods, version })
+  const server = await serve(host, { path, methods, version, grace })
   after(async () => { await server.close(); await host.close() })
   return { path, server }
 }
@@ -186,5 +186,37 @@ test('a call times out against a server that never answers', async () => {
   after(() => { silent.close() })
   const client = await connect(path, { timeout: 50 })
   await assert.rejects(client.call('host.status'), (error) => error instanceof NotAnswering && /not answering/.test(error.message))
+  client.close()
+})
+
+test('close lets an admitted call finish, then drops an idle client without waiting for it', async () => {
+  let release!: () => void
+  const slow = new Promise<void>((resolve) => { release = resolve })
+  const { path, server } = await served({ 'test.slow': { agent: true, handler: async () => { await slow; return 'done' } } })
+  const busy = await connect(path)
+  const idle = await connect(path)
+  await busy.call('host.hello', { version: VERSION, caller: human })
+  await idle.call('host.hello', { version: VERSION, caller: human })
+  const answer = busy.call('test.slow')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const closing = server.close()
+  setTimeout(release, 100)
+  assert.equal(await answer, 'done')
+  await closing
+  await assert.rejects(idle.call('host.status'), NotRunning)
+  await assert.rejects(connect(path), NotRunning)
+  busy.close()
+  idle.close()
+})
+
+test('close stops waiting for a call that outlasts the grace, and its client sees the connection close', async () => {
+  const { path, server } = await served({ 'test.stuck': { agent: true, handler: () => new Promise(() => {}) } }, undefined, 100)
+  const client = await connect(path)
+  await client.call('host.hello', { version: VERSION, caller: human })
+  const stuck = assert.rejects(client.call('test.stuck'), NotRunning)
+  const started = Date.now()
+  await server.close()
+  assert.equal(Date.now() - started < 2_000, true)
+  await stuck
   client.close()
 })

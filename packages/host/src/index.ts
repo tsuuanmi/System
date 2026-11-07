@@ -88,9 +88,15 @@ export interface ServeOptions {
   methods?: Methods
   /** The code version a hello must carry; default: this build's `VERSION`. */
   version?: string
+  /** Milliseconds `close` lets admitted calls finish before it drops the connections; default `STOP_GRACE`. */
+  grace?: number
 }
 
+/** How long a stopping Host lets admitted calls finish, in milliseconds. */
+export const STOP_GRACE = 2_000
+
 export interface Served {
+  /** Stop accepting, let admitted calls finish for the grace, drop every connection, and close. Never waits on a client. */
   close(): Promise<void>
 }
 
@@ -117,6 +123,8 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
   const methods = tableOf(options.methods)
   const version = options.version ?? VERSION
   const sockets = new Set<Socket>()
+  const inflight = new Set<Promise<void>>()
+  let stopping = false
   const server: Server = createServer((socket) => {
     sockets.add(socket)
     socket.on('close', () => sockets.delete(socket))
@@ -165,7 +173,9 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
       for (let at = buffer.indexOf(10); at >= 0 && at <= MAX_FRAME; at = buffer.indexOf(10)) {
         const line = buffer.subarray(0, at)
         buffer = buffer.subarray(at + 1)
-        if (line.length) void handle(line.toString('utf8'))
+        if (!line.length || stopping) continue
+        const call = handle(line.toString('utf8')).finally(() => inflight.delete(call))
+        inflight.add(call)
       }
       if (buffer.length > MAX_FRAME) {
         fail(null, INVALID_REQUEST, `invalid request: a line is larger than ${MAX_FRAME} bytes`)
@@ -179,10 +189,15 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
     server.listen(options.path, () => { server.off('error', reject); resolve() })
   })
   return {
-    close: () => new Promise<void>((resolve) => {
-      server.close(() => resolve())
+    async close() {
+      stopping = true
+      const closed = new Promise<void>((resolve) => server.close(() => resolve()))
+      let timer: NodeJS.Timeout | undefined
+      await Promise.race([Promise.allSettled(inflight), new Promise((resolve) => { timer = setTimeout(resolve, options.grace ?? STOP_GRACE) })])
+      clearTimeout(timer)
       for (const socket of sockets) socket.destroy()
-    }),
+      await closed
+    },
   }
 }
 
@@ -213,8 +228,9 @@ export function connect(path: string, options: ConnectOptions = {}): Promise<Cli
     socket.once('error', (error: NodeJS.ErrnoException) => {
       reject(error.code === 'ENOENT' || error.code === 'ECONNREFUSED' ? new NotRunning(`the Host is not running (no answer at ${path}); start it: systemctl --user start system`) : error)
     })
-    socket.on('error', (error) => drop(error))
-    socket.on('close', () => drop(new Error('the Host closed the connection')))
+    const closed = () => new NotRunning('the Host closed the connection (it stopped or was restarted): the Host is not running; start it: systemctl --user start system')
+    socket.on('error', (error: NodeJS.ErrnoException) => drop(error.code === 'ECONNRESET' || error.code === 'EPIPE' ? closed() : error))
+    socket.on('close', () => drop(closed()))
     let buffer = ''
     socket.setEncoding('utf8')
     socket.on('data', (chunk: string) => {
