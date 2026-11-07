@@ -90,8 +90,8 @@ export interface RetryOptions {
   reason: string
 }
 
-/** A human's decision on held Work. */
-export interface Decision {
+/** A human's approval or denial of what held Work awaits (GLOSSARY: Approval). */
+export interface Approval {
   decision: 'approved' | 'denied'
   caller: Caller
   reason: string
@@ -484,6 +484,8 @@ export class WorkController {
       ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isVerifyStep(s) || isEffectStep(s)))
       : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded'))
     if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker, verify or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
+    // Choosing among runs of a check would let an agent keep the lucky one: verifying again is the operator's.
+    if (isVerifyStep(step) && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} records a decision and tells the operator`)
     if (!isWorkerStep(step) && options.worker) throw new WorkError(`${step.id} is ${isVerifyStep(step) ? 'a verify' : 'an effect'} step; --worker names Workers only`)
     if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
@@ -893,7 +895,7 @@ export class WorkController {
    * Record a human operator's decision on held Work; an approval runs it on.
    * Agent callers are refused (ADR-0004 decision 3).
    */
-  async decide(workId: string, decision: Decision, command?: Command, started?: () => void): Promise<WorkRecord> {
+  async decide(workId: string, decision: Approval, command?: Command, started?: () => void): Promise<WorkRecord> {
     if (decision.caller.type !== 'human') throw new WorkError('only a human operator approves; an agent caller cannot decide')
     const release = await this.enter(workId, command)
     try {

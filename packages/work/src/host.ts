@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type WorkChange, type Command, type Decision, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type WorkChange, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import type { GoalView } from './goal.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
@@ -196,7 +196,7 @@ export class Host {
     return this.once({ commandId, op: 'cancel', args: { workId, ...request } }, (command) => this.controller.cancel(workId, request, command))
   }
 
-  decide(workId: string, options: Starting & Decision): Promise<WorkRecord> {
+  decide(workId: string, options: Starting & Approval): Promise<WorkRecord> {
     const { commandId, started, ...decision } = options
     return this.once({ commandId, op: 'decide', args: { workId, ...decision }, started }, (command, begun) => this.controller.decide(workId, decision, command, begun))
   }

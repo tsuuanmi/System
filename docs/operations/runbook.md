@@ -412,7 +412,9 @@ brief <goal>`: the Goal and its budget left, its Works with their current step
 and live progress, its decisions, and what waits), and records each choice it
 makes with `decision.add` (`system decision add`: question, options, choice,
 reason, and the Artifacts it rests on, such as a synthesis or a review). A
-decision is a record, never an authority.
+decision is a record, never an authority. When a check failed for a reason
+outside the change, it records that and tells the operator: only a human
+runs `system work retry <work> --step checks.checks`.
 
 It cannot approve or deny, store a conversation, set credentials, write a Goal,
 sign an account in, or merge into `main`. It is refused, with the reason, any

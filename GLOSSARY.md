@@ -59,6 +59,21 @@ A recorded choice by the operator or an Orchestrator, with its options, its
 reason and the Artifacts it rests on; a record, never an authority.
 _Avoid_: note, log entry, approval
 
+**Approval**:
+A human's yes or no on what a held Work awaits; the only one of these that
+lets a Work go on.
+_Avoid_: decision, sign-off
+
+**Stall**:
+A running attempt that has reported nothing for longer than the Host allows;
+a notice to look, never a verdict, and the attempt goes on.
+_Avoid_: timeout, hang, failure
+
+**Brief**:
+The text a new Orchestrator session starts from, written only from what
+System recorded about a Goal.
+_Avoid_: summary, report, handoff note
+
 **Host**:
 The one long-lived System process on a machine that owns every Work; the
 CLI and agents act on Work only by asking it.

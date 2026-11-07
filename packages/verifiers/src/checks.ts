@@ -66,11 +66,12 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     accepts: ['git-tree'],
     async criteria({ name, input }) {
       if (!input) throw new Error('the Work has no input task naming a repository')
-      // A change given as the input itself (code-checks.yaml on its own) is its own base.
+      // The checks come from a base the Worker did not write, never from the change itself.
       const read = artifacts.get(input)
-      const baseId = read.state === 'stored' && read.envelope.kind === 'git-tree' ? input : contentOf<Task>(artifacts, input, TASK_KIND.kind).base
-      if (!baseId) throw new Error('the input task has no base commit (system task new --repo)')
-      const base = contentOf<GitTreeContent>(artifacts, baseId, 'git-tree')
+      if (read.state !== 'stored' || read.envelope.kind !== TASK_KIND.kind) throw new Error('the checks are pinned from a task with a base commit (system task new --repo), not from the change itself')
+      const task = read.envelope.content as Task
+      if (!task.base) throw new Error('the input task has no base commit (system task new --repo)')
+      const base = contentOf<GitTreeContent>(artifacts, task.base, 'git-tree')
       let text: string
       try {
         text = await git(base.repository, ['show', `${base.commit}:${CHECKS_FILE}`])
@@ -80,7 +81,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const parsed = checksFileSchema.safeParse(parse(text))
       if (!parsed.success) throw new Error(`${CHECKS_FILE} at ${base.commit} is invalid: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
       const content: Checks = { name, source: { repository: base.repository, commit: base.commit, path: CHECKS_FILE }, checks: parsed.data.checks }
-      return (await artifacts.put({ ...CHECKS_KIND, content, inputs: [baseId], classification: 'operator-shared', producer })).id
+      return (await artifacts.put({ ...CHECKS_KIND, content, inputs: [task.base], classification: 'operator-shared', producer })).id
     },
     async verify(request): Promise<VerifyResult> {
       const verdict = (v: VerifyResult['verdict'], reason: string, evidence: string[]): VerifyResult => ({ verdict: v, reason, subject: request.subject, criteria: request.criteria, evidence })

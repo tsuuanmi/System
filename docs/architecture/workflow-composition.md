@@ -110,7 +110,8 @@ the Work. **`system work retry --step <id>`** reruns a Worker step of failed,
 cancelled or held Work and resets every step after it, so a verdict never
 outlives its subject. On a verify step it asks the verifier again on the same
 subject with the same pinned criteria (PROP-0006 "verify again"), as after a
-check failed for a reason outside the change; the earlier verdict stays in
+check failed for a reason outside the change; only a human asks it, so no
+agent keeps the luckiest of several runs; the earlier verdict stays in
 the record and no longer counts.
 
 **Effects** (ADR-0004 decision 10): an effect step's provider validates its

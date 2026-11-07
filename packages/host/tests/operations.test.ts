@@ -684,6 +684,8 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   assert.match(failed.state.reason!, /checks\.checks=fail/)
   const implemented = failed.state.steps.implement!.attempts
 
+  // Choosing among runs of a check is the operator's: an agent is refused, and records a decision instead.
+  await assert.rejects((await open(agent)).call('work.retry', { workId: work.id, step: 'checks.checks' }), /only a human verifies again/)
   // The environment is fixed; the same change is verified again, with the same pinned criteria.
   await assert.rejects(client.call('work.retry', { workId: work.id, step: 'checks.checks', worker: 'fake/claude' }), /verify step/)
   await client.call('work.retry', { workId: work.id, step: 'checks.checks', reason: 'the Host had Node 22 on its PATH' })
