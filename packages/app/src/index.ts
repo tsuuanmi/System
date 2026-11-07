@@ -133,9 +133,21 @@ async function runHost(ctx: Context): Promise<number> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
   if (!work || !artifacts || !capabilities) throw new Error('the work row is not mounted (run `system doctor`)')
   const home = dshHome(ctx)
+  // The launcher stops its tree on a signal and exits 130 for SIGINT; the Host stops itself and exits 0. Its handler
+  // goes on before the launcher's comes off, so a signal is never lost between the two (libuv drops one sent to a
+  // handle being closed), and before the Host says it listens: a stop asked earlier waits until it serves.
+  let serving: Awaited<ReturnType<typeof serveHost>> | undefined
+  let stopAsked = false
+  const onSignal = () => { if (serving) void serving.stop(); else stopAsked = true }
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    const launcher = process.listeners(signal)
+    // A repeat while stopping (systemd also signals the wrapper's child) is ignored.
+    process.on(signal, onSignal)
+    for (const listener of launcher) process.off(signal, listener)
+  }
   const host = await work.startHost(home)
   const credentials = credentialCommands(ctx)
-  const serving = await serveHost({
+  serving = await serveHost({
     host, home,
     log: (line) => { process.stderr.write(`system host: ${line}\n`) },
     services: {
@@ -162,12 +174,7 @@ async function runHost(ctx: Context): Promise<number> {
     await host.close()
     throw error
   })
-  // The launcher stops its tree on a signal and exits 130 for SIGINT; the Host stops itself and exits 0.
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.removeAllListeners(signal)
-    // A repeat while stopping (systemd also signals the wrapper's child) is ignored.
-    process.on(signal, () => { void serving.stop() })
-  }
+  if (stopAsked) void serving.stop()
   return serving.exited
 }
 
