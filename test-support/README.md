@@ -27,9 +27,13 @@ Helpers shared by the tests, so each stand-in has one implementation:
   names it for a test that kills it, and `stop()` sends SIGTERM (SIGKILL after
   10 s). Call `stop()` from `after`. For the [smoke tests](../tests/README.md).
 
-- [headed.ts](headed.ts) — `skipHeaded`: the reason a test that needs a headed
-  Chrome on a private Xvfb cannot run here (no Chrome, no Xvfb, or Chrome does not
-  start: [headed-probe.ts](headed-probe.ts) tries one), or false.
+- [headed.ts](headed.ts) — `CHROME` (the Chrome the Runtime chooses; the pinned
+  Chrome for Testing is installed once into `SYSTEM_TEST_BROWSERS`, default
+  `<tmp>/system-test-browsers-<user>`, shared by the test processes) and
+  `skipHeaded`. A Chrome or Xvfb that is missing, or a Chrome that does not start
+  ([headed-probe.ts](headed-probe.ts) tries one), **fails** the file that imports
+  it instead of skipping its tests: the checks once passed on a host where those
+  tests fail. `SYSTEM_SKIP_HEADED=1` skips them, for a host with no Xvfb.
 
 It is not a package: tests import it by path. It imports the built
 `@system/*` packages, so run `corepack pnpm build` first (`corepack pnpm check`

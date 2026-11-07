@@ -22,6 +22,18 @@ export function nodeChoice(current, installed) {
 /** The exit status of a Host that stopped to run new code (EX_TEMPFAIL): the same as `UPGRADE_EXIT` in packages/host, which a test holds equal. */
 export const UPGRADE_EXIT = 75
 
+/** The options of `dsh` that take a value (`dsh --help`); the others stand alone. */
+const VALUE_OPTIONS = ['--profile', '--patch', '--from-default-profile']
+
+/** Whether the command is `host`: the first argument that is not a global option of dsh nor the value of one. */
+export function hostCommand(args) {
+  for (let i = 0; i < args.length; i++) {
+    if (!args[i].startsWith('-')) return args[i] === 'host'
+    if (VALUE_OPTIONS.includes(args[i])) i++
+  }
+  return false
+}
+
 export const unitPath = (homedir) => join(homedir, '.config', 'systemd', 'user', 'system.service')
 
 /** One word of a unit line: systemd expands `%` and `$`, and splits on spaces unless quoted. */

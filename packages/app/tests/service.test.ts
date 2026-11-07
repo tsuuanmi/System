@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MIN_NODE, UPGRADE_EXIT, nodeChoice, serviceMode, supervise, unitPath, unitText } from '../../../bin/service.mjs'
+import { MIN_NODE, UPGRADE_EXIT, hostCommand, nodeChoice, serviceMode, supervise, unitPath, unitText } from '../../../bin/service.mjs'
 
 test('a Node that is new enough runs the command itself', () => {
   assert.deepEqual(nodeChoice('24.9.0', ['v24.21.0']), { use: 'current' })
@@ -80,4 +80,14 @@ test('the supervisor runs the Host again after exit 75 and after nothing else', 
   // A signal to the supervisor is a stop: a Host that exits 75 anyway is not restarted.
   const stopped = await run([75, 0], () => true)
   assert.deepEqual([stopped.code, stopped.runs], [75, 1])
+})
+
+test('`host` is found after the global options of dsh, and a value of one is not a command', () => {
+  assert.equal(hostCommand(['host', '--supervise']), true)
+  assert.equal(hostCommand(['--patch', 'x.yml', 'host', '--supervise']), true)
+  assert.equal(hostCommand(['--patch=x.yml', '--profile', 'system', 'host']), true)
+  assert.equal(hostCommand(['--dump-config', 'host']), true)
+  assert.equal(hostCommand(['--patch', 'host']), false)
+  assert.equal(hostCommand(['--patch', 'x.yml', 'doctor']), false)
+  assert.equal(hostCommand([]), false)
 })

@@ -494,6 +494,35 @@ and orchestrator scope; O3 completion notices.
     Fixed in the code (`chatgpt.ts` shares one close; `display.ts` takes a
     display only when its lock names its own Xvfb); a test starts four Xvfbs
     from the same number. Not the tests' fault, and not Chrome's zygote.
+- [x] W5. Port System 1's browser runtime and make `dev` green again
+  (operator, 2026-11-07). *(Real-site result pending: the operator runs it.)*
+  - Evidence from the real site: a signed-in account reported as challenged (a
+    false positive), and Turnstile looping on a second account. Cause by
+    comparison: Playwright's default launch advertised automation and used
+    `--no-sandbox`, `--password-store=basic`, `--use-mock-keychain` on
+    Chromium 136. System 1 launches a genuine Chrome and works.
+  - `playwright-core` is replaced by `patchright-core` 1.63.0 (System 1's pin),
+    launched with System 1's `CHROME_ARGS` and `ignoreDefaultArgs`; Chrome is
+    chosen as System 1 does (`chrome.ts`, `chrome.lock.json`: configured path,
+    `CHROME_PATH`, a recent system Chrome, else Chrome for Testing 155.0.8059.39,
+    installed on first use; it runs on this Ubuntu 20.04, glibc 2.31). Page
+    state, Chat mode and the Work refusal are System 1's logic in a selector
+    table and scripts, `SELECTORS.version` 2. PROP-0005 records that System 1
+    used VNC (real X input) and that CDP-dispatched input is the difference
+    left if a challenge still loops.
+  - `dev` was red: Chrome aborts with `Socket path too long` when `TMPDIR` is
+    deeper than about 55 bytes, and the verifier's throwaway HOME is. The
+    headed tests were **skipped** there (the probe saw Chrome die), so the
+    required checks passed on L1 without running them: a coverage gap. Fixed
+    in the code (Chrome gets a short `TMPDIR`) and in the checks: a headed
+    Chrome that cannot start now fails these tests (`SYSTEM_SKIP_HEADED=1`
+    opts out); the tests use the Chrome the Runtime chooses, installed once
+    into a cache shared by the test processes.
+  - `bin/system` supervised only when `host` was `args[0]`; it now finds `host`
+    after DSH's options (`--patch X host --supervise`).
+  - The one change to `pnpm-lock.yaml` is the dependency swap itself
+    (`playwright-core` out; `patchright-core` and `@puppeteer/browsers` in),
+    which `--frozen-lockfile` needs.
 - [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
   temporary chats, two signed-in accounts (`chatgpt-web/default`,
   `chatgpt-web/second`) can each give an independent proposal. A Brainstorm

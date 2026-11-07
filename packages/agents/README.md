@@ -128,8 +128,8 @@ Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 
 An Account `chatgpt-web/<name>` runs one step as one prompt in the operator's
 own signed-in ChatGPT web session ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
-It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives the installed Google Chrome with
-`playwright-core` 1.64.1 (no browser is downloaded), and runs inside the Host,
+It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives a genuine headed Chrome with
+`patchright-core` 1.63.0 (System 1's pin; [chrome.ts](src/chrome.ts) chooses the Chrome and installs the pinned Chrome for Testing on first use), and runs inside the Host,
 not as a spawned process. It is not in the bundle's `agents` row; add it as in
 the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).
 
@@ -141,7 +141,7 @@ the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).
         profileDir: chatgpt-web/default        # under $DSH_HOME/system unless absolute; mode 0700
         temporaryChat: true                    # each attempt in a temporary chat
         url: https://chatgpt.com/
-        executablePath: /usr/bin/google-chrome
+        executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
         timeouts: {load: 60, send: 30, answer: 900, stable: 3}   # seconds
 ```
 
@@ -155,11 +155,16 @@ One attempt:
    also on cancel and on the time limit. Without Xvfb on `PATH` the Account is
    `unavailable`, with a reason naming it, and an account that sets `headless` is
    too.
-2. **Load** a new chat (`?temporary-chat=true` when `temporaryChat`) and read
-   the page state: a chat box and no sign-in button is ready; a sign-in wall,
-   a CAPTCHA or Cloudflare challenge, or neither within `load` seconds fails
-   the attempt with that reason. System never types into or solves a challenge.
-3. **Send** one prompt built like the CLI prompt, with the inputs (and context)
+2. **Load** a new chat (`?temporary-chat=true` when `temporaryChat`) and wait,
+   up to `load` seconds, for the page state as System 1 reads it: a **visible**
+   chat box is ready; a challenge counts only while it is visible (or the URL
+   is under `/cdn-cgi/challenge-platform/`); the login host, or a login control
+   with no chat box, is a sign-in wall; the logged-out shell is held 3 s before
+   it counts as one; the site's own error page is its own failure. Anything
+   but ready fails the attempt with that reason. System never types into or
+   solves a challenge.
+3. **Send**, after pressing **Chat** in the "Composer mode" group (a composer
+   whose label names Work is refused: Work spends the Codex quota), one prompt built like the CLI prompt, with the inputs (and context)
    inlined as text, and each output slot asked for as a fenced block labelled
    with its name. At most 200 KiB.
 4. **Wait** until the newest assistant turn's copy action is present and its
@@ -179,9 +184,8 @@ One attempt:
 
 On any failure the page's screenshot is kept as partial output `screenshot`.
 Cancel and `attemptTimeoutMinutes` close the browser, as they stop a CLI. The
-selectors are one versioned table, `SELECTORS`; the page is read with scripts
-and Playwright's own `fill`, `click` and `waitForSelector` are not used, so an
-older Chrome works. After a lost attempt the Account's slot is held while the
+selectors are one versioned table, `SELECTORS` (ported from System 1's UI map);
+the page is read with a few scripts, not the engine's `fill` or `click`. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.
 
 **Login** (`system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
@@ -197,7 +201,7 @@ printed.
 
 `--remote` ([remote-login.ts](src/remote-login.ts)) is for a Host with no display
 and for a Cloudflare challenge that only a human can pass. It opens the profile
-headed on a private Xvfb (over Playwright's pipe: no CDP port) and serves a
+headed on a private Xvfb (over the engine's pipe: no CDP port) and serves a
 viewer on `127.0.0.1` on a random port under a random 32-byte token (403
 without it). The viewer shows a CDP screencast over Server-Sent Events and
 posts the operator's clicks, scrolls and keys back as `Input.dispatchMouseEvent`
@@ -207,11 +211,12 @@ line and the URL; the runbook has the steps. Save closes the browser cleanly (so
 `cf_clearance` and the session stay in the profile), checks the signed-in state
 and reports it; Cancel, Ctrl-C or the 15-minute TTL end the session without a
 check. Everything it started (Xvfb, browser, server) is stopped. Nothing solves
-or clicks a challenge.
+or clicks a challenge. Unlike System 1's VNC, its input is CDP-dispatched
+(PROP-0005 names that as the difference left).
 
 ## Limits
 
-The `chatgpt-web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that for their own account (PROP-0005). It needs a Chrome new enough for chatgpt.com.
+The `chatgpt-web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that for their own account (PROP-0005). It needs a Chrome new enough for chatgpt.com: the pinned build is installed under `$DSH_HOME/system/browsers` when no recent one exists.
 
 No sandbox or egress control (ADR-0004 decision 14): the agent runs as the
 operator and could read the operator's files, including the credential store.

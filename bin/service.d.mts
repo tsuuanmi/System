@@ -5,3 +5,4 @@ export function unitText(options: { node: string; entry: string; home: string; p
 export function serviceMode(options: { home: string; homedir: string; platform: NodeJS.Platform; args: string[]; env: Record<string, string | undefined> }): 'install' | 'skip' | 'foreground'
 export const UPGRADE_EXIT: 75
 export function supervise(options: { run: () => Promise<number>; stopped: () => boolean; log: (line: string) => void }): Promise<number>
+export function hostCommand(args: string[]): boolean

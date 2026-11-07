@@ -15,6 +15,7 @@
 - `system host --supervise` (development, no systemd) stays as a small
   supervisor around `system host` and runs it again after exit 75, the status of
   a Host that stopped to run new code; any other exit ends it with that status.
+  `host` is found after DSH's own options too (`system --patch f host --supervise`).
 - `system host` and `system doctor` (and any command led by a DSH flag, such as
   `--patch f host`) run `dsh --profile system <args>`; SIGTERM sent to the
   wrapper reaches DSH, and its exit status is the wrapper's.

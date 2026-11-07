@@ -1,11 +1,11 @@
 /**
  * The chatgpt-web Runtime against a local fake ChatGPT page (tests/fake-chatgpt):
  * the same selector roles, scenarios chosen by the query string. Drives the
- * installed Chrome headed on a private Xvfb; no network and no account. Skipped,
- * with the reason, when that Chrome cannot start.
+ * Chrome the Runtime chooses, headed on a private Xvfb; no network and no account. A
+ * Chrome that cannot start fails it (test-support/headed.ts).
  */
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -18,7 +18,8 @@ import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
-import { SELECTORS, parseBlocks, webDefaults, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, SELECTORS, chromeTmpdir, classify, launch, parseBlocks, webDefaults, type PageFacts, type WebConfig } from '../src/chatgpt.ts'
+import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
 const skip = skipHeaded
@@ -96,6 +97,58 @@ test('parseCookies reads a browser-extension JSON export and a Netscape file, fo
   })
   assert.throws(() => parseCookies('not cookies'), /neither a JSON/)
   assert.throws(() => parseCookies('[]'), /no cookie for chatgpt\.com/)
+})
+
+test('Chrome starts when TMPDIR is too deep for its profile socket', { skip, timeout: 60_000 }, async () => {
+  // Chrome puts SingletonSocket under TMPDIR and aborts ("Socket path too long") past 107 bytes: a throwaway HOME is that deep.
+  const deep = join(root, 'a'.repeat(40), 'b'.repeat(40), 'c'.repeat(40))
+  mkdirSync(deep, { recursive: true })
+  const was = process.env.TMPDIR
+  process.env.TMPDIR = deep
+  const display = await startXvfb()
+  try {
+    const context = await launch(web('scenario=signin'), display)
+    await context.close()
+  } finally {
+    if (was === undefined) delete process.env.TMPDIR
+    else process.env.TMPDIR = was
+    await display.stop()
+  }
+})
+
+const facts = (extra: Partial<PageFacts> = {}): PageFacts => ({ challenge: false, composer: false, loginPage: false, loggedOutHome: false, error: false, ...extra })
+
+test('a page is read as System 1 reads it: a visible composer is signed in, and a challenge only counts while it shows', () => {
+  assert.equal(classify(facts({ composer: true })), 'ready')
+  // The app with its chat box is signed in whatever else the page holds (a login control beside it, the shell of the logged-out home).
+  assert.equal(classify(facts({ composer: true, loginPage: false, loggedOutHome: false })), 'ready')
+  assert.equal(classify(facts({ challenge: true, composer: true })), 'challenge')
+  assert.equal(classify(facts({ challenge: true })), 'challenge')
+  assert.equal(classify(facts({ loginPage: true })), 'signin')
+  assert.equal(classify(facts({ error: true })), 'error')
+  // The logged-out home may be a signed-in app that has not loaded its session yet: settle holds it before it counts.
+  assert.equal(classify(facts({ loggedOutHome: true })), 'logged-out-home')
+  assert.equal(classify(facts()), 'unknown')
+})
+
+test('the browser is launched without the flags that advertise automation, and never headless', () => {
+  assert.deepEqual([...IGNORED_DEFAULT_ARGS].sort(), ['--enable-automation', '--no-sandbox', '--password-store=basic', '--use-mock-keychain'])
+  assert.ok(!CHROME_ARGS.some((arg) => /headless|enable-automation|user-agent/.test(arg)))
+})
+
+test('a short TMPDIR is kept, and a deep one is replaced by a short directory owned by the user, mode 0700', () => {
+  const was = process.env.TMPDIR
+  try {
+    process.env.TMPDIR = '/tmp'
+    assert.equal(chromeTmpdir(), '/tmp')
+    process.env.TMPDIR = join(root, 'x'.repeat(60))
+    const short = chromeTmpdir()
+    assert.ok(short.length <= 55, short)
+    assert.equal(statSync(short).mode & 0o777, 0o700)
+  } finally {
+    if (was === undefined) delete process.env.TMPDIR
+    else process.env.TMPDIR = was
+  }
 })
 
 test('the selector table is versioned', () => {
@@ -181,6 +234,40 @@ test('a CAPTCHA or Cloudflare challenge fails the attempt and is never typed int
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /CAPTCHA or Cloudflare challenge/)
   assert.ok(result.partial?.screenshot)
+})
+
+test('a signed-in page whose challenge frame and sign-in button are only in the DOM is not a challenge', { skip, timeout: 60_000 }, async () => {
+  const { result } = await run('scenario=hidden-challenge')
+  assert.equal(result.status, 'succeeded', result.reason)
+})
+
+test('the logged-out shell of an app that is still loading its session is held, then the attempt goes on', { skip, timeout: 60_000 }, async () => {
+  const { result } = await run('scenario=slow-session')
+  assert.equal(result.status, 'succeeded', result.reason)
+})
+
+test('a logged-out home that stays without a composer counts as signed out, after being held', { skip, timeout: 60_000 }, async () => {
+  const started = Date.now()
+  const { result } = await run('scenario=logged-out-home')
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /sign-in wall/)
+  assert.ok(Date.now() - started >= 3000, 'decided before the hold')
+})
+
+test('a composer on Work is switched to Chat before anything is typed', { skip, timeout: 60_000 }, async () => {
+  const { result } = await run('mode=work')
+  assert.equal(result.status, 'succeeded', result.reason)
+})
+
+test('Work is never used: a switch that stays on Work, or a composer that names Work, ends the attempt before anything is sent', { skip, timeout: 60_000 }, async () => {
+  for (const [mode, reason] of [['stuck', /Chat mode could not be selected/], ['label', /refusing to use Work/]] as const) {
+    const { artifacts, result } = await run(`mode=${mode}`)
+    assert.equal(result.status, 'failed', mode)
+    assert.match(result.reason!, reason)
+    assert.equal(result.partial?.conversation, undefined, 'nothing was sent, so nothing was recorded')
+    assert.ok(result.partial?.screenshot)
+    assert.ok(artifacts)
+  }
 })
 
 test('an unknown page state fails when the load stage times out', { skip, timeout: 60_000 }, async () => {

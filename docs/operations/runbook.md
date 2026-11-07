@@ -177,10 +177,18 @@ bundle's accounts plus this one), then restart the Host:
   capabilities: [research, web-search]
 ```
 
-It needs Google Chrome (`/usr/bin/google-chrome`, or `executablePath`) recent
-enough for chatgpt.com, and `Xvfb` (`apt install xvfb`). `system workers` shows
-it as `available` once both are found; that says nothing about the sign-in. It
-is `unavailable` with a reason that names whichever is missing.
+It needs `Xvfb` (`apt install xvfb`) and a recent Chrome. System picks the
+Chrome like System 1: `executablePath`, then `CHROME_PATH`, then a system Chrome
+no older than the browser engine's Chromium (an old one, such as Chrome 95, is
+passed over), then the pinned Chrome for Testing
+(`packages/agents/chrome.lock.json`), which it downloads under
+`$DSH_HOME/system/browsers` the first time an attempt or a login needs it
+(about 150 MB; it is not done at startup, and a failed download names the
+cause). It launches the browser as a genuine one: no automation flags, no
+sandbox switch, a real keyring, and Chrome's `TMPDIR` shortened when yours is too
+deep for its profile socket. `system workers` shows the account as `available`
+once Xvfb is found and the Chrome path exists; that says nothing about the
+sign-in. It is `unavailable` with a reason that names what is missing.
 
 **The browser is never headless.** System always runs a real, headed Chrome, on
 your `DISPLAY` if the Host has one and otherwise on its own invisible Xvfb that
@@ -243,6 +251,13 @@ sign-in per account at a time, and not while an attempt of the account runs.
 means the session ended (a sign-out, a password change, an expired cookie). Run
 the login again. The attempt's `screenshot` partial output shows what the page
 looked like: `system work show <id>`, then `system artifact cat <id> > shot.png`.
+
+**A challenge that does not clear.** If "Verify you are human" appears again
+however often you tick it, the Chrome is the first thing to check (`system
+workers` shows its path; an old or automation-flagged build loops). System 1's
+remote login uses VNC, so the clicks are real X input; the viewer here sends
+them over CDP. If a challenge still loops with a current Chrome, that is the
+difference left (PROP-0005); report it.
 
 **A CAPTCHA or Cloudflare challenge.** The attempt fails with `a CAPTCHA or
 Cloudflare challenge is showing`; System never types into or solves one, and
