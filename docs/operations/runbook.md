@@ -177,7 +177,8 @@ bundle's accounts plus this one), then restart the Host:
   capabilities: [research, web-search]
 ```
 
-It needs `Xvfb` (`apt install xvfb`) and a recent Chrome. System picks the
+It needs `Xvfb` (`apt install xvfb`) and a recent Chrome (and for `--remote`
+a VNC server, see below). System picks the
 Chrome like System 1: `executablePath`, then `CHROME_PATH`, then a system Chrome
 no older than the browser engine's Chromium (an old one, such as Chrome 95, is
 passed over), then the pinned Chrome for Testing
@@ -227,25 +228,39 @@ It prints three steps, for example:
 1. On your own machine, open the tunnel (keep it running):
      ssh -L 41873:127.0.0.1:41873 me@server
 2. Open this address in your browser:
-     http://127.0.0.1:41873/<64 hex characters>/
+     http://127.0.0.1:41873/<43 characters>/
 3. Sign in and clear any check by hand, then press Save. ...
 ```
 
 1. On **your own machine**, run the `ssh -L ...` line exactly as printed. The
    `user@host` part is the Host's user and its host name; replace the host with
    the name or address you reach the server by if they differ.
-2. Open the URL in your browser. It shows the ChatGPT tab; click, scroll and
-   type in it as in a normal browser. Anything without the long token in the
-   address gets `403`.
+2. Open the URL in your browser. It shows the whole screen of the browser's
+   private display (every tab, any popup), scaled to your window; click, scroll
+   and type in it as in a normal browser. Anything without the long token in
+   the address gets `404`.
 3. Sign in, and if a "verify you are human" check shows, clear it yourself.
    System never clicks it.
 4. Press **Save**. The page says `Signed in` or `Not signed in: <why>`, and the
    command prints the same and exits 0 or 1. **Cancel**, Ctrl-C on the server,
    or 15 minutes end the session without saving.
 
-The viewer listens on `127.0.0.1` only and no debugging port is opened; the
-browser, its Xvfb and the server are stopped when the session ends. One remote
-sign-in per account at a time, and not while an attempt of the account runs.
+The page listens on `127.0.0.1` only, the VNC server only on an owner-only unix
+socket, and no debugging port is opened; the browser, its VNC server, its Xvfb
+and the server are stopped when the session ends. One remote sign-in per account
+at a time, and not while an attempt of the account runs.
+
+`--remote` needs a VNC server on the Host's `PATH`: `x11vnc` (`apt install
+x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`);
+without one the command fails at once, naming both. noVNC and `ws` come with
+System. On the machine of this repository there is no root, so x11vnc 0.9.16 was
+installed from the Ubuntu 20.04 packages, unpacked into the home directory:
+`apt-get download x11vnc libvncclient1`, then `dpkg -x` each into
+`~/.local/opt/x11vnc`, and `~/.local/bin/x11vnc`, a shell script that sets
+`LD_LIBRARY_PATH` to `~/.local/opt/x11vnc/usr/lib/x86_64-linux-gnu` and runs
+`~/.local/opt/x11vnc/usr/bin/x11vnc "$@"`. A Host started with `HOME` set to
+another directory does not find that script's target: put `~/.local/bin` on its
+`PATH` with the real home.
 
 **A sign-in wall.** An attempt that fails with `the page shows a sign-in wall`
 means the session ended (a sign-out, a password change, an expired cookie). Run
@@ -254,10 +269,9 @@ looked like: `system work show <id>`, then `system artifact cat <id> > shot.png`
 
 **A challenge that does not clear.** If "Verify you are human" appears again
 however often you tick it, the Chrome is the first thing to check (`system
-workers` shows its path; an old or automation-flagged build loops). System 1's
-remote login uses VNC, so the clicks are real X input; the viewer here sends
-them over CDP. If a challenge still loops with a current Chrome, that is the
-difference left (PROP-0005); report it.
+workers` shows its path; an old or automation-flagged build loops). The viewer
+is VNC, as System 1's, so the clicks are real X input. If a challenge still
+loops with a current Chrome, report it (PROP-0005).
 
 **A CAPTCHA or Cloudflare challenge.** The attempt fails with `a CAPTCHA or
 Cloudflare challenge is showing`; System never types into or solves one, and

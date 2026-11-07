@@ -10,9 +10,11 @@ fake ChatGPT site ([web-driver/tests/fake-chatgpt.ts](../../web-driver/tests/fak
 are its options; the Chrome the Runtime chooses, headed on a private Xvfb; a Chrome that cannot start fails them, see [test-support](../../../test-support/README.md)).
 [fake-chatgpt/](fake-chatgpt) is a small page for the remote sign-in tests only.
 [chrome.test.ts](chrome.test.ts) covers the Chrome choice and its install with an injected installer. [remote-login.test.ts](remote-login.test.ts)
-runs the remote sign-in against that page (token, a screencast frame over
-SSE, a click and a key reaching the page, Save, Cancel, expiry and cleanup of
-Xvfb and the browser), an attempt on its own Xvfb, Xvfbs started together from one display number, and the `unavailable` account
+runs the remote sign-in against that page over a real Xvfb and VNC server
+(skipped with the reason where there is none): the token, the WebSocket reaching
+the VNC socket of the whole screen, real pointer input reaching the page, Save,
+Cancel, expiry, and that Xvfb, the VNC server and the browser are gone after;
+and the failure at once without a VNC server on `PATH`, an attempt on its own Xvfb, Xvfbs started together from one display number, and the `unavailable` account
 without Xvfb or with `headless`.
 
 The booted profile is covered by [tests/agents.test.ts](../../../tests/README.md),

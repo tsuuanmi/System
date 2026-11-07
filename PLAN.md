@@ -463,7 +463,7 @@ and orchestrator scope; O3 completion notices.
   the real-site run, `SYSTEM_REAL_WEB=1`, is still to do.)*
 
 - [x] W2. Remote sign-in over SSH, as System 1 does (operator, 2026-11-07).
-  *(2026-11-07: pure Node, no VNC and no new package.)*
+  *(2026-11-07: pure Node, no VNC and no new package; the viewer was replaced by VNC and noVNC in W9.)*
   - `system workers login <ref> --remote` opens the account's profile headed
     on its own Xvfb and serves a viewer on 127.0.0.1 behind a random 32-byte
     token: a CDP screencast over Server-Sent Events, input sent back by POST,
@@ -581,6 +581,48 @@ and orchestrator scope; O3 completion notices.
     header as the info string (README, "Fences without Copy").
   - Red test first: driver tests where the fake page's Copy gives text without
     fences, and where it gives nothing, must still fill `report` and `sources`.
+- [x] W9. Port System 1's remote login viewer (VNC desktop through noVNC),
+  replacing the CDP screencast viewer (operator, 2026-11-07). *(Real-site
+  result pending: the operator tries `system workers login chatgpt-web/second
+  --remote` after the merge.)*
+  - Why (operator evidence, 2026-11-07): the W2 viewer showed a blank white page
+    for `chatgpt-web/second` (the profile had restored an `auth.openai.com`
+    "Session ended" tab, and the screencast shows only the page it attached
+    to), its canvas did not fit the window, and Cloudflare Turnstile looped on
+    CDP-dispatched clicks. System 1 works: the whole Xvfb screen through VNC and
+    noVNC, scaled to the window, with real X input. PROP-0005's "Why not VNC" is
+    reversed.
+  - `packages/agents/src/remote-login.ts` is System 1's
+    `packages/plugins/login/src/remote.ts` (commit `f199a277`, last changed in
+    `750257ae`), fixes kept: a VNC server on the account's private Xvfb behind an
+    owner-only unix socket, a loopback HTTP server under a random token that
+    serves `@novnc/novnc` 1.7.0 (MPL-2.0, unmodified) and bridges its WebSocket
+    (`ws` 8.22.0) to the socket, Save, Cancel from the page's own origin only,
+    the TTL, cleanup. `findVnc` (display.ts) is System 1's lookup of
+    `x0vncserver` or `x11vnc` on `PATH`; without one `--remote` fails at once,
+    naming both. System's side is kept: `workers.loginRemote`/`loginWait`
+    (`agent: false`), the printed `ssh -L` line and URL, Ctrl-C cancels, the
+    persistent profile, never headless, and the Save check is the driver's
+    `checkAuth` (W7). Chrome runs headed on that Xvfb as in an attempt.
+  - **One difference, forced by the tool:** x11vnc 0.9.16 (the version here) has
+    no `-unixsockonly`, and its `-unixsock` still listens on TCP 5900 with no
+    password. `x11vnc` is therefore run per connection with `-inetd` behind a
+    unix socket the Host listens on, and no TCP port is opened; `x0vncserver`
+    runs as in System 1 (not installed here, so that path is not exercised).
+  - Deleted: the screencast, its input code (`toCdp`) and their tests.
+  - x11vnc 0.9.16 was installed without root from Ubuntu packages (runbook).
+  - Tests: the session over a real Xvfb and x11vnc (skipped with the reason
+    when either is missing): token required, the WebSocket reaches the VNC socket
+    of the whole 1440x1000 screen with no TCP port open, a real pointer click
+    reaches the page, Save and Cancel, expiry, nothing left running; the CLI
+    `--remote` test through the real Host.
+  - **Growth recorded** (lines of `.ts`; baseline `ff5e594`): the active core is
+    3,076, **unchanged**; `packages/agents/src` 1,693 → 1,751 (+58);
+    `remote-login.test.ts` 303 → 339.
+  - `pnpm-lock.yaml` is not part of this change (instructions): it needs
+    `@novnc/novnc` 1.7.0, `ws` 8.22.0 and `@types/ws` 8.18.2 under
+    `packages/agents`; regenerate it with `corepack pnpm install
+    --no-frozen-lockfile` when merging.
 - [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
   temporary chats, two signed-in accounts (`chatgpt-web/default`,
   `chatgpt-web/second`) can each give an independent proposal. A Brainstorm

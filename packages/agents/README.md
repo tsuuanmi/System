@@ -206,19 +206,24 @@ profile. The signed-in state is then checked and reported; no cookie value is
 printed.
 
 `--remote` ([remote-login.ts](src/remote-login.ts)) is for a Host with no display
-and for a Cloudflare challenge that only a human can pass. It opens the profile
-headed on a private Xvfb (over the engine's pipe: no CDP port) and serves a
-viewer on `127.0.0.1` on a random port under a random 32-byte token (403
-without it). The viewer shows a CDP screencast over Server-Sent Events and
-posts the operator's clicks, scrolls and keys back as `Input.dispatchMouseEvent`
-and `Input.dispatchKeyEvent`, scaled to the page's pixels, with **Save** and
-**Cancel**. The CLI prints the `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
+and for a Cloudflare challenge that only a human can pass. It is a port of System 1's
+remote login (the file's header names the source and its commit). It opens the
+profile headed on a private Xvfb (over the engine's pipe: no CDP port) with a VNC
+server on that Xvfb (`x0vncserver` or `x11vnc`, first found on `PATH`; without
+one it fails at once, naming both) reachable only through an owner-only unix
+socket, and serves noVNC (`@novnc/novnc` 1.7.0, MPL-2.0, served unmodified;
+`ws` 8.22.0 bridges its WebSocket to the socket) on `127.0.0.1` on a random port
+under a random 32-byte token (404 without it, and for a Host header other than
+loopback). The page shows the whole Xvfb screen, scaled to the window
+(`scaleViewport`), with real X input, **Save** and **Cancel** (a POST only from
+the page's own origin). `x11vnc` is run per connection with `-inetd` behind a
+socket the Host listens on, because 0.9.16 has no unix-socket-only mode and
+would open TCP port 5900. The CLI prints the `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
 line and the URL; the runbook has the steps. Save closes the browser cleanly (so
 `cf_clearance` and the session stay in the profile), checks the signed-in state
 (the driver's `checkAuth`) and reports it; Cancel, Ctrl-C or the 15-minute TTL end the session without a
-check. Everything it started (Xvfb, browser, server) is stopped. Nothing solves
-or clicks a challenge. Unlike System 1's VNC, its input is CDP-dispatched
-(PROP-0005 names that as the difference left).
+check. Everything it started (Xvfb, VNC server, browser, server) is stopped. Nothing
+solves or clicks a challenge.
 
 ## Limits
 

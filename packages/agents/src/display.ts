@@ -13,20 +13,30 @@ import { randomBytes } from 'node:crypto'
 
 export const XVFB_MISSING = 'Xvfb is not installed (apt install xvfb): System runs the browser headed on a private display, never headless'
 
-/** `Xvfb` on `PATH`, or undefined. */
-export function findXvfb(): string | undefined {
-  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    if (!dir) continue
-    const file = join(dir, 'Xvfb')
-    try {
-      accessSync(file, constants.X_OK)
-      return file
-    } catch {
-      // Next directory.
+/** The first of `names` found executable on `PATH` (the names in order, as System 1's login plugin looks for a VNC server), or undefined. */
+function findOnPath(names: readonly string[]): string | undefined {
+  for (const name of names) {
+    for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+      if (!dir) continue
+      const file = join(dir, name)
+      try {
+        accessSync(file, constants.X_OK)
+        return file
+      } catch {
+        // Next directory.
+      }
     }
   }
   return undefined
 }
+
+/** `Xvfb` on `PATH`, or undefined. */
+export const findXvfb = (): string | undefined => findOnPath(['Xvfb'])
+
+export const VNC_MISSING = 'remote login needs a VNC server on PATH: x11vnc (apt install x11vnc) or x0vncserver (apt install tigervnc-scraping-server)'
+
+/** The VNC server of the remote login on `PATH`: `x0vncserver` (TigerVNC) or `x11vnc`, or undefined. */
+export const findVnc = (): string | undefined => findOnPath(['x0vncserver', 'x11vnc'])
 
 export interface Display {
   /** For example `:101`. */

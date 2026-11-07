@@ -19,16 +19,19 @@
   "dependencies": {
     "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
     "@deepseek-ai/dsh-subprocess": "0.2.2-rc.1",
+    "@novnc/novnc": "1.7.0",
     "@puppeteer/browsers": "3.2.3",
     "@system/artifacts": "workspace:*",
     "@system/web-driver": "workspace:*",
     "@system/work": "workspace:*",
-    "patchright-core": "1.63.0"
+    "patchright-core": "1.63.0",
+    "ws": "8.22.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.1.0"
+    "@deepseek-ai/cordis": "4.1.0",
+    "@types/ws": "8.18.2"
   }
 }
