@@ -8,7 +8,7 @@ a real git repository, including a Codex takeover of cancelled Claude work.
 [chatgpt.test.ts](chatgpt.test.ts) runs the `chatgpt-web` Runtime against System 1's
 fake ChatGPT site ([web-driver/tests/fake-chatgpt.ts](../../web-driver/tests/fake-chatgpt.ts); scenarios
 are its options; the Chrome the Runtime chooses, headed on a private Xvfb; a Chrome that cannot start fails them, see [test-support](../../../test-support/README.md)).
-[fake-chatgpt/](fake-chatgpt) is a small page for the remote sign-in tests only.
+Its WW1 tests seed a disposable profile with tabs and relaunch it after a clean close and after a SIGKILL, check the one-working-tab invariant (a late page is closed too), the launch clock (a launcher that never returns, and one that fails) and the evidence record of good, failed, cancelled and timed-out attempts. [fake-chatgpt/](fake-chatgpt) is a small page for the remote sign-in tests only.
 [chrome.test.ts](chrome.test.ts) covers the Chrome choice and its install with an injected installer. [remote-login.test.ts](remote-login.test.ts)
 runs the remote sign-in against that page over a real Xvfb and VNC server
 (skipped with the reason where there is none): the token, the WebSocket reaching

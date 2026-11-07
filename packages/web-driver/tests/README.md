@@ -6,5 +6,5 @@ self-heal matcher. [driver.test.ts](driver.test.ts) runs the driver against
 [fake-chatgpt.ts](fake-chatgpt.ts), System 1's stand-in for chatgpt.com (its
 header lists the live traps it reproduces), in a headed Chrome on a private
 Xvfb. [serve-fake-chatgpt.ts](serve-fake-chatgpt.ts) serves the fake from its
-own process, for tests that block their event loop. The Runtime's attempts are
+own process, for tests that block their event loop. The fake's `modeSwitch`, `modeSwitchDelayMs`, `modeFlipToWorkMs`, `signOutAfterMs` and `challengeAfterMs` reproduce a switch that is late, absent, or changes, and a session that ends or a challenge that appears while it is awaited. The Runtime's attempts are
 tested in [packages/agents/tests](../../agents/tests/README.md).

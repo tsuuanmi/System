@@ -680,10 +680,20 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
   runs on each Account after each merge into `web-workers` and every six
   hours (a systemd user timer).
 - **Steps.**
-  1. [ ] Known defects: restored tabs (14 tabs and 5.5 GB on `default`,
+  1. [x] Known defects: restored tabs (14 tabs and 5.5 GB on `default`,
      measured 2026-11-07); the Chat/Work switch sometimes not found; the
      1.5 s Chrome launch timeout in `chatgpt.test.ts` (flaky under load); the
-     Worker rules no longer forbid the lockfile.
+     Worker rules no longer forbid the lockfile. *Done (WW1), except the last:
+     the lockfile rule is in the Worker prompts, outside this repository, and
+     is left to the operator's agent.* Measured: on Chrome for Testing 155,
+     preferences alone left 6 tabs (the launch's `--restore-last-session`
+     outranks them) and, without the flag, lost the session-only cookie; the
+     flag with `Default/Sessions` removed before launch gave 1 tab and kept the
+     cookie, after a clean close, and 1 tab after a SIGKILL (3 s launch, 4 tabs
+     seeded; the real profile's stall was 60 s+ with 17). The switch is
+     awaited (map `settings.modeReadyMs`, 15 s) and failures are named; no
+     selector changed. Each attempt keeps a stage-chain evidence record as
+     partial output.
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [ ] Canary.
