@@ -173,9 +173,13 @@ export function operations(services: Services): Methods {
     'work.show': {
       agent: true,
       scope: ofWork('work.show'),
-      summary: 'The Work record: events and state.',
+      summary: 'The Work record: events and state; while Worker attempts run, also `live`: per attempt its step, Worker, start, last activity, elapsed and quiet seconds, whether it is stalled, and the `progress` its Runtime last reported (turns, last tool, tokens, stage). `live` is an observation of the moment, never part of the record.',
       params: z.object({ workId }).strict(),
-      handler: (host, p) => known(host, p.workId),
+      handler(host, p) {
+        const record = known(host, p.workId)
+        const live = host.live(p.workId)
+        return live.length ? { ...record, live } : record
+      },
     },
     'work.list': {
       agent: true,
@@ -216,7 +220,7 @@ export function operations(services: Services): Methods {
     'work.watch': {
       agent: true,
       scope: (host, p, caller) => watchScope(host, p, caller, 'work.watch'),
-      summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval. With `goal`, instead one for each new Work of the Goal, with `seq` 0. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`.',
+      summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. With `goal`, instead one for each new Work of the Goal, with `seq` 0, and the stall notices of its Works. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`.',
       params: watching,
       handler: (host, p, _caller, link) => watch(host, p, link, true),
     },

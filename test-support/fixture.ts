@@ -52,8 +52,8 @@ export interface Fixture {
   admission(file: string): Admission
   /** What the fake publisher's `reconcile` reports about the remote. */
   remote: { state: 'applied' | 'absent' | 'unknown' }
-  /** Start a Host over this fixture's table, Artifacts and Workers, locked to `home`. */
-  startHost(home: string): Promise<Host>
+  /** Start a Host over this fixture's table, Artifacts and Workers, locked to `home`; `stallMinutes` as the Host takes it. */
+  startHost(home: string, options?: { stallMinutes?: number }): Promise<Host>
 }
 
 /** The two Accounts of the fake Workers: Brainstorm's proposals use different ones, as the bundle's do. */
@@ -154,7 +154,7 @@ export function fixture(options: { seed?: number; slots?: number; goals?: Artifa
     admit(file) {
       return controller.admit(this.admission(file))
     },
-    startHost: (home) => Host.start({ home, table, specs: specStore, capabilities }),
+    startHost: (home, more) => Host.start({ home, table, specs: specStore, capabilities, ...more }),
   }
 }
 

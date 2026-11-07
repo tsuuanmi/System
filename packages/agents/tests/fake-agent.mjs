@@ -11,6 +11,7 @@
 //   FAKE:grandchild=FILE  start a process in the agent's own group that waits, and write its pid to FILE
 //   FAKE:escaped=FILE     the same, but in a session of its own (setsid), as a `system host` a test started might be
 //   FAKE:delay=MS finish only after MS milliseconds, so attempts can be seen to overlap
+//   FAKE:turns    (claude, stream-json) first print two assistant messages that use tools, as progress
 //   FAKE:fail     report an error
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
@@ -66,6 +67,9 @@ function finish(ok, message) {
   process.stdout.write('', () => process.exit(ok ? 0 : 1))
 }
 
+if (!codex && has('turns') && args.includes('stream-json')) {
+  for (const [id, tool] of [['m1', 'Bash'], ['m2', 'Read']]) console.log(JSON.stringify({ type: 'assistant', message: { id, content: [{ type: 'tool_use', name: tool }], usage: { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 3 } } }))
+}
 if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
 if (has('edit')) writeFileSync(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */

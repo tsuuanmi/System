@@ -63,12 +63,12 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
   }
 }
 
-async function started(options: { f?: Fixture } = {}) {
+async function started(options: { f?: Fixture; stallMinutes?: number } = {}) {
   const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema }, { ...DECISION_KIND, content: decisionSchema })
   const f = options.f ?? fixture({ goals: artifacts })
   const home = join(dir, `n${count++}`)
   mkdirSync(home)
-  const host = await f.startHost(home)
+  const host = await f.startHost(home, { stallMinutes: options.stallMinutes })
   const svc = services(f, artifacts)
   const table = operations(svc)
   const path = join(sockets, `${count++}.sock`)
@@ -394,7 +394,7 @@ test('an orchestrator reaches only the Works of its Goal, and the Artifacts of t
   await scoped(newer.call('work.show', { workId: workB.id }))
 })
 
-type Notice = { workId: string; status: string; seq: number }
+type Notice = { workId: string; status: string; seq: number; stalled?: boolean }
 
 /** A connection that keeps the `work.changed` notices it is sent. */
 async function listening(open: (caller?: { type: string; operatorId: string }) => Promise<Client>, caller?: { type: string; operatorId: string }) {
@@ -551,4 +551,45 @@ test('a decision names its Goal: an orchestrator records only for its own, and d
   await scoped(ours.call('decision.list', { goal: b }))
   const listed = (await ours.call('decision.list', {}) as { choice: string; previous?: string; at: string }[])
   assert.deepEqual(listed.map((d) => [d.choice, d.previous]), [['x', undefined], ['x', first.id], ['y', second.id]])
+})
+
+test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 60_000 }, async () => {
+  const f = fixture()
+  let twoTurns!: () => void
+  const reported = new Promise<void>((resolve) => { twoTurns = resolve })
+  f.capabilities.registerWorker({
+    ref: 'fake/quiet', capabilities: ['quiet-work'],
+    async run(request) {
+      request.progress?.({ turns: 1, lastTool: 'Bash', tokens: 10 })
+      request.progress?.({ turns: 2, lastTool: 'Read', tokens: 25 })
+      twoTurns()
+      // Then nothing more, until it is cancelled.
+      await new Promise((resolve) => request.signal.addEventListener('abort', resolve, { once: true }))
+      return { status: 'cancelled', outputs: {} }
+    },
+  })
+  const { open } = await started({ f, stallMinutes: 0.005 })
+  const { client, notices } = await listening(open)
+  const work = await client.call('work.submit', { capabilities: ['quiet-work'] }) as { id: string }
+  await client.call('work.watch', { workId: work.id })
+  await client.call('work.run', { workId: work.id })
+  await reported
+  type Live = { stepId: string; attemptId: string; worker: string; startedAt: string; lastActivityAt: string; elapsedSeconds: number; quietSeconds: number; stalled: boolean; progress: unknown }
+  const shown = await client.call('work.show', { workId: work.id }) as { live: Live[]; events: { type: string }[] }
+  assert.equal(shown.live.length, 1)
+  assert.deepEqual([shown.live[0]!.stepId, shown.live[0]!.worker, shown.live[0]!.progress], ['task', 'fake/quiet', { turns: 2, lastTool: 'Read', tokens: 25 }])
+  assert.ok(shown.live[0]!.lastActivityAt >= shown.live[0]!.startedAt)
+
+  await settled('the stall notice', () => notices.some((n) => n.stalled))
+  const seq = (await events(client, work.id)).events.at(-1)!.seq
+  assert.deepEqual(notices, [{ workId: work.id, status: 'running', seq, stalled: true }])
+  const stalled = await client.call('work.show', { workId: work.id }) as { live: Live[] }
+  assert.equal(stalled.live[0]!.stalled, true)
+
+  await client.call('work.cancel', { workId: work.id, reason: 'quiet too long' })
+  await settled('the end', () => notices.some((n) => n.status === 'cancelled'))
+  const record = await client.call('work.show', { workId: work.id }) as { live?: unknown; events: { type: string }[] }
+  assert.equal(record.live, undefined, 'nothing is live once the attempt reported')
+  assert.deepEqual(record.events.map((e) => e.type), ['admitted', 'dispatched', 'observed', 'terminal'])
+  assert.doesNotMatch(JSON.stringify(record), /turns|lastTool|stalled/, 'progress is an observation of the moment, not an event')
 })

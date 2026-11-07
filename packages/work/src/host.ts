@@ -22,6 +22,7 @@ import { WorkError } from './errors.ts'
 import type { GoalView } from './goal.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
+import type { LiveAttempt } from './live.ts'
 import type { Capabilities } from './registry.ts'
 import { Slots } from './slots.ts'
 import { TERMINAL, type WorkRecord, type WorkState } from './record.ts'
@@ -32,6 +33,8 @@ export interface HostOptions {
   table: WorkTable
   specs: SpecStore
   capabilities: Capabilities
+  /** How long a running attempt may be quiet before it is reported stalled; default `DEFAULT_STALL_MINUTES`. */
+  stallMinutes?: number
 }
 
 /** An option every command takes: with it, a repeat is answered, not done again. */
@@ -75,7 +78,7 @@ export class Host {
       return section()
     })
     this.slots = new Slots(options.capabilities)
-    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots)
+    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes)
   }
 
   /** Take the lock for `options.home`, then recover, then accept operations. Refuses when another Host holds the home. */
@@ -147,6 +150,11 @@ export class Host {
 
   list(): WorkRecord[] {
     return this.controller.list()
+  }
+
+  /** The Work's running Worker attempts and their progress, in memory only. */
+  live(workId: string): LiveAttempt[] {
+    return this.controller.live(workId)
   }
 
   replay(workId: string): { state: WorkState; matches: boolean } {

@@ -347,6 +347,14 @@ exits 0; the Work is not touched. With `--cancel-on-interrupt` Ctrl-C sends
 detaches. Closing the terminal or killing the CLI never cancels a Work: only
 `system work cancel` does. Read what happened with `system work show <id>`.
 
+While Worker attempts run, `work show` also prints `live`: for each attempt
+its start, last activity, elapsed and quiet seconds, and what its Runtime last
+reported (Claude Code and Codex: turns, the last tool, tokens so far). An
+attempt quiet for `stallMinutes` (10 by default; the `work` row's config) is
+`stalled: true`, and watchers get one `work.changed` with `stalled: true`. A
+stall is a notice, not a verdict: the attempt is not stopped. `live` is never
+recorded; it is gone once the attempt reports.
+
 ## Goals and their budget
 
 A Goal bounds what an agent session may spend. Write one at a terminal:
@@ -391,7 +399,8 @@ With `--goal` it is an Orchestrator for that Goal. It may:
 Each Work in scope is also an MCP resource, `system://work/<id>`; reading it
 gives `work.show`. To be told instead of polling, subscribe to it
 (`resources/subscribe`): the server sends `notifications/resources/updated`
-when the Work becomes terminal, is held, or waits for approval. With `--goal`
+when the Work becomes terminal, is held, waits for approval, or one of its
+attempts stalls. With `--goal`
 it also sends `notifications/resources/list_changed` when a new Work of the
 Goal appears. A notice only wakes the session: read the Work's events with
 `work.events` from your last `seq`. A session that was away misses no event,

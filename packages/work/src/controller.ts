@@ -27,6 +27,7 @@ import { MemoryControl, type CancelRequest } from './control.ts'
 import { WorkError } from './errors.ts'
 import { overBudget, resolveGoal, spendOf, type GoalStore, type GoalView } from './goal.ts'
 import { noLane, type Lane } from './lane.ts'
+import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Verdict } from './kinds.ts'
 import { Slots, type LostAttempt } from './slots.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
@@ -139,7 +140,8 @@ export interface WorkChange {
   status: WorkState['status']
   /** The `seq` of the event just committed: 0 for an admission. */
   seq: number
-  type: WorkEvent['type']
+  /** The event's type, or `stalled` when an attempt of the Work has been quiet for `stallMinutes` (no event). */
+  type: WorkEvent['type'] | 'stalled'
 }
 
 export class WorkController {
@@ -163,14 +165,20 @@ export class WorkController {
   private readonly quiet = new Set<() => void>()
   /** The Works a drive is advancing now. */
   private readonly driving = new Set<string>()
+  /** The running Worker attempts' progress, in memory only. */
+  private readonly running: LiveAttempts
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities)) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES) {
     this.table = table
     this.specs = specs
     this.capabilities = capabilities
     this.lane = lane
     this.slots = slots
     slots.onFree(() => this.notify())
+    this.running = new LiveAttempts(stallMinutes, (workId) => {
+      const record = this.table.get(workId)
+      if (record) this.tell({ workId, status: record.state.status, seq: record.events.at(-1)!.seq, type: 'stalled' })
+    })
   }
 
   /** Call `listener` after every committed event, in the lane; it must not throw or wait. Returns the way to stop. */
@@ -182,9 +190,18 @@ export class WorkController {
   /** The one change hook: every append, and the admission, end here. A listener's failure never reaches the Work. */
   private changed(record: WorkRecord): void {
     const event = record.events.at(-1)!
+    this.tell({ workId: record.id, status: record.state.status, seq: event.seq, type: event.type })
+  }
+
+  private tell(change: WorkChange): void {
     for (const listener of this.listeners) {
-      try { listener({ workId: record.id, status: record.state.status, seq: event.seq, type: event.type }) } catch { /* a listener is not the Work's concern */ }
+      try { listener(change) } catch { /* a listener is not the Work's concern */ }
     }
+  }
+
+  /** The Work's running Worker attempts and what they last reported; empty when none runs. */
+  live(workId: string): LiveAttempt[] {
+    return this.running.of(workId)
   }
 
   private now(): string {
@@ -675,12 +692,14 @@ export class WorkController {
     const poll = setInterval(() => { if (this.control.cancelRequest(workId)) abort.abort() }, CANCEL_POLL_MS)
     // A poll never keeps the process alive by itself.
     poll.unref()
+    const progress = this.running.start({ workId, stepId: s.id, attemptId, worker: attempt.worker.ref })
     try {
-      return { result: await attempt.worker.run({ workId, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, instructions: s.instructions, signal: abort.signal }), aborted: abort.signal.aborted }
+      return { result: await attempt.worker.run({ workId, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, instructions: s.instructions, signal: abort.signal, progress }), aborted: abort.signal.aborted }
     } catch (error) {
       return { result: { status: abort.signal.aborted ? 'cancelled' : 'failed', outputs: {}, reason: `the Worker threw: ${(error as Error).message}` }, aborted: abort.signal.aborted }
     } finally {
       clearInterval(poll)
+      this.running.end(attemptId)
     }
   }
 

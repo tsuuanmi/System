@@ -164,8 +164,9 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
     const send = (message: object) => { if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`) }
     // A notice has no id and is no answer: it only wakes the client, which reads `work.events` from its cursor.
     const notify = ({ workId, status, seq, type }: WorkChange) => {
-      const admitted = type === 'admitted' && [...link.goals].some((watched) => inScope(host, watched, workId))
-      if ((type === 'terminal' && link.works.has(workId)) || admitted) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq } })
+      const ofGoal = () => [...link.goals].some((watched) => inScope(host, watched, workId))
+      if (type === 'stalled' && (link.works.has(workId) || ofGoal())) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq, stalled: true } })
+      else if ((type === 'terminal' && link.works.has(workId)) || (type === 'admitted' && ofGoal())) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq } })
     }
     let stopListening: (() => void) | undefined
     const link: Link = { works: new Set(), goals: new Set(), listen() { stopListening ??= host.onChange(notify) } }

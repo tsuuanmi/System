@@ -72,6 +72,9 @@ model is recorded for it.
      --allowedTools Bash WebSearch WebFetch --disallowedTools "Bash(git push:*)" "Bash(gh:*)"`
    - `codex exec --json --ephemeral --ignore-user-config --skip-git-repo-check [-m <model>]
      -s workspace-write -C work --add-dir out <prompt>`
+   While it runs, its stdout is read every 0.5 s; when it grew, the attempt
+   reports its progress (`progressReader`: turns, the last tool, tokens so
+   far) to the Host, which keeps it in memory only.
 4. **Capture**, the same rule for every domain: in a git workspace the first
    output slot is the working tree, committed on the base with a private index
    as `git-tree@1` and pinned at `refs/system/artifacts/<commit>`; every other

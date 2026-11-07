@@ -197,6 +197,23 @@ test('cancel stops the agent with SIGTERM and keeps what it left as partial outp
   assert.equal(execFileSync('git', ['-C', repository, 'show', `${partial.commit}:PARTIAL.md`], { encoding: 'utf8' }), 'half done\n')
 })
 
+test('a running Claude Code attempt reports its progress from the stream as it grows', async () => {
+  const { artifacts } = memory()
+  const abort = new AbortController()
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-progress'))
+  const reports: unknown[] = []
+  let twoTurns!: () => void
+  const reported = new Promise<void>((resolve) => { twoTurns = resolve })
+  const running = worker.run({
+    ...request({ question: await task(artifacts, 'FAKE:turns FAKE:sleep') }, ['report'], abort.signal),
+    progress(report) { reports.push(report); if (report.turns === 2) twoTurns() },
+  })
+  await reported
+  abort.abort()
+  assert.equal((await running).status, 'cancelled')
+  assert.deepEqual(reports.at(-1), { turns: 2, lastTool: 'Read', tokens: 36 })
+})
+
 test('an agent ignoring SIGTERM is killed when the grace ends', async () => {
   const { artifacts } = memory()
   const abort = new AbortController()

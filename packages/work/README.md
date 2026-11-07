@@ -23,6 +23,10 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
+- [src/live.ts](src/live.ts) — `LiveAttempts`: each running Worker attempt's
+  start, last activity and the `progress` its Worker reported (in memory
+  only, never an event), and the stall notice after `stallMinutes` (the row's
+  config, default 10): a `WorkChange` of type `stalled`, once until it reports again.
 - [src/control.ts](src/control.ts) — `MemoryControl`: the per-Work lock and cancel request, in memory.
 - [src/host.ts](src/host.ts) — `Host` ([the Host](../../docs/architecture/host.md),
   H2, in process): takes the Host lock, owns the controller, runs every
