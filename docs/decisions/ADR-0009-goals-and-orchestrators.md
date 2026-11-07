@@ -66,6 +66,21 @@ The terms are in [GLOSSARY.md](../../GLOSSARY.md).
    - A notice only wakes the client. It reads the change with `work.events`
      from its cursor, so a missed notice loses nothing.
 
+## Implemented
+
+- Decision 3 (O2): `system mcp` is `packages/app/src/mcp.ts`, run by the thin
+  client. Its tools are the table's `agent: true` rows, with JSON Schema from
+  the row's params and the row's summary.
+  - The hello's caller is `{ type: "orchestrator", operatorId, goal }` with
+    `--goal`; the caller schema of the Work events has the same type.
+  - Tool names are the method names, such as `work.submit`.
+- Decision 4 (O2): the scope is a `scope` hook on the Host's rows, so the
+  adapter decides nothing. Beyond the operations the decision names, an
+  orchestrator also reads `work.replay` and `goal.show` only inside its Goal's
+  chain; `task.new`, `artifact.put` and `workers.list` stay an agent's.
+  Artifacts in scope are those a scoped Work's events name, and the context
+  and base of its Task.
+
 ## Consequences
 
 - An agent session can be given a Goal and left to work. The operator keeps

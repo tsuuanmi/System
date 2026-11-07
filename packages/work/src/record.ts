@@ -10,7 +10,12 @@ import { z } from 'zod'
 const at = z.string()
 const TERMINAL_STATUSES = ['succeeded', 'failed', 'held', 'cancelled'] as const
 const status = z.enum(['running', ...TERMINAL_STATUSES])
-const caller = z.object({ type: z.enum(['human', 'agent']), operatorId: z.string().min(1) }).strict()
+const operatorId = z.string().min(1)
+/** An orchestrator names the Goal it works for (ADR-0009 decision 3); it has an agent's authority and no more. */
+const caller = z.discriminatedUnion('type', [
+  z.object({ type: z.enum(['human', 'agent']), operatorId }).strict(),
+  z.object({ type: z.literal('orchestrator'), operatorId, goal: contentIdSchema }).strict(),
+])
 
 /** Why a candidate Worker or verifier was or was not chosen. */
 const candidate = z.object({ ref: z.string(), selected: z.boolean(), reason: z.string() }).strict()

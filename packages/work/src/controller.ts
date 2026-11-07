@@ -222,6 +222,12 @@ export class WorkController {
     return { ...view, spend: spendOf(this.list(), chain) }
   }
 
+  /** The Goal and every Goal in its supersedes chain, as far back and forward as the chain goes. */
+  goalChain(goalId: string): ReadonlySet<string> {
+    if (!this.specs.goals) throw new WorkError('this Host has no Goals')
+    return resolveGoal(this.specs.goals, goalId).chain
+  }
+
   list(): WorkRecord[] {
     return [...this.table.keys()].map((key) => this.table.get(key)!)
   }

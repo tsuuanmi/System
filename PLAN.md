@@ -394,9 +394,9 @@ and orchestrator scope; O3 completion notices.
   finish; only the operator raises it). Every Work an Orchestrator creates
   names its Goal. A Goal carries the Charter principles as context for its
   Works.
-- [ ] **`system mcp`** (moved from H, ADR-0007 amendment): the agent client
+- [x] **`system mcp`** (moved from H, ADR-0007 amendment): the agent client
   of the Host's socket, offering only operations flagged `agent`.
-- [ ] **Orchestrator**: an agent connected through MCP, a caller scoped to
+- [x] **Orchestrator**: an agent connected through MCP, a caller scoped to
   one Goal. It may submit, run, cancel and retry, and read Artifacts. It may
   never approve, mark a PR ready, accept an inconclusive verdict or merge.
 - [ ] **Completion notices** (operator, 2026-11-06): instead of polling, the

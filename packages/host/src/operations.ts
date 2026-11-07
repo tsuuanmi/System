@@ -6,8 +6,8 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Goal, type Host, type WorkRecord } from '@system/work'
-import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Methods } from './index.ts'
+import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Goal, type Host, type WorkEvent, type WorkRecord } from '@system/work'
+import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
 export interface Services {
@@ -62,7 +62,50 @@ async function started(host: Host, id: string, begin: (started: () => void) => P
   return known(host, id)
 }
 
+type Orchestrator = Caller & { type: 'orchestrator' }
+
+const outside = (what: string, caller: Orchestrator) => new RpcError(NOT_ALLOWED, `${what} is outside the scope of the orchestrator's Goal ${caller.goal}: it reaches only the Works of that Goal and of its supersedes chain`)
+
+/** Whether the Work was admitted for the orchestrator's Goal or one in its supersedes chain (ADR-0009 decision 4). */
+function inScope(host: Host, record: WorkRecord | undefined, caller: Orchestrator): record is WorkRecord {
+  const admitted = record?.events[0]
+  return admitted?.type === 'admitted' && admitted.goal !== undefined && host.goalChain(caller.goal).has(admitted.goal)
+}
+
+/** Every Artifact ID an event names as an input, output or evidence. */
+function named(event: WorkEvent): string[] {
+  switch (event.type) {
+    case 'admitted': return [...(event.input ? [event.input] : []), ...Object.values(event.criteria ?? {})]
+    case 'dispatched': return Object.values(event.inputs)
+    case 'observed': return [...Object.values(event.outputs), ...Object.values(event.partial ?? {}), ...(event.log ? [event.log] : [])]
+    case 'verified': return [event.subject, ...(event.verdictId ? [event.verdictId] : []), ...(event.evidence ?? [])]
+    case 'terminal': return Object.values(event.results)
+    default: return []
+  }
+}
+
+/** The Artifacts of the orchestrator's Works: what their events name, and the context and base of each Task among them. */
+function scopedArtifacts(host: Host, services: Services, caller: Orchestrator): Set<string> {
+  const found = new Set<string>()
+  for (const record of host.list()) if (inScope(host, record, caller)) for (const event of record.events) for (const id of named(event)) found.add(id)
+  for (const id of [...found]) {
+    const read = services.artifact(id) as { state?: string; envelope?: { kind?: string; content?: { context?: string[]; base?: string } } }
+    if (read.state !== 'stored' || read.envelope?.kind !== TASK_KIND.kind) continue
+    for (const more of [...(read.envelope.content?.context ?? []), ...(read.envelope.content?.base ? [read.envelope.content.base] : [])]) found.add(more)
+  }
+  return found
+}
+
 export function operations(services: Services): Methods {
+  /** The scope of a row on one Work: refused unless the Work is the orchestrator's. */
+  const ofWork = (name: string): Method['scope'] => (host, p, caller) => {
+    if (!inScope(host, host.get(p.workId), caller)) throw outside(`${name} on ${p.workId}`, caller)
+    return p
+  }
+  const ofArtifact = (name: string): Method['scope'] => (host, p, caller) => {
+    if (!scopedArtifacts(host, services, caller).has(p.id)) throw outside(`${name} on ${p.id}`, caller)
+    return p
+  }
   return {
     'work.submit': {
       agent: true,
@@ -76,27 +119,35 @@ export function operations(services: Services): Methods {
           : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId })
       },
+      scope(_host, p, caller) {
+        if (p.goal !== undefined && p.goal !== caller.goal) throw outside(`work.submit for Goal ${p.goal}`, caller)
+        return { ...p, goal: caller.goal }
+      },
     },
     'work.run': {
       agent: true,
+      scope: ofWork('work.run'),
       summary: 'Start admitted or interrupted Work and return its record once it is running; follow it with `work.events`.',
       params: z.object({ workId, commandId }).strict(),
       handler: (host, p) => started(host, p.workId, (go) => host.run(p.workId, { commandId: p.commandId, started: go })),
     },
     'work.retry': {
       agent: true,
+      scope: ofWork('work.retry'),
       summary: 'Run a Worker step of failed, cancelled or held Work again as a new attempt, and return its record once it is running.',
       params: z.object({ workId, step: z.string().min(1).optional(), worker: z.string().min(1).optional(), reason: z.string().default('retried by the operator'), commandId }).strict(),
       handler: (host, p, caller) => started(host, p.workId, (go) => host.retry(p.workId, { step: p.step, worker: p.worker, reason: p.reason, caller, commandId: p.commandId, started: go })),
     },
     'work.cancel': {
       agent: true,
+      scope: ofWork('work.cancel'),
       summary: 'Stop Work: its record once cancelled, or `"requested"` while a run is stopping its attempt.',
       params: z.object({ workId, reason: z.string().default('cancelled by the operator'), commandId }).strict(),
       handler: (host, p, caller) => host.cancel(p.workId, { reason: p.reason, caller, commandId: p.commandId }),
     },
     'work.show': {
       agent: true,
+      scope: ofWork('work.show'),
       summary: 'The Work record: events and state.',
       params: z.object({ workId }).strict(),
       handler: (host, p) => known(host, p.workId),
@@ -105,16 +156,18 @@ export function operations(services: Services): Methods {
       agent: true,
       summary: 'Every Work as `{ id, status, specId }`.',
       params: z.object({}).strict(),
-      handler: (host) => host.list().map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
+      handler: (host, _p, caller) => host.list().filter((r) => caller.type !== 'orchestrator' || inScope(host, r, caller)).map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
     },
     'work.replay': {
       agent: true,
+      scope: ofWork('work.replay'),
       summary: 'Fold the recorded events again: `{ state, matches }`. Runs nothing.',
       params: z.object({ workId }).strict(),
       handler: (host, p) => (known(host, p.workId), host.replay(p.workId)),
     },
     'work.report': {
       agent: true,
+      scope: ofWork('work.report'),
       summary: 'Duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also the Goal, its budget and its spend.',
       params: z.object({ workId }).strict(),
       handler(host, p) {
@@ -127,6 +180,7 @@ export function operations(services: Services): Methods {
     },
     'work.events': {
       agent: true,
+      scope: ofWork('work.events'),
       summary: 'The events with `seq` above `after` (all when omitted) and the current status: `{ events, status }`. Poll it to follow a Work.',
       params: z.object({ workId, after: z.number().int().min(-1).optional() }).strict(),
       handler(host, p) {
@@ -156,6 +210,10 @@ export function operations(services: Services): Methods {
       agent: true,
       summary: 'A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`.',
       params: z.object({ goal: artifactId }).strict(),
+      scope(host, p, caller) {
+        if (!host.goalChain(caller.goal).has(p.goal)) throw outside(`goal.show on ${p.goal}`, caller)
+        return p
+      },
       handler: (host, p) => host.goal(p.goal),
     },
     'task.new': {
@@ -172,12 +230,14 @@ export function operations(services: Services): Methods {
     },
     'artifact.show': {
       agent: true,
+      scope: ofArtifact('artifact.show'),
       summary: 'An Artifact\'s envelope and occurrences, or why it is not stored.',
       params: z.object({ id: artifactId }).strict(),
       handler: (_host, p) => services.artifact(p.id),
     },
     'artifact.cat': {
       agent: true,
+      scope: ofArtifact('artifact.cat'),
       summary: 'The bytes of a blob Artifact as `{ data }` in base64; refused when they do not fit a frame.',
       params: z.object({ id: artifactId }).strict(),
       async handler(_host, p) {
