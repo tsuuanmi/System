@@ -100,8 +100,8 @@ async function loginAccount(ctx: Context, ref: string, cookies: string | undefin
   return agents.login(ref, cookies)
 }
 
-/** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT. */
-async function runHost(ctx: Context): Promise<void> {
+/** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT (status 0) or on new code on disk (`UPGRADE_EXIT`). */
+async function runHost(ctx: Context): Promise<number> {
   const work = ctx.get('work') as WorkService | undefined
   const artifacts = ctx.get('artifacts') as Artifacts | undefined
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
@@ -132,13 +132,12 @@ async function runHost(ctx: Context): Promise<void> {
     throw error
   })
   // The launcher stops its tree on a signal and exits 130 for SIGINT; the Host stops itself and exits 0.
-  await new Promise<void>((stopped) => {
-    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-      process.removeAllListeners(signal)
-      // A repeat while stopping (systemd also signals the wrapper's child) is ignored.
-      process.on(signal, () => { void serving.stop().then(stopped) })
-    }
-  })
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.removeAllListeners(signal)
+    // A repeat while stopping (systemd also signals the wrapper's child) is ignored.
+    process.on(signal, () => { void serving.stop() })
+  }
+  return serving.exited
 }
 
 export function apply(ctx: Context): void {

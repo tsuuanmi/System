@@ -112,8 +112,8 @@ export interface ClientHost {
 
 /** What `doctor` and `host` run against: the process that boots DSH. */
 export interface HostProcess extends DoctorHost {
-  /** Run as the Host of this home until stopped by a signal; resolves once it has stopped. */
-  runHost(): Promise<void>
+  /** Run as the Host of this home until stopped by a signal or by new code on disk; resolves its exit status once it has stopped. */
+  runHost(): Promise<number>
 }
 
 /** A command the program selected, run after startup. */
@@ -140,12 +140,11 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
       })
     })
   program.command('host')
-    .description('run the Host: own every Work of this home and serve $DSH_HOME/system/host.sock until SIGTERM or SIGINT')
+    .description('run the Host: own every Work of this home and serve $DSH_HOME/system/host.sock until SIGTERM or SIGINT, or until the code on disk changes (exit 75)')
+    // Handled by bin/system before DSH starts: the supervisor is that wrapper, which runs this command again after an exit 75.
+    .option('--supervise', 'stay as a supervisor and run the Host again after an exit 75 (new code); any other exit ends it')
     .action(() => {
-      select(async () => {
-        await host.runHost()
-        return 0
-      })
+      select(() => host.runHost())
     })
   return program
 }

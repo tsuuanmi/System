@@ -106,7 +106,33 @@ finish for 2 s, then closes every connection, and the CLI says the Host is not
 running.
 
 Whatever was running when the Host stopped is lost at the next start and is
-left interrupted; nothing runs again until `system work run` or `retry`.
+left interrupted; nothing runs again until `system work run` or `retry`. (A
+Host that stopped itself for new code waits for its attempts first; see
+[Upgrading](#upgrading).)
+
+## Upgrading
+
+Nothing to do after a merge or a `corepack pnpm build`: the Host looks at its
+code every 10 s and restarts itself on new code.
+
+1. It logs `system host: upgrading: this Host runs <old>, the code on disk is
+   <new>; ...`, starts no new attempt, and lets the running ones finish
+   (however long they take; it never interrupts one). Works can still be
+   submitted and run: they wait.
+2. With no attempt running it logs `stopped for the upgrade ... exiting 75`
+   and exits 75. The unit restarts on that status (`RestartForceExitStatus=75`);
+   `system host --supervise` runs it again (foreground, development: nothing
+   else restarts it, and a crash or a SIGTERM ends the supervisor).
+3. The new Host recovers as on any start and logs `continuing N Works held for
+   the upgrade`: the Works whose runs waited at the gate go on, and nothing
+   that was interrupted does.
+
+A command run meanwhile waits up to 3 s for the swap before it says the Host
+is not running. If the Host is still draining, `system host`'s log says what it
+waits for; `systemctl --user restart system` (or SIGTERM) stops it at once and
+interrupts the attempts, as any stop does. After a build that is still
+half-written the new Host may fail to start: build again, then
+`systemctl --user restart system`.
 
 ## Attempts at once, and held slots
 

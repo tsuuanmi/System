@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { constants, homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { MIN_NODE, nodeChoice, serviceMode, unitPath, unitText } from './service.mjs'
+import { MIN_NODE, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
 
 const PROFILE = 'system'
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -26,10 +26,16 @@ function run(command, args, env) {
   return new Promise((done) => {
     const child = spawn(command, args, { stdio: 'inherit', env })
     child.on('error', (error) => fail(error.message))
-    child.on('exit', (code, signal) => done(code ?? 128 + (constants.signals[signal] ?? 0)))
-    process.on('SIGTERM', () => child.kill('SIGTERM'))
+    const onTerm = () => child.kill('SIGTERM')
     // At a terminal, Ctrl-C reaches the child itself, and a second one from here would force its exit.
-    process.on('SIGINT', () => { if (!process.stdin.isTTY) child.kill('SIGINT') })
+    const onInt = () => { if (!process.stdin.isTTY) child.kill('SIGINT') }
+    child.on('exit', (code, signal) => {
+      process.off('SIGTERM', onTerm)
+      process.off('SIGINT', onInt)
+      done(code ?? 128 + (constants.signals[signal] ?? 0))
+    })
+    process.on('SIGTERM', onTerm)
+    process.on('SIGINT', onInt)
   })
 }
 
@@ -101,5 +107,12 @@ else if (thin(args)) {
   process.exit(await main(args, home))
 } else {
   if (!existsSync(join(profileDir, 'package.json'))) fail(`no ${PROFILE} profile under ${home}/profiles: run \`system init\` first`)
+  if (args[0] === 'host' && args.includes('--supervise')) {
+    // The development setup, without systemd: stay small, and run the Host again after it stopped for new code.
+    let stopped = false
+    for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { stopped = true })
+    const inner = args.filter((arg) => arg !== '--supervise')
+    process.exit(await supervise({ run: () => dsh(['--profile', PROFILE, ...inner]), stopped: () => stopped, log: (line) => process.stderr.write(`system host: ${line}\n`) }))
+  }
   process.exit(await dsh(['--profile', PROFILE, ...args]))
 }

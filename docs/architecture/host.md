@@ -99,7 +99,10 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
 
 - **Handshake.** Each connection starts with a version handshake. A CLI and
   a Host of different versions refuse each other and name the fix: restart
-  the Host.
+  the Host. A Host that notices new code on disk restarts itself
+  ([Upgrading](#upgrading-on-new-code-d)), and a hello from the code it is
+  upgrading to is refused with `-32002` (`UPGRADING`), "retry in a moment",
+  which the thin client retries for a few seconds.
 - **Caller.** Every call records its caller: human at a terminal, agent, or
   Orchestrator (an agent scoped to one Goal, by the Host).
 - **Receipts.** `submit`, `run`, `retry`, `cancel` and `approve` carry a
@@ -210,13 +213,48 @@ next start's recovery. It stops accepting, lets admitted calls finish for a
 short grace (2 s), then drops every connection, so a client that stays
 connected never keeps it from stopping.
 
+### Upgrading on new code (D)
+
+After a merge the code on disk is newer than the code a Host runs, and every
+new client is refused. The Host restarts itself, and never interrupts an
+attempt to do it.
+
+- **Noticing.** A timer (`UPGRADE_POLL`, 10 s) recomputes the code-version hash,
+  a few hundred small files. Not `fs.watch`: a build deletes and rewrites
+  `lib/`, which loses watches on Linux, and it needs a debounce anyway. A
+  change counts when two looks in a row find the same new hash, so a build
+  still writing its files does not restart the Host. A hello from a client
+  whose version differs from the Host's asks the disk at once, and the Host
+  upgrades if the disk's hash is that client's: the common idle case waits
+  for no timer.
+- **Upgrading.** The Host logs why, stops dispatching new attempts (worker,
+  verifier and effect; accepting a Work is none) and lets the running ones
+  finish. `work.submit` and `work.run` are still accepted, so clients see
+  only a delay; the runs wait at the gate.
+- **Leaving.** With no attempt running, the Host stops accepting, writes the
+  IDs of the Works whose runs it held to `$DSH_HOME/system/upgrade.json`,
+  releases the lock and exits with status 75. A SIGTERM meanwhile wins: exit 0
+  and no file.
+- **Restart.** The unit has `Restart=on-failure` and `RestartForceExitStatus=75`;
+  `system host --supervise` re-executes the Host after 75 and after nothing
+  else. The new Host recovers as on any start, and then reads and deletes the
+  file: it runs those Works, except any with an attempt it just marked lost,
+  finished ones, and ones already driven. Nothing interrupted resumes; a Work
+  that was only held at the gate has nothing in flight to interrupt. The file
+  is one use, not a queue.
+- **Clients.** The thin client retries the connection, and a hello refused as
+  upgrading, for 3 s before it says "not running", and a client following a
+  Work opens a closed connection again once.
+
 `host.status` reports the number of Works and the size of their records, for
 PLAN's growth budget.
 
 ### Running it
 
 `system init` installs `system.service`:
-- a plain user unit, with `Restart=on-failure`;
+- a plain user unit, with `Restart=on-failure` and `RestartForceExitStatus=75`
+  (the status of a Host that stopped to run new code, so the new code starts at
+  once even if `Restart=` is changed);
 - the PATH captured at init, so the unit finds `claude`, `codex`, `git` and
   `node`;
 - lingering enabled, so the Host runs after logout.
@@ -231,7 +269,8 @@ and exits 0. `system init` never enables or starts the unit, and a `DSH_HOME`
 other than `~/.dsh` gets no unit; the commands, `--no-service`, logs and the
 "not running" and "not answering" cases are in the
 [operations runbook](../operations/runbook.md). Other homes (tests,
-experiments) run `system host` in the foreground.
+experiments) run `system host` in the foreground, with `--supervise` to have
+it start again on new code.
 
 ## Goals (O1)
 
@@ -267,6 +306,7 @@ before the code (Charter 12, fixture first).
 | Agents cannot approve | Held (H3): `an agent connection is refused every method flagged agent: false, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
 | Recovery is conservative | Held (H2, and the slot at H5, see the next row): `a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until settled: `a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself` and `a lost attempt whose Worker cannot confirm it gone keeps its slot` (packages/work/tests/slots.test.ts). |
 | A Goal's budget holds | `admission is refused once the spend reached the budget, at the limit and not before`, `a raise lets admission continue...`, `a running Work is never stopped by the budget`, `the spend is a fold of the records...` (packages/work/tests/goal.test.ts); `goal.new is refused to an agent connection, and nothing is stored` (packages/host/tests/operations.test.ts); `a Goal's context reaches the Worker...` (packages/agents/tests/agent.test.ts); through the CLI, tests/goal.test.ts. |
+| New code replaces the Host without interrupting an attempt | Held (D): `a draining Host starts no new attempt, lets the running one finish, and names the Works it held`, `resume continues what a draining Host held, and nothing that start found interrupted` (packages/work/tests/upgrade.test.ts); `on new code a supervised Host starts nothing new, finishes its attempt, exits 75, and the next Host serves the new version and runs what was queued` (which includes a client call during the swap), `a client built from the new code upgrades an idle Host at once, and is told to retry`, `a change seen once is not enough...`, `a stop while the Host drains exits 0 and leaves nothing to continue`, `a connection retries while the Host is away...` (packages/host/tests/upgrade.test.ts); `the supervisor runs the Host again after exit 75 and after nothing else` (packages/app/tests/service.test.ts). |
 | Version skew is caught | Held (H3a): `a Host of another version refuses the hello and names the fix` (packages/host/tests/transport.test.ts). |
 | Slots hold (R2) | Held (H5), in packages/work/tests/slots.test.ts: `Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once`, `a synthesis step waits for both proposals`, `two Works on one Account never run two attempts at once with a limit of 1`, `two Works on one Account run two attempts at once with a limit of 2`, `a waiting step goes in Work admission order when its slot frees`, `a cancel while two attempts run records both, then one terminal event`, and `seed 1` to `seed 50: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event` (also never above the limit). Through the process: `the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both` (tests/brainstorm.test.ts). The agent side: `the account's slots are the Host's: the worker offers its limit and never queues attempts itself` and `a lost attempt is gone when its pid file is absent or names no process, and not while the process runs` (packages/agents/tests/agent.test.ts). |
 

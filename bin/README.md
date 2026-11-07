@@ -12,6 +12,9 @@
   and `loginctl enable-linger`, and prints the command that enables it (it never
   enables or starts it). `--no-service` or `SYSTEM_NO_SERVICE=1` skips that; any
   other home is told to run `system host` in the foreground.
+- `system host --supervise` (development, no systemd) stays as a small
+  supervisor around `system host` and runs it again after exit 75, the status of
+  a Host that stopped to run new code; any other exit ends it with that status.
 - `system host` and `system doctor` (and any command led by a DSH flag, such as
   `--patch f host`) run `dsh --profile system <args>`; SIGTERM sent to the
   wrapper reaches DSH, and its exit status is the wrapper's.
@@ -19,8 +22,9 @@
   ([client.ts](../packages/app/src/client.ts)): it does not boot DSH and needs
   no profile, only a Host on `$DSH_HOME/system/host.sock`.
 - [service.mjs](service.mjs) (typed by [service.d.mts](service.d.mts)) holds the
-  decisions that need no DSH: the unit text, whether init installs it, and the
-  Node choice.
+  decisions that need no DSH: the unit text (`Restart=on-failure` and
+  `RestartForceExitStatus=75`), whether init installs it, the supervisor loop and
+  the Node choice.
 
 `DSH_HOME` defaults to `~/.dsh`. The wrapper uses the workspace's pinned DSH
 launcher and puts the workspace's pinned `pnpm` on `PATH`, because

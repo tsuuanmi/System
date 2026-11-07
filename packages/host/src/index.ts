@@ -61,6 +61,8 @@ export const INTERNAL_ERROR = -32603
 export const REFUSED = -32000
 /** An operation flagged `agent: false`, called by an agent or an orchestrator; or a call outside an orchestrator's Goal. */
 export const NOT_ALLOWED = -32001
+/** A hello from the code on disk, refused because this Host is upgrading to it: retry in a moment. */
+export const UPGRADING = -32002
 
 export class RpcError extends Error {
   readonly code: number
@@ -112,6 +114,8 @@ export interface ServeOptions {
   methods?: Methods
   /** The code version a hello must carry; default: this build's `VERSION`. */
   version?: string
+  /** Called with the version of a hello that differs from this Host's: whether the Host is (now) upgrading, so the refusal says to retry. */
+  upgrading?: (clientVersion: string) => boolean
   /** Milliseconds `close` lets admitted calls finish before it drops the connections; default `STOP_GRACE`. */
   grace?: number
 }
@@ -125,19 +129,19 @@ export interface Served {
 }
 
 /** The `host.*` rows every Host serves, besides `host.hello`, which the connection itself handles. */
-const builtin: Methods = {
+const builtin = (version: string): Methods => ({
   'host.status': {
     agent: true,
     summary: 'Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`.',
     handler(host) {
       const records = host.list()
-      return { version: VERSION, pid: process.pid, works: records.length, recordBytes: records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0) }
+      return { version, pid: process.pid, works: records.length, recordBytes: records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0) }
     },
   },
-}
+})
 
 /** The whole table a Host serves: the built-in rows and `extra`. */
-export const tableOf = (extra: Methods = {}): Methods => ({ ...builtin, ...extra })
+export const tableOf = (extra: Methods = {}, version: string = VERSION): Methods => ({ ...builtin(version), ...extra })
 
 /** The caller a hello declares, or nothing when it does not fit the shape. */
 const callerOf = (value: unknown): Caller | undefined => {
@@ -147,8 +151,8 @@ const callerOf = (value: unknown): Caller | undefined => {
 
 /** Listen on `options.path`; each connection must say `host.hello` before any other method. */
 export async function serve(host: Host, options: ServeOptions): Promise<Served> {
-  const methods = tableOf(options.methods)
   const version = options.version ?? VERSION
+  const methods = tableOf(options.methods, version)
   const sockets = new Set<Socket>()
   const inflight = new Set<Promise<void>>()
   let stopping = false
@@ -180,6 +184,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
           const next = callerOf(request.params?.caller)
           if (!next) throw new RpcError(INVALID_PARAMS, 'host.hello needs caller: { type: "human" | "agent", operatorId } or { type: "orchestrator", operatorId, goal }')
           if (request.params.version !== version) {
+            if (options.upgrading?.(String(request.params.version))) throw new RpcError(UPGRADING, `the Host runs code ${version} and is upgrading to the code on disk, ${String(request.params.version)}: it restarts when its running attempts finish; retry in a moment`)
             throw new RpcError(REFUSED, `the Host runs code ${version} and the client ${String(request.params.version)}; restart the Host: systemctl --user restart system (or restart \`system host\`)`)
           }
           caller = next
@@ -248,10 +253,56 @@ export interface Client {
 export interface ConnectOptions {
   /** Milliseconds a call waits for its answer. */
   timeout?: number
+  /** Milliseconds to keep trying while the Host is away, such as in the swap of an upgrade; default 0, one try. */
+  retry?: number
 }
 
-/** Connect to a Host's socket. A refusal says the Host is not running. */
-export function connect(path: string, options: ConnectOptions = {}): Promise<Client> {
+/** How long to wait between tries while a Host is away. */
+const RETRY_EVERY = 50
+
+/** Connect to a Host's socket, trying again for `options.retry` ms. A refusal that lasts says the Host is not running. */
+export async function connect(path: string, options: ConnectOptions = {}): Promise<Client> {
+  const until = Date.now() + (options.retry ?? 0)
+  for (;;) {
+    try {
+      return await connectOnce(path, options)
+    } catch (error) {
+      if (!(error instanceof NotRunning) || Date.now() >= until) throw error
+      await new Promise((resolve) => setTimeout(resolve, RETRY_EVERY))
+    }
+  }
+}
+
+export interface HelloOptions extends ConnectOptions {
+  version: string
+  caller: Caller
+}
+
+/**
+ * Connect and say hello, trying again for `options.retry` ms while the Host is away or is upgrading to this
+ * client's code. After that the last refusal is the error: not running, or the upgrade that has not finished.
+ */
+export async function connectHello(path: string, options: HelloOptions): Promise<Client> {
+  const until = Date.now() + (options.retry ?? 0)
+  for (;;) {
+    try {
+      const client = await connectOnce(path, options)
+      try {
+        await client.call('host.hello', { version: options.version, caller: options.caller })
+        return client
+      } catch (error) {
+        client.close()
+        throw error
+      }
+    } catch (error) {
+      const away = error instanceof NotRunning || (error instanceof RpcError && error.code === UPGRADING)
+      if (!away || Date.now() >= until) throw error
+      await new Promise((resolve) => setTimeout(resolve, RETRY_EVERY))
+    }
+  }
+}
+
+function connectOnce(path: string, options: ConnectOptions): Promise<Client> {
   const timeout = options.timeout ?? CALL_TIMEOUT
   return new Promise((resolve, reject) => {
     const socket: Socket = createConnection(path)

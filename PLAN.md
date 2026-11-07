@@ -353,6 +353,7 @@ written first.
   The agent worker's own per-account queue is gone (the Host's slots replace
   it); each attempt's CLI writes a pid file first, which is what lets a later
   Host confirm a lost attempt's process gone.
+- [ ] Self-restart on new code (D): the Host notices new code on disk, stops dispatching, lets running attempts finish and exits 75; the unit and `system host --supervise` restart it, the thin client retries the swap, and Works held at the gate continue (host.md "Upgrading on new code (D)").
 - [x] Gate R1 (checked 2026-11-07, each item against a test that exists):
   - [x] every existing smoke behaviour passes through the Host: every file of
     `tests/` drives `bin/system` through `systemCli` (`test-support/cli.ts`),
