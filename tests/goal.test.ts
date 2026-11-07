@@ -85,6 +85,13 @@ test('a Goal is written by a human at a terminal, its context reaches a Work, an
   const listed = JSON.parse(system(['decision', 'list', '--goal', goal]).stdout) as { id: string; choice: string; restsOn: string[] }[]
   assert.deepEqual(listed.map((d) => [d.id, d.choice, d.restsOn]), [[last(decided.stdout), 'y', [record.state.steps.task.outputs.result]]])
 
+  const briefed = system(['goal', 'brief', goal])
+  assert.equal(briefed.status, 0, briefed.stderr)
+  assert.match(briefed.stdout, /^# Goal sha256:/)
+  assert.match(briefed.stdout, new RegExp(`${ran.stdout.trim()} succeeded`))
+  assert.match(briefed.stdout, new RegExp(`which direction\\? -> y: the report says so \\(${last(decided.stdout)}\\)`))
+  assert.equal(system(['goal', 'brief', goal]).stdout, briefed.stdout, 'the same records give the same text')
+
   const raise = onTerminal(['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '2', '--supersedes', goal], '\n')
   const raiseShort = raise.stdout.match(/type exactly ([0-9a-f]{8})/)![1]!
   const raised = last(onTerminal(['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '2', '--supersedes', goal], `${raiseShort}\n`).stdout)

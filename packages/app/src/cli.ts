@@ -85,6 +85,8 @@ export interface WorkCommands {
   /** Store a Goal on the human's own connection, as the operator who confirmed it; `supersedes` is the Goal it raises or changes. */
   newGoal(goal: NewGoal, supersedes: string | undefined, operatorId: string): Promise<{ id: string }>
   goal(goalId: string): Promise<GoalView>
+  /** The Goal's brief: text written from records only. */
+  brief(goalId: string): Promise<string>
   addDecision(decision: NewDecision): Promise<{ id: string }>
   decisions(goalId: string | undefined): Promise<StoredDecision[]>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
@@ -289,6 +291,14 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .action((id: string) => {
       select(async () => {
         io.out(`${JSON.stringify(await host.work().goal(id), null, 2)}\n`)
+        return 0
+      })
+    })
+  goal.command('brief <id>')
+    .description('what a new Orchestrator session starts from, written from records only: the Goal and its budget left, its Works, its decisions and what waits')
+    .action((id: string) => {
+      select(async () => {
+        io.out(await host.work().brief(id))
         return 0
       })
     })

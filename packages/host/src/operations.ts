@@ -7,6 +7,7 @@
  */
 import { createHash } from 'node:crypto'
 import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, decisionSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewDecision, type NewGoal, type StoredDecision, type WorkEvent, type WorkRecord } from '@system/work'
+import { brief } from './brief.ts'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, inScope, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -284,6 +285,21 @@ export function operations(services: Services): Methods {
         return { goal: p.goal ?? caller.goal }
       },
       handler: (host, p) => services.decisions(p.goal ? host.goalChain(p.goal) : undefined),
+    },
+    'goal.brief': {
+      agent: true,
+      summary: 'What a new Orchestrator session starts from, as text written from records only (no model call): the Goal and its budget left, its Works with status, current step and live progress, its decisions, and what waits (approvals, held, failed, stalled Works): `{ text }`. The same records give the same text.',
+      params: z.object({ goal: artifactId }).strict(),
+      scope(host, p, caller) {
+        if (!host.goalChain(caller.goal).has(p.goal)) throw outside(`goal.brief on ${p.goal}`, caller)
+        return p
+      },
+      handler(host, p) {
+        const view = host.goal(p.goal)
+        const chain = host.goalChain(p.goal)
+        const works = host.list().filter((r) => r.events[0]?.type === 'admitted' && r.events[0].goal !== undefined && chain.has(r.events[0].goal))
+        return { text: brief(view, works, services.decisions(chain), (id) => host.live(id)) }
+      },
     },
     'task.new': {
       agent: true,

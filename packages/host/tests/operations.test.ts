@@ -63,9 +63,10 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
   }
 }
 
-async function started(options: { f?: Fixture; stallMinutes?: number } = {}) {
+async function started(options: { setup?: (f: Fixture) => void; stallMinutes?: number } = {}) {
   const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema }, { ...DECISION_KIND, content: decisionSchema })
-  const f = options.f ?? fixture({ goals: artifacts })
+  const f = fixture({ goals: artifacts })
+  options.setup?.(f)
   const home = join(dir, `n${count++}`)
   mkdirSync(home)
   const host = await f.startHost(home, { stallMinutes: options.stallMinutes })
@@ -554,10 +555,9 @@ test('a decision names its Goal: an orchestrator records only for its own, and d
 })
 
 test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 60_000 }, async () => {
-  const f = fixture()
   let twoTurns!: () => void
   const reported = new Promise<void>((resolve) => { twoTurns = resolve })
-  f.capabilities.registerWorker({
+  const { open } = await started({ stallMinutes: 0.005, setup: (f) => f.capabilities.registerWorker({
     ref: 'fake/quiet', capabilities: ['quiet-work'],
     async run(request) {
       request.progress?.({ turns: 1, lastTool: 'Bash', tokens: 10 })
@@ -567,8 +567,7 @@ test('a running attempt shows its progress in work.show, and a quiet one sends a
       await new Promise((resolve) => request.signal.addEventListener('abort', resolve, { once: true }))
       return { status: 'cancelled', outputs: {} }
     },
-  })
-  const { open } = await started({ f, stallMinutes: 0.005 })
+  }) })
   const { client, notices } = await listening(open)
   const work = await client.call('work.submit', { capabilities: ['quiet-work'] }) as { id: string }
   await client.call('work.watch', { workId: work.id })
@@ -592,4 +591,45 @@ test('a running attempt shows its progress in work.show, and a quiet one sends a
   assert.equal(record.live, undefined, 'nothing is live once the attempt reported')
   assert.deepEqual(record.events.map((e) => e.type), ['admitted', 'dispatched', 'observed', 'terminal'])
   assert.doesNotMatch(JSON.stringify(record), /turns|lastTool|stalled/, 'progress is an observation of the moment, not an event')
+})
+
+test('goal.brief prints the Goal, its budget left, its running, failed and held Works and its decisions; the same records give the same text', { timeout: 60_000 }, async () => {
+  const { f, open, artifacts } = await started({ setup: (f) => f.capabilities.registerWorker({ ref: 'fake/failing', capabilities: ['fail-work'], async run() { return { status: 'failed', outputs: {}, reason: 'the tests failed' } } }) })
+  const human = await open()
+  const goal = (await human.call('goal.new', { aim: 'ship OC', scope: 'the Host', budget: { attempts: 10 } }) as { id: string }).id
+  const other = (await human.call('goal.new', { aim: 'elsewhere', scope: 's', budget: {} }) as { id: string }).id
+  const task = async (text: string) => (await artifacts.put({ ...TASK_KIND, content: { instructions: text }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
+  const submit = async (params: object) => await human.call('work.submit', params) as { id: string }
+
+  const failed = await submit({ capabilities: ['fail-work'], input: await task('two'), goal })
+  await human.call('work.run', { workId: failed.id })
+  const held = await submit({ workflow: heldWorkflow, input: await task('three'), goal })
+  await human.call('work.run', { workId: held.id })
+  await submit({ capabilities: ['code-write'], input: await task('not ours'), goal: other })
+  for (const id of [failed.id, held.id]) await terminal(human, id)
+  // Started last: it holds the fake Account's one slot until released.
+  f.hold('task')
+  const running = await submit({ capabilities: ['code-write'], input: await task('one'), goal })
+  await human.call('work.run', { workId: running.id })
+  await f.arrived('task')
+  const first = await human.call('decision.add', { goal, question: 'which direction?', options: ['x', 'y'], choice: 'x', reason: 'the synthesis' }) as { id: string }
+  const second = await human.call('decision.add', { goal, question: 'merge now?', options: ['yes', 'no'], choice: 'no', reason: 'wait for checks' }) as { id: string }
+
+  const orchestrated = await open(orchestrator(goal))
+  const { text } = await orchestrated.call('goal.brief', { goal }) as { text: string }
+  assert.match(text, /ship OC/)
+  assert.match(text, /attempts: \d+ of 10 spent, \d+ left/)
+  assert.match(text, new RegExp(`${running.id} running.*step task running`))
+  assert.match(text, new RegExp(`${failed.id} failed: step task failed \\(the tests failed\\)\n`))
+  assert.match(text, new RegExp(`${held.id} held.*awaits accept`))
+  assert.doesNotMatch(text, /not ours|elsewhere/)
+  assert.match(text, new RegExp(`which direction\\? -> x: the synthesis \\(${first.id}\\)`))
+  assert.match(text, new RegExp(`merge now\\? -> no: wait for checks \\(${second.id}\\)`))
+  assert.ok(text.indexOf(first.id) < text.indexOf(second.id), 'decisions oldest first')
+  assert.match(text, new RegExp(`approval: ${held.id}`))
+  assert.match(text, new RegExp(`failed: ${failed.id}`))
+  assert.equal((await orchestrated.call('goal.brief', { goal }) as { text: string }).text, text, 'the same records give the same text')
+  await assert.rejects(orchestrated.call('goal.brief', { goal: other }), (error: { code: number }) => error.code === NOT_ALLOWED)
+  f.release('task')
+  await terminal(human, running.id)
 })

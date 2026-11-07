@@ -406,6 +406,14 @@ Goal appears. A notice only wakes the session: read the Work's events with
 `work.events` from your last `seq`. A session that was away misses no event,
 only the wake-up.
 
+**Replacing the Orchestrator session.** Its state lives in System, so a new
+session takes over like a new Worker: it starts from `goal.brief` (`system goal
+brief <goal>`: the Goal and its budget left, its Works with their current step
+and live progress, its decisions, and what waits), and records each choice it
+makes with `decision.add` (`system decision add`: question, options, choice,
+reason, and the Artifacts it rests on, such as a synthesis or a review). A
+decision is a record, never an authority.
+
 It cannot approve or deny, store a conversation, set credentials, write a Goal,
 sign an account in, or merge into `main`. It is refused, with the reason, any
 call on another Goal's Works or their Artifacts. The budget of the Goal still

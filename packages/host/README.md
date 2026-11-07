@@ -48,6 +48,8 @@ await serving.stop()                                // server, then the Host cor
   `operations(services)` (`src/operations.ts`) builds the rows of the Work
   operations; `Services` is what they need besides the `Host`: Artifacts,
   credentials and the Workers view; `system host` brings the DSH-backed ones.
+  `goal.brief` writes its text with `brief` (`src/brief.ts`), from records
+  and the live attempts only.
 - **Orchestrator scope.** An `orchestrator` caller has an agent's authority and
   is further confined to its Goal (ADR-0009 decision 4). A row's optional
   `scope` hook (`src/operations.ts`) runs for it before the handler and throws
@@ -88,6 +90,7 @@ await serving.stop()                                // server, then the Host cor
 | `goal.show` | yes | `goal: string` | A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`. |
 | `decision.add` | yes | `goal?: string`, `question: string`, `options: string[]`, `choice: string`, `reason: string`, `restsOn?: string[]` | Record a choice made for a Goal as a `decision@1` Artifact: the question, the options, the choice, the reason and the Artifacts it rests on (`restsOn`), after the latest decision of the Goal's chain: `{ id }`. A record, never an authority. An orchestrator records only for its own Goal. |
 | `decision.list` | yes | `goal?: string` | The decisions of a Goal and its chain (of every Goal without `goal`), oldest first: `[{ id, at, goal, question, options, choice, reason, restsOn, by, previous? }]`. An orchestrator lists its own Goal's. |
+| `goal.brief` | yes | `goal: string` | What a new Orchestrator session starts from, as text written from records only (no model call): the Goal and its budget left, its Works with status, current step and live progress, its decisions, and what waits (approvals, held, failed, stalled Works): `{ text }`. The same records give the same text. |
 | `task.new` | yes | `instructions: string`, `repository?: string`, `ref?: string`, `context?: string[]` | Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. |
 | `artifact.put` | yes | `data: string`, `mediaType?: string`, `classification?: "public" \| "operator-shared" \| "local-private"` | Store bytes (base64, within the frame limit) as a `file@1` Artifact: its envelope. |
 | `artifact.show` | yes | `id: string` | An Artifact's envelope and occurrences, or why it is not stored. |

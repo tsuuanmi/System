@@ -116,6 +116,7 @@ export function remoteHost(remote: Remote): ClientHost {
       }
     },
     goal: (goalId) => read('goal.show', { goal: goalId }) as Promise<GoalView>,
+    brief: async (goalId) => (await read('goal.brief', { goal: goalId }) as { text: string }).text,
     addDecision: (decision) => read('decision.add', decision),
     decisions: (goalId) => read('decision.list', goalId ? { goal: goalId } : {}),
     replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,
