@@ -710,6 +710,24 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      `promptSendAttempted` (PROP-0005 lists each); and a 66 KB prompt took
      5.5 min to type, so the composer takes one paste (`do: pasteText`, its
      own `insert` stage; 60 KB in about a second on the fake page).
+     *Then (PR #38) unit took 202 s (38 s before WW), all its slow tests
+     driving a real Chrome: unit and smoke leave those out and `test:web`
+     runs them as the required check `web` (unit 23 s; web about 4 min at
+     load 90-200).*
+  1d. [ ] Worker tool policy for Software Engineering Workers (no background
+     tasks or Monitor; commands run in the foreground under `timeout`), a
+     per-attempt budget (tokens and time, from the observed usage; WW1 took
+     183M input tokens over 13 turns, WW1c 86M), failure reasons in one line
+     (the check, the test, the first error line), and the checks pinned to
+     Node 24 whatever the Host's `PATH`.
+  1e. [ ] Merge queue (decided 2026-11-07), before any parallel Software
+     Engineering Works.
+  2a. [ ] The web Runtime as its own package and an optional DSH row: core
+     and the CLI Runtimes do not depend on it; a smoke test runs the main
+     path with the web row off.
+  2p. [ ] Required checks selected by `paths` (as GitHub Actions' `paths`
+     filter); the main path always under 3 min, `web` under 5 min when it
+     runs; the verdict names each check run or skipped, and its time.
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [ ] Canary.
@@ -741,9 +759,13 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
   a step `uses:` another Workflow, expanded at admission into the pinned
   spec; the controller is unchanged. The WW loop itself becomes a Workflow
   (`brainstorm`, then `software-engineering`, then `second-opinion`).
+- **Moved to milestone OC** (operator, 2026-11-07; built from `dev` by the
+  Development session, branch `orchestrator-continuity`, PROP-0006):
+  decisions as Artifacts, the Goal brief, live attempt progress and stall
+  notices, Sub-workflows, `code-checks.yaml` and retrying a verify step.
 - **Order of the new Workflows.** 1b. `second-opinion.yaml` right after WW1
-  (the loop needs it). 2c. Sub-workflows in the compiler. 2b. `debate.yaml`,
-  built from Sub-workflows, after 2c. 7. research fan-out (`research.yaml`
+  (the loop needs it; done). Sub-workflows come with OC. 2b. `debate.yaml`,
+  built from Sub-workflows, after OC is merged into `web-workers`. 7. research fan-out (`research.yaml`
   used k times) and `digest` after step 6.
 - **Gate to merge into `dev`.** Canary ≥95% over ≥50 attempts across both
   Accounts; zero wrong-Account, wrong-mode or malformed-output acceptances;
