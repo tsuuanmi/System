@@ -1,0 +1,26 @@
+# Second opinion. One independent Worker reviews a change or a document given
+# as the Task's context (a diff, a design) and writes a review. It is a
+# reference Artifact for the operator or an Orchestrator, never a verdict: no
+# verifier, nothing is blocked on it. Routing is by the role capability
+# review.second-opinion, which the profile gives to one account (PLAN WW, 1b).
+schema: system.workflow/v1
+id: second-opinion
+version: 1
+steps:
+  - id: review
+    capabilities: [review.second-opinion]
+    inputs:
+      task: $work.input
+    outputs: [review]
+    instructions: |
+      Review the change or document in the Task's context on your own, as a
+      careful senior reviewer who did not write it. The Task's instructions
+      say what it is meant to do.
+      Write the output "review" as Markdown with these sections:
+      1. Verdict: one line, "looks right", "needs changes" or "wrong approach".
+      2. Defects: each concrete problem, most severe first, with where it is
+         (file and the code it concerns) and the input or state that breaks it.
+         Say "none found" if there are none; do not invent any.
+      3. Risks: what could go wrong later that is not a defect today.
+      4. Questions: what you could not tell from the text alone.
+      Quote code exactly when you refer to it. Do not rewrite the change.
