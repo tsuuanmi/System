@@ -8,14 +8,13 @@
  * assertions always give the same ID. System vouches for the bytes, never for
  * where they came from or whether they are true.
  */
-import type { Artifacts, Envelope, Producer } from '@system/artifacts'
+import { contentIdSchema, type Artifacts, type Envelope, type Producer } from '@system/artifacts'
 import { z } from 'zod'
 
 export const CONVERSATION_KIND = { kind: 'conversation', schemaVersion: 1 } as const
 
 export const NOTICE = 'Operator-supplied conversation. System stored these bytes as given and has not verified who wrote them, whether they are complete, or whether they are true.'
 
-const artifactId = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 
 export const assertedSchema = z.object({
   provider: z.string().min(1).optional(),
@@ -35,7 +34,7 @@ export const conversationSchema = z.object({
   parts: z.array(z.object({
     role: z.enum(['prompt', 'response', 'attachment']),
     name: z.string().min(1),
-    artifact: artifactId,
+    artifact: contentIdSchema,
     mediaType: z.string().min(1),
     bytes: z.number().int().nonnegative(),
   }).strict()).min(1),

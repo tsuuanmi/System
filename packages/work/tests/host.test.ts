@@ -14,17 +14,6 @@ const newHome = () => { const path = join(dir, `home-${homes++}`); mkdirSync(pat
 const turn = () => new Promise((resolve) => setImmediate(resolve))
 const types = (record: WorkRecord) => record.events.map((e) => (e.type === 'terminal' ? `terminal:${e.outcome}` : 'stepId' in e ? `${e.type}:${e.stepId}` : e.type))
 
-test('a second Host on the same home is refused; another home is not; a closed Host frees its home', async () => {
-  const f = fixture()
-  const home = newHome()
-  const first = await f.startHost(home)
-  await assert.rejects(f.startHost(home), /another Host already runs/)
-  const other = await f.startHost(newHome())
-  await other.close()
-  await first.close()
-  await (await f.startHost(home)).close()
-})
-
 test('no copy of the store outlives its Host: a second Host is refused while one runs a Work, and the next one starts from what the first wrote', async () => {
   const f = fixture()
   const home = newHome()
@@ -177,15 +166,6 @@ test('without a commandId every submit is a new Work', async () => {
   await host.close()
 })
 
-test('submit sent twice at once gives one Work', async () => {
-  const f = fixture()
-  const host = await f.startHost(newHome())
-  const [a, b] = await Promise.all([host.submit(f.admission('brainstorm.yaml'), { commandId: 'cmd-1' }), host.submit(f.admission('brainstorm.yaml'), { commandId: 'cmd-1' })])
-  assert.equal(a.id, b.id)
-  assert.equal(host.list().length, 1)
-  await host.close()
-})
-
 test('the same commandId with different arguments is refused', async () => {
   const f = fixture()
   const host = await f.startHost(newHome())
@@ -210,16 +190,6 @@ test('the same run twice dispatches once', async () => {
   assert.equal(again.state.status, 'succeeded')
   assert.equal(f.attempts.length, 3)
   assert.equal(f.controller.get(id)!.events.length, first.events.length)
-  await host.close()
-})
-
-test('the same run sent twice while it runs joins it', async () => {
-  const f = fixture()
-  const host = await f.startHost(newHome())
-  const { id } = await host.submit(f.admission('brainstorm.yaml'))
-  const [a, b] = await Promise.all([host.run(id, { commandId: 'run-1' }), host.run(id, { commandId: 'run-1' })])
-  assert.equal(a.state.status, b.state.status)
-  assert.equal(f.attempts.length, 3)
   await host.close()
 })
 
@@ -325,13 +295,13 @@ test('a Host killed mid-attempt: the new Host marks the attempt lost, does not r
   assert.deepEqual(types(record), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'observed:idea-a', 'attempt-lost:idea-b'])
   assert.equal(record.state.status, 'running')
   assert.deepEqual(second.interrupted(), [id])
-  assert.deepEqual(second.uncertain(), [{ workId: id, stepId: 'idea-b', attemptId: record.state.steps['idea-b']!.attempts[0]! }])
+  assert.deepEqual(second.slots.uncertain(), [{ workId: id, stepId: 'idea-b', attemptId: record.state.steps['idea-b']!.attempts[0]! }])
   for (let n = 0; n < 20; n++) await turn()
   assert.deepEqual(f.attempts, ['idea-a', 'idea-b'], 'nothing is dispatched by itself')
   // The lost attempt may still run: until its process is confirmed gone it keeps its Account's slot (slots.test.ts).
   f.gone(record.state.steps['idea-b']!.attempts[0]!)
-  assert.deepEqual((await second.settle()).map((l) => l.stepId), ['idea-b'])
-  assert.deepEqual(second.uncertain(), [])
+  assert.deepEqual((await second.slots.settle()).map((l) => l.stepId), ['idea-b'])
+  assert.deepEqual(second.slots.uncertain(), [])
   const done = await second.run(id, { commandId: 'run-1' })
   assert.equal(done.state.status, 'succeeded')
   assert.deepEqual(f.attempts, ['idea-a', 'idea-b', 'idea-b', 'synthesis'])

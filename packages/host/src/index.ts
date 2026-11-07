@@ -38,16 +38,23 @@ export const VERSION: string = codeVersion()
 
 /** The largest line, in bytes, either side accepts. */
 export const MAX_FRAME = 1024 * 1024
+/** Whether base64 text leaves room in a frame for the rest of its message. */
+export const fitsFrame = (base64: string): boolean => base64.length <= MAX_FRAME - 1024
 /** How long a call waits for its answer, in milliseconds. */
 export const CALL_TIMEOUT = 10_000
 
+/** The line is not JSON; the connection stays open. */
 export const PARSE_ERROR = -32700
+/** Not a JSON-RPC 2.0 request, or a line over `MAX_FRAME` (the connection is closed). */
 export const INVALID_REQUEST = -32600
 export const METHOD_NOT_FOUND = -32601
+/** A malformed hello, or params that do not fit the row's schema. */
 export const INVALID_PARAMS = -32602
-/** Refused by the Host: a handshake not done or not matching. */
+/** The handler failed. */
+export const INTERNAL_ERROR = -32603
+/** Refused by the Host: no hello yet, or a version mismatch. */
 export const REFUSED = -32000
-/** An operation closed to agents, called by one. */
+/** An operation flagged `agent: false`, called by an agent. */
 export const NOT_ALLOWED = -32001
 
 export class RpcError extends Error {
@@ -87,16 +94,16 @@ export interface Served {
   close(): Promise<void>
 }
 
-/** The memory report (C18): what the records weigh, counted from the records. */
-const report = (host: Host) => {
-  const records = host.list()
-  return { version: VERSION, pid: process.pid, works: records.length, recordBytes: records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0) }
-}
-
 /** The `host.*` rows every Host serves, besides `host.hello`, which the connection itself handles. */
 const builtin: Methods = {
-  'host.ping': { agent: true, summary: 'Whether the Host answers: `{ version, pid, works, recordBytes }`.', handler: (host) => report(host) },
-  'host.status': { agent: true, summary: 'The memory report (C18), counted from the records: the same `{ version, pid, works, recordBytes }`, for the growth budget.', handler: (host) => report(host) },
+  'host.status': {
+    agent: true,
+    summary: 'Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`.',
+    handler(host) {
+      const records = host.list()
+      return { version: VERSION, pid: process.pid, works: records.length, recordBytes: records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0) }
+    },
+  },
 }
 
 /** The whole table a Host serves: the built-in rows and `extra`. */
@@ -148,7 +155,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         send({ jsonrpc: '2.0', id, result: await method.handler(host, params, caller) ?? null })
       } catch (error) {
         if (error instanceof RpcError) fail(id, error.code, error.message)
-        else fail(id, -32603, error instanceof Error ? error.message : String(error))
+        else fail(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error))
       }
     }
 

@@ -9,9 +9,9 @@
  *
  * Scheduling (PROP-0004 C3): a drive dispatches every ready step (pending, all
  * `dependsOn` succeeded) whose Account has a free slot, and goes on as each
- * attempt reports. An Account is a Worker's `ref`; it has `maxConcurrentAttempts`
- * slots (default 1), reserved in the lane before `dispatched` is appended and
- * released once `observed` is. Verifier and effect steps take none. Ready steps
+ * attempt reports. A Worker attempt holds a slot of its Account (see
+ * `slots.ts`) from before `dispatched` until `observed`. Verifier and effect
+ * steps take none. Ready steps
  * that find no slot wait in memory; a freed slot wakes the Works in admission
  * order, and each takes its steps in Workflow file order.
  *
@@ -28,6 +28,7 @@ import { WorkError } from './errors.ts'
 import { overBudget, resolveGoal, spendOf, type GoalStore, type GoalView } from './goal.ts'
 import { noLane, type Lane } from './lane.ts'
 import type { Verdict } from './kinds.ts'
+import { Slots, type LostAttempt } from './slots.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, workflowSchema, type ResolvedSpec, type Step } from './workflow.ts'
@@ -80,6 +81,21 @@ export interface Command {
   args: string
 }
 
+/** What `retry` is told: which step and Worker take over, by whom and why. */
+export interface RetryOptions {
+  worker?: string
+  step?: string
+  caller: Caller
+  reason: string
+}
+
+/** A human's decision on held Work. */
+export interface Decision {
+  decision: 'approved' | 'denied'
+  caller: Caller
+  reason: string
+}
+
 /** What one turn of a drive decided: the record now, and, for each attempt dispatched, how to finish it. */
 interface Turn {
   record: WorkRecord
@@ -89,13 +105,6 @@ interface Turn {
   waiting?: boolean
   /** The slot epoch the decision was made at: a change since means the wait is over. */
   epoch: number
-}
-
-/** An attempt that was dispatched and never observed. */
-export interface LostAttempt {
-  workId: string
-  stepId: string
-  attemptId: string
 }
 
 /** A dispatched Worker attempt: what `execute` needs and `observe` reports on. */
@@ -132,20 +141,19 @@ export class WorkController {
   private readonly lane: Lane
   /** Commands whose receipt the next `terminal` event of a Work carries. */
   private readonly expected = new Map<string, Receipt[]>()
-  /** Account -> the attempts holding one of its slots. */
-  private readonly slots = new Map<string, Set<string>>()
-  /** Lost attempts whose process may still run, by attempt ID: they keep their slot until settled. */
-  private readonly uncertain = new Map<string, { account: string; lost: LostAttempt }>()
+  readonly slots: Slots
   /** Changes whenever a slot is freed or a cancel is asked, so a waiting drive does not miss it. */
   private epoch = 0
   /** The drives waiting for such a change, by Work. */
   private readonly waiters = new Map<string, () => void>()
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities)) {
     this.table = table
     this.specs = specs
     this.capabilities = capabilities
     this.lane = lane
+    this.slots = slots
+    slots.onFree(() => this.notify())
   }
 
   private now(): string {
@@ -290,7 +298,7 @@ export class WorkController {
       if (TERMINAL.has(turn.record.state.status)) break
       if (turn.waiting) {
         // With nothing of its own in flight, the Work asks whether a lost attempt it waits on is gone by now.
-        if (!flying.size && this.uncertain.size && (await this.settle()).length) continue
+        if (!flying.size && this.slots.uncertain().length && (await this.slots.settle()).length) continue
         if (this.epoch === turn.epoch) await this.idle(workId, flying)
       }
       if (failures.length) throw failures[0]
@@ -321,45 +329,6 @@ export class WorkController {
 
   private admittedAt(workId: string): string {
     return this.table.get(workId)?.events[0]?.at ?? ''
-  }
-
-  private limitOf(worker: WorkerPort): number {
-    return worker.maxConcurrentAttempts ?? 1
-  }
-
-  /** In the lane, before `dispatched`: take a slot of the Worker's Account, if one is free. */
-  private reserve(worker: WorkerPort, attemptId: string): boolean {
-    const held = this.slots.get(worker.ref) ?? new Set<string>()
-    if (held.size >= this.limitOf(worker)) return false
-    this.slots.set(worker.ref, held.add(attemptId))
-    return true
-  }
-
-  private release(account: string, attemptId: string): void {
-    if (this.slots.get(account)?.delete(attemptId)) this.notify()
-  }
-
-  /** The lost attempts whose slots are held, in the order they were marked. */
-  uncertainAttempts(): LostAttempt[] {
-    return [...this.uncertain.values()].map((u) => u.lost)
-  }
-
-  /** Ask each Worker whether the process of a lost attempt is confirmed gone; those that are free their slot. Returns them. */
-  async settle(): Promise<LostAttempt[]> {
-    const settled: LostAttempt[] = []
-    for (const [attemptId, { account, lost }] of [...this.uncertain]) {
-      let gone = false
-      try {
-        gone = (await this.capabilities.workerFor(account)?.gone?.(attemptId)) ?? false
-      } catch {
-        gone = false
-      }
-      if (!gone) continue
-      this.uncertain.delete(attemptId)
-      this.release(account, attemptId)
-      settled.push(lost)
-    }
-    return settled
   }
 
   private async advance(workId: string, busy: boolean): Promise<Turn> {
@@ -407,7 +376,7 @@ export class WorkController {
    * only by `worker`. The new attempt gets the same recorded inputs plus, as
    * `previous`, the partial output the last attempt left. Then run.
    */
-  async retry(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }, command?: Command, started?: () => void): Promise<WorkRecord> {
+  async retry(workId: string, options: RetryOptions, command?: Command, started?: () => void): Promise<WorkRecord> {
     const release = await this.enter(workId, command)
     try {
       await this.lane(() => this.reopen(workId, options))
@@ -418,7 +387,7 @@ export class WorkController {
     }
   }
 
-  private async reopen(workId: string, options: { worker?: string; step?: string; caller: Caller; reason: string }): Promise<void> {
+  private async reopen(workId: string, options: RetryOptions): Promise<void> {
     const record = this.require(workId)
     if (!['failed', 'cancelled', 'held'].includes(record.state.status)) throw new WorkError(`only failed, cancelled or held Work is retried; ${workId} is ${record.state.status}`)
     if (options.worker && !this.capabilities.workerRefs().includes(options.worker)) throw new WorkError(`no enabled Worker ${options.worker}; enabled: ${this.capabilities.workerRefs().join(', ') || 'none'}`)
@@ -466,8 +435,7 @@ export class WorkController {
     for (const attempt of lost) {
       const dispatched = record.events.findLast((e) => e.type === 'dispatched' && e.attemptId === attempt.attemptId)
       if (dispatched?.type !== 'dispatched' || dispatched.executor !== 'worker') continue
-      this.slots.set(dispatched.selected, (this.slots.get(dispatched.selected) ?? new Set()).add(attempt.attemptId))
-      this.uncertain.set(attempt.attemptId, { account: dispatched.selected, lost: attempt })
+      this.slots.hold(dispatched.selected, attempt)
     }
     await this.recover(record, { resumeEffects: false })
     return lost
@@ -573,7 +541,7 @@ export class WorkController {
             const execution = await this.executeWorker(attempt)
             return await this.lane(() => this.observeWorker(attempt, execution))
           } finally {
-            this.release(attempt.worker.ref, attempt.attemptId)
+            this.slots.release(attempt.worker.ref, attempt.attemptId)
           }
         }))
       } else if (isVerifyStep(next)) {
@@ -614,14 +582,14 @@ export class WorkController {
     const route = this.capabilities.routeWorker(s.capabilities, takeover?.worker)
     if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled Worker ${takeover?.worker ? `${takeover.worker} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`) }
     const attemptId = `attempt:${randomUUID()}`
-    if (!this.reserve(route.selected, attemptId)) return { record, blocked: true }
+    if (!this.slots.reserve(route.selected, attemptId)) return { record, blocked: true }
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
         selected: route.selected.ref, candidates: route.candidates, inputs,
       })
     } catch (error) {
-      this.release(route.selected.ref, attemptId)
+      this.slots.release(route.selected.ref, attemptId)
       throw error
     }
     return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
@@ -830,7 +798,7 @@ export class WorkController {
    * Record a human operator's decision on held Work; an approval runs it on.
    * Agent callers are refused (ADR-0004 decision 3).
    */
-  async decide(workId: string, decision: { decision: 'approved' | 'denied'; caller: Caller; reason: string }, command?: Command, started?: () => void): Promise<WorkRecord> {
+  async decide(workId: string, decision: Decision, command?: Command, started?: () => void): Promise<WorkRecord> {
     if (decision.caller.type !== 'human') throw new WorkError('only a human operator approves; an agent caller cannot decide')
     const release = await this.enter(workId, command)
     try {

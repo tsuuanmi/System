@@ -6,8 +6,8 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { WorkError, assertedSchema, goalSchema, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Goal, type Host, type WorkRecord } from '@system/work'
-import { MAX_FRAME, NOT_ALLOWED, RpcError, type Methods } from './index.ts'
+import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Goal, type Host, type WorkRecord } from '@system/work'
+import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
 export interface Services {
@@ -32,7 +32,6 @@ export interface Services {
 
 const commandId = z.string().min(1).optional()
 const workId = z.string().min(1)
-const artifactId = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 /** Bytes as base64: canonical, so what was sent is what is stored. */
 const base64 = z.string().max(MAX_FRAME).refine((text) => Buffer.from(text, 'base64').toString('base64') === text, 'not canonical base64')
 const part = z.object({ name: z.string().min(1), data: base64, mediaType: z.string().min(1) }).strict()
@@ -168,7 +167,7 @@ export function operations(services: Services): Methods {
     'artifact.put': {
       agent: true,
       summary: 'Store bytes (base64, within the frame limit) as a `file@1` Artifact: its envelope.',
-      params: z.object({ data: base64, mediaType: z.string().min(1).default('application/octet-stream'), classification: z.enum(['public', 'operator-shared', 'local-private']).default('local-private') }).strict(),
+      params: z.object({ data: base64, mediaType: z.string().min(1).default('application/octet-stream'), classification: z.enum(CLASSIFICATIONS).default('local-private') }).strict(),
       handler: (_host, p, caller) => services.putFile(Buffer.from(p.data, 'base64'), p.mediaType, p.classification, caller),
     },
     'artifact.show': {
@@ -183,7 +182,7 @@ export function operations(services: Services): Methods {
       params: z.object({ id: artifactId }).strict(),
       async handler(_host, p) {
         const data = Buffer.from(await services.readBytes(p.id)).toString('base64')
-        if (data.length > MAX_FRAME - 1024) throw new WorkError(`${p.id} is too large for one reply (${data.length} bytes in base64)`)
+        if (!fitsFrame(data)) throw new WorkError(`${p.id} is too large for one reply (${data.length} bytes in base64)`)
         return { data }
       },
     },

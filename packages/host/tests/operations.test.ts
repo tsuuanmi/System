@@ -147,7 +147,6 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(svc.seen.logins, [['chatgpt-web/default', 'the file']])
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
-  assert.equal((await call('host.ping') as { works: number }).works, 4)
   const status = await call('host.status') as { works: number; recordBytes: number }
   assert.equal(status.works, 4)
   assert.ok(status.recordBytes > 0)
@@ -281,7 +280,7 @@ test('a missing Work or Artifact is an error, not a crash', async () => {
   await assert.rejects(client.call('work.show', { workId: 'work:none' }), /no Work work:none/)
   await assert.rejects(client.call('work.events', { workId: 'work:none' }), /no Work work:none/)
   await assert.rejects(client.call('artifact.cat', { id: `sha256:${'0'.repeat(64)}` }), /no Artifact/)
-  assert.equal((await client.call('host.ping') as { works: number }).works, 0)
+  assert.equal((await client.call('host.status') as { works: number }).works, 0)
 })
 
 test('conversation.add refuses a preview with warnings unless acceptWarnings', async () => {

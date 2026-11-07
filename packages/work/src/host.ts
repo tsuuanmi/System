@@ -17,13 +17,14 @@
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type Command, type LostAttempt, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type Command, type Decision, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import type { GoalView } from './goal.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
 import type { Capabilities } from './registry.ts'
-import { TERMINAL, type Caller, type WorkRecord, type WorkState } from './record.ts'
+import { Slots } from './slots.ts'
+import { TERMINAL, type WorkRecord, type WorkState } from './record.ts'
 
 export interface HostOptions {
   /** `DSH_HOME`: the Host lock is named after its canonical path. */
@@ -54,6 +55,12 @@ export class Host {
   private readonly controller: WorkController
   private readonly lock: HostLock
   private readonly lane: Lane
+  /**
+   * The Accounts' slots. Worker attempts lost at start, whose process may
+   * still run, keep theirs: `slots.uncertain()` lists them, and
+   * `slots.settle()` frees those whose process is confirmed gone.
+   */
+  readonly slots: Slots
   private readonly commands = new Map<string, Seen>()
   private closed = false
 
@@ -65,7 +72,8 @@ export class Host {
       if (this.closed) throw new WorkError(`the Host is closed (it ran ${this.lock.home})`)
       return section()
     })
-    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane)
+    this.slots = new Slots(options.capabilities)
+    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots)
   }
 
   /** Take the lock for `options.home`, then recover, then accept operations. Refuses when another Host holds the home. */
@@ -90,20 +98,7 @@ export class Host {
       await this.lane(() => this.controller.interrupt(record.id))
     }
     // Those whose process is already gone free their slot now; the rest stay held.
-    await this.controller.settle()
-  }
-
-  /**
-   * Worker attempts lost at start, whose process may still be running: each
-   * keeps its Account's slot until `settle` finds it gone.
-   */
-  uncertain(): LostAttempt[] {
-    return this.controller.uncertainAttempts()
-  }
-
-  /** Ask each Account's Worker whether a lost attempt's process is confirmed gone; those that are free their slot. Returns them. */
-  settle(): Promise<LostAttempt[]> {
-    return this.controller.settle()
+    await this.slots.settle()
   }
 
   /** Stop: refuse every further operation and free the home. Whatever was cut short is the next start's recovery. */
@@ -138,26 +133,26 @@ export class Host {
   /** Admit a Work. With a `commandId` its ID derives from it, and the same submit again returns that Work. */
   submit(admission: Admission, options: Idempotent = {}): Promise<WorkRecord> {
     const workId = options.commandId ? workIdOf(options.commandId) : undefined
-    return this.once(options.commandId, 'submit', admission, undefined, (command) => this.lane(() => this.controller.admit(admission, { workId, command })))
+    return this.once({ commandId: options.commandId, op: 'submit', args: admission }, (command) => this.lane(() => this.controller.admit(admission, { workId, command })))
   }
 
   run(workId: string, options: Starting = {}): Promise<WorkRecord> {
-    return this.once(options.commandId, 'run', { workId }, options.started, (command, started) => this.controller.run(workId, command, started))
+    return this.once({ commandId: options.commandId, op: 'run', args: { workId }, started: options.started }, (command, started) => this.controller.run(workId, command, started))
   }
 
-  retry(workId: string, options: Starting & { worker?: string; step?: string; caller: Caller; reason: string }): Promise<WorkRecord> {
+  retry(workId: string, options: Starting & RetryOptions): Promise<WorkRecord> {
     const { commandId, started, ...retry } = options
-    return this.once(commandId, 'retry', { workId, ...retry }, started, (command, begin) => this.controller.retry(workId, retry, command, begin))
+    return this.once({ commandId, op: 'retry', args: { workId, ...retry }, started }, (command, begun) => this.controller.retry(workId, retry, command, begun))
   }
 
   cancel(workId: string, options: Idempotent & CancelRequest): Promise<'requested' | WorkRecord> {
     const { commandId, ...request } = options
-    return this.once(commandId, 'cancel', { workId, ...request }, undefined, (command) => this.controller.cancel(workId, request, command))
+    return this.once({ commandId, op: 'cancel', args: { workId, ...request } }, (command) => this.controller.cancel(workId, request, command))
   }
 
-  decide(workId: string, options: Starting & { decision: 'approved' | 'denied'; caller: Caller; reason: string }): Promise<WorkRecord> {
+  decide(workId: string, options: Starting & Decision): Promise<WorkRecord> {
     const { commandId, started, ...decision } = options
-    return this.once(commandId, 'decide', { workId, ...decision }, started, (command, begin) => this.controller.decide(workId, decision, command, begin))
+    return this.once({ commandId, op: 'decide', args: { workId, ...decision }, started }, (command, begun) => this.controller.decide(workId, decision, command, begun))
   }
 
   /**
@@ -165,7 +160,8 @@ export class Host {
    * arguments are refused. `started` is called when `act` says it has begun
    * driving its Work, and for a repeat when the first call had.
    */
-  private once<T>(commandId: string | undefined, op: string, args: unknown, started: (() => void) | undefined, act: (command: Command | undefined, begin: () => void) => Promise<T>): Promise<T> {
+  private once<T>(command: { commandId?: string; op: string; args: unknown; started?: () => void }, act: (command: Command | undefined, started: () => void) => Promise<T>): Promise<T> {
+    const { commandId, op, args, started } = command
     if (!commandId) return act(undefined, () => started?.())
     const hash = hashDomain('system.command/v1', { op, args })
     const seen = this.commands.get(commandId)

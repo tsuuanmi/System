@@ -6,7 +6,7 @@
  */
 export type Lane = <T>(section: () => Promise<T>) => Promise<T>
 
-/** A lane that runs each section at once: one process driving one Work, as before the Host. */
+/** A lane that runs each section at once: for a controller driven on its own, without a Host. */
 export const noLane: Lane = (section) => section()
 
 /** A new lane: a promise chain. */

@@ -10,7 +10,7 @@ GitHub credentials. Run with `corepack pnpm smoke`.
 
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
 - [host-process.test.ts](host-process.test.ts) — H4a: `bin/system host` as a
-  child process: `host.hello` and `host.ping` on `host.sock`, a second Host
+  child process: `host.hello` and `host.status` on `host.sock`, a second Host
   refused, the Work commands reaching the running Host, SIGTERM and SIGINT
   stop it with exit 0 and free the home, a killed Host's stale socket is
   replaced, leftover control files of the old mode ignored and left in place, and

@@ -160,7 +160,7 @@ test('a Host killed with two attempts in flight: both are lost, their slots are 
   try {
     const [a, b] = [second.get(id)!.state.steps['idea-a']!.attempts[0]!, second.get(id)!.state.steps['idea-b']!.attempts[0]!]
     assert.deepEqual(types(second.get(id)!), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'attempt-lost:idea-a', 'attempt-lost:idea-b'])
-    assert.deepEqual(second.uncertain(), [{ workId: id, stepId: 'idea-a', attemptId: a }, { workId: id, stepId: 'idea-b', attemptId: b }])
+    assert.deepEqual(second.slots.uncertain(), [{ workId: id, stepId: 'idea-a', attemptId: a }, { workId: id, stepId: 'idea-b', attemptId: b }])
     await turns()
     assert.deepEqual(f.attempts, ['idea-a', 'idea-b'], 'nothing is dispatched by itself')
 
@@ -177,8 +177,8 @@ test('a Host killed with two attempts in flight: both are lost, their slots are 
     // Confirming idea-a's process gone frees the Claude Account only.
     f.hold('idea-a')
     f.gone(a)
-    assert.deepEqual(await second.settle(), [{ workId: id, stepId: 'idea-a', attemptId: a }])
-    assert.deepEqual(second.uncertain(), [{ workId: id, stepId: 'idea-b', attemptId: b }])
+    assert.deepEqual(await second.slots.settle(), [{ workId: id, stepId: 'idea-a', attemptId: a }])
+    assert.deepEqual(second.slots.uncertain(), [{ workId: id, stepId: 'idea-b', attemptId: b }])
     await f.arrived('idea-a', 2)
     await turns(50)
     assert.equal(f.attempts.filter((s) => s === 'idea-a').length, 2, 'idea-a runs again, once: the Work that asked first takes the slot')
@@ -186,8 +186,8 @@ test('a Host killed with two attempts in flight: both are lost, their slots are 
 
     f.gone(b)
     f.release('idea-a')
-    await second.settle()
-    assert.deepEqual(second.uncertain(), [])
+    await second.slots.settle()
+    assert.deepEqual(second.slots.uncertain(), [])
     for (const record of await Promise.all([rerun, otherRun])) assert.equal(record.state.status, 'succeeded')
     assertConsistent(f, id)
     assertConsistent(f, other.id)
@@ -209,8 +209,8 @@ test('a lost attempt whose Worker cannot confirm it gone keeps its slot', { time
   await assert.rejects(running, /Host is closed/)
   const second = await f.startHost(home)
   try {
-    assert.deepEqual(await second.settle(), [])
-    assert.equal(second.uncertain().length, 2)
+    assert.deepEqual(await second.slots.settle(), [])
+    assert.equal(second.slots.uncertain().length, 2)
   } finally {
     await second.close()
   }
@@ -234,7 +234,7 @@ test('a lost attempt confirmed gone at the next start frees its slot at once; on
   f.gone(a)
   const second = await f.startHost(home)
   try {
-    assert.deepEqual(second.uncertain(), [{ workId: id, stepId: 'idea-b', attemptId: b }], 'idea-a was confirmed gone at start')
+    assert.deepEqual(second.slots.uncertain(), [{ workId: id, stepId: 'idea-b', attemptId: b }], 'idea-a was confirmed gone at start')
     f.hold('idea-a')
     const rerun = second.run(id)
     await f.arrived('idea-a', 2)
@@ -244,7 +244,7 @@ test('a lost attempt confirmed gone at the next start frees its slot at once; on
     // Nobody calls settle: the waiting Work asks again when its own attempt ends.
     f.release('idea-a')
     assert.equal((await rerun).state.status, 'succeeded')
-    assert.deepEqual(second.uncertain(), [])
+    assert.deepEqual(second.slots.uncertain(), [])
   } finally {
     await second.close()
   }

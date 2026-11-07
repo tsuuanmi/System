@@ -15,7 +15,7 @@ lane, receipts and recovery on start are in `packages/work` (`host-lock.ts`,
 `packages/app` (H4). The old per-command mode, where every `system` command
 booted its own host and coordinated through files, is gone; what it did is in
 [Work ownership and recovery](work-ownership-and-recovery.md). Parallel steps
-and Account slots (H5) are in `controller.ts`.
+and Account slots (H5) are in `controller.ts` and `slots.ts`.
 
 ## Why
 
@@ -142,9 +142,9 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
   - **Implemented (H4b-1):** the CLI is a thin client (`packages/app`:
-    `remote.ts` is an `AppHost` over the socket, `client.ts` its entry, run by
+    `remote.ts` is a `ClientHost` over the socket, `client.ts` its entry, run by
     `bin/system` for every command but `init`, `host` and `doctor`, without
-    booting DSH). `buildProgram` is the same program over either `AppHost`.
+    booting DSH). `buildProgram` is its commands; `doctor` and `host` are a program of their own (`buildHostProgram`), run in the DSH process.
   - It reads the Workflow file and sends its contents. A call that changes
     something carries a fresh `commandId`, sent once more with the same one
     after a timeout.
@@ -187,7 +187,7 @@ says.
   dispatches; attempts in flight are aborted (a cancel) or finish and are
   recorded, then the terminal event follows.
 - **Uncertain attempts.** On start each lost Worker attempt keeps its slot, over
-  the limit if need be (`uncertain()`). `settle()` asks the Account's Worker
+  the limit if need be (`host.slots.uncertain()`). `settle()` asks the Account's Worker
   `gone(attemptId)` and frees the slot if it is true. Start calls it, and so does
   a waiting Work with nothing of its own running. An agent attempt is gone when
   its pid file is absent or names no live process; a Worker without `gone` is
@@ -208,7 +208,7 @@ Orchestrator, runs them again.
 **Implemented (H2):** `Host.start` marks each unfinished Work's unreported
 attempts `attempt-lost` and reconciles effects left `intended` or `unknown`
 by reading the remote, applying nothing. `interrupted()` lists the Works
-nothing is driving, and `uncertain()` the lost Worker attempts that keep
+nothing is driving, and `slots.uncertain()` the lost Worker attempts that keep
 their Account slot (H5). `close()` refuses new operations and frees the home.
 
 On stop, the Host refuses new runs and exits. Whatever was cut short is the
@@ -275,10 +275,10 @@ before the code (Charter 12, fixture first).
 
 | Guarantee | Test |
 |---|---|
-| One Host per home (ends the empty lock and stale-lock removal of 2026-11-06: no lock file exists to be empty, stale or moved) | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts); `a second Host on the same home is refused; another home is not; a closed Host frees its home` (host.test.ts). `system host` (H4a): `host-process.test.ts`, which also holds `the Host ignores the control files of the old mode and leaves them where they are; it makes no control directory` (H4b-2). |
+| One Host per home (ends the empty lock and stale-lock removal of 2026-11-06: no lock file exists to be empty, stale or moved) | Held for the lock (H2): `a second lock on the same home is refused, naming the home`, `a lock on another home is not refused`, `the home is canonical: a symlink to a held home is the same home`, `after release the home can be taken at once`, `a killed process releases the home by itself` (packages/work/tests/host-lock.test.ts). `system host` (H4a): `host-process.test.ts`, which also holds `the Host ignores the control files of the old mode and leaves them where they are; it makes no control directory` (H4b-2). |
 | No change from a stale copy (ends the stale snapshot of 2026-11-06: one process loads the store, so no second copy exists) | Held for the Host's commands (H2): `no copy of the store outlives its Host: a second Host is refused while one runs a Work, and the next one starts from what the first wrote`, `a cancel and the report of a held attempt in the same turn: both are recorded, in order, and the record replays`, `run and cancel submitted together: the cancel is decided first, so nothing is dispatched`, `two runs of one Work together: one drives it, the other is refused, nothing interleaves`, `writes of different Works never overlap: every change goes through the one lane`, `seed 1` to `seed 20: run, cancel and run again at random moments lose and repeat no event`, `the lane runs one section at a time, in order, and a failure does not block the next`, `a closed Host writes nothing, even when its attempt reports late` (host.test.ts); the controller itself by H1 in packages/work/tests/seam.test.ts. |
 | The five defects of 2026-11-06 stay fixed | The empty lock, stale-lock removal and the stale snapshot are the first two rows. The SQLite store-creation race and the profile config rewrite are in [tests/README.md](../../tests/README.md#regressions) (`concurrency.test.ts`, run through the Host). |
-| A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `submit sent twice at once gives one Work`, `the same run twice dispatches once`, `the same run sent twice while it runs joins it`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
+| A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `the same run twice dispatches once`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
 | Agents cannot approve | Held (H3): `an agent connection is refused every method flagged agent: false, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
 | Recovery is conservative | Held (H2, and the slot at H5, see the next row): `a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until settled: `a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself` and `a lost attempt whose Worker cannot confirm it gone keeps its slot` (packages/work/tests/slots.test.ts). |
 | A Goal's budget holds | `admission is refused once the spend reached the budget, at the limit and not before`, `a raise lets admission continue...`, `a running Work is never stopped by the budget`, `the spend is a fold of the records...` (packages/work/tests/goal.test.ts); `goal.new is refused to an agent connection, and nothing is stored` (packages/host/tests/operations.test.ts); `a Goal's context reaches the Worker...` (packages/agents/tests/agent.test.ts); through the CLI, tests/goal.test.ts. |
