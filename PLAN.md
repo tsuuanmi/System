@@ -651,7 +651,11 @@ HOME=<fresh> CI=1`, the machine at a load average of about 270):
   (99 CPU-s). Smoke: F 75 s, `dev` 85 s (354 and 386 CPU-s); install, build
   and typecheck 56 s and 55 s. So the overrun is WW's browser tests, not
   OC or CQ, and it ends when `web-workers` moves them to `test:web` (the
-  rule above); no defect is carried into the next milestone.
+  rule above); no defect is carried into the next milestone. The machine
+  then went quiet (load about 10, 03:56): `dev` took 4 min 20 s in all
+  (install 9 s, build 28 s, typecheck 9 s, unit 133 s with 474 of 474 passing,
+  smoke 80 s), and unit without the three browser files 13.5 s, so about
+  2 min 20 s without them, under the 3-minute goal.
 - **One flaky test, outside OC:** `packages/agents/tests/chatgpt.test.ts`
   "a page that is neither signed in nor signed out" failed once in the full
   run (Chrome did not start within its 1.5 s launch timeout under load) and
