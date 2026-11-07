@@ -96,6 +96,17 @@ test('a Work runs on the account: the answer fills the slot and the exchange is 
   assert.match(workers.stdout, /chatgpt-web\/default\s+available/)
 })
 
+test('recheck passes on the signed-in account; on the walled one it fails and `system workers` shows the quarantine and what to do', { skip, timeout: 120_000 }, () => {
+  const passed = system(['workers', 'recheck', 'chatgpt-web/default'])
+  assert.equal(passed.status, 0, passed.stderr + passed.stdout)
+  assert.match(passed.stdout, /chatgpt-web\/default: ready: .*nothing was sent/)
+  const failed = system(['workers', 'recheck', 'chatgpt-web/anon'])
+  assert.equal(failed.status, 1)
+  assert.match(failed.stdout, /chatgpt-web\/anon: not ready \(needs-sign-in\)/)
+  assert.match(system(['workers']).stdout, /chatgpt-web\/anon\s+unavailable .*- needs sign-in since \d\d:\d\d: run `system workers login chatgpt-web\/anon --remote`, then `system workers recheck chatgpt-web\/anon`/)
+  assert.match(system(['workers']).stdout, /chatgpt-web\/default\s+available/)
+})
+
 // The remote login needs a VNC server (x11vnc or x0vncserver) as well.
 const skipRemote = skip || (findVnc() ? false : 'neither x11vnc nor x0vncserver is on PATH (docs/operations/runbook.md)')
 test('login --remote prints the tunnel and the address, serves noVNC behind the token, and Save reports the state', { skip: skipRemote, timeout: 120_000 }, async () => {

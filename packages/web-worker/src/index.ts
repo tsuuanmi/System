@@ -6,19 +6,23 @@
 import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { lazyVersion, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
+import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { systemPath, type Capabilities } from '@system/work'
 import { checkProcedures, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
 import { webLogin } from './chatgpt-login.ts'
 import { discoverChrome } from './chrome.ts'
 import { XVFB_MISSING, findXvfb } from './display.ts'
+import { AccountHealth, HEALTH_DEFAULTS, unavailableReason, type HealthSettings } from './health.ts'
+import { recheck } from './recheck.ts'
 import { startRemoteLogin, type RemoteSession } from './remote-login.ts'
 
 export * from './chatgpt.ts'
 export * from './chatgpt-login.ts'
 export * from './remote-login.ts'
 export * from './display.ts'
+export * from './health.ts'
+export * from './recheck.ts'
 
 export const name = 'system-web-worker'
 export const inject = ['capabilities', 'artifacts', 'subprocess']
@@ -28,7 +32,9 @@ export function apply(ctx: Context): void {
   const artifacts = ctx.get('artifacts') as Artifacts
   const subprocess = ctx.get('subprocess') as SubprocessRuntime
   const attempts = systemPath(ctx, 'attempts')
-  const webs = new Map<string, WebConfig>()
+  const webs = new Map<string, { web: WebConfig; health: AccountHealth }>()
+  // A notice of a state change goes to the Host's log.
+  const log = (line: string) => { process.stderr.write(`system host: web-worker: ${line}\n`) }
   const disposers = new Set<() => void>()
   const register = async (account: WebRegistration) => {
     if ('headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
@@ -47,28 +53,35 @@ export function apply(ctx: Context): void {
       if (!(typeof seconds === 'number' && seconds > 0)) throw new Error(`timeouts.${stage} is ${seconds}; it must be a number of seconds above 0`)
     }
     if (!(Number.isInteger(web.maxOutsideChars) && web.maxOutsideChars >= 0)) throw new Error(`maxOutsideChars is ${web.maxOutsideChars}; it must be a whole number of characters, 0 or more`)
+    const cooldownSeconds = account.cooldownSeconds ?? HEALTH_DEFAULTS.cooldownSeconds
+    if (!(Array.isArray(cooldownSeconds) && cooldownSeconds.length > 0 && cooldownSeconds.every((n) => typeof n === 'number' && n > 0))) throw new Error(`cooldownSeconds is ${JSON.stringify(cooldownSeconds)}; it must be a list of seconds above 0`)
+    if (account.hostLoad !== undefined && !(typeof account.hostLoad === 'number' && account.hostLoad > 0)) throw new Error(`hostLoad is ${account.hostLoad}; it must be a load average above 0`)
+    const healthSettings: HealthSettings = { cooldownSeconds, ...(account.hostLoad === undefined ? {} : { hostLoad: account.hostLoad }) }
+    // The Account's state lives in its directory, beside the profile, and survives a restart.
+    const health = new AccountHealth(web.profileDir, account.ref, { log, settings: healthSettings })
     const version = lazyVersion(subprocess, command)
-    const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: account.capabilities, command, version, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web }, artifacts, attempts))
-    webs.set(account.ref, web)
+    const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: account.capabilities, command, version, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts))
+    const entry = { web, health }
+    webs.set(account.ref, entry)
     const dispose = () => {
       if (!disposers.delete(dispose)) return
-      if (webs.get(account.ref) === web) webs.delete(account.ref)
+      if (webs.get(account.ref) === entry) webs.delete(account.ref)
       off()
     }
     disposers.add(dispose)
-    return { command, version, dispose }
+    return { command, version, dispose, unavailable: () => unavailableReason(health) }
   }
   ctx.effect(() => () => { for (const dispose of [...disposers]) dispose() }, 'web worker registrations')
   const remotes = new Map<string, RemoteSession>()
   ctx.effect(() => () => { for (const remote of remotes.values()) void remote.cancel() }, 'remote sign-ins')
   const account = (ref: string) => {
-    const web = webs.get(ref)
-    if (!web) throw new Error(`${ref} is not an available chatgpt-web account (system workers)`)
-    return web
+    const found = webs.get(ref)
+    if (!found) throw new Error(`${ref} is not an available chatgpt-web account (system workers)`)
+    return found
   }
-  const login = async (ref: string, cookies: string | undefined) => webLogin(account(ref), { cookies, display: process.env.DISPLAY })
+  const login = async (ref: string, cookies: string | undefined) => webLogin(account(ref).web, { cookies, display: process.env.DISPLAY })
   const loginRemote = async (ref: string): Promise<RemoteView> => {
-    const web = account(ref)
+    const { web } = account(ref)
     if (remotes.has(ref)) throw new Error(`a remote sign-in of ${ref} is already running: finish it, or cancel it (system workers login ${ref} --remote, then Ctrl-C)`)
     const session = await startRemoteLogin(web)
     remotes.set(ref, session)
@@ -79,7 +92,15 @@ export function apply(ctx: Context): void {
     const session = remotes.get(ref)
     if (!session) throw new Error(`no remote sign-in of ${ref} is running`)
     if (cancel) await session.cancel()
-    return session.done
+    const report = await session.done
+    // A successful sign-in does the recheck itself: the Account is ready again only when the checks pass.
+    if (!report.signedIn) return report
+    const checked = await recheckOf(ref)
+    return checked.ready ? report : { ...report, signedIn: false, detail: `signed in, but ${checked.detail}` }
   }
-  ctx.provide('webWorker', { register, login, loginRemote, loginWait } satisfies WebWorkerService)
+  const recheckOf = async (ref: string): Promise<RecheckReport> => {
+    const { web, health } = account(ref)
+    return recheck(web, health)
+  }
+  ctx.provide('webWorker', { register, login, loginRemote, loginWait, recheck: recheckOf } satisfies WebWorkerService)
 }

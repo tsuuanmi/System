@@ -100,6 +100,12 @@ export interface LoginView {
   skipped?: number
 }
 
+export interface RecheckView {
+  ready: boolean
+  state: string
+  detail: string
+}
+
 export interface RemoteLoginView {
   url: string
   port: number
@@ -119,6 +125,8 @@ export interface ClientHost {
   credentials(): CredentialCommands
   workers(): Promise<WorkersView>
   login(ref: string, cookies: string | undefined): Promise<LoginView>
+  /** Check an account that is quarantined or cooling down, sending nothing; ready again only when the check passes. */
+  recheck(ref: string): Promise<RecheckView>
   /** The remote sign-in: `show` is given where to reach the viewer once it is up; resolves when it ends. Ctrl-C cancels it. */
   loginRemote(ref: string, show: (view: RemoteLoginView) => void): Promise<LoginView>
 }
@@ -245,6 +253,15 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         if (report.imported !== undefined) io.out(`imported ${report.imported} cookie(s), skipped ${report.skipped ?? 0} of other sites\n`)
         io.out(`${ref}: ${report.signedIn ? 'signed in' : `not signed in: ${report.detail}`}\n`)
         return report.signedIn ? 0 : 1
+      })
+    })
+  workers.command('recheck <ref>')
+    .description('check a chatgpt-web account that is quarantined or cooling down (sign-in, Chat mode, temporary chat), sending nothing, and make it ready again only when the check passes; operators only')
+    .action((ref: string) => {
+      select(async () => {
+        const report = await host.recheck(ref)
+        io.out(`${ref}: ${report.ready ? 'ready' : `not ready (${report.state})`}: ${report.detail}\n`)
+        return report.ready ? 0 : 1
       })
     })
   const task = program.command('task').description('task inputs for Work')

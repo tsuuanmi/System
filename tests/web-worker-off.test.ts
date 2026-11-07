@@ -55,9 +55,9 @@ test('system workers reports a chatgpt-web account unavailable because the row i
   assert.match(out.stdout, /chatgpt-web\/default\s+unavailable.*\(chatgpt-web\)\n/, 'the runtime ends each account line: tools/web-canary reads it')
 })
 
-test('login and the remote viewer say the row is disabled', () => {
+test('login, the remote viewer and recheck say the row is disabled', () => {
   writeFileSync(join(home, 'cookies.json'), '[]')
-  for (const args of [['workers', 'login', 'chatgpt-web/default', '--cookies', join(home, 'cookies.json')], ['workers', 'login', 'chatgpt-web/default', '--remote']]) {
+  for (const args of [['workers', 'login', 'chatgpt-web/default', '--cookies', join(home, 'cookies.json')], ['workers', 'login', 'chatgpt-web/default', '--remote'], ['workers', 'recheck', 'chatgpt-web/default']]) {
     const ran = system(args)
     assert.equal(ran.status, 1)
     assert.match(ran.stderr, /the web-worker row is disabled/)

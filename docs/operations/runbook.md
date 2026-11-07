@@ -280,6 +280,18 @@ installed from the Ubuntu 20.04 packages, unpacked into the home directory:
 another directory does not find that script's target: put `~/.local/bin` on its
 `PATH` with the real home.
 
+**Account states.** Each `chatgpt-web` Account has a state in `$DSH_HOME/system/chatgpt-web/<name>/state.json`, and `system workers` shows
+any state but `ready` as `unavailable` with what to do; Works needing the Account go to another one, or fail with "no enabled Worker
+provides" when there is none. Each change is one line in the Host log.
+
+- `needs-sign-in`: a sign-in wall, the login page or "Session ended, invalid_state" showed. Run `system workers login chatgpt-web/<name> --remote`
+  (or `--cookies`), then `system workers recheck chatgpt-web/<name>`; a successful `--remote` does the recheck itself.
+- `challenged`: a Cloudflare or CAPTCHA challenge showed. Clear it by hand as below, then `recheck`. Nothing else leaves it.
+- `cooling`: a site error or a suspected rate limit; it is eligible again at the time shown (2 minutes, then 5 after consecutive ones;
+  `cooldownSeconds`), a success clears it, and `recheck` ends it early. If it keeps coming back, stop using the Account for a while.
+- A failure of the Host's (Chrome did not start, a page timeout while the Host's load is high) never changes the state; look at the Host.
+  No prompt is resent automatically: a retry is `work retry`.
+
 **A sign-in wall.** An attempt that fails with `the page shows a sign-in wall`
 means the session ended (a sign-out, a password change, an expired cookie). Run
 the login again. The attempt's `screenshot` partial output shows what the page

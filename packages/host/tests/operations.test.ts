@@ -60,6 +60,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
     async workers() { return { registered: f.capabilities.workerRefs(), accounts: [] } },
     async login(ref, cookies) { seen.logins!.push([ref, cookies]); return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 } },
     async loginRemote(ref) { seen.logins!.push([ref, 'remote']); return { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 } },
+    async recheck(ref) { seen.logins!.push([ref, 'recheck']); return { ready: false, state: 'needs-sign-in', detail: 'signed out' } },
     async loginWait(ref, cancel) { seen.logins!.push([ref, cancel ? 'cancel' : 'wait']); return { signedIn: !cancel, detail: cancel ? 'cancelled' : 'signed in' } },
   }
 }
@@ -167,6 +168,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(await call('workers.loginWait', { ref: 'chatgpt-web/default' }), { signedIn: true, detail: 'signed in' })
   assert.deepEqual(await call('workers.loginWait', { ref: 'chatgpt-web/default', cancel: true }), { signedIn: false, detail: 'cancelled' })
   assert.deepEqual(svc.seen.logins!.slice(1), [['chatgpt-web/default', 'remote'], ['chatgpt-web/default', 'wait'], ['chatgpt-web/default', 'cancel']])
+  assert.deepEqual(await call('workers.recheck', { ref: 'chatgpt-web/default' }), { ready: false, state: 'needs-sign-in', detail: 'signed out' })
+  assert.deepEqual(svc.seen.logins!.at(-1), ['chatgpt-web/default', 'recheck'])
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   const status = await call('host.status') as { works: number; recordBytes: number }
@@ -180,7 +183,7 @@ test('an agent connection is refused every method flagged agent: false, and only
   const { table, open } = await started()
   const client = await open(agent)
   const closed = Object.entries(tableOf(table)).filter(([, m]) => !m.agent).map(([name]) => name)
-  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('conversation.add') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait'))
+  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('conversation.add') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait') && closed.includes('workers.recheck'))
   for (const [name, method] of Object.entries(tableOf(table))) {
     const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
     if (method.agent) assert.notEqual(outcome?.code, NOT_ALLOWED, `${name} is open to agents`)
