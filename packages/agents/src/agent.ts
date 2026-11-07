@@ -1,5 +1,5 @@
 /**
- * One account of one agent CLI as a System Worker (ADR-0004 decisions 4-6,
+ * One account of one agent CLI (or of the ChatGPT website, see chatgpt.ts) as a System Worker (ADR-0004 decisions 4-6,
  * ADR-0005). Each attempt: prepare the workspace, run the CLI headless through
  * a `Spawner` (the DSH subprocess service in production), capture outputs,
  * store a bounded log, clean up. Cancellation aborts the process range with a
@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, type Runtime } from './runtimes.ts'
+import { profileLockPid, webAttempt, type WebConfig } from './chatgpt.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
 const GRACE_MS = 30_000
@@ -48,6 +49,8 @@ export interface Account {
   ref: string
   runtime: Runtime
   capabilities: string[]
+  /** chatgpt-web: the profile, page and timeouts; `command` is then the path of Chrome. */
+  web?: WebConfig
   /** Absolute path of the CLI. */
   command: string
   /** Its `--version` output, asked when first needed. */
@@ -87,6 +90,11 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
     maxConcurrentAttempts: account.maxConcurrentAttempts,
     run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs),
     async gone(attemptId) {
+      // A browser attempt has no pid file; Chrome's own profile lock names the process that may still hold the Account.
+      if (account.web) {
+        const pid = profileLockPid(account.web.profileDir)
+        return pid === undefined || exited(pid)
+      }
       const file = pidFile(attemptsDir, attemptId)
       if (!existsSync(file)) return true
       const pid = Number(readFileSync(file, 'utf8'))
@@ -98,6 +106,7 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
 }
 
 async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, request: WorkerRequest, graceMs: number): Promise<WorkerResult> {
+  if (account.runtime === 'chatgpt-web') return webAttempt(account, artifacts, attemptsDir, request)
   const tier = requestedTier(request.capabilities)
   const model = tier ? account.models?.[tier] : account.models?.standard
   const executor: NonNullable<WorkerResult['executor']> = {

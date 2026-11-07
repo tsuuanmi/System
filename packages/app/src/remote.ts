@@ -17,6 +17,9 @@ import { caller } from './io.ts'
 /** How often `work.events` is asked while following a Work (PROP-0004 C13). */
 export const POLL_MS = 1000
 
+/** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
+const LOGIN_TIMEOUT = 11 * 60_000
+
 const FINISHED = new Set(['succeeded', 'failed', 'held', 'cancelled'])
 const CLASSIFICATIONS = ['public', 'operator-shared', 'local-private']
 const ARTIFACT_ID = /^sha256:[0-9a-f]{64}$/
@@ -163,5 +166,7 @@ export function remoteHost(remote: Remote): AppHost {
       describe: async (name) => (await read('credentials.status', { names: [name] }))[0],
     }),
     workers: () => read('workers.list'),
+    // A manual sign-in waits for the operator, so this call outlasts the usual answer time.
+    login: async (ref, cookies) => (await link()).call('workers.login', { ref, ...(cookies === undefined ? {} : { cookies }) }, LOGIN_TIMEOUT) as any,
   }
 }

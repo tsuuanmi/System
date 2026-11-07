@@ -1,6 +1,7 @@
 # @system/agents
 
-The `agents` row: each configured agent CLI account becomes a System Worker
+The `agents` row: each configured agent CLI account (and, as a third Runtime,
+the operator's ChatGPT website session) becomes a System Worker
 ([ADR-0004](../../docs/decisions/ADR-0004-mvp-0-operating-decisions.md) decisions 4-6,
 [ADR-0005](../../docs/decisions/ADR-0005-subscription-tokens-for-workers.md)).
 
@@ -123,7 +124,71 @@ Linux 5.4 (no Landlock), Claude Code 2.1.311 with a `setup-token` token,
 Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 `HOME`; Codex's `workspace-write` sandbox works; both report token usage.
 
+## The `chatgpt-web` Runtime
+
+An Account `chatgpt-web/<name>` runs one step as one prompt in the operator's
+own signed-in ChatGPT web session ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
+It is in [chatgpt.ts](src/chatgpt.ts), drives the installed Google Chrome with
+`playwright-core` 1.64.1 (no browser is downloaded), and runs inside the Host,
+not as a spawned process. It is not in the bundle's `agents` row; add it as in
+the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).
+
+```yaml
+      - ref: chatgpt-web/default
+        runtime: chatgpt-web
+        capabilities: [research, web-search]   # brainstorm.idea-<role> too, by role
+        # all optional, with these defaults:
+        profileDir: chatgpt-web/default        # under $DSH_HOME/system unless absolute; mode 0700
+        temporaryChat: true                    # each attempt in a temporary chat
+        url: https://chatgpt.com/
+        executablePath: /usr/bin/google-chrome
+        headless: true
+        timeouts: {load: 60, send: 30, answer: 900, stable: 3}   # seconds
+```
+
+One attempt:
+
+1. **Launch** a persistent Chrome context on `profileDir`: the profile is the
+   Account's credential and is reused by every attempt. One attempt at a time
+   per Account (Chrome locks the profile).
+2. **Load** a new chat (`?temporary-chat=true` when `temporaryChat`) and read
+   the page state: a chat box and no sign-in button is ready; a sign-in wall,
+   a CAPTCHA or Cloudflare challenge, or neither within `load` seconds fails
+   the attempt with that reason. System never types into or solves a challenge.
+3. **Send** one prompt built like the CLI prompt, with the inputs (and context)
+   inlined as text, and each output slot asked for as a fenced block labelled
+   with its name. At most 200 KiB.
+4. **Wait** until the newest assistant turn's copy action is present and its
+   text has been unchanged for `stable` seconds, within `answer` seconds.
+5. **Extract** that turn as Markdown from the DOM, and the hrefs of its links.
+6. **Fill** each slot from its labelled block (a longer fence holds shorter
+   ones; the first block of a name wins). A missing block fails the attempt;
+   what was found stays as unaccepted partial output.
+7. **Record** a `conversation@1`: `prompt.md` and `response.md` as parts,
+   `links.json` (the cited hrefs) as an attachment, asserted `provider:
+   ChatGPT`, the page `url` and `context: [temporary-chat]` when used. Its
+   producer is the Worker (the attempt observed the exchange). It is returned as
+   the extra output `conversation` (the controller records only a step's
+   declared slots). Usage is unknown. The log is the stage notes.
+
+On any failure the page's screenshot is kept as partial output `screenshot`.
+Cancel and `attemptTimeoutMinutes` close the browser, as they stop a CLI. The
+selectors are one versioned table, `SELECTORS`; the page is read with scripts
+and Playwright's own `fill`, `click` and `waitForSelector` are not used, so an
+older Chrome works. After a lost attempt the Account's slot is held while the
+process in Chrome's `SingletonLock` lives.
+
+**Login** (`system workers login chatgpt-web/<name> [--cookies <file>]`, an
+operator-only operation, `workers.login`): `--cookies` imports a JSON
+(browser-extension export) or Netscape cookie file, keeping only chatgpt.com
+and openai.com cookies and giving a session cookie a 30-day lifetime, and
+deletes nothing; the file is read once by the CLI. Without it, a visible window
+opens on the Host's `DISPLAY` and waits up to ten minutes for a sign-in. Either
+way the signed-in state is then checked and reported; no cookie value is printed.
+
 ## Limits
+
+The `chatgpt-web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that for their own account (PROP-0005). It needs a Chrome new enough for chatgpt.com.
 
 No sandbox or egress control (ADR-0004 decision 14): the agent runs as the
 operator and could read the operator's files, including the credential store.

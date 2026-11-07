@@ -136,6 +136,63 @@ has nothing of its own running, so a held slot clears after `system work run`
 once the process is gone. If it never does, a process is still alive: find it
 with `pgrep -fa claude` or `pgrep -fa codex`.
 
+## The chatgpt-web account
+
+A Worker that runs a step in the operator's signed-in ChatGPT web session
+([PROP-0005](../proposals/PROP-0005-chatgpt-website-worker.md); options in the
+[agents README](../../packages/agents/README.md#the-chatgpt-web-runtime)). It is
+**not enabled by default**: add it to the profile's `agents` row (for example in
+`$DSH_HOME/profiles/system/cordis.patch.yml`, replacing `accounts` with the
+bundle's accounts plus this one), then restart the Host:
+
+```yaml
+- ref: chatgpt-web/default
+  runtime: chatgpt-web
+  capabilities: [research, web-search]
+```
+
+It needs Google Chrome (`/usr/bin/google-chrome`, or `executablePath`) recent
+enough for chatgpt.com. `system workers` shows it as `available` once Chrome is
+found; that says nothing about the sign-in.
+
+**Sign in, once.** Either:
+- `system workers login chatgpt-web/default --cookies <file>`: a JSON export from
+  a browser extension, or a Netscape `cookies.txt`, of chatgpt.com taken from
+  your own signed-in browser. The CLI reads it once and sends it to the Host;
+  only chatgpt.com and openai.com cookies are kept, a session cookie gets a
+  30-day lifetime, and your file is left as it is: delete it yourself when done,
+  because it is as good as a password.
+- With no `--cookies`, on a machine with a display: a window opens on the
+  **Host's** `DISPLAY` (a user service has none unless you run
+  `systemctl --user import-environment DISPLAY` and restart it). Sign in by hand;
+  it waits up to ten minutes. This machine has no display, so use cookies.
+
+Either way it then loads the page and prints `signed in`, or `not signed in:`
+and why (exit 1). It never prints a cookie value. Do not log in while an attempt
+of the account runs: Chrome holds the profile.
+
+**A sign-in wall.** An attempt that fails with `the page shows a sign-in wall`
+means the session ended (a sign-out, a password change, an expired cookie). Run
+the login again. The attempt's `screenshot` partial output shows what the page
+looked like: `system work show <id>`, then `system artifact cat <id> > shot.png`.
+
+**A CAPTCHA or Cloudflare challenge.** The attempt fails with `a CAPTCHA or
+Cloudflare challenge is showing`; System never types into or solves one, and
+retrying at once will meet it again. Clear it by hand: stop the Host, open
+Chrome on the profile with a display
+(`google-chrome --user-data-dir=$DSH_HOME/system/chatgpt-web/default https://chatgpt.com/`),
+pass the check, close it, start the Host, and retry. If it keeps coming back,
+slow down or stop using the account for a while; an automated session is
+against OpenAI's Terms of Use, a risk the operator accepted for their own
+account.
+
+**The profile** is `$DSH_HOME/system/chatgpt-web/<name>` (or `profileDir`), a
+Chrome user-data directory created mode 0700. It holds the live session: treat
+it as a password. Keep it out of backups, sync and version control, never copy
+it to another machine or hand it to another Worker, and delete the directory to
+sign the account out of System. An attempt that finds the page in an unknown
+state fails after the `load` timeout with that reason and a screenshot.
+
 ## Another home
 
 Only `~/.dsh` gets the unit. For any other `DSH_HOME`, run

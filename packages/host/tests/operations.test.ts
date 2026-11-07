@@ -24,7 +24,7 @@ const b64 = (text: string) => Buffer.from(text).toString('base64')
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
 function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
-  const seen: Record<string, unknown[]> = { credentials: [], conversations: [], goals: [] }
+  const seen: Record<string, unknown[]> = { credentials: [], conversations: [], goals: [], logins: [] }
   return {
     seen,
     capabilities: f.capabilities,
@@ -53,6 +53,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       async describe(name) { return name === 'known' ? { configured: true, source: 'store' } : { configured: false } },
     },
     async workers() { return { registered: f.capabilities.workerRefs(), accounts: [] } },
+    async login(ref, cookies) { seen.logins!.push([ref, cookies]); return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 } },
   }
 }
 
@@ -91,7 +92,7 @@ const terminal = async (client: Client, workId: string) => {
 }
 
 test('every method of the table round-trips over the socket', async () => {
-  const { f, table, open, artifacts } = await started()
+  const { f, svc, table, open, artifacts } = await started()
   const client = await open()
   const called = new Set<string>()
   const call = (method: string, params?: unknown) => { called.add(method); return client.call(method, params) }
@@ -142,6 +143,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(await call('conversation.add', { parts, asserted: { provider: 'web' }, supersedes: [] }), { id: 'conversation:1' })
 
   assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake/claude', 'fake/codex'])
+  assert.deepEqual(await call('workers.login', { ref: 'chatgpt-web/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
+  assert.deepEqual(svc.seen.logins, [['chatgpt-web/default', 'the file']])
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   assert.equal((await call('host.ping') as { works: number }).works, 4)
@@ -156,7 +159,7 @@ test('an agent connection is refused every method flagged agent: false, and only
   const { table, open } = await started()
   const client = await open(agent)
   const closed = Object.entries(tableOf(table)).filter(([, m]) => !m.agent).map(([name]) => name)
-  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('conversation.add'))
+  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('conversation.add') && closed.includes('workers.login'))
   for (const [name, method] of Object.entries(tableOf(table))) {
     const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
     if (method.agent) assert.notEqual(outcome?.code, NOT_ALLOWED, `${name} is open to agents`)

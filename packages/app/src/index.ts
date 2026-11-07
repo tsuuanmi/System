@@ -94,6 +94,12 @@ async function workersView(ctx: Context): Promise<WorkersView> {
   return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
 }
 
+async function loginAccount(ctx: Context, ref: string, cookies: string | undefined) {
+  const agents = ctx.get('agents') as AgentsService | undefined
+  if (!agents) throw new Error('the agents row is not mounted (run `system doctor`)')
+  return agents.login(ref, cookies)
+}
+
 /** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT. */
 async function runHost(ctx: Context): Promise<void> {
   const work = ctx.get('work') as WorkService | undefined
@@ -119,6 +125,7 @@ async function runHost(ctx: Context): Promise<void> {
       addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
       credentials,
       workers: () => workersView(ctx),
+      login: (ref, cookies) => loginAccount(ctx, ref, cookies),
     },
   }).catch(async (error: unknown) => {
     await host.close()
@@ -149,6 +156,7 @@ export function apply(ctx: Context): void {
     work: thinOnly,
     credentials: thinOnly,
     workers: thinOnly,
+    login: thinOnly,
     runHost: () => runHost(ctx),
   }
   let selected: Run | undefined

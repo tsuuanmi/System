@@ -130,7 +130,7 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
     dispatch table `method -> { params, handler, agent }`. Params are a zod
     schema per method; the connection's caller reaches each handler.
   - The rows (`operations.ts`): `work.*`, `approval.decide`, `task.new`,
-    `artifact.*`, `conversation.*`, `workers.list`, `credentials.*` and
+    `artifact.*`, `conversation.*`, `workers.list`, `workers.login`, `credentials.*` and
     `host.status`. They need the DSH-backed parts (Artifacts, credentials,
     Workers) as `Services`; the CLI brings them at H4.
   - `work.submit` takes the Workflow file's contents, never a path.

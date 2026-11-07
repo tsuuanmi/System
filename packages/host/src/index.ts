@@ -180,7 +180,8 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
 }
 
 export interface Client {
-  call(method: string, params?: unknown): Promise<unknown>
+  /** `timeout` overrides the connection's for this call. */
+  call(method: string, params?: unknown, timeout?: number): Promise<unknown>
   close(): void
 }
 
@@ -229,14 +230,14 @@ export function connect(path: string, options: ConnectOptions = {}): Promise<Cli
       }
     })
     socket.once('connect', () => resolve({
-      call(method, params) {
+      call(method, params, callTimeout = timeout) {
         if (gone) return Promise.reject(gone)
         const id = next++
         return new Promise((res, rej) => {
           const timer = setTimeout(() => {
             pending.delete(id)
-            rej(new NotAnswering(`the Host is not answering ${method} after ${timeout} ms`))
-          }, timeout)
+            rej(new NotAnswering(`the Host is not answering ${method} after ${callTimeout} ms`))
+          }, callTimeout)
           pending.set(id, { resolve: res, reject: rej, timer })
           socket.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
         })

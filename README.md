@@ -79,6 +79,7 @@ mkdir -p ~/.dsh/system/codex/default
 CODEX_HOME=~/.dsh/system/codex/default codex login --device-auth
 bin/system credentials set GITHUB_TOKEN              # System's own; Workers never get it
 bin/system workers                                   # which accounts are usable, and why not
+bin/system workers login chatgpt-web/default --cookies cookies.json   # an account that is not in the bundle; see the runbook
 ```
 
 A Software Engineering change needs a repository whose base commit has
@@ -122,7 +123,8 @@ A step asks for a model tier with the capability `tier.economy`,
 Environment variables: `DSH_HOME` (default `~/.dsh`), `SYSTEM_OPERATOR_ID`
 (default: the OS user), `SYSTEM_CALLER` (`human` or `agent`; labels a call,
 never authorises an approval), `SYSTEM_REAL_AGENTS=1` (runs the
-credential-gated tests in `tests/real-agents.test.ts`). Launcher flags go
+credential-gated tests in `tests/real-agents.test.ts`; `SYSTEM_REAL_WEB=1`
+those in `tests/real-web.test.ts`). Launcher flags go
 before the command, such as `bin/system --patch overlay.yml work submit ...`.
 
 **System develops System:** [`.system/checks.yaml`](.system/checks.yaml) is

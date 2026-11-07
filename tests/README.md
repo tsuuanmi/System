@@ -29,6 +29,12 @@ GitHub credentials. Run with `corepack pnpm smoke`.
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
   through the operator's Host when one answers, or one the test starts.
+- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `chatgpt-web` account on
+  the booted profile against the local fake page: `workers login --cookies`
+  (no value printed), a sign-in wall reported, a Work filling its slot and
+  producing a conversation. Skipped without Chrome.
+- [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
+  one Research Work on the operator's signed-in `chatgpt-web/default` profile.
 - [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
   accounts (CLI pointed at the fake): two proposals by different providers
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal
