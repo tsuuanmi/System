@@ -6,8 +6,8 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Goal, type Host, type WorkEvent, type WorkRecord } from '@system/work'
-import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
+import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewGoal, type WorkEvent, type WorkRecord } from '@system/work'
+import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, inScope, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
 export interface Services {
@@ -19,7 +19,7 @@ export interface Services {
   readBytes(id: string): Promise<Uint8Array>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller): Promise<{ task: string; base?: string }>
   /** Store a `goal@1`; without `context`, the Charter is stored and used. `supersedes` is the Goal it raises or changes. */
-  newGoal(goal: Omit<Goal, 'context'> & { context?: string[] }, supersedes: string | undefined, caller: Caller): Promise<{ id: string }>
+  newGoal(goal: NewGoal, supersedes: string | undefined, caller: Caller): Promise<{ id: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<{ id: string }>
   credentials: {
     set(name: string, value: string): Promise<void>
@@ -66,12 +66,6 @@ type Orchestrator = Caller & { type: 'orchestrator' }
 
 const outside = (what: string, caller: Orchestrator) => new RpcError(NOT_ALLOWED, `${what} is outside the scope of the orchestrator's Goal ${caller.goal}: it reaches only the Works of that Goal and of its supersedes chain`)
 
-/** Whether the Work was admitted for the orchestrator's Goal or one in its supersedes chain (ADR-0009 decision 4). */
-function inScope(host: Host, record: WorkRecord | undefined, caller: Orchestrator): record is WorkRecord {
-  const admitted = record?.events[0]
-  return admitted?.type === 'admitted' && admitted.goal !== undefined && host.goalChain(caller.goal).has(admitted.goal)
-}
-
 /** Every Artifact ID an event names as an input, output or evidence. */
 function named(event: WorkEvent): string[] {
   switch (event.type) {
@@ -87,7 +81,7 @@ function named(event: WorkEvent): string[] {
 /** The Artifacts of the orchestrator's Works: what their events name, and the context and base of each Task among them. */
 function scopedArtifacts(host: Host, services: Services, caller: Orchestrator): Set<string> {
   const found = new Set<string>()
-  for (const record of host.list()) if (inScope(host, record, caller)) for (const event of record.events) for (const id of named(event)) found.add(id)
+  for (const record of host.list()) if (inScope(host, caller.goal, record.id)) for (const event of record.events) for (const id of named(event)) found.add(id)
   for (const id of [...found]) {
     const read = services.artifact(id) as { state?: string; envelope?: { kind?: string; content?: { context?: string[]; base?: string } } }
     if (read.state !== 'stored' || read.envelope?.kind !== TASK_KIND.kind) continue
@@ -101,7 +95,7 @@ const watching = z.object({ workId: workId.optional(), goal: artifactId.optional
 
 /** An orchestrator watches only the Works of its Goal, and its Goal's chain. */
 function watchScope(host: Host, p: z.infer<typeof watching>, caller: Orchestrator, name: string): z.infer<typeof watching> {
-  if (p.workId ? !inScope(host, host.get(p.workId), caller) : !host.goalChain(caller.goal).has(p.goal!)) throw outside(`${name} on ${p.workId ?? p.goal}`, caller)
+  if (p.workId ? !inScope(host, caller.goal, p.workId) : !host.goalChain(caller.goal).has(p.goal!)) throw outside(`${name} on ${p.workId ?? p.goal}`, caller)
   return p
 }
 
@@ -122,7 +116,7 @@ function watch(host: Host, p: z.infer<typeof watching>, link: Link, on: boolean)
 export function operations(services: Services): Methods {
   /** The scope of a row on one Work: refused unless the Work is the orchestrator's. */
   const ofWork = (name: string): Method['scope'] => (host, p, caller) => {
-    if (!inScope(host, host.get(p.workId), caller)) throw outside(`${name} on ${p.workId}`, caller)
+    if (!inScope(host, caller.goal, p.workId)) throw outside(`${name} on ${p.workId}`, caller)
     return p
   }
   const ofArtifact = (name: string): Method['scope'] => (host, p, caller) => {
@@ -179,7 +173,7 @@ export function operations(services: Services): Methods {
       agent: true,
       summary: 'Every Work as `{ id, status, specId }`.',
       params: z.object({}).strict(),
-      handler: (host, _p, caller) => host.list().filter((r) => caller.type !== 'orchestrator' || inScope(host, r, caller)).map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
+      handler: (host, _p, caller) => host.list().filter((r) => caller.type !== 'orchestrator' || inScope(host, caller.goal, r.id)).map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
     },
     'work.replay': {
       agent: true,

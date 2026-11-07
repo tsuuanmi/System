@@ -33,11 +33,6 @@ Non-goals: remote access, multiple users, sandboxing, a durable scheduler
 queue, live plugin reload, auto-resume after a crash, an Orchestrator or
 Goal (milestone O).
 
-## Architecture
-
-Described once, in [Host architecture](../architecture/host.md): the
-diagram, the components below in place, and the guarantees with their tests.
-
 ## Decisions (operator, 2026-11-06)
 
 - **First grilling.**
@@ -102,46 +97,21 @@ diagram, the components below in place, and the guarantees with their tests.
 5. Parallel steps and Works with per-Account slots, with barrier tests for
    shared-Account contention and for restarts. **Release R2** (G2).
 
-## Documents the milestone leaves (N12)
+## Documents and cut list
 
-- This proposal (accepted) and the amended
-  [ADR-0007](../decisions/ADR-0007-one-long-lived-host.md).
-- [Host architecture](../architecture/host.md): the diagram, ownership and
-  lock, the commit lane, the attempt lifecycle, the read path, and a map from
-  each guarantee to a test that would fail without it.
-- The API reference, derived from the operation table, in the Host package
-  README.
-- An operations runbook under `docs/operations/`:
-  - starting and stopping;
-  - "host not running" and "host not answering";
-  - upgrading;
-  - approving while the Host is down;
-  - logs;
-  - the cutover and rollback checklist.
-- The PLAN gate, with evidence and the growth measures.
-
-## Cut list (deferred)
-
-- Subscriptions and streaming.
-- TCP or remote access.
-- Auto-resume.
-- A persisted scheduler queue, priorities and fairness tuning.
-- Live profile and plugin reload.
-- Sandboxing.
-- Idle shutdown.
-- Compaction.
-- Orchestrator and Goal scopes.
+The milestone leaves this proposal, the amended
+[ADR-0007](../decisions/ADR-0007-one-long-lived-host.md), the
+[Host architecture](../architecture/host.md) (diagram, guarantees and their
+tests, and the deferred items), the API reference in the Host package README,
+the [runbook](../operations/runbook.md) and the PLAN gate with its growth
+measures. Idle shutdown and Orchestrator and Goal scopes were cut with the
+other deferrals.
 
 ## Answered by the review
 
-- **Which of C8, C10, C12 and C14 can wait?**
-  - C8 stays, because it costs almost nothing.
-  - C10 shrinks.
-  - C12 is folded into C1.
-  - C14 is deferred.
-- **What the Host makes worse, and the mitigation:**
-  - it is a single point of failure (supervised unit, `Restart=on-failure`,
-    conservative recovery);
-  - the CLI depends on it starting (a clear "not running" or "not
-    answering", never a silent fallback);
-  - it may run old code after an upgrade (the version handshake).
+C8 stays because it costs almost nothing, C10 shrinks, C12 folds into C1 and
+C14 is deferred. What the Host makes worse, and the mitigation: it is a single
+point of failure (supervised unit, `Restart=on-failure`, conservative
+recovery); the CLI depends on it starting (a clear "not running" or "not
+answering", never a silent fallback); it may run old code after an upgrade
+(the version handshake).

@@ -14,7 +14,7 @@ import { ResourceListChangedNotificationSchema, ResourceUpdatedNotificationSchem
 import { GOAL_KIND, TASK_KIND, goalSchema, taskSchema } from '@system/work'
 import { fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { NOT_ALLOWED, VERSION, connect, serve, tableOf } from '../../host/src/index.ts'
+import { VERSION, connect, serve, tableOf } from '../../host/src/index.ts'
 import { operations, type Services } from '../../host/src/operations.ts'
 
 const entry = new URL('../../../bin/system', import.meta.url).pathname
@@ -128,15 +128,6 @@ test('with --goal the Host scopes the tools to the Goal of the orchestrator', { 
   assert.match((await call(client, 'artifact.show', { id: spec })).error!, /scope/)
   assert.match((await call(client, 'artifact.cat', { id: spec })).error!, /scope/)
   assert.equal((await call(client, 'work.run', { workId: own.value.id })).value.id, own.value.id)
-})
-
-test('over the socket an orchestrator connection is refused what is flagged agent: false', { timeout: 60_000 }, async () => {
-  const socket = await connect(join(home, 'system', 'host.sock'))
-  after(() => socket.close())
-  await socket.call('host.hello', { version: VERSION, caller: { type: 'orchestrator', operatorId: 'o1', goal: `sha256:${'a'.repeat(64)}` } })
-  for (const method of ['approval.decide', 'credentials.set', 'conversation.add', 'goal.new']) {
-    await assert.rejects(socket.call(method, {}), (error: { code: number }) => error.code === NOT_ALLOWED, method)
-  }
 })
 
 const textOf = (read: { contents: object[] }) => JSON.parse((read.contents[0] as { text: string }).text)

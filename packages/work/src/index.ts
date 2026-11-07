@@ -15,7 +15,7 @@ import { snapshot } from './git.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
 import { CHARTER_PATH, goalStore } from './goal.ts'
-import { GIT_TREE_KIND, GOAL_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, goalSchema, taskSchema, verdictSchema, type Goal } from './kinds.ts'
+import { GIT_TREE_KIND, GOAL_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, goalSchema, taskSchema, verdictSchema, type NewGoal } from './kinds.ts'
 import type { Caller } from './record.ts'
 import { workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
@@ -98,7 +98,7 @@ export class WorkService {
    * Store a `goal@1` the operator wrote. Without `context` it is the Charter,
    * stored as a file Artifact now. `supersedes` must name a stored Goal with no successor, so the chain stays linear.
    */
-  async newGoal(goal: Omit<Goal, 'context'> & { context?: string[] }, supersedes: string | undefined, caller: Caller): Promise<{ id: string }> {
+  async newGoal(goal: NewGoal, supersedes: string | undefined, caller: Caller): Promise<{ id: string }> {
     if (supersedes && !this.storage.specs.goals?.get(supersedes)) throw new WorkError(`${supersedes} is not a stored Goal`)
     if (supersedes) {
       const [newer] = this.storage.specs.goals!.successors(supersedes)

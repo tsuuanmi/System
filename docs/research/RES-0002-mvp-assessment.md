@@ -49,42 +49,22 @@ retirement decision, not how optionality is achieved.
 "Disabled" is a **configuration and composition state**, not a request to
 remove source, uninstall packages or discard community integration.
 
-## Audit workstreams and outputs
+## Audit workstreams and proof matrix
 
-1. **DSH inventory:** pin its release, inspect services, bundles, profile
-   overrides and which plugin rows mount in the effective configuration.
-2. **Minimal capability closure:** map client -> Work -> Worker -> Artifact ->
-   verification -> decision; create a profile with no unrelated active rows.
-3. **Effect integrity:** test persistence, retry, approvals, egress and plugin
-   lifecycle during crash/cancellation/unload.
-4. **Metering:** test cumulative resumed-session usage against an oracle and
-   distinguish missing data from zero usage.
-5. **Composition experiments:** disable/re-enable plugins, verify config-layer
-   precedence and fail-closed behavior on missing required services.
-6. **Cross-domain proof:** run Software Engineering and Research via the
-   same work core and swap adapters under a compatible contract.
-7. **Decision:** retain only proven System-specific mechanisms and record
-   which DSH services implement the rest.
+The workstreams were: pin and inventory DSH and its effective rows; map the
+minimal capability closure (client -> Work -> Worker -> Artifact ->
+verification -> decision) to a profile with no unrelated rows; test effect
+integrity, metering (cumulative resumed-session usage against an oracle,
+missing data distinct from zero), plugin composition and lifecycle, and the
+cross-domain proof; then retain only proven System-specific mechanisms.
 
-## MVP proof matrix
-
-| Test | Expected proof |
-|---|---|
-| T1 Two workflow files | Software Engineering and Research configs use identical Work Core without source changes |
-| T2 Crash/restart | killed process resumes or reconciles with no blind duplicate effect |
-| T3 Trust boundaries | denied tool, credential abuse and forbidden egress blocked |
-| T4 Accounting | session resumes without double-counted usage |
-| T5 Verification | exact Artifact ID, configured verifier capability, criteria version and evidence |
-| T6 Replaceability | a compatible Worker can take over from Artifact IDs, without transcript or engine modification |
-| T11 Config snapshot | workflow file edit/removal does not alter admitted Work; replay uses persisted decisions |
-| T12 Single Task | Work without a Workflow config runs without public DAG machinery |
-| T7 Plugin configuration | optional plugin disabled without deletion; effective state verified |
-| T8 Plugin unload | in-flight work drains, holds or safely reconciles |
-| T9 Runtime overhead | cold start, memory, service count and latency measured |
-| T10 Operator autonomy | accepted tasks and approval requests instrumented |
-
-These are **test plans**, not passing results. Historical reference
-targets R1–R5 are candidate benchmarks, not pre-adopted System release gates.
+The proof matrix T1-T12 is the acceptance and failure tests of the
+[MVP contract](../requirements/mvp.md) (two workflow files on one core, crash
+and restart, trust boundaries, accounting, exact-subject verification, Worker
+takeover from Artifact IDs, config snapshot and replay, single Task without a
+DAG, plugin disable and unload, runtime overhead, operator autonomy). They
+are **test plans**, not passing results. Historical reference targets R1-R5
+are candidate benchmarks, not release gates.
 
 For pinned-source findings and **adopt / adapt / defer / reject**
 dispositions, see [RES-0004](RES-0004-reference-workflow-artifact-audit.md).

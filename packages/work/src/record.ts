@@ -12,7 +12,7 @@ const TERMINAL_STATUSES = ['succeeded', 'failed', 'held', 'cancelled'] as const
 const status = z.enum(['running', ...TERMINAL_STATUSES])
 const operatorId = z.string().min(1)
 /** An orchestrator names the Goal it works for (ADR-0009 decision 3); it has an agent's authority and no more. */
-const caller = z.discriminatedUnion('type', [
+export const callerSchema = z.discriminatedUnion('type', [
   z.object({ type: z.enum(['human', 'agent']), operatorId }).strict(),
   z.object({ type: z.literal('orchestrator'), operatorId, goal: contentIdSchema }).strict(),
 ])
@@ -34,7 +34,7 @@ const usage = z.union([
 
 export const eventSchema = z.discriminatedUnion('type', [
   z.object({
-    type: z.literal('admitted'), seq: z.number().int(), at, caller,
+    type: z.literal('admitted'), seq: z.number().int(), at, caller: callerSchema,
     specId: contentIdSchema, input: contentIdSchema.optional(),
     /** The Goal the Work was admitted for, and whose spend it counts toward (absent without a Goal, and in records written before ADR-0009). */
     goal: contentIdSchema.optional(),
@@ -73,7 +73,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), attemptId: z.string(), reason: z.string(),
   }).strict(),
   z.object({
-    type: z.literal('reopened'), seq: z.number().int(), at, caller,
+    type: z.literal('reopened'), seq: z.number().int(), at, caller: callerSchema,
     stepId: z.string(), reason: z.string(),
     /** Only this Worker may take the step over. */
     worker: z.string().optional(),
@@ -96,13 +96,13 @@ export const eventSchema = z.discriminatedUnion('type', [
     detail: z.record(z.string(), z.string()).optional(),
   }).strict(),
   z.object({
-    type: z.literal('decided'), seq: z.number().int(), at, caller,
+    type: z.literal('decided'), seq: z.number().int(), at, caller: callerSchema,
     stepId: z.string(), decision: z.enum(['approved', 'denied']), reason: z.string(),
   }).strict(),
   z.object({
     type: z.literal('terminal'), seq: z.number().int(), at,
     outcome: z.enum(TERMINAL_STATUSES), reason: z.string(),
-    results: z.record(z.string(), contentIdSchema), caller: caller.optional(),
+    results: z.record(z.string(), contentIdSchema), caller: callerSchema.optional(),
     /** For `held`: the step whose operator decision `system approve` records. */
     awaiting: z.string().optional(),
   }).strict(),
@@ -110,7 +110,7 @@ export const eventSchema = z.discriminatedUnion('type', [
 
 export type WorkEvent = z.infer<typeof eventSchema>
 export type NewEvent = WorkEvent extends infer E ? (E extends { seq: number; at: string } ? Omit<E, 'seq' | 'at'> : never) : never
-export type Caller = z.infer<typeof caller>
+export type Caller = z.infer<typeof callerSchema>
 
 const stepState = z.object({
   state: z.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled']),

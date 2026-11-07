@@ -25,16 +25,14 @@ run `system host` in a terminal instead of step 4.
    ```
    pgrep -af -- '--profile system' ; pgrep -af 'bin/system'
    ```
-   Both print nothing (a `pgrep` matching only itself does not count). If a
-   `system work run` or `retry` of the old mode is still going, let it finish
-   or `kill` it, and run `system work list` after the cutover to see what was
-   left interrupted.
+   Both print nothing (a `pgrep` matching only itself does not count). Let a
+   `system work run` or `retry` of the old mode finish or `kill` it, and run
+   `system work list` after the cutover to see what was left interrupted.
 2. **Back up the store.** With nothing running, copy it with its WAL files:
    ```
    mkdir ~/system-backup-$(date +%F) && cp -a $DSH_HOME/system/state.sqlite* ~/system-backup-$(date +%F)/
    ```
-   (`$DSH_HOME` is `~/.dsh` by default). Keep the copy until a Work has run
-   through the Host.
+   Keep the copy until a Work has run through the Host.
 3. **`system init`** from a shell that has `claude`, `codex`, `git` and `node`
    on its `PATH`: it refreshes the profile and writes the unit.
 4. **`systemctl --user enable --now system`** starts the Host now and at every
@@ -69,14 +67,12 @@ To go back to the previous release, in this order:
    `system init` again.
 
 **The store format is unchanged by R1:** the DSH storage units `system_work` and
-`system_artifacts` stay at version 1, and the Work record and the Artifact
-envelope schemas are the same as before R1
-(`git diff <release before R1> -- packages/work/src/record.ts packages/artifacts/src`
-shows what a release changed; R1 itself changed neither). Nothing needs
-converting, so a rollback keeps the Works. One earlier addition matters when
-the previous release is older than the Host (H2): a Work changed through a
-command carries an optional `receipts` field, which the strict record schema of
-a release before H2 refuses at open. Count them:
+`system_artifacts` stay at version 1 and the record and envelope schemas are
+the same (`git diff <release before R1> -- packages/work/src/record.ts packages/artifacts/src`
+shows what a release changed), so a rollback keeps the Works. One earlier
+addition matters when the previous release is older than the Host (H2): a Work
+changed through a command carries an optional `receipts` field, which the
+strict record schema of a release before H2 refuses at open. Count them:
 ```
 node -e "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(process.argv[1],{readOnly:true});console.log(d.prepare(\"select count(*) as n from u_system_work_work where value like '%\\\"receipts\\\"%'\").get().n)" $DSH_HOME/system/state.sqlite
 ```

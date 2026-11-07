@@ -34,21 +34,10 @@ touches.
 **Scoring.** The three final outputs of each brief were shuffled and labelled
 X, Y and Z, and the key was kept apart. At the operator's request, a Claude
 Sonnet subagent that saw only the blind packet scored each output from 1 to 5
-on five criteria:
-
-- usefulness for the decision (U);
-- diversity of options (D);
-- critical thinking (C);
-- actionability (A);
-- worth of its run time (W).
-
-The scores, the key, the run list and the briefs are Artifacts in the
-operator's store:
-
-- scores `sha256:5fc55e82…`;
-- key `sha256:170789e8…`;
-- runs `sha256:b92a72e9…`;
-- briefs `sha256:d5aa6945…`.
+on usefulness for the decision (U), diversity of options (D), critical
+thinking (C), actionability (A) and worth of its run time (W). The scores
+(`sha256:5fc55e82…`), key (`sha256:170789e8…`), run list (`sha256:b92a72e9…`)
+and briefs (`sha256:d5aa6945…`) are Artifacts in the operator's store.
 
 ## Results
 

@@ -128,7 +128,7 @@ Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 
 An Account `chatgpt-web/<name>` runs one step as one prompt in the operator's
 own signed-in ChatGPT web session ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
-It is in [chatgpt.ts](src/chatgpt.ts), drives the installed Google Chrome with
+It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives the installed Google Chrome with
 `playwright-core` 1.64.1 (no browser is downloaded), and runs inside the Host,
 not as a spawned process. It is not in the bundle's `agents` row; add it as in
 the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).

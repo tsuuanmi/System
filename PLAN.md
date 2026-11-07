@@ -184,17 +184,17 @@ Growth is expected. The budgets make it visible and justified; they do not
 forbid it. Record the measures at the end of every milestone. Growth above
 budget is either justified in the milestone's row or paid for by removal.
 
-| Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone | R1 (end of H4, 2026-11-07) | H, before the pass | H, after the pass |
-|---|---|---|---|---|---|
-| Active core: `packages/work/src` + `packages/artifacts/src`, lines | 2,317 | +20% | 2,564 (+10.7%) | 2,913 (+25.7%) | 2,953 (+27.4%) |
-| All package source, lines (`.ts` and `.mjs` under `packages/*/src`) | 4,081 | recorded | 5,299 (+29.8%) | 6,349 (+55.6%) | 6,374 (+56.2%) |
-| Tests: `packages/*/tests`, `tests` and `test-support`, lines | not recorded | recorded | not recorded | 6,906 | 6,832 |
-| Docs under `docs/`: lines (files) | 3,571 (37) | +20%, and no fact stated twice | 4,284 (43) (+20.0%) | 4,557 (44) (+27.6%) | 4,557 (44) (+27.6%) |
-| Unit check, clean worktree | ~1 min | under 2 min | 39 s (install, build, typecheck, test) | not measured | not measured |
-| All required checks (`.system/checks.yaml`) | ~7 min | under 10 min | about 5 min (docs 2 s, unit 39 s, smoke 4 min 14 s) | not measured | not measured |
-| Flaky tests known | 0 | 0: a flaky test is fixed before features | 0 | 0 | 0 |
-| Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured |
-| Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured |
+| Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone | R1 (end of H4, 2026-11-07) | H, before the pass | H, after the pass | O, before → after the pass |
+|---|---|---|---|---|---|---|
+| Active core: `packages/work/src` + `packages/artifacts/src`, lines | 2,317 | +20% | 2,564 (+10.7%) | 2,913 (+25.7%) | 2,953 (+27.4%) | 3,006 (+29.7%) → 3,008 (+29.8%) |
+| All package source, lines (`.ts` and `.mjs` under `packages/*/src`) | 4,081 | recorded | 5,299 (+29.8%) | 6,349 (+55.6%) | 6,374 (+56.2%) | 6,722 (+64.7%) → 6,735 (+65.0%) |
+| Tests: `packages/*/tests`, `tests` and `test-support`, lines | not recorded | recorded | not recorded | 6,906 | 6,832 | 7,364 → 7,351 |
+| Docs under `docs/`: lines (files) | 3,571 (37) | +20%, and no fact stated twice | 4,284 (43) (+20.0%) | 4,557 (44) (+27.6%) | 4,557 (44) (+27.6%) | 4,648 (44) (+30.2%) → 4,283 (44) (+19.9%) |
+| Unit check, clean worktree | ~1 min | under 2 min | 39 s (install, build, typecheck, test) | not measured | not measured | not measured → 1 min 14 s (install 7 s, build and typecheck 29 s, test 37 s) |
+| All required checks (`.system/checks.yaml`) | ~7 min | under 10 min | about 5 min (docs 2 s, unit 39 s, smoke 4 min 14 s) | not measured | not measured | not measured → about 7 min 20 s (docs 2 s, unit 1 min 14 s, smoke 6 min 9 s, run beside another job) |
+| Flaky tests known | 0 | 0: a flaky test is fixed before features | 0 | 0 | 0 | 0 → 0 |
+| Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured | not measured |
+| Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured | not measured |
 
 **Growth at R1.** The core grew 10.7% since the baseline, inside the +20%
 budget. Before H4b-2 it was 2,852 lines (+23.1%, over the budget): the Host
@@ -229,6 +229,34 @@ start/stop, stale-socket, second-Host and idempotency duplicates). Docs held
 at 4,557 lines: the pass trimmed the package READMEs, which are not counted,
 and did not take out the 48 lines over budget at R2. The next
 milestone has to pay the core and the docs down by removal.
+
+**Growth at O (the simplification pass).** The pass changed no behaviour.
+- **Docs: budget met.** 4,648 lines fell to 4,283 (+19.9%, inside the +20%
+  budget; the 4,285-line limit). Facts stated twice went to one home and the
+  copies became links: the Host protocol and notices (the Host README), CLI
+  following and exit codes (the runbook), the five defects (ADR-0007), the
+  test matrices of RES-0002/3/4 (the MVP contract). Research and proposals
+  were cut to what is still evidence (their front matter and IDs stay), and
+  the stale "draft PR #2" and "no implementation yet" statements went. No
+  document was retired: none was clearly superseded.
+- **Core: budget not met.** 3,006 to 3,008 lines (+29.8%, over the +20%
+  budget by about 230 lines). No removal was obvious: no exported name of
+  `packages/work/src` or `packages/artifacts/src` is unused, and the `NewGoal`
+  type (+2) and the exported `callerSchema` pay for removing the Host's own
+  `GOAL_ID` and hand-written caller check in `packages/host`, outside the core.
+  The overage is the Host's receipts, slots, scheduler, conversation and Goal
+  folds (see H and R2), which are behaviour, not duplication. Paying it down
+  takes a decision to drop a feature, not a cleanup; it stays an open debt.
+- **Other findings of the Standards review:** one `inScope`, one `shortCode`,
+  `positive` out of the builder, `forwarded` reused by the MCP tool handler,
+  the `work.changed` rule kept in the Host README, `chatgpt.ts` split into the
+  attempt and `chatgpt-login.ts` (cookie import and sign-in). The
+  `{} as Services` cast in `mcp.ts` stays: the table is built by a closure
+  over `Services`, so there is no typed way to get its shapes alone.
+- **Tests:** 7,364 to 7,351 lines. The orchestrator `agent: false` test over
+  the socket (kept in the Host's operations test) and the budget refusal and
+  raise in `tests/goal.test.ts` (kept in `packages/work/tests/goal.test.ts`)
+  were duplicates.
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -412,6 +440,8 @@ and orchestrator scope; O3 completion notices.
   model label and `SELECTORS.version`; `system mcp` announces a changed
   resource list after it reconnects; the code version covers
   `cordis.patch.yml`.
+- [x] End of milestone: review, simplification pass, growth record (the
+  growth table, column "O, before → after the pass").
 - [ ] Later, not in O: an Orchestrator that System spawns on a schedule.
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
