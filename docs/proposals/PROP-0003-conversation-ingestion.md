@@ -25,16 +25,11 @@ interactive Worker later.
 
 This design came from System itself. Brainstorm Work `work:78631103…` (the
 *architecture* brief in [RES-0008](../research/RES-0008-brainstorm-evaluation.md))
-compared two proposals and was the best-scored output of the evaluation. It
-recommends:
-
-- the **curated handoff** model (proposal B), with the raw capture optional
-  (proposal A);
-- **observed** facts kept apart from **asserted** ones;
-- one atomic bundle;
-- a preview before anything is stored;
-- leaks treated as permanent;
-- clear labelling for Workers.
+was the best-scored output of the evaluation. It recommends the **curated
+handoff** model (proposal B) with the raw capture optional (proposal A),
+**observed** facts kept apart from **asserted** ones, one atomic bundle, a
+preview before anything is stored, leaks treated as permanent and clear
+labelling for Workers.
 
 Checking the platform answers its open questions:
 
@@ -96,16 +91,12 @@ Checking the platform answers its open questions:
 
 ## Acceptance
 
-- Unit tests:
-  - a manifest needs stored parts, and the same files give the same ID;
-  - the preview stores nothing;
-  - secret-like strings are reported;
-  - a correction links to what it corrects;
-  - a Task carries its context, and the classification propagates.
-- Workspace test: a Worker receives a conversation and a plain file as
-  context, under the notice.
-- Smoke test on the real profile: add, show, then a Task with context run by
-  the fake CLI, which reads it.
-- **Dogfood:** ingest one of the operator's real ChatGPT reviews of PR #2,
-  run a Brainstorm brief that has it as context, and check that the
-  synthesis treats it as data.
+Unit tests: a manifest needs stored parts and the same files give the same ID;
+the preview stores nothing; secret-like strings are reported; a correction
+links to what it corrects; a Task carries its context and the classification
+propagates. A workspace test: a Worker receives a conversation and a plain
+file as context, under the notice. A smoke test on the real profile: add,
+show, then a Task with context run by the fake CLI, which reads it.
+**Dogfood:** ingest one of the operator's real ChatGPT reviews of PR #2, run a
+Brainstorm brief with it as context, and check that the synthesis treats it as
+data.

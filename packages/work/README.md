@@ -22,8 +22,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   verifiers, route by capability with a reason for every candidate.
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
-- [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots, and the lost
-  attempts that keep theirs until `settle` finds their process gone.
+- [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
 - [src/control.ts](src/control.ts) — `MemoryControl`: the per-Work lock and cancel request, in memory.
 - [src/host.ts](src/host.ts) — `Host` ([the Host](../../docs/architecture/host.md),
   H2, in process): takes the Host lock, owns the controller, runs every

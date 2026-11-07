@@ -20,20 +20,13 @@ and `codex/default`. A *third execution* is **not a third provider or plugin**:
 the same registered account may execute several independent attempts with
 distinct `attemptId`, inputs and output Artifact IDs.
 
-A sensible first composition is:
-
-```text
-Input brief Artifact
-   |                        |
-   +-> idea-a: Claude ------+-> synthesis: Claude or Codex -> final Artifact
-   +-> idea-b: Codex -------+
-```
-
-The two idea steps read the **same initial brief** and do not read each
-other's output; the synthesis step receives **exactly the two output Artifact
-IDs** (plus the original brief). This tests divergent perspectives without
+The first composition (the diagram is in
+[Brainstorm composition](../architecture/brainstorm-composition.md#current-capability-and-shape))
+has two idea steps reading the **same initial brief** without seeing each
+other's output, and a synthesis step receiving **exactly the two output
+Artifact IDs** (plus the brief). This tests divergent perspectives without
 conversation handoff. Each role is a **Workflow step**, not a new singleton
-component. A future critique step or review capability remains optional.
+component; a future critique or review step stays optional.
 
 ## System 1 as a reference: what to copy conceptually
 
@@ -55,130 +48,71 @@ synthesis + provenance. This yields a useful three-attempt flow without
 porting `workflow/src/teams.ts`, persistent sessions, member ballots,
 dynamic DAG growth, team voting, or a new plugin manager.
 
-## What the current implementation actually supports
+## What the implementation supports
 
-| Existing implementation | Evidence | Implication |
-|---|---|---|
-| External YAML, step `dependsOn`, `inputs`, `instructions`, `outputs` | [workflow compiler](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/packages/work/src/workflow.ts) | Three role steps and Artifact-ID handoff need no new workflow engine. |
-| Controller chooses first ready pending step | [controller](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/packages/work/src/controller.ts) | Independent branches are **executed sequentially** today; drawing parallel arrows does not mean parallel runtime execution. Do not add parallelism just for V0. |
-| Worker registry picks first registered account meeting capabilities | [registry](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/packages/work/src/registry.ts) | Without different capability mappings, all three steps could route to Claude. Add **role-specific capability labels** in DSH account config first; no schema change required. |
-| Two configured accounts, Claude with research/web, Codex with code-write and tiers | [bundle config](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/packages/bundle/cordis.patch.yml) | Give both the appropriate `brainstorm.*` capability names by profile patch. Do not claim Codex currently advertises `research`. |
-| External Worker adapter handles `file@1` output from `out/<slot>`, including no-Git inputs | [workspace adapter](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/packages/agents/src/workspace.ts) | A text brief and three Markdown output artifacts fit today's file handoff. No code worktree is required for these steps. |
-| A workflow **without `accept` or `verify`** can terminate `succeeded` once all Worker steps succeed | [`finishWithoutAccept`](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/packages/work/src/controller.ts) | Brainstorm is possible as exploratory work without a quality verifier, **but** status means execution completed, not factual correctness, approval or intellectual merit. |
-| One `Work` persists events/spec/artifacts; retry and replay exist | [Work controller](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/packages/work/src/controller.ts) | Replay uses recorded results; no LLM rerun to reproduce a prior brainstorm. |
+Evidence at [`7099428`](https://github.com/tsuuanmi/System/commit/709942819e56c57452bf72c2db019c845fca1d74);
+the shipped graph is [`workflows/brainstorm.yaml`](../../workflows/brainstorm.yaml)
+and the composition is [Brainstorm composition](../architecture/brainstorm-composition.md).
 
-## A proposed, currently expressible Workflow configuration
-
-**Illustrative only:** assumes the DSH account config is first extended to
-advertise `brainstorm.idea-a` (Claude), `brainstorm.idea-b` (Codex), and
-`brainstorm.synthesis` (whichever existing Worker is chosen). These are
-configuration labels, **not new Worker implementations**.
-The YAML otherwise uses the existing `system.workflow/v1` syntax.
-
-```yaml
-schema: system.workflow/v1
-id: brainstorm
-version: 1
-steps:
-  - id: idea-a
-    capabilities: [brainstorm.idea-a, tier.standard]
-    inputs: {brief: "$work.input"}
-    outputs: [proposal-a]
-    instructions: |
-      Explore a distinct solution space. Produce proposal-a with assumptions,
-      options, tradeoffs, risks and unanswered questions.
-  - id: idea-b
-    capabilities: [brainstorm.idea-b, tier.standard]
-    inputs: {brief: "$work.input"}
-    outputs: [proposal-b]
-    instructions: |
-      Independently explore alternatives. Do not assume the other Worker's
-      conclusions. Include disconfirming arguments and tradeoffs.
-  - id: synthesis
-    dependsOn: [idea-a, idea-b]
-    capabilities: [brainstorm.synthesis, tier.standard]
-    inputs:
-      brief: "$work.input"
-      a: "$steps.idea-a.proposal-a"
-      b: "$steps.idea-b.proposal-b"
-    outputs: [synthesis]
-    instructions: |
-      Compare the two proposals, note disagreements, recommend experiments,
-      identify decisions requiring the operator, and write synthesis.
-```
-
-The schema supports `outputs` as hyphenated slot IDs and resolves the two
-symbolic references to immutable Artifact IDs at execution. Make
-`brainstorm.synthesis` available on **one** configured account for the
-initial fixture. If a later experiment requires explicit Worker-ref selection,
-introduce a narrowly tested, versioned config extension rather than
-hardcoding `claude`/`codex` in Work Controller.
+- External YAML (`dependsOn`, `inputs`, `instructions`, `outputs`) needs no new
+  engine for three role steps with Artifact-ID handoff.
+- The registry picks the first account meeting a step's capabilities, so
+  without different capability mappings all three steps could route to Claude.
+  Role-specific `brainstorm.*` labels in the DSH account config need no
+  schema change. Codex does not advertise `research`; give it only the role it
+  can run. If explicit Worker-ref selection is needed later, add a narrowly
+  tested, versioned extension; do not hardcode `claude`/`codex` in the
+  Controller.
+- The Worker adapter handles `file@1` output from `out/<slot>`, including
+  no-Git inputs, so a text brief and Markdown outputs need no code worktree.
+- At that commit the controller ran independent branches sequentially (it
+  has since gained slots, see [Host](../architecture/host.md)); a workflow
+  without `accept` or `verify` ends `succeeded` once its Worker steps do,
+  which means execution completed, not correctness or merit.
 
 ## What to test before claiming Brainstorm works
 
-1. Register role-specific capabilities via a DSH profile patch without
-   changing the Work Controller or creating a new Worker package.
-2. Fake-run with two distinct Worker refs and three distinct `attemptId`s;
-   validate exact input/output Artifact references, provenance and stable
-   dependency ordering. Two independent idea steps must not receive the
-   other's result.
-3. Credential-gated real run: one Claude idea, one Codex idea, one synthesis
-   from the selected account; record which models actually served the calls.
-   The agents' success must mean all three files were stored.
-4. Kill/restart between idea steps and synthesis; completed idea outputs must
-   **not be regenerated**, and the pinned Workflow spec must remain fixed.
-5. Change the YAML during a run; old Work uses pinned spec, new Work uses
-   new definition. `replay` must match.
-6. Report Worker failure/cancellation and preserve partial outputs; do not
-   falsely claim successful brainstorm if synthesis was not produced.
-7. Show final artifact through existing CLI and compare at least a few briefs
-   against a **single-Worker** baseline for novelty, coverage, disagreement,
-   cost/latency and operator usefulness. Three Workers are a design choice to
-   evaluate, **not proof of superior quality**.
+Pinned spec, exact input/output references and provenance, three distinct
+`attemptId`s, and idea steps not seeing each other's result; a
+credential-gated real run recording which models served; kill/restart
+without regenerating finished ideas; a YAML edit during a run not affecting
+the old Work; Worker failure or cancellation preserving partial outputs and
+never reporting success without the synthesis. Most of this is now in
+`tests/brainstorm.test.ts` (see
+[RES-0007](RES-0007-brainstorm-and-concurrency-review.md)). The part still
+open is comparing a few briefs against a **single-Worker** baseline for
+novelty, coverage, disagreement, cost/latency and usefulness; three Workers
+are a design choice to evaluate, **not proof of superior quality**.
 
 ## Does the system need a third Worker?
 
-**Not for the next milestone.** One Claude account can perform two attempts,
-Codex one, or vice versa. If the same model produces near-identical
-perspectives, try different role prompts and assigned account models first.
-Add a new Worker provider only when a real workflow requires a missing
-modality/tool/API/provider or measurable diversity unavailable through
-existing runtimes, and a compatibility/credential/usage contract is proven.
-
-Likewise, **do not port** System 1's monolithic team/agent-workers engine
-just to coordinate three Artifact-bound steps. The audited System 1 team
-requires persistent session affinity, ballot/tally contracts and dynamic
-round management; none is required for the first System Brainstorm.
-[OpenAI Agents SDK orchestration patterns](https://openai.github.io/openai-agents-python/multi_agent/)
+**Not for the next milestone** ([PROP-0002](../proposals/PROP-0002-post-mvp-roadmap.md#decision-should-we-add-another-worker)).
+One Claude account can perform two attempts, Codex one, or vice versa; if one
+model gives near-identical perspectives, try different role prompts and
+account models first. Do **not** port System 1's monolithic team engine
+(session affinity, ballots, dynamic rounds) to coordinate three Artifact-bound
+steps. [OpenAI Agents SDK orchestration patterns](https://openai.github.io/openai-agents-python/multi_agent/)
 and [Anthropic's research system](https://www.anthropic.com/engineering/multi-agent-research-system)
-are external comparison patterns, not dependencies or proof of a need for
-another provider.
+are external comparison patterns, not dependencies.
 
 ## Research workflow versus future Website research
 
-- **Current Research:** already implemented in PR #2. A model answers a
-  question, produces `report`/`sources`, and the existing
-  `research.citation-check` checks sources/quotes. **Keep the flow operable**,
-  but do not spend the next milestone upgrading claim/source verifiers.
-  This check is not proof of report-level claim support.
-- **Optional exploratory Research config:** when testing a flow without any
-  verifier, use a **new versioned workflow file** consisting of a Worker step
-  and output Artifacts. No `accept` node is needed in current `v1`.
-  This is an execution-result workflow, **not a verified-research outcome**.
-  Retain the existing research YAML and verifier capability; do not silently
-  alter accepted historic runs/spec hashes.
-- **Future, after the next MVP milestone:** Website Worker/browser-driven
-  research can add interactive sources behind the existing WorkerPort and
-  source Artifact contracts. At that stage revisit source snapshots,
-  citations/claim verification and provider-auth constraints. The browser
-  may be needed for login-gated or interactive sites, not merely ordinary
-  public web fetch. Keep research verification a separately configurable
-  future capability rather than a universal stage.
+Current Research (a model answers a question, produces `report`/`sources`,
+and `research.citation-check` checks sources and quotes) stays operable but
+is not proof of report-level claim support. A flow without any verifier needs
+a **new versioned workflow file** (a Worker step and outputs, no `accept`
+node) and is an execution-result workflow, **not a verified-research
+outcome**; keep the existing research YAML and verifier and do not alter
+accepted runs' spec hashes. After the next MVP milestone, a Website
+Worker/browser-driven research can add interactive or login-gated sources
+behind the existing WorkerPort and source Artifact contracts, and then
+source snapshots, citations/claim verification and provider-auth constraints
+are revisited; verification stays a separately configurable capability.
 
 ## Decision
 
 **Research recommendation:** ship a Brainstorm vertical slice using the two
 existing runtimes and three Worker attempts before adopting new plugins or
-Worker providers. Defer parallel fanout, peer messaging, full team framework,
-claim-level Research validation and Website Worker until a measured use case.
-This is an experiment plan, **not** a newly accepted ADR.
+Worker providers. Defer parallel fanout, peer messaging, a full team
+framework, claim-level Research validation and Website Worker until a
+measured use case. This is an experiment plan, **not** a newly accepted ADR.

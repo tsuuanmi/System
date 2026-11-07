@@ -16,7 +16,8 @@ import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
-import { SELECTORS, parseBlocks, parseCookies, webDefaults, webLogin, type WebConfig } from '../src/chatgpt.ts'
+import { SELECTORS, parseBlocks, webDefaults, type WebConfig } from '../src/chatgpt.ts'
+import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
 const CHROME = '/usr/bin/google-chrome'
 const skip = !existsSync(CHROME) && `${CHROME} is not installed`

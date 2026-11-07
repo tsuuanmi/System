@@ -92,24 +92,15 @@ support and exact subject identity; independent model review is configurable.
 
 ## Falsifiable experiments for System
 
-1. Load two external workflow files and validate/execute them through the
-   **same controller**, not two domain plugins.
-2. Submit a single Work with no workflow file; no public DAG required.
-3. Edit/remove the workflow config during execution: old work retains the
-   admitted spec hash and outputs, new work sees the revised definition.
-4. Produce the same typed payload in two attempts: identical content IDs,
-   separate provenance, proper classification and read authorization.
-5. Hand an Artifact ID from one Worker/provider to a different one without
-   transferring the prior conversation or mutable path.
-6. Verify a code-tree artifact with code checks and a report with citation
-   checks; change each subject and require fresh verifier results.
-7. Test unknown verifier, stale criteria/version, malformed references,
-   source URL without actual evidence and `inconclusive` disposition.
-8. Crash between effect invocation and receipt; reconcile before any retry.
-9. Disable a DSH plugin by config, leaving code installed: refuse new work
-   needing it and safely handle in-flight attempts.
-10. Measure the actual active plugin graph, cold start, resource overhead,
-    operator touches and accepted-result latency.
+The experiments are now the acceptance and failure tests of the
+[MVP contract](../requirements/mvp.md#failure-and-governance-tests) (two
+workflow files on one controller, a Task without a file, a pinned spec under
+a config edit, stable content IDs with separate provenance, cross-provider
+Artifact handoff, fresh verification when a subject changes, unknown or stale
+verifiers, a crash between effect and receipt, plugin disable) plus these
+two: a source URL without actual evidence must not pass, and the actual
+active plugin graph, cold start, overhead, operator touches and
+accepted-result latency are measured.
 
 Exact YAML schema, artifact hashing/canonicalization, storage/backend,
 effective DSH profile, verification isolation and crash semantics remain

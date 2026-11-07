@@ -11,7 +11,6 @@ This is a **working technical sketch** inside the
 DSH host are already decided in
 [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md);
 specific schemas, service keys, process boundaries and storage remain open.
-No implementation exists in this repository yet.
 
 ## Minimum candidate contracts
 
@@ -43,26 +42,25 @@ smallest two-workflow spike validates the transitions.
 
 ## Failure points for a controlled spike
 
-- Crash before assigning the Worker; crash during execution; crash after a
-  remote effect but before confirmation; crash after result before verification.
-- Cancel an attempt and disable its backing DSH plugin mid-flight.
-- Layer a higher-priority configuration patch that overrides the intended
-  enablement, and confirm that admission observes **effective** state.
-- Try a malicious or buggy Worker adapter that reports false success or
-  attempts unauthorized data egress.
-- Retry a resumed session whose usage report is cumulative, not incremental.
-- Change the artifact after checks to prove stale verification is rejected.
+The crash, cancel, plugin-disable, denial and replacement scenarios are the
+[MVP failure tests](../requirements/mvp.md#failure-and-governance-tests). The
+ones it does not name:
+
+- a higher-priority configuration patch that overrides the intended
+  enablement: admission must observe **effective** state;
+- a malicious or buggy Worker adapter that reports false success;
+- a resumed session whose usage report is cumulative, not incremental;
+- crash after a result but before verification, and an artifact changed after
+  its checks (stale verification is rejected).
 
 ## Answered for MVP-0
 
-[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md) answers two
-earlier questions: System owns the work semantics and stores them in the DSH
-storage hub (one key per Work, one atomic update per transition), and Workers
-use a System-owned adapter built on DSH's subprocess and credential layers
-because the stock subagent adapters drop usage and workspace changes. The
-minimal Worker contract that represents both code patches and research
-reports is `WorkerRequest`/`WorkerResult` in `@system/work`: exact input
-Artifact IDs in, output slots captured by the adapter out.
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md) decisions 5 and
+9 answer two earlier questions: Work semantics live in the DSH storage hub (one
+key per Work, one atomic update per transition), and Workers use a
+System-owned adapter because the stock subagent adapters drop usage and
+workspace changes. The minimal Worker contract for both code patches and
+research reports is `WorkerRequest`/`WorkerResult` in `@system/work`.
 
 ## Unanswered design questions
 

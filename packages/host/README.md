@@ -50,19 +50,8 @@ await serving.stop()                                // server, then the Host cor
   credentials and the Workers view; `system host` brings the DSH-backed ones.
 - **Orchestrator scope.** An `orchestrator` caller has an agent's authority and
   is further confined to its Goal (ADR-0009 decision 4). A row's optional
-  `scope(host, params, caller)` runs for it before the handler: it throws
-  `-32001` naming the scope, or returns the params to run with.
-  - `work.submit` takes only the caller's own `goal`, and fills it in when
-    absent.
-  - `work.run`, `work.retry`, `work.cancel`, `work.show`, `work.events`,
-    `work.report` and `work.replay` take only Works whose `admitted` event
-    names the Goal or one in its supersedes chain; `work.list` shows only
-    those.
-  - `artifact.show` and `artifact.cat` take only Artifacts a scoped Work
-    names as input, output, evidence or criteria, or as context or base of
-    its Task. `goal.show` takes only the Goals of the chain.
-  - Rows without a scope (`task.new`, `artifact.put`, `workers.list`,
-    `conversation.preview`, `host.status`) are an agent's.
+  `scope` hook (`src/operations.ts`) runs for it before the handler and throws
+  `-32001` naming the scope; a row without one is an agent's.
 - **Receipts.** `work.submit`, `work.run`, `work.retry`, `work.cancel` and
   `approval.decide` take an optional `commandId`, which the Host core turns
   into a receipt: the same call again answers from the record, and the same

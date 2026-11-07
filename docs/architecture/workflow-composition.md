@@ -13,8 +13,7 @@ covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*
 [executable configs](../../workflows/README.md) are the authority for exact
 v1 syntax. The examples below are conceptual sketches, **not runnable v1
 examples**. The [Brainstorm composition](brainstorm-composition.md) adds a
-third domain without a new controller, and currently executes ready steps
-sequentially. Work/Task
+third domain without a new controller. Work/Task
 is the basic durable unit. A Workflow is a versioned **config file** interpreted
 by a single generic Work Controller; it is not a code module per use case.
 The decision is [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md).
@@ -40,21 +39,11 @@ creates subordinate attempts or internal step records, but preserves a
 single accepted config version for that run. The config is read from an
 external file, validated, canonicalized and recorded at admission.
 
-## Minimal authoring vocabulary
+## Authoring vocabulary
 
-The MVP workflow file SHOULD express only:
-
-- `id`, `version` and optionally an input artifact schema;
-- `steps` with stable step IDs and `dependsOn` to order/depend on work;
-- required Worker `capabilities` and policy-constrained parameters;
-- named output artifact slots and references to prior slots;
-- optional per-step or final `verify` contract/capability and acceptance gate;
-- bounded time, retry and concurrency policies where necessary.
-
-Unknown fields, broken dependencies, cycles, missing output slots, unsupported
-capabilities, invalid verifier IDs and incompatible schema versions are
-rejected *before starting a Worker*. Configured Worker IDs may be hints, but
-default selection is capability-based, not hardcoded to a vendor.
+Configured Worker IDs may be hints; default selection is capability-based,
+never hardcoded to a vendor. Bounded time, retry and concurrency policies are
+added only where necessary.
 
 ## The implemented vocabulary: `system.workflow/v1`
 
@@ -127,21 +116,20 @@ accept step.
 
 ## Deterministic admission and replay boundary
 
-1. Validate and resolve the config against the **effective DSH plugin
-   composition**, schemas and policy at admission.
-2. Persist a content-addressed, canonical **resolved workflow spec** and
-   record its Artifact ID on the Work before dispatch.
-3. Assign Worker and resolve step aliases against a snapshot of actual
-   Artifact IDs; persist the choice and reason before its effects.
-4. Record completed result IDs, verifier evidence, approval/denial and
-   external observations. Replay uses the recorded history, **not**
-   a rerun of Worker/model reasoning.
-5. Editing the YAML does not mutate a running Work's spec. Removal disables
-   **new admissions** but does not discard persisted in-flight specs.
-6. Only an explicit migration/decision can rebind a live Work to a new
-   spec/version. That must invalidate any affected downstream verification.
-7. Where the remote side effect is uncertain, hold or reconcile it before
-   retrying. Workflow structure alone cannot guarantee exactly-once effects.
+Admission validates and resolves the config against the **effective DSH
+plugin composition**, then persists the content-addressed resolved spec and
+records its Artifact ID on the Work before dispatch
+([ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md)
+decision 5). Worker choice and step aliases resolve against actual Artifact
+IDs, with the choice and reason persisted before its effects. Replay uses
+recorded result IDs, verifier evidence, decisions and external observations,
+**not** a rerun of Worker reasoning
+([determinism](artifact-verification.md#determinism-three-separate-questions)).
+Editing the YAML never mutates a running Work's spec; removing it disables
+only **new admissions**; only an explicit migration or decision may rebind a
+live Work, and it must invalidate affected downstream verification. An
+uncertain remote effect is held or reconciled before any retry; workflow
+structure alone cannot guarantee exactly-once effects.
 
 **Implemented recovery:** each Work is one storage key holding its events
 (`admitted`, `dispatched`, `observed`, `verified`, `attempt-lost`, `terminal`)
@@ -156,11 +144,11 @@ DAG-specific user abstraction for a one-step task.
 
 ## Config is not capability installation
 
-DSH profile/bundle config controls plugin activation. System Workflow YAML
-only requests already available capabilities. It cannot silently enable an
-untrusted Worker, install a package, grant new egress or approve an effect.
-An optional plugin disabled via DSH config makes dependent workflow
-admission fail with a clear missing-capability reason.
+Workflow YAML only requests capabilities DSH profile/bundle config has
+already activated; it cannot enable an untrusted Worker, install a package,
+grant egress or approve an effect. A capability disabled in DSH config makes
+dependent admission fail with a clear missing-capability reason
+([control plane](control-plane.md#kernel--active-composition-rule)).
 
 See [Artifact-ID handoff](artifact-verification.md),
 [MVP requirements](../requirements/mvp.md), and the

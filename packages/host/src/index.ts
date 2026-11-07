@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
-import type { Caller, Host, WorkChange, z } from '@system/work'
+import { callerSchema, type Caller, type Host, type WorkChange, type z } from '@system/work'
 
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -84,6 +84,12 @@ export interface Link {
   listen(): void
 }
 
+/** Whether the Work was admitted for `goal` or a Goal in its supersedes chain (ADR-0009 decision 4). */
+export function inScope(host: Host, goal: string, workId: string): boolean {
+  const admitted = host.get(workId)?.events[0]
+  return admitted?.type === 'admitted' && admitted.goal !== undefined && host.goalChain(goal).has(admitted.goal)
+}
+
 export interface Method {
   /** One line for the API reference: what it does and returns. */
   summary?: string
@@ -133,12 +139,10 @@ const builtin: Methods = {
 /** The whole table a Host serves: the built-in rows and `extra`. */
 export const tableOf = (extra: Methods = {}): Methods => ({ ...builtin, ...extra })
 
-const GOAL_ID = /^sha256:[0-9a-f]{64}$/
-
-const callerOf = (value: any): Caller | undefined => {
-  if (!value || typeof value.operatorId !== 'string' || !value.operatorId) return undefined
-  if (value.type === 'human' || value.type === 'agent') return { type: value.type, operatorId: value.operatorId }
-  return value.type === 'orchestrator' && typeof value.goal === 'string' && GOAL_ID.test(value.goal) ? { type: 'orchestrator', operatorId: value.operatorId, goal: value.goal } : undefined
+/** The caller a hello declares, or nothing when it does not fit the shape. */
+const callerOf = (value: unknown): Caller | undefined => {
+  const parsed = callerSchema.safeParse(value)
+  return parsed.success ? parsed.data : undefined
 }
 
 /** Listen on `options.path`; each connection must say `host.hello` before any other method. */
@@ -156,8 +160,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
     const send = (message: object) => { if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`) }
     // A notice has no id and is no answer: it only wakes the client, which reads `work.events` from its cursor.
     const notify = ({ workId, status, seq, type }: WorkChange) => {
-      const goal = type === 'admitted' ? host.get(workId)?.events[0] : undefined
-      const admitted = goal?.type === 'admitted' && goal.goal !== undefined && [...link.goals].some((watched) => host.goalChain(watched).has(goal.goal!))
+      const admitted = type === 'admitted' && [...link.goals].some((watched) => inScope(host, watched, workId))
       if ((type === 'terminal' && link.works.has(workId)) || admitted) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq } })
     }
     let stopListening: (() => void) | undefined

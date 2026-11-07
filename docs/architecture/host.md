@@ -21,12 +21,8 @@ and Account slots (H5) are in `controller.ts` and `slots.ts`.
 
 **One owner.** One process owns every Work. That ends the class of defects
 that came from several short-lived processes each loading their own copy of
-the store. Five were found and fixed on 2026-11-06:
-- an empty lock;
-- stale-lock removal moving a live lock;
-- a stale snapshot overwriting events;
-- SQLite store-creation races;
-- the profile config rewritten under a reader.
+the store. Five were found and fixed on 2026-11-06 (listed in
+[ADR-0007](../decisions/ADR-0007-one-long-lived-host.md#context)).
 
 **Parallel steps.** The same owner can then run independent steps and Works
 at the same time.
@@ -124,20 +120,13 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   - A `run` cut short has no receipt, so after a restart the same `commandId`
     runs the Work on.
 - **Implemented (H3), the socket and the operation table:** `packages/host`.
-  Its README is the protocol and API reference, the latter generated from the
-  table and checked by a test.
-  - The transport (`index.ts`): `host.hello`, the 1 MiB frame bound and a
-    dispatch table `method -> { params, handler, agent }`. Params are a zod
-    schema per method; the connection's caller reaches each handler.
-  - The rows (`operations.ts`): `work.*`, `approval.decide`, `task.new`,
-    `artifact.*`, `conversation.*`, `workers.list`, `workers.login`, `credentials.*` and
-    `host.status`. They need the DSH-backed parts (Artifacts, credentials,
-    Workers) as `Services`; the CLI brings them at H4.
-  - `work.submit` takes the Workflow file's contents, never a path.
-  - `work.run`, `work.retry` and `approval.decide` answer once the Work is
-    being driven, through a `started` signal of the Host core, so a refusal
-    still reaches the caller and a long run does not hold the call. A closed
-    connection never cancels a Work.
+  Its README is the protocol (hello, 1 MiB frames, table rows, orchestrator
+  scope, long calls) and the API reference, the latter generated from the
+  table and checked by a test. `work.submit` takes the Workflow file's
+  contents, never a path, and `work.run`, `work.retry` and `approval.decide`
+  answer once the Work is being driven, so a refusal still reaches the caller
+  and a long run does not hold the call. A closed connection never cancels a
+  Work.
 - **Following a Work.** `work.events` takes `{ workId, after }` and returns the
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
@@ -147,30 +136,21 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
     booting DSH). `buildProgram` is its commands; `doctor` and `host` are a program of their own (`buildHostProgram`), run in the DSH process.
   - It reads the Workflow file and sends its contents. A call that changes
     something carries a fresh `commandId`, sent once more with the same one
-    after a timeout.
-  - `work submit`, `run`, `retry`, `approve`, `deny` and `cancel --wait` follow
-    the Work and exit with the usual codes (0, 1, 3, 5). Ctrl-C prints
-    `detached; <work> goes on in the Host` and exits 0; with
-    `--cancel-on-interrupt` it sends `work.cancel` and follows to the end.
+    after a timeout (10 s: "not answering").
+  - Following, exit codes (0, 1, 3, 5), Ctrl-C detaching (or
+    `--cancel-on-interrupt`) and the "not running" line are in the
+    [runbook](../operations/runbook.md#following-a-work-and-detaching).
   - `approve` and `deny` keep the terminal confirmation and send
     `approval.decide` after it, on a connection whose caller is human.
-  - No Host: one line, `the System Host is not running for <home>`, exit 1. No
-    answer in 10 s: "not answering", naming the runbook.
   - `doctor` still boots DSH and also reports whether a Host answers.
-- **Watching a Work (O3).** `work.watch` keeps the connection subscribed, and
-  the Host sends the notification (JSON-RPC, no `id`)
-  `work.changed { workId, status, seq }` when a watched Work becomes terminal,
-  is held, or starts awaiting approval; with `goal`, instead one with `seq` 0
-  for each new Work of the Goal. `work.unwatch` stops it, and a closed
-  connection drops its watches.
-  - One change hook (`Host.onChange`) is called in the commit lane after each
-    append and admission; the connection filters it. Nothing polls storage.
-  - A notice only wakes the client. The log is the truth: the client reads
-    `work.events` from its cursor, so a notice sent while it was away loses
-    nothing. A watch on a Work that already ended replies with its final
-    `{ status, seq }`.
-  - `system mcp` turns it into MCP resource subscriptions (the
-    [runbook](../operations/runbook.md#using-system-from-an-agent)).
+- **Watching a Work (O3).** `work.watch` subscribes the connection to the
+  notice `work.changed { workId, status, seq }` (protocol in the package
+  README). One change hook (`Host.onChange`) is called in the commit lane after
+  each append and admission, and nothing polls storage. A notice only wakes the
+  client; the log is the truth, so a notice sent while it was away loses
+  nothing, and a watch on a Work that already ended replies with its final
+  `{ status, seq }`. `system mcp` turns it into MCP resource subscriptions (the
+  [runbook](../operations/runbook.md#using-system-from-an-agent)).
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact
   subject at a terminal, and the Host checks that subject again before it
@@ -243,26 +223,15 @@ PLAN's growth budget.
 
 Credentials still come from the DSH store.
 
-**Implemented (H4a):**
-- `system host` builds the Host core in the DSH composition (`WorkService.startHost`),
-  serves the operation table on `$DSH_HOME/system/host.sock` (a stale file is
-  removed once the lock is held), and logs one line per start and stop to
-  stderr. On SIGTERM or SIGINT it closes the server, then the core (which
-  releases the lock), and exits 0.
-- `system init` writes the unit, runs `daemon-reload` and enables lingering,
-  and prints the commands to enable and start it; it never does either.
-  `--no-service` or `SYSTEM_NO_SERVICE=1` skips it, and a `DSH_HOME` other than
-  `~/.dsh` gets no unit.
-- `bin/system` runs the newest Node 24 (>= 24.9) under `~/.nvm/versions/node/`
-  when the running one is older, or names `nvm install 24`.
-
-The commands are in the [operations runbook](../operations/runbook.md).
-
-The CLI says which case it hit (H4b-1):
-- not running: run `systemctl --user start system`;
-- not answering: see the [operations runbook](../operations/runbook.md).
-
-Other homes (tests, experiments) run `system host` in the foreground.
+**Implemented (H4a):** `system host` builds the Host core in the DSH
+composition (`WorkService.startHost`) and serves the operation table on
+`$DSH_HOME/system/host.sock` (a stale file is removed once the lock is held).
+SIGTERM or SIGINT closes the server, then the core (which releases the lock),
+and exits 0. `system init` never enables or starts the unit, and a `DSH_HOME`
+other than `~/.dsh` gets no unit; the commands, `--no-service`, logs and the
+"not running" and "not answering" cases are in the
+[operations runbook](../operations/runbook.md). Other homes (tests,
+experiments) run `system host` in the foreground.
 
 ## Goals (O1)
 
@@ -303,13 +272,8 @@ before the code (Charter 12, fixture first).
 
 ## Not here
 
-- `system mcp` (milestone O).
-- Socket activation.
-- An offline doctor (until a wedged Host needs one).
-- Streaming or subscriptions.
-- TCP or remote access.
-- Auto-resume.
-- Priorities, fairness tuning and a persisted queue.
-- Live plugin reload.
-- Sandboxing.
-- Compaction (until the memory report exceeds its budget).
+Socket activation; an offline doctor (until a wedged Host needs one); TCP or
+remote access; auto-resume; priorities, fairness tuning and a persisted queue;
+live profile and plugin reload; sandboxing; idle shutdown; compaction (until
+the memory report exceeds its budget). Subscriptions exist only as O3's
+notices above.

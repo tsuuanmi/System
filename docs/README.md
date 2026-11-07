@@ -28,15 +28,9 @@ source and tests are the authority for implementation behavior.
 
 ## Change workflow
 
-Requirements define **what** needs to be proven, architecture owns
-**responsibility boundaries**, decisions preserve **why** choices were made,
-research retains evidence and uncertainty, and proposals contain unaccepted
-work. Executable source and tests, when present, determine actual behavior.
-
-The [documentation profile](governance/documentation.md) declares active
-areas and conformance level. Folder READMEs route rather than duplicate facts.
-Typed relationships belong in front matter; generated indexes belong to the
-documentation tool.
+The [documentation profile](governance/documentation.md) declares the areas,
+what each owns and the conformance level; folder READMEs route rather than
+duplicate facts, and generated indexes belong to the documentation tool.
 
 ## Reading rules
 

@@ -1,8 +1,8 @@
 /**
  * ADR-0009 O1 on the real profile: `system goal new` behind a terminal
  * confirmation, a Work admitted under the Goal (its context reaches the
- * Worker), the budget refusal at the limit, and a raise. Workers run on the
- * fake CLI.
+ * Worker), and a raise. The budget is tested in packages/work. Workers run on
+ * the fake CLI.
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -44,7 +44,7 @@ after(async () => {
   rmSync(home, { recursive: true, force: true })
 })
 
-test('a Goal is written by a human at a terminal, its budget limits admission, and a raise lets it go on', { skip: !hasScript && 'needs script(1) for a pseudo-terminal', timeout: 240_000 }, () => {
+test('a Goal is written by a human at a terminal, its context reaches a Work, and a raise supersedes it', { skip: !hasScript && 'needs script(1) for a pseudo-terminal', timeout: 240_000 }, () => {
   const args = ['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '1']
   const piped = system(args)
   assert.equal(piped.status, 1)
@@ -77,15 +77,10 @@ test('a Goal is written by a human at a terminal, its budget limits admission, a
   const report = JSON.parse(system(['work', 'report', ran.stdout.trim()]).stdout) as { goal: { spend: { attempts: number }; budget: unknown } }
   assert.deepEqual([report.goal.spend.attempts, report.goal.budget], [1, { attempts: 1 }])
 
-  const refused = system(['work', 'submit', '--capability', 'research', '--input', task, '--goal', goal])
-  assert.equal(refused.status, 1)
-  assert.match(refused.stderr, /budget of Goal .* is used up/)
-
   const raise = onTerminal(['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '2', '--supersedes', goal], '\n')
   const raiseShort = raise.stdout.match(/type exactly ([0-9a-f]{8})/)![1]!
   const raised = last(onTerminal(['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '2', '--supersedes', goal], `${raiseShort}\n`).stdout)
   assert.equal((JSON.parse(system(['goal', 'show', goal]).stdout) as { current: { id: string } }).current.id, raised)
-  assert.equal(system(['work', 'submit', '--capability', 'research', '--input', task, '--goal', goal]).status, 0)
 
   // Only the newest version can be raised again: the chain stays linear.
   const branch = ['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '3', '--supersedes', goal]

@@ -8,10 +8,10 @@ covers: [packages/artifacts/src/envelope.ts, packages/artifacts/src/canonical.ts
 
 # Artifact-ID handoff and pluggable verification
 
-**Accepted architecture semantics; concrete contracts run in draft PR #2.**
+**Accepted architecture semantics; the contracts are implemented.**
 The fields and examples in this page include future interface concepts.
-The [current artifact package](https://github.com/tsuuanmi/System/tree/973cea6c9e00359519569e3b43a7f809215e518f/packages/artifacts)
-and [verifier registry](https://github.com/tsuuanmi/System/blob/973cea6c9e00359519569e3b43a7f809215e518f/packages/work/src/registry.ts)
+The [artifact package](../../packages/artifacts/README.md)
+and [verifier registry](../../packages/work/src/registry.ts)
 define implemented behavior. Brainstorm may succeed with **no verifier**:
 that means Artifact delivery, not independently validated ideas.
 The current Research citation check validates source references/quotes,
@@ -136,13 +136,6 @@ that the configured required verifier capability is available, its subject
 and criteria types match, and it returned a verdict on the **same exact
 artifact ID and pinned criteria** before accepting the Work.
 
-Examples:
-
-- Software Engineering: tests/check outputs, optional independent code review,
-  patch/tree identity and controlled landing approval.
-- Research: schema/citation parsing, resolving source references, cited-claim
-  consistency, optional independent evidence review and explicit uncertainty.
-
 A verification policy may require multiple capabilities, but must remain
 configured rather than hardcoded into the Work Controller. Some verifiers
 are pure/deterministic programs; others invoke nondeterministic models.
@@ -155,16 +148,15 @@ claim is *not* a pass. `inconclusive` is distinct from `fail`.
 
 ## Decisions, effects and auditability
 
-Record a decision or event for each consequential route, authorization,
-acceptance/rejection and recovery action. Tie decisions to exact artifacts,
-policy and verifier versions. Side effects also need operation identities
-and reconciliation: content-addressed records alone cannot prevent duplicate
-external operations after a crash.
-
-Make artifact retention, garbage collection, read permissions and
-content-hash existence leakage part of the audit; deleting underlying
-blob bytes while retaining a historical ID must produce explicit
-`expired` / `unavailable` state, not pretend the content still exists.
+Each consequential route, authorization, acceptance, rejection and recovery
+action records a decision tied to exact artifacts, policy and verifier
+versions ([ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
+decision 9); side effects also need operation identities and reconciliation,
+because content-addressed records cannot prevent duplicate external operations
+after a crash. Retention, garbage collection, read permissions and
+content-hash existence leakage are part of the audit; deleting blob bytes
+while retaining a historical ID must give an explicit `expired` /
+`unavailable` state, not pretend the content exists.
 
 See [workflow composition](workflow-composition.md),
 [MVP acceptance](../requirements/mvp.md) and

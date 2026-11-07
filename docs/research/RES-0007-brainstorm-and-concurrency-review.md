@@ -25,9 +25,9 @@ audit source only.
   asserts Claude/Codex role routing, three attempts, exact input refs,
   producer provenance, missing-Codex refusal, cancellation and retry
   reusing proposal A, pinned spec despite file edits, and replay.
-- The Work Controller remains one domain-independent, **sequential**
-  interpreter. No Agent Team, third Worker implementation, speculative
-  parallel scheduler or mandatory brainstorm verifier was added.
+- The Work Controller remained one domain-independent, **sequential**
+  interpreter at that commit; no Agent Team, third Worker implementation or
+  mandatory brainstorm verifier was added.
 - [`c9fc13b` pnpm patch](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/patches/@deepseek-ai__dsh-storage-sqlite@0.2.2-rc.1.patch)
   configures SQLite busy timeout, retries WAL journal mode under
   startup contention, and uses `INSERT OR IGNORE` with read-back for
@@ -70,34 +70,22 @@ The table below is a **historical audit of `4a71c79`**, not a claim that the ori
 | Model diversity is not measured quality | Two providers; the current YAML reuses one proposer prompt via YAML anchor | **Product question**: compare one Worker against independent proposal synthesis and role-diverse prompts across five briefs, with operator assessment. |
 | Web conversation handoff is not yet Artifact-backed | Operator's web brainstorming and research were copied into PR docs manually, unlike Work artifacts produced in System | **Valid workflow gap, not proof browser automation is necessary**: first compare explicit conversation-to-Artifact import with Website Worker implementation when scoped. |
 
-## B3 experiment recommended before new providers
+## B3 experiment and boundary
 
-At least five varied briefs. For each, keep original brief and
-proposal A/B/summary Artifacts, and run a single-Worker comparator.
-The operator evaluates usefulness, conceptual diversity, valid
-disagreements, next-action quality and whether the synthesis actually
-adds new decision value. Measure elapsed time, usage when observed,
-number of interventions, failure/retry and summary bias; do not rely
-on models rating themselves. A config-only **different-cognitive-role**
-pair and alternating synthesis provider are useful second variants.
-Never require fact-checking a brainstorm to mark its Artifact delivery
-complete.
+The B3 method (at least five varied briefs, a single-Worker comparator,
+operator-judged usefulness, diversity, disagreement and next-action quality,
+plus time, usage, interventions and summary bias; models do not rate
+themselves) is in [Brainstorm composition](../architecture/brainstorm-composition.md#b3-product-experiment-quality-is-not-a-verifier-gate).
+A different-cognitive-role pair and an alternating synthesis provider are
+useful second variants.
 
-## Boundary recommendation
-
-**Keep existing System components:** `@system/work`, `artifacts`,
-`agents`, `verifiers`, `effects`, DSH/Cordis host and current
-two Worker providers. Do not port System 1 voting/Team sessions or
-add a third provider just to fill three roles. B4 correctness probes and
-B3 comparison yield better decisions than plugin expansion now.
-
-**Future:** a provenance-only conversation-to-Artifact import may be
-worth a small spike before a browser-driven Website Worker. A genuine
-Website Worker can follow later for interactive/authenticated sources;
-it must still produce exact input/output Artifact IDs. Research
-claim-level verification and mandatory security isolation are not
-near-term Brainstorm acceptance gates.
+Keep the existing components and two providers; no System 1 voting or Team
+sessions, no third provider to fill three roles. A provenance-only
+conversation-to-Artifact import may deserve a small spike before a
+browser-driven Website Worker, which can follow for interactive or
+authenticated sources and must still produce exact Artifact IDs. Claim-level
+Research verification and mandatory isolation are not near-term gates.
 
 Architecture ownership: [Brainstorm composition](../architecture/brainstorm-composition.md),
-[draft Work integrity design](../architecture/work-ownership-and-recovery.md).
-Detailed priorities remain in [PROP-0002](../proposals/PROP-0002-post-mvp-roadmap.md).
+[Work integrity design](../architecture/work-ownership-and-recovery.md).
+Priorities: [PROP-0002](../proposals/PROP-0002-post-mvp-roadmap.md).

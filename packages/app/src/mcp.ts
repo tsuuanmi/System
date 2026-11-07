@@ -6,9 +6,8 @@
  * decides nothing: who may do what is the Host's, from the caller it declares.
  * Each Work in scope is also a resource, `system://work/<id>`, whose reading
  * is `work.show`; a subscription is a `work.watch` on the connection, and the
- * Host's `work.changed` becomes `notifications/resources/updated` (ADR-0009
- * decision 5). A notice only wakes the client, which reads `work.events` from
- * its cursor.
+ * Host's `work.changed` (see the Host README) becomes
+ * `notifications/resources/updated` (ADR-0009 decision 5).
  */
 import { parseArgs } from 'node:util'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -83,16 +82,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
   }
   server.oninitialized = () => { if (goal) link().catch(() => {}) }
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools }))
-  server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
-    try {
-      if (!tools.some((tool) => tool.name === params.name)) throw new Error(`unknown tool ${params.name}`)
-      const result = await (await link()).call(params.name, params.arguments ?? {})
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result ?? null) }] }
-    } catch (error) {
-      return { isError: true, content: [{ type: 'text' as const, text: failed(error).message }] }
-    }
-  })
-  /** Run a Host call for a resource request: a failure is the request's error. */
+  /** Run a Host call for a request: a failure is the request's error. */
   const forwarded = async (method: string, params: object): Promise<unknown> => {
     try {
       return await (await link()).call(method, params)
@@ -100,6 +90,14 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
       throw failed(error)
     }
   }
+  server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
+    try {
+      if (!tools.some((tool) => tool.name === params.name)) throw new Error(`unknown tool ${params.name}`)
+      return { content: [{ type: 'text' as const, text: JSON.stringify(await forwarded(params.name, params.arguments ?? {}) ?? null) }] }
+    } catch (error) {
+      return { isError: true, content: [{ type: 'text' as const, text: (error as Error).message }] }
+    }
+  })
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: ((await forwarded('work.list', {})) as { id: string; status: string }[]).map((work) => ({ uri: `system://work/${work.id}`, name: work.id, description: `Work ${work.id}: ${work.status}`, mimeType: 'application/json' })),
   }))

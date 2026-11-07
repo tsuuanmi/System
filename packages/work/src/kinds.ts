@@ -31,6 +31,8 @@ export const goalSchema = z.object({
   context: z.array(contentIdSchema).min(1).max(16),
 }).strict()
 export type Goal = z.infer<typeof goalSchema>
+/** A Goal as the operator writes it: without `context` the Charter is the context. */
+export type NewGoal = Omit<Goal, 'context'> & { context?: string[] }
 
 export const GIT_TREE_KIND = { kind: 'git-tree', schemaVersion: 1 } as const
 export const gitTreeSchema = z.object({

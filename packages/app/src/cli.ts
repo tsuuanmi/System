@@ -7,13 +7,23 @@ import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type Goal, type GoalView, type WorkRecord, type WorkState } from '@system/work'
+import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type GoalView, type NewGoal, type WorkRecord, type WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 /** A repeatable option's values, in order. */
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value]
 }
+
+/** A whole number above zero, for an option. */
+const positive = (name: string) => (text: string): number => {
+  const value = Number(text)
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} is a whole number above zero, not ${text}`)
+  return value
+}
+
+/** What a human types to confirm: the first eight characters of an ID or digest, without its prefix. */
+const shortCode = (id: string): string => id.replace(/^\w+:/, '').slice(0, 8)
 
 const MEDIA_TYPES: Record<string, string> = { '.md': 'text/markdown', '.txt': 'text/plain', '.json': 'application/json', '.html': 'text/html', '.htm': 'text/html', '.pdf': 'application/pdf' }
 const mediaTypeOf = (path: string) => MEDIA_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'
@@ -73,7 +83,7 @@ export interface WorkCommands {
   /** A Work's measurements, and for a Work of a Goal the Goal's budget and spend. */
   report(workId: string): Promise<unknown>
   /** Store a Goal on the human's own connection, as the operator who confirmed it; `supersedes` is the Goal it raises or changes. */
-  newGoal(goal: Omit<Goal, 'context'> & { context?: string[] }, supersedes: string | undefined, operatorId: string): Promise<{ id: string }>
+  newGoal(goal: NewGoal, supersedes: string | undefined, operatorId: string): Promise<{ id: string }>
   goal(goalId: string): Promise<GoalView>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
@@ -177,7 +187,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       const record = await host.work().get(workId)
       if (!record) throw new Error(`no Work ${workId}`)
       io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
-      const short = workId.replace(/^work:/, '').slice(0, 8)
+      const short = shortCode(workId)
       // On a line of its own, so a pasted command is not taken for the answer.
       const operatorId = await io.confirmHuman(`Nothing is decided unless you type exactly ${short} to record "${decision}" for ${record.state.awaiting ?? 'it'}\n> `, short)
       return exitOf(await host.work().decide(workId, decision, operatorId, options.reason))
@@ -232,11 +242,6 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
-  const positive = (name: string) => (text: string): number => {
-    const value = Number(text)
-    if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} is a whole number above zero, not ${text}`)
-    return value
-  }
   const goal = program.command('goal').description('Goals: an aim, its scope and its budget, which Works are admitted under')
   goal.command('new')
     .description('store a goal@1 Artifact and print its ID; a human at a terminal only. A raise or a change supersedes the old Goal')
@@ -251,7 +256,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         const budget = { ...(options.attempts ? { attempts: options.attempts } : {}), ...(options.tokens ? { tokens: options.tokens } : {}) }
         const content = { aim: options.aim, scope: options.scope, budget, ...(options.context.length ? { context: options.context } : {}) }
         io.out(`${JSON.stringify({ ...content, ...(options.supersedes ? { supersedes: options.supersedes } : {}) }, null, 2)}\n`)
-        const short = createHash('sha256').update(JSON.stringify([content, options.supersedes])).digest('hex').slice(0, 8)
+        const short = shortCode(`sha256:${createHash('sha256').update(JSON.stringify([content, options.supersedes])).digest('hex')}`)
         // On a line of its own, so a pasted command is not taken for the answer.
         const operatorId = await io.confirmHuman(`Nothing is stored unless you type exactly ${short} to write this Goal\n> `, short)
         io.out(`${(await host.work().newGoal(content, options.supersedes, operatorId)).id}\n`)
