@@ -109,6 +109,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal(work.state.status, 'running')
   assert.deepEqual((await call('work.list') as { id: string }[]).map((r) => r.id), [work.id])
   assert.equal(((await call('work.show', { workId: work.id })) as { id: string }).id, work.id)
+  assert.deepEqual(await call('work.watch', { workId: work.id }), { status: 'running', seq: 0 })
+  assert.deepEqual(await call('work.unwatch', { workId: work.id }), { status: 'running', seq: 0 })
   assert.equal((await call('work.cancel', { workId: work.id, reason: 'stop' }) as { state: { status: string } }).state.status, 'cancelled')
   await call('work.retry', { workId: work.id, reason: 'again' })
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
@@ -177,13 +179,13 @@ test('goal.new is refused to an agent connection, and nothing is stored', async 
   assert.deepEqual(svc.seen.goals, [])
   // The row is open to a human, and its handler checks again.
   const { host, table } = await started()
-  await assert.rejects(async () => table['goal.new']!.handler(host, { aim: 'a', scope: 's', budget: {} }, agent), /human/)
+  await assert.rejects(async () => table['goal.new']!.handler(host, { aim: 'a', scope: 's', budget: {} }, agent, undefined as never), /human/)
 })
 
 test('approval.decide needs a human even when its row is opened to agents', async () => {
   const { host, table } = await started()
   const decide = table['approval.decide']!
-  await assert.rejects(async () => decide.handler(host, { workId: 'work:x', decision: 'approved', reason: 'ok' }, agent), /human/)
+  await assert.rejects(async () => decide.handler(host, { workId: 'work:x', decision: 'approved', reason: 'ok' }, agent, undefined as never), /human/)
 })
 
 test('a malformed or unknown param is refused with -32602 before the handler', async () => {
@@ -379,4 +381,127 @@ test('an orchestrator reaches only the Works of its Goal, and the Artifacts of t
   const newer = await open(orchestrator(raised))
   assert.ok((await newer.call('work.list') as { id: string }[]).some((r) => r.id === workA.id))
   await scoped(newer.call('work.show', { workId: workB.id }))
+})
+
+type Notice = { workId: string; status: string; seq: number }
+
+/** A connection that keeps the `work.changed` notices it is sent. */
+async function listening(open: (caller?: { type: string; operatorId: string }) => Promise<Client>, caller?: { type: string; operatorId: string }) {
+  const client = await open(caller)
+  const notices: Notice[] = []
+  client.onNotice((method, params) => { assert.equal(method, 'work.changed'); notices.push(params as Notice) })
+  return { client, notices }
+}
+
+const settled = async (what: string, ok: () => boolean) => {
+  for (const end = Date.now() + 20_000; Date.now() < end; await new Promise((r) => setTimeout(r, 10))) if (ok()) return
+  assert.fail(`timed out waiting for ${what}`)
+}
+
+const heldWorkflow = `${readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'workflows', 'software-engineering.yaml'), 'utf8')}      approval: operator\n`
+
+test('work.watch sends one work.changed when the Work finishes, and one when it is held', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const { client, notices } = await listening(open)
+  const done = await client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  assert.deepEqual(await client.call('work.watch', { workId: done.id }), { status: 'running', seq: 0 })
+  await client.call('work.run', { workId: done.id })
+  await settled('the notice', () => notices.length > 0)
+  const last = (await events(client, done.id)).events.at(-1)!
+  assert.deepEqual(notices, [{ workId: done.id, status: 'succeeded', seq: last.seq }])
+
+  const held = await client.call('work.submit', { workflow: heldWorkflow, input: input(f) }) as { id: string }
+  await client.call('work.watch', { workId: held.id })
+  await client.call('work.run', { workId: held.id })
+  await settled('the held notice', () => notices.length > 1)
+  assert.equal(notices[1]!.status, 'held')
+  assert.equal(notices[1]!.workId, held.id)
+  // Approving it is the next change of the same Work: one more notice, the end.
+  const approver = await open()
+  await approver.call('approval.decide', { workId: held.id, decision: 'approved', reason: 'ok' })
+  await settled('the end after approval', () => notices.length > 2)
+  assert.deepEqual([notices[2]!.status, notices.length], ['succeeded', 3])
+})
+
+test('work.unwatch stops the notices; a watch on another Work is not heard', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const quiet = await listening(open)
+  const loud = await listening(open)
+  const work = await quiet.client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const other = await quiet.client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  await quiet.client.call('work.watch', { workId: work.id })
+  await quiet.client.call('work.watch', { workId: other.id })
+  await loud.client.call('work.watch', { workId: work.id })
+  await quiet.client.call('work.unwatch', { workId: work.id })
+  await quiet.client.call('work.run', { workId: work.id })
+  // The other connection's notice is sent in the same step as the one that was not.
+  await settled('the notice', () => loud.notices.length > 0)
+  assert.deepEqual(quiet.notices, [])
+  await quiet.client.call('work.run', { workId: other.id })
+  await settled('the other notice', () => quiet.notices.length > 0)
+  assert.deepEqual((quiet.notices as Notice[]).map((n) => n.workId), [other.id])
+  await assert.rejects(quiet.client.call('work.watch', { workId: 'work:nope' }), /no Work work:nope/)
+})
+
+test('a closed connection drops its watches', { timeout: 60_000 }, async () => {
+  const { f, host, open } = await started()
+  let live = 0
+  const real = host.onChange.bind(host)
+  host.onChange = (listener) => { live++; const stop = real(listener); return () => { live--; stop() } }
+  const gone = await open()
+  const work = await gone.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  await gone.call('work.watch', { workId: work.id })
+  assert.equal(live, 1)
+  gone.close()
+  await settled('the watches to drop', () => live === 0)
+  const next = await open()
+  await next.call('work.run', { workId: work.id })
+  assert.equal((await terminal(next, work.id)).status, 'succeeded')
+})
+
+test('a client that missed the notice reads on from its cursor and loses nothing', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const away = await listening(open)
+  const work = await away.client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  await away.client.call('work.watch', { workId: work.id })
+  const cursor = (await events(away.client, work.id)).events.at(-1)!.seq
+  away.client.close()
+  // Nobody is connected when the Work ends, so no notice reaches anyone.
+  const other = await open()
+  await other.call('work.run', { workId: work.id })
+  assert.equal((await terminal(other, work.id)).status, 'succeeded')
+  assert.deepEqual(away.notices, [])
+
+  const back = await open()
+  const missed = await events(back, work.id, cursor)
+  const all = await events(back, work.id)
+  assert.equal(missed.status, 'succeeded')
+  assert.deepEqual(missed.events.map((e) => e.seq), all.events.slice(cursor + 1).map((e) => e.seq))
+  assert.equal(missed.events.at(-1)!.type, 'terminal')
+  assert.equal(missed.events.length, all.events.length - cursor - 1)
+  // Watching a Work that already ended says so in the reply, which is the same wake-up.
+  assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', seq: all.events.at(-1)!.seq })
+})
+
+test('work.watch by goal tells of each new Work of the Goal, and an orchestrator watches only its own', { timeout: 60_000 }, async () => {
+  const { open } = await started()
+  const human1 = await open()
+  const [a, b] = [(await human1.call('goal.new', { aim: 'a', scope: 's' }) as { id: string }).id, (await human1.call('goal.new', { aim: 'b', scope: 's' }) as { id: string }).id]
+  const orch = await listening(open, orchestrator(a))
+  await orch.client.call('work.watch', { goal: a })
+  await assert.rejects(orch.client.call('work.watch', { goal: b }), (error: { code: number }) => error.code === NOT_ALLOWED)
+  await assert.rejects(orch.client.call('work.watch', {}), /exactly one of workId and goal/)
+  const mine = await human1.call('work.submit', { capabilities: ['code-write'], goal: a }) as { id: string }
+  await human1.call('work.submit', { capabilities: ['code-write'], goal: b })
+  const free = await human1.call('work.submit', { capabilities: ['code-write'] }) as { id: string }
+  await settled('the admission notice', () => orch.notices.length > 0)
+  await human1.call('work.run', { workId: free.id })
+  await terminal(human1, free.id)
+  assert.deepEqual(orch.notices, [{ workId: mine.id, status: 'running', seq: 0 }])
+  await assert.rejects(orch.client.call('work.watch', { workId: free.id }), (error: { code: number }) => error.code === NOT_ALLOWED)
+  await orch.client.call('work.unwatch', { goal: a })
+  await human1.call('work.submit', { capabilities: ['code-write'], goal: a })
+  await human1.call('work.run', { workId: mine.id })
+  await terminal(human1, mine.id)
+  assert.equal(orch.notices.length, 1)
 })

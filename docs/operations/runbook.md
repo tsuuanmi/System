@@ -303,6 +303,15 @@ With `--goal` it is an Orchestrator for that Goal. It may:
   reports and Artifacts;
 - store Tasks and files, and list the Workers.
 
+Each Work in scope is also an MCP resource, `system://work/<id>`; reading it
+gives `work.show`. To be told instead of polling, subscribe to it
+(`resources/subscribe`): the server sends `notifications/resources/updated`
+when the Work becomes terminal, is held, or waits for approval. With `--goal`
+it also sends `notifications/resources/list_changed` when a new Work of the
+Goal appears. A notice only wakes the session: read the Work's events with
+`work.events` from your last `seq`. A session that was away misses no event,
+only the wake-up.
+
 It cannot approve or deny, store a conversation, set credentials, write a Goal,
 sign an account in, or merge into `main`. It is refused, with the reason, any
 call on another Goal's Works or their Artifacts. The budget of the Goal still

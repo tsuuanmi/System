@@ -399,7 +399,7 @@ and orchestrator scope; O3 completion notices.
 - [x] **Orchestrator**: an agent connected through MCP, a caller scoped to
   one Goal. It may submit, run, cancel and retry, and read Artifacts. It may
   never approve, mark a PR ready, accept an inconclusive verdict or merge.
-- [ ] **Completion notices** (operator, 2026-11-06): instead of polling, the
+- [x] **Completion notices** (operator, 2026-11-06): instead of polling, the
   Host tells a connected Orchestrator when one of its Works changes state,
   for example finishes, is held, or needs approval. Use MCP's own
   server-to-client notifications (resource subscriptions), not a new

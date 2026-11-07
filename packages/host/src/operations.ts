@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto'
 import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Goal, type Host, type WorkEvent, type WorkRecord } from '@system/work'
-import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Method, type Methods } from './index.ts'
+import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
 export interface Services {
@@ -94,6 +94,29 @@ function scopedArtifacts(host: Host, services: Services, caller: Orchestrator): 
     for (const more of [...(read.envelope.content?.context ?? []), ...(read.envelope.content?.base ? [read.envelope.content.base] : [])]) found.add(more)
   }
   return found
+}
+
+const watching = z.object({ workId: workId.optional(), goal: artifactId.optional() }).strict()
+  .refine((p) => Boolean(p.workId) !== Boolean(p.goal), 'give exactly one of workId and goal')
+
+/** An orchestrator watches only the Works of its Goal, and its Goal's chain. */
+function watchScope(host: Host, p: z.infer<typeof watching>, caller: Orchestrator, name: string): z.infer<typeof watching> {
+  if (p.workId ? !inScope(host, host.get(p.workId), caller) : !host.goalChain(caller.goal).has(p.goal!)) throw outside(`${name} on ${p.workId ?? p.goal}`, caller)
+  return p
+}
+
+/** Add to or remove from what the connection watches; the reply is where the Work stands now. */
+function watch(host: Host, p: z.infer<typeof watching>, link: Link, on: boolean): { status: string; seq: number } | { goal: string } {
+  if (p.goal) {
+    host.goal(p.goal)
+    link.goals[on ? 'add' : 'delete'](p.goal)
+    if (on) link.listen()
+    return { goal: p.goal }
+  }
+  const record = known(host, p.workId!)
+  link.works[on ? 'add' : 'delete'](p.workId!)
+  if (on) link.listen()
+  return { status: record.state.status, seq: record.events.at(-1)!.seq }
 }
 
 export function operations(services: Services): Methods {
@@ -187,6 +210,20 @@ export function operations(services: Services): Methods {
         const record = known(host, p.workId)
         return { events: record.events.filter((e) => e.seq > (p.after ?? -1)), status: record.state.status }
       },
+    },
+    'work.watch': {
+      agent: true,
+      scope: (host, p, caller) => watchScope(host, p, caller, 'work.watch'),
+      summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval. With `goal`, instead one for each new Work of the Goal, with `seq` 0. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`.',
+      params: watching,
+      handler: (host, p, _caller, link) => watch(host, p, link, true),
+    },
+    'work.unwatch': {
+      agent: true,
+      scope: (host, p, caller) => watchScope(host, p, caller, 'work.unwatch'),
+      summary: 'Stop the notices of `work.watch` for a Work or a Goal on this connection.',
+      params: watching,
+      handler: (host, p, _caller, link) => watch(host, p, link, false),
     },
     'approval.decide': {
       agent: false,
