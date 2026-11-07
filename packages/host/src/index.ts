@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
-import type { Caller, Host, z } from '@system/work'
+import type { Caller, Host, WorkChange, z } from '@system/work'
 
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -71,12 +71,20 @@ export class NotRunning extends Error {}
 /** A call got no answer in time. A client may repeat a call that carries a `commandId`. */
 export class NotAnswering extends Error {}
 
+/** What a connection watches, for the rows that keep it subscribed (`work.watch`). The connection sends the notices; a closed one drops them. */
+export interface Link {
+  works: Set<string>
+  goals: Set<string>
+  /** Start hearing the Host's changes, once: call it after adding to `works` or `goals`. */
+  listen(): void
+}
+
 export interface Method {
   /** One line for the API reference: what it does and returns. */
   summary?: string
   /** The shape of `params`; a call that does not fit is refused with -32602, and the handler gets the parsed value. */
   params?: z.ZodType
-  handler: (host: Host, params: any, caller: Caller) => unknown | Promise<unknown>
+  handler: (host: Host, params: any, caller: Caller, link: Link) => unknown | Promise<unknown>
   /**
    * For an `orchestrator` caller only, before the handler: throw `NOT_ALLOWED` naming the scope when the call
    * reaches outside its Goal, or return the params to run with (ADR-0009 decision 4). A row without one is not scoped.
@@ -141,6 +149,15 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
     socket.on('error', () => socket.destroy())
     let caller: Caller | undefined
     const send = (message: object) => { if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`) }
+    // A notice has no id and is no answer: it only wakes the client, which reads `work.events` from its cursor.
+    const notify = ({ workId, status, seq, type }: WorkChange) => {
+      const goal = type === 'admitted' ? host.get(workId)?.events[0] : undefined
+      const admitted = goal?.type === 'admitted' && goal.goal !== undefined && [...link.goals].some((watched) => host.goalChain(watched).has(goal.goal!))
+      if ((type === 'terminal' && link.works.has(workId)) || admitted) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq } })
+    }
+    let stopListening: (() => void) | undefined
+    const link: Link = { works: new Set(), goals: new Set(), listen() { stopListening ??= host.onChange(notify) } }
+    socket.on('close', () => stopListening?.())
     const fail = (id: unknown, code: number, message: string) => send({ jsonrpc: '2.0', id, error: { code, message } })
 
     async function handle(line: string): Promise<void> {
@@ -171,7 +188,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
           params = parsed.data
         }
         if (caller.type === 'orchestrator' && method.scope) params = method.scope(host, params, caller)
-        send({ jsonrpc: '2.0', id, result: await method.handler(host, params, caller) ?? null })
+        send({ jsonrpc: '2.0', id, result: await method.handler(host, params, caller, link) ?? null })
       } catch (error) {
         if (error instanceof RpcError) fail(id, error.code, error.message)
         else fail(id, INTERNAL_ERROR, error instanceof Error ? error.message : String(error))
@@ -215,6 +232,8 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
 export interface Client {
   /** `timeout` overrides the connection's for this call. */
   call(method: string, params?: unknown, timeout?: number): Promise<unknown>
+  /** Hear the Host's notifications (JSON-RPC messages without an `id`, such as `work.changed`). */
+  onNotice(listener: (method: string, params: unknown) => void): void
   close(): void
 }
 
@@ -229,6 +248,7 @@ export function connect(path: string, options: ConnectOptions = {}): Promise<Cli
   return new Promise((resolve, reject) => {
     const socket: Socket = createConnection(path)
     const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>()
+    const listeners: ((method: string, params: unknown) => void)[] = []
     let next = 1
     let gone: Error | undefined
     const drop = (error: Error) => {
@@ -251,6 +271,10 @@ export function connect(path: string, options: ConnectOptions = {}): Promise<Cli
         buffer = buffer.slice(at + 1)
         let reply: any
         try { reply = JSON.parse(line) } catch { continue }
+        if (reply && typeof reply.method === 'string' && reply.id === undefined) {
+          for (const listener of listeners) listener(reply.method, reply.params)
+          continue
+        }
         const call = pending.get(reply?.id)
         if (!call) {
           // An error without an id (an oversize frame) is for whoever waits.
@@ -276,6 +300,7 @@ export function connect(path: string, options: ConnectOptions = {}): Promise<Cli
           socket.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
         })
       },
+      onNotice(listener) { listeners.push(listener) },
       close() { socket.destroy() },
     }))
   })

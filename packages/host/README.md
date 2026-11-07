@@ -22,7 +22,12 @@ await serving.stop()                                // server, then the Host cor
 - **Framing.** [JSON-RPC 2.0](https://www.jsonrpc.org/specification), one JSON
   object per line (NDJSON), as MCP's stdio transport. Requests carry an `id`
   and may be answered out of order; the client matches them by `id`. There are
-  no notifications and no batches.
+  no batches. The Host sends notifications (no `id`) only to a connection that
+  called `work.watch`: `work.changed { workId, status, seq }` when a watched
+  Work becomes terminal, is held, or starts awaiting approval (with `goal`:
+  when a new Work of the Goal is admitted, `seq` 0). One hook in the commit
+  lane sends them, and a closed connection drops its watches. A notice only
+  wakes the client, which reads `work.events` from its cursor.
 - **Limit.** A line is at most 1 MiB (`MAX_FRAME`). A larger one gets
   `-32600` with `id: null`, and the Host closes the connection.
 - **Handshake.** The first request must be `host.hello` with
@@ -87,6 +92,8 @@ await serving.stop()                                // server, then the Host cor
 | `work.replay` | yes | `workId: string` | Fold the recorded events again: `{ state, matches }`. Runs nothing. |
 | `work.report` | yes | `workId: string` | Duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also the Goal, its budget and its spend. |
 | `work.events` | yes | `workId: string`, `after?: integer` | The events with `seq` above `after` (all when omitted) and the current status: `{ events, status }`. Poll it to follow a Work. |
+| `work.watch` | yes | `workId?: string`, `goal?: string` | Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval. With `goal`, instead one for each new Work of the Goal, with `seq` 0. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`. |
+| `work.unwatch` | yes | `workId?: string`, `goal?: string` | Stop the notices of `work.watch` for a Work or a Goal on this connection. |
 | `approval.decide` | no | `workId: string`, `decision: "approved" \| "denied"`, `reason: string`, `commandId?: string` | Record a human's decision on what held Work awaits, and continue it. Only a human caller; the CLI sends it after its terminal confirmation. |
 | `goal.new` | no | `aim: string`, `scope: string`, `budget?: { attempts?: integer, tokens?: integer }`, `context?: string[]`, `supersedes?: string` | Store a `goal@1` the operator wrote: `{ id }`. `supersedes` names the Goal it raises or changes; without `context` the Charter is the context. Only a human caller; the CLI sends it after its terminal confirmation. |
 | `goal.show` | yes | `goal: string` | A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`. |

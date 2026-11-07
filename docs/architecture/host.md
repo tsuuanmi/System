@@ -157,6 +157,20 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   - No Host: one line, `the System Host is not running for <home>`, exit 1. No
     answer in 10 s: "not answering", naming the runbook.
   - `doctor` still boots DSH and also reports whether a Host answers.
+- **Watching a Work (O3).** `work.watch` keeps the connection subscribed, and
+  the Host sends the notification (JSON-RPC, no `id`)
+  `work.changed { workId, status, seq }` when a watched Work becomes terminal,
+  is held, or starts awaiting approval; with `goal`, instead one with `seq` 0
+  for each new Work of the Goal. `work.unwatch` stops it, and a closed
+  connection drops its watches.
+  - One change hook (`Host.onChange`) is called in the commit lane after each
+    append and admission; the connection filters it. Nothing polls storage.
+  - A notice only wakes the client. The log is the truth: the client reads
+    `work.events` from its cursor, so a notice sent while it was away loses
+    nothing. A watch on a Work that already ended replies with its final
+    `{ status, seq }`.
+  - `system mcp` turns it into MCP resource subscriptions (the
+    [runbook](../operations/runbook.md#using-system-from-an-agent)).
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact
   subject at a terminal, and the Host checks that subject again before it

@@ -133,6 +133,15 @@ interface VerifierAttempt {
   refusal?: string
 }
 
+/** What a listener of `onChange` is told after an event is committed. */
+export interface WorkChange {
+  workId: string
+  status: WorkState['status']
+  /** The `seq` of the event just committed: 0 for an admission. */
+  seq: number
+  type: WorkEvent['type']
+}
+
 export class WorkController {
   private readonly table: WorkTable
   private readonly specs: SpecStore
@@ -146,6 +155,7 @@ export class WorkController {
   private epoch = 0
   /** The drives waiting for such a change, by Work. */
   private readonly waiters = new Map<string, () => void>()
+  private readonly listeners = new Set<(change: WorkChange) => void>()
 
   constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities)) {
     this.table = table
@@ -154,6 +164,20 @@ export class WorkController {
     this.lane = lane
     this.slots = slots
     slots.onFree(() => this.notify())
+  }
+
+  /** Call `listener` after every committed event, in the lane; it must not throw or wait. Returns the way to stop. */
+  onChange(listener: (change: WorkChange) => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  /** The one change hook: every append, and the admission, end here. A listener's failure never reaches the Work. */
+  private changed(record: WorkRecord): void {
+    const event = record.events.at(-1)!
+    for (const listener of this.listeners) {
+      try { listener({ workId: record.id, status: record.state.status, seq: event.seq, type: event.type }) } catch { /* a listener is not the Work's concern */ }
+    }
   }
 
   private now(): string {
@@ -208,6 +232,7 @@ export class WorkController {
       ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
     }
     await this.table.put(id, workRecordSchema.parse(record))
+    this.changed(record)
     return record
   }
 
@@ -421,11 +446,13 @@ export class WorkController {
     // The terminal event settles the commands waiting on this Work: their receipts go in the same update.
     const receipts = event.type === 'terminal' ? (this.expected.get(record.id) ?? []).map((r) => ({ ...r, result: { workId: record.id, status: event.outcome } })) : []
     if (receipts.length) this.expected.delete(record.id)
-    return this.table.update(record.id, (current) => {
+    const updated = await this.table.update(record.id, (current) => {
       const next = { ...event, seq: current.events.length, at: this.now() } as WorkEvent
       const events = [...current.events, next]
       return { ...current, events, state: fold(stepIds, events), ...(receipts.length ? { receipts: [...(current.receipts ?? []), ...receipts] } : {}) }
     })
+    this.changed(updated)
+    return updated
   }
 
   /**

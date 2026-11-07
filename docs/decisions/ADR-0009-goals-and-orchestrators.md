@@ -81,6 +81,15 @@ The terms are in [GLOSSARY.md](../../GLOSSARY.md).
   Artifacts in scope are those a scoped Work's events name, and the context
   and base of its Task.
 
+- Decision 5 (O3): `work.watch` and `work.unwatch` are `agent: true` rows,
+  scoped like `work.show`. The Host sends `work.changed { workId, status, seq }`
+  on a watching connection from one hook, `Host.onChange`, called in the
+  commit lane after each append; it fires for the `terminal` event, which is
+  how a Work ends, is held, or awaits approval. `work.watch { goal }`
+  announces each new Work of the Goal (`seq` 0), which the adapter sends as
+  `notifications/resources/list_changed`. `system mcp` serves
+  `system://work/<id>` (read: `work.show`) and `resources/subscribe`.
+
 ## Consequences
 
 - An agent session can be given a Goal and left to work. The operator keeps

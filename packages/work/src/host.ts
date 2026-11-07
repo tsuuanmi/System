@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type Command, type Decision, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type WorkChange, type Command, type Decision, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import type { GoalView } from './goal.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
@@ -106,6 +106,11 @@ export class Host {
     if (this.closed) return
     this.closed = true
     await this.lock.release()
+  }
+
+  /** Call `listener` after each event is committed to a Work (and its admission): the one hook notices are built on. Returns the way to stop. */
+  onChange(listener: (change: WorkChange) => void): () => void {
+    return this.controller.onChange(listener)
   }
 
   get(workId: string): WorkRecord | undefined {

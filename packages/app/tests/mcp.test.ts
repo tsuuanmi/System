@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { ResourceListChangedNotificationSchema, ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 import { GOAL_KIND, TASK_KIND, goalSchema, taskSchema } from '@system/work'
 import { fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
@@ -130,4 +131,65 @@ test('over the socket an orchestrator connection is refused what is flagged agen
   for (const method of ['approval.decide', 'credentials.set', 'conversation.add', 'goal.new']) {
     await assert.rejects(socket.call(method, {}), (error: { code: number }) => error.code === NOT_ALLOWED, method)
   }
+})
+
+const textOf = (read: { contents: object[] }) => JSON.parse((read.contents[0] as { text: string }).text)
+
+test('a subscribed resource is updated when its Work ends; reading it gives work.show', { timeout: 60_000 }, async () => {
+  const goalId = (await human1.call('goal.new', { aim: 'watch', scope: 's', budget: {} }) as { id: string }).id
+  const client = await mcp('--goal', goalId)
+  const updated: string[] = []
+  client.setNotificationHandler(ResourceUpdatedNotificationSchema, (n) => { updated.push(n.params.uri) })
+  const id = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  const uri = `system://work/${id}`
+  assert.ok((await client.listResources()).resources.some((r) => r.uri === uri))
+  await client.subscribeResource({ uri })
+  await call(client, 'work.run', { workId: id })
+  await until('the update', async () => updated.length > 0)
+  assert.deepEqual(updated, [uri])
+  const shown = textOf(await client.readResource({ uri }))
+  assert.equal(shown.id, id)
+  assert.equal(shown.state.status, 'succeeded')
+  // After an unsubscribe a later change says nothing.
+  const quiet = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  await client.subscribeResource({ uri: `system://work/${quiet}` })
+  await client.unsubscribeResource({ uri: `system://work/${quiet}` })
+  await call(client, 'work.run', { workId: quiet })
+  await until('the Work to end', async () => (await call(client, 'work.events', { workId: quiet })).value.status === 'succeeded')
+  await new Promise((r) => setTimeout(r, 100))
+  assert.deepEqual(updated, [uri])
+  await assert.rejects(client.readResource({ uri: 'system://work/work:nope' }), /scope/)
+  await assert.rejects(client.readResource({ uri: 'file:///etc/passwd' }))
+})
+
+test('with --goal a new Work of the Goal changes the resource list, and a Work outside it does not appear', { timeout: 60_000 }, async () => {
+  const goalId = (await human1.call('goal.new', { aim: 'list', scope: 's', budget: {} }) as { id: string }).id
+  const client = await mcp('--goal', goalId)
+  let changed = 0
+  client.setNotificationHandler(ResourceListChangedNotificationSchema, () => { changed++ })
+  await client.listResources()
+  const outside = await human1.call('work.submit', { capabilities: ['code-write'] }) as { id: string }
+  const own = await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId }) as { id: string }
+  await until('list_changed', async () => changed > 0)
+  assert.equal(changed, 1)
+  const uris = (await client.listResources()).resources.map((r) => r.uri)
+  assert.deepEqual(uris, [`system://work/${own.id}`])
+  assert.ok(!uris.includes(`system://work/${outside.id}`))
+})
+
+test('a notice only wakes the client: one that was away reads work.events from its cursor and misses nothing', { timeout: 60_000 }, async () => {
+  const first = await mcp()
+  const id = (await call(first, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  await first.subscribeResource({ uri: `system://work/${id}` })
+  const cursor = (await call(first, 'work.events', { workId: id })).value.events.at(-1).seq as number
+  await first.close()
+  // The Work ends while no client is connected: nobody hears a notice.
+  await human1.call('work.run', { workId: id })
+  await until('the Work to end', async () => ((await human1.call('work.events', { workId: id })) as { status: string }).status === 'succeeded')
+  const second = await mcp()
+  const missed = (await call(second, 'work.events', { workId: id, after: cursor })).value
+  const all = (await call(second, 'work.events', { workId: id })).value
+  assert.equal(missed.status, 'succeeded')
+  assert.deepEqual(missed.events, all.events.slice(cursor + 1))
+  assert.equal(missed.events.at(-1).type, 'terminal')
 })
