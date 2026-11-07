@@ -642,6 +642,16 @@ HOME=<fresh> CI=1`, the machine at a load average of about 270):
   It is measured again on a quiet machine once OC is on `dev`, and the row
   above corrected; a unit check still over 1 minute is then a defect of the
   next milestone (operator, 2026-11-07). The merge does not wait for it.
+  **Measured again (2026-11-08).** The load never fell below about 400 that
+  night, so F (`1adb430`) and `dev` (`6d92315`) were measured the same way
+  at the same load, with CPU time beside wall time (`/usr/bin/time`, `env -i`,
+  fresh HOME). Unit: F 40 s (34 CPU-s), `dev` 178 s (122 CPU-s); `dev`
+  without the three headed-browser test files of WW (`chatgpt`,
+  `remote-login`, `driver`) 20 s (31 CPU-s), those three alone 181 s
+  (99 CPU-s). Smoke: F 75 s, `dev` 85 s (354 and 386 CPU-s); install, build
+  and typecheck 56 s and 55 s. So the overrun is WW's browser tests, not
+  OC or CQ, and it ends when `web-workers` moves them to `test:web` (the
+  rule above); no defect is carried into the next milestone.
 - **One flaky test, outside OC:** `packages/agents/tests/chatgpt.test.ts`
   "a page that is neither signed in nor signed out" failed once in the full
   run (Chrome did not start within its 1.5 s launch timeout under load) and
