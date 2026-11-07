@@ -18,6 +18,7 @@ nothing else.
   stop it with exit 0 and free the home, a killed Host's stale socket is
   replaced, leftover control files of the old mode ignored and left in place, and
   what `init` says about the service.
+  `system host --supervise` serves and stops with exit 0 and no new Host.
 - [cli-host.test.ts](cli-host.test.ts) — H4b-1: the thin client: no Host is one
   line and exit 1, a Host that does not answer is named, an error is one line
   (a stack only with `SYSTEM_DEBUG=1`), Ctrl-C detaches while the Work finishes

@@ -63,6 +63,8 @@ export class Host {
   readonly slots: Slots
   private readonly commands = new Map<string, Seen>()
   private closed = false
+  /** The Works that had an attempt marked lost when this Host started: nothing resumes them. */
+  private readonly lostAtStart = new Set<string>()
 
   private constructor(lock: HostLock, options: HostOptions) {
     this.lock = lock
@@ -95,7 +97,7 @@ export class Host {
         this.commands.set(receipt.commandId, { args: receipt.args, result: async () => this.controller.get(record.id), begun: Promise.resolve() })
       }
       if (TERMINAL.has(record.state.status)) continue
-      await this.lane(() => this.controller.interrupt(record.id))
+      if ((await this.lane(() => this.controller.interrupt(record.id))).length) this.lostAtStart.add(record.id)
     }
     // Those whose process is already gone free their slot now; the rest stay held.
     await this.slots.settle()
@@ -106,6 +108,32 @@ export class Host {
     if (this.closed) return
     this.closed = true
     await this.lock.release()
+  }
+
+  /**
+   * Begin an upgrade: no new attempt is dispatched (Works are still admitted, and their runs wait), and this
+   * resolves once none is running. Running attempts are never interrupted for it.
+   */
+  drain(): Promise<void> {
+    return this.controller.drain()
+  }
+
+  /** After `drain` and once nothing more is accepted: the unfinished Works whose runs were held, for the next Host to `resume`. */
+  held(): Promise<string[]> {
+    return this.controller.held()
+  }
+
+  /**
+   * Run the Works a draining Host held, and return the ones started. A Work that had an attempt lost at this
+   * start, one that is finished or one already driven is left alone: nothing interrupted resumes by itself.
+   */
+  resume(workIds: string[]): string[] {
+    const started = workIds.filter((id) => {
+      const record = this.get(id)
+      return record && !TERMINAL.has(record.state.status) && !this.lostAtStart.has(id) && !this.controller.runningElsewhere(id)
+    })
+    for (const id of started) this.run(id).catch(() => {})
+    return started
   }
 
   /** Call `listener` after each event is committed to a Work (and its admission): the one hook notices are built on. Returns the way to stop. */

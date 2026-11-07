@@ -156,6 +156,13 @@ export class WorkController {
   /** The drives waiting for such a change, by Work. */
   private readonly waiters = new Map<string, () => void>()
   private readonly listeners = new Set<(change: WorkChange) => void>()
+  /** Set by `drain`: no further attempt is dispatched; a drive that would waits. */
+  private draining = false
+  /** The attempts dispatched and not yet reported, counted in the lane where they are dispatched. */
+  private attempts = 0
+  private readonly quiet = new Set<() => void>()
+  /** The Works a drive is advancing now. */
+  private readonly driving = new Set<string>()
 
   constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities)) {
     this.table = table
@@ -309,6 +316,15 @@ export class WorkController {
    * of the Work may be in flight at once.
    */
   private async drive(workId: string): Promise<WorkRecord> {
+    this.driving.add(workId)
+    try {
+      return await this.advanceToEnd(workId)
+    } finally {
+      this.driving.delete(workId)
+    }
+  }
+
+  private async advanceToEnd(workId: string): Promise<WorkRecord> {
     await this.lane(() => this.recover(this.require(workId)))
     const flying = new Set<Promise<void>>()
     const failures: unknown[] = []
@@ -316,6 +332,7 @@ export class WorkController {
       // A failed attempt is kept, not thrown here: only the drive's own loop rejects.
       const done: Promise<void> = settle().then(() => undefined, (error) => { failures.push(error) }).finally(() => {
         flying.delete(done)
+        if (--this.attempts === 0) for (const wake of this.quiet) wake()
         // A decision made while it was still in flight is out of date.
         this.epoch++
       })
@@ -323,7 +340,11 @@ export class WorkController {
     }
     // An attempt's observation may end the Work, so the record is read again at each turn.
     while (!TERMINAL.has(this.require(workId).state.status)) {
-      const turn = await this.lane(() => this.advance(workId, flying.size > 0))
+      const turn = await this.lane(async () => {
+        const decided = await this.advance(workId, flying.size > 0)
+        this.attempts += decided.settles.length
+        return decided
+      })
       for (const settle of turn.settles) fly(settle)
       if (failures.length) throw failures[0]
       if (TERMINAL.has(turn.record.state.status)) break
@@ -371,6 +392,23 @@ export class WorkController {
     if (cancel) return { record: await this.cancelled(record, cancel), settles: [], epoch: this.epoch }
     if (unknown) return { record: await this.finish(record, 'held', `the outcome of ${unknown.stepId} is unknown: ${lastReason(record, unknown.stepId)}; check the remote, then run the Work again`), settles: [], epoch: this.epoch }
     return this.step(record, busy)
+  }
+
+  /** Stop dispatching new attempts, and resolve once none is running. Works are still admitted and run; their drives wait. */
+  async drain(): Promise<void> {
+    this.draining = true
+    // A section that began before has finished and counted what it dispatched; any later one sees the flag.
+    await this.lane(async () => {})
+    while (this.attempts > 0) await new Promise<void>((wake) => this.quiet.add(wake))
+    this.quiet.clear()
+  }
+
+  /** The unfinished Works a drive is advancing, once every drive has settled at the gate of a drain. */
+  async held(): Promise<string[]> {
+    // The drives that just saw an attempt report reach the gate within the event loop's next turn.
+    await new Promise((resolve) => setImmediate(resolve))
+    await this.lane(async () => {})
+    return [...this.driving].filter((id) => !TERMINAL.has(this.require(id).state.status))
   }
 
   runningElsewhere(workId: string): boolean {
@@ -565,6 +603,8 @@ export class WorkController {
     let waiting = false
     for (const next of ready) {
       let turn: Turn
+      // Draining: an attempt is what an upgrade waits for, so none begins; accepting is no attempt.
+      if (this.draining && (isWorkerStep(next) || isVerifyStep(next) || isEffectStep(next))) { waiting = true; continue }
       if (isWorkerStep(next)) {
         const dispatched = await this.dispatchWorker(record, next)
         if (dispatched.blocked) { waiting = true; continue }

@@ -19,6 +19,9 @@ export function nodeChoice(current, installed) {
   return best ? { use: 'other', version: best.name } : { use: 'none' }
 }
 
+/** The exit status of a Host that stopped to run new code (EX_TEMPFAIL): the same as `UPGRADE_EXIT` in packages/host, which a test holds equal. */
+export const UPGRADE_EXIT = 75
+
 export const unitPath = (homedir) => join(homedir, '.config', 'systemd', 'user', 'system.service')
 
 /** One word of a unit line: systemd expands `%` and `$`, and splits on spaces unless quoted. */
@@ -37,10 +40,24 @@ ExecStart=${word(node)} ${word(entry)} host
 Environment=${word(`DSH_HOME=${home}`)}
 Environment=${word(`PATH=${path}`)}
 Restart=on-failure
+RestartForceExitStatus=75
 
 [Install]
 WantedBy=default.target
 `
+}
+
+/**
+ * `system host --supervise`: run the Host with `run` (it resolves the exit status), and again only after
+ * `UPGRADE_EXIT`. Any other status, a crash included, ends the supervisor with it, as does a stop asked of the
+ * supervisor itself (`stopped()`).
+ */
+export async function supervise({ run, stopped, log }) {
+  for (;;) {
+    const code = await run()
+    if (code !== UPGRADE_EXIT || stopped()) return code
+    log('restarting: the Host stopped to upgrade to the code on disk')
+  }
 }
 
 /**

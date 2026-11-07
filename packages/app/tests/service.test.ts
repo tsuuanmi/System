@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MIN_NODE, nodeChoice, serviceMode, unitPath, unitText } from '../../../bin/service.mjs'
+import { MIN_NODE, UPGRADE_EXIT, nodeChoice, serviceMode, supervise, unitPath, unitText } from '../../../bin/service.mjs'
 
 test('a Node that is new enough runs the command itself', () => {
   assert.deepEqual(nodeChoice('24.9.0', ['v24.21.0']), { use: 'current' })
@@ -56,4 +56,28 @@ test('only the default home gets the unit; --no-service and SYSTEM_NO_SERVICE=1 
   assert.equal(serviceMode({ ...base, home: '/tmp/other' }), 'foreground')
   assert.equal(serviceMode({ ...base, home: '/tmp/other', args: ['--no-service'] }), 'skip')
   assert.equal(serviceMode({ ...base, home: '/home/tan/.dsh', platform: 'darwin' }), 'skip')
+})
+
+test('the unit restarts on exit 75, the status of a Host that stopped to upgrade', () => {
+  const text = unitText({ node: '/n', entry: '/e', home: '/h', path: '/p' })
+  assert.match(text, /^RestartForceExitStatus=75$/m)
+  assert.equal(UPGRADE_EXIT, 75)
+})
+
+test('the supervisor runs the Host again after exit 75 and after nothing else', async () => {
+  const run = (codes: number[], stopped = () => false) => {
+    const log: string[] = []
+    let runs = 0
+    return supervise({ run: async () => codes[runs++]!, stopped, log: (line: string) => log.push(line) }).then((code: number) => ({ code, runs, log }))
+  }
+  assert.deepEqual((await run([75, 75, 0])).code, 0)
+  assert.equal((await run([75, 75, 0])).runs, 3)
+  const failed = await run([75, 1, 0])
+  assert.deepEqual([failed.code, failed.runs], [1, 2])
+  assert.match(failed.log.join('\n'), /restarting: the Host stopped to upgrade/)
+  const clean = await run([0, 75])
+  assert.deepEqual([clean.code, clean.runs], [0, 1])
+  // A signal to the supervisor is a stop: a Host that exits 75 anyway is not restarted.
+  const stopped = await run([75, 0], () => true)
+  assert.deepEqual([stopped.code, stopped.runs], [75, 1])
 })

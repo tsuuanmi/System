@@ -10,7 +10,7 @@ import { resolve } from 'node:path'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
 import { TERMINAL, type Asserted, type Caller, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { MAX_FRAME, NotAnswering, fitsFrame, type Client } from '../../host/lib/index.js'
+import { MAX_FRAME, NotAnswering, NotRunning, fitsFrame, type Client } from '../../host/lib/index.js'
 import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
 import { caller } from './io.ts'
 
@@ -47,6 +47,16 @@ export function remoteHost(remote: Remote): ClientHost {
   let session: Promise<Client> | undefined
   const link = (): Promise<Client> => (session ??= remote.open(caller()))
   const read = async (method: string, params?: object): Promise<any> => (await link()).call(method, params)
+  /** A read that outlives a Host's swap for new code: a connection it closed is opened again (`open` waits for the next Host), once. */
+  const reread = async (method: string, params?: object): Promise<any> => {
+    try {
+      return await read(method, params)
+    } catch (error) {
+      if (!(error instanceof NotRunning)) throw error
+      session = undefined
+      return read(method, params)
+    }
+  }
   const change = async (method: string, params: object): Promise<any> => mutate(await link(), method, params)
 
   /** Poll `work.events` until the Work is terminal. Ctrl-C detaches, or cancels first with `cancelOnInterrupt`. */
@@ -71,12 +81,12 @@ export function remoteHost(remote: Remote): ClientHost {
     }
     try {
       for (;;) {
-        const polled = await Promise.race([read('work.events', { workId, after }) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted])
+        const polled = await Promise.race([reread('work.events', { workId, after }) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted])
         if (polled === 'interrupted') return detach()
         after = polled.events.at(-1)?.seq ?? after
         if (TERMINAL.has(polled.status)) {
           await cancelling
-          return read('work.show', { workId })
+          return reread('work.show', { workId })
         }
         const slept = await Promise.race([new Promise<'slept'>((done) => setTimeout(() => done('slept'), POLL_MS)), interrupted])
         if (slept === 'interrupted') return detach()

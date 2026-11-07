@@ -36,7 +36,7 @@ await serving.stop()                                // server, then the Host cor
   the code version (`VERSION`): a short sha256 over the built `lib/**/*.js`
   of the System packages and the bundle's `cordis.patch.yml`, computed once when the Host starts and by each
   client for its own files. Another version is refused with an error that says
-  `restart the Host: systemctl --user restart system` (or restart `system host`).
+  `restart the Host: systemctl --user restart system` (or restart `system host`). A hello of the code on disk, while the Host is upgrading to it, gets `-32002` (`UPGRADING`) instead: retry. `connect` and `connectHello` take `retry` (ms) to wait out such a swap.
   The reply carries `packageVersion`, the `package.json` version, for display only. The caller is kept for
   the connection, passed to every handler and recorded as the `caller` of each Work event the call causes. Until a hello succeeds, any other
   method is refused.

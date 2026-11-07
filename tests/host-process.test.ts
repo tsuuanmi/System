@@ -161,3 +161,20 @@ test('the Host ignores the control files of the old mode and leaves them where t
   assert.equal((await host.exited).code, 0)
   for (const [file, text] of Object.entries(left)) assert.equal(readFileSync(join(control, file), 'utf8'), text, `${file} is neither read nor deleted`)
 })
+
+test('system host --supervise serves like a Host, and SIGTERM stops it with exit 0 and no new Host', { timeout: 60_000 }, async () => {
+  const supervised = cli.runAsync(['host', '--supervise'])
+  try {
+    const client = await connect(socket, { retry: 30_000 })
+    await client.call('host.hello', { version: VERSION, caller: human })
+    client.close()
+    supervised.child.kill('SIGTERM')
+    const ran = await supervised.done
+    assert.equal(ran.status, 0, ran.stderr)
+    assert.doesNotMatch(ran.stderr, /restarting/)
+    assert.equal(existsSync(socket), false)
+  } finally {
+    supervised.child.kill('SIGTERM')
+    await supervised.done
+  }
+})

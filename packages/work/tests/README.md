@@ -17,6 +17,9 @@
   lost, slots held until `settle`, nothing re-dispatched), and seeds 1 to 50 of
   three concurrent Brainstorms (replay matches, no event lost or repeated, never
   above the limit).
+- `upgrade.test.ts` — `drain`, `held` and `resume`: no new attempt while
+  draining, the running one finishes, and a later Host continues only the Works
+  nothing interrupted.
 - `host-lock.test.ts` — the Host lock: a second lock on a home refused (also by
   symlink), another home free, release and a SIGKILLed child freeing it at
   once, the off-Linux and missing-home errors.
