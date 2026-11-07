@@ -13,9 +13,9 @@ import type { Artifacts, Classification } from '@system/artifacts'
 import type { AgentsService } from '@system/agents'
 import { dshHome, type Capabilities, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { buildProgram, type AppHost, type CredentialCommands, type Run, type WorkersView } from './cli.ts'
+import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
-import { caller, confirmHuman, errorLine, explain, readSecret } from './io.ts'
+import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, connect } from '../../host/lib/index.js'
 import { serveHost, socketPath } from '../../host/lib/process.js'
@@ -63,14 +63,14 @@ async function probeStorage(ctx: Context): Promise<StorageStatus> {
   }
 }
 
-/** Whether a Host answers on the socket of `home`: a hello and a ping, in three seconds. */
+/** Whether a Host answers on the socket of `home`: a hello and a status, in three seconds. */
 async function probeHost(home: string): Promise<HostStatus> {
   try {
     const client = await connect(socketPath(home), { timeout: 3000 })
     try {
       await client.call('host.hello', { version: VERSION, caller: caller() })
-      const ping = await client.call('host.ping') as { version: string; pid: number }
-      return { answering: true, detail: `version ${ping.version}, pid ${ping.pid}` }
+      const status = await client.call('host.status') as { version: string; pid: number }
+      return { answering: true, detail: `version ${status.version}, pid ${status.pid}` }
     } finally {
       client.close()
     }
@@ -141,27 +141,17 @@ async function runHost(ctx: Context): Promise<void> {
   })
 }
 
-/** Every command but `doctor` and `host` is the thin client's: it talks to the Host and never boots DSH. */
-function thinOnly(): never {
-  throw new Error('this command is a client of the Host: run it as `system <command>`, without DSH flags')
-}
-
 export function apply(ctx: Context): void {
-  const host: AppHost = {
+  const host: HostProcess = {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,
     probeStorage: () => probeStorage(ctx),
     probeHost: () => probeHost(dshHome(ctx)),
-    artifacts: thinOnly,
-    work: thinOnly,
-    credentials: thinOnly,
-    workers: thinOnly,
-    login: thinOnly,
     runHost: () => runHost(ctx),
   }
   let selected: Run | undefined
-  const io = { out: (text: string) => { process.stdout.write(text) }, err: (text: string) => { process.stderr.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
-  const program = buildProgram(host, io, (run) => { selected = run })
+  const io = { out: (text: string) => { process.stdout.write(text) } }
+  const program = buildHostProgram(host, io, (run) => { selected = run })
   parseCmdline(ctx, program)
   const run = selected
   if (run === undefined) return

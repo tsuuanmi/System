@@ -126,7 +126,7 @@ export function systemCli(prefix: string, base: Record<string, string> = { SYSTE
       const client = await connect(socket)
       try {
         await client.call('host.hello', { version: VERSION, caller: { type: 'human', operatorId: 'tester' } })
-        return ((await client.call('host.ping')) as { pid: number }).pid
+        return ((await client.call('host.status')) as { pid: number }).pid
       } finally {
         client.close()
       }

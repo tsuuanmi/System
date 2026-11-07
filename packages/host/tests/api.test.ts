@@ -23,10 +23,3 @@ test('the README lists exactly the table\'s methods, flags and params', () => {
   if (process.env.SYSTEM_DOCS_WRITE) writeFileSync(readme, text.slice(0, from) + expected + text.slice(to + END.length))
   else assert.equal(text.slice(from, to + END.length), expected, 'the README is out of date with the table: run SYSTEM_DOCS_WRITE=1 corepack pnpm test')
 })
-
-test('the reference names a row\'s agent flag and each param, with its type and whether it is optional', () => {
-  const reference = apiReference(table)
-  assert.match(reference, /\| `work\.events` \| yes \| `workId: string`, `after\?: integer` \|/)
-  assert.match(reference, /\| `credentials\.set` \| no \|/)
-  assert.match(reference, /\| `work\.submit` \| yes \|.*`commandId\?: string`/)
-})

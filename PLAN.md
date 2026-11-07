@@ -184,16 +184,17 @@ Growth is expected. The budgets make it visible and justified; they do not
 forbid it. Record the measures at the end of every milestone. Growth above
 budget is either justified in the milestone's row or paid for by removal.
 
-| Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone | R1 (end of H4, 2026-11-07) |
-|---|---|---|---|
-| Active core: `packages/work/src` + `packages/artifacts/src`, lines | 2,317 | +20% | 2,564 (+10.7%) |
-| All package source, lines (`.ts` and `.mjs` under `packages/*/src`) | 4,081 | recorded | 5,299 (+29.8%) |
-| Docs under `docs/`: lines (files) | 3,571 (37) | +20%, and no fact stated twice | 4,284 (43) (+20.0%) |
-| Unit check, clean worktree | ~1 min | under 2 min | 39 s (install, build, typecheck, test) |
-| All required checks (`.system/checks.yaml`) | ~7 min | under 10 min | about 5 min (docs 2 s, unit 39 s, smoke 4 min 14 s) |
-| Flaky tests known | 0 | 0: a flaky test is fixed before features | 0 |
-| Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) |
-| Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed |
+| Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone | R1 (end of H4, 2026-11-07) | H, before the pass | H, after the pass |
+|---|---|---|---|---|---|
+| Active core: `packages/work/src` + `packages/artifacts/src`, lines | 2,317 | +20% | 2,564 (+10.7%) | 2,913 (+25.7%) | 2,953 (+27.4%) |
+| All package source, lines (`.ts` and `.mjs` under `packages/*/src`) | 4,081 | recorded | 5,299 (+29.8%) | 6,349 (+55.6%) | 6,374 (+56.2%) |
+| Tests: `packages/*/tests`, `tests` and `test-support`, lines | not recorded | recorded | not recorded | 6,906 | 6,832 |
+| Docs under `docs/`: lines (files) | 3,571 (37) | +20%, and no fact stated twice | 4,284 (43) (+20.0%) | 4,557 (44) (+27.6%) | 4,557 (44) (+27.6%) |
+| Unit check, clean worktree | ~1 min | under 2 min | 39 s (install, build, typecheck, test) | not measured | not measured |
+| All required checks (`.system/checks.yaml`) | ~7 min | under 10 min | about 5 min (docs 2 s, unit 39 s, smoke 4 min 14 s) | not measured | not measured |
+| Flaky tests known | 0 | 0: a flaky test is fixed before features | 0 | 0 | 0 |
+| Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured |
+| Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured |
 
 **Growth at R1.** The core grew 10.7% since the baseline, inside the +20%
 budget. Before H4b-2 it was 2,852 lines (+23.1%, over the budget): the Host
@@ -214,6 +215,20 @@ budget; the scheduler, slots and recovery of held slots are about 170 lines of
 the budget): host.md's slot section and guarantee row and the runbook's
 `maxConcurrentAttempts` section are the new facts and have no other home. The
 end-of-milestone simplification pass has to take the 48 lines out.
+
+**Growth at H (the simplification pass).** The pass changed no behaviour.
+It left the core 2,953 lines (+27.4%, over the +20% budget; the Host's
+receipts, slots and the conversation and summary modules are the growth, and
+none of it was cut by this pass: moving the slots into `slots.ts` adds a module
+header and a class wrapper, about 40 lines, which the removed duplicates
+(three Artifact-ID patterns, a status enum, `host.ping`, the `Counts` flags,
+the retry and decision option types written twice) only partly paid back). All
+package source is 6,374 (+25 over the pass: the two programs of the app and the
+slots module outweigh the deleted stubs). Tests fell by 74 lines (the
+start/stop, stale-socket, second-Host and idempotency duplicates). Docs held
+at 4,557 lines: the pass trimmed the package READMEs, which are not counted,
+and did not take out the 48 lines over budget at R2. The next
+milestone has to pay the core and the docs down by removal.
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -256,7 +271,7 @@ written first.
   attempts, uncertain slots, no auto-resume), `commandId` receipts. Evidence:
   `packages/work/tests/host-lock.test.ts` and `host.test.ts` (lock incl. a
   SIGKILLed child, lane, receipts, recovery); the slot itself is H5, so
-  `Host.uncertain()` only lists the attempts that will keep one.
+  `host.slots.uncertain()` only lists the attempts that will keep one.
 - [x] H3. API on a temporary socket (`packages/host`: transport, then the operation table). Evidence: `packages/host/tests/` (`transport`, `operations`, `api`). Includes:
   - the operation table with its `agent` flag and the exclusion test;
   - the version handshake and the caller;
@@ -361,8 +376,9 @@ written first.
   - [x] replay: `seed 1` to `seed 50` replay exactly with no event lost or
     repeated (`assertConsistent`), and `a cancel while two attempts run records
     both, then one terminal event`.
-- [ ] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
-  the Standards axis), the simplification pass, and the growth record.
+- [x] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
+  the Standards axis), the simplification pass, and the growth record (the
+  growth table above, column "H, after the pass").
   *(Spec review 2026-11-07, three defects fixed: `git.publish` now matches a
   pull request by head and base and fails on one aimed elsewhere; the version
   handshake is a hash of the built code, not the package version; ADR-0008

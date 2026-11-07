@@ -4,10 +4,12 @@
  * replay of the recorded events always yields the stored state; replay never
  * re-runs a Worker, a verifier or an external effect.
  */
+import { contentIdSchema } from '@system/artifacts'
 import { z } from 'zod'
 
 const at = z.string()
-const artifactId = z.string().regex(/^sha256:[0-9a-f]{64}$/)
+const TERMINAL_STATUSES = ['succeeded', 'failed', 'held', 'cancelled'] as const
+const status = z.enum(['running', ...TERMINAL_STATUSES])
 const caller = z.object({ type: z.enum(['human', 'agent']), operatorId: z.string().min(1) }).strict()
 
 /** Why a candidate Worker or verifier was or was not chosen. */
@@ -28,11 +30,11 @@ const usage = z.union([
 export const eventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('admitted'), seq: z.number().int(), at, caller,
-    specId: artifactId, input: artifactId.optional(),
+    specId: contentIdSchema, input: contentIdSchema.optional(),
     /** The Goal the Work was admitted for, and whose spend it counts toward (absent without a Goal, and in records written before ADR-0009). */
-    goal: artifactId.optional(),
+    goal: contentIdSchema.optional(),
     /** Each verify step's criteria Artifact, pinned at admission. */
-    criteria: z.record(z.string(), artifactId).optional(),
+    criteria: z.record(z.string(), contentIdSchema).optional(),
     /** Each verify step's verifier and version, pinned at admission (absent in records written before M6). */
     verifiers: z.record(z.string(), z.object({ ref: z.string(), version: z.string() }).strict()).optional(),
     source: z.object({ kind: z.enum(['workflow-file', 'direct-task']), path: z.string().optional(), fileHash: z.string().optional() }).strict(),
@@ -41,24 +43,24 @@ export const eventSchema = z.discriminatedUnion('type', [
     type: z.literal('dispatched'), seq: z.number().int(), at,
     stepId: z.string(), attemptId: z.string(), executor: z.enum(['worker', 'verifier']),
     capability: z.string(), selected: z.string(), candidates: z.array(candidate),
-    inputs: z.record(z.string(), artifactId),
+    inputs: z.record(z.string(), contentIdSchema),
   }).strict(),
   z.object({
     type: z.literal('observed'), seq: z.number().int(), at,
     stepId: z.string(), attemptId: z.string(), status: z.enum(['succeeded', 'failed', 'cancelled']),
-    outputs: z.record(z.string(), artifactId), reason: z.string().optional(), usage,
+    outputs: z.record(z.string(), contentIdSchema), reason: z.string().optional(), usage,
     /** What a cancelled attempt left behind: kept, never accepted as the step's output. */
-    partial: z.record(z.string(), artifactId).optional(),
+    partial: z.record(z.string(), contentIdSchema).optional(),
     /** The bounded agent output, for audit only; never handed to another Worker. */
-    log: artifactId.optional(),
+    log: contentIdSchema.optional(),
     worker: executor.optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,
-    stepId: z.string(), attemptId: z.string(), subject: artifactId, criteria: z.string(),
+    stepId: z.string(), attemptId: z.string(), subject: contentIdSchema, criteria: z.string(),
     verdict: z.enum(['pass', 'fail', 'inconclusive', 'error']), reason: z.string(),
-    verdictId: artifactId.optional(),
-    evidence: z.array(artifactId).optional(),
+    verdictId: contentIdSchema.optional(),
+    evidence: z.array(contentIdSchema).optional(),
     verifier: z.object({ ref: z.string(), version: z.string() }).strict().optional(),
   }).strict(),
   z.object({
@@ -71,13 +73,13 @@ export const eventSchema = z.discriminatedUnion('type', [
     /** Only this Worker may take the step over. */
     worker: z.string().optional(),
     /** The previous attempt's partial output, handed to the new attempt as input `previous`. */
-    previous: artifactId.optional(),
+    previous: contentIdSchema.optional(),
     /** Steps reset with it: the step and everything that depends on it, so no verdict outlives its subject. */
     reset: z.array(z.string()).optional(),
   }).strict(),
   z.object({
     type: z.literal('effect-intended'), seq: z.number().int(), at,
-    stepId: z.string(), operationId: z.string(), capability: z.string(), subject: artifactId,
+    stepId: z.string(), operationId: z.string(), capability: z.string(), subject: contentIdSchema,
     params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
     provider: z.object({ ref: z.string(), version: z.string() }).strict(),
   }).strict(),
@@ -94,8 +96,8 @@ export const eventSchema = z.discriminatedUnion('type', [
   }).strict(),
   z.object({
     type: z.literal('terminal'), seq: z.number().int(), at,
-    outcome: z.enum(['succeeded', 'failed', 'held', 'cancelled']), reason: z.string(),
-    results: z.record(z.string(), artifactId), caller: caller.optional(),
+    outcome: z.enum(TERMINAL_STATUSES), reason: z.string(),
+    results: z.record(z.string(), contentIdSchema), caller: caller.optional(),
     /** For `held`: the step whose operator decision `system approve` records. */
     awaiting: z.string().optional(),
   }).strict(),
@@ -108,11 +110,11 @@ export type Caller = z.infer<typeof caller>
 const stepState = z.object({
   state: z.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled']),
   attempts: z.array(z.string()),
-  outputs: z.record(z.string(), artifactId),
-  partial: z.record(z.string(), artifactId).optional(),
+  outputs: z.record(z.string(), contentIdSchema),
+  partial: z.record(z.string(), contentIdSchema).optional(),
   verdict: z.enum(['pass', 'fail', 'inconclusive', 'error']).optional(),
   /** For a verify step: the exact subject its verdict is about. */
-  subject: artifactId.optional(),
+  subject: contentIdSchema.optional(),
   /** An operator's decision on this step (approval of an effect or of an inconclusive verdict). */
   decision: z.enum(['approved', 'denied']).optional(),
 }).strict()
@@ -124,17 +126,17 @@ const effectState = z.object({
 }).strict()
 
 export const stateSchema = z.object({
-  status: z.enum(['running', 'succeeded', 'failed', 'held', 'cancelled']),
-  specId: artifactId,
-  input: artifactId.optional(),
+  status,
+  specId: contentIdSchema,
+  input: contentIdSchema.optional(),
   /** Added in M4; records written before it read as `{}` (DSH validates every stored record at open). */
-  criteria: z.record(z.string(), artifactId).default({}),
+  criteria: z.record(z.string(), contentIdSchema).default({}),
   steps: z.record(z.string(), stepState),
   /** Added in M5; operation ID -> what is known of that external effect. */
   effects: z.record(z.string(), effectState).default({}),
   reason: z.string().optional(),
   awaiting: z.string().optional(),
-  results: z.record(z.string(), artifactId),
+  results: z.record(z.string(), contentIdSchema),
 }).strict()
 
 export type WorkState = z.infer<typeof stateSchema>
@@ -148,7 +150,7 @@ export type StepState = z.infer<typeof stepState>
 const receipt = z.object({
   commandId: z.string().min(1),
   args: z.string(),
-  result: z.object({ workId: z.string(), status: z.enum(['running', 'succeeded', 'failed', 'held', 'cancelled']) }).strict(),
+  result: z.object({ workId: z.string(), status }).strict(),
 }).strict()
 
 export const workRecordSchema = z.object({
@@ -161,7 +163,7 @@ export const workRecordSchema = z.object({
 export type WorkRecord = z.infer<typeof workRecordSchema>
 export type Receipt = z.infer<typeof receipt>
 
-export const TERMINAL = new Set<WorkState['status']>(['succeeded', 'failed', 'held', 'cancelled'])
+export const TERMINAL = new Set<WorkState['status']>(TERMINAL_STATUSES)
 
 /** Fold events into state. Pure and total over valid event sequences. */
 export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): WorkState {

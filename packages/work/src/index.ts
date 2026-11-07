@@ -33,10 +33,13 @@ export * from './kinds.ts'
 export * from './lane.ts'
 export * from './record.ts'
 export * from './registry.ts'
+export * from './slots.ts'
 export * from './summary.ts'
 export * from './workflow.ts'
 /** The zod the Work schemas are built with, for the packages that validate the same shapes. */
 export { z } from 'zod'
+/** The Artifact ID schema and classifications, for the packages that validate the same shapes. */
+export { CLASSIFICATIONS, contentIdSchema } from '@system/artifacts'
 
 export const name = 'system-work'
 export const inject = ['storageDomain', 'artifacts']

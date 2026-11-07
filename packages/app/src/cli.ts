@@ -91,12 +91,17 @@ export interface WorkersView {
   accounts: { ref: string; available: boolean; reason: string; version?: string }[]
 }
 
-export interface AppHost extends DoctorHost {
+/** What the thin client's commands run against: the Host, over its socket. */
+export interface ClientHost {
   artifacts(): ArtifactCommands
   work(): WorkCommands
   credentials(): CredentialCommands
   workers(): Promise<WorkersView>
   login(ref: string, cookies: string | undefined): Promise<LoginView>
+}
+
+/** What `doctor` and `host` run against: the process that boots DSH. */
+export interface HostProcess extends DoctorHost {
   /** Run as the Host of this home until stopped by a signal; resolves once it has stopped. */
   runHost(): Promise<void>
 }
@@ -104,13 +109,16 @@ export interface AppHost extends DoctorHost {
 /** A command the program selected, run after startup. */
 export type Run = () => Promise<number>
 
+const newProgram = () => new Command('system')
+  .description('System: a durable work control plane for replaceable AI Workers')
+
 /**
- * Build the program. `select` receives the chosen command's runner; commander
- * only parses, so nothing touches the host before startup completes.
+ * Build the program of the process that boots DSH: `doctor` and `host`.
+ * `select` receives the chosen command's runner; commander only parses, so
+ * nothing touches the host before startup completes.
  */
-export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => void): Command {
-  const program = new Command('system')
-    .description('System: a durable work control plane for replaceable AI Workers')
+export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, select: (run: Run) => void): Command {
+  const program = newProgram()
   program.command('doctor')
     .description('check the mounted composition and durable storage')
     .option('--json', 'print the report as JSON')
@@ -129,6 +137,12 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
         return 0
       })
     })
+  return program
+}
+
+/** Build the thin client's program: every other command, over the Host's socket. */
+export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => void): Command {
+  const program = newProgram()
   const artifact = program.command('artifact').description('store and read immutable Artifacts by ID')
   artifact.command('put <file>')
     .description('store a file as an Artifact of kind file@1 and print its ID')

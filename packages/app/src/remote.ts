@@ -1,5 +1,5 @@
 /**
- * An `AppHost` over the Host's socket: every Work, Artifact, credential and
+ * A `ClientHost` over the Host's socket: every Work, Artifact, credential and
  * Worker call of the CLI becomes one JSON-RPC call to the matching operation
  * (see the API reference of @system/host). The CLI reads files itself and
  * sends their contents.
@@ -7,11 +7,11 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { Envelope, ReadResult } from '@system/artifacts'
-import type { Asserted, ConversationParts, GoalView, WorkRecord, WorkState } from '@system/work'
+import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
+import { TERMINAL, type Asserted, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { MAX_FRAME, NotAnswering, type Client } from '../../host/lib/index.js'
-import type { AppHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
+import { MAX_FRAME, NotAnswering, fitsFrame, type Client } from '../../host/lib/index.js'
+import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
 import { caller } from './io.ts'
 
 /** How often `work.events` is asked while following a Work (PROP-0004 C13). */
@@ -20,9 +20,6 @@ export const POLL_MS = 1000
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
 const LOGIN_TIMEOUT = 11 * 60_000
 
-const FINISHED = new Set(['succeeded', 'failed', 'held', 'cancelled'])
-const CLASSIFICATIONS = ['public', 'operator-shared', 'local-private']
-const ARTIFACT_ID = /^sha256:[0-9a-f]{64}$/
 
 export interface Remote {
   /** A connection that has said `host.hello` as `caller`. */
@@ -44,7 +41,7 @@ async function mutate(client: Client, method: string, params: object): Promise<a
 
 const base64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
-export function remoteHost(remote: Remote): AppHost {
+export function remoteHost(remote: Remote): ClientHost {
   let session: Promise<Client> | undefined
   const link = (): Promise<Client> => (session ??= remote.open(caller()))
   const read = async (method: string, params?: object): Promise<any> => (await link()).call(method, params)
@@ -72,10 +69,10 @@ export function remoteHost(remote: Remote): AppHost {
     }
     try {
       for (;;) {
-        const polled = await Promise.race([read('work.events', { workId, after }) as Promise<{ events: { seq: number }[]; status: string }>, interrupted])
+        const polled = await Promise.race([read('work.events', { workId, after }) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted])
         if (polled === 'interrupted') return detach()
         after = polled.events.at(-1)?.seq ?? after
-        if (FINISHED.has(polled.status)) {
+        if (TERMINAL.has(polled.status)) {
           await cancelling
           return read('work.show', { workId })
         }
@@ -137,27 +134,21 @@ export function remoteHost(remote: Remote): AppHost {
     },
   }
 
-  const unavailable = (what: string) => () => { throw new Error(`${what} runs in the process that boots DSH, not in the thin client`) }
   return {
-    hasService: unavailable('the doctor'),
-    dshVersion: unavailable('the doctor'),
-    probeStorage: unavailable('the doctor'),
-    probeHost: unavailable('the doctor'),
-    runHost: unavailable('the Host'),
     work: () => work,
     artifacts: () => ({
       async putFile(path: string, mediaType: string, classification: string): Promise<Envelope> {
-        if (!CLASSIFICATIONS.includes(classification)) throw new Error(`unknown classification ${classification}`)
+        if (!(CLASSIFICATIONS as readonly string[]).includes(classification)) throw new Error(`unknown classification ${classification}`)
         const data = base64(readFileSync(path))
-        if (data.length > MAX_FRAME - 1024) throw new Error(`${path} is too large to send to the Host (${data.length} bytes in base64; a frame holds ${MAX_FRAME})`)
+        if (!fitsFrame(data)) throw new Error(`${path} is too large to send to the Host (${data.length} bytes in base64; a frame holds ${MAX_FRAME})`)
         return read('artifact.put', { data, mediaType, classification })
       },
       async get(id: string): Promise<ReadResult> {
-        if (!ARTIFACT_ID.test(id)) throw new Error(`not an Artifact ID: ${id}`)
+        if (!CONTENT_ID_RE.test(id)) throw new Error(`not an Artifact ID: ${id}`)
         return read('artifact.show', { id })
       },
       async readBytes(id: string) {
-        if (!ARTIFACT_ID.test(id)) throw new Error(`not an Artifact ID: ${id}`)
+        if (!CONTENT_ID_RE.test(id)) throw new Error(`not an Artifact ID: ${id}`)
         return Buffer.from((await read('artifact.cat', { id })).data, 'base64')
       },
     }),

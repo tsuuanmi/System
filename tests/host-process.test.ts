@@ -24,15 +24,15 @@ before(() => {
 
 const human = { type: 'human', operatorId: 'tester' }
 
-test('system host serves hello and ping on host.sock, and logs its start', { timeout: 60_000 }, async () => {
+test('system host serves hello and status on host.sock, and logs its start', { timeout: 60_000 }, async () => {
   const host = await cli.start()
   const client = await connect(socket)
   try {
     assert.deepEqual(await client.call('host.hello', { version: VERSION, caller: human }), { version: VERSION, packageVersion: PACKAGE_VERSION })
-    const ping = await client.call('host.ping') as { version: string; pid: number; works: number }
-    assert.equal(ping.version, VERSION)
-    assert.equal(ping.pid > 0, true)
-    assert.equal(ping.works, 0)
+    const status = await client.call('host.status') as { version: string; pid: number; works: number }
+    assert.equal(status.version, VERSION)
+    assert.equal(status.pid > 0, true)
+    assert.equal(status.works, 0)
   } finally {
     client.close()
   }
@@ -85,7 +85,7 @@ test('a stale socket file left by a killed Host is replaced once the lock is tak
   const client = await connect(socket)
   await client.call('host.hello', { version: VERSION, caller: human })
   // The wrapper's child is the Host; killing it leaves the socket file behind.
-  const { pid } = await client.call('host.ping') as { pid: number }
+  const { pid } = await client.call('host.status') as { pid: number }
   client.close()
   process.kill(pid, 'SIGKILL')
   await first.exited

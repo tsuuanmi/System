@@ -50,11 +50,19 @@ function raw(path: string): { socket: Socket; lines: () => Promise<Record<string
   }
 }
 
-test('hello, then ping reports the version, the pid and the memory of the records', async () => {
+test('hello, then status reports the version, the pid and the memory of the records', async () => {
   const { path } = await served()
   const client = await connect(path)
   assert.deepEqual(await client.call('host.hello', { version: VERSION, caller: human }), { version: VERSION, packageVersion: PACKAGE_VERSION })
-  assert.deepEqual(await client.call('host.ping'), { version: VERSION, pid: process.pid, works: 0, recordBytes: 0 })
+  assert.deepEqual(await client.call('host.status'), { version: VERSION, pid: process.pid, works: 0, recordBytes: 0 })
+  client.close()
+})
+
+test('host.ping is gone: host.status is the one report', async () => {
+  const { path } = await served()
+  const client = await connect(path)
+  await client.call('host.hello', { version: VERSION, caller: human })
+  await assert.rejects(client.call('host.ping'), /unknown method host\.ping/)
   client.close()
 })
 
@@ -62,7 +70,7 @@ test('a Host of another version refuses the hello and names the fix', async () =
   const { path } = await served()
   const client = await connect(path)
   await assert.rejects(client.call('host.hello', { version: '9.9.9', caller: human }), /restart the Host: systemctl --user restart system/)
-  await assert.rejects(client.call('host.ping'), /host\.hello/)
+  await assert.rejects(client.call('host.status'), /host\.hello/)
   client.close()
 })
 
@@ -108,9 +116,9 @@ test('a Host started, then a built file changed, refuses a client built from the
 test('a call before hello is refused, and so is a malformed hello', async () => {
   const { path } = await served()
   const client = await connect(path)
-  await assert.rejects(client.call('host.ping'), /host\.hello first/)
+  await assert.rejects(client.call('host.status'), /host\.hello first/)
   await assert.rejects(client.call('host.hello', { version: VERSION, caller: { type: 'robot', operatorId: 'x' } }), /caller/)
-  await assert.rejects(client.call('host.ping'), /host\.hello first/)
+  await assert.rejects(client.call('host.status'), /host\.hello first/)
   client.close()
 })
 
@@ -177,6 +185,6 @@ test('a call times out against a server that never answers', async () => {
   await new Promise<void>((resolve) => silent.listen(path, resolve))
   after(() => { silent.close() })
   const client = await connect(path, { timeout: 50 })
-  await assert.rejects(client.call('host.ping'), (error) => error instanceof NotAnswering && /not answering/.test(error.message))
+  await assert.rejects(client.call('host.status'), (error) => error instanceof NotAnswering && /not answering/.test(error.message))
   client.close()
 })

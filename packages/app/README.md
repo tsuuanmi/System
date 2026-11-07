@@ -44,10 +44,11 @@ operator, `4` not terminal, `5` cancelled. Each call records its caller: `human`
 a terminal, otherwise `agent`, unless `SYSTEM_CALLER` says `human` or `agent`.
 
 - [src/index.ts](src/index.ts) — the Cordis plugin: wiring to DSH services for
-  `doctor` and `system host`. It runs no Work itself: any other command reached
-  through a leading DSH flag says it is a client of the Host.
-- [src/cli.ts](src/cli.ts) — the commander program, over an `AppHost`.
-- [src/remote.ts](src/remote.ts) — the `AppHost` over the Host's socket;
+  `doctor` and `system host`, which are the only commands of its program
+  (`HostProcess`). It runs no Work itself.
+- [src/cli.ts](src/cli.ts) — the commander programs: `doctor` and `host`, and
+  the thin client's commands over a `ClientHost`.
+- [src/remote.ts](src/remote.ts) — the `ClientHost` over the Host's socket;
   [src/client.ts](src/client.ts) — the entry `bin/system` runs for it;
   [src/io.ts](src/io.ts) — caller, secrets, confirmation and error lines.
 - [src/doctor.ts](src/doctor.ts) — the checks, behind a `DoctorHost` seam so

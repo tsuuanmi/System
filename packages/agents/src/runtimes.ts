@@ -71,6 +71,24 @@ function usageCounts(r: ClaudeResult): Counts {
   return { input: count(u.input_tokens), read: count(u.cache_read_input_tokens), write: count(u.cache_creation_input_tokens), output: count(u.output_tokens), cost: price(r.total_cost_usd) }
 }
 
+/**
+ * What the results add up to, over every model of each when `byModel`. A part
+ * without both input and output makes the total unknown, never a partial sum;
+ * the cache split and the cost are reported whole or not at all, so a
+ * half-reported one never reads as zero cache or a cheaper run.
+ */
+function totalUsage(results: ClaudeResult[], byModel: boolean): Omit<NonNullable<Parsed['usage']>, 'source'> | undefined {
+  const parts = results.flatMap((r) => (byModel ? Object.values(r.modelUsage!).map(modelCounts) : [usageCounts(r)]))
+  if (parts.some((p) => p.input === undefined || p.output === undefined)) return undefined
+  const sum = (of: (p: Counts) => number) => parts.reduce((total, p) => total + of(p), 0)
+  return {
+    inputTokens: sum((p) => p.input! + (p.read ?? 0) + (p.write ?? 0)),
+    ...(parts.every((p) => p.read !== undefined && p.write !== undefined) ? { cacheReadTokens: sum((p) => p.read!), cacheWriteTokens: sum((p) => p.write!) } : {}),
+    outputTokens: sum((p) => p.output!),
+    ...(parts.every((p) => p.cost !== undefined) ? { costUsd: sum((p) => p.cost!) } : {}),
+  }
+}
+
 /** `stream-json` prints one `result` per turn, so a follow-up turn (a background command's notification) adds one; usage is summed over all of them, and over every model in each. */
 export function parseClaude(stdout: string): Parsed {
   const results: ClaudeResult[] = []
@@ -86,51 +104,17 @@ export function parseClaude(stdout: string): Parsed {
   if (!last) return { ok: false, message: `unreadable Claude Code output: ${stdout.slice(0, 200)}` }
   /** `modelUsage` counts subagents, `usage` does not; use it when every result has it (a result that has none leaves the whole stream on `usage`). */
   const byModel = results.every((r) => r.modelUsage && Object.keys(r.modelUsage).length > 0)
-  let input = 0
-  let read = 0
-  let write = 0
-  let output = 0
-  let cost = 0
-  /** A result without both counts makes the total unknown, never a partial sum; likewise the split and the cost. */
-  let counted = true
-  let split = true
-  let priced = true
-  for (const r of results) {
-    const parts: Counts[] = byModel ? Object.values(r.modelUsage!).map(modelCounts) : [usageCounts(r)]
-    for (const p of parts) {
-      if (p.input === undefined || p.output === undefined) {
-        counted = false
-        continue
-      }
-      input += p.input
-      output += p.output
-      // The split is reported whole or not at all, so a half-reported one never reads as zero cache.
-      if (p.read !== undefined && p.write !== undefined) {
-        read += p.read
-        write += p.write
-      } else {
-        split = false
-      }
-      input += (p.read ?? 0) + (p.write ?? 0)
-      if (p.cost === undefined) priced = false
-      else cost += p.cost
-    }
-  }
+  const usage = totalUsage(results, byModel)
   return {
     ok: last.is_error === false,
     message: String(last.result ?? last.subtype ?? ''),
     servedModels: results.some((r) => r.modelUsage) ? [...new Set(results.flatMap((r) => Object.keys(r.modelUsage ?? {})))].sort() : undefined,
-    usage: counted
-      ? {
-          inputTokens: input,
-          ...(split ? { cacheReadTokens: read, cacheWriteTokens: write } : {}),
-          outputTokens: output,
-          ...(priced ? { costUsd: cost } : {}),
-          source: byModel
-            ? `claude-code modelUsage (includes subagents) over ${results.length} result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`
-            : `claude-code usage (excludes subagents) over ${results.length} result(s) (input_tokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`,
-        }
-      : undefined,
+    usage: usage && {
+      ...usage,
+      source: byModel
+        ? `claude-code modelUsage (includes subagents) over ${results.length} result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`
+        : `claude-code usage (excludes subagents) over ${results.length} result(s) (input_tokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`,
+    },
   }
 }
 
