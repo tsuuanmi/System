@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
 import { skipHeaded } from '../test-support/headed.ts'
-import { findVnc } from '../packages/agents/src/display.ts'
+import { findVnc } from '../packages/web-worker/src/display.ts'
 
 const skip = skipHeaded
 const serve = join(repo, 'packages', 'web-driver', 'tests', 'serve-fake-chatgpt.ts')
@@ -33,7 +33,9 @@ before(async () => {
   const signedIn = await site({ answer })
   const signedOut = await site({ answer, signedIn: false })
   assert.equal(system(['init']).status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: web-worker
+  disabled: false
+- id: agents
   config:
     accounts:
       - ref: chatgpt-web/default

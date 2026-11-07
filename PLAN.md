@@ -761,9 +761,43 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      the answer kept as partial output. Found on the real site 2026-11-07
      (`work:7f820cb2`, `second`: a three-backtick `review` holding ```` ```ts ````
      was closed by the inner fence, 339 bytes of it accepted, the rest outside).
-  2a. [ ] The web Runtime as its own package and an optional DSH row: core
+  2a. [x] The web Runtime as its own package and an optional DSH row: core
      and the CLI Runtimes do not depend on it; a smoke test runs the main
-     path with the web row off.
+     path with the web row off. *Done (WW2a).* `packages/web-worker`
+     (`@system/web-worker`, row `web-worker`, off in the bundle) holds the web
+     Runtime and the browser dependencies; `@system/agents` keeps the CLI
+     Runtimes and has none of them. `chatgpt-web` accounts stay in the `agents`
+     row's `accounts`; it hands each to the row's service (`ctx.webWorker`,
+     contract in `packages/agents/src/web.ts`), and with the row off reports
+     it `unavailable`, "the web-worker row is disabled". `workers login` (CLI
+     and Host) reach the same service and say the same. `test:web` and the
+     `web` check's `paths` follow the move; `tests/web-worker-off.test.ts`
+     runs a fake-agent Software Engineering Work and a Brainstorm with the row
+     off. Dependencies (workspace packages; `->` is "depends on"):
+
+     | | Before | After |
+     |---|---|---|
+     | agents | -> artifacts, work, **web-driver**, patchright-core, @puppeteer/browsers, @novnc/novnc, ws | -> artifacts, work |
+     | web-worker | (did not exist) | -> agents, artifacts, work, web-driver, patchright-core, @puppeteer/browsers, @novnc/novnc, ws |
+     | app | -> agents, artifacts, work (and so the browser, through agents) | -> agents, artifacts, work (agents has no browser) |
+     | verifiers | -> agents, artifacts, work (and so the browser) | unchanged (agents has no browser) |
+     | bundle | -> agents, app, artifacts, effects, fakes, verifiers, work | adds web-worker (row off) |
+     | host | -> work | unchanged; its code version also hashes web-worker |
+
+     Nothing but the bundle depends on web-worker. Lines moved by `git mv`
+     (before -> after, the rest is the seam): source `chatgpt.ts` 559 -> 586,
+     `chatgpt-login.ts` 129 -> 123, `remote-login.ts` 330 -> 331,
+     `display.ts` 120, `chrome.ts` 108, `evidence.ts` 93 (1,339 -> 1,361);
+     tests `chatgpt.test.ts` 815 -> 813, `chrome.test.ts` 66, `remote-login.test.ts`
+     339 -> 341 (1,220 -> 1,220); `chrome.lock.json` and `fake-chatgpt/` unchanged.
+     Growth, not moved: the seam is +106 source lines (all package source
+     12,097 -> 12,203): `web.ts` 59 and the row's `index.ts` 84, less 51 from
+     `agents/src/index.ts` and 9 from `agent.ts`, plus 27 in `chatgpt.ts`
+     (`WebAccount`, `webWorker`: the web Worker was a branch of `agentWorker`), 5 net in
+     `chatgpt-login.ts`, `remote-login.ts` and the app; tests +140
+     (10,627 -> 10,767: `web-worker-off.test.ts` 90 and `agents/tests/index.test.ts`
+     41). The core (`work` + `artifacts` source) is unchanged at 3,420. The growth buys
+     the optional row; it is justified here, not paid for by removal.
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
      Inspection of the driver, its callers and the engine: [RES-0009](docs/research/RES-0009-web-driver-inspection.md).
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.

@@ -348,7 +348,7 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   const main = all.filter((name) => name !== 'web')
   for (const file of ['packages/work/src/controller.ts', 'tests/work.test.ts', 'docs/requirements/purpose.md', 'workflows/code-checks.yaml']) assert.deepEqual(run([file]), main, file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver or the build inputs change (PLAN WW).
-  for (const file of ['packages/web-driver/src/driver.ts', 'packages/agents/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'pnpm-lock.yaml']) assert.deepEqual(run([file]), all, file)
+  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'pnpm-lock.yaml']) assert.deepEqual(run([file]), all, file)
 })
 
 test('a commit checked as it is (code-checks.yaml on its own) runs every check, paths or not', async () => {

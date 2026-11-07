@@ -166,23 +166,33 @@ with `pgrep -fa claude` or `pgrep -fa codex`.
 
 A Worker that runs a step in the operator's signed-in ChatGPT web session
 ([PROP-0005](../proposals/PROP-0005-chatgpt-website-worker.md); options in the
-[agents README](../../packages/agents/README.md#the-chatgpt-web-runtime)). It is
-**not enabled by default**: add it to the profile's `agents` row (for example in
-`$DSH_HOME/profiles/system/cordis.patch.yml`, replacing `accounts` with the
-bundle's accounts plus this one), then restart the Host:
+[web-worker README](../../packages/web-worker/README.md)). It is
+**not enabled by default**, in two steps in the profile's own patch
+(`$DSH_HOME/profiles/system/cordis.patch.yml`), then restart the Host: turn on the
+optional `web-worker` row, and add the account to the `agents` row (replacing `accounts` with the
+bundle's accounts plus this one):
 
 ```yaml
-- ref: chatgpt-web/default
-  runtime: chatgpt-web
-  capabilities: [research, web-search]
+- id: web-worker
+  disabled: false
+- id: agents
+  config:
+    accounts:
+      # the bundle's accounts, plus:
+      - ref: chatgpt-web/default
+        runtime: chatgpt-web
+        capabilities: [research, web-search]
 ```
+
+With the row off, `system workers` shows the account `unavailable` with the reason
+"the web-worker row is disabled", and `system workers login` says the same.
 
 It needs `Xvfb` (`apt install xvfb`) and a recent Chrome (and for `--remote`
 a VNC server, see below). System picks the
 Chrome like System 1: `executablePath`, then `CHROME_PATH`, then a system Chrome
 no older than the browser engine's Chromium (an old one, such as Chrome 95, is
 passed over), then the pinned Chrome for Testing
-(`packages/agents/chrome.lock.json`), which it downloads under
+(`packages/web-worker/chrome.lock.json`), which it downloads under
 `$DSH_HOME/system/browsers` the first time an attempt or a login needs it
 (about 150 MB; it is not done at startup, and a failed download names the
 cause). It launches the browser as a genuine one: no automation flags, no

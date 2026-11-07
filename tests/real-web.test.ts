@@ -25,7 +25,9 @@ const system = (args: string[], input?: string) => cli.run(args, { input, timeou
 before(async () => {
   if (!enabled) return
   assert.equal(system(['init']).status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: web-worker
+  disabled: false
+- id: agents
   config:
     accounts:
       - ref: chatgpt-web/default

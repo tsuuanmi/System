@@ -10,7 +10,7 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1 and the review of WW1 in WW1c).
+**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1 and the review of WW1 in WW1c; moved to its own optional row `web-worker` in WW2a, 2026-11-07).
 
 ## Decision context
 
@@ -44,12 +44,14 @@ fallback.
 ## Proposal and what was built
 
 1. **A third Runtime**, `chatgpt-web`, beside Claude Code and Codex, in
-   `packages/agents/src/chatgpt.ts`: an Account `chatgpt-web/<name>` of the
+   `packages/web-worker/src/chatgpt.ts` (its own package and optional, off-by-default `web-worker`
+   row since WW2a: with the row off the account is `unavailable`, "the web-worker row is disabled"):
+   an Account `chatgpt-web/<name>` of the
    `agents` row (default `chatgpt-web/default`) with the capabilities
    `research`, `brainstorm.idea-*` (by role) and `web-search`. It drives the
    page with `patchright-core` 1.63.0 (Apache-2.0, the version System 1 pins;
    W5 replaced `playwright-core`) on a Chrome chosen as in System 1
-   (`packages/agents/src/chrome.ts`): the configured `executablePath`, then
+   (`packages/web-worker/src/chrome.ts`): the configured `executablePath`, then
    `CHROME_PATH`, then a system Chrome no older than the engine's Chromium,
    then the pinned Chrome for Testing (`chrome.lock.json`), installed with
    `@puppeteer/browsers` under `$DSH_HOME/system/browsers` the first time it is
@@ -59,7 +61,7 @@ fallback.
    **Not enabled in the bundle**; the runbook says how to add it.
    **Never headless** (operator, 2026-11-07). System always runs a real,
    headed Chrome on an invisible display, a private Xvfb that it starts and
-   stops (`packages/agents/src/display.ts`). The option `headless` does not
+   stops (`packages/web-worker/src/display.ts`). The option `headless` does not
    exist, and an account that sets it is `unavailable`. The reason: a real
    headed browser is closer to the operator's own and is challenged less. Each
    attempt and each login uses the operator's `DISPLAY` when one is set, and
@@ -82,7 +84,7 @@ fallback.
    - `--remote`, for a machine with no display (the operator's, checked
      2026-11-07), which also lets the operator clear a Cloudflare challenge
      that the cookies did not carry (W2).
-   **The remote flow, as built** (`packages/agents/src/remote-login.ts`,
+   **The remote flow, as built** (`packages/web-worker/src/remote-login.ts`,
    W9; a port of System 1's remote login, `packages/plugins/login/src/remote.ts`):
    1. Without `x11vnc` or `x0vncserver` on `PATH` it fails at once, naming
       both. Otherwise the Host starts a private Xvfb, a VNC server on it, and
@@ -238,7 +240,7 @@ fallback.
   before each launch and marks the last exit clean, then keeps one working tab
   (its own, opened first). The preferences alone did not stop the restore: the
   launch keeps `--restore-last-session`, which outranks them and which keeps
-  session-only cookies alive ([agents README](../../packages/agents/README.md)).
+  session-only cookies alive ([web-worker README](../../packages/web-worker/README.md)).
   Cancel and the time limit end Chrome with `context.close()`, and a SIGKILL
   relaunch is tested to open one tab.
 - **Chat/Work switch not found.** The switch is awaited (a bounded setting of
@@ -275,19 +277,19 @@ Fixed, each with a test that failed first:
   stage; closed pages are counted when confirmed, and a page that will not close
   fails the attempt.
 - **Questions answered in the READMEs:** `close()` is the Playwright context's, and the
-  process's exit is now checked (agents README); stages are in the evidence list.
+  process's exit is now checked (web-worker README); stages are in the evidence list.
 - **Also found (WW1c):** typing a 66 KB prompt took 5.5 min, so the composer takes one
   paste event ([web-driver README](../../packages/web-driver/README.md)), recorded as
   the `insert` stage; and a Runtime waited for a Worker's pipes to close, which two
   leaked Xvfb held open for 33 min: the attempt now ends on process exit
-  ([agents README](../../packages/agents/README.md)).
+  ([web-worker README](../../packages/web-worker/README.md)).
 - **Also found (WW1g):** the paste of a 61,581-character prompt became an attachment chip on a
   Team workspace (the composer read 2 characters and the read-back failed) and stayed text on
   another account. A prompt is now a header typed in the composer and a body pasted after it,
   accepted as text or as one chip named by its start, else failed before the send in the stage
   `attach`; the evidence records the outcome and the chip count
   ([web-driver README](../../packages/web-driver/README.md),
-  [agents README](../../packages/agents/README.md)).
+  [web-worker README](../../packages/web-worker/README.md)).
 - **Also found (WW1h, second opinion of WW1c, `work:ce23f210`):** fixed: a failed launch
   kills only a Chrome this process started (1); a close with no identified process is not
   `ok` (2); only a known mode can settle (3); each page operation of the mode wait ends at
@@ -302,11 +304,11 @@ Fixed, each with a test that failed first:
 ## Tests and what is still to verify
 
 System 1's fake site (`packages/web-driver/tests/fake-chatgpt.ts`, ported with
-the driver, driven by `packages/agents/tests/chatgpt.test.ts` and
+the driver, driven by `packages/web-worker/tests/chatgpt.test.ts` and
 `tests/chatgpt-web.test.ts`) covers send, wait and extract, a sign-in wall, a
 CAPTCHA page, the logged-out home, the site's error page, a composer on Work,
 a missing output block and cancel mid-answer, deterministically and without an
-account. The ported engine tests are in `packages/web-driver/tests`. `packages/agents/tests/remote-login.test.ts` covers the
+account. The ported engine tests are in `packages/web-driver/tests`. `packages/web-worker/tests/remote-login.test.ts` covers the
 remote flow (token, frames, input, Save, Cancel, expiry, cleanup) and the
 private Xvfb. A headed Chrome that cannot start is a failure of these tests,
 not a skip (`test-support/headed.ts`; `SYSTEM_SKIP_HEADED=1` skips them on a

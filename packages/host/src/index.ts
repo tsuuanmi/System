@@ -13,7 +13,7 @@ import { callerSchema, type Caller, type Host, type WorkChange, type z } from '@
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
-const SYSTEM_PACKAGES = ['artifacts', 'work', 'agents', 'verifiers', 'effects', 'host', 'app']
+const SYSTEM_PACKAGES = ['artifacts', 'work', 'agents', 'web-worker', 'verifiers', 'effects', 'host', 'app']
 
 const jsFiles = (dir: string, at = ''): string[] =>
   readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(dir, join(at, e.name)) : e.name.endsWith('.js') ? [join(at, e.name)] : []))

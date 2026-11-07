@@ -15,10 +15,8 @@ import type { Artifacts } from '@system/artifacts'
 import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatgpt.ts'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
-import { agentWorker, type Account } from '../src/agent.ts'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
@@ -46,8 +44,8 @@ const memory = () => memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ..
 function web(fake: FakeChatGpt, extra: Partial<WebConfig> = {}): WebConfig {
   return { ...webDefaults(join(root, `profile-${count++}`)), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, ...extra }
 }
-const account = (config: WebConfig, extra: Partial<Account> = {}): Account => ({
-  ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
+const account = (config: WebConfig, extra: Partial<WebAccount> = {}): WebAccount => ({
+  ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
 })
 function request(inputs: Record<string, string>, outputs: string[], signal = new AbortController().signal): WorkerRequest {
   return { workId: 'work:test', attemptId: `attempt:${count++}`, stepId: 'research', capabilities: ['research'], inputs, outputs, signal }
@@ -58,11 +56,11 @@ async function task(artifacts: Artifacts, instructions: string, note?: string): 
   return (await artifacts.put({ ...TASK_KIND, content: { instructions, ...(context.length ? { context } : {}) }, ...(context.length ? { inputs: context } : {}), classification: 'local-private', producer })).id
 }
 /** One attempt on a fake site with `options`; `answer` defaults to a block for each of `outputs`. */
-async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string; note?: string; started?: (fake: FakeChatGpt) => void } = {}) {
+async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<WebAccount>; instructions?: string; note?: string; started?: (fake: FakeChatGpt) => void } = {}) {
   const fake = await site({ answer: blocks(...outputs), ...options })
   more.started?.(fake)
   const { artifacts } = memory()
-  const worker = agentWorker(account(web(fake, more.config), more.extra), artifacts, processSpawner, join(root, 'attempts'))
+  const worker = webWorker(account(web(fake, more.config), more.extra), artifacts, join(root, 'attempts'))
   const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.', more.note) }, outputs, more.signal))
   return { artifacts, result, fake }
 }
@@ -384,7 +382,7 @@ test('the profile is created owner-only and reused by the next attempt', { skip,
   const fake = await site({ requireCookie: true })
   const config = web(fake)
   const { artifacts } = memory()
-  const worker = agentWorker(account(config), artifacts, processSpawner, join(root, 'attempts'))
+  const worker = webWorker(account(config), artifacts, join(root, 'attempts'))
   for (let i = 0; i < 2; i++) {
     const result = await worker.run(request({ task: await task(artifacts, 'x') }, ['report']))
     assert.equal(result.status, 'failed', 'the fake serves a sign-in wall until the cookie exists')
@@ -401,7 +399,7 @@ test('login imports cookies into the profile, checks the signed-in state and nev
   assert.equal(report.signedIn, true, report.detail)
   assert.doesNotMatch(JSON.stringify(report), /"valid"|session=valid/)
   const { artifacts } = memory()
-  const worker = agentWorker(account(config), artifacts, processSpawner, join(root, 'attempts'))
+  const worker = webWorker(account(config), artifacts, join(root, 'attempts'))
   const result = await worker.run(request({ task: await task(artifacts, 'x') }, ['report']))
   assert.equal(result.status, 'succeeded', result.reason)
   const anonymous = await webLogin(web(fake), { cookies: JSON.stringify([{ name: 'other', value: 'z', domain: '127.0.0.1', path: '/' }]), cookieDomains: ['127.0.0.1'] })

@@ -19,12 +19,11 @@ import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright-core'
 import type { Artifacts } from '@system/artifacts'
 import { ChatGptWebDriver, ProviderError, type PageDiagnostics } from '@system/web-driver'
-import { addConversation, type WorkerRequest, type WorkerResult } from '@system/work'
-import type { Account } from './agent.ts'
+import { cleanup, exited, mediaTypeOf, prepare, type Workspace } from '@system/agents'
+import { addConversation, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { ensureChrome } from './chrome.ts'
 import { acquireDisplay, type Display } from './display.ts'
 import { createEvidence } from './evidence.ts'
-import { cleanup, mediaTypeOf, prepare, type Workspace } from './workspace.ts'
 
 export interface WebConfig {
   /** The Chrome user-data directory: the signed-in session. Owner-only; never shared. */
@@ -49,6 +48,20 @@ export interface WebConfig {
    * means an output may have been cut short (WW5c).
    */
   maxOutsideChars: number
+}
+
+/** One `chatgpt-web` account as the web Runtime runs it: `command` is the path of Chrome. */
+export interface WebAccount {
+  ref: string
+  capabilities: string[]
+  command: string
+  /** Chrome's `--version`, asked when first needed. */
+  version: () => Promise<string>
+  /** Wall-clock limit of one attempt, in minutes (fractions allowed). */
+  attemptTimeoutMinutes?: number
+  /** How many attempts of this account run at once (the Host's slots); default 1. */
+  maxConcurrentAttempts?: number
+  web: WebConfig
 }
 
 /** Chrome's launch clock when the account sets none, in seconds. */
@@ -387,9 +400,23 @@ async function launchBounded(launcher: typeof launch, web: WebConfig, display: D
   }
 }
 
+/** The account as a `WorkerPort`; the Host's slots limit how many attempts run at once. A browser attempt has no pid file: Chrome's own profile lock names the process that may still hold the Account. */
+export function webWorker(account: WebAccount, artifacts: Artifacts, attemptsDir: string): WorkerPort {
+  return {
+    ref: account.ref,
+    capabilities: account.capabilities,
+    maxConcurrentAttempts: account.maxConcurrentAttempts,
+    run: (request) => webAttempt(account, artifacts, attemptsDir, request),
+    async gone() {
+      const pid = profileLockPid(account.web.profileDir)
+      return pid === undefined || exited(pid)
+    },
+  }
+}
+
 /** `launcher` is injectable for tests; a launch that never returns ends at the launch clock, and a Chrome that comes up late is closed. */
-export async function webAttempt(account: Account, artifacts: Artifacts, attemptsDir: string, request: WorkerRequest, launcher: typeof launch = launch): Promise<WorkerResult> {
-  const web = account.web!
+export async function webAttempt(account: WebAccount, artifacts: Artifacts, attemptsDir: string, request: WorkerRequest, launcher: typeof launch = launch): Promise<WorkerResult> {
+  const web = account.web
   const executor: NonNullable<WorkerResult['executor']> = { ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: await account.version() }
   const log: string[] = []
   const note = (line: string) => { log.push(`${new Date().toISOString()} ${line}`) }

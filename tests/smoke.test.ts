@@ -13,7 +13,7 @@ const home = cli.home
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
-const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'agents', 'credentials', 'system-app']
+const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'web-worker', 'agents', 'credentials', 'system-app']
 
 const system = (...args: string[]) => cli.run(args)
 const human = { SYSTEM_CALLER: 'human' }
@@ -95,6 +95,11 @@ test('init is repeatable and keeps the operator patch', () => {
 test('the fakes row is installed but off by default', () => {
   const ran = system('--dump-config')
   assert.match(ran.stdout, /- id: fakes\n  name: '@system\/fakes'\n  disabled: true/)
+})
+
+test('the web-worker row is installed but off by default', () => {
+  const ran = system('--dump-config')
+  assert.match(ran.stdout, /- id: web-worker\n  name: '@system\/web-worker'\n  disabled: true/)
 })
 
 test('an Artifact stored in one Host is read by ID alone after a restart', async () => {

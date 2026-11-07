@@ -1,0 +1,11 @@
+# @system/web-worker source
+
+- [index.ts](index.ts) — the Cordis row: `register` an account of the `agents` row, and the sign-in operations (`ctx.webWorker`).
+- [chatgpt.ts](chatgpt.ts) — the `chatgpt-web` Runtime's attempt: patchright on a genuine headed Chrome, the prompt, the `@system/web-driver` driver for the page, labelled blocks, the `conversation@1`; the account as a `WorkerPort`.
+- [evidence.ts](evidence.ts) — the attempt's evidence record: a stage chain written as it happens.
+- [chrome.ts](chrome.ts) — which Chrome (configured, `CHROME_PATH`, recent system, pinned managed) and its install on first use.
+- [chatgpt-login.ts](chatgpt-login.ts) — its sign-in: cookie import, or by hand in a window; the signed-in check (the driver's `checkAuth`).
+- [remote-login.ts](remote-login.ts) — the remote sign-in: the private Xvfb through a VNC server and noVNC on 127.0.0.1 behind a token, for use over an SSH tunnel (a port of System 1's remote login).
+- [display.ts](display.ts) — the private Xvfb every browser runs on, `findXvfb` and `findVnc`.
+
+See the [package README](../README.md).

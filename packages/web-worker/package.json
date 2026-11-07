@@ -1,0 +1,37 @@
+{
+  "name": "@system/web-worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The web Runtime as its own, optional row: ChatGPT website accounts as System Workers through patchright on a genuine Chrome (PROP-0005, WW2a)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "chrome.lock.json"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.1",
+    "@novnc/novnc": "1.7.0",
+    "@puppeteer/browsers": "3.2.3",
+    "@system/agents": "workspace:*",
+    "@system/artifacts": "workspace:*",
+    "@system/web-driver": "workspace:*",
+    "@system/work": "workspace:*",
+    "patchright-core": "1.63.0",
+    "ws": "8.22.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@types/ws": "8.18.2"
+  }
+}

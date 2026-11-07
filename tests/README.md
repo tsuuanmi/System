@@ -33,7 +33,12 @@ nothing else.
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
   through the operator's Host when one answers, or one the test starts.
-- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `chatgpt-web` account on
+- [web-worker-off.test.ts](web-worker-off.test.ts) — WW2a: the profile with the
+  `web-worker` row off (the bundle's default) runs a Software Engineering Work and a
+  Brainstorm on the fake Runtimes, `system workers` reports a `chatgpt-web` account
+  unavailable with "the web-worker row is disabled", and `workers login` says the same.
+- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `chatgpt-web` account (the
+  `web-worker` row turned on by a profile patch) on
   the booted profile against the local fake site ([web-driver](../packages/web-driver/tests/fake-chatgpt.ts)): `workers login --cookies`
   (no value printed), a sign-in wall reported, a Work filling its slot and
   producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).

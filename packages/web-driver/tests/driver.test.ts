@@ -3,7 +3,7 @@
  * the Runtime relies on (the sign-in states, a temporary chat in Chat mode, the answer
  * and its model read back). Headed Chrome on a private Xvfb; no network, no account.
  * System 1's own driver specs were cut from its suite (ADR-0084); the Runtime's
- * attempts are tested in packages/agents/tests/chatgpt.test.ts.
+ * attempts are tested in packages/web-worker/tests/chatgpt.test.ts.
  */
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -12,8 +12,8 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import type { BrowserContext, Page } from 'patchright-core'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
-import { launch, webDefaults } from '../../agents/src/chatgpt.ts'
-import { startXvfb, type Display } from '../../agents/src/display.ts'
+import { launch, webDefaults } from '../../web-worker/src/chatgpt.ts'
+import { startXvfb, type Display } from '../../web-worker/src/display.ts'
 import { ChatGptWebDriver, ProviderError, shippedMap, type DriverTimeouts } from '../src/index.ts'
 import { FakeChatGpt, type FakeOptions } from './fake-chatgpt.ts'
 

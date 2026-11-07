@@ -47,4 +47,4 @@ checks:
     # touches the web Runtime, its driver or what they are built from.
     run: corepack pnpm test:web
     timeoutSeconds: 600
-    paths: [packages/agents/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/**, .system/**, package.json, pnpm-lock.yaml]
+    paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/**, .system/**, package.json, pnpm-lock.yaml]

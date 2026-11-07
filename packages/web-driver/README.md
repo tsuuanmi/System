@@ -3,9 +3,9 @@
 System 1's ChatGPT web driver, its UI map and its UI engine, ported whole
 (operator's decision, 2026-11-07: System 1 already works against chatgpt.com,
 so its logic is ported, not written again; [PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md) item 7).
-It is a library: the `chatgpt-web` Runtime in [@system/agents](../agents/README.md)
+It is a library: the `chatgpt-web` Runtime in [@system/web-worker](../web-worker/README.md)
 builds one `ChatGptWebDriver` per attempt and calls `checkAuth`, `open` and
-`ask`. It starts no browser (the Runtime does, with [chrome.ts](../agents/src/chrome.ts))
+`ask`. It starts no browser (the Runtime does, with [chrome.ts](../web-worker/src/chrome.ts))
 and holds no account, ledger or decision store.
 
 Source: System 1, `tsuuanmi/system`, commit
@@ -43,7 +43,7 @@ changed but the header line.
 - **Not ported:** the Cordis plugin glue (`plugin.ts`, `index.ts`), the
   scheduler, ledger, gateway, accounts and vault, System 1's `Browser`,
   `Display`, registry and portable state (System has its own Host, slots,
-  [chrome.ts](../agents/src/chrome.ts) and [display.ts](../agents/src/display.ts)),
+  [chrome.ts](../web-worker/src/chrome.ts) and [display.ts](../web-worker/src/display.ts)),
   `reconcile.ts` and `start.ts` of provider-core (only the `TurnSnapshot` type
   is kept, in `src/core/driver.ts`), the `ui-outline` schema, and System 1's
   driver specs (cut from its suite by its ADR-0084; `tests/driver.test.ts` is
@@ -51,7 +51,7 @@ changed but the header line.
   `-provider-core` and `-ui-ops` are relative paths.
 - **Reports go to the attempt's log, or nowhere.** `onDrift`, `onCopyRefused`,
   `onStall` and `onReport` are wired by the Runtime (`chatGptDriver` in
-  `agents/src/chatgpt.ts`) to the attempt's log as counts and structure;
+  `web-worker/src/chatgpt.ts`) to the attempt's log as counts and structure;
   `onHeal` and `beforeHealedAction` are unset and `healEnabled` is `false`:
   no decision store exists, and a heal acts without recording its decision
   (System 1's INV-13). The heal code is ported and never runs here. The local
@@ -171,7 +171,7 @@ changed but the header line.
 
 ## Used by the Runtime, not in System 1
 
-- `chatGptDriver(web, note)` (in agents) builds the driver on one account's
+- `chatGptDriver(web, note)` (in web-worker) builds the driver on one account's
   clocks: `readyMs` is `timeouts.load`, `turnMs` is `timeouts.answer`,
   `stableMs` is `timeouts.stable`, and the stall clock is System 1's 3 minutes,
   or half of `answer` when that is shorter (the completion wait refuses a stall

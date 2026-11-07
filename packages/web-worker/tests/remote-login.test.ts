@@ -18,10 +18,8 @@ import { fileURLToPath } from 'node:url'
 import { FakeChatGpt } from '../../web-driver/tests/fake-chatgpt.ts'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { processSpawner } from '../../../test-support/process.ts'
 import { TASK_KIND, CONVERSATION_KIND, conversationSchema, taskSchema, type WorkerRequest } from '@system/work'
-import { agentWorker, type Account } from '../src/agent.ts'
-import { profileLockPid, webDefaults, type WebConfig } from '../src/chatgpt.ts'
+import { profileLockPid, webDefaults, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
 import { apply } from '../src/index.ts'
 import { startXvfb, findXvfb, findVnc } from '../src/display.ts'
 import { startRemoteLogin, type RemoteSession } from '../src/remote-login.ts'
@@ -267,12 +265,12 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
   await fake.start()
   try {
     const config = { ...web(''), url: `${fake.origin}/` }
-    const account: Account = { ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config }
+    const account: WebAccount = { ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config }
     const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...CONVERSATION_KIND, content: conversationSchema })
     const task = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'x' }, classification: 'local-private', producer: { type: 'operator', ref: 'tester' } })).id
     const stop = new AbortController()
     const request: WorkerRequest = { workId: 'work:test', attemptId: 'attempt:display', stepId: 'research', capabilities: ['research'], inputs: { task }, outputs: ['report'], signal: stop.signal }
-    const running = agentWorker(account, artifacts, processSpawner, join(root, 'attempts')).run(request)
+    const running = webWorker(account, artifacts, join(root, 'attempts')).run(request)
     await until('the prompt to be sent', () => fake.sent.length === 1)
     const chrome = profileLockPid(config.profileDir)!
     const env = readFileSync(`/proc/${chrome}/environ`, 'utf8').split('\0')
@@ -309,20 +307,24 @@ test('Xvfbs that start together from the same display number each get their own 
   }
 })
 
-/** Mount the `agents` row on a bare context and return the accounts it reports. */
+/** Mount the `web-worker` row on a bare context and register an account with it: whether it is available, and the reason if not. */
 async function accountsOf(account: Record<string, unknown>, path?: string) {
   let registered = 0
   const provided: Record<string, any> = {}
-  const services: Record<string, unknown> = { capabilities: { registerWorker: () => { registered += 1; return () => {} } }, artifacts: {}, subprocess: { resolveExecutable: async (command: string) => command }, credentials: {} }
+  const services: Record<string, unknown> = { capabilities: { registerWorker: () => { registered += 1; return () => {} } }, artifacts: {}, subprocess: { resolveExecutable: async (command: string) => command } }
   const ctx = { get: (key: string) => services[key], effect() {}, provide: (key: string, value: unknown) => { provided[key] = value } }
   const was = process.env.PATH
   if (path !== undefined) process.env.PATH = path
+  let reason = 'registered'
   try {
-    await apply(ctx as never, { accounts: [{ ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], executablePath: CHROME, ...account }] })
+    apply(ctx as never)
+    await provided.webWorker.register({ ref: 'chatgpt-web/default', capabilities: ['research'], executablePath: CHROME, ...account })
+  } catch (error) {
+    reason = (error as Error).message
   } finally {
     process.env.PATH = was
   }
-  return { accounts: await provided.agents.accounts() as { available: boolean; reason: string }[], registered }
+  return { accounts: [{ available: reason === 'registered', reason }], registered }
 }
 
 test('without Xvfb the account is unavailable and the reason names it', { timeout: 30_000 }, async () => {
