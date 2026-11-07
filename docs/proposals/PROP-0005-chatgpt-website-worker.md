@@ -205,6 +205,10 @@ fallback.
    found. W8: the answer keeps its fences; where Copy does not give them, each
    rendered code block is fenced again from the page (`pre code`, its header
    as the info string).
+   WW5a: a review holding code is answered in a four-backtick fence, which
+   the driver's three-backtick pairing broke (second opinions `work:d72ce675`
+   and `work:a4bd030d` lost their `review` block); fences are read by
+   CommonMark's rule and rebuilt one backtick longer than their content.
 
 ## Known defects, fixed in WW1 (2026-11-07)
 

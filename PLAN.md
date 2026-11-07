@@ -734,6 +734,9 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      fences, per-output sentinels with the attempt id, JSON; then the second
      opinion of WW1c again. (The two second-opinion runs so far lost their
      `review` block: long Markdown with code fences inside.)
+  5a. [x] Output blocks with a longer fence, or holding fenced code, read as
+     the answer meant them (the driver's copy path and `parseBlocks`); found
+     on the real site 2026-11-07 (`work:d72ce675`, `work:a4bd030d`).
   2a. [ ] The web Runtime as its own package and an optional DSH row: core
      and the CLI Runtimes do not depend on it; a smoke test runs the main
      path with the web row off.

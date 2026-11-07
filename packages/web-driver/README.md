@@ -94,6 +94,17 @@ changed but the header line.
   `withFencedBlocks` share `renderedBlocks`, and a bare fence takes its
   block's header as its name. Checked on the real site: a Research Work on
   `chatgpt-web/default` was accepted with its citation found.
+- **Longer fences (WW5a).** A review that holds code is answered in a
+  four-backtick fence (`webPrompt` asks for a longer fence around a block with
+  one inside), and System 1's three-backtick pattern paired the wrong lines.
+  The copy path now reads fences by CommonMark's rule (a closing fence is as
+  long as the opening one at least; a shorter one inside is content), a bare
+  fence of any length takes the header's name, and a block rebuilt from the
+  page gets a fence one backtick longer than any run in its body. The rendered
+  text that stands in for a refused Copy is not taken for Markdown because its
+  content has fence lines. Checked on the real site (2026-11-07) with a tiny
+  prompt on `chatgpt-web/default`: the page showed one widget labelled
+  `review`, and the copy was the bare four-backtick form.
 - **Long prompts are pasted (WW1c).** Typing a 66 KB prompt with
   `keyboard.insertText` into ChatGPT's editor took about 5.5 min (the whole `mode`
   stage of `work:d72ce675` was 336 s). The map's `composer.insert` is now `do:

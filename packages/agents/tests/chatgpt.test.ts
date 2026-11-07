@@ -78,6 +78,16 @@ test('parseBlocks reads labelled fenced blocks, with longer fences around shorte
   assert.deepEqual(parseBlocks(markdown, ['report', 'sources', 'missing']), { blocks: { report: 'a', sources: '```js\nx\n```' }, missing: ['missing'] })
 })
 
+test('parseBlocks reads a long-fenced block that holds a shorter fence, and only closes it with an equal or longer one', () => {
+  const review = '## Verdict\nok\n```ts\nconst a = 1\n```'
+  assert.deepEqual(parseBlocks(`\`\`\`\`review\n${review}\n\`\`\`\``, ['review']), { blocks: { review }, missing: [] })
+  assert.deepEqual(parseBlocks(`~~~\n\`\`\`\`\`review\n${review}\n\`\`\`\`\`\`\n`, ['review']), { blocks: { review }, missing: [] })
+  // A bare long fence has no label, so it fills no slot.
+  assert.deepEqual(parseBlocks(`\`\`\`\`\n${review}\n\`\`\`\``, ['review']), { blocks: {}, missing: ['review'] })
+  // A shorter closing line is content; the block is never closed here.
+  assert.deepEqual(parseBlocks('````review\nx\n```', ['review']), { blocks: {}, missing: ['review'] })
+})
+
 test('parseCookies reads a browser-extension JSON export and a Netscape file, for chatgpt.com only', () => {
   const json = JSON.stringify([
     { name: 's', value: 'v1', domain: '.chatgpt.com', path: '/', secure: true, httpOnly: true, expirationDate: 1900000000, sameSite: 'no_restriction' },
