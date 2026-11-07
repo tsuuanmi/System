@@ -6,7 +6,7 @@
  * in a directory of mode 0700, and it listens on no TCP port.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { accessSync, constants, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -49,6 +49,14 @@ export function xauthority(number: string, cookie: Buffer): Buffer {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 const socketOf = (number: number) => `/tmp/.X11-unix/X${number}`
+/** Whether `pid` is the Xvfb that owns display `number`: the socket can be another Xvfb's while this one is still losing the race, its lock file names the owner. */
+const owns = (number: number, pid: number) => {
+  try {
+    return Number(readFileSync(`/tmp/.X${number}-lock`, 'utf8')) === pid && existsSync(socketOf(number))
+  } catch {
+    return false
+  }
+}
 
 /** Start an Xvfb on the first free display number from a random start; one that loses a race for a number exits, and the next number is tried. */
 export async function startXvfb(): Promise<Display> {
@@ -67,8 +75,8 @@ export async function startXvfb(): Promise<Display> {
       let exited = child.exitCode !== null || child.signalCode !== null
       const exit = new Promise<void>((resolve) => child.once('exit', () => { exited = true; resolve() }))
       child.once('error', () => { exited = true })
-      for (let waited = 0; !exited && !existsSync(socketOf(number)) && waited < 10_000; waited += 25) await sleep(25)
-      if (!exited && existsSync(socketOf(number))) {
+      for (let waited = 0; !exited && !owns(number, child.pid!) && waited < 10_000; waited += 25) await sleep(25)
+      if (!exited && owns(number, child.pid!)) {
         return {
           display: `:${number}`, pid: child.pid!, env: { DISPLAY: `:${number}`, XAUTHORITY: auth },
           async stop() {

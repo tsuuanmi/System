@@ -481,6 +481,19 @@ and orchestrator scope; O3 completion notices.
     where a headed Chrome does not start on an Xvfb (the Chrome 95 on this
     machine crashes on start when headed), so a headed run is still to do on a
     machine where it starts.
+  - Parallel-merge interaction fixed (L1) *(2026-11-07)*. W2, A (faster
+    checks, tests in parallel) and D each passed alone; their merge turned
+    `dev` red. Cause, two races in W2's code, both made likely by the parallel
+    runs: (1) `agentWorker` closed the browser from the abort and again at the
+    end, and the second `close()` returned before Chrome had exited, so the
+    attempt ended with Chrome and its profile still in use (the test then read
+    a dead or half-gone process, and the file's cleanup hit a profile still
+    being written); (2) `startXvfb` took the first X socket it saw, which
+    could be another Xvfb's when two started from the same display number, so
+    two attempts shared a display and one Xvfb exited under its browser.
+    Fixed in the code (`chatgpt.ts` shares one close; `display.ts` takes a
+    display only when its lock names its own Xvfb); a test starts four Xvfbs
+    from the same number. Not the tests' fault, and not Chrome's zygote.
 - [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
   temporary chats, two signed-in accounts (`chatgpt-web/default`,
   `chatgpt-web/second`) can each give an independent proposal. A Brainstorm

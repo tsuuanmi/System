@@ -261,6 +261,10 @@ it to another machine or hand it to another Worker, and delete the directory to
 sign the account out of System. An attempt that finds the page in an unknown
 state fails after the `load` timeout with that reason and a screenshot.
 
+## The dev branch
+
+Parallel Works each pass their own checks, but their merge can still break `dev`, so `dev` is re-checked after a batch of merges.
+
 ## Another home
 
 Only `~/.dsh` gets the unit. For any other `DSH_HOME`, run

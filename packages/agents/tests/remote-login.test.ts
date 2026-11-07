@@ -21,6 +21,7 @@ import { TASK_KIND, CONVERSATION_KIND, conversationSchema, taskSchema, type Work
 import { agentWorker, type Account } from '../src/agent.ts'
 import { profileLockPid, webDefaults, type WebConfig } from '../src/chatgpt.ts'
 import { apply } from '../src/index.ts'
+import { startXvfb, findXvfb } from '../src/display.ts'
 import { startRemoteLogin, type RemoteSession } from '../src/remote-login.ts'
 
 const skip = skipHeaded
@@ -249,6 +250,22 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
     assert.equal(alive(chrome), false)
   } finally {
     if (was !== undefined) process.env.DISPLAY = was
+  }
+})
+
+test('Xvfbs that start together from the same display number each get their own display', { skip: findXvfb() ? false : 'Xvfb is not installed', timeout: 60_000 }, async () => {
+  const random = Math.random
+  Math.random = () => 0.5
+  const displays = await Promise.allSettled(Array.from({ length: 4 }, () => startXvfb()))
+  Math.random = random
+  try {
+    const up = displays.map((d) => { assert.equal(d.status, 'fulfilled'); return (d as PromiseFulfilledResult<Awaited<ReturnType<typeof startXvfb>>>).value })
+    assert.equal(new Set(up.map((d) => d.display)).size, up.length, 'one display each')
+    for (const d of up) {
+      assert.equal(Number(readFileSync(`/tmp/.X${d.display.slice(1)}-lock`, 'utf8')), d.pid, `${d.display} belongs to the Xvfb that was started for it`)
+    }
+  } finally {
+    for (const d of displays) if (d.status === 'fulfilled') await d.value.stop()
   }
 })
 
