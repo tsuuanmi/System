@@ -61,6 +61,8 @@ export interface AskResult {
   text: string
   /** The final answer's rendered code blocks: each one's header label and raw text (rows kept); none for a research report. */
   blocks: Array<{ label: string; code: string }>
+  /** The answer's rendered text (its `innerText`, as the page shows it: no Markdown escapes), for a caller whose Copy text is escaped (WW5d); the text itself for a research report. */
+  rendered: string
   /** Canonical conversation id for persistent turns; undefined for temporary ones. */
   binding: string | undefined
   /** The mode read back from the page before sending (never assumed). */

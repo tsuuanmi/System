@@ -34,8 +34,8 @@ export interface EvidenceData {
   promptSubmitted: boolean
   /** What the site made of the prompt's body: text in the composer, or attachment chips and how many; none for a one-part prompt. */
   attach?: { outcome: 'text' | 'attachment'; chips: number }
-  /** How each required output was filled: from the rendered block that carries its name, or from the Markdown text. */
-  filled?: Record<string, 'block' | 'text'>
+  /** How each required output was filled: from the rendered block that carries its name, the Markdown text, or (the site showed the fences as text, its Copy escaped them) the answer's rendered text (WW5d). */
+  filled?: Record<string, 'block' | 'text' | 'rendered'>
   /** Characters of the answer outside its output blocks, whitespace ignored (WW5c). */
   outsideChars?: number
   stages: StageRecord[]

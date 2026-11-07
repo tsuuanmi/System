@@ -111,6 +111,11 @@ changed but the header line.
   the old guard take the text for Markdown, so `withFencedBlocks` now runs
   whenever a block's label has no fence of that name in the text, and the
   Runtime fills an output from the block that carries its name.
+- **Rendered text as data (WW5d).** `AskResult.rendered` is the answer's
+  rendered text as the page shows it (the research report's text for Deep
+  research). The live `default` account showed `~~~~report` as paragraphs and
+  its Copy escaped the Markdown (`\~`, `https\://`); a caller that finds no
+  block in `text` reads the fences from `rendered`.
 - **Tilde fences (WW5c).** The output contract is `~~~~<name>` ... `~~~~`: a
   backtick fence closed early by the review's own ```` ```ts ```` was accepted
   as a truncated output on the real site, and only tildes close a tilde fence.

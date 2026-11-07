@@ -761,6 +761,11 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      the answer kept as partial output. Found on the real site 2026-11-07
      (`work:7f820cb2`, `second`: a three-backtick `review` holding ```` ```ts ````
      was closed by the inner fence, 339 bytes of it accepted, the rest outside).
+  5d. [x] When no rendered block and no Markdown fence gives an output, it is
+     read from the answer's rendered text (`AskResult.rendered`), evidence
+     `filled: rendered`; never from escaped Markdown. Found on the real site
+     2026-11-08 (`default`: "~~~~report" shown as paragraphs, Copy escaped
+     `\~` and `https\://`).
   2a. [x] The web Runtime as its own package and an optional DSH row: core
      and the CLI Runtimes do not depend on it; a smoke test runs the main
      path with the web row off. *Done (WW2a).* `packages/web-worker`

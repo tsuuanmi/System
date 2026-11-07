@@ -115,7 +115,12 @@ One attempt:
    characters outside its output blocks, whitespace ignored (WW5c: "the answer
    continues outside its output blocks (N characters): an output may be cut
    short", for a fence closed early by its own content). What was found stays
-   as unaccepted partial output.
+   as unaccepted partial output. When no rendered block and no Markdown fence
+   gives any output (the site showed the fences as paragraph text and its Copy
+   escaped the Markdown, WW5d), the answer's rendered text is read by the same
+   rules, and `outsideChars` counts that text. Escaped Markdown (a line of
+   escaped tildes or backticks, or `\:`) never fills an output: the rendered
+   text gives it exactly, or the attempt fails.
 7. **Record** a `conversation@1`: `prompt.md` and `response.md` as parts,
    `links.json` (the cited hrefs) as an attachment, asserted `provider:
    ChatGPT`, the page `url`, the `model` the driver read back from the model
@@ -141,7 +146,7 @@ closed inherited and late, and late ones that would not close), the viewport, Ch
 the failed stage and the last completed one, and for a two-part prompt `attach`: which outcome (`text` or
 `attachment`) and the chip count, and `filled`: how each output was filled (`block`: the rendered
 code block labelled with its name, verbatim, two of one name being ambiguous and a failure; `text`: the
-Markdown's fenced block; WW5b) and `outsideChars`, the characters outside the output blocks (WW5c). It is partial output `evidence` of
+Markdown's fenced block; `rendered`: the answer's rendered text, when Copy was escaped, WW5d; WW5b) and `outsideChars`, the characters outside the output blocks (WW5c). It is partial output `evidence` of
 every failed or cancelled attempt, and the last line of the log of every attempt.
 **A prompt in two parts (WW1g).** `webPrompt` returns the header (role line, step,
 instructions, the output-format request, and a line naming the attached inputs), which
