@@ -258,11 +258,11 @@ export type WorkflowFiles = (name: string) => string
 
 /** Rename what a joined step refers to: step IDs by `id`, `$steps` references by `ref`. */
 function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {
-  const dependsOn = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
-  if (isWorkerStep(s)) return { ...s, ...dependsOn, ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
-  if (isVerifyStep(s)) return { ...s, ...dependsOn, verify: { ...s.verify, subject: ref(s.verify.subject) } }
-  if (isEffectStep(s)) return { ...s, ...dependsOn, effect: { ...s.effect, subject: ref(s.effect.subject), requires: s.effect.requires.map(id) } }
-  return { ...s, ...dependsOn, accept: { ...s.accept, requires: s.accept.requires.map(id) } }
+  const ids = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
+  if (isWorkerStep(s)) return { ...s, ...ids, ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
+  if (isVerifyStep(s)) return { ...s, ...ids, verify: { ...s.verify, subject: ref(s.verify.subject) } }
+  if (isEffectStep(s)) return { ...s, ...ids, effect: { ...s.effect, subject: ref(s.effect.subject), requires: s.effect.requires.map(id) } }
+  return { ...s, ...ids, accept: { ...s.accept, requires: s.accept.requires.map(id) } }
 }
 
 /** Join every Sub-workflow of `workflow` into its steps; `chain` is the IDs of the Workflows using it, outermost first. */

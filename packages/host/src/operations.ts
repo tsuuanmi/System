@@ -134,6 +134,16 @@ export function operations(services: Services): Methods {
     if (!inScope(host, caller.goal, p.workId)) throw outside(`${name} on ${p.workId}`, caller)
     return p
   }
+  /** A row that names a Goal: it may only be the orchestrator's own, which is filled in when absent. */
+  const ownGoal = (name: string): Method['scope'] => (_host, p, caller) => {
+    if (p.goal !== undefined && p.goal !== caller.goal) throw outside(`${name} for Goal ${p.goal}`, caller)
+    return { ...p, goal: caller.goal }
+  }
+  /** A row that reads a Goal: one of the orchestrator's chain, its own when absent. */
+  const inChain = (name: string): Method['scope'] => (host, p, caller) => {
+    if (p.goal !== undefined && !host.goalChain(caller.goal).has(p.goal)) throw outside(`${name} on ${p.goal}`, caller)
+    return { ...p, goal: p.goal ?? caller.goal }
+  }
   const ofArtifact = (name: string): Method['scope'] => (host, p, caller) => {
     if (!scopedArtifacts(host, services, caller).has(p.id)) throw outside(`${name} on ${p.id}`, caller)
     return p
@@ -151,10 +161,7 @@ export function operations(services: Services): Methods {
           : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId })
       },
-      scope(_host, p, caller) {
-        if (p.goal !== undefined && p.goal !== caller.goal) throw outside(`work.submit for Goal ${p.goal}`, caller)
-        return { ...p, goal: caller.goal }
-      },
+      scope: ownGoal('work.submit'),
     },
     'work.run': {
       agent: true,
@@ -260,10 +267,7 @@ export function operations(services: Services): Methods {
       agent: true,
       summary: 'A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`.',
       params: z.object({ goal: artifactId }).strict(),
-      scope(host, p, caller) {
-        if (!host.goalChain(caller.goal).has(p.goal)) throw outside(`goal.show on ${p.goal}`, caller)
-        return p
-      },
+      scope: inChain('goal.show'),
       handler: (host, p) => host.goal(p.goal),
     },
     'decision.add': {
@@ -273,10 +277,7 @@ export function operations(services: Services): Methods {
         goal: artifactId.optional(), question: decisionSchema.shape.question, options: decisionSchema.shape.options,
         choice: decisionSchema.shape.choice, reason: decisionSchema.shape.reason, restsOn: decisionSchema.shape.restsOn.default([]),
       }).strict(),
-      scope(_host, p, caller) {
-        if (p.goal !== undefined && p.goal !== caller.goal) throw outside(`decision.add for Goal ${p.goal}`, caller)
-        return { ...p, goal: caller.goal }
-      },
+      scope: ownGoal('decision.add'),
       handler(_host, { goal, ...decision }, caller) {
         if (!goal) throw new WorkError('decision.add needs the Goal it is made for')
         return services.addDecision({ goal, ...decision }, caller)
@@ -286,25 +287,17 @@ export function operations(services: Services): Methods {
       agent: true,
       summary: 'The decisions of a Goal and its chain (of every Goal without `goal`), oldest first: `[{ id, at, goal, question, options, choice, reason, restsOn, by, previous? }]`. An orchestrator lists its own Goal\'s.',
       params: z.object({ goal: artifactId.optional() }).strict(),
-      scope(host, p, caller) {
-        if (p.goal !== undefined && !host.goalChain(caller.goal).has(p.goal)) throw outside(`decision.list on ${p.goal}`, caller)
-        return { goal: p.goal ?? caller.goal }
-      },
+      scope: inChain('decision.list'),
       handler: (host, p) => services.decisions(p.goal ? host.goalChain(p.goal) : undefined),
     },
     'goal.brief': {
       agent: true,
       summary: 'What a new Orchestrator session starts from, as text written from records only (no model call): the Goal and its budget left, its Works with status, current step and live progress, its decisions, and what waits (approvals, held, failed, stalled Works): `{ text }`. The same records give the same text.',
       params: z.object({ goal: artifactId }).strict(),
-      scope(host, p, caller) {
-        if (!host.goalChain(caller.goal).has(p.goal)) throw outside(`goal.brief on ${p.goal}`, caller)
-        return p
-      },
+      scope: inChain('goal.brief'),
       handler(host, p) {
-        const view = host.goal(p.goal)
-        const chain = host.goalChain(p.goal)
-        const works = host.list().filter((r) => r.events[0]?.type === 'admitted' && r.events[0].goal !== undefined && chain.has(r.events[0].goal))
-        return { text: brief(view, works, services.decisions(chain), (id) => host.live(id)) }
+        const works = host.list().filter((r) => inScope(host, p.goal, r.id))
+        return { text: brief(host.goal(p.goal), works, services.decisions(host.goalChain(p.goal)), (id) => host.live(id)) }
       },
     },
     'task.new': {
