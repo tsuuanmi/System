@@ -88,10 +88,14 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     ref: 'code.required-checks',
     version: '1',
     capabilities: ['code.required-checks'],
-    accepts: ['git-tree'],
+    // A task on its own (code-checks.yaml alone) has its base commit checked as it is.
+    accepts: ['git-tree', 'task'],
     async criteria({ name, input }) {
       if (!input) throw new Error('the Work has no input task naming a repository')
-      const task = contentOf<Task>(artifacts, input, TASK_KIND.kind)
+      // The checks come from a base the Worker did not write, never from the change itself.
+      const read = artifacts.get(input)
+      if (read.state !== 'stored' || read.envelope.kind !== TASK_KIND.kind) throw new Error('the checks are pinned from a task with a base commit (system task new --repo), not from the change itself')
+      const task = read.envelope.content as Task
       if (!task.base) throw new Error('the input task has no base commit (system task new --repo)')
       const base = contentOf<GitTreeContent>(artifacts, task.base, 'git-tree')
       let text: string
@@ -107,7 +111,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     },
     async verify(request): Promise<VerifyResult> {
       const verdict = (v: VerifyResult['verdict'], reason: string, evidence: string[]): VerifyResult => ({ verdict: v, reason, subject: request.subject, criteria: request.criteria, evidence })
-      const tree = contentOf<GitTreeContent>(artifacts, request.subject, 'git-tree')
+      const subject = artifacts.get(request.subject)
+      const treeId = subject.state === 'stored' && subject.envelope.kind === TASK_KIND.kind ? (subject.envelope.content as Task).base ?? '' : request.subject
+      const tree = contentOf<GitTreeContent>(artifacts, treeId, 'git-tree')
       const checks = contentOf<Checks>(artifacts, request.criteria, CHECKS_KIND.kind)
       const scratch = mkdtempSync(join(tmpdir(), 'system-checks-'))
       const worktree = join(scratch, 'work')

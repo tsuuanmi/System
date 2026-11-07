@@ -11,7 +11,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync }
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
-import { claudeInvocation, codexInvocation, parseClaude, parseCodex, type Runtime } from './runtimes.ts'
+import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
 import { profileLockPid, webAttempt, type WebConfig } from './chatgpt.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
@@ -21,6 +21,8 @@ export const DRAIN_MS = 5000
 /** The wall-clock limit of an attempt when neither the account nor the row sets one. */
 export const DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 60
 const MAX_LOG_BYTES = 256 * 1024
+/** How often a running agent's stdout is read for its progress. */
+const PROGRESS_MS = 500
 
 export interface SpawnSpec {
   argv: string[]
@@ -148,7 +150,18 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     let timedOut = false
     const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
     const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
+    // Output that grew is activity: what it says so far is the attempt's progress.
+    const read = progressReader(account.runtime)
+    let seen = 0
+    const watch = setInterval(() => {
+      const out = spawned.stdout()
+      if (out.length === seen) return
+      seen = out.length
+      request.progress?.(read(out))
+    }, PROGRESS_MS)
+    watch.unref()
     const outcome = await spawned.done.finally(() => {
+      clearInterval(watch)
       clearTimeout(timer)
       request.signal.removeEventListener('abort', forward)
       rmSync(pidFile(attemptsDir, request.attemptId), { force: true })

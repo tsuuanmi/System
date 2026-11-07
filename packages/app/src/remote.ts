@@ -6,9 +6,9 @@
  */
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, type Asserted, type Caller, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
+import { TERMINAL, parseWorkflow, type Asserted, type Caller, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { MAX_FRAME, NotAnswering, NotRunning, fitsFrame, type Client } from '../../host/lib/index.js'
 import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
@@ -42,6 +42,22 @@ async function mutate(client: Client, method: string, params: object): Promise<a
 }
 
 const base64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
+
+/** The Workflow files `text` uses (Sub-workflows), and the ones they use, read from `dir` once each, by name. A file that does not parse is sent as it is: the Host says why. */
+export function usedFiles(text: string, dir: string, found: Record<string, string> = {}): Record<string, string> {
+  let names: string[]
+  try {
+    names = parseWorkflow(text).steps.flatMap((s) => ('uses' in s ? [s.uses] : []))
+  } catch {
+    return found
+  }
+  for (const name of names) {
+    if (Object.hasOwn(found, name)) continue
+    found[name] = readFileSync(join(dir, name), 'utf8')
+    usedFiles(found[name], dir, found)
+  }
+  return found
+}
 
 export function remoteHost(remote: Remote): ClientHost {
   let session: Promise<Client> | undefined
@@ -97,7 +113,10 @@ export function remoteHost(remote: Remote): ClientHost {
   }
 
   const work: WorkCommands = {
-    admitFile: (path, input, goal) => change('work.submit', { workflow: readFileSync(path, 'utf8'), input, goal }),
+    admitFile(path, input, goal) {
+      const workflow = readFileSync(path, 'utf8')
+      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, goal })
+    },
     admitTask: (capabilities, input, goal) => change('work.submit', { capabilities, input, goal }),
     async run(workId, options) {
       await change('work.run', { workId })
@@ -116,6 +135,9 @@ export function remoteHost(remote: Remote): ClientHost {
       }
     },
     goal: (goalId) => read('goal.show', { goal: goalId }) as Promise<GoalView>,
+    brief: async (goalId) => (await read('goal.brief', { goal: goalId }) as { text: string }).text,
+    addDecision: (decision) => read('decision.add', decision),
+    decisions: (goalId) => read('decision.list', goalId ? { goal: goalId } : {}),
     replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,
     cancel: (workId, reason) => change('work.cancel', { workId, reason }),
     async decide(workId, decision, operator, reason) {

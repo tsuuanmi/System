@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: active
-reviewed: 2026-11-05
+reviewed: 2026-11-07
 decided-by: [ADR-0003]
 covers: [packages/artifacts/src/envelope.ts, packages/artifacts/src/canonical.ts, packages/work/src/kinds.ts]
 ---
@@ -128,7 +128,9 @@ the Work), and the controller stores the `verdict@1` Artifact itself after
 refusing, as `error`, a verdict about another subject or other criteria, a
 `pass` without evidence, unstored evidence, or a subject kind the verifier
 does not accept. A verdict whose subject has since been replaced counts as
-`stale`. The two verifiers are described in
+`stale`. Asking a verify step again (`work retry --step`, PROP-0006) runs it
+on the same subject with the same pinned criteria; the earlier verdict stays
+recorded and no longer counts. The two verifiers are described in
 [`@system/verifiers`](../../packages/verifiers/README.md).
 
 **No single review algorithm is mandatory.** The Work Controller checks
@@ -154,7 +156,10 @@ versions ([ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contrac
 decision 9); side effects also need operation identities and reconciliation,
 because content-addressed records cannot prevent duplicate external operations
 after a crash. Retention, garbage collection, read permissions and
-content-hash existence leakage are part of the audit; deleting blob bytes
+content-hash existence leakage are part of the audit;
+a choice made for a Goal by the operator or an Orchestrator is a `decision@1`
+Artifact naming the Artifacts it rests on (PROP-0006), a record and never an
+authority; deleting blob bytes
 while retaining a historical ID must give an explicit `expired` /
 `unavailable` state, not pretend the content exists.
 

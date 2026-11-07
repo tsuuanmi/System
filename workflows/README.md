@@ -5,9 +5,13 @@ read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
 - [software-engineering.yaml](software-engineering.yaml) — `implement`
-  (`code-write`) → `checks` (`code.required-checks`) → `publish`
+  (`code-write`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
   (`git.publish`: the checked commit to `system/<work>`, one draft pull
   request) → `accept`.
+- [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
+  on the input change, criteria pinned from its base). A Sub-workflow of
+  `software-engineering.yaml`; on its own, on a task with a base, it checks that commit as it is.
+  `system work retry <work> --step checks.checks` verifies the same change again.
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`) → `accept`.

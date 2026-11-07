@@ -7,7 +7,7 @@
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
 import { WorkError } from './errors.ts'
-import { GOAL_KIND, TASK_KIND, taskSchema, type Goal } from './kinds.ts'
+import { DECISION_KIND, GOAL_KIND, TASK_KIND, taskSchema, type Goal, type RecordedDecision } from './kinds.ts'
 import { TERMINAL, type Caller, type WorkRecord } from './record.ts'
 import { summarize } from './summary.ts'
 
@@ -29,7 +29,17 @@ export interface GoalStore {
   successors(id: string): string[]
   /** Store a `task@1` like `task` with `context` added to its own: its ID. */
   wrapTask(task: string, context: string[], caller: Caller): Promise<string>
+  /** Store a `decision@1` by `caller`, after the latest decision of its Goal's chain: its ID. */
+  decide(decision: NewDecision, caller: Caller): Promise<{ id: string }>
+  /** The decisions of the Goals in `chain` (all without it), oldest first. */
+  decisions(chain?: ReadonlySet<string>): StoredDecision[]
 }
+
+/** A decision as it is asked for: its author and its place in the order are the store's. */
+export type NewDecision = Omit<RecordedDecision, 'by' | 'previous'>
+
+/** A stored decision, its ID and when it was stored. */
+export type StoredDecision = RecordedDecision & { id: string; at: string }
 
 /** What a Goal's Works have spent. Tokens are fresh input, cache writes and output; an attempt with unknown usage adds none. */
 export interface Spend {
@@ -95,8 +105,24 @@ export function resolveGoal(store: GoalStore, id: string): { view: Omit<GoalView
   return { view: { id, goal: first.goal, current: { id: current.id, goal: current.goal } }, chain }
 }
 
+/** Each after its `previous`; among those ready, the earlier stored first. */
+function inOrder(decisions: StoredDecision[]): StoredDecision[] {
+  const left = [...decisions].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1))
+  const placed = new Set<string>()
+  const ordered: StoredDecision[] = []
+  while (left.length) {
+    const at = Math.max(0, left.findIndex((d) => !d.previous || placed.has(d.previous) || !left.some((o) => o.id === d.previous)))
+    const [next] = left.splice(at, 1)
+    placed.add(next!.id)
+    ordered.push(next!)
+  }
+  return ordered
+}
+
 /** Goals over the Artifact store. */
 export function goalStore(artifacts: Artifacts): GoalStore {
+  // Decisions are recorded one at a time, so each names the one before it.
+  let deciding: Promise<unknown> = Promise.resolve()
   const store: GoalStore = {
     get(id) {
       const read = artifacts.get(id)
@@ -114,6 +140,28 @@ export function goalStore(artifacts: Artifacts): GoalStore {
         ...TASK_KIND, content: { ...content, context: merged }, inputs: [...(content.base ? [content.base] : []), ...merged],
         classification: 'local-private', producer: { type: 'operator', ref: caller.operatorId },
       })).id
+    },
+    decide(decision, caller) {
+      const record = async () => {
+        const { chain } = resolveGoal(store, decision.goal)
+        if (!decision.options.includes(decision.choice)) throw new WorkError(`the choice ${decision.choice} is not one of the options: ${decision.options.join(', ')}`)
+        const previous = store.decisions(chain).at(-1)?.id
+        const stored = await artifacts.put({
+          ...DECISION_KIND, content: { ...decision, by: caller, ...(previous ? { previous } : {}) },
+          inputs: [decision.goal, ...decision.restsOn, ...(previous ? [previous] : [])],
+          classification: 'operator-shared', producer: { type: 'operator', ref: caller.operatorId },
+        })
+        return { id: stored.id }
+      }
+      const done = deciding.then(record, record)
+      deciding = done.catch(() => {})
+      return done
+    },
+    decisions(chain) {
+      return inOrder(artifacts.ofKind(DECISION_KIND.kind)
+        .filter((e) => e.schemaVersion === DECISION_KIND.schemaVersion)
+        .map((e) => ({ ...(e.content as RecordedDecision), id: e.id, at: e.createdAt }))
+        .filter((d) => !chain || chain.has(d.goal)))
     },
   }
   return store

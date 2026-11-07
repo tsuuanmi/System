@@ -82,7 +82,7 @@ function controller(w: ReturnType<typeof world>, options: Options = {}) {
 
 async function admit(c: WorkController, w: ReturnType<typeof world>, yaml = SE) {
   const capabilities = (c as unknown as { capabilities: Capabilities }).capabilities
-  const spec = resolve(parseWorkflow(yaml), capabilities.available())
+  const spec = resolve(parseWorkflow(yaml), capabilities.available(), (name) => readFileSync(join(repo, 'workflows', name), 'utf8'))
   return c.admit({ spec, input: w.store('task', 'task'), caller: human, source: { kind: 'workflow-file' } })
 }
 
@@ -115,7 +115,7 @@ test('nothing is published unless the required verdict passed on that exact subj
   const unsure = world()
   const notPublished = await controller(unsure, { verdict: 'inconclusive' }).run((await admit(controller(unsure, { verdict: 'inconclusive' }), unsure)).id)
   assert.equal(notPublished.state.status, 'failed')
-  assert.match(notPublished.state.reason!, /publish needs a passing verdict on its subject: checks=inconclusive/)
+  assert.match(notPublished.state.reason!, /publish needs a passing verdict on its subject: checks\.checks=inconclusive/)
   assert.equal(notPublished.state.awaiting, undefined)
   assert.equal(unsure.remote.applies + failing.remote.applies, 0)
 })
@@ -223,7 +223,7 @@ test('an inconclusive verdict is accepted only by a human decision', async () =>
   await assert.rejects(() => c.decide(held.id, { decision: 'approved', caller: agent, reason: 'x' }), /only a human operator approves/)
   const done = await c.decide(held.id, { decision: 'approved', caller: human, reason: 'the source is right; the page moved' })
   assert.equal(done.state.status, 'succeeded')
-  assert.match(done.state.reason!, /accepted by tan despite inconclusive checks: the source is right; the page moved/)
+  assert.match(done.state.reason!, /accepted by tan despite inconclusive checks\.checks: the source is right; the page moved/)
   await assert.rejects(() => c.decide(done.id, { decision: 'approved', caller: human, reason: 'again' }), /nothing awaits a decision/)
 })
 

@@ -18,6 +18,9 @@ const id = (text: string) => `sha256:${createHash('sha256').update(text).digest(
 
 export const caller = { type: 'human', operatorId: 'tan' } as const
 
+/** A Workflow file of workflows/ by name: what `resolve` reads the Sub-workflows a Workflow uses from. */
+export const workflowFile = (name: string): string => readFileSync(join(repo, 'workflows', name), 'utf8')
+
 /** mulberry32: the same seed gives the same sequence of numbers in [0, 1). */
 export function seeded(seed: number): () => number {
   let a = seed >>> 0
@@ -52,8 +55,12 @@ export interface Fixture {
   admission(file: string): Admission
   /** What the fake publisher's `reconcile` reports about the remote. */
   remote: { state: 'applied' | 'absent' | 'unknown' }
-  /** Start a Host over this fixture's table, Artifacts and Workers, locked to `home`. */
-  startHost(home: string): Promise<Host>
+  /** The verdicts the fake verifier gives next, in order; `pass` once they are used up. */
+  verdicts: Verdict['verdict'][]
+  /** A Workflow file of workflows/ by name, as the CLI sends the files a Workflow uses. */
+  files(name: string): string
+  /** Start a Host over this fixture's table, Artifacts and Workers, locked to `home`; `stallMinutes` as the Host takes it. */
+  startHost(home: string, options?: { stallMinutes?: number }): Promise<Host>
 }
 
 /** The two Accounts of the fake Workers: Brainstorm's proposals use different ones, as the bundle's do. */
@@ -89,6 +96,7 @@ export function fixture(options: { seed?: number; slots?: number; goals?: Artifa
   const delay = async () => { for (let n = Math.floor((random?.() ?? 0) * 9); n > 0; n--) await turn() }
 
   const remote: Fixture['remote'] = { state: 'absent' }
+  const next: Verdict['verdict'][] = []
   const capabilities = new Capabilities()
   const worker = (ref: string, offered: string[]) => capabilities.registerWorker({
     ref,
@@ -127,7 +135,7 @@ export function fixture(options: { seed?: number; slots?: number; goals?: Artifa
       await delay()
       const evidence = id(`evidence/${request.attemptId}`)
       stored.add(evidence)
-      return { verdict: 'pass', reason: 'scripted', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
+      return { verdict: next.shift() ?? 'pass', reason: 'scripted', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
     },
   })
   capabilities.registerEffect({
@@ -140,13 +148,13 @@ export function fixture(options: { seed?: number; slots?: number; goals?: Artifa
   const table = memoryWorkTable()
   const controller = new WorkController(table, specStore, capabilities)
   return {
-    controller, capabilities, table, attempts, remote, peak,
+    controller, capabilities, table, attempts, remote, peak, verdicts: next, files: workflowFile,
     hold: (stepId) => { held.add(stepId) },
     arrived: (stepId, count = 1) => ((arrived.get(stepId) ?? 0) >= count ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, [...(arrivals.get(stepId) ?? []), { count, go }]))),
     release: (stepId) => { held.delete(stepId); for (const go of waiting.get(stepId) ?? []) go(); waiting.delete(stepId) },
     gone: (attemptId) => { goneAttempts.add(attemptId) },
     admission(file) {
-      const spec = resolve(parseWorkflow(readFileSync(join(repo, 'workflows', file), 'utf8')), capabilities.available())
+      const spec = resolve(parseWorkflow(workflowFile(file)), capabilities.available(), workflowFile)
       const input = id('the task')
       stored.add(input)
       return { spec, input, caller, source: { kind: 'workflow-file', path: file } }
@@ -154,7 +162,7 @@ export function fixture(options: { seed?: number; slots?: number; goals?: Artifa
     admit(file) {
       return controller.admit(this.admission(file))
     },
-    startHost: (home) => Host.start({ home, table, specs: specStore, capabilities }),
+    startHost: (home, more) => Host.start({ home, table, specs: specStore, capabilities, ...more }),
   }
 }
 

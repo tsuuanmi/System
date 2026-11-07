@@ -22,7 +22,7 @@ steps:
 
 function problems(yaml: string, caps: AvailableCapabilities = available): string[] {
   try {
-    resolve(parseWorkflow(yaml), caps)
+    resolve(parseWorkflow(yaml), caps, fixture)
   } catch (error) {
     assert.ok(error instanceof WorkflowError, String(error))
     return error.problems
@@ -31,9 +31,9 @@ function problems(yaml: string, caps: AvailableCapabilities = available): string
 }
 
 test('both repository Workflow files parse and resolve with the same schema', () => {
-  const se = resolve(parseWorkflow(fixture('software-engineering.yaml')), available)
+  const se = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
   const research = resolve(parseWorkflow(fixture('research.yaml')), available)
-  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks', 'publish', 'accept'])
+  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks.checks', 'publish', 'accept'])
   assert.deepEqual(research.steps.map((s) => s.id), ['investigate', 'citations', 'accept'])
   assert.deepEqual(se.workflow, { id: 'software-engineering', version: 1 })
 })
@@ -127,7 +127,7 @@ test('capabilities no enabled Worker or verifier provides are refused before any
   const found = problems(fixture('software-engineering.yaml'), none)
   assert.deepEqual(found, [
     'step implement needs Worker capability code-write, which no enabled Worker provides',
-    'step checks needs verifier code.required-checks, which no enabled verifier provides',
+    'step checks.checks needs verifier code.required-checks, which no enabled verifier provides',
     'step publish needs effect git.publish, which no enabled effect provider offers',
   ])
 })
@@ -174,4 +174,80 @@ test('an effect step is refused when its provider is missing, its requirements a
   assert.match(problems(publishing(ok.replace('requires: [checks]', 'requires: []')), withEffects).join(';'), /requires|too_small|>=1/i)
   const twoOutputs = publishing(ok).replace('outputs: [change]', 'outputs: [change, notes]').replace('subject: $steps.implement.change\n      requires', 'subject: $steps.implement.notes\n      requires')
   assert.match(problems(twoOutputs, withEffects).join(';'), /publish publishes \$steps\.implement\.notes, but checks verified \$steps\.implement\.change/)
+})
+
+/** Workflow files by name, as the CLI sends the files a Workflow uses. */
+const files = (texts: Record<string, string>) => (name: string) => {
+  const text = texts[name]
+  if (text === undefined) throw new WorkflowError([`uses ${name}: no such file was given`])
+  return text
+}
+
+const review = `schema: system.workflow/v1
+id: review
+version: 1
+steps:
+  - id: write
+    capabilities: [research]
+    inputs: { task: $work.input }
+    outputs: [report]
+  - id: check
+    dependsOn: [write]
+    verify: { capability: research.citation-check, subject: $steps.write.report, criteria: c1 }
+`
+
+test('a step that uses another Workflow is expanded in place, with namespaced step IDs, references and dependencies', () => {
+  const outer = `${base}  - id: implement
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+  - id: second
+    dependsOn: [implement]
+    uses: review.yaml
+    inputs: { input: $steps.implement.change }
+    outputs: { report: $steps.write.report }
+  - id: publish
+    dependsOn: [second]
+    effect: { capability: git.publish, subject: $steps.second.report, requires: [second.check] }
+  - id: accept
+    dependsOn: [publish]
+    accept: { requires: [second.check] }
+`
+  const spec = resolve(parseWorkflow(outer), available, files({ 'review.yaml': review }))
+  assert.deepEqual(spec.steps.map((s) => s.id), ['implement', 'second.write', 'second.check', 'publish', 'accept'])
+  assert.deepEqual(spec.steps[1], { id: 'second.write', dependsOn: ['implement'], capabilities: ['research'], inputs: { task: '$steps.implement.change' }, outputs: ['report'] })
+  assert.deepEqual(spec.steps[2], { id: 'second.check', dependsOn: ['second.write'], verify: { capability: 'research.citation-check', subject: '$steps.second.write.report', criteria: 'c1' } })
+  assert.deepEqual(spec.steps[3], { id: 'publish', dependsOn: ['second.check', 'second.write'], effect: { capability: 'git.publish', subject: '$steps.second.write.report', requires: ['second.check'] } })
+  // The same files give the same spec; a Workflow without `uses` resolves as before.
+  assert.deepEqual(resolve(parseWorkflow(outer), available, files({ 'review.yaml': review })), spec)
+  assert.deepEqual(resolve(parseWorkflow(review), available), resolve(parseWorkflow(review), available, files({})))
+})
+
+test('Sub-workflows: recursion, depth 4, a missing file, an accept step inside and a dotted step ID are refused', () => {
+  const using = (id: string, name: string) => `schema: system.workflow/v1
+id: ${id}
+version: 1
+steps:
+  - id: inner
+    uses: ${name}
+`
+  const refused = (outer: string, texts: Record<string, string>) => {
+    try {
+      resolve(parseWorkflow(outer), available, files(texts))
+    } catch (error) {
+      assert.ok(error instanceof WorkflowError, String(error))
+      return error.problems.join('; ')
+    }
+    assert.fail('expected the workflow to be refused')
+  }
+  assert.match(refused(using('a', 'b.yaml'), { 'b.yaml': using('b', 'a.yaml'), 'a.yaml': using('a', 'b.yaml') }), /recursion: a -> b -> a/)
+  assert.match(refused(using('a', 'a.yaml'), { 'a.yaml': using('a', 'a.yaml') }), /recursion: a -> a/)
+  // Three levels of uses are allowed; the fourth is refused.
+  const chain = { 'l1.yaml': using('l1', 'l2.yaml'), 'l2.yaml': using('l2', 'l3.yaml'), 'l3.yaml': review }
+  assert.deepEqual(resolve(parseWorkflow(using('top', 'l1.yaml')), available, files(chain)).steps.map((s) => s.id), ['inner.inner.inner.write', 'inner.inner.inner.check'])
+  assert.match(refused(using('top', 'l1.yaml'), { ...chain, 'l3.yaml': using('l3', 'l4.yaml'), 'l4.yaml': review }), /deeper than 3/)
+  assert.match(refused(using('top', 'nope.yaml'), {}), /nope\.yaml/)
+  assert.match(refused(using('top', 'acc.yaml'), { 'acc.yaml': `${review}  - id: accept\n    dependsOn: [check]\n    accept: { requires: [check] }\n` }), /accept step/)
+  assert.match(refused(`${base}  - id: a.b\n    capabilities: [research]\n    outputs: [x]\n`, {}), /a\.b/)
+  assert.match(refused(`${base}  - id: s\n    uses: ../escape.yaml\n`, {}), /uses/)
 })

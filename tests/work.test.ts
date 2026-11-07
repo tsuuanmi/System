@@ -86,6 +86,7 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   rmSync(log, { force: true })
   const file = join(home, 'se.yaml')
   copyFileSync(join(repo, 'workflows', 'software-engineering.yaml'), file)
+  copyFileSync(join(repo, 'workflows', 'code-checks.yaml'), join(home, 'code-checks.yaml'))
   await host({ SYSTEM_FAKE_CRASH_AT: 'implement' })
   const crashed = system(['work', 'submit', '--workflow', file, '--input', input])
   assert.equal(crashed.signal, null, 'the CLI survives; the Host was killed')

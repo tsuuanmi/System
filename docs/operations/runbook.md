@@ -361,6 +361,14 @@ exits 0; the Work is not touched. With `--cancel-on-interrupt` Ctrl-C sends
 detaches. Closing the terminal or killing the CLI never cancels a Work: only
 `system work cancel` does. Read what happened with `system work show <id>`.
 
+While Worker attempts run, `work show` also prints `live`: for each attempt
+its start, last activity, elapsed and quiet seconds, and what its Runtime last
+reported (Claude Code and Codex: turns, the last tool, tokens so far). An
+attempt quiet for `stallMinutes` (10 by default; the `work` row's config) is
+`stalled: true`, and watchers get one `work.changed` with `stalled: true`. A
+stall is a notice, not a verdict: the attempt is not stopped. `live` is never
+recorded; it is gone once the attempt reports.
+
 ## Goals and their budget
 
 A Goal bounds what an agent session may spend. Write one at a terminal:
@@ -405,11 +413,22 @@ With `--goal` it is an Orchestrator for that Goal. It may:
 Each Work in scope is also an MCP resource, `system://work/<id>`; reading it
 gives `work.show`. To be told instead of polling, subscribe to it
 (`resources/subscribe`): the server sends `notifications/resources/updated`
-when the Work becomes terminal, is held, or waits for approval. With `--goal`
+when the Work becomes terminal, is held, waits for approval, or one of its
+attempts stalls. With `--goal`
 it also sends `notifications/resources/list_changed` when a new Work of the
 Goal appears. A notice only wakes the session: read the Work's events with
 `work.events` from your last `seq`. A session that was away misses no event,
 only the wake-up.
+
+**Replacing the Orchestrator session.** Its state lives in System, so a new
+session takes over like a new Worker: it starts from `goal.brief` (`system goal
+brief <goal>`: the Goal and its budget left, its Works with their current step
+and live progress, its decisions, and what waits), and records each choice it
+makes with `decision.add` (`system decision add`: question, options, choice,
+reason, and the Artifacts it rests on, such as a synthesis or a review). A
+decision is a record, never an authority. When a check failed for a reason
+outside the change, it records that and tells the operator: only a human
+runs `system work retry <work> --step checks.checks`.
 
 It cannot approve or deny, store a conversation, set credentials, write a Goal,
 sign an account in, or merge into `main`. It is refused, with the reason, any

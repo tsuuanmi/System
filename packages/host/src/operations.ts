@@ -6,7 +6,8 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewGoal, type WorkEvent, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, WorkError, WorkflowError, contentIdSchema as artifactId, assertedSchema, decisionSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewDecision, type NewGoal, type StoredDecision, type WorkEvent, type WorkRecord } from '@system/work'
+import { brief } from './brief.ts'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, inScope, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -21,6 +22,10 @@ export interface Services {
   /** Store a `goal@1`; without `context`, the Charter is stored and used. `supersedes` is the Goal it raises or changes. */
   newGoal(goal: NewGoal, supersedes: string | undefined, caller: Caller): Promise<{ id: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<{ id: string }>
+  /** Store a `decision@1` by `caller`, after the latest one of its Goal's chain. */
+  addDecision(decision: NewDecision, caller: Caller): Promise<{ id: string }>
+  /** The decisions of the Goals in `chain` (all without it), oldest first. */
+  decisions(chain?: ReadonlySet<string>): StoredDecision[]
   credentials: {
     set(name: string, value: string): Promise<void>
     describe(name: string): Promise<{ configured: boolean; source?: string }>
@@ -45,6 +50,12 @@ const bytesOf = (p: z.infer<typeof part>) => ({ name: p.name, data: Buffer.from(
 const conversationOf = (p: z.infer<typeof parts>): ConversationParts => ({
   response: bytesOf(p.response), ...(p.prompt ? { prompt: bytesOf(p.prompt) } : {}), attachments: p.attachments.map(bytesOf),
 })
+
+/** The Workflow files a submit sent, by name. */
+const usedFile = (files: Record<string, string>) => (name: string): string => {
+  if (!Object.hasOwn(files, name)) throw new WorkflowError([`no file ${name} was sent with the Workflow (uses)`])
+  return files[name]!
+}
 
 const known = (host: Host, id: string): WorkRecord => {
   const record = host.get(id)
@@ -123,6 +134,16 @@ export function operations(services: Services): Methods {
     if (!inScope(host, caller.goal, p.workId)) throw outside(`${name} on ${p.workId}`, caller)
     return p
   }
+  /** A row that names a Goal: it may only be the orchestrator's own, which is filled in when absent. */
+  const ownGoal = (name: string): Method['scope'] => (_host, p, caller) => {
+    if (p.goal !== undefined && p.goal !== caller.goal) throw outside(`${name} for Goal ${p.goal}`, caller)
+    return { ...p, goal: caller.goal }
+  }
+  /** A row that reads a Goal: one of the orchestrator's chain, its own when absent. */
+  const inChain = (name: string): Method['scope'] => (host, p, caller) => {
+    if (p.goal !== undefined && !host.goalChain(caller.goal).has(p.goal)) throw outside(`${name} on ${p.goal}`, caller)
+    return { ...p, goal: p.goal ?? caller.goal }
+  }
   const ofArtifact = (name: string): Method['scope'] => (host, p, caller) => {
     if (!scopedArtifacts(host, services, caller).has(p.id)) throw outside(`${name} on ${p.id}`, caller)
     return p
@@ -130,20 +151,17 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent.',
-      params: z.object({ workflow: z.string().min(1).optional(), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), commandId }).strict()
+      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` holds the contents of the Workflow files it uses (Sub-workflows), by file name; they are joined into the pinned spec now. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent.',
+      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
         const available = services.capabilities.available()
         const admission: Admission = p.workflow
-          ? { spec: resolve(parseWorkflow(p.workflow), available), input: p.input, goal: p.goal, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
+          ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses)), input: p.input, goal: p.goal, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
           : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId })
       },
-      scope(_host, p, caller) {
-        if (p.goal !== undefined && p.goal !== caller.goal) throw outside(`work.submit for Goal ${p.goal}`, caller)
-        return { ...p, goal: caller.goal }
-      },
+      scope: ownGoal('work.submit'),
     },
     'work.run': {
       agent: true,
@@ -155,7 +173,7 @@ export function operations(services: Services): Methods {
     'work.retry': {
       agent: true,
       scope: ofWork('work.retry'),
-      summary: 'Run a Worker step of failed, cancelled or held Work again as a new attempt, and return its record once it is running.',
+      summary: 'Run a step of failed, cancelled or held Work again as a new attempt, and return its record once it is running; the steps after it are reset. A verify step is asked again on the same subject with the same pinned criteria, by a human caller only; its earlier verdict stays recorded and no longer counts.',
       params: z.object({ workId, step: z.string().min(1).optional(), worker: z.string().min(1).optional(), reason: z.string().default('retried by the operator'), commandId }).strict(),
       handler: (host, p, caller) => started(host, p.workId, (go) => host.retry(p.workId, { step: p.step, worker: p.worker, reason: p.reason, caller, commandId: p.commandId, started: go })),
     },
@@ -169,9 +187,13 @@ export function operations(services: Services): Methods {
     'work.show': {
       agent: true,
       scope: ofWork('work.show'),
-      summary: 'The Work record: events and state.',
+      summary: 'The Work record: events and state; while Worker attempts run, also `live`: per attempt its step, Worker, start, last activity, elapsed and quiet seconds, whether it is stalled, and the `progress` its Runtime last reported (turns, last tool, tokens, stage). `live` is an observation of the moment, never part of the record.',
       params: z.object({ workId }).strict(),
-      handler: (host, p) => known(host, p.workId),
+      handler(host, p) {
+        const record = known(host, p.workId)
+        const live = host.live(p.workId)
+        return live.length ? { ...record, live } : record
+      },
     },
     'work.list': {
       agent: true,
@@ -212,7 +234,7 @@ export function operations(services: Services): Methods {
     'work.watch': {
       agent: true,
       scope: (host, p, caller) => watchScope(host, p, caller, 'work.watch'),
-      summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval. With `goal`, instead one for each new Work of the Goal, with `seq` 0. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`.',
+      summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. With `goal`, instead one for each new Work of the Goal, with `seq` 0, and the stall notices of its Works. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`.',
       params: watching,
       handler: (host, p, _caller, link) => watch(host, p, link, true),
     },
@@ -245,11 +267,38 @@ export function operations(services: Services): Methods {
       agent: true,
       summary: 'A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`.',
       params: z.object({ goal: artifactId }).strict(),
-      scope(host, p, caller) {
-        if (!host.goalChain(caller.goal).has(p.goal)) throw outside(`goal.show on ${p.goal}`, caller)
-        return p
-      },
+      scope: inChain('goal.show'),
       handler: (host, p) => host.goal(p.goal),
+    },
+    'decision.add': {
+      agent: true,
+      summary: 'Record a choice made for a Goal as a `decision@1` Artifact: the question, the options, the choice, the reason and the Artifacts it rests on (`restsOn`), after the latest decision of the Goal\'s chain: `{ id }`. A record, never an authority. An orchestrator records only for its own Goal.',
+      params: z.object({
+        goal: artifactId.optional(), question: decisionSchema.shape.question, options: decisionSchema.shape.options,
+        choice: decisionSchema.shape.choice, reason: decisionSchema.shape.reason, restsOn: decisionSchema.shape.restsOn.default([]),
+      }).strict(),
+      scope: ownGoal('decision.add'),
+      handler(_host, { goal, ...decision }, caller) {
+        if (!goal) throw new WorkError('decision.add needs the Goal it is made for')
+        return services.addDecision({ goal, ...decision }, caller)
+      },
+    },
+    'decision.list': {
+      agent: true,
+      summary: 'The decisions of a Goal and its chain (of every Goal without `goal`), oldest first: `[{ id, at, goal, question, options, choice, reason, restsOn, by, previous? }]`. An orchestrator lists its own Goal\'s.',
+      params: z.object({ goal: artifactId.optional() }).strict(),
+      scope: inChain('decision.list'),
+      handler: (host, p) => services.decisions(p.goal ? host.goalChain(p.goal) : undefined),
+    },
+    'goal.brief': {
+      agent: true,
+      summary: 'What a new Orchestrator session starts from, as text written from records only (no model call): the Goal and its budget left, its Works with status, current step and live progress, its decisions, and what waits (approvals, held, failed, stalled Works): `{ text }`. The same records give the same text.',
+      params: z.object({ goal: artifactId }).strict(),
+      scope: inChain('goal.brief'),
+      handler(host, p) {
+        const works = host.list().filter((r) => inScope(host, p.goal, r.id))
+        return { text: brief(host.goal(p.goal), works, services.decisions(host.goalChain(p.goal)), (id) => host.live(id)) }
+      },
     },
     'task.new': {
       agent: true,

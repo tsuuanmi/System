@@ -785,6 +785,86 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
   brief) ran `idea-a` on `default` and `idea-b` on `second` (one launch
   timeout, retried), synthesis on Claude: every step succeeded.
 
+### OC — A replaceable Orchestrator, and the checks as a Sub-workflow ([PROP-0006](docs/proposals/PROP-0006-replaceable-orchestrator-and-code-checks.md))
+
+Decided by the operator on 2026-11-07, built from `dev` as one pull request
+by the Development session, apart from the Website Worker programme on
+`web-workers` (whose PLAN records milestone WW). Each step with a test that
+failed first; the acceptance list is in PROP-0006.
+
+- [x] OC1. `decision@1`, `system decision add|list` (`decision.add` agent,
+  Goal-scoped).
+- [x] OC2. Live attempt progress in the Host (`work show`), and the stall
+  notice after `stallMinutes`.
+- [x] OC3. `system goal brief` / `goal.brief`, generated from records.
+- [x] OC4. Sub-workflows in the Workflow compiler (ADR-0002 amendment).
+- [x] OC5. `workflows/code-checks.yaml`, used by `software-engineering.yaml`,
+  and `work retry --step` on a verify step ("verify again").
+- [x] Growth recorded (core lines, docs, check time) and a simplification
+  pass, as for every milestone.
+
+**Growth at OC** (measured from `orchestrator-continuity` at `a4862d7`, the
+same line counts before and after; all checks with `env -i PATH LANG
+HOME=<fresh> CI=1`, the machine at a load average of about 270):
+
+| Measure | Before OC | OC, before → after the pass |
+|---|---|---|
+| Active core (`packages/work/src`, `packages/artifacts/src`), lines | 3,076 | 3,403 → 3,403 (+327, +10.6%; +46.9% over the PR #3 baseline) |
+| All package source, lines | 10,505 | 11,069 → 11,062 |
+| Tests, lines | 9,162 | 9,540 → 9,540 |
+| Docs under `docs/`, lines (files) | 4,786 (46) | 4,821 (46) → 4,821 (46) (+35) |
+| Required checks | not measured | docs 0.4 s, install 12 s, build 33 s, typecheck 10 s, unit 3 min 14 s (463 pass, 1 fail, see below), smoke 1 min 32 s (73 pass): 5 min 44 s |
+
+- **Core: over budget, justified.** The +327 lines are behaviour asked for
+  by PROP-0006, none of it duplication: Sub-workflows in the compiler (about
+  110 lines of `workflow.ts`), live progress and the stall timer (`live.ts`,
+  88), decisions in the Goal store with their kind and `Artifacts.ofKind`
+  (about 80), and the `work` row's config, the verify-step retry and the
+  controller's dotted step IDs (about 50). The brief lives in `packages/host`,
+  outside the core. The operator then measured the budget from here
+  ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)): 3,403
+  lines, +10% per milestone, paid back within the milestone.
+- **Docs: +35 lines**, the new facts only (the `uses` step, verify again,
+  `live` and stalls, replacing the Orchestrator); the package READMEs carry
+  the rest. Docs were over the 4,285-line limit before OC (the WW programme's
+  documents); OC does not pay that down.
+- **Check time: over the 3-minute goal on this machine.** The unit check took
+  3 min 14 s against 38 s at F, with the machine at a load average of about
+  270 (other users' sessions). The same commands measured 2 min 28 s at F.
+  It is measured again on a quiet machine once OC is on `dev`, and the row
+  above corrected; a unit check still over 1 minute is then a defect of the
+  next milestone (operator, 2026-11-07). The merge does not wait for it.
+- **One flaky test, outside OC:** `packages/agents/tests/chatgpt.test.ts`
+  "a page that is neither signed in nor signed out" failed once in the full
+  run (Chrome did not start within its 1.5 s launch timeout under load) and
+  passed 24/24 alone. It belongs to the web Runtime (WW) and is a defect to
+  fix there (Charter 12).
+- **Default tests have no Website Worker and no browser** (operator,
+  2026-11-07): the unit and smoke checks run without headed Chrome or Xvfb;
+  those tests run apart (`test:web`, introduced on `web-workers`).
+- **Review fixes before the merge** (operator, 2026-11-07): the human's
+  approval type is `Approval`, apart from `decision@1`; only a human verifies
+  a step again (an agent would otherwise keep the luckiest run, so it records
+  a decision and tells the operator); `code.required-checks` pins its checks
+  only from a task's base commit, never from the change itself.
+- **Simplification pass:** the orchestrator scopes of the Goal rows became
+  two helpers (`ownGoal`, `inChain`); `goal.brief` uses `inScope`. No
+  feature was dropped.
+
+### Core debt ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md))
+
+After OC and WW are on `dev`, so it does not compete with them for code:
+
+- [ ] A System Work (Sonnet) reads `packages/work/src` and
+  `packages/artifacts/src` and proposes cuts, each with its line count and
+  what would stop working. First look: `controller.ts` (945 lines; its
+  effect and reconcile part, about 150, apart), `conversation.ts` (120, if
+  `conversation@1` is no longer used).
+- [ ] The operator decides each: drop the feature, or keep it.
+- [ ] Each cut is its own pull request, with tests showing the rest behaves
+  the same.
+- [ ] The core's line count is recorded after each.
+
 ## 4. After Brainstorm — future, not current gates
 
 - [x] Website Worker for interactive/browser-assisted Research **only when**

@@ -2,6 +2,7 @@
  * How each agent CLI is invoked headless and how its output is read
  * (ADR-0004 decision 6, ADR-0005). Pure functions; spawning is the adapter's.
  */
+import type { Progress } from '@system/work'
 import type { Workspace } from './workspace.ts'
 
 export type Runtime = 'claude-code' | 'codex' | 'chatgpt-web'
@@ -174,5 +175,42 @@ export function parseCodex(stdout: string): Parsed {
           source: `codex turn.completed usage over ${turns} turn(s) (input_tokens includes cached_input_tokens)`,
         }
       : undefined,
+  }
+}
+
+/**
+ * Read an agent's progress from its stdout as it grows: call the reader with
+ * the whole stdout so far; it parses only the complete lines it has not seen.
+ * Claude Code: a turn is an assistant message (one message may stream as
+ * several events), the last tool is the last `tool_use`, tokens are fresh
+ * input, cache writes and output per message. Codex: a turn is a
+ * `turn.completed`, the last tool the type of the last item completed.
+ */
+export function progressReader(runtime: 'claude-code' | 'codex'): (stdout: string) => Progress {
+  let consumed = 0
+  const messages = new Map<string, number>()
+  let turns = 0
+  let tokens = 0
+  let lastTool: string | undefined
+  const n = (value: unknown) => (Number.isInteger(value) ? (value as number) : 0)
+  return (stdout) => {
+    const end = stdout.lastIndexOf('\n') + 1
+    for (const line of stdout.slice(consumed, Math.max(consumed, end)).split('\n')) {
+      let event: any
+      try { event = JSON.parse(line) } catch { continue }
+      if (runtime === 'claude-code' && event?.type === 'assistant' && event.message) {
+        const u = event.message.usage ?? {}
+        messages.set(String(event.message.id ?? messages.size), n(u.input_tokens) + n(u.cache_creation_input_tokens) + n(u.output_tokens))
+        for (const part of event.message.content ?? []) if (part?.type === 'tool_use' && typeof part.name === 'string') lastTool = part.name
+      }
+      if (runtime === 'codex' && event?.type === 'turn.completed') {
+        turns += 1
+        tokens += n(event.usage?.input_tokens) - n(event.usage?.cached_input_tokens) + n(event.usage?.output_tokens)
+      }
+      if (runtime === 'codex' && event?.type === 'item.completed' && typeof event.item?.type === 'string' && event.item.type !== 'agent_message') lastTool = event.item.type
+    }
+    consumed = Math.max(consumed, end)
+    const counted = runtime === 'claude-code' ? { turns: messages.size, tokens: [...messages.values()].reduce((a, b) => a + b, 0) } : { turns, tokens }
+    return { turns: counted.turns, ...(lastTool ? { lastTool } : {}), tokens: counted.tokens }
   }
 }
