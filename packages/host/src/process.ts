@@ -53,6 +53,8 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
   const onDisk = options.codeVersion ?? (() => diskVersion())
   let stopping: Promise<void> | undefined
   let upgrading = false
+  /** The code this Host is upgrading to, once it is. */
+  let target: string | undefined
   let finish!: (status: number) => void
   const exited = new Promise<number>((resolve) => { finish = resolve })
   const stop = () => stopping ??= (async () => {
@@ -69,6 +71,7 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
    */
   const upgrade = async (now: string): Promise<void> => {
     upgrading = true
+    target = now
     options.log(`upgrading: this Host runs ${version}, the code on disk is ${now}; no new attempt starts, running ones finish, then this Host exits ${UPGRADE_EXIT}`)
     await options.host.drain()
     if (stopping) return
@@ -83,13 +86,13 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
     })()
   }
 
-  /** A hello of another version asks the disk at once; the Host upgrades only to the code that client was built from. */
-  const asked = (clientVersion: string): boolean => {
+  /** A hello of another version asks the disk at once; the Host upgrades only to the code that client was built from. Returns the code it is upgrading to, if it is. */
+  const asked = (clientVersion: string): string | undefined => {
     if (!upgrading && !stopping) {
       const now = onDisk()
       if (now === clientVersion && now !== version) void upgrade(now)
     }
-    return upgrading
+    return upgrading ? target : undefined
   }
 
   const served = await serve(options.host, { path, methods: operations(options.services), version, upgrading: asked })

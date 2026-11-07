@@ -19,7 +19,7 @@ const CONNECT_RETRY = 3000
 export async function main(args: string[], home: string): Promise<number> {
   const out = (text: string) => { process.stdout.write(text) }
   const err = (text: string) => { process.stderr.write(text) }
-  const open = (who: Caller): Promise<Client> => connectHello(socketPath(home), { version: VERSION, caller: who, retry: CONNECT_RETRY })
+  const open = (who: Caller, options: { readOnly?: boolean } = {}): Promise<Client> => connectHello(socketPath(home), { version: VERSION, caller: who, retry: CONNECT_RETRY, ...options })
   if (args[0] === 'mcp') return runMcp(args.slice(1), home, open)
   let selected: Run | undefined
   const io = { out, err, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }

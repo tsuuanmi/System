@@ -128,7 +128,9 @@ code every 10 s and restarts itself on new code.
    that was interrupted does.
 
 A command run meanwhile waits up to 3 s for the swap before it says the Host
-is not running. If the Host is still draining, `system host`'s log says what it
+is not running. While the Host waits on a long attempt, a CLI of the new code
+can still read (`work show`, `work list`, `workers`); a command that changes
+something says the Host is upgrading, and to retry once it has restarted. If the Host is still draining, `system host`'s log says what it
 waits for; `systemctl --user restart system` (or SIGTERM) stops it at once and
 interrupts the attempts, as any stop does. After a build that is still
 half-written the new Host may fail to start: build again, then
