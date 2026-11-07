@@ -1,17 +1,31 @@
 # Required checks System runs on a change to this repository
 # (code.required-checks, pinned from the base commit at admission).
+#
+# The verifier runs every check in order in ONE worktree with ONE throwaway
+# HOME, so the checks share what earlier ones produced: `install` and `build`
+# run once and the later checks reuse node_modules and dist. One check per
+# part, so a failure names the part that failed. No shared package store: the
+# install takes under 10 s from an empty HOME, so leaking host state into the
+# check would buy nothing.
 checks:
   - name: docs
     run: python3 tools/docs.py check && python3 tools/docs.py sync --check
     timeoutSeconds: 120
+  - name: install
+    run: corepack pnpm install --frozen-lockfile
+    timeoutSeconds: 300
+  - name: build
+    run: corepack pnpm build
+    timeoutSeconds: 300
+  - name: typecheck
+    run: corepack pnpm typecheck
+    timeoutSeconds: 300
   - name: unit
-    # A clean install in the fresh worktree (the verifier gives it its own
-    # HOME), then build, typecheck and the unit tests; the smoke tests boot
-    # DSH hosts and stay with `corepack pnpm check`.
-    run: corepack pnpm install --frozen-lockfile && corepack pnpm build && corepack pnpm typecheck && corepack pnpm test
-    timeoutSeconds: 600
+    run: corepack pnpm test
+    timeoutSeconds: 300
   - name: smoke
-    # The booted-profile smoke tests (bin/system against throwaway DSH homes);
-    # they caught what the unit tests missed when the lock format changed.
-    run: corepack pnpm install --frozen-lockfile && corepack pnpm build && corepack pnpm smoke
-    timeoutSeconds: 900
+    # The booted-profile smoke tests (bin/system against throwaway DSH homes,
+    # test files in parallel); they caught what the unit tests missed when the
+    # lock format changed.
+    run: corepack pnpm smoke
+    timeoutSeconds: 600

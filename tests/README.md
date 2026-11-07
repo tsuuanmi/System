@@ -6,7 +6,10 @@ Offline tests of the booted `system` profile. Each creates a throwaway
 profile and credentials when it starts, so a test restarts it after changing
 them), and drives the real CLI, which is a thin client of that Host. They need
 `corepack pnpm install` and `corepack pnpm build` first, and no model or
-GitHub credentials. Run with `corepack pnpm smoke`.
+GitHub credentials. Run with `corepack pnpm smoke`: the test files run in
+parallel (`--test-concurrency=16`), which is safe because each file owns its
+home (so its Host lock and socket), its repositories and its ports, and shares
+nothing else.
 
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
 - [host-process.test.ts](host-process.test.ts) — H4a: `bin/system host` as a
