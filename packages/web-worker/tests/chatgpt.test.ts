@@ -521,6 +521,31 @@ test('an output with no block of its name is filled from the Markdown text, and 
   assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { report: 'text' })
 })
 
+// WW5d (live 2026-11-08, chatgpt-web/default): the site shows "~~~~report" as paragraph text and its Copy escapes the Markdown.
+const escapedCopy = (markdown: string) => markdown.replace(/[~:]/g, (c) => `\\${c}`).replace(/\n/g, '\\\n')
+const PARAGRAPHS = '~~~~report\nThe capital of France is Paris. [s1]\n~~~~\n\n~~~~sources\n[{"id":"s1","url":"https://en.wikipedia.org/wiki/Paris"}]\n~~~~'
+
+test('outputs are filled from the rendered text when the site shows the fences as text and its Copy escapes them', { skip, timeout: 120_000 }, async () => {
+  const { artifacts, result } = await run({ answer: PARAGRAPHS, copied: escapedCopy, literalFences: true }, ['report', 'sources'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(await text(artifacts, result.outputs.report!), 'The capital of France is Paris. [s1]')
+  assert.equal(await text(artifacts, result.outputs.sources!), '[{"id":"s1","url":"https://en.wikipedia.org/wiki/Paris"}]')
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { report: 'rendered', sources: 'rendered' })
+})
+
+test('an output is never filled from escaped Markdown: without a fence in the rendered text the attempt fails', { skip, timeout: 120_000 }, async () => {
+  const { result } = await run({ answer: 'no fences here, only https://example.org', copied: () => '\\~\\~\\~\\~report\\\nx\\\n\\~\\~\\~\\~ https\\://example.org', literalFences: true }, ['report'])
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /wrote no output block for report/)
+})
+
+test('the outside limit counts the rendered text when the outputs were filled from it', { skip, timeout: 120_000 }, async () => {
+  const { result } = await run({ answer: `${'A long remark before the block. '.repeat(10)}\n\n~~~~report\nthe report\n~~~~`, copied: escapedCopy, literalFences: true }, ['report'])
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /continues outside its output blocks/)
+})
+
 test('two rendered blocks with the label of an output are ambiguous: the attempt fails with that reason', { skip, timeout: 120_000 }, async () => {
   const { result } = await run({ answer: '```review\nfirst\n```\n\n```review\nsecond\n```', copied: () => '', codeWidget: true }, ['review'])
   assert.equal(result.status, 'failed')

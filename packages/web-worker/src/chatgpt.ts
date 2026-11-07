@@ -147,6 +147,11 @@ export function outsideChars(markdown: string, slots: readonly string[]): number
   return readBlocks(markdown, slots).outside.replace(/\s/g, '').length
 }
 
+/** Whether the text is Markdown with its characters escaped (a line of escaped tildes or backticks, or "\\:"), which never gives an output exactly (WW5d). */
+export function escapedMarkdown(markdown: string): boolean {
+  return /^ {0,3}\\[~`]/m.test(markdown) || /\\:/.test(markdown)
+}
+
 class Failure extends Error {}
 
 /** Chrome's profile lock is a socket at `$TMPDIR/org.chromium.Chromium.XXXXXX/SingletonSocket`, and a socket path may be 107 bytes at most. */
@@ -541,10 +546,10 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       attachments: links.length ? [{ name: 'links.json', data: Buffer.from(JSON.stringify(links, null, 2)), mediaType: 'application/json' }] : [],
     }, { provider: 'ChatGPT', url, ...(model ? { model } : {}), context: [`ui-map:${driver.map.uiRevision}`, ...(web.temporaryChat ? ['temporary-chat'] : [])] }, { producer })
     // Each output: the rendered block that carries its name (its code, verbatim), else the Markdown text's fenced block.
-    const parsed = parseBlocks(markdown, request.outputs)
-    const filled: Record<string, 'block' | 'text'> = {}
-    const contents: Record<string, string> = {}
-    const missing: string[] = []
+    const parsed = escapedMarkdown(markdown) ? { blocks: {} as Record<string, string> } : parseBlocks(markdown, request.outputs)
+    const filled: Record<string, 'block' | 'text' | 'rendered'> = {}
+    let contents: Record<string, string> = {}
+    let missing: string[] = []
     for (const slot of request.outputs) {
       const named = answer.blocks.filter((block) => block.label === slot)
       if (named.length > 1) return finish({ status: 'failed', outputs: {}, partial: { conversation: conversation.id }, reason: `${account.ref}: ${named.length} rendered blocks are labelled ${slot} (ambiguous)` })
@@ -552,7 +557,18 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       else if (slot in parsed.blocks) [contents[slot], filled[slot]] = [parsed.blocks[slot]!, 'text']
       else missing.push(slot)
     }
-    const outside = outsideChars(markdown, request.outputs)
+    // Nothing found in a block or the Markdown (the site showed the fences as text, and its Copy escaped them): the rendered text, exactly as shown.
+    let source = markdown
+    if (!Object.keys(contents).length && !escapedMarkdown(answer.rendered)) {
+      const shown = parseBlocks(answer.rendered, request.outputs)
+      if (Object.keys(shown.blocks).length) {
+        source = answer.rendered
+        contents = shown.blocks
+        missing = shown.missing
+        for (const slot of Object.keys(shown.blocks)) filled[slot] = 'rendered'
+      }
+    }
+    const outside = outsideChars(source, request.outputs)
     evidence.set({ filled, outsideChars: outside })
     const outputs: Record<string, string> = {}
     for (const [slot, content] of Object.entries(contents)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))

@@ -52,6 +52,8 @@ export interface FakeOptions {
    * `[data-code-block-source] code`. Default: System 1's `pre > code` with a header before it.
    */
   codeWidget?: boolean
+  /** Fences shown as plain paragraph text, never as code blocks (`default` account, live 2026-11-08: "~~~~report" lines as they were written). */
+  literalFences?: boolean
   /** The Chat/Work switch is rendered at all (default true); false: it never appears (the driver must refuse to send). */
   modeSwitch?: boolean
   /** The switch appears this long after the page loads, the composer being there already (default 0). */
@@ -530,7 +532,7 @@ function renderMarkdown(text) {
   // Code blocks are set aside while the inline rules run, so their backticks stay as they are.
   const blocks = []
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/(\x60{3,}|~{3,})([^\\n]*)\\n([\\s\\S]*?)\\n\\1[\x60~]*[ \\t]*(?=\\n|$)/g, (_, _fence, lang, code) => '\x00' + (blocks.push(options.codeWidget
+    .replace(options.literalFences ? /$^/ : /(\x60{3,}|~{3,})([^\\n]*)\\n([\\s\\S]*?)\\n\\1[\x60~]*[ \\t]*(?=\\n|$)/g, (_, _fence, lang, code) => '\x00' + (blocks.push(options.codeWidget
       ? '<div data-client-defined-widget="code_block"><div data-code-block="true" data-markdown-copy="code-block"><div data-markdown-copy="exclude" contenteditable="false"><div class="min-w-0 truncate flex-1">' + (lang || 'Code') + '</div><button type="button" aria-label="Copy code"></button></div><div data-code-block-source="true"><code><span><span>' + code + '</span></span></code></div></div></div>'
       : '<div>' + (lang || 'Code') + '</div><pre><code>' + code + '</code></pre>') - 1) + '\x00')
   return escaped.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>').replace(/\x60([^\x60]+)\x60/g, '<code>$1</code>')
@@ -587,7 +589,7 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
       researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',

@@ -146,7 +146,10 @@ fallback.
       tildes, so code fences inside never end it); a missing block fails the
       attempt, as a missing file does today, and so does an answer that holds
       more than `maxOutsideChars` (200) characters outside its blocks, since an
-      output may then be cut short.
+      output may then be cut short. When the site shows the fences as paragraph
+      text and its Copy escapes the Markdown (`\~`, `https\://`; seen live
+      2026-11-08, WW5d), slots are read from the answer's rendered text by the
+      same rules; escaped Markdown never fills one.
 4. **Provenance.** Each attempt also stores the exchange as a
    `conversation@1` ([PROP-0003](PROP-0003-conversation-ingestion.md)): the
    prompt and response as parts, the conversation URL, the model the driver

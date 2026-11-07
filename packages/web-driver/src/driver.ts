@@ -264,9 +264,9 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     })
     const reply = await this.staged('wait', () => this.waitForAnswer(page, before, options.signal, options.deadlines, options.conversation === 'persistent' && !options.binding ? options.onBinding : undefined))
     // The binding is part of the read stage's one record: a failure there is where the attempt failed.
-    const { text, blocks, binding } = await this.staged('read', async () => {
+    const { text, blocks, rendered, binding } = await this.staged('read', async () => {
       // Deep research answers with an acknowledgement; the report arrives later in its frame.
-      const read = feature === 'deep-research' ? { text: await this.waitForResearch(page, reply, options.signal, options.deadlines), blocks: [] } : await this.markdownOf(page, reply)
+      const read = feature === 'deep-research' ? await this.waitForResearch(page, reply, options.signal, options.deadlines).then((report) => ({ text: report, blocks: [], rendered: report })) : { ...(await this.markdownOf(page, reply)), rendered: reply }
       // The site answered with its own usage limit (a map rule `on: answer`, ADR-0034): sent, never
       // resent. Only this answer is looked at, never an earlier one of the conversation.
       if ((await engine.count('turn.assistant')) > 0) await engine.answerErrors((await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
@@ -277,7 +277,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       }
       return { ...read, binding: found }
     })
-    return { text, blocks, binding, mode }
+    return { text, blocks, rendered, binding, mode }
   }
 
   /**
