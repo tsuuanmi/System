@@ -14,6 +14,12 @@ import type { ActionSpec, Candidate, Condition, ElementSpec, UiMap } from './map
 import { NetworkObserver } from './network.ts'
 import { outlineOf, type UiOutline } from './outline.ts'
 
+/** What the site made of a pasted body: text in the composer, or attachment chips (the new ones). */
+export interface AttachOutcome {
+  outcome: 'text' | 'attachment'
+  chips: number
+}
+
 export interface Resolved {
   locator: Locator
   /** Index of the winning candidate; -1 for a healed element. */
@@ -260,6 +266,41 @@ export class UiEngine {
       if (detached() || /detached/i.test((error as Error).message)) return undefined
       throw error
     })
+  }
+
+  /**
+   * The Procedure "attach text": paste `body` into the composer, which already holds `header`, and accept
+   * what the site made of it: (a) the composer holds header and body, as text, or (b) it holds the header and
+   * exactly one new chip (`composer.attachment`) whose label starts with the body's first characters, with
+   * nothing still being added (`composer.attachment-adding`). Anything else, still unsettled at the map's
+   * `attachWaitMs`, is a failure that says what the page held (counts only, never text).
+   */
+  async attachText(action: string, body: string, header: string, waitMs?: number): Promise<AttachOutcome> {
+    const { attachLabelChars } = this.map.settings
+    const attachWaitMs = waitMs ?? this.map.settings.attachWaitMs
+    const spec = this.map.actions[action]
+    if (!spec) throw new ProviderError('config_error', `${this.map.provider}: unknown action ${action}`)
+    const before = await this.count('composer.attachment')
+    await this.act(action, { text: body })
+    const input = (await this.resolve(spec.target)).locator
+    const collapse = (s: string): string => s.replace(/[\s\u00a0]+/g, ' ').trim()
+    const start = collapse(body).slice(0, attachLabelChars)
+    let seen = ''
+    for (const end = Date.now() + attachWaitMs; ; await sleep(TICK_MS)) {
+      const adding = (await this.count('composer.attachment-adding')) > 0
+      const composer = lineText(await typedText(input))
+      const chips = await this.tryResolve('composer.attachment')
+      const labels = chips ? await chips.locator.filter({ visible: true }).evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? '')) : []
+      const added = labels.length - before
+      const named = labels.filter((label) => collapse(label).startsWith(start)).length
+      if (!adding) {
+        if (composer === lineText(header + body) && added === 0) return { outcome: 'text', chips: 0 }
+        if (composer === lineText(header) && added === 1 && named >= 1) return { outcome: 'attachment', chips: added }
+      }
+      seen = `${adding ? 'an attachment is still being added' : 'no attachment is being added'}; the composer holds ${composer.length} characters (header ${lineText(header).length}, header and body ${lineText(header + body).length}); ${added} new chip(s), ${named} named by the body's first ${start.length} characters`
+      if (Date.now() >= end) break
+    }
+    throw new ProviderError('ui_drift', `${this.map.provider}: attach text failed: ${/still being added/.test(seen) ? 'the attachment was still being added' : 'neither the text nor one named attachment was found'} after ${attachWaitMs} ms (${seen})`)
   }
 
   /** Number of visible matches of a `many` element (or 0/1 for a `one` element). */
@@ -577,14 +618,15 @@ export class UiEngine {
         return
       }
       case 'insertText':
-      case 'pasteText': {
+      case 'pasteText':
+      case 'attachText': {
         const text = args.text ?? ''
         await locator.click()
         // After anything already in the composer (such as a tool mention chip).
         await locator.press('ControlOrMeta+End')
         // A paste is one event the editor handles as one insertion (typing a 66 KB prompt into the live editor took 5.5 min);
         // an editor that does not handle it leaves it unprevented, and the text is typed instead.
-        const pasted = spec.do === 'pasteText' && (await locator.evaluate((el, pasting) => {
+        const pasted = spec.do !== 'insertText' && (await locator.evaluate((el, pasting) => {
           const data = new DataTransfer()
           data.setData('text/plain', pasting)
           const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
@@ -593,6 +635,8 @@ export class UiEngine {
         }, text))
         // Insert as text (no key events), so editor shortcuts never fire; then read back.
         if (!pasted) await this.page.keyboard.insertText(text)
+        // What the site made of the paste is the Procedure's to judge (`attachText`), not a read-back of one text.
+        if (spec.do === 'attachText') return
         const value = await typedText(locator)
         // Editors turn line breaks into paragraphs and may change spacing; the lines and
         // their characters must survive.

@@ -226,14 +226,27 @@ the DOM's structure, bounded to 20,000 characters: tags, attribute names, `role`
 value replaced by its length (`[text:42]`); no cookie or storage is read. **Evidence (WW1):** each attempt makes a small JSON record before Chrome
 launches ([evidence.ts](src/evidence.ts)) and rewrites it, atomically, as each stage
 starts and ends: `launch`, `open`, `auth`, `mode`, `insert` (the prompt into the composer: one
-paste, so a 60 KB prompt takes about a second), `send`, `wait`, `read`,
+paste, so a 60 KB prompt takes about a second), `attach` (only for a two-part prompt, below), `send`, `wait`, `read`,
 `close`, in the order they run, with elapsed times, `promptSendAttempted` (true from
 the moment the send is tried, so a retry never assumes the prompt was not sent),
 `promptSubmitted` (true only once the page shows a user turn for it), the launch
 timeout, the page counts (initial, before the first navigation, and confirmed
 closed inherited and late, and late ones that would not close), the viewport, Chrome's version, the UI map's revision and hash,
-the failed stage and the last completed one. It is partial output `evidence` of
+the failed stage and the last completed one, and for a two-part prompt `attach`: which outcome (`text` or
+`attachment`) and the chip count. It is partial output `evidence` of
 every failed or cancelled attempt, and the last line of the log of every attempt.
+**A prompt in two parts (WW1g).** `webPrompt` returns the header (role line, step,
+instructions, the output-format request, and a line naming the attached inputs), which
+the `insert` stage puts in the composer and reads back exactly, and the body (the inputs
+and context, fenced and named), which the `attach` stage pastes after it as its own
+paste. The site decides what a long paste is: a Team workspace turned 61,581 characters
+into an attachment chip (the composer read 2 characters), another account kept 69,410 as
+text. The driver accepts either (the composer holds header and body, or header and
+exactly one new chip named by the body's start, with nothing still being added) and
+anything else fails before the send in the stage `attach`, with the screenshot and
+structure-only DOM above. Inputs under the map's `attachMinChars` stay in the one
+part. `timeouts.attach` (seconds) overrides the map's `attachWaitMs` for the wait.
+A chip left in the composer by a failed attempt is not removed (the browser closes with the attempt).
 The `mode` stage waits for the Chat/Work switch (bounded by `timeouts.mode`, else the
 map's `settings.modeReadyMs`) and fails closed as `signed out`, `challenge` or
 `mode unknown`.

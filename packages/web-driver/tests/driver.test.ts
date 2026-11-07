@@ -216,3 +216,52 @@ test('a paste the composer does not take falls back to typed text', { skip, time
   await driver.ask(page, 'Typed instead.\nSecond line.', { conversation: 'temporary' })
   assert.equal(fake.sent[0]!.prompt, 'Typed instead.\nSecond line.')
 })
+
+// WW1g: on a Team workspace a 61,581-character paste became an attachment chip, not composer text (live 2026-11-07);
+// on another account of the same site it stayed text. A prompt is a header typed in the composer and a body pasted after it.
+const HEADER = 'Header: read the attached inputs.\n'
+const BODY = `Inputs:\n${longPrompt(5000)}`
+
+/** The stages and the outcome one ask reports. */
+function watch(driver: ChatGptWebDriver): { stages: string[]; attached: unknown[] } {
+  const seen = { stages: [] as string[], attached: [] as unknown[] }
+  driver.onStage = ({ stage, status }) => { if (status === 'start') seen.stages.push(stage) }
+  driver.onAttached = (outcome) => seen.attached.push(outcome)
+  return seen
+}
+
+test('a body pasted as an attachment chip is accepted: one new chip named by its text, once it is no longer adding', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start({ attachOver: 1000, attachAddingMs: 700 })
+  const seen = watch(driver)
+  await driver.ask(page, HEADER, { conversation: 'temporary', attachment: BODY })
+  assert.deepEqual(seen.attached, [{ outcome: 'attachment', chips: 1 }])
+  assert.deepEqual(seen.stages.filter((s) => s === 'insert' || s === 'attach'), ['insert', 'attach'])
+  assert.equal(fake.sent.length, 1)
+  assert.equal(fake.sent[0]!.prompt, `${HEADER.trim()}\n${BODY}`)
+})
+
+test('a body the composer keeps as text is accepted and read back, as before', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start({ attachOver: 0 })
+  const seen = watch(driver)
+  await driver.ask(page, HEADER, { conversation: 'temporary', attachment: BODY })
+  assert.deepEqual(seen.attached, [{ outcome: 'text', chips: 0 }])
+  assert.equal(fake.sent[0]!.prompt.replace(/\n+/g, '\n'), `${HEADER.trim()}\n${BODY}`.replace(/\n+/g, '\n'))
+})
+
+test('a chip that does not start with the body fails in the attach stage, with nothing sent', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start({ attachOver: 1000, attachWrongLabel: true }, { attachWaitMs: 2000 })
+  const stages: string[] = []
+  driver.onStage = ({ stage, status }) => { if (status === 'failed') stages.push(stage) }
+  await assert.rejects(driver.ask(page, HEADER, { conversation: 'temporary', attachment: BODY }), (error: unknown) => error instanceof ProviderError && /attach/.test(error.message))
+  assert.deepEqual(stages, ['attach'])
+  assert.equal(fake.sent.length, 0)
+})
+
+test('a chip still being added at the deadline fails in the attach stage, with nothing sent', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start({ attachOver: 1000, attachAddingMs: 60_000 }, { attachWaitMs: 1500 })
+  const stages: string[] = []
+  driver.onStage = ({ stage, status }) => { if (status === 'failed') stages.push(stage) }
+  await assert.rejects(driver.ask(page, HEADER, { conversation: 'temporary', attachment: BODY }), (error: unknown) => error instanceof ProviderError && /still being added/.test(error.message))
+  assert.deepEqual(stages, ['attach'])
+  assert.equal(fake.sent.length, 0)
+})

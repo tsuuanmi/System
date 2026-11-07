@@ -51,7 +51,7 @@ export type SideEffect = 'none' | 'reversible' | 'irreversible'
 
 export interface ActionSpec {
   description?: string
-  do: 'click' | 'insertText' | 'pasteText' | 'clearText' | 'press' | 'setFiles' | 'select'
+  do: 'click' | 'insertText' | 'pasteText' | 'attachText' | 'clearText' | 'press' | 'setFiles' | 'select'
   target: string
   key?: string
   require?: Array<'enabled' | 'editable'>
@@ -92,11 +92,17 @@ export interface UiSettings {
   modeReadyMs: number
   /** How long the mode the switch shows must hold before it is trusted. */
   modeSettleMs: number
+  /** A prompt's inputs shorter than this stay in its one part (`ui-map@1.6`): no attachment is made of a short text. */
+  attachMinChars: number
+  /** How long a pasted body may take to settle, as text in the composer or as one finished chip. */
+  attachWaitMs: number
+  /** How many of the body's first characters (whitespace collapsed) a chip's label must start with. */
+  attachLabelChars: number
 }
-export const DEFAULT_SETTINGS: UiSettings = { modeReadyMs: 15_000, modeSettleMs: 600 }
+export const DEFAULT_SETTINGS: UiSettings = { modeReadyMs: 15_000, modeSettleMs: 600, attachMinChars: 4000, attachWaitMs: 30_000, attachLabelChars: 24 }
 
 export interface UiMap {
-  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4' | 'ui-map@1.5'
+  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4' | 'ui-map@1.5' | 'ui-map@1.6'
   provider: string
   uiRevision: string
   locales: string[]

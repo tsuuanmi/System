@@ -258,6 +258,13 @@ Fixed, each with a test that failed first:
   the `insert` stage; and a Runtime waited for a Worker's pipes to close, which two
   leaked Xvfb held open for 33 min: the attempt now ends on process exit
   ([agents README](../../packages/agents/README.md)).
+- **Also found (WW1g):** the paste of a 61,581-character prompt became an attachment chip on a
+  Team workspace (the composer read 2 characters and the read-back failed) and stayed text on
+  another account. A prompt is now a header typed in the composer and a body pasted after it,
+  accepted as text or as one chip named by its start, else failed before the send in the stage
+  `attach`; the evidence records the outcome and the chip count
+  ([web-driver README](../../packages/web-driver/README.md),
+  [agents README](../../packages/agents/README.md)).
 - **Not fixed, as risks:** the lock check is not atomic; the `page` handler closes
   legitimate pop-ups; evidence writes that fail are silent; `skip`-gated headed tests
   depend on the environment.

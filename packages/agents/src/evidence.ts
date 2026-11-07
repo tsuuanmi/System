@@ -32,6 +32,8 @@ export interface EvidenceData {
   promptSendAttempted: boolean
   /** True only once the page shows a user turn for the prompt: the site has it. False with `promptSendAttempted` is unknown, not "not sent". */
   promptSubmitted: boolean
+  /** What the site made of the prompt's body: text in the composer, or attachment chips and how many; none for a one-part prompt. */
+  attach?: { outcome: 'text' | 'attachment'; chips: number }
   stages: StageRecord[]
   lastCompleted?: string
   failedStage?: string

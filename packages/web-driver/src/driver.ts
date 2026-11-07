@@ -9,7 +9,7 @@
  *   marker and stable text (the event stream stays open, so it is never consulted).
  */
 import { type AskOptions, type AskResult, type AuthState, bindingReporter, completionOptions, type DeleteOptions, modePresets, ProviderError, type ProviderDriver, type ProviderFeature, type ProviderMode, type ResearchState, type TurnSnapshot, sleep, splitAfterLastFence, waitForReport, waitForStableCompletion, withMissingSources } from './core/index.ts'
-import { copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, type StallEvent, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
+import { type AttachOutcome, copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, type StallEvent, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
 import type { Frame, Locator, Page, Route } from 'patchright-core'
 
 /** How long the logged-out home must hold, with no composer, before it counts as signed out. */
@@ -35,10 +35,12 @@ export interface DriverTimeouts {
   modeReadyMs?: number
   /** How long the mode the switch shows must hold (default: the map's `settings.modeSettleMs`). */
   modeSettleMs?: number
+  /** How long a pasted body may take to settle as text or one finished attachment (default: the map's `settings.attachWaitMs`). */
+  attachWaitMs?: number
 }
 
 /** The stages of a turn, in order, as `onStage` reports them. */
-export type TurnStage = 'open' | 'auth' | 'mode' | 'insert' | 'send' | 'wait' | 'read'
+export type TurnStage = 'open' | 'auth' | 'mode' | 'insert' | 'attach' | 'send' | 'wait' | 'read'
 export interface StageEvent {
   stage: TurnStage
   status: 'start' | 'ok' | 'failed'
@@ -137,8 +139,10 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   onStage: ((event: StageEvent) => void) | undefined
   /** Called once the page shows a user turn for the sent prompt: the site has it (`send` alone is an attempt). */
   onSubmitted: (() => void) | undefined
+  /** What the site made of the attached body: text in the composer, or attachment chips (WW1g); the Runtime records it. */
+  onAttached: ((outcome: AttachOutcome) => void) | undefined
   private readonly origin: string
-  private readonly timeouts: Required<Omit<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>> & Pick<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>
+  private readonly timeouts: Required<Omit<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs' | 'attachWaitMs'>> & Pick<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs' | 'attachWaitMs'>
   private readonly engines = new WeakMap<Page, UiEngine>()
   readonly modes: readonly string[]
   private readonly preset: (name: string | undefined) => ProviderMode | undefined
@@ -222,21 +226,32 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
         await engine.act(feature === 'deep-research' ? 'tools.deep-research' : 'tools.web-search')
       }
     })
-    // The insert is its own stage: a long prompt takes most of the time of what was one stage with the mode.
-    await this.staged('insert', async () => {
-      await engine.act('composer.insert', { text: prompt })
+    // Never sent on a failure after the text is in: it is not left behind as a draft for the next turn or the operator.
+    const beforeSend = async (run: () => Promise<void>): Promise<void> => {
       try {
+        await run()
         // The mode is read again right before the send: the insert can take long enough for the page to change it.
         await this.requireChat(engine, 'before sending')
         await this.refuseWorkComposer(engine)
         options.signal?.throwIfAborted()
         await options.beforeSend?.({ previousResponse, mode })
       } catch (error) {
-        // Typed, never sent: the text is not left behind as a draft for the next turn or the operator.
         await engine.act('composer.clear').catch(() => undefined)
         throw error
       }
-    })
+    }
+    // The insert is its own stage: a long prompt takes most of the time of what was one stage with the mode.
+    // With a body, the checks right before the send close the attach stage instead.
+    const body = options.attachment
+    await this.staged('insert', () => body ? engine.act('composer.insert', { text: prompt }) : beforeSend(() => engine.act('composer.insert', { text: prompt })))
+    // The body is its own paste after the header, and its own stage: the site may turn it into an attachment.
+    if (body) {
+      await this.staged('attach', () => beforeSend(async () => {
+        // Awaited before the call: an optional call whose callback is unset would never evaluate its argument.
+        const outcome = await engine.attachText('composer.attach', body, prompt, this.timeouts.attachWaitMs)
+        this.onAttached?.(outcome)
+      }))
+    }
     // The stage starts before the click: a click that throws may still have sent, so it counts as submitted.
     await this.staged('send', async () => {
       const turns = await engine.count('turn.user')
