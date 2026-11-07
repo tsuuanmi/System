@@ -118,10 +118,11 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           return verdict('error', (error as Error).message, [])
         }
         const path = [bin, process.env.PATH].filter(Boolean).join(':')
-        // What the change touches against the base its checks were pinned from (PROP-0007 decision 5).
-        const touched = (await git(tree.repository, ['diff', '--name-only', checks.source.commit, tree.commit])).split('\n').filter(Boolean)
+        // What the change touches against the base its checks were pinned from (PROP-0007 decision 5); a commit checked as it is runs them all.
+        const asItIs = tree.commit === checks.source.commit
+        const touched = asItIs ? [] : (await git(tree.repository, ['diff', '--name-only', checks.source.commit, tree.commit])).split('\n').filter(Boolean)
         for (const check of checks.checks) {
-          if (!selected(check, touched)) {
+          if (!asItIs && !selected(check, touched)) {
             skipped.push(check.name)
             continue
           }

@@ -323,3 +323,14 @@ test('System\'s own checks: a change to docs alone runs only docs; a change to c
   const all = own.checks.map((c) => c.name)
   for (const file of ['packages/work/src/controller.ts', 'tests/work.test.ts', 'pnpm-lock.yaml', 'docs/requirements/purpose.md', 'workflows/code-checks.yaml']) assert.deepEqual(run([file]), all, file)
 })
+
+test('a commit checked as it is (code-checks.yaml on its own) runs every check, paths or not', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: always\n    run: "true"\n  - name: packages\n    run: "true"\n    paths: ["packages/**"]\n')
+  const { task } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: task, criteria })
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
+})

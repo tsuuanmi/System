@@ -59,7 +59,8 @@ checks:
 - **Paths** (decision 5): a check with `paths` (globs, as GitHub Actions'
   `paths` filter, matched by `path.matchesGlob`) runs only when
   `git diff --name-only <base> <subject>` names a file one of them matches;
-  the base is the commit the checks were pinned from. A skipped check has no
+  the base is the commit the checks were pinned from; a commit checked as it
+  is (`code-checks.yaml` on its own) runs every check. A skipped check has no
   `check-run@1`. The verdict's reason lists what ran, with its time, and what
   was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
 
