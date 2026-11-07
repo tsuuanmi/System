@@ -737,6 +737,9 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
   5a. [x] Output blocks with a longer fence, or holding fenced code, read as
      the answer meant them (the driver's copy path and `parseBlocks`); found
      on the real site 2026-11-07 (`work:d72ce675`, `work:a4bd030d`).
+  5b. [x] An output is filled from the rendered code block that carries its
+     name (`AskResult.blocks`), else from the Markdown text; found on the real
+     site 2026-11-07 (`work:feee282d`: one `review` widget holding fences).
   2a. [ ] The web Runtime as its own package and an optional DSH row: core
      and the CLI Runtimes do not depend on it; a smoke test runs the main
      path with the web row off.

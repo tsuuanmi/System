@@ -105,6 +105,12 @@ changed but the header line.
   content has fence lines. Checked on the real site (2026-11-07) with a tiny
   prompt on `chatgpt-web/default`: the page showed one widget labelled
   `review`, and the copy was the bare four-backtick form.
+- **Blocks as data (WW5b).** `AskResult.blocks` is the final answer's rendered
+  code blocks, `{ label, code }`: the header and the raw text, rows kept. A
+  widget whose raw text holds fence lines (a review with ```` ```ts ````) made
+  the old guard take the text for Markdown, so `withFencedBlocks` now runs
+  whenever a block's label has no fence of that name in the text, and the
+  Runtime fills an output from the block that carries its name.
 - **Long prompts are pasted (WW1c).** Typing a 66 KB prompt with
   `keyboard.insertText` into ChatGPT's editor took about 5.5 min (the whole `mode`
   stage of `work:d72ce675` was 336 s). The map's `composer.insert` is now `do:

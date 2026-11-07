@@ -59,6 +59,8 @@ export interface AskOptions {
 
 export interface AskResult {
   text: string
+  /** The final answer's rendered code blocks: each one's header label and raw text (rows kept); none for a research report. */
+  blocks: Array<{ label: string; code: string }>
   /** Canonical conversation id for persistent turns; undefined for temporary ones. */
   binding: string | undefined
   /** The mode read back from the page before sending (never assumed). */

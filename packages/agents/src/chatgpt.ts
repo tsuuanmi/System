@@ -466,9 +466,21 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
       response: { name: 'response.md', data: Buffer.from(markdown), mediaType: 'text/markdown' },
       attachments: links.length ? [{ name: 'links.json', data: Buffer.from(JSON.stringify(links, null, 2)), mediaType: 'application/json' }] : [],
     }, { provider: 'ChatGPT', url, ...(model ? { model } : {}), context: [`ui-map:${driver.map.uiRevision}`, ...(web.temporaryChat ? ['temporary-chat'] : [])] }, { producer })
-    const { blocks, missing } = parseBlocks(markdown, request.outputs)
+    // Each output: the rendered block that carries its name (its code, verbatim), else the Markdown text's fenced block.
+    const parsed = parseBlocks(markdown, request.outputs)
+    const filled: Record<string, 'block' | 'text'> = {}
+    const contents: Record<string, string> = {}
+    const missing: string[] = []
+    for (const slot of request.outputs) {
+      const named = answer.blocks.filter((block) => block.label === slot)
+      if (named.length > 1) return finish({ status: 'failed', outputs: {}, partial: { conversation: conversation.id }, reason: `${account.ref}: ${named.length} rendered blocks are labelled ${slot} (ambiguous)` })
+      if (named.length) [contents[slot], filled[slot]] = [named[0]!.code, 'block']
+      else if (slot in parsed.blocks) [contents[slot], filled[slot]] = [parsed.blocks[slot]!, 'text']
+      else missing.push(slot)
+    }
+    evidence.set({ filled })
     const outputs: Record<string, string> = {}
-    for (const [slot, content] of Object.entries(blocks)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
+    for (const [slot, content] of Object.entries(contents)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
     if (missing.length) {
       return finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref} wrote no output block for ${missing.join(', ')}` })
     }
