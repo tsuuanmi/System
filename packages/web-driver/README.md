@@ -168,6 +168,11 @@ changed but the header line.
   (`open`, `auth`, `mode`, `insert`, `attach`, `send`, `wait`, `read`) for the Runtime's evidence
   record; `send` is only the click, so a started `send` means the prompt may be out,
   and `onSubmitted` fires once the page shows the new user turn (the confirmed case).
+  The wait also polls the map's state `answer.site-error` (element `answer.error`, inside the
+  newest answer only): when the site shows its own error there ("This response couldn’t load",
+  WW6a; it can replace the streaming or follow it) the wait stops at once with a
+  `ProviderError` (`overloaded`, `siteError`, "site error: the answer did not load
+  (retryable)"). Nothing is resent or regenerated; a retry is System's `work retry`.
   A failure to find the conversation binding after the read is the `read` stage's, which is reported once.
   `ask` runs `open` as `reach` (load, sign-in) then `enterMode`; `open` is both.
 - **Tests:** vitest became `node:test` and `node:assert/strict`

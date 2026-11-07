@@ -125,6 +125,11 @@ export interface FakeOptions {
   copied?: (markdown: string) => string
   /** Delay before streaming starts, in ms. */
   thinkMs?: number
+  /**
+   * The answer's text is streamed (none for an empty `answer`), then the site gives up like the live one
+   * (2026-11-07): the answer holds only "This response couldn’t load", with no Copy and nothing running.
+   */
+  loadFailure?: boolean
   /** Model radios in the model menu. */
   models?: string[]
   /** Models shown but locked for this account. */
@@ -512,6 +517,12 @@ async function send() {
         answer.before(holder)
         holder.outerHTML = '<iframe title="Deep research" src="/web-sandbox.oai/' + convId + '/' + event.research + '" style="display:block;width:960px;height:640px;border:0"></iframe>' + (options.framePills ? ${JSON.stringify(INLINE_PILLS)} : '')
       }
+      if (event.failed) {
+        if (!started) { $('log').append(answer); started = true }
+        answer.querySelector('p').textContent = 'This response couldn\u2019t load'
+        running = false
+        render()
+      }
       if (event.done) {
         // Like the live site: the finished answer renders its Markdown; Copy copies the Markdown itself.
         const markdown = raw
@@ -589,7 +600,7 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loadFailure: false, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
       researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',
@@ -682,6 +693,7 @@ export class FakeChatGpt {
         res.write(`data: ${JSON.stringify({ delta: word })}\n\n`)
         await new Promise((resolve) => setTimeout(resolve, 60))
       }
+      if (this.options.loadFailure) return void res.write(`data: ${JSON.stringify({ failed: true })}\n\n`)
       conversation.turns.push({ role: 'assistant', text: answer })
       res.write(`data: ${JSON.stringify({ done: true, research: user.research ?? false, copy: this.options.copied(answer) })}\n\n`)
       // Like the live site, the stream is left open after the answer is complete.

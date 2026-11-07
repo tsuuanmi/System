@@ -356,6 +356,22 @@ test('a missing output block fails the attempt and keeps what was found as parti
   assert.equal(conversationOf(artifacts, result, 'partial').content.parts.length, 2)
 })
 
+for (const [name, answer] of [['instead of streaming', ''], ['after some streamed text', 'The answer begins here and then ']] as const) {
+  test(`the site's own error answer fails the attempt at once, as a retryable site error (${name})`, { skip, timeout: 60_000 }, async () => {
+    const started = Date.now()
+    // A long answer clock: failing fast must not be a timeout.
+    const { artifacts, result } = await run({ answer, loadFailure: true }, ['report'], { config: { timeouts: { load: 10, answer: 40, stable: 0.5 } } })
+    assert.equal(result.status, 'failed')
+    assert.equal(result.reason, 'site error: the answer did not load (retryable)')
+    assert.ok(Date.now() - started < 30_000)
+    assert.ok(result.partial?.screenshot)
+    assert.ok(result.partial?.snapshot)
+    const evidence = JSON.parse(await text(artifacts, result.partial!.evidence!))
+    assert.equal(evidence.siteError, true)
+    assert.equal(evidence.waitEnded, 'site error')
+  })
+}
+
 test('an answer that never starts fails at the answer timeout', { skip, timeout: 60_000 }, async () => {
   const { result } = await run({ thinkMs: 60_000 }, ['report'], { config: { timeouts: { load: 10, answer: 2, stable: 0.5 } } })
   assert.equal(result.status, 'failed')

@@ -233,6 +233,14 @@ fallback.
    fences, the parsers read them by CommonMark, and an answer with more than
    `maxOutsideChars` characters outside its output blocks fails, the answer
    kept as partial output (evidence `outsideChars`).
+   WW6a: the answer element twice held only "This response couldn’t load" (a
+   site-side generation error; 2026-11-07 probe, `work:78fbf67b`), and the
+   attempt failed as "wrote no output block", which hid the cause. The UI map
+   declares that error (the text, or any alert inside the newest answer) as a
+   state polled during the wait; when it shows, the wait stops at once and the
+   attempt fails with "site error: the answer did not load (retryable)"
+   (evidence `siteError`, `waitEnded`), the screenshot and structure-only DOM
+   kept. Nothing is resent or regenerated: a retry is `work retry`.
 
 ## Known defects, fixed in WW1 (2026-11-07)
 
