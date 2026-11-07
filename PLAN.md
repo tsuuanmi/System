@@ -679,11 +679,16 @@ Website-Worker-specific. Acceptance in PROP-0007.
 | All package source, lines | 11,068 | 11,366 (+298: the merge queue, the checks' Node and reasons, the attempt budget) |
 | Tests, lines | 9,549 | 9,712 |
 | Docs under `docs/`, lines (files) | 4,872 (47) | 4,985 (48), PROP-0007 included |
-| Required checks | | CHECK_TIMES |
+| Required checks | | docs 0.4 s, install 12 s, build 21 s, typecheck 7 s, unit 2 min 52 s (473 pass; 1 fail, the chatgpt-web launch test fixed on `web-workers`), smoke 1 min 11 s (74 pass): 4 min 45 s at a load average of about 210; a docs-only change now runs docs alone |
 
 - **Simplification pass:** GitHub's merge endpoint went, and with it the
   merged-pull lookups and the pull request fields only they read; the fake
   GitHub servers lost their merge endpoint and `--kill-host-on-merge`.
+- **A lost stop signal, found by CQ5:** the Host replaced the launcher's
+  signal handlers by removing them first; a SIGTERM sent in between (right
+  after `listening on`) was dropped and the Host never stopped. That was the
+  flaky SIGTERM test. Fixed (4 of 9 failures before, 16 of 16 passes after,
+  in parallel).
 - **Not tested end to end:** the merge queue against github.com (a branch
   protection that requires pull requests refuses its push), and the attempt
   budget against a real Claude Code attempt.
