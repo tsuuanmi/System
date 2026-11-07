@@ -278,7 +278,13 @@ state fails after the `load` timeout with that reason and a screenshot.
 
 ## The dev branch
 
-Parallel Works each pass their own checks, but their merge can still break `dev`, so `dev` is re-checked after a batch of merges.
+Parallel Works each pass their own checks; their merges no longer break `dev`
+together, because System merges a Work's change into an allowlisted base
+(`mergeInto`) only through its merge queue: `dev` moves to exactly a commit whose required checks
+passed, the change's merge with the current tip when `dev` has moved, by a
+push with a lease. A conflict fails the publish step naming the files; a
+check that fails on the merge names it in the reason. Do not require pull
+requests in `dev`'s branch protection: the push would be refused.
 
 ## Another home
 
@@ -385,6 +391,10 @@ start the Host first. Write a Goal (above), then add the server with its ID:
 ```
 claude mcp add system -- system mcp --goal <goal-id>
 ```
+
+A Workflow submitted through `work.submit` may use Sub-workflows without
+sending them: the Host reads each from `workflows/` at the input Task's base
+commit, else beside its own code.
 
 Without `--goal` the session is a plain agent: it may use every agent
 operation on every Work.

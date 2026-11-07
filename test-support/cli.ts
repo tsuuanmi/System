@@ -108,19 +108,18 @@ export function systemCli(prefix: string, base: Record<string, string> = { SYSTE
         },
       }
       hosts.push(host)
-      let gone = false
-      void exited.then(() => { gone = true })
-      for (let tries = 0; tries < 600; tries++) {
-        if (gone) throw new Error(`the Host exited before answering: ${stderr}`)
-        try {
-          (await connect(socket)).close()
-          return host
-        } catch {
-          await new Promise((r) => setTimeout(r, 100))
+      // The Host says when it listens; waiting for that line, not for a number of tries, holds at any load.
+      await new Promise<void>((resolve, reject) => {
+        const heard = () => {
+          if (!/listening on /.test(stderr)) return
+          child.stderr!.off('data', heard)
+          resolve()
         }
-      }
-      await host.stop()
-      throw new Error(`the Host never answered: ${stderr}`)
+        child.stderr!.on('data', heard)
+        heard()
+        void exited.then(() => reject(new Error(`the Host exited before answering: ${stderr}`)))
+      })
+      return host
     },
     async pid() {
       const client = await connect(socket)

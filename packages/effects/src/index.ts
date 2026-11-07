@@ -25,7 +25,22 @@ export function apply(ctx: Context, config: Config = {}): void {
   const ref = credentialRef(config.tokenRef ?? 'GITHUB_TOKEN')
   const publisher = githubPublisher(
     ctx.get('artifacts') as Artifacts,
-    { token: async () => (await credentials.resolve(ref))?.value },
+    {
+      token: async () => (await credentials.resolve(ref))?.value,
+      // The merge queue runs the Work's required checks again, with their pinned criteria, on the merge it made.
+      async check(subject, intent) {
+        const evidence: string[] = []
+        for (const { capability, criteria } of intent.required ?? []) {
+          const verifier = capabilities.routeVerifier(capability).selected
+          if (!verifier) return { verdict: 'error', reason: `no enabled verifier provides ${capability}`, evidence }
+          const result = await verifier.verify({ workId: intent.workId, attemptId: `merge:${intent.operationId}`, stepId: intent.stepId, capability, subject, criteria })
+          evidence.push(...result.evidence)
+          if (result.verdict !== 'pass') return { verdict: result.verdict, reason: result.reason, evidence }
+        }
+        if (!intent.required?.length) return { verdict: 'error', reason: 'the effect requires no checks to run on the merge', evidence }
+        return { verdict: 'pass', reason: `${intent.required.length} required check(s) passed on the merge`, evidence }
+      },
+    },
     { remote: config.remote ?? 'origin', base: config.base ?? 'main', mergeInto: config.mergeInto ?? [], apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository },
   )
   const dispose = capabilities.registerEffect(publisher)

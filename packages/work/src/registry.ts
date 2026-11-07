@@ -26,6 +26,8 @@ export interface Progress {
   lastTool?: string
   /** Tokens so far: fresh input, cache writes and output. */
   tokens?: number
+  /** Input tokens so far, cache reads included: what a long wait re-reads (PROP-0007 decision 2). */
+  inputTokens?: number
   /** Where an attempt with stages is, such as a web Runtime's evidence stage. */
   stage?: string
 }
@@ -124,6 +126,8 @@ export interface EffectIntent {
   /** The exact Artifact ID the effect publishes. */
   subject: string
   params: Record<string, string | number | boolean>
+  /** The verify steps the effect requires, with their pinned criteria: what a provider runs again on a commit it makes, such as a merge. */
+  required?: { capability: string; criteria: string }[]
 }
 
 export interface EffectOutcome {

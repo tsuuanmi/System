@@ -246,3 +246,91 @@ test('a ratio outside 0 to 1 is not valid criteria', () => {
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 1.5 })).success, false)
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 0 })).success, true)
 })
+
+/** A repository whose checks are `checks`, with `files` beside them (package.json, test files), and a change on it; returns the verdict. */
+async function verdictOf(checks: string, files: Record<string, string>) {
+  const artifacts = store()
+  const repository = repo(checks)
+  for (const [path, text] of Object.entries(files)) writeFileSync(join(repository, path), text)
+  execFileSync('git', ['-C', repository, 'add', '.'])
+  execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'files'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n' })
+  return verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
+}
+
+test('the checks run on the Node the repository asks for, whatever Node is first on the Host\'s PATH', async () => {
+  // A Node 22 first on PATH, as the Host had twice.
+  const old = mkdtempSync(join(root, 'node22-'))
+  writeFileSync(join(old, 'node'), '#!/bin/sh\necho v22.0.0\nexit 0\n', { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${old}:${path}`
+  try {
+    const result = await verdictOf('checks:\n  - name: node\n    run: test "$(node -p process.versions.node | cut -d. -f1)" = 24\n', { 'package.json': '{ "engines": { "node": ">=24.9.0" } }\n' })
+    assert.equal(result.verdict, 'pass', result.reason)
+  } finally {
+    process.env.PATH = path
+  }
+})
+
+test('a failed check says in one line which check, which test and its first error line', async () => {
+  const failing = "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\ntest('adds', () => { assert.equal(1 + 1, 3) })\ntest('fine', () => {})\n"
+  const result = await verdictOf('checks:\n  - name: unit\n    run: node --test adds.test.mjs\n', { 'adds.test.mjs': failing })
+  assert.equal(result.verdict, 'fail')
+  assert.equal(result.reason, 'failed: unit: adds.test.mjs "adds": Expected values to be strictly equal: 2 !== 3')
+})
+
+test('a timed-out check names the test that was running', { timeout: 60_000 }, async () => {
+  const hanging = "import { test } from 'node:test'\ntest('first', () => {})\ntest('waits forever', () => new Promise(() => { setInterval(() => {}, 1000) }))\n"
+  const result = await verdictOf('checks:\n  - name: unit\n    run: node --test hangs.test.mjs\n    timeoutSeconds: 3\n', { 'hangs.test.mjs': hanging })
+  assert.equal(result.verdict, 'fail')
+  assert.match(result.reason, /^failed: unit: timed out after 3 s while running hangs\.test\.mjs/)
+})
+
+test('engines.node ranges: the comparators package.json uses', async () => {
+  const { satisfies } = await import('../src/reasons.ts')
+  assert.deepEqual(['>=24.9.0', '^24.1.0', '24', '>=22 <24', '24.21.0'].map((range) => satisfies('v24.21.0', range)), [true, true, true, false, true])
+  assert.equal(satisfies('22.12.0', '>=24.9.0'), false)
+})
+
+test('a check with paths runs only when the change touches one of them, and the verdict lists what ran and what was skipped', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: always\n    run: "true"\n  - name: packages\n    run: "true"\n    paths: ["packages/**"]\n')
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const verify = (subject: string) => verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
+
+  const docs = await verify(await change(artifacts, repository, tree.commit, { 'docs/note.md': 'a note\n' }))
+  assert.equal(docs.verdict, 'pass', docs.reason)
+  assert.match(docs.reason, /run: always [\d.]+ s; skipped: packages$/)
+  assert.equal(docs.evidence.length, 1, 'a skipped check has no run')
+  const code = await verify(await change(artifacts, repository, tree.commit, { 'packages/a/index.ts': 'export {}\n' }))
+  assert.match(code.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
+  assert.equal(code.evidence.length, 2)
+  await assert.rejects(verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    paths: []\n'))).task, operatorId: 't' }), /is invalid/)
+})
+
+test('System\'s own checks: a change to docs alone runs only docs; a change to code, tests or the Charter runs them all', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { parse } = await import('yaml')
+  const { checksFileSchema, selected } = await import('../src/checks.ts')
+  const own = checksFileSchema.parse(parse(readFileSync(new URL('../../../.system/checks.yaml', import.meta.url), 'utf8')))
+  const run = (touched: string[]) => own.checks.filter((c) => selected(c, touched)).map((c) => c.name)
+  assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
+  const all = own.checks.map((c) => c.name)
+  for (const file of ['packages/work/src/controller.ts', 'tests/work.test.ts', 'pnpm-lock.yaml', 'docs/requirements/purpose.md', 'workflows/code-checks.yaml']) assert.deepEqual(run([file]), all, file)
+})
+
+test('a commit checked as it is (code-checks.yaml on its own) runs every check, paths or not', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: always\n    run: "true"\n  - name: packages\n    run: "true"\n    paths: ["packages/**"]\n')
+  const { task } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: task, criteria })
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
+})

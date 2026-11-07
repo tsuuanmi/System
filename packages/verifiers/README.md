@@ -33,6 +33,7 @@ checks:
   - name: test               # [a-z][a-z0-9-]*
     run: npm ci && npm test  # run with /bin/sh -c in the checked-out commit
     timeoutSeconds: 600      # default 600, at most 3600
+    paths: [src/**, package.json]  # optional globs: run only when the change touches one
 ```
 
 - **Verify:** check out the exact subject commit into a fresh worktree, run
@@ -44,6 +45,24 @@ checks:
   check); name one check per part so a failure says which part failed.
   `pass` when every check exits 0; `fail` when any does not or times out;
   `error` when the commit cannot be checked out.
+- **Node** ([src/reasons.ts](src/reasons.ts), PROP-0007 decision 3): when the
+  commit's `package.json` has `engines.node`, a Node that satisfies it goes
+  first on the checks' `PATH`: the Host's own, else the newest under
+  `~/.nvm/versions/node`, as `bin/system` looks; none is an `error` verdict.
+  Whatever Node the Host's `PATH` starts with no longer decides.
+- **Reasons** (decision 4): a check that failed under Node's test runner is
+  one line, `<check>: <file> "<test>": <first error line>`, read from the
+  runner's `failing tests` summary. A check runs under `timeout -s INT`, so on
+  its time limit the runner prints what it was running:
+  `<check>: timed out after <n> s while running <file> "<test>"`. Other
+  commands keep `<check> (exit <n>)`. Several failures are joined by `; `.
+- **Paths** (decision 5): a check with `paths` (globs, as GitHub Actions'
+  `paths` filter, matched by `path.matchesGlob`) runs only when
+  `git diff --name-only <base> <subject>` names a file one of them matches;
+  the base is the commit the checks were pinned from; a commit checked as it
+  is (`code-checks.yaml` on its own) runs every check. A skipped check has no
+  `check-run@1`. The verdict's reason lists what ran, with its time, and what
+  was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
 
 ## `research.citation-check` (version 2)
 

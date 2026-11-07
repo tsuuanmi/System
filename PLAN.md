@@ -654,6 +654,45 @@ HOME=<fresh> CI=1`, the machine at a load average of about 270):
   two helpers (`ownGoal`, `inChain`); `goal.brief` uses `inScope`. No
   feature was dropped.
 
+### CQ — Worker policy, faster and clearer checks, and a merge queue ([PROP-0007](docs/proposals/PROP-0007-worker-policy-checks-and-merge-queue.md))
+
+Decided by the operator on 2026-11-07, built from `dev` after OC (PR #39) by
+the Development session; moved out of milestone WW, which keeps only what is
+Website-Worker-specific. Acceptance in PROP-0007.
+
+- [x] CQ1. Worker policy (no background tasks or monitors for `code-write`
+  Accounts) and the per-attempt budget.
+- [x] CQ2. Checks run on the repository's Node; one-line failure reasons.
+- [x] CQ3. Checks selected by `paths`; the verdict lists run and skipped.
+- [x] CQ4. The merge queue for `mergeInto` branches (push with a lease, not
+  GitHub's merge endpoint: operator, 2026-11-07; ADR-0008 amendment).
+- [x] CQ5. The Host resolves Sub-workflows for `work.submit`; the flaky
+  host-process test.
+- [x] Growth recorded and a simplification pass.
+
+**Growth at CQ** (from `dev` at `4af8bf0`; budget per
+[ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md): +10%):
+
+| Measure | Before CQ | After CQ |
+|---|---|---|
+| Active core, lines | 3,405 | 3,420 (+15, +0.4%: the effect intent's `required` checks) |
+| All package source, lines | 11,068 | 11,366 (+298: the merge queue, the checks' Node and reasons, the attempt budget) |
+| Tests, lines | 9,549 | 9,712 |
+| Docs under `docs/`, lines (files) | 4,872 (47) | 4,985 (48), PROP-0007 included |
+| Required checks | | docs 0.4 s, install 12 s, build 21 s, typecheck 7 s, unit 2 min 52 s (473 pass; 1 fail, the chatgpt-web launch test fixed on `web-workers`), smoke 1 min 11 s (74 pass): 4 min 45 s at a load average of about 210; a docs-only change now runs docs alone |
+
+- **Simplification pass:** GitHub's merge endpoint went, and with it the
+  merged-pull lookups and the pull request fields only they read; the fake
+  GitHub servers lost their merge endpoint and `--kill-host-on-merge`.
+- **A lost stop signal, found by CQ5:** the Host replaced the launcher's
+  signal handlers by removing them first; a SIGTERM sent in between (right
+  after `listening on`) was dropped and the Host never stopped. That was the
+  flaky SIGTERM test. Fixed (4 of 9 failures before, 16 of 16 passes after,
+  in parallel).
+- **Not tested end to end:** the merge queue against github.com (a branch
+  protection that requires pull requests refuses its push), and the attempt
+  budget against a real Claude Code attempt.
+
 ### Core debt ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md))
 
 After OC and WW are on `dev`, so it does not compete with them for code:

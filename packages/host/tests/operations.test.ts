@@ -49,6 +49,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       const stored = await artifacts.put({ ...GOAL_KIND, content: { context: [charter.id], ...goal }, inputs: [charter.id], supersedes: supersedes ? [supersedes] : [], classification: 'public', producer })
       return { id: stored.id }
     },
+    workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
     addDecision: (decision, caller) => goals.decide(decision, caller),
     decisions: (chain) => goals.decisions(chain),
     async addConversation(parts, asserted, supersedes, caller) { seen.conversations!.push({ parts, asserted, supersedes, caller }); return { id: 'conversation:1' } },
@@ -698,4 +699,12 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   assert.deepEqual(done.events.find((e) => e.type === 'reopened')!.reset, ['checks.checks', 'publish', 'accept'])
   assert.equal(done.state.steps['checks.checks']!.verdict, 'pass')
   assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
+})
+
+test('work.submit without the content of the Sub-workflows: the Host reads them itself', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const client = await open(agent)
+  const work = await client.call('work.submit', { workflow: workflowFile('software-engineering.yaml'), input: input(f) }).catch((error: Error) => error)
+  assert.ok(!(work instanceof Error), String(work))
+  assert.deepEqual(Object.keys((work as { state: { steps: Record<string, unknown> } }).state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
 })
