@@ -272,6 +272,16 @@ elements:
     cardinality: many
     candidates:
       - { role: button, name: { en: '^Copy$' }, exact: true }
+  answer.error:
+    description: >-
+      The site's own error in place of an answer, looked for inside the newest answer only (the state
+      `answer.site-error`). Live 2026-11-07 and 2026-11-08 (System): the answer held only "This response
+      couldn't load" (a site-side generation error). The alert is any element the site marks as an error
+      there; its own Retry control is not named yet (the DOM of that answer has not been captured).
+    cardinality: many
+    candidates:
+      - { text: { en: '^This response couldn.t load' } }
+      - { css: '[role="alert"]' }
   answer.code:
     description: >-
       A code block's text in an answer, its rows kept (the answer's Copy loses them). Live since
@@ -506,6 +516,8 @@ states:
   auth.login-page: { anyOf: [{ url: '^https?://auth\.openai\.com/|/auth/login' }, { allOf: [{ visible: auth.login }, { not: { visible: composer.input } }] }] }
   auth.signed-out: { anyOf: [{ state: auth.login-page }, { allOf: [{ visible: auth.logged-out-home }, { not: { visible: composer.input } }] }] }
   site.error-page: { allOf: [{ visible: site.error }, { not: { visible: composer.input } }] }
+  # Evaluated inside the newest answer on every poll of the wait: it can replace the streaming or follow it.
+  answer.site-error: { visible: answer.error }
   turn.running: { visible: composer.stop }
   # Nothing generating and nothing open: the page can be kept for the session's next turn.
   page.idle: { allOf: [{ not: { state: turn.running } }, { hidden: page.overlay }] }

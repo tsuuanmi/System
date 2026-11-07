@@ -349,6 +349,11 @@ export class UiEngine {
     return this.evaluate({ state: id }, new Map())
   }
 
+  /** Whether a map state holds inside `root` only (the newest answer, say); its elements are looked for there. */
+  async stateIn(id: string, root: Locator): Promise<boolean> {
+    return this.evaluate({ state: id }, new Map(), root)
+  }
+
   /** Poll a condition until it holds; a timeout is a typed failure. */
   async waitFor(condition: Condition, timeoutMs: number, baselines: Baselines = new Map()): Promise<void> {
     const deadline = Date.now() + timeoutMs

@@ -497,8 +497,14 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       const seconds = limitOf(failed)
       const first = (error as Error).message.split('\n')[0] ?? ''
       const op = /^([\w.]+): Timeout/.exec(first)?.[1]
+      if (error instanceof ProviderError && error.siteError) {
+        evidence.set({ siteError: true, waitEnded: 'site error' })
+        throw new Failure(error.message)
+      }
+      const ranOut = (error as Error).name === 'TimeoutError' || (error instanceof ProviderError && (error.kind === 'timeout' || error.kind === 'provider_stalled'))
+      if (failed === 'wait' && ranOut) evidence.set({ waitEnded: 'timeout' })
       if ((error as Error).name === 'TimeoutError' && op !== undefined && seconds !== undefined) throw new Failure(`${account.ref}: ${failed}: ${op} timed out after ${seconds} s`)
-      if ((error as Error).name === 'TimeoutError' || (error instanceof ProviderError && (error.kind === 'timeout' || error.kind === 'provider_stalled'))) throw new Failure(`${account.ref}: the ${failed} stage timed out${seconds === undefined ? '' : ` after ${seconds} s`}: ${first}`)
+      if (ranOut) throw new Failure(`${account.ref}: the ${failed} stage timed out${seconds === undefined ? '' : ` after ${seconds} s`}: ${first}`)
       if (error instanceof ProviderError && error.kind !== 'aborted') throw new Failure(`${account.ref}: ${error.message}${error.kind === 'reauth_required' ? '; sign in again (system workers login)' : ''}`)
       throw error
     }
@@ -535,6 +541,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     // finished answer, on the clocks it was built with (`chatGptDriver`).
     const answer = await stage('answer', () => driver.ask(page!, prompt.header, { conversation: conversationKind, ...(prompt.body === undefined ? {} : { attachment: prompt.body }), signal: stop.signal }))
     tabs.check()
+    evidence.set({ waitEnded: 'done' })
     const markdown = answer.text
     const links = [...new Set(markdown.match(/https?:\/\/[^\s)>"\]]+/g) ?? [])]
     note(`answer of ${markdown.length} characters, ${links.length} link(s)`)

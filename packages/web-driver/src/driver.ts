@@ -93,6 +93,9 @@ const FEATURE_ENTRIES = [['deep-research', 'tools.deep-research'], ['web-search'
 /** Where a Deep research report was read: its frame, or inline as the last answer. */
 type ReportPath = 'frame' | 'inline'
 
+/** The reason of an answer the site itself could not load: a retry is System's, never the driver's. */
+const SITE_ERROR_ANSWER = 'site error: the answer did not load (retryable)'
+
 /** The failures that are the site's own error page, which `open` loads once more. */
 const SITE_ERROR_PAGES = new WeakSet<object>()
 function siteErrorPage(): ProviderError {
@@ -983,6 +986,10 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       reportBinding()
       const count = await engine.count('turn.assistant')
       if (count <= before) return { responsePresent: false, text: '', html: '', running: true }
+      // The site's own error in the newest answer ends the wait at once, whatever was streamed before it: sent, never resent from here.
+      if (await engine.stateIn('answer.site-error', (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))) {
+        throw new ProviderError('overloaded', SITE_ERROR_ANSWER, { siteError: true })
+      }
       const text = await this.answerText(engine)
       const finished = (await engine.count('turn.assistant.done')) >= count
       const running = (await engine.state('turn.running')) || !finished

@@ -38,6 +38,10 @@ export interface EvidenceData {
   filled?: Record<string, 'block' | 'text' | 'rendered'>
   /** Characters of the answer outside its output blocks, whitespace ignored (WW5c). */
   outsideChars?: number
+  /** How the wait for the answer ended: it finished, the site showed its own error in its place, or the time ran out (WW6a). */
+  waitEnded?: 'done' | 'site error' | 'timeout'
+  /** True when the newest answer held the site's own error ("This response couldn’t load"): sent, nothing answered. */
+  siteError?: true
   stages: StageRecord[]
   lastCompleted?: string
   failedStage?: string
