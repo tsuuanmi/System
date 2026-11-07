@@ -4,7 +4,7 @@
  * grace).
  */
 import { spawn } from 'node:child_process'
-import { recordingPid, type Spawner } from '@system/agents'
+import { DRAIN_MS, recordingPid, type Spawner } from '@system/agents'
 
 export const processSpawner: Spawner = {
   spawn(spec) {
@@ -21,7 +21,12 @@ export const processSpawner: Spawner = {
       setTimeout(() => group('SIGKILL'), spec.graceMs).unref()
     }, { once: true })
     return {
-      done: new Promise((resolve) => child.on('close', (exitCode, signal) => resolve({ exitCode, signal }))),
+      // The agent's exit ends the attempt: its output is drained for a bounded time, then the pipes are closed and what it left in its group is killed.
+      done: new Promise((resolve) => child.on('exit', (exitCode, signal) => {
+        const close = () => { child.stdout.destroy(); child.stderr.destroy(); group('SIGKILL'); resolve({ exitCode, signal }) }
+        const drain = setTimeout(close, spec.drainMs ?? DRAIN_MS)
+        child.on('close', () => { clearTimeout(drain); group('SIGKILL'); resolve({ exitCode, signal }) })
+      })),
       stdout: () => stdout,
       stderr: () => stderr,
     }

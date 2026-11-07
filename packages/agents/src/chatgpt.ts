@@ -204,6 +204,9 @@ export function prepareProfile(dir: string): void {
  * `prepareProfile`). There is no headless mode: a real window is closer to the operator's own browser and is challenged less.
  */
 export const launch = async (web: WebConfig, display: Display): Promise<BrowserContext> => {
+  // Another live Chrome on the profile: nothing is prepared and nothing is launched (it would hand the start to that Chrome).
+  const holder = profileLockPid(web.profileDir)
+  if (holder !== undefined && alive(holder)) throw new Error(`the profile ${web.profileDir} is held by a running Chrome (pid ${holder}); not launching on it`)
   ensureProfile(web.profileDir)
   prepareProfile(web.profileDir)
   const chrome = await ensureChrome(web.executablePath, web.managedDir)
@@ -221,20 +224,22 @@ export const launch = async (web: WebConfig, display: Display): Promise<BrowserC
 /**
  * One working tab: the worker's own is opened first (closing the last page of a headed window may end the
  * browser), then every other page is closed, and so is any that arrives later, as a late session restore or a
- * popup does, until the context ends. Counts are for the evidence record.
+ * popup does, until the context ends. Counts are of pages whose close was confirmed (one that cannot be closed fails the attempt, or is counted apart for a late one).
  */
-export async function singleTab(context: BrowserContext): Promise<{ page: Page; initial: number; closed: number; late: () => number }> {
+export async function singleTab(context: BrowserContext): Promise<{ page: Page; initial: number; closed: number; late: () => number; lateFailed: () => number }> {
   const inherited = context.pages()
   const page = await context.newPage()
   let late = 0
+  let lateFailed = 0
   context.on('page', (arrived) => {
     if (arrived === page) return
-    late += 1
-    void arrived.close().catch(() => {})
+    arrived.close().then(() => { late += 1 }, () => { lateFailed += 1 })
   })
   const others = context.pages().filter((p) => p !== page)
-  await Promise.all(others.map((p) => p.close().catch(() => {})))
-  return { page, initial: inherited.length, closed: others.length, late: () => late }
+  const closes = await Promise.all(others.map((p) => p.close().then(() => true, () => false)))
+  const stuck = closes.filter((ok) => !ok).length
+  if (stuck) throw new Failure(`${stuck} other page(s) could not be closed; the one-tab invariant does not hold`)
+  return { page, initial: inherited.length, closed: others.length, late: () => late, lateFailed: () => lateFailed }
 }
 
 /** The prompt of one attempt: the step, the inputs inlined as text, and each output as a labelled fenced block. */
@@ -284,8 +289,31 @@ async function within<T>(ms: number, run: Promise<T>): Promise<T> {
   }
 }
 
-/** One launch, ended at the launch clock plus a margin even when it neither returns nor fails; a Chrome that comes up after that is closed. */
+/** Whether `pid` is gone within `ms`. */
+async function gone(pid: number, ms: number): Promise<boolean> {
+  for (const end = Date.now() + ms; alive(pid); await new Promise((resolve) => setTimeout(resolve, 50))) if (Date.now() > end) return false
+  return true
+}
+
+/** Kill the process group of the Chrome `pid` (Playwright starts it as a group of its own); the process alone when that fails. */
+function killChrome(pid: number): void {
+  for (const target of [-pid, pid]) {
+    try {
+      process.kill(target, 'SIGKILL')
+      return
+    } catch {
+      // Not a group leader, or gone.
+    }
+  }
+}
+
+/**
+ * One launch, ended at the launch clock plus a margin even when it neither returns nor fails. A launch that
+ * fails or is abandoned must not leave Chrome running: the process that took the profile's lock since the launch began
+ * is killed (never one that held it before), and a context that comes up late is closed.
+ */
 async function launchBounded(launcher: typeof launch, web: WebConfig, display: Display): Promise<BrowserContext> {
+  const before = profileLockPid(web.profileDir)
   const started = launcher(web, display)
   let timer: NodeJS.Timeout | undefined
   const gaveUp = new Promise<never>((_, reject) => {
@@ -294,6 +322,8 @@ async function launchBounded(launcher: typeof launch, web: WebConfig, display: D
   try {
     return await Promise.race([started, gaveUp])
   } catch (error) {
+    const pid = profileLockPid(web.profileDir)
+    if (pid !== undefined && pid !== before && alive(pid)) killChrome(pid)
     void started.then((late) => late.close(), () => {})
     throw error
   } finally {
@@ -325,6 +355,13 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   // One close, shared by the abort and the end of the attempt: a second `close()` returns before the browser has exited.
   let closing: Promise<void> | undefined
   const close = async () => { if (context) await (closing ??= context.close().catch(() => {})) }
+  // The browser's process, from the profile's lock once it is up: the close is ok only when that process has exited.
+  let chromePid: number | undefined
+  const survivor = async (): Promise<string | undefined> => {
+    if (chromePid === undefined || (await gone(chromePid, 3000))) return undefined
+    killChrome(chromePid)
+    return `close() returned but the browser process ${chromePid} did not exit; it was killed`
+  }
   const driver = chatGptDriver(web, note)
   let page: Page | undefined
   let display: Display | undefined
@@ -335,20 +372,21 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     attempt: request.attemptId, account: account.ref, chrome: executor.version,
     uiMap: { revision: driver.map.uiRevision, hash: driver.map.hash }, launchTimeoutSeconds: launchTimeoutMs(web) / 1000,
   })
+  driver.onSubmitted = () => evidence.set({ promptSubmitted: true })
   driver.onStage = ({ stage, status, error }) => {
     if (status === 'start') {
       evidence.begin(stage)
-      if (stage === 'send') evidence.set({ promptSubmitted: true })
+      if (stage === 'send') evidence.set({ promptSendAttempted: true })
     } else {
       evidence.end(stage, status === 'failed' ? error ?? 'failed' : undefined)
     }
   }
   const finish = async (result: Omit<WorkerResult, 'executor' | 'log'>): Promise<WorkerResult> => {
     // The browser is ended, and that recorded, before the evidence is stored.
-    if (tabs) evidence.set({ pages: { ...evidence.data.pages!, closedLate: tabs.late() } })
+    if (tabs) evidence.set({ pages: { ...evidence.data.pages!, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
     evidence.begin('close')
     await close()
-    evidence.end('close')
+    evidence.end('close', await survivor())
     note(`evidence ${evidence.json()}`)
     const logId = await putFile(Buffer.from(`${log.join('\n')}\n`), 'text/plain')
     if (result.status !== 'succeeded') result.partial = { ...result.partial, evidence: await putFile(Buffer.from(evidence.json()), 'application/json') }
@@ -382,6 +420,7 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     display = await acquireDisplay()
     check()
     context = await recorded('launch', () => stage('launch', launchTimeoutMs(web) / 1000, () => launchBounded(launcher, web, display!)))
+    chromePid = profileLockPid(web.profileDir)
     stop.signal.addEventListener('abort', () => { void close() }, { once: true })
     check()
     // One working tab, whatever Chrome brought up: the worker's own first, then the rest closed, before any navigation.
@@ -389,7 +428,7 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     page = tabs.page
     page.setDefaultNavigationTimeout(web.timeouts.load * 1000)
     const size = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })).catch(() => undefined)
-    evidence.set({ ...(size ? { viewport: size } : {}), pages: { initial: tabs.initial, beforeNavigation: context.pages().length, closedInherited: tabs.closed, closedLate: tabs.late() } })
+    evidence.set({ ...(size ? { viewport: size } : {}), pages: { initial: tabs.initial, beforeNavigation: context.pages().length, closedInherited: tabs.closed, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
     const conversationKind = web.temporaryChat ? 'temporary' : 'persistent'
     // The driver opens the chat (a temporary one when asked, in Chat mode), checks the sign-in, sends the prompt and waits for the
     // finished answer, on the clocks it was built with (`chatGptDriver`).

@@ -296,6 +296,23 @@ test('the time limit stops what the agent spawned in its process group, but not 
   }
 })
 
+// 2026-11-07: two Xvfb leaked by a Worker's own tests held a finished attempt "running" for 33 min: the pipes stayed open.
+test('the attempt ends when the agent exits, even if a process it left behind holds its output open', { timeout: 20_000 }, async () => {
+  const { artifacts } = memory()
+  const holder = join(root, 'holder.pid')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-holder'), 300, 300)
+  const started = Date.now()
+  try {
+    const result = await worker.run(request({ question: await task(artifacts, `FAKE:outputs FAKE:holdstdout=${holder}`) }, ['report']))
+    assert.equal(result.status, 'succeeded', result.reason)
+    assert.ok(Date.now() - started < 5000, `ended ${Date.now() - started} ms after the start, not when the pipe closed`)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    assert.ok(!alive(Number(readFileSync(holder, 'utf8'))), 'what the agent left in its group is stopped')
+  } finally {
+    try { process.kill(Number(readFileSync(holder, 'utf8')), 'SIGKILL') } catch { /* gone */ }
+  }
+})
+
 test('each Codex attempt gets a fresh CODEX_HOME with only auth.json; a refresh is copied back', async () => {
   const { artifacts } = memory()
   const repository = repo()

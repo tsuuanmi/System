@@ -418,10 +418,10 @@ actions:
     sideEffect: reversible
     timeouts: { resolveMs: 15000, verifyMs: 5000 }
   composer.insert:
-    do: insertText
+    do: pasteText
     target: composer.input
     require: [editable]
-    # The engine reads the text back; Send's label is not part of this check, so a renamed Send cannot fail it.
+    # One paste event (typing 66 KB took 5.5 min), typed instead when the editor ignores it. The engine reads the text back; Send's label is not part of this check, so a renamed Send cannot fail it.
     verify: { visible: composer.input }
     sideEffect: none
     heal: deterministic

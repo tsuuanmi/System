@@ -16,6 +16,8 @@ import { profileLockPid, webAttempt, type WebConfig } from './chatgpt.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
 const GRACE_MS = 30_000
+/** After the agent exits, its output is read for this long and its process range is given this long to empty; then both are closed (never waited for: a process it left holding the pipes would hold the attempt). */
+export const DRAIN_MS = 5000
 /** The wall-clock limit of an attempt when neither the account nor the row sets one. */
 export const DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 60
 const MAX_LOG_BYTES = 256 * 1024
@@ -26,6 +28,8 @@ export interface SpawnSpec {
   env: Record<string, string | undefined>
   signal: AbortSignal
   graceMs: number
+  /** After the process exits: how long its output may still be read and its group may still empty before the pipes are closed and what is left is killed (default `DRAIN_MS`). */
+  drainMs?: number
   /** Where the process writes its own ID before it starts the CLI (see `recordingPid`), for a later Host to find. */
   pidFile?: string
 }
@@ -83,12 +87,12 @@ function exited(pid: number): boolean {
 }
 
 /** The Host's slots limit how many attempts of an account run at once, so none queues here. */
-export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, graceMs = GRACE_MS): WorkerPort {
+export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, graceMs = GRACE_MS, drainMs = DRAIN_MS): WorkerPort {
   return {
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
-    run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs),
+    run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs),
     async gone(attemptId) {
       // A browser attempt has no pid file; Chrome's own profile lock names the process that may still hold the Account.
       if (account.web) {
@@ -105,7 +109,7 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
   }
 }
 
-async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, request: WorkerRequest, graceMs: number): Promise<WorkerResult> {
+async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, request: WorkerRequest, graceMs: number, drainMs: number): Promise<WorkerResult> {
   if (account.runtime === 'chatgpt-web') return webAttempt(account, artifacts, attemptsDir, request)
   const tier = requestedTier(request.capabilities)
   const model = tier ? account.models?.[tier] : account.models?.standard
@@ -143,7 +147,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     request.signal.addEventListener('abort', forward, { once: true })
     let timedOut = false
     const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
-    const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs, pidFile: pidFile(attemptsDir, request.attemptId) })
+    const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
     const outcome = await spawned.done.finally(() => {
       clearTimeout(timer)
       request.signal.removeEventListener('abort', forward)

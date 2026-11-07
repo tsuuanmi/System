@@ -6,10 +6,10 @@
  * base commit**, so a Worker cannot weaken them by editing that file. Each
  * check runs `sh -c <run>` in the worktree with a minimal environment and its
  * own timeout; its exit, duration and output tails are one evidence Artifact.
- * Verdict: `pass` when every check exits 0, `fail` when any does not (a
+ * Verdict: `pass` when every check exits 0 and leaves no Xvfb or Chrome running (it is named and killed), `fail` when any does not (a
  * timeout is a failure), `error` when the checks could not be run at all.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Spawner } from '@system/agents'
@@ -44,10 +44,35 @@ export const checkRunSchema = z.object({
   exitCode: z.number().int().nullable(),
   signal: z.string().nullable(),
   timedOut: z.boolean(),
+  /** Xvfb and Chrome processes the check started and left running (stopped by the verifier), as `name pid N`. */
+  leftovers: z.array(z.string()).optional(),
   durationMs: z.number().int().nonnegative(),
   stdoutTail: z.string(),
   stderrTail: z.string(),
 }).strict()
+
+/** A display server or browser: what a check's own tests leak, and what then holds a Worker's pipes and profile. */
+const LEAKED = /^(Xvfb|chrome|chromium|chrome-headless-shell)$/
+
+/**
+ * The Xvfb and Chrome processes a check left running: those of this user whose environment carries the check's own
+ * throwaway HOME (children keep it, and a leaked process is reparented, so its ancestry is no help). Each is killed.
+ */
+export function stopLeftovers(home: string): string[] {
+  const found: string[] = []
+  for (const entry of readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry)) continue
+    try {
+      const name = readFileSync(`/proc/${entry}/comm`, 'utf8').trim()
+      if (!LEAKED.test(name) || !readFileSync(`/proc/${entry}/environ`, 'utf8').split('\0').includes(`HOME=${home}`)) continue
+      process.kill(Number(entry), 'SIGKILL')
+      found.push(`${name} pid ${entry}`)
+    } catch {
+      // Gone already, another user's, or no /proc (not Linux): nothing to name.
+    }
+  }
+  return found
+}
 
 const tail = (text: string) => (text.length > TAIL ? text.slice(-TAIL) : text)
 
@@ -103,13 +128,15 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), PATH: process.env.PATH, LANG: process.env.LANG, HOME: scratch, CI: '1' },
           })
           const outcome = await spawned.done
+          const leftovers = stopLeftovers(scratch)
           const run = {
             name: check.name, run: check.run, commit: tree.commit, exitCode: outcome.exitCode, signal: outcome.signal,
             timedOut: timeout.aborted, durationMs: Math.max(0, Math.round(now() - started)),
-            stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()),
+            stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}),
           }
           evidence.push((await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id)
           if (run.exitCode !== 0 || run.timedOut) failed.push(run.timedOut ? `${check.name} (timed out after ${check.timeoutSeconds} s)` : `${check.name} (exit ${run.exitCode ?? run.signal})`)
+          else if (leftovers.length) failed.push(`${check.name} (left running: ${leftovers.join(', ')})`)
         }
       } finally {
         await removeWorktree(tree.repository, worktree)

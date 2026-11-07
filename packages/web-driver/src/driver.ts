@@ -38,7 +38,7 @@ export interface DriverTimeouts {
 }
 
 /** The stages of a turn, in order, as `onStage` reports them. */
-export type TurnStage = 'open' | 'auth' | 'mode' | 'send' | 'wait' | 'read'
+export type TurnStage = 'open' | 'auth' | 'mode' | 'insert' | 'send' | 'wait' | 'read'
 export interface StageEvent {
   stage: TurnStage
   status: 'start' | 'ok' | 'failed'
@@ -46,7 +46,7 @@ export interface StageEvent {
   error?: string
 }
 
-/** What `diagnostics` keeps of a page: bounded, with no cookie, token, input value or long text. */
+/** What `diagnostics` keeps of a page: bounded, with no cookie, token, input value or text: lengths stand for text and values. */
 export interface PageDiagnostics {
   url: string
   viewport: { width: number; height: number }
@@ -135,6 +135,8 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   healEnabled: () => boolean = () => true
   /** Each stage of a turn as it starts and ends; the Runtime writes it into its evidence record. */
   onStage: ((event: StageEvent) => void) | undefined
+  /** Called once the page shows a user turn for the sent prompt: the site has it (`send` alone is an attempt). */
+  onSubmitted: (() => void) | undefined
   private readonly origin: string
   private readonly timeouts: Required<Omit<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>> & Pick<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>
   private readonly engines = new WeakMap<Page, UiEngine>()
@@ -219,8 +221,12 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
         await engine.act('tools.open')
         await engine.act(feature === 'deep-research' ? 'tools.deep-research' : 'tools.web-search')
       }
+    })
+    // The insert is its own stage: a long prompt takes most of the time of what was one stage with the mode.
+    await this.staged('insert', async () => {
       await engine.act('composer.insert', { text: prompt })
       try {
+        // The mode is read again right before the send: the insert can take long enough for the page to change it.
         await this.requireChat(engine, 'before sending')
         await this.refuseWorkComposer(engine)
         options.signal?.throwIfAborted()
@@ -232,7 +238,15 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       }
     })
     // The stage starts before the click: a click that throws may still have sent, so it counts as submitted.
-    await this.staged('send', () => engine.act('composer.send'))
+    await this.staged('send', async () => {
+      const turns = await engine.count('turn.user')
+      await engine.act('composer.send')
+      // Confirmed only when the page shows the new user turn (it keeps no claim when the turn is slow to render).
+      for (const end = Date.now() + 10_000; Date.now() < end; await sleep(this.timeouts.pollMs)) {
+        options.signal?.throwIfAborted()
+        if ((await engine.count('turn.user').catch(() => 0)) > turns) return this.onSubmitted?.()
+      }
+    })
     const reply = await this.staged('wait', () => this.waitForAnswer(page, before, options.signal, options.deadlines, options.conversation === 'persistent' && !options.binding ? options.onBinding : undefined))
     const text = await this.staged('read', async () => {
       // Deep research answers with an acknowledgement; the report arrives later in its frame.
@@ -243,10 +257,14 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       return read
     })
     if (options.conversation === 'temporary') return { text, binding: undefined, mode }
-    const binding = await this.binding(page)
-    if (options.binding !== undefined && binding !== options.binding) {
-      throw new ProviderError('session_broken', `chatgpt-web: conversation moved from ${options.binding} to ${binding}`)
-    }
+    // Part of the read stage's record: a failure here is where the attempt failed.
+    const binding = await this.staged('read', async () => {
+      const found = await this.binding(page)
+      if (options.binding !== undefined && found !== options.binding) {
+        throw new ProviderError('session_broken', `chatgpt-web: conversation moved from ${options.binding} to ${found}`)
+      }
+      return found
+    })
     return { text, binding, mode }
   }
 
@@ -357,22 +375,26 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
 
   /**
    * Wait for the Chat/Work switch, which the site renders after the composer; a missing switch is
-   * never read as Chat mode. Once shown, the mode it reads must hold for `modeSettleMs` (a site that
-   * restores its last mode late changes it under us); a change starts the wait again. At the deadline
+   * never read as Chat mode. Once shown, the mode it reads must hold for `modeSettleMs`, sampled every poll (a site that
+   * restores its last mode late changes it under us); a change starts the hold again, and the whole wait ends at `modeReadyMs`. At the deadline
    * the page's state is named: a challenge, a signed-out page, or a mode unknown.
    */
   private async awaitModeSwitch(engine: UiEngine): Promise<void> {
     const readyMs = this.timeouts.modeReadyMs ?? this.map.settings.modeReadyMs
     const settleMs = this.timeouts.modeSettleMs ?? this.map.settings.modeSettleMs
     const deadline = Date.now() + readyMs
-    for (;;) {
+    // The mode is sampled every poll: any change (or the switch going) starts the hold again; the whole wait ends at the deadline.
+    let seen: string | null | undefined
+    let since = 0
+    while (Date.now() < deadline) {
       if ((await engine.count('mode.group')) > 0) {
-        const seen = await this.pressed(engine)
-        await sleep(settleMs)
-        if ((await engine.count('mode.group')) > 0 && (await this.pressed(engine)) === seen) return
+        const now = await this.pressed(engine)
+        if (seen === undefined || now !== seen) { seen = now; since = Date.now() }
+        else if (Date.now() - since >= settleMs && Date.now() <= deadline) return
+      } else {
+        seen = undefined
       }
-      if (Date.now() >= deadline) break
-      await sleep(this.timeouts.pollMs)
+      await sleep(Math.max(0, Math.min(this.timeouts.pollMs, deadline - Date.now())))
     }
     if (await engine.state('auth.challenge')) throw new ProviderError('challenge', 'chatgpt-web: the site shows a challenge while the Chat/Work switch is awaited; nothing was sent')
     if (await engine.state('auth.signed-out')) throw new ProviderError('reauth_required', 'chatgpt-web: signed out while the Chat/Work switch was awaited')
@@ -394,23 +416,24 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
 
   /**
    * What the page shows, for a failure nobody watched: its URL without query, the viewport, the UI
-   * map's version, and the DOM with scripts, styles, input values, editable text, query strings and
-   * long text taken out, cut to a fixed size. No cookie or storage is read.
+   * map's version, and the DOM's structure (tags, roles, aria-labels, data-testid, attribute names) with
+   * scripts, styles and input values taken out and every text node and other attribute value (URLs
+   * included) replaced by its length (`[text:42]`), cut to a fixed size. No cookie or storage is read.
    */
   async diagnostics(page: Page): Promise<PageDiagnostics> {
     const captured = await page.evaluate((limit) => {
       const root = document.documentElement.cloneNode(true) as HTMLElement
       root.querySelectorAll('script,style,noscript,svg,link,meta,template,iframe').forEach((el) => el.remove())
       root.querySelectorAll('input,textarea,select,[contenteditable]').forEach((el) => { el.textContent = '' })
+      // Structure only: tags, attribute names, and the values of role, aria-label and data-testid; every other value and every text node is its length.
       for (const el of [root, ...root.querySelectorAll('*')]) {
         for (const attr of [...el.attributes]) {
           if (/^(on|style$|value$|checked$|srcset$)/.test(attr.name)) el.removeAttribute(attr.name)
-          else if (/^(href|src|action)$/.test(attr.name)) el.setAttribute(attr.name, attr.value.replace(/[?#].*$/, ''))
-          else if (attr.value.length > 80) el.setAttribute(attr.name, `${attr.value.slice(0, 40)}…`)
+          else if (!/^(role|aria-label|data-testid)$/.test(attr.name) && attr.value !== '') el.setAttribute(attr.name, `[text:${attr.value.length}]`)
         }
       }
       const texts = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-      for (let node = texts.nextNode(); node; node = texts.nextNode()) if ((node.nodeValue ?? '').length > 60) node.nodeValue = `${node.nodeValue!.slice(0, 60)}…`
+      for (let node = texts.nextNode(); node; node = texts.nextNode()) if ((node.nodeValue ?? '').trim() !== '') node.nodeValue = `[text:${node.nodeValue!.length}]`
       const html = root.outerHTML
       return { html: html.slice(0, limit), truncated: html.length > limit, width: window.innerWidth, height: window.innerHeight }
     }, DIAGNOSTIC_DOM_CHARS)

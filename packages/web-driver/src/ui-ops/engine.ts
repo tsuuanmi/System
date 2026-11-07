@@ -576,13 +576,23 @@ export class UiEngine {
         }
         return
       }
-      case 'insertText': {
+      case 'insertText':
+      case 'pasteText': {
         const text = args.text ?? ''
         await locator.click()
         // After anything already in the composer (such as a tool mention chip).
         await locator.press('ControlOrMeta+End')
+        // A paste is one event the editor handles as one insertion (typing a 66 KB prompt into the live editor took 5.5 min);
+        // an editor that does not handle it leaves it unprevented, and the text is typed instead.
+        const pasted = spec.do === 'pasteText' && (await locator.evaluate((el, pasting) => {
+          const data = new DataTransfer()
+          data.setData('text/plain', pasting)
+          const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+          el.dispatchEvent(event)
+          return event.defaultPrevented
+        }, text))
         // Insert as text (no key events), so editor shortcuts never fire; then read back.
-        await this.page.keyboard.insertText(text)
+        if (!pasted) await this.page.keyboard.insertText(text)
         const value = await typedText(locator)
         // Editors turn line breaks into paragraphs and may change spacing; the lines and
         // their characters must survive.

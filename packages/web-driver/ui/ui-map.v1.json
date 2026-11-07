@@ -504,6 +504,7 @@
           "enum": [
             "click",
             "insertText",
+            "pasteText",
             "clearText",
             "press",
             "setFiles",

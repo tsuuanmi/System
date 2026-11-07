@@ -156,3 +156,63 @@ test('the diagnostics of a page are bounded and redacted: URL, viewport, map ver
   assert.doesNotMatch(JSON.stringify(found), /SECRET/)
   assert.match(found.dom, /Composer mode/, 'the structure is kept')
 })
+
+test('the diagnostics keep structure only: text nodes and attribute values are lengths, aria-labels and data-testid stay', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start({ modeSwitch: false })
+  await page.goto(`${fake.origin}/`)
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend', '<section data-testid="turn" data-secret-name="SECRET-DATA" title="SECRET-TITLE" id="SECRET-ID" class="SECRET-CLASS" role="log" aria-label="Chat log"><p>SECRET-TEXT me@example.com</p><a href="/x?t=SECRET-QUERY" data-user="SECRET-USER">SECRET-LINK</a></section>')
+  })
+  const found = await driver.diagnostics(page)
+  assert.doesNotMatch(JSON.stringify(found), /SECRET|example\.com/)
+  assert.match(found.dom, /data-testid="turn"/)
+  assert.match(found.dom, /data-secret-name="\[text:11\]"/, 'data-* names stay, their values are lengths')
+  assert.match(found.dom, /role="log"/)
+  assert.match(found.dom, /aria-label="Chat log"/)
+  assert.match(found.dom, /\[text:\d+\]/)
+})
+
+test('the mode wait ends at its deadline even when the mode would be stable only after it; nothing is sent', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start({}, { modeReadyMs: 1000, modeSettleMs: 2500 })
+  const started = Date.now()
+  await assert.rejects(driver.ask(page, 'Slow settle.', { conversation: 'temporary' }), failure('ui_drift', /mode unknown/))
+  assert.ok(Date.now() - started < 2400, `ended at the deadline, not after the settle (${Date.now() - started} ms)`)
+  assert.equal(fake.sent.length, 0)
+})
+
+test('a mode that leaves Chat and comes back inside the settle interval restarts it', { skip, timeout: 60_000 }, async () => {
+  const { page, driver } = await start({ startOnWork: false }, { modeReadyMs: 20_000, modeSettleMs: 2000 })
+  const flips: number[] = []
+  let sent = 0
+  driver.onStage = ({ stage, status }) => {
+    if (stage === 'mode' && status === 'start') {
+      const click = (id: string) => page.evaluate((i) => document.getElementById(i)!.click(), id)
+      setTimeout(() => void click('mode-work'), 300)
+      setTimeout(() => { void click('mode-chat'); flips.push(Date.now()) }, 1800)
+    }
+    if (stage === 'insert' && status === 'start') sent = Date.now()
+  }
+  await driver.ask(page, 'Blip.', { conversation: 'temporary' })
+  assert.ok(sent >= flips[0]! + 1950, `the wait ended too early: the settle began again after the last change (${sent - flips[0]!} ms after it)`)
+})
+
+// WW1c: keyboard.insertText of 66 KB into the live editor took 5.5 min; the composer takes one paste instead.
+const longPrompt = (bytes: number) => Array.from({ length: Math.ceil(bytes / 60) }, (_, i) => `line ${i}: the quick brown fox jumps over the lazy dog`).join('\n')
+
+test('a 60 KB prompt goes into the composer as one paste, intact and fast, as its own stage', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start()
+  const stages: string[] = []
+  driver.onStage = ({ stage, status }) => { if (status === 'start') stages.push(stage) }
+  const prompt = longPrompt(60_000)
+  const started = Date.now()
+  await driver.ask(page, prompt, { conversation: 'temporary', beforeSend: async () => { assert.equal(await page.locator('#input').getAttribute('data-pasted'), '1') } })
+  assert.ok(Date.now() - started < 10_000, `${Date.now() - started} ms`)
+  assert.equal(fake.sent[0]!.prompt, prompt)
+  assert.ok(stages.indexOf('insert') > stages.indexOf('mode') && stages.indexOf('insert') < stages.indexOf('send'), stages.join())
+})
+
+test('a paste the composer does not take falls back to typed text', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, driver } = await start({ pasteTaken: false })
+  await driver.ask(page, 'Typed instead.\nSecond line.', { conversation: 'temporary' })
+  assert.equal(fake.sent[0]!.prompt, 'Typed instead.\nSecond line.')
+})

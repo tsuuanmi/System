@@ -694,12 +694,22 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      awaited (map `settings.modeReadyMs`, 15 s) and failures are named; no
      selector changed. Each attempt keeps a stage-chain evidence record as
      partial output.
-  1c. [ ] Found while running WW1 (2026-11-07): a Runtime waits for the
+  1c. [x] Found while running WW1 (2026-11-07): a Runtime waits for the
      Worker's output pipe to close, so two Xvfb leaked by the Worker's own
      tests held a finished attempt "running" for 33 min (end the attempt on
      process exit, then drain briefly; required checks fail on leftover
      processes); `tests/host-process.test.ts` "SIGTERM stops the Host ..."
      timed out once at a host load average of about 200 (flaky under load).
+     *Done (WW1c), except the last: the attempt ends on the process's exit
+     and drains for 5 s; a check that leaves Xvfb or Chrome fails, naming
+     it; the host-process test is untouched.* Also done: the review of WW1
+     (second opinion, `work:d72ce675`): the failure DOM is structure only,
+     a timed-out launch kills its Chrome, a held profile is never launched,
+     the mode wait is bounded and read again before the send, `close` is
+     `ok` only when the process exited, `promptSubmitted` is apart from
+     `promptSendAttempted` (PROP-0005 lists each); and a 66 KB prompt took
+     5.5 min to type, so the composer takes one paste (`do: pasteText`, its
+     own `insert` stage; 60 KB in about a second on the fake page).
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [ ] Canary.
