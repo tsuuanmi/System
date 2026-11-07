@@ -209,6 +209,12 @@ fallback.
    the driver's three-backtick pairing broke (second opinions `work:d72ce675`
    and `work:a4bd030d` lost their `review` block); fences are read by
    CommonMark's rule and rebuilt one backtick longer than their content.
+   WW5b: a second opinion (`work:feee282d`) was answered as one `review` widget
+   whose text holds ```` ```ts ```` fences; the driver took those lines for
+   Markdown and did not fence the widget. The driver now returns the rendered
+   blocks as data and the Runtime fills each output from the block labelled
+   with its name (verbatim; two such blocks are ambiguous and fail), else from
+   the Markdown text; the evidence records which (`filled`).
 
 ## Known defects, fixed in WW1 (2026-11-07)
 

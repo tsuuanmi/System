@@ -112,6 +112,13 @@ for (const [name, copied] of [
   })
 }
 
+// WW5b: the result also carries the final answer's rendered blocks as data, so a caller can fill an output from the block that names it.
+test("an answer's rendered code blocks are returned as data: label and raw text, rows kept", { skip, timeout: 60_000 }, async () => {
+  const { page, driver } = await start({ answer: NESTED, copied: () => '', codeWidget: true })
+  const result = await driver.ask(page, 'Review.', { conversation: 'temporary' })
+  assert.deepEqual(result.blocks, [{ label: 'review', code: '## Verdict\nok\n```ts\nconst a = 1\n```' }])
+})
+
 // WW1 defect 2: the Chat/Work switch was "not found" on the real site, with no page captured. A missing switch is no proof of
 // Chat mode: the driver waits for it, bounded by the map's `settings.modeReadyMs`, and fails closed with the page's state named.
 const MODE_WAIT = { modeReadyMs: 1500, modeSettleMs: 300 }

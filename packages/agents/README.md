@@ -236,7 +236,9 @@ the moment the send is tried, so a retry never assumes the prompt was not sent),
 timeout, the page counts (initial, before the first navigation, and confirmed
 closed inherited and late, and late ones that would not close), the viewport, Chrome's version, the UI map's revision and hash,
 the failed stage and the last completed one, and for a two-part prompt `attach`: which outcome (`text` or
-`attachment`) and the chip count. It is partial output `evidence` of
+`attachment`) and the chip count, and `filled`: how each output was filled (`block`: the rendered
+code block labelled with its name, verbatim, two of one name being ambiguous and a failure; `text`: the
+Markdown's fenced block; WW5b). It is partial output `evidence` of
 every failed or cancelled attempt, and the last line of the log of every attempt.
 **A prompt in two parts (WW1g).** `webPrompt` returns the header (role line, step,
 instructions, the output-format request, and a line naming the attached inputs), which

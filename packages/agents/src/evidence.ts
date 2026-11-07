@@ -34,6 +34,8 @@ export interface EvidenceData {
   promptSubmitted: boolean
   /** What the site made of the prompt's body: text in the composer, or attachment chips and how many; none for a one-part prompt. */
   attach?: { outcome: 'text' | 'attachment'; chips: number }
+  /** How each required output was filled: from the rendered block that carries its name, or from the Markdown text. */
+  filled?: Record<string, 'block' | 'text'>
   stages: StageRecord[]
   lastCompleted?: string
   failedStage?: string

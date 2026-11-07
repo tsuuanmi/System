@@ -483,6 +483,32 @@ test('the worker tab is opened first, every other page is closed, and a page tha
   }
 })
 
+// WW5b (live 2026-11-07): one widget labelled `review` whose raw text holds ```ts and ```json fences, and Copy gives nothing.
+const REVIEW = '## 1. Verdict\n\nneeds changes\n\n## 2. Defects\n\n```ts\nconst before = 1\n```\n\n```json\n{"a":1}\n```'
+
+test('an output is filled verbatim from the rendered block that carries its name, and the evidence says so', { skip, timeout: 120_000 }, async () => {
+  const { artifacts, result } = await run({ answer: '````review\n' + REVIEW + '\n````', copied: () => '', codeWidget: true }, ['review'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(await text(artifacts, result.outputs.review!), REVIEW)
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { review: 'block' })
+})
+
+test('an output with no block of its name is filled from the Markdown text, and the evidence says so', { skip, timeout: 120_000 }, async () => {
+  // The page's block has no name (`Code`); Copy gives the fence with the name.
+  const { artifacts, result } = await run({ answer: '```\nsame words\n```', copied: () => '```report\nsame words\n```' }, ['report'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(await text(artifacts, result.outputs.report!), 'same words')
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { report: 'text' })
+})
+
+test('two rendered blocks with the label of an output are ambiguous: the attempt fails with that reason', { skip, timeout: 120_000 }, async () => {
+  const { result } = await run({ answer: '```review\nfirst\n```\n\n```review\nsecond\n```', copied: () => '', codeWidget: true }, ['review'])
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /review.*ambiguous|ambiguous.*review/)
+})
+
 // The stage chain of one attempt (evidence.ts): written as it happens, kept as partial output, and in the log on success.
 const STAGES = ['launch', 'open', 'auth', 'mode', 'insert', 'send', 'wait', 'read', 'close']
 const evidenceOf = async (artifacts: Artifacts, result: WorkerResult) => JSON.parse(await text(artifacts, result.partial!.evidence!))

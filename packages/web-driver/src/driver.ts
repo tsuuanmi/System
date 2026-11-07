@@ -263,15 +263,15 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       }
     })
     const reply = await this.staged('wait', () => this.waitForAnswer(page, before, options.signal, options.deadlines, options.conversation === 'persistent' && !options.binding ? options.onBinding : undefined))
-    const text = await this.staged('read', async () => {
+    const { text, blocks } = await this.staged('read', async () => {
       // Deep research answers with an acknowledgement; the report arrives later in its frame.
-      const read = feature === 'deep-research' ? await this.waitForResearch(page, reply, options.signal, options.deadlines) : await this.markdownOf(page, reply)
+      const read = feature === 'deep-research' ? { text: await this.waitForResearch(page, reply, options.signal, options.deadlines), blocks: [] } : await this.markdownOf(page, reply)
       // The site answered with its own usage limit (a map rule `on: answer`, ADR-0034): sent, never
       // resent. Only this answer is looked at, never an earlier one of the conversation.
       if ((await engine.count('turn.assistant')) > 0) await engine.answerErrors((await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
       return read
     })
-    if (options.conversation === 'temporary') return { text, binding: undefined, mode }
+    if (options.conversation === 'temporary') return { text, blocks, binding: undefined, mode }
     // Part of the read stage's record: a failure here is where the attempt failed.
     const binding = await this.staged('read', async () => {
       const found = await this.binding(page)
@@ -280,7 +280,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       }
       return found
     })
-    return { text, binding, mode }
+    return { text, blocks, binding, mode }
   }
 
   /**
@@ -686,7 +686,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     }
     // Its citations may stand outside the answer's own container (inline source pills): every
     // link to another site after the prompt, in the conversation, follows the report as a source.
-    return withMissingSources(await this.markdownOf(page, rendered), await this.linksAfterPrompt(engine))
+    return withMissingSources((await this.markdownOf(page, rendered)).text, await this.linksAfterPrompt(engine))
   }
 
   /** The links to another site after the last prompt, within its conversation (href → text, first text wins). */
@@ -908,7 +908,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
    * the clipboard, and kept only when its words are the rendered answer's words (the clipboard
    * may be shared). Otherwise the rendered text stands, followed by the answer's cited links.
    */
-  private async markdownOf(page: Page, rendered: string): Promise<string> {
+  private async markdownOf(page: Page, rendered: string): Promise<{ text: string; blocks: Array<{ label: string; code: string }> }> {
     const engine = this.engine(page)
     const text = await copiedMarkdown(engine, rendered, async () => (await engine.resolve('turn.assistant.done', 1000)).locator.last(), async (markdown) => {
       // Copy rebuilds code blocks from the page and loses their line breaks: take each block's
@@ -928,8 +928,10 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       })
       return `${out}${fenced.slice(at)}${rest}`.trim()
     }, async () => (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
-    // The rendered text stands in for a refused Copy: its own fence lines (a block's content) do not make it Markdown.
-    return /^```/m.test(text) && !text.startsWith(rendered) ? text : this.withFencedBlocks(engine, text)
+    // A block's own fence lines (its content) do not make the text Markdown: a block still needs its fence when none of that name is in the text.
+    const blocks = await this.renderedBlocks(engine)
+    const unfenced = blocks.some(({ label }) => !new RegExp(`^\\s{0,3}\`{3,}\\s*${escapeRegExp(label)}\\s*$`, 'm').test(text))
+    return { text: unfenced ? this.withFencedBlocks(blocks, text) : text, blocks }
   }
 
   /**
@@ -938,8 +940,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
    * written as a fenced block again, in place where the text still carries it, else after the text.
    * Not in System 1's driver as such: it kept Markdown fences only when Copy worked (W8).
    */
-  private async withFencedBlocks(engine: UiEngine, text: string): Promise<string> {
-    const blocks = await this.renderedBlocks(engine)
+  private withFencedBlocks(blocks: Array<{ label: string; code: string }>, text: string): string {
     let result = text
     for (const { label, code: body } of blocks) {
       const fenced = fencedText(label, body)
