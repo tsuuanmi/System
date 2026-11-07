@@ -724,25 +724,22 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      prompts stay one part. Evidence: the stages `insert` and `attach`, the outcome and
      the chip count. Tests on the fake page, in `test:web`. *Not yet checked on the real
      site: the selectors come from the DOM the operator's agent captured.*
-  1d. [ ] Worker tool policy for Software Engineering Workers (no background
-     tasks or Monitor; commands run in the foreground under `timeout`), a
-     per-attempt budget (tokens and time, from the observed usage; WW1 took
-     183M input tokens over 13 turns, WW1c 86M), failure reasons in one line
-     (the check, the test, the first error line), and the checks pinned to
-     Node 24 whatever the Host's `PATH`.
-  1e. [ ] Merge queue (decided 2026-11-07), before any parallel Software
-     Engineering Works.
+  1d, 1e, 2p. *Moved to milestone CQ (PROP-0007 on branch `checks-and-merge-queue`,
+     built from `dev` by the Development session; operator, 2026-11-07): the
+     Worker tool policy and per-attempt budget, checks on the repository's
+     Node with one-line reasons, checks selected by `paths`, the merge queue.
+     They are not Website-Worker-specific.*
+  Order from here (operator, 2026-11-07): 5, 2a, 2, 3, 4, 6, 2b, 7.
+  5. [ ] Output contract bake-off, on the real site with both Accounts:
+     fences, per-output sentinels with the attempt id, JSON; then the second
+     opinion of WW1c again. (The two second-opinion runs so far lost their
+     `review` block: long Markdown with code fences inside.)
   2a. [ ] The web Runtime as its own package and an optional DSH row: core
      and the CLI Runtimes do not depend on it; a smoke test runs the main
      path with the web row off.
-  2p. [ ] Required checks selected by `paths` (as GitHub Actions' `paths`
-     filter); the main path always under 3 min, `web` under 5 min when it
-     runs; the verdict names each check run or skipped, and its time.
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [ ] Canary.
-  5. [ ] Output contract bake-off: fences, per-output sentinels with the
-     attempt id, JSON.
   6. [ ] Account supervision: preflight, spacing, cooldown, an
      `AUTH_REQUIRED` notice for re-login.
 - **What Website Workers do** (operator, 2026-11-07): `research` (web search
