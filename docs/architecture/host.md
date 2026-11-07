@@ -212,7 +212,9 @@ nothing is driving, and `slots.uncertain()` the lost Worker attempts that keep
 their Account slot (H5). `close()` refuses new operations and frees the home.
 
 On stop, the Host refuses new runs and exits. Whatever was cut short is the
-next start's recovery.
+next start's recovery. It stops accepting, lets admitted calls finish for a
+short grace (2 s), then drops every connection, so a client that stays
+connected never keeps it from stopping.
 
 `host.status` reports the number of Works and the size of their records, for
 PLAN's growth budget.

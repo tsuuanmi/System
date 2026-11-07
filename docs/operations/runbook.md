@@ -105,6 +105,10 @@ systemctl --user restart system
 systemctl --user status system
 ```
 
+Clients still connected do not delay the stop: the Host lets admitted calls
+finish for 2 s, then closes every connection, and the CLI says the Host is not
+running.
+
 Whatever was running when the Host stopped is lost at the next start and is
 left interrupted; nothing runs again until `system work run` or `retry`.
 
