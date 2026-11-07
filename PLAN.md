@@ -733,13 +733,26 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
   5. [ ] Output contract bake-off, on the real site with both Accounts:
      fences, per-output sentinels with the attempt id, JSON; then the second
      opinion of WW1c again. (The two second-opinion runs so far lost their
-     `review` block: long Markdown with code fences inside.)
+     `review` block: long Markdown with code fences inside.) Result
+     (2026-11-07, both Accounts): A, a backtick fence with "use a longer
+     fence", passed once; **B, four tildes (`~~~~review` ... `~~~~`), passed on
+     both**; C, `===BEGIN/END===` sentinel lines, failed on both (Copy escapes
+     them to `\===BEGIN`). B is safe by construction: only tildes close a
+     tilde fence, and ChatGPT still renders one widget labelled with the name.
+     The second opinion of WW1c under B is still to be run.
   5a. [x] Output blocks with a longer fence, or holding fenced code, read as
      the answer meant them (the driver's copy path and `parseBlocks`); found
      on the real site 2026-11-07 (`work:d72ce675`, `work:a4bd030d`).
   5b. [x] An output is filled from the rendered code block that carries its
      name (`AskResult.blocks`), else from the Markdown text; found on the real
      site 2026-11-07 (`work:feee282d`: one `review` widget holding fences).
+  5c. [x] The contract is B, and an output that may be cut short is never
+     accepted: `webPrompt` asks for `~~~~<name>` ... `~~~~`, `parseBlocks` and
+     the driver read tilde fences by CommonMark, and an answer with more than
+     `maxOutsideChars` (200) characters outside its output blocks fails with
+     the answer kept as partial output. Found on the real site 2026-11-07
+     (`work:7f820cb2`, `second`: a three-backtick `review` holding ```` ```ts ````
+     was closed by the inner fence, 339 bytes of it accepted, the rest outside).
   2a. [ ] The web Runtime as its own package and an optional DSH row: core
      and the CLI Runtimes do not depend on it; a smoke test runs the main
      path with the web row off.

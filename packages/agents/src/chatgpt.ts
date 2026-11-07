@@ -8,7 +8,7 @@
  * wait for a finished answer and the read of its Markdown are all the driver's.
  * This file only launches the browser, builds the prompt and records the
  * exchange. The profile on disk is the Account's credential and is reused by
- * every attempt. Each output slot is a labelled fenced block of the answer. The
+ * every attempt. Each output slot is a labelled, tilde-fenced block of the answer. The
  * exchange is stored as a `conversation@1` whose producer is the attempt.
  * Nothing here gets round a check: a sign-in wall, a CAPTCHA or an unknown
  * page ends the attempt with a screenshot.
@@ -44,6 +44,11 @@ export interface WebConfig {
    * text must stay unchanged once it can be complete.
    */
   timeouts: { load: number; answer: number; stable: number; launch?: number; mode?: number; attach?: number }
+  /**
+   * How many characters (whitespace ignored) the answer may hold outside its output blocks before the attempt fails: more
+   * means an output may have been cut short (WW5c).
+   */
+  maxOutsideChars: number
 }
 
 /** Chrome's launch clock when the account sets none, in seconds. */
@@ -52,7 +57,7 @@ export const LAUNCH_SECONDS = 30
 export const launchTimeoutMs = (web: WebConfig): number => (web.timeouts.launch ?? LAUNCH_SECONDS) * 1000
 
 export function webDefaults(profileDir: string): WebConfig {
-  return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', timeouts: { load: 60, answer: 900, stable: 3 } }
+  return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', timeouts: { load: 60, answer: 900, stable: 3 }, maxOutsideChars: 200 }
 }
 
 /**
@@ -90,25 +95,43 @@ export async function authState(driver: ChatGptWebDriver, page: Page): Promise<{
 
 const MAX_PROMPT_BYTES = 200 * 1024
 
-/** The labelled fenced blocks of Markdown that fill `slots`; the first block with a name wins. A longer fence holds shorter ones. */
-export function parseBlocks(markdown: string, slots: readonly string[]): { blocks: Record<string, string>; missing: string[] } {
+/**
+ * The fenced blocks of Markdown by CommonMark's rule: a backtick or a tilde fence, closed by a line of the same character at
+ * least as long (so a longer fence, or the other character, holds shorter ones). The blocks that fill `slots` (the first of a
+ * name wins), and `outside`: the text of every other line, an unclosed fence included.
+ */
+function readBlocks(markdown: string, slots: readonly string[]): { blocks: Record<string, string>; outside: string } {
   const blocks: Record<string, string> = {}
-  let open: { ticks: number; label: string; lines: string[] } | undefined
+  const outside: string[] = []
+  let open: { char: string; length: number; label: string; lines: string[] } | undefined
   for (const line of markdown.split('\n')) {
     if (!open) {
-      const start = /^ {0,3}(`{3,})\s*([^`\s]*)\s*$/.exec(line)
-      if (start) open = { ticks: start[1]!.length, label: start[2]!, lines: [] }
+      const start = /^ {0,3}(?:(`{3,})\s*([^`\s]*)|(~{3,})\s*(\S*))\s*$/.exec(line)
+      if (start) open = { char: start[1] ? '`' : '~', length: (start[1] ?? start[3])!.length, label: (start[2] ?? start[4])!, lines: [line] }
+      else outside.push(line)
       continue
     }
-    const end = /^ {0,3}(`{3,})\s*$/.exec(line)
-    if (end && end[1]!.length >= open.ticks) {
-      if (slots.includes(open.label) && !(open.label in blocks)) blocks[open.label] = open.lines.join('\n')
+    open.lines.push(line)
+    const end = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line)
+    if (end && end[1]![0] === open.char && end[1]!.length >= open.length) {
+      if (slots.includes(open.label) && !(open.label in blocks)) blocks[open.label] = open.lines.slice(1, -1).join('\n')
+      else outside.push(...open.lines)
       open = undefined
-    } else {
-      open.lines.push(line)
     }
   }
+  if (open) outside.push(...open.lines)
+  return { blocks, outside: outside.join('\n') }
+}
+
+/** The labelled fenced blocks of Markdown that fill `slots`; the first block with a name wins. */
+export function parseBlocks(markdown: string, slots: readonly string[]): { blocks: Record<string, string>; missing: string[] } {
+  const { blocks } = readBlocks(markdown, slots)
   return { blocks, missing: slots.filter((slot) => !(slot in blocks)) }
+}
+
+/** How many characters of the Markdown, whitespace ignored, are outside the blocks that fill `slots` (WW5c). */
+export function outsideChars(markdown: string, slots: readonly string[]): number {
+  return readBlocks(markdown, slots).outside.replace(/\s/g, '').length
 }
 
 class Failure extends Error {}
@@ -253,7 +276,7 @@ export interface WebPrompt {
 }
 
 /**
- * The prompt of one attempt: the step, the inputs inlined as text, and each output as a labelled fenced block. Inputs of at
+ * The prompt of one attempt: the step, the inputs inlined as text, and each output as a labelled tilde-fenced block. Inputs of at
  * least `minBody` characters are the body, pasted apart from the header: the site may turn that paste into an attachment
  * (the UI map's `attachMinChars`); a shorter prompt stays one part.
  */
@@ -288,8 +311,8 @@ export function webPrompt(ws: Workspace, request: WorkerRequest, minBody: number
     ...(request.instructions ? ['Instructions for this step:', request.instructions, ''] : []),
     ...(split ? ['The inputs and context follow in the same message, after these instructions, perhaps as an attached pasted text; read them as part of this message.', ''] : []),
     ...(split ? [] : [inputs]),
-    'Reply with each of these outputs as its own fenced code block, with the output name right after the opening fence. If an output contains a code fence, use a longer fence around it. Do not ask questions; there is no one to answer.',
-    ...request.outputs.map((slot) => `- ${slot}: a block that starts with \`\`\`${slot}`),
+    'Reply with each of these outputs as: a line with the output name after four tildes, the output, then a line of four tildes (more tildes if the output itself has a line of four or more), and nothing after the last output. Do not ask questions; there is no one to answer.',
+    ...request.outputs.map((slot) => `- ${slot}: a line "~~~~${slot}", the output, a line "~~~~"`),
   ]
   const header = lines.join('\n')
   const body = split ? `\n${inputs}` : undefined
@@ -478,11 +501,16 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
       else if (slot in parsed.blocks) [contents[slot], filled[slot]] = [parsed.blocks[slot]!, 'text']
       else missing.push(slot)
     }
-    evidence.set({ filled })
+    const outside = outsideChars(markdown, request.outputs)
+    evidence.set({ filled, outsideChars: outside })
     const outputs: Record<string, string> = {}
     for (const [slot, content] of Object.entries(contents)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
     if (missing.length) {
       return finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref} wrote no output block for ${missing.join(', ')}` })
+    }
+    // An output closed early (a fence of its own inside it) leaves the rest of the answer outside the blocks: never accepted.
+    if (outside > web.maxOutsideChars) {
+      return finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref}: the answer continues outside its output blocks (${outside} characters): an output may be cut short` })
     }
     return finish({ status: 'succeeded', outputs: { ...outputs, conversation: conversation.id } })
   } catch (error) {

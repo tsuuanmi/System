@@ -49,6 +49,8 @@ export interface AccountConfig {
   executablePath?: string
   /** chatgpt-web: seconds per stage (`load`, `send`, `answer`) and how long the answer's text must stay unchanged (`stable`). */
   timeouts?: Partial<WebConfig['timeouts']>
+  /** chatgpt-web: characters (whitespace ignored) the answer may hold outside its output blocks (default 200); more fails the attempt, as an output may be cut short. */
+  maxOutsideChars?: number
   /** The model per tier; each listed tier adds the capability `tier.<name>`. */
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes; overrides the row's. */
@@ -167,12 +169,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile))
         const config: WebConfig = {
           ...defaults, ...(account.executablePath ? { executablePath: account.executablePath } : {}), managedDir: browsers, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,
-          url: account.url ?? defaults.url, timeouts: { ...defaults.timeouts, ...account.timeouts },
+          url: account.url ?? defaults.url, timeouts: { ...defaults.timeouts, ...account.timeouts }, maxOutsideChars: account.maxOutsideChars ?? defaults.maxOutsideChars,
         }
         new URL(config.url)
         for (const [stage, seconds] of Object.entries(config.timeouts)) {
           if (!(typeof seconds === 'number' && seconds > 0)) throw new Error(`timeouts.${stage} is ${seconds}; it must be a number of seconds above 0`)
         }
+        if (!(Number.isInteger(config.maxOutsideChars) && config.maxOutsideChars >= 0)) throw new Error(`maxOutsideChars is ${config.maxOutsideChars}; it must be a whole number of characters, 0 or more`)
         resolved.web = config
         webs.set(account.ref, config)
       } else if (account.runtime === 'claude-code') {

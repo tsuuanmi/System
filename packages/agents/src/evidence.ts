@@ -36,6 +36,8 @@ export interface EvidenceData {
   attach?: { outcome: 'text' | 'attachment'; chips: number }
   /** How each required output was filled: from the rendered block that carries its name, or from the Markdown text. */
   filled?: Record<string, 'block' | 'text'>
+  /** Characters of the answer outside its output blocks, whitespace ignored (WW5c). */
+  outsideChars?: number
   stages: StageRecord[]
   lastCompleted?: string
   failedStage?: string

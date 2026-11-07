@@ -111,6 +111,13 @@ changed but the header line.
   the old guard take the text for Markdown, so `withFencedBlocks` now runs
   whenever a block's label has no fence of that name in the text, and the
   Runtime fills an output from the block that carries its name.
+- **Tilde fences (WW5c).** The output contract is `~~~~<name>` ... `~~~~`: a
+  backtick fence closed early by the review's own ```` ```ts ```` was accepted
+  as a truncated output on the real site, and only tildes close a tilde fence.
+  `fencedBlocks`, `splitAfterLastFence`, the word comparison and the
+  unfenced-label guard read tilde fences beside backtick ones (a closing fence
+  has the opening one's character and is at least as long); a rebuilt block is
+  still written with backticks.
 - **Long prompts are pasted (WW1c).** Typing a 66 KB prompt with
   `keyboard.insertText` into ChatGPT's editor took about 5.5 min (the whole `mode`
   stage of `work:d72ce675` was 336 s). The map's `composer.insert` is now `do:

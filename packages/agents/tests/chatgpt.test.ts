@@ -81,11 +81,31 @@ test('parseBlocks reads labelled fenced blocks, with longer fences around shorte
 test('parseBlocks reads a long-fenced block that holds a shorter fence, and only closes it with an equal or longer one', () => {
   const review = '## Verdict\nok\n```ts\nconst a = 1\n```'
   assert.deepEqual(parseBlocks(`\`\`\`\`review\n${review}\n\`\`\`\``, ['review']), { blocks: { review }, missing: [] })
-  assert.deepEqual(parseBlocks(`~~~\n\`\`\`\`\`review\n${review}\n\`\`\`\`\`\`\n`, ['review']), { blocks: { review }, missing: [] })
+  assert.deepEqual(parseBlocks(`intro\n\`\`\`\`\`review\n${review}\n\`\`\`\`\`\`\n`, ['review']), { blocks: { review }, missing: [] })
   // A bare long fence has no label, so it fills no slot.
   assert.deepEqual(parseBlocks(`\`\`\`\`\n${review}\n\`\`\`\``, ['review']), { blocks: {}, missing: ['review'] })
   // A shorter closing line is content; the block is never closed here.
   assert.deepEqual(parseBlocks('````review\nx\n```', ['review']), { blocks: {}, missing: ['review'] })
+})
+
+test('parseBlocks reads tilde fences by CommonMark: backtick code inside never ends one, and a closing fence is as long', () => {
+  const review = '## Verdict\nok\n```ts\nconst a = 1\n```\n\n```json\n{"a":1}\n```'
+  assert.deepEqual(parseBlocks(`intro\n~~~~review\n${review}\n~~~~\n`, ['review']), { blocks: { review }, missing: [] })
+  assert.deepEqual(parseBlocks(`~~~~~review\nx\n~~~~\ny\n~~~~~`, ['review']), { blocks: { review: 'x\n~~~~\ny' }, missing: [] })
+  assert.deepEqual(parseBlocks('~~~~review\nx\n~~~', ['review']), { blocks: {}, missing: ['review'] })
+  assert.deepEqual(parseBlocks('~~~~review\nx\n````', ['review']), { blocks: {}, missing: ['review'] })
+})
+
+test('webPrompt asks for each output in a four-tilde fence and nothing after the last', () => {
+  const dir = join(root, 'prompt-fmt')
+  mkdirSync(dir, { recursive: true })
+  const ws = { root: dir, home: dir, inputs: dir, outputs: dir, work: dir, instructions: 'Review it.', listed: [], context: [] }
+  const { header } = webPrompt(ws, request({}, ['report', 'sources']), 4000)
+  assert.match(header, /^- report: a line "~~~~report", the output, a line "~~~~"$/m)
+  assert.match(header, /^- sources: a line "~~~~sources", the output, a line "~~~~"$/m)
+  assert.match(header, /more tildes/)
+  assert.match(header, /nothing after the last/i)
+  assert.ok(!header.includes('longer fence'))
 })
 
 test('parseCookies reads a browser-extension JSON export and a Netscape file, for chatgpt.com only', () => {
@@ -159,7 +179,7 @@ test('one prompt is sent in a temporary chat in Chat mode, the answer is awaited
   assert.equal(fake.sent.length, 1)
   assert.equal(fake.sent[0]!.temporary, true)
   assert.equal(fake.sent[0]!.mode, 'chat', 'the page started on Work: the driver switched it before anything was typed')
-  assert.match(fake.sent[0]!.prompt, /```report/)
+  assert.match(fake.sent[0]!.prompt, /"~~~~report"/)
   assert.equal(result.usage, undefined, 'the web UI shows no token counts')
   assert.deepEqual(result.executor, { ref: 'chatgpt-web/default', account: 'default', command: CHROME, version: 'fake' })
   assert.ok(result.log)
@@ -178,7 +198,7 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.deepEqual([prompt!.role, response!.role], ['prompt', 'response'])
   const sent = await text(artifacts, prompt!.artifact)
   assert.match(sent, /Explain the fake topic\./)
-  assert.match(sent, /```report/)
+  assert.match(sent, /"~~~~report"/)
   const answer = await text(artifacts, response!.artifact)
   assert.match(answer, /Here is the \*\*answer\*\*\./)
   assert.match(answer, /```report\ncontent of report\nsecond line\n```/)
@@ -192,7 +212,7 @@ test('a prompt with inputs is a header and a body: the body is accepted as a chi
     const { artifacts, result, fake } = await run(options, ['report'], { note: NOTE })
     assert.equal(result.status, 'succeeded', result.reason)
     const sent = fake.sent[0]!.prompt
-    assert.match(sent, /```report/)
+    assert.match(sent, /"~~~~report"/)
     assert.ok(sent.includes('note 199: the quick brown fox'), 'the inputs went with the prompt')
     assert.ok(sent.indexOf('Complete this one step') < sent.indexOf('note 0:'), 'the header comes before the body')
     const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
@@ -234,7 +254,7 @@ test('webPrompt splits a prompt into its header and its fenced body, and keeps a
   assert.ok(split.body)
   assert.match(split.header, /^You are a Worker for System/)
   assert.match(split.header, /Review it\./)
-  assert.match(split.header, /```report/)
+  assert.match(split.header, /"~~~~report"/)
   assert.match(split.header, /follow in the same message/, 'the header names the attached inputs')
   assert.ok(!split.header.includes('note 0:'))
   assert.match(split.body, /^\nContext \(read-only\)/)
@@ -507,6 +527,44 @@ test('two rendered blocks with the label of an output are ambiguous: the attempt
   const { result } = await run({ answer: '```review\nfirst\n```\n\n```review\nsecond\n```', copied: () => '', codeWidget: true }, ['review'])
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /review.*ambiguous|ambiguous.*review/)
+})
+
+// WW5c (live 2026-11-07): a tilde fence is closed only by tildes, so a review holding ```ts and ```json is one block, whole.
+for (const [name, options] of [
+  ['the rendered block', { copied: () => '', codeWidget: true }],
+  ['the Markdown text', { copied: (markdown: string) => markdown }],
+] as const) {
+  test(`a tilde-fenced review holding code fences fills its output verbatim through ${name}`, { skip, timeout: 120_000 }, async () => {
+    const { artifacts, result } = await run({ answer: '~~~~review\n' + REVIEW + '\n~~~~', ...options }, ['review'])
+    assert.equal(result.status, 'succeeded', result.reason)
+    assert.equal(await text(artifacts, result.outputs.review!), REVIEW)
+  })
+}
+
+// The real shape: a three-backtick `review` block that its own inner fence closes, the rest of the review after it.
+const CUT = '```review\n## 1. Verdict\n\nneeds changes\n\n```ts\nconst before = 1\n```\n\n## 2. Defects\n\n' + 'A long finding about the code that went on after the block closed. '.repeat(8) + '\n\n```json\n{"a":1}\n```'
+for (const [name, options] of [
+  ['the rendered block', { copied: () => '', codeWidget: true }],
+  ['the Markdown text', { copied: (markdown: string) => markdown }],
+] as const) {
+  test(`an answer that continues outside its output block fails and is kept as partial output (${name})`, { skip, timeout: 120_000 }, async () => {
+    const { artifacts, result } = await run({ answer: CUT, ...options }, ['review'])
+    assert.equal(result.status, 'failed')
+    assert.match(result.reason!, /the answer continues outside its output blocks \(\d+ characters\): an output may be cut short/)
+    assert.ok(result.partial!.review, 'what was found is kept')
+    assert.equal(await text(artifacts, result.partial!.review!), '## 1. Verdict\n\nneeds changes\n\n```ts\nconst before = 1')
+    assert.ok(result.partial!.conversation)
+    assert.match(String((await evidenceOf(artifacts, result)).outsideChars), /^\d+$/)
+  })
+}
+
+test('the outside limit is a setting: a short remark outside the block is fine, and a tighter limit refuses it', { skip, timeout: 120_000 }, async () => {
+  const answer = 'Done, here it is.\n\n~~~~review\nthe review\n~~~~'
+  const ok = await run({ answer }, ['review'])
+  assert.equal(ok.result.status, 'succeeded', ok.result.reason)
+  const tight = await run({ answer }, ['review'], { config: { maxOutsideChars: 5 } })
+  assert.equal(tight.result.status, 'failed')
+  assert.match(tight.result.reason!, /continues outside its output blocks \(14 characters\)/)
 })
 
 // The stage chain of one attempt (evidence.ts): written as it happens, kept as partial output, and in the log on success.

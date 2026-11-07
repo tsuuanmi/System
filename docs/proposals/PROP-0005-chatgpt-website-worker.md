@@ -138,9 +138,13 @@ fallback.
       seconds.
    4. Extract the answer as Markdown (the page's own Copy, checked against the
       rendered words) and the cited links. Output
-      slots are filled from labelled, fenced blocks the prompt asks for (such
-      as `report` and `sources`); a missing block fails the attempt, as a
-      missing file does today.
+      slots are filled from labelled blocks the prompt asks for (such as
+      `report` and `sources`), each as a line `~~~~<name>`, the output, a line
+      `~~~~` and nothing after the last (WW5c; a tilde fence is closed only by
+      tildes, so code fences inside never end it); a missing block fails the
+      attempt, as a missing file does today, and so does an answer that holds
+      more than `maxOutsideChars` (200) characters outside its blocks, since an
+      output may then be cut short.
 4. **Provenance.** Each attempt also stores the exchange as a
    `conversation@1` ([PROP-0003](PROP-0003-conversation-ingestion.md)): the
    prompt and response as parts, the conversation URL, the model the driver
@@ -215,6 +219,15 @@ fallback.
    blocks as data and the Runtime fills each output from the block labelled
    with its name (verbatim; two such blocks are ambiguous and fail), else from
    the Markdown text; the evidence records which (`filled`).
+   WW5c: a second opinion (`work:7f820cb2`) was accepted with a 339-byte
+   `review`: ChatGPT wrapped it in a three-backtick fence although it holds
+   ```` ```ts ````, the inner closing fence ended the block, and the page,
+   the widget and the parser agreed on the truncated text. A bake-off on both
+   Accounts chose four tildes (backtick fences passed once, `===BEGIN===`
+   sentinels failed on both: Copy escapes them). The prompt asks for tilde
+   fences, the parsers read them by CommonMark, and an answer with more than
+   `maxOutsideChars` characters outside its output blocks fails, the answer
+   kept as partial output (evidence `outsideChars`).
 
 ## Known defects, fixed in WW1 (2026-11-07)
 

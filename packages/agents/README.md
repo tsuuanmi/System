@@ -214,7 +214,7 @@ One attempt:
    control. System never types into or solves a challenge. The driver then
    clears the composer, reads the model back and sends one prompt built like the
    CLI prompt, with the inputs (and context) inlined as text, and each output
-   slot asked for as a fenced block labelled with its name. At most 200 KiB.
+   slot asked for as a four-tilde fenced block labelled with its name (WW5c). At most 200 KiB.
    Nothing in the Runtime knows a selector: the UI map is the driver's.
 3. **Wait** as the driver does: the answer's finished marker and text unchanged
    for `stable` seconds, within `answer` seconds (a stall clock of 3 minutes, or
@@ -225,9 +225,14 @@ One attempt:
 5. **Drift and heal:** what the driver reports (a drifted element, a refused
    Copy, a stall) goes to the attempt's log as counts and structure only.
    Self-heal is off: no decision store exists.
-6. **Fill** each slot from its labelled block (a longer fence holds shorter
-   ones; the first block of a name wins). A missing block fails the attempt;
-   what was found stays as unaccepted partial output.
+6. **Fill** each slot from its labelled block (backtick or tilde fences by
+   CommonMark: a longer fence, or the other character, holds shorter ones; the
+   first block of a name wins). A missing block fails the attempt; so does an
+   answer with more than `maxOutsideChars` (account setting, default 200)
+   characters outside its output blocks, whitespace ignored (WW5c: "the answer
+   continues outside its output blocks (N characters): an output may be cut
+   short", for a fence closed early by its own content). What was found stays
+   as unaccepted partial output.
 7. **Record** a `conversation@1`: `prompt.md` and `response.md` as parts,
    `links.json` (the cited hrefs) as an attachment, asserted `provider:
    ChatGPT`, the page `url`, the `model` the driver read back from the model
@@ -253,7 +258,7 @@ closed inherited and late, and late ones that would not close), the viewport, Ch
 the failed stage and the last completed one, and for a two-part prompt `attach`: which outcome (`text` or
 `attachment`) and the chip count, and `filled`: how each output was filled (`block`: the rendered
 code block labelled with its name, verbatim, two of one name being ambiguous and a failure; `text`: the
-Markdown's fenced block; WW5b). It is partial output `evidence` of
+Markdown's fenced block; WW5b) and `outsideChars`, the characters outside the output blocks (WW5c). It is partial output `evidence` of
 every failed or cancelled attempt, and the last line of the log of every attempt.
 **A prompt in two parts (WW1g).** `webPrompt` returns the header (role line, step,
 instructions, the output-format request, and a line naming the attached inputs), which

@@ -112,6 +112,22 @@ for (const [name, copied] of [
   })
 }
 
+// WW5c: a tilde fence is closed only by tildes, so the code fences inside never end it.
+const TILDES = '~~~~review\n## Verdict\nok\n```ts\nconst a = 1\n```\n~~~~'
+for (const [name, copied] of [
+  ['drops the label', () => '~~~~\n## Verdict\nok\n```ts\nconst a = 1\n```\n~~~~'],
+  ['gives nothing', () => ''],
+  ['is right', () => TILDES],
+  ['loses the rows', () => '~~~~review\n## Verdict ok ```ts const a = 1 ```\n~~~~'],
+] as const) {
+  test(`a tilde-fenced block holding a code block is read whole when Copy ${name}`, { skip, timeout: 60_000 }, async () => {
+    const { page, driver } = await start({ answer: TILDES, copied, codeWidget: true })
+    const result = await driver.ask(page, 'Review.', { conversation: 'temporary' })
+    assert.match(result.text, /^[`~]{3,}review\n## Verdict\nok\n```ts\nconst a = 1\n```\n[`~]{3,}$/m)
+    assert.deepEqual(result.blocks, [{ label: 'review', code: '## Verdict\nok\n```ts\nconst a = 1\n```' }])
+  })
+}
+
 // WW5b: the result also carries the final answer's rendered blocks as data, so a caller can fill an output from the block that names it.
 test("an answer's rendered code blocks are returned as data: label and raw text, rows kept", { skip, timeout: 60_000 }, async () => {
   const { page, driver } = await start({ answer: NESTED, copied: () => '', codeWidget: true })

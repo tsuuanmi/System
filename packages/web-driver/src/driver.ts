@@ -930,7 +930,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     }, async () => (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
     // A block's own fence lines (its content) do not make the text Markdown: a block still needs its fence when none of that name is in the text.
     const blocks = await this.renderedBlocks(engine)
-    const unfenced = blocks.some(({ label }) => !new RegExp(`^\\s{0,3}\`{3,}\\s*${escapeRegExp(label)}\\s*$`, 'm').test(text))
+    const unfenced = blocks.some(({ label }) => !new RegExp(`^\\s{0,3}(?:\`{3,}|~{3,})\\s*${escapeRegExp(label)}\\s*$`, 'm').test(text))
     return { text: unfenced ? this.withFencedBlocks(blocks, text) : text, blocks }
   }
 
@@ -999,21 +999,22 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
 
 /**
  * The fenced code blocks of Markdown by CommonMark's rule: a closing fence is the opening one's
- * character, at least as long, with nothing after it; a shorter fence inside is content. `start`
+ * character, at least as long, with nothing after it; a shorter fence, or one of the other character, inside is content. `start`
  * and `end` bound the block's lines in the text; an unclosed block is not one.
  */
 function fencedBlocks(markdown: string): Array<{ start: number; end: number; info: string }> {
   const found: Array<{ start: number; end: number; info: string }> = []
-  let open: { start: number; ticks: number; info: string } | undefined
+  let open: { start: number; char: string; length: number; info: string } | undefined
   let at = 0
   for (const line of markdown.split('\n')) {
     const end = at + line.length
     if (!open) {
-      const start = /^ {0,3}(`{3,})([^`]*)$/.exec(line)
-      if (start) open = { start: at, ticks: start[1]!.length, info: start[2]!.trim() }
+      // A backtick fence's info string holds no backtick; a tilde fence's may.
+      const start = /^ {0,3}(?:(`{3,})([^`]*)|(~{3,})(.*))$/.exec(line)
+      if (start) open = { start: at, char: start[1] ? '`' : '~', length: (start[1] ?? start[3])!.length, info: (start[2] ?? start[4])!.trim() }
     } else {
-      const close = /^ {0,3}(`{3,})[ \t]*$/.exec(line)
-      if (close && close[1]!.length >= open.ticks) {
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)
+      if (close && close[1]![0] === open.char && close[1]!.length >= open.length) {
         found.push({ start: open.start, end, info: open.info })
         open = undefined
       }
