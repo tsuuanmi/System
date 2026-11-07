@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
-import { GOAL_KIND, TASK_KIND, goalSchema, taskSchema } from '@system/work'
+import { DECISION_KIND, GOAL_KIND, TASK_KIND, decisionSchema, goalSchema, goalStore, taskSchema } from '@system/work'
 import { fixture, type Fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { NOT_ALLOWED, VERSION, connect, serve, tableOf, type Client } from '../src/index.ts'
@@ -25,6 +25,7 @@ const b64 = (text: string) => Buffer.from(text).toString('base64')
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
 function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
+  const goals = goalStore(artifacts)
   const seen: Record<string, unknown[]> = { credentials: [], conversations: [], goals: [], logins: [] }
   return {
     seen,
@@ -48,6 +49,8 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       const stored = await artifacts.put({ ...GOAL_KIND, content: { context: [charter.id], ...goal }, inputs: [charter.id], supersedes: supersedes ? [supersedes] : [], classification: 'public', producer })
       return { id: stored.id }
     },
+    addDecision: (decision, caller) => goals.decide(decision, caller),
+    decisions: (chain) => goals.decisions(chain),
     async addConversation(parts, asserted, supersedes, caller) { seen.conversations!.push({ parts, asserted, supersedes, caller }); return { id: 'conversation:1' } },
     credentials: {
       async set(name, value) { seen.credentials!.push([name, value]) },
@@ -61,7 +64,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
 }
 
 async function started(options: { f?: Fixture } = {}) {
-  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema })
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema }, { ...DECISION_KIND, content: decisionSchema })
   const f = options.f ?? fixture({ goals: artifacts })
   const home = join(dir, `n${count++}`)
   mkdirSync(home)
@@ -137,6 +140,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal((await call('goal.show', { goal: goal.id }) as { current: { id: string } }).current.id, raised.id)
   await call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id })
   await assert.rejects(call('goal.show', { goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
+  const decided = await call('decision.add', { goal: goal.id, question: 'which?', options: ['a', 'b'], choice: 'a', reason: 'cheaper' }) as { id: string }
+  assert.deepEqual((await call('decision.list', { goal: goal.id }) as { id: string }[]).map((d) => d.id), [decided.id])
 
   const second = await call('work.submit', { capabilities: ['code-write'], input: input(f) }) as { id: string }
   await call('work.run', { workId: second.id })
@@ -511,4 +516,39 @@ test('work.watch by goal tells of each new Work of the Goal, and an orchestrator
   await human1.call('work.run', { workId: mine.id })
   await terminal(human1, mine.id)
   assert.equal(orch.notices.length, 1)
+})
+
+test('a decision names its Goal: an orchestrator records only for its own, and decision.list returns them in order', async () => {
+  const { open, artifacts } = await started()
+  const human = await open()
+  const goal = async (aim: string, supersedes?: string) => (await human.call('goal.new', { aim, scope: 's', budget: {}, supersedes }) as { id: string }).id
+  const [a, b] = [await goal('a'), await goal('b')]
+  const synthesis = (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: new TextEncoder().encode('the synthesis'), mediaType: 'text/plain', classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
+  const ours = await open(orchestrator(a))
+  const scoped = (call: Promise<unknown>) => assert.rejects(call, (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /scope/.test(error.message))
+  const ask = { question: 'which direction?', options: ['x', 'y'], choice: 'x', reason: 'the synthesis favours it' }
+
+  const first = await ours.call('decision.add', { ...ask, restsOn: [synthesis] }) as { id: string }
+  const stored = artifacts.get(first.id)
+  assert.equal(stored.state, 'stored')
+  const content = (stored as { envelope: { kind: string; content: { goal: string; by: unknown; restsOn: string[] } } }).envelope
+  assert.deepEqual([content.kind, content.content.goal, content.content.by, content.content.restsOn], ['decision', a, orchestrator(a), [synthesis]])
+  await scoped(ours.call('decision.add', { ...ask, goal: b }))
+  await assert.rejects(ours.call('decision.add', { ...ask, choice: 'z' }), /choice z is not one of the options/)
+  await assert.rejects(human.call('decision.add', ask), /needs the Goal/)
+  await assert.rejects(human.call('decision.add', { ...ask, goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
+
+  // The same question asked again is a second decision, after the first.
+  const second = await human.call('decision.add', { ...ask, goal: a }) as { id: string }
+  const other = await human.call('decision.add', { ...ask, goal: b }) as { id: string }
+  const raised = await goal('a again', a)
+  const third = await (await open(orchestrator(raised))).call('decision.add', { ...ask, choice: 'y', reason: 'changed course' }) as { id: string }
+  const ids = (list: unknown) => (list as { id: string }[]).map((d) => d.id)
+  assert.deepEqual(ids(await ours.call('decision.list', {})), [first.id, second.id, third.id])
+  assert.deepEqual(ids(await human.call('decision.list', { goal: a })), [first.id, second.id, third.id])
+  assert.deepEqual(ids(await human.call('decision.list', { goal: b })), [other.id])
+  assert.equal((await human.call('decision.list', {}) as unknown[]).length, 4)
+  await scoped(ours.call('decision.list', { goal: b }))
+  const listed = (await ours.call('decision.list', {}) as { choice: string; previous?: string; at: string }[])
+  assert.deepEqual(listed.map((d) => [d.choice, d.previous]), [['x', undefined], ['x', first.id], ['y', second.id]])
 })

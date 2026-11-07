@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type GoalView, type NewGoal, type WorkRecord, type WorkState } from '@system/work'
+import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type GoalView, type NewDecision, type NewGoal, type StoredDecision, type WorkRecord, type WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 /** A repeatable option's values, in order. */
@@ -85,6 +85,8 @@ export interface WorkCommands {
   /** Store a Goal on the human's own connection, as the operator who confirmed it; `supersedes` is the Goal it raises or changes. */
   newGoal(goal: NewGoal, supersedes: string | undefined, operatorId: string): Promise<{ id: string }>
   goal(goalId: string): Promise<GoalView>
+  addDecision(decision: NewDecision): Promise<{ id: string }>
+  decisions(goalId: string | undefined): Promise<StoredDecision[]>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
@@ -287,6 +289,31 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .action((id: string) => {
       select(async () => {
         io.out(`${JSON.stringify(await host.work().goal(id), null, 2)}\n`)
+        return 0
+      })
+    })
+  const decision = program.command('decision').description('choices made for a Goal, recorded as Artifacts: a record, never an authority')
+  decision.command('add')
+    .description('record a decision for a Goal and print its ID')
+    .requiredOption('--goal <id>', 'the Goal it is made for')
+    .requiredOption('--question <text>', 'what was decided')
+    .requiredOption('--option <text>', 'an option considered (repeatable)', collect, [])
+    .requiredOption('--choice <text>', 'the option chosen')
+    .requiredOption('--reason <text>', 'why')
+    .option('--rests-on <id>', 'an Artifact it rests on, such as a synthesis, a review or a check-run (repeatable)', collect, [])
+    .action((options: { goal: string; question: string; option: string[]; choice: string; reason: string; restsOn: string[] }) => {
+      select(async () => {
+        const { goal: goalId, question, option, choice, reason, restsOn } = options
+        io.out(`${(await host.work().addDecision({ goal: goalId, question, options: option, choice, reason, restsOn })).id}\n`)
+        return 0
+      })
+    })
+  decision.command('list')
+    .description('the decisions of a Goal and its chain (of every Goal without --goal), oldest first, as JSON')
+    .option('--goal <id>', 'the Goal')
+    .action((options: { goal?: string }) => {
+      select(async () => {
+        io.out(`${JSON.stringify(await host.work().decisions(options.goal), null, 2)}\n`)
         return 0
       })
     })

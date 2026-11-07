@@ -44,7 +44,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   `resolveGoal` (a Goal's newest version and its chain), `spendOf` (the fold of
   attempts and tokens over the Works that name a Goal in the chain) and
   `overBudget`. `WorkController.goalView` and `Host.goal` report a Goal with
-  its spend.
+  its spend. The store also records decisions (`decide`, `decisions`): each
+  `decision@1` names the latest one of its Goal's chain as `previous`, which
+  orders them; they are recorded one at a time.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
   a conversation held elsewhere taken in as `file@1` parts under a manifest
   of what the operator asserts and a fixed notice; the preview and its
@@ -131,8 +133,9 @@ reruns the Work, a denial fails it.
 optional `context`: Artifacts the Worker reads as data, also listed as the
 task's inputs) and
 `git-tree@1` (`repository`, `commit`, `tree`, `parent`) and `goal@1` (`aim`,
-`scope`, `budget: { attempts?, tokens? }`, `context`: Artifact IDs), registered by
-this row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
+`scope`, `budget: { attempts?, tokens? }`, `context`: Artifact IDs) and
+`decision@1` (`goal`, `question`, `options`, `choice`, `reason`, `restsOn`,
+`by`, optional `previous`), registered by this row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 
 ## Crash boundaries
 

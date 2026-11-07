@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewGoal, type WorkEvent, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, decisionSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewDecision, type NewGoal, type StoredDecision, type WorkEvent, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, inScope, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -21,6 +21,10 @@ export interface Services {
   /** Store a `goal@1`; without `context`, the Charter is stored and used. `supersedes` is the Goal it raises or changes. */
   newGoal(goal: NewGoal, supersedes: string | undefined, caller: Caller): Promise<{ id: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<{ id: string }>
+  /** Store a `decision@1` by `caller`, after the latest one of its Goal's chain. */
+  addDecision(decision: NewDecision, caller: Caller): Promise<{ id: string }>
+  /** The decisions of the Goals in `chain` (all without it), oldest first. */
+  decisions(chain?: ReadonlySet<string>): StoredDecision[]
   credentials: {
     set(name: string, value: string): Promise<void>
     describe(name: string): Promise<{ configured: boolean; source?: string }>
@@ -250,6 +254,32 @@ export function operations(services: Services): Methods {
         return p
       },
       handler: (host, p) => host.goal(p.goal),
+    },
+    'decision.add': {
+      agent: true,
+      summary: 'Record a choice made for a Goal as a `decision@1` Artifact: the question, the options, the choice, the reason and the Artifacts it rests on (`restsOn`), after the latest decision of the Goal\'s chain: `{ id }`. A record, never an authority. An orchestrator records only for its own Goal.',
+      params: z.object({
+        goal: artifactId.optional(), question: decisionSchema.shape.question, options: decisionSchema.shape.options,
+        choice: decisionSchema.shape.choice, reason: decisionSchema.shape.reason, restsOn: decisionSchema.shape.restsOn.default([]),
+      }).strict(),
+      scope(_host, p, caller) {
+        if (p.goal !== undefined && p.goal !== caller.goal) throw outside(`decision.add for Goal ${p.goal}`, caller)
+        return { ...p, goal: caller.goal }
+      },
+      handler(_host, { goal, ...decision }, caller) {
+        if (!goal) throw new WorkError('decision.add needs the Goal it is made for')
+        return services.addDecision({ goal, ...decision }, caller)
+      },
+    },
+    'decision.list': {
+      agent: true,
+      summary: 'The decisions of a Goal and its chain (of every Goal without `goal`), oldest first: `[{ id, at, goal, question, options, choice, reason, restsOn, by, previous? }]`. An orchestrator lists its own Goal\'s.',
+      params: z.object({ goal: artifactId.optional() }).strict(),
+      scope(host, p, caller) {
+        if (p.goal !== undefined && !host.goalChain(caller.goal).has(p.goal)) throw outside(`decision.list on ${p.goal}`, caller)
+        return { goal: p.goal ?? caller.goal }
+      },
+      handler: (host, p) => services.decisions(p.goal ? host.goalChain(p.goal) : undefined),
     },
     'task.new': {
       agent: true,

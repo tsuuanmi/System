@@ -14,8 +14,8 @@ import { CONVERSATION_KIND, addConversation, conversationSchema, type Asserted, 
 import { snapshot } from './git.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
-import { CHARTER_PATH, goalStore } from './goal.ts'
-import { GIT_TREE_KIND, GOAL_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, goalSchema, taskSchema, verdictSchema, type NewGoal } from './kinds.ts'
+import { CHARTER_PATH, goalStore, type NewDecision, type StoredDecision } from './goal.ts'
+import { DECISION_KIND, GIT_TREE_KIND, GOAL_KIND, TASK_KIND, VERDICT_KIND, decisionSchema, gitTreeSchema, goalSchema, taskSchema, verdictSchema, type NewGoal } from './kinds.ts'
 import type { Caller } from './record.ts'
 import { workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
@@ -115,6 +115,16 @@ export class WorkService {
     return { id: stored.id }
   }
 
+  /** Record a decision for a Goal (PROP-0006): a record, never an authority. */
+  addDecision(decision: NewDecision, caller: Caller): Promise<{ id: string }> {
+    return this.storage.specs.goals!.decide(decision, caller)
+  }
+
+  /** The decisions of the Goals in `chain` (all without it), oldest first. */
+  decisions(chain?: ReadonlySet<string>): StoredDecision[] {
+    return this.storage.specs.goals!.decisions(chain)
+  }
+
   /** Store a conversation the operator had elsewhere (PROP-0003). */
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<Envelope> {
     return addConversation(this.artifacts, parts, asserted, { producer: { type: 'operator', ref: caller.operatorId }, supersedes })
@@ -172,6 +182,7 @@ export async function apply(ctx: Context): Promise<void> {
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...GOAL_KIND, content: goalSchema })
+  artifacts.registerKind({ ...DECISION_KIND, content: decisionSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
   const capabilities = new Capabilities()
   const table = domain.table('work') as unknown as WorkTable

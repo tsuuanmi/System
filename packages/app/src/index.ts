@@ -123,6 +123,8 @@ async function runHost(ctx: Context): Promise<number> {
       newTask: (instructions, repository, ref, context, who) => work.newTask(instructions, repository, ref, who, context),
       newGoal: (goal, supersedes, who) => work.newGoal(goal, supersedes, who),
       addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
+      addDecision: (decision, who) => work.addDecision(decision, who),
+      decisions: (chain) => work.decisions(chain),
       credentials,
       workers: () => workersView(ctx),
       login: async (ref, cookies) => (await agentsService(ctx)).login(ref, cookies),
