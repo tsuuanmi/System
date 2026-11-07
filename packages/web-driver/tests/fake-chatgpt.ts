@@ -60,6 +60,12 @@ export interface FakeOptions {
   modeFlipToWorkMs?: number
   /** The composer takes a pasted text/plain as the live editor does (default true); false: the paste is ignored, only typed text goes in. */
   pasteTaken?: boolean
+  /** A pasted text over this many characters becomes an attachment chip, as on a Team workspace (live 2026-11-07), not composer text (0: never). */
+  attachOver?: number
+  /** The chip shows "Adding pasted text…" this long before it holds the text (default 0; a huge value: never done). */
+  attachAddingMs?: number
+  /** The chip's label is not the start of the pasted text. */
+  attachWrongLabel?: boolean
   /** This long after load the app turns into the logged-out home (a session that ended; 0: never). */
   signOutAfterMs?: number
   /** This long after load a challenge heading appears (0: never). */
@@ -284,6 +290,7 @@ ${missing ? `<div role="alert">Unable to load conversation ${missing}</div>` : '
       <button type="button" aria-label="Select ChatGPT model" aria-haspopup="menu" aria-expanded="false" id="picker"${options.modelPicker === false ? ' hidden' : ''}>Instant</button>
       <button type="button" aria-label="Dictate">d</button>
       <span id="slot"></span>
+      <div data-composer-attachments id="attachments"></div>
     </form>
   </main>
 </main>
@@ -397,9 +404,29 @@ $('temp').onclick = () => { temporary = true; history.pushState({}, '', '/?tempo
 $('temp-off').onclick = () => { temporary = false; history.pushState({}, '', '/'); render() }
 $('input').addEventListener('input', render)
 // Like the live editor: a paste is handled by the page (the default is prevented), as one insertion of its text/plain.
+const attached = []
 $('input').addEventListener('paste', (e) => {
   if (!options.pasteTaken) return
   e.preventDefault()
+  const pasted = e.clipboardData.getData('text/plain')
+  if (options.attachOver && pasted.length > options.attachOver) {
+    // Like the live site: a long paste becomes a chip labelled with the start of the text and an ellipsis, after an adding state.
+    const adding = document.createElement('span')
+    adding.textContent = 'Adding pasted text…'
+    $('attachments').append(adding)
+    setTimeout(() => {
+      adding.remove()
+      const surface = document.createElement('span')
+      surface.className = 'composer-attachment-surface'
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('aria-label', (options.attachWrongLabel ? 'Something else entirely' : pasted.replace(/\\s+/g, ' ').slice(0, 60)) + '…')
+      surface.append(button)
+      $('attachments').append(surface)
+      attached.push(pasted)
+    }, options.attachAddingMs)
+    return
+  }
   $('input').dataset.pasted = String(Number($('input').dataset.pasted || 0) + 1)
   document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
 })
@@ -411,7 +438,9 @@ async function send() {
   const chips = [...$('input').querySelectorAll('[contenteditable="false"]')].map((el) => el.innerText)
   let prompt = $('input').innerText
   for (const chip of chips) prompt = prompt.replace(chip, '')
-  prompt = prompt.replace(/\u00a0/g, ' ').trim()
+  prompt = [prompt.replace(/\\u00a0/g, ' ').trim(), ...attached].join('\\n')
+  attached.length = 0
+  $('attachments').textContent = ''
   $('input').textContent = ''
   const user = document.createElement('div')
   user.className = 'turn'
@@ -555,7 +584,7 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, modeSwitch: true, pasteTaken: true, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
       researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',

@@ -714,6 +714,16 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      driving a real Chrome: unit and smoke leave those out and `test:web`
      runs them as the required check `web` (unit 23 s; web about 4 min at
      load 90-200).*
+  1g. [x] A prompt in two parts (operator, 2026-11-07): short instructions typed in the
+     composer, long inputs pasted after them as their own paste. On `chatgpt-web/second`
+     (a Team workspace) a 61,581-character paste became an attachment chip and the
+     read-back failed (2 characters, 16 s); on `default` 69,410 stayed text. The generic
+     Procedure "attach text" accepts either (text, or one new chip named by the body's
+     start, nothing still adding) and fails anything else before the send in the stage
+     `attach`; the Site's selectors and clocks are in the UI map (`ui-map@1.6`). Short
+     prompts stay one part. Evidence: the stages `insert` and `attach`, the outcome and
+     the chip count. Tests on the fake page, in `test:web`. *Not yet checked on the real
+     site: the selectors come from the DOM the operator's agent captured.*
   1d. [ ] Worker tool policy for Software Engineering Workers (no background
      tasks or Monitor; commands run in the foreground under `timeout`), a
      per-attempt budget (tokens and time, from the observed usage; WW1 took

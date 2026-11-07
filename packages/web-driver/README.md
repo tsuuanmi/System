@@ -102,6 +102,25 @@ changed but the header line.
   an editor that leaves the event unprevented gets the text typed instead. The
   read-back check is unchanged. The insert is its own stage, `insert`, apart from
   `mode`, and the checks right before the send are part of it.
+- **A prompt in two parts: "attach text" (WW1g).** On a Team workspace a 61,581-character
+  paste became an attachment chip, not composer text, and the read-back failed (2 characters
+  read), while on another account of the same site 69,410 characters stayed text. `ask` takes
+  an `attachment` (the body); the prompt is the header, inserted and read back as before
+  (`insert`), and the body is pasted after it as its own paste (`attach`). The generic
+  Procedure is `UiEngine.attachText` with the action `composer.attach` (`do: attachText`: the
+  same paste, no read-back); what is the Site's is in the map (`ui-map@1.6`): the elements
+  `composer.attachment` (a button in `[data-composer-attachments]` whose aria-label is the
+  start of the text, whitespace collapsed, and an ellipsis) and `composer.attachment-adding`
+  ("Adding pasted text…"), and the settings `attachMinChars` (4000: inputs below it stay one
+  part, used by the Runtime's `webPrompt`), `attachWaitMs` (30 s) and `attachLabelChars` (24).
+  It accepts the composer holding header and body, or the header and exactly one new chip
+  whose label starts with the body's first characters with nothing adding; at the deadline
+  anything else is `ui_drift` ("still being added", or "neither the text nor one named
+  attachment"), in the stage `attach`, before the pre-send checks and the send, with counts
+  only. `onAttached` reports `text` or `attachment` and the chip count. The pre-send mode
+  checks close the last of `insert` and `attach`. Tests on the fake page: a paste over N
+  characters becomes a chip after an adding state, or stays text; a wrong label and a chip
+  still adding fail before the send (they drive Chrome, so they belong to `test:web`).
 - **The Chat/Work switch is awaited, never assumed (WW1).** System 1 refused at once
   when `mode.group` was not there yet ("the Chat/Work switch was not found"), which
   failed real attempts on a page that was only slow, with nothing captured. `open` now
@@ -117,7 +136,7 @@ changed but the header line.
   `aria-label` and `data-testid`, with every text node and every other attribute
   value, URLs included, replaced by its length, `[text:42]`, so no conversation
   text, address or token survives). `onStage` reports the stages
-  (`open`, `auth`, `mode`, `insert`, `send`, `wait`, `read`) for the Runtime's evidence
+  (`open`, `auth`, `mode`, `insert`, `attach`, `send`, `wait`, `read`) for the Runtime's evidence
   record; `send` is only the click, so a started `send` means the prompt may be out,
   and `onSubmitted` fires once the page shows the new user turn (the confirmed case).
   A failure to find the conversation binding after the read is the `read` stage's.

@@ -2,7 +2,7 @@
 # ChatGPT Web UI map (ui-map@1.0, ADR-0021). Checked against the live site on 2026-10-11
 # (a research note, now in Git history).
 # When the site changes, edit this file (and the fixture), not the driver code.
-schema: ui-map@1.5
+schema: ui-map@1.6
 provider: chatgpt-web
 uiRevision: '2026-10-11'
 locales: [en]
@@ -12,8 +12,27 @@ locales: [en]
 settings:
   modeReadyMs: 15000
   modeSettleMs: 600
+  # WW1g: inputs shorter than this stay in the prompt's one part. A pasted body that the site turns into an
+  # attachment is waited for this long; its chip's label must start with the body's first 24 characters.
+  attachMinChars: 4000
+  attachWaitMs: 30000
+  attachLabelChars: 24
 
 elements:
+  composer.attachment:
+    description: >-
+      A pasted text the site turned into an attachment (live 2026-11-07, a Team workspace): in the
+      composer's `[data-composer-attachments]`, a button whose aria-label is the start of the text
+      (whitespace collapsed) followed by an ellipsis.
+    cardinality: many
+    candidates:
+      - { css: '[data-composer-attachments] button[aria-label$="…"]' }
+  composer.attachment-adding:
+    description: >-
+      The attachment area while a paste is being added: it shows "Adding pasted text…" (live
+      2026-11-07), and no longer once the chip holds the text.
+    candidates:
+      - { css: '[data-composer-attachments]:has-text("Adding pasted text")' }
   auth.login:
     description: Sign-in entry points shown to a signed-out visitor.
     candidates:
@@ -422,6 +441,18 @@ actions:
     target: composer.input
     require: [editable]
     # One paste event (typing 66 KB took 5.5 min), typed instead when the editor ignores it. The engine reads the text back; Send's label is not part of this check, so a renamed Send cannot fail it.
+    verify: { visible: composer.input }
+    sideEffect: none
+    heal: deterministic
+    timeouts: { resolveMs: 15000, verifyMs: 5000 }
+  composer.attach:
+    description: >-
+      The prompt's body, pasted after its header. The engine's "attach text" Procedure then accepts
+      the text in the composer or one new chip (composer.attachment) named by it; the paste is not
+      read back here.
+    do: attachText
+    target: composer.input
+    require: [editable]
     verify: { visible: composer.input }
     sideEffect: none
     heal: deterministic

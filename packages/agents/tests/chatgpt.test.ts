@@ -18,7 +18,7 @@ import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, profileLockPid, singleTab, webAttempt, webDefaults, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
@@ -52,16 +52,18 @@ const account = (config: WebConfig, extra: Partial<Account> = {}): Account => ({
 function request(inputs: Record<string, string>, outputs: string[], signal = new AbortController().signal): WorkerRequest {
   return { workId: 'work:test', attemptId: `attempt:${count++}`, stepId: 'research', capabilities: ['research'], inputs, outputs, signal }
 }
-async function task(artifacts: Artifacts, instructions: string): Promise<string> {
-  return (await artifacts.put({ ...TASK_KIND, content: { instructions }, classification: 'local-private', producer: { type: 'operator', ref: 'tester' } })).id
+async function task(artifacts: Artifacts, instructions: string, note?: string): Promise<string> {
+  const producer = { type: 'operator' as const, ref: 'tester' }
+  const context = note === undefined ? [] : [(await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: new TextEncoder().encode(note), mediaType: 'text/plain', classification: 'local-private', producer })).id]
+  return (await artifacts.put({ ...TASK_KIND, content: { instructions, ...(context.length ? { context } : {}) }, ...(context.length ? { inputs: context } : {}), classification: 'local-private', producer })).id
 }
 /** One attempt on a fake site with `options`; `answer` defaults to a block for each of `outputs`. */
-async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string; started?: (fake: FakeChatGpt) => void } = {}) {
+async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string; note?: string; started?: (fake: FakeChatGpt) => void } = {}) {
   const fake = await site({ answer: blocks(...outputs), ...options })
   more.started?.(fake)
   const { artifacts } = memory()
   const worker = agentWorker(account(web(fake, more.config), more.extra), artifacts, processSpawner, join(root, 'attempts'))
-  const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.') }, outputs, more.signal))
+  const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.', more.note) }, outputs, more.signal))
   return { artifacts, result, fake }
 }
 const text = async (artifacts: Artifacts, id: string) => Buffer.from(await artifacts.readBytes(id)).toString('utf8')
@@ -170,6 +172,69 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   const answer = await text(artifacts, response!.artifact)
   assert.match(answer, /Here is the \*\*answer\*\*\./)
   assert.match(answer, /```report\ncontent of report\nsecond line\n```/)
+})
+
+// WW1g: a prompt with inputs is a header typed in the composer and a body pasted after it, which the site may turn into an attachment.
+const NOTE = `Notes of the review:\n${Array.from({ length: 200 }, (_, i) => `note ${i}: the quick brown fox jumps over the lazy dog`).join('\n')}`
+
+test('a prompt with inputs is a header and a body: the body is accepted as a chip or as text, and the evidence says which', { skip, timeout: 120_000 }, async () => {
+  for (const [options, outcome, chips] of [[{ attachOver: 1000 }, 'attachment', 1], [{ attachOver: 0 }, 'text', 0]] as const) {
+    const { artifacts, result, fake } = await run(options, ['report'], { note: NOTE })
+    assert.equal(result.status, 'succeeded', result.reason)
+    const sent = fake.sent[0]!.prompt
+    assert.match(sent, /```report/)
+    assert.ok(sent.includes('note 199: the quick brown fox'), 'the inputs went with the prompt')
+    assert.ok(sent.indexOf('Complete this one step') < sent.indexOf('note 0:'), 'the header comes before the body')
+    const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+    const evidence = JSON.parse(line.slice(line.indexOf('{')))
+    assert.deepEqual(evidence.stages.map((stage: { stage: string }) => stage.stage), ['launch', 'open', 'auth', 'mode', 'insert', 'attach', 'send', 'wait', 'read', 'close'])
+    assert.deepEqual(evidence.attach, { outcome, chips })
+  }
+})
+
+test('a chip that is not the body fails in the attach stage before the send, with the page as evidence', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result, fake } = await run({ attachOver: 1000, attachWrongLabel: true }, ['report'], { note: NOTE, config: { timeouts: { load: 10, answer: 20, stable: 0.5, attach: 1.5 } } })
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /attach text failed/)
+  assert.equal(fake.sent.length, 0)
+  const evidence = await evidenceOf(artifacts, result)
+  assert.equal(evidence.failedStage, 'attach')
+  assert.equal(evidence.promptSendAttempted, false)
+  assert.ok(result.partial!.screenshot && result.partial!.snapshot)
+})
+
+test('the prompt of a Task with no inputs, or small ones, stays one part', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result, fake } = await run({ attachOver: 1000 }, ['report'], { note: 'a short note' })
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.match(fake.sent[0]!.prompt, /a short note/)
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  const evidence = JSON.parse(line.slice(line.indexOf('{')))
+  assert.ok(!evidence.stages.some((stage: { stage: string }) => stage.stage === 'attach'))
+  assert.equal(evidence.attach, undefined)
+})
+
+test('webPrompt splits a prompt into its header and its fenced body, and keeps a short one whole', async () => {
+  const dir = join(root, 'prompt-ws')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'context-1')
+  writeFileSync(file, NOTE)
+  const ws = { root: dir, home: dir, inputs: dir, outputs: dir, work: dir, instructions: 'Review it.', listed: [], context: [{ name: 'context-1', where: file }] }
+  const req = request({}, ['report'])
+  const split = webPrompt(ws, req, 4000)
+  assert.ok(split.body)
+  assert.match(split.header, /^You are a Worker for System/)
+  assert.match(split.header, /Review it\./)
+  assert.match(split.header, /```report/)
+  assert.match(split.header, /follow in the same message/, 'the header names the attached inputs')
+  assert.ok(!split.header.includes('note 0:'))
+  assert.match(split.body, /^\nContext \(read-only\)/)
+  assert.ok(split.body.includes('note 199:'))
+  assert.equal(split.text, split.header + split.body)
+  const small = webPrompt(ws, req, 1_000_000)
+  assert.equal(small.body, undefined)
+  assert.ok(small.header.includes('note 199:'))
+  assert.ok(!small.header.includes('follow in the same message'))
+  assert.equal(webPrompt({ ...ws, context: [] }, req, 0).body, undefined)
 })
 
 test('a page with no model picker is refused before anything is sent', { skip, timeout: 60_000 }, async () => {

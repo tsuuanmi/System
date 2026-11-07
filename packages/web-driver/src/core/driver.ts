@@ -29,6 +29,11 @@ export type ProviderFeature = 'chat' | 'deep-research' | 'web-search'
 
 export interface AskOptions {
   conversation: ConversationMode
+  /**
+   * The prompt's second part, pasted after the prompt (its header) as its own paste: the site may keep it as
+   * composer text or make an attachment of it, and the driver accepts either (WW1g).
+   */
+  attachment?: string | undefined
   /** Name of a configured mode preset; the driver's default preset when absent. */
   mode?: string | undefined
   /** `deep-research` needs a persistent conversation. Default `chat`. */
