@@ -18,9 +18,33 @@ settings:
   attachWaitMs: 30000
   attachLabelChars: 24
 
+# WW2-ii: what the generic Procedures (src/procedures.ts) bind to. The ChatGPT driver does not read it yet.
+site:
+  origin: 'https://chatgpt.com'
+  conversationUrl: '^/c/([0-9a-f-]+)$'
+  temporaryChat: { action: temporary.enable }
+
+# Chat is the required mode and is verified by its own state: the Chat button pressed, or the temporary chat
+# that hides the switch (live: the switch is absent there). Work spends the Codex quota and is forbidden.
+modes:
+  switch: mode.group
+  required: mode.chat-selected
+  forbidden: [mode.work-selected]
+  select: mode.select-chat
+
 # WW6b: ChatGPT sometimes leaks a model control token into the visible text, inside a rendered code block
 # (live 2026-11-08: "<escape>" before a sources JSON). Removed at an output's start and end only.
 answer:
+  turn: turn.assistant
+  userTurn: turn.user
+  # The answer is the heading's container, which starts with the heading's own text.
+  container: parent
+  prefix: '^\s*ChatGPT said:?\s*'
+  running: turn.running
+  done: answer.finished
+  error: answer.site-error
+  code: answer.code
+  codeLabel: answer.code-label
   leakedTokens: ['<escape>']
 
 elements:
@@ -300,6 +324,14 @@ elements:
       - { role: textbox, name: { en: '^Edit code$' } }
 
 
+  answer.code-label:
+    description: >-
+      A code block's label: the header bar of the live widget (2026-11-07), whose first line is the language.
+      The older `pre` form, with its header before the `pre`, is not covered (a label per block is paired by order).
+    cardinality: many
+    candidates:
+      - { css: '[data-code-block="true"] [data-markdown-copy="exclude"]' }
+
   # Deleting one conversation (PROP-0004 Phase 5). NOT yet verified live: the names follow the
   # site's conversation menu as documented by OpenAI; the live check replaces them.
   conversation.pane:
@@ -523,6 +555,10 @@ states:
   site.error-page: { allOf: [{ visible: site.error }, { not: { visible: composer.input } }] }
   # Evaluated inside the newest answer on every poll of the wait: it can replace the streaming or follow it.
   answer.site-error: { visible: answer.error }
+  # Every answer has its Copy: finished when the Copy buttons are as many as the answers.
+  answer.finished: { countAtLeast: { of: turn.assistant.done, as: turn.assistant } }
+  mode.chat-selected: { anyOf: [{ attr: { of: mode.chat, name: aria-pressed, equals: 'true' } }, { visible: temporary.off }] }
+  mode.work-selected: { attr: { of: mode.work, name: aria-pressed, equals: 'true' } }
   turn.running: { visible: composer.stop }
   # Nothing generating and nothing open: the page can be kept for the session's next turn.
   page.idle: { allOf: [{ not: { state: turn.running } }, { hidden: page.overlay }] }

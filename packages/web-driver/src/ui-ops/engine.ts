@@ -681,6 +681,7 @@ export class UiEngine {
     if ('visible' in condition) return (await find(condition.visible)) !== undefined
     if ('hidden' in condition) return (await find(condition.hidden)) === undefined
     if ('countIncreased' in condition) return (await this.count(condition.countIncreased)) > (baselines.get(`count:${condition.countIncreased}`) ?? 0)
+    if ('countAtLeast' in condition) return (await this.count(condition.countAtLeast.of)) >= (await this.count(condition.countAtLeast.as))
     if ('network' in condition) {
       const open = this.map.network[condition.network]?.open
       const seen = this.network.seen(condition.network)

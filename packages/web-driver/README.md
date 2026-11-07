@@ -187,6 +187,49 @@ changed but the header line.
   (`toMatchObject` is `assert.partialDeepStrictEqual`); the assertions are the
   same.
 
+## Generic Procedures (WW2-ii, new here)
+
+[`src/procedures.ts`](src/procedures.ts): `checkAuth`, `openChat`, `ensureMode`,
+`insertInstructions`, `attachText`, `send`, `waitForAnswer` and `readAnswer` as fixed
+TypeScript control flow over the UI engine, with no Site name in it. Each returns
+`{ status: 'ok' | 'failed' | 'unknown', reason?, evidence }` (counts and names, never prompt
+or page text) and throws only for the caller's abort. The ChatGPT driver does not use them
+yet (migrating it is the next step), so nothing of its behaviour changed.
+
+- **The map binds, the code decides** (`ui-map@1.7`; 1.6 maps still load). `site` (origin,
+  conversation URL pattern, `temporaryChat.action` or none), `modes` (`switch` element,
+  `required` state, `forbidden` states, `select` action; none for a Site without modes),
+  `answer` (`turn`, `userTurn`, `container: self|parent`, `prefix`, `running`, `done`,
+  `error` state, `code`, `codeLabel`, `leakedTokens`) and `settings` for the holds that were
+  constants (`signedOutHoldMs`, `sendAckMs`, `answerPollMs`, `answerStableMs`,
+  `answerTimeoutMs`). By convention the states `auth.signed-in` (required),
+  `auth.signed-out`, `auth.login-page`, `auth.challenge`, `site.error-page` and the actions
+  `composer.clear`, `composer.insert`, `composer.send` (and `composer.attach`) keep their
+  names. One new condition, `countAtLeast` (a done marker under every answer).
+- **Validated before a browser opens.** `loadUiMap` refuses a dangling binding (an unknown
+  state, element or action, a bad regular expression); `bindingProblems(map)` lists what a
+  map lacks for the Procedures, and the `Procedures` constructor throws on any.
+- **Mode.** `ensureMode` verifies the required mode by its own state, held for
+  `modeSettleMs`; a forbidden mode is left by `modes.select` once, else `failed`; a switch
+  that never shows is `unknown`, never assumed. `send` checks the mode again and refuses
+  (`rejected`) before the click.
+- **Send.** `accepted` (a new user turn shows), `rejected` (nothing was sent), `unknown` (it
+  may have been; nothing shows it). Nothing here sends again after `unknown`.
+- **Answer.** Scope is the turn after the pre-send baseline (`send` returns it). Each poll,
+  in this order: the Site's error inside the answer (`failed`, `retryable`, never an answer),
+  a challenge or error page, running, the done marker (when the map has one), the text held
+  for `answerStableMs`. The deadline is `unknown`. `readAnswer` returns the text, the code
+  blocks as `{ label, code }` (label element paired by order; a count that does not pair is
+  `failed`) and the outside links. Leaked tokens stay the Runtime's.
+- **Conformance.** [tests/conformance.ts](tests/conformance.ts) is the contract as a suite
+  that runs on any map and fake page; [tests/conformance.test.ts](tests/conformance.test.ts)
+  runs it on the hostile Site ([tests/fake-other.ts](tests/fake-other.ts),
+  [ui/fake-other.ui.yaml](ui/fake-other.ui.yaml)) and on ChatGPT's map and fake page. Not
+  covered yet, shown as a skipped test: ChatGPT's *unknown send* (its fake always shows the
+  user turn). Outside the binding model today, found by the hostile Site and ChatGPT's
+  map, and recorded with the verdict in
+  [RES-0009](../../docs/research/RES-0009-web-driver-inspection.md#6-result-of-the-hostile-site).
+
 ## Used by the Runtime, not in System 1
 
 - `chatGptDriver(web, note)` (in web-worker) builds the driver on one account's

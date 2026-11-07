@@ -216,3 +216,38 @@ block's label element; (4) `settings` for the holds that are constants now.
 Whether a Site with a different flow needs a fifth kind, an ordered list of
 steps, is the question RES-0009 does not settle; it needs the second Site's
 map.
+
+## 6. Result of the hostile Site
+
+Added after WW2-ii (2026-11-08). The question of section 5, whether the binding model
+suffices or needs an ordered `steps` list, was put to an invented Site
+(`web-driver/tests/fake-other.ts` and `ui/fake-other.ui.yaml`) that has no temporary chat,
+no mode switch, a plain textarea, no Stop button (a status element), its error inside the
+answer and its code label above the code, and to ChatGPT's own map on its fake. Both pass the
+one conformance suite (`tests/conformance.ts`) through `src/procedures.ts`.
+
+**Verdict: the bindings sufficed; no `steps` list was added.** For the hostile Site every
+action is one engine action (clear, paste, send, attach) and every difference is an element,
+a state or an answer field in its map: the missing temporary chat and modes are the absence of
+`site.temporaryChat` and `modes`; the status element is the states `answer.running` and
+`answer.finished`; the error is the state `answer.error`, looked for inside the newest answer;
+the label is `answer.codeLabel`. No generic code changed for it. No flow needed a menu
+followed by an option, a URL navigation or any other ordered sequence, so the question of a
+fifth kind stays open only for a real Site that has one.
+
+What the two Sites did show, each recorded here and not fixed beyond what a test required:
+
+| Gap | Where | Handling |
+|---|---|---|
+| A done marker under every answer (ChatGPT's Copy), as a per-answer count | ChatGPT | A condition `countAtLeast` (the hostile Site needed none). |
+| Chat is verified by its own state, but its switch is absent in a temporary chat | ChatGPT | `modes.required` is a state: Chat pressed, or `temporary.off` visible. An absent switch with neither is `unknown`. |
+| The `Work` label guard on the composer (`attr` with a pattern) | ChatGPT | Not expressed: the forbidden state is the Work button pressed. The condition stays `equals`/`present` only. |
+| The code label before a `pre` (System 1's older form) | ChatGPT | Not covered: one label element per block, paired by order; only the live widget's header bar is bound. |
+| The engine's attach Procedure names `composer.attachment`, `composer.attachment-adding` and reads a chip's `aria-label` | engine | The hostile Site declares both elements, which never match, and its text stays text. A Site with another chip form cannot express it yet. |
+| The action ids and the `auth.*` and `site.error-page` states are fixed names, not bindings | Procedures | By convention, checked by `bindingProblems`; not worth a schema field until a Site cannot use them. |
+| `openChat` after `ensureMode` | Procedures | A page already showing an empty new chat is kept, because ChatGPT chooses Chat on its home and then toggles temporary; a load may restore another mode. |
+| An unknown send on ChatGPT | its fake | Not covered: the fake shows the user turn at once. Covered on the hostile Site. |
+| Leaked control tokens, the Copy-based Markdown and its fences | Runtime | Stay above the Procedures; `readAnswer` returns the rendered blocks and text only. |
+
+The site error is classified first on every poll (`failed`, `retryable`), so a "This response
+couldn't load" is never read as an answer, on either Site.

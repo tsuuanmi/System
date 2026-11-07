@@ -24,6 +24,8 @@ export type SourcedCandidate = Candidate & { source: 'shipped' | 'overlay' }
 
 export type Condition =
   | { visible: string } | { hidden: string } | { countIncreased: string }
+  /** `ui-map@1.7`: at least as many matches of `of` as of `as`. */
+  | { countAtLeast: { of: string; as: string } }
   | { attr: { of: string; name: string; equals?: string; present?: boolean } }
   | { url: string } | { network: string } | { state: string }
   | { stableTextMs: number; of: string }
@@ -98,11 +100,53 @@ export interface UiSettings {
   attachWaitMs: number
   /** How many of the body's first characters (whitespace collapsed) a chip's label must start with. */
   attachLabelChars: number
+  /** How long a logged-out home must stay before it counts as signed out (`ui-map@1.7`; the app may paint it before its session loads). */
+  signedOutHoldMs: number
+  /** How long a sent prompt may take to show as a new user turn before the send is unknown. */
+  sendAckMs: number
+  /** The wait for an answer: polling interval, how long its text must hold, and its deadline. */
+  answerPollMs: number
+  answerStableMs: number
+  answerTimeoutMs: number
 }
-export const DEFAULT_SETTINGS: UiSettings = { modeReadyMs: 15_000, modeSettleMs: 600, attachMinChars: 4000, attachWaitMs: 30_000, attachLabelChars: 24 }
+export const DEFAULT_SETTINGS: UiSettings = {
+  modeReadyMs: 15_000, modeSettleMs: 600, attachMinChars: 4000, attachWaitMs: 30_000, attachLabelChars: 24,
+  signedOutHoldMs: 3000, sendAckMs: 10_000, answerPollMs: 250, answerStableMs: 1500, answerTimeoutMs: 15 * 60_000,
+}
 
-/** How an answer's outputs are read (`ui-map@1.7`); a map without `answer` lists nothing. */
+/** The site itself (`ui-map@1.7`). */
+export interface UiSite {
+  origin: string
+  /** A regular expression over a conversation page's path; its first group is the conversation's id. */
+  conversationUrl?: string
+  /** The action that enters a temporary chat; absent, the site has none. */
+  temporaryChat?: { action: string }
+}
+
+/** The site's modes (`ui-map@1.7`): an absent `modes` means the site has none. */
+export interface UiModes {
+  /** The element that shows the mode; absent at the deadline the mode is unverified. */
+  switch: string
+  /** The state that must hold. */
+  required: string
+  /** States that must not hold, refused before a send. */
+  forbidden?: string[]
+  /** The action that moves to the required mode. */
+  select?: string
+}
+
+/** How an answer is found and read (`ui-map@1.7`); a map without `answer` lists nothing. */
 export interface UiAnswer {
+  turn?: string
+  userTurn?: string
+  container?: 'self' | 'parent'
+  prefix?: string
+  running?: string
+  done?: string
+  /** A state looked for inside the newest answer, on every poll. */
+  error?: string
+  code?: string
+  codeLabel?: string
   /** Literal strings the site leaks into its visible text: removed where they sit at the very start or end of an output. */
   leakedTokens: string[]
 }
@@ -115,6 +159,8 @@ export interface UiMap {
   locales: string[]
   settings: UiSettings
   answer: UiAnswer
+  site?: UiSite
+  modes?: UiModes
   elements: Record<string, ElementSpec>
   actions: Record<string, ActionSpec>
   network: Record<string, NetworkPattern>
@@ -156,6 +202,7 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
     if ('visible' in c) element(c.visible, where)
     else if ('hidden' in c) element(c.hidden, where)
     else if ('countIncreased' in c) element(c.countIncreased, where)
+    else if ('countAtLeast' in c) { element(c.countAtLeast.of, where); element(c.countAtLeast.as, where) }
     else if ('attr' in c) element(c.attr.of, where)
     else if ('stableTextMs' in c) element(c.of, where)
     else if ('network' in c) { if (!map.network[c.network]) missing.push(`${where}: unknown network signal ${c.network}`) }
@@ -172,6 +219,31 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
   }
   for (const [id, s] of Object.entries(map.states)) walk(s, `states.${id}`)
   map.errors.forEach((e, i) => walk(e.when, `errors[${i}]`))
+  const action = (id: string | undefined, where: string): void => {
+    if (id && !map.actions[id]) missing.push(`${where}: unknown action ${id}`)
+  }
+  const state = (id: string | undefined, where: string): void => {
+    if (id && !map.states[id]) missing.push(`${where}: unknown state ${id}`)
+  }
+  const pattern = (source: string | undefined, where: string): void => {
+    try {
+      if (source) new RegExp(source)
+    } catch {
+      missing.push(`${where}: not a regular expression`)
+    }
+  }
+  action(map.site?.temporaryChat?.action, 'site.temporaryChat')
+  pattern(map.site?.conversationUrl, 'site.conversationUrl')
+  if (map.modes) {
+    element(map.modes.switch, 'modes.switch')
+    state(map.modes.required, 'modes.required')
+    for (const id of map.modes.forbidden ?? []) state(id, 'modes.forbidden')
+    action(map.modes.select, 'modes.select')
+  }
+  const { answer } = map
+  for (const [key, id] of [['turn', answer.turn], ['userTurn', answer.userTurn], ['code', answer.code], ['codeLabel', answer.codeLabel]] as const) if (id) element(id, `answer.${key}`)
+  for (const [key, id] of [['running', answer.running], ['done', answer.done], ['error', answer.error]] as const) state(id, `answer.${key}`)
+  pattern(answer.prefix, 'answer.prefix')
   return missing
 }
 
@@ -184,7 +256,7 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
 export function loadUiMap(text: string, overlayText?: string): UiMap {
   const raw = parse(text) as Record<string, unknown>
   assertMap(raw)
-  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'answer' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
+  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'answer' | 'site' | 'modes' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
   const elements: Record<string, ElementSpec> = {}
   let overlayErrors: ErrorRule[] = []
   for (const [id, e] of Object.entries(shipped.elements)) {
@@ -206,6 +278,8 @@ export function loadUiMap(text: string, overlayText?: string): UiMap {
     locales: shipped.locales,
     settings: { ...DEFAULT_SETTINGS, ...shipped.settings },
     answer: { ...DEFAULT_ANSWER, ...shipped.answer },
+    ...(shipped.site ? { site: shipped.site } : {}),
+    ...(shipped.modes ? { modes: shipped.modes } : {}),
     elements,
     actions: shipped.actions ?? {},
     network: shipped.network ?? {},

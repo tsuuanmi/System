@@ -814,6 +814,13 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      engine: [RES-0009](docs/research/RES-0009-web-driver-inspection.md)
      (274 lines generic, 143 ChatGPT, 297 unused by the Runtime; four new map
      kinds: `site`, `modes`, `answer`, `settings`).
+  2-ii. [x] Generic Procedures on the binding model, proved on a hostile fake
+     second Site with only a map and a page (WW2-ii): `packages/web-driver`
+     `src/procedures.ts`, `ui-map@1.7` (`site`, `modes`, `answer`, `settings`, the
+     condition `countAtLeast`; 1.6 maps still load), `tests/conformance.ts` run on
+     the hostile Site and on ChatGPT's map and fake. The bindings sufficed; no `steps`
+     list. Gaps: [RES-0009 section 6](docs/research/RES-0009-web-driver-inspection.md#6-result-of-the-hostile-site).
+     The ChatGPT driver is unchanged; moving it onto the Procedures is the rest of 2.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [x] Canary (WW4, `work:83bc6867`): `system work submit --worker <ref>`;
      a fixed canary Task; `tools/web-canary` (runs it on each web Account,

@@ -1,0 +1,247 @@
+/**
+ * The Procedure contract as an executable suite (WW2-ii): `conformance(fixture, env)` registers the same tests for any Site,
+ * given its UI map and a fake page that can be put into each scenario. A Site that passes needs only that map and that page,
+ * no generic code of its own. What a fixture cannot do yet is listed in its `unsupported`, each with its reason, and shows as
+ * a skipped test.
+ */
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+import type { Page } from 'patchright-core'
+import { type Baseline, Procedures, type Result, type UiMap } from '../src/index.ts'
+
+export type Case = 'happy' | 'attach' | 'temporary' | 'signed out' | 'challenge' | 'site error' | 'forbidden mode' | 'mode switch absent' | 'unknown send' | 'previous answer' | 'previous answer, no markers' | 'labelled blocks'
+
+/** What the page is made to do. A fixture maps each to its own page's options. */
+export interface Scenario {
+  /** The answer for a prompt (default "OK"). */
+  answer?: (prompt: string) => string
+  signedOut?: boolean
+  challenge?: boolean
+  /** The site gives up on the answer with its own error. */
+  siteError?: boolean
+  /** The send reaches the site and nothing shows it. */
+  loseSend?: boolean
+  /** The Site starts in a forbidden mode and cannot leave it. */
+  forbiddenMode?: boolean
+  /** The mode switch never renders. */
+  noModeSwitch?: boolean
+  /** The answer takes over a second to start. */
+  slow?: boolean
+  /** Answers show as the live widget's labelled blocks. */
+  labelledBlocks?: boolean
+}
+
+export interface RunningSite {
+  origin: string
+  stop(): Promise<void>
+  /** Prompts the site received so far. */
+  sent(): number
+}
+
+export interface Fixture {
+  name: string
+  map: UiMap
+  start(scenario: Scenario): Promise<RunningSite>
+  /** Cases the fixture cannot run yet, with why. */
+  unsupported?: Partial<Record<Case, string>>
+}
+
+export interface Env {
+  /** A fresh Chrome page, closed after the file. */
+  page(): Promise<Page>
+  skip: string | boolean
+}
+
+/** Short clocks: the cases wait for what a fake page does in a moment. */
+const quick = (map: UiMap): UiMap => ({ ...map, settings: { ...map.settings, modeReadyMs: 1500, modeSettleMs: 200, signedOutHoldMs: 500, sendAckMs: 2000, answerPollMs: 100, answerStableMs: 400, answerTimeoutMs: 20_000 } })
+
+const BLOCKS = [
+  { label: 'Final Report', code: '  indented line\n\n\ttabbed, with trailing spaces   \nunicode: ünï – 漢字 <b>&amp;</b>\n~~~~' },
+  { label: 'sources.json', code: '{"a": 1}' },
+]
+const withBlocks = (): string => `Here is the answer.\n${BLOCKS.map((b) => `\`\`\`${b.label}\n${b.code}\n\`\`\``).join('\nBetween the blocks.\n')}\nSee [Example](https://example.org/a) for more.`
+
+export function conformance(fixture: Fixture, env: Env): void {
+  const map = quick(fixture.map)
+  const hasModes = map.modes !== undefined
+
+  /** Run `body` with a started site and Procedures bound to it. */
+  async function on(scenario: Scenario, body: (p: Procedures, site: RunningSite) => Promise<void>, bound: UiMap = map): Promise<void> {
+    const site = await fixture.start(scenario)
+    const page = await env.page()
+    const p = new Procedures(page, bound, { origin: site.origin, readyMs: 8000 })
+    try {
+      await body(p, site)
+    } finally {
+      p.dispose()
+      // The browser goes first: a site's server waits for the page's open connections before it stops.
+      await page.context().close().catch(() => undefined)
+      await site.stop()
+    }
+  }
+
+  const ok = <T>(result: Result<T>, what: string): T => {
+    assert.equal(result.status, 'ok', `${what}: ${result.status} ${result.reason ?? ''} ${JSON.stringify(result.evidence)}`)
+    return result.value as T
+  }
+
+  /** The way in to a composer that is ready: signed in, in the required mode, in a new chat. */
+  async function ready(p: Procedures, temporary?: 'preferred'): Promise<void> {
+    ok(await p.checkAuth(), 'checkAuth')
+    ok(await p.ensureMode(), 'ensureMode')
+    ok(await p.openChat(temporary ? { temporary } : {}), 'openChat')
+  }
+
+  async function ask(p: Procedures, prompt: string): Promise<Baseline> {
+    ok(await p.insertInstructions(prompt), 'insertInstructions')
+    return ok(await p.send(), 'send')
+  }
+
+  const run = (name: Case, options: { timeout?: number }, body: () => Promise<void>): void => {
+    const reason = fixture.unsupported?.[name]
+    void test(name, { skip: env.skip || (reason ? `not covered yet: ${reason}` : false), timeout: options.timeout ?? 60_000 }, body)
+  }
+
+  describe(`conformance: ${fixture.name}`, () => {
+    run('happy', {}, () => on({ answer: (prompt) => `Answer to: ${prompt}` }, async (p, site) => {
+      const auth = await p.checkAuth()
+      assert.deepEqual([auth.status, auth.evidence.auth], ['ok', 'signed-in'])
+      ok(await p.ensureMode(), 'ensureMode')
+      ok(await p.openChat(), 'openChat')
+      const baseline = await ask(p, 'What is 2+2?')
+      assert.equal(site.sent(), 1)
+      const waited = await p.waitForAnswer(baseline)
+      assert.equal(waited.status, 'ok', JSON.stringify(waited))
+      assert.equal(waited.value?.text, 'Answer to: What is 2+2?')
+      const read = ok(await p.readAnswer(baseline), 'readAnswer')
+      assert.equal(read.text, 'Answer to: What is 2+2?')
+      assert.deepEqual([read.blocks, read.links], [[], []])
+      // Evidence is counts and names, never the prompt or the answer.
+      assert.doesNotMatch(JSON.stringify([auth, waited.evidence]), /2\+2/)
+    }))
+
+    run('attach', {}, () => on({}, async (p) => {
+      await ready(p)
+      const header = 'Header line.\n'
+      ok(await p.insertInstructions(header), 'insertInstructions')
+      const body = 'Body line one.\nBody line two.\n'.repeat(5)
+      const outcome = ok(await p.attachText(body, header), 'attachText')
+      // What the page shows decides: these fakes keep a short paste as text.
+      assert.deepEqual(outcome, { outcome: 'text' })
+    }))
+
+    run('temporary', {}, () => on({}, async (p) => {
+      ok(await p.checkAuth(), 'checkAuth')
+      ok(await p.ensureMode(), 'ensureMode')
+      const required = await p.openChat({ temporary: 'required' })
+      if (map.site?.temporaryChat) {
+        assert.equal(required.status, 'ok')
+        assert.equal(required.evidence.temporary, true)
+      } else {
+        // A Site with none: required fails explicitly, preferred goes on in a normal chat and says so.
+        assert.equal(required.status, 'failed')
+        assert.match(required.reason ?? '', /temporary chat is required/)
+        assert.equal(required.evidence.temporary, false)
+        const preferred = await p.openChat({ temporary: 'preferred' })
+        assert.equal(preferred.status, 'ok')
+        assert.equal(preferred.evidence.temporary, false)
+        assert.ok(preferred.evidence.downgraded)
+      }
+    }))
+
+    run('signed out', {}, () => on({ signedOut: true }, async (p) => {
+      const auth = await p.checkAuth()
+      assert.equal(auth.status, 'failed')
+      assert.equal(auth.evidence.auth, 'signed-out')
+    }))
+
+    run('challenge', {}, () => on({ challenge: true }, async (p) => {
+      const auth = await p.checkAuth()
+      assert.equal(auth.status, 'failed')
+      assert.equal(auth.evidence.auth, 'challenge')
+    }))
+
+    run('site error', {}, () => on({ siteError: true, answer: () => 'A partial answer that never finishes' }, async (p, site) => {
+      await ready(p)
+      const baseline = await ask(p, 'Anything')
+      const waited = await p.waitForAnswer(baseline)
+      // The site's own error is a failure of the answer, retryable by the caller, never an answer.
+      assert.equal(waited.status, 'failed', JSON.stringify(waited))
+      assert.deepEqual([waited.evidence.kind, waited.evidence.retryable], ['site-error', true])
+      assert.equal(waited.value, undefined)
+      const read = await p.readAnswer(baseline)
+      assert.equal(read.status, 'failed')
+      assert.equal(read.value, undefined)
+      assert.equal(site.sent(), 1, 'nothing is resent')
+    }))
+
+    run('forbidden mode', {}, () => {
+      if (!hasModes) return Promise.resolve()
+      return on({ forbiddenMode: true }, async (p, site) => {
+        ok(await p.checkAuth(), 'checkAuth')
+        const mode = await p.ensureMode()
+        assert.equal(mode.status, 'failed', JSON.stringify(mode))
+        assert.equal(mode.evidence.mode, 'forbidden')
+        // Refused before the send: the composer may hold the text, the click is never made.
+        await p.insertInstructions('Do not send this').catch(() => undefined)
+        const sent = await p.send()
+        assert.equal(sent.status, 'failed')
+        assert.equal(sent.evidence.outcome, 'rejected')
+        assert.equal(site.sent(), 0)
+      })
+    })
+
+    run('mode switch absent', {}, () => {
+      if (!hasModes) return Promise.resolve()
+      return on({ noModeSwitch: true }, async (p) => {
+        ok(await p.checkAuth(), 'checkAuth')
+        const mode = await p.ensureMode()
+        assert.equal(mode.status, 'unknown', JSON.stringify(mode))
+        assert.equal(mode.evidence.mode, 'unverified')
+      })
+    })
+
+    run('unknown send', {}, () => on({ loseSend: true }, async (p, site) => {
+      await ready(p)
+      ok(await p.insertInstructions('Is this sent?'), 'insertInstructions')
+      const sent = await p.send()
+      assert.equal(sent.status, 'unknown', JSON.stringify(sent))
+      assert.equal(sent.evidence.outcome, 'unknown')
+      // The prompt reached the site once. Nothing here sends it again, and an answer cannot be waited for as if it had been accepted.
+      assert.equal(site.sent(), 1)
+      const waited = await p.waitForAnswer(sent.value!, { timeoutMs: 600 })
+      assert.equal(waited.status, 'unknown')
+      assert.equal(site.sent(), 1)
+    }))
+
+    const previous = (scenario: Scenario, bound?: UiMap) => on({ ...scenario, slow: true, answer: (prompt) => (prompt.startsWith('first') ? 'The FIRST answer' : 'The SECOND answer') }, async (p, site) => {
+      await ready(p)
+      const first = await ask(p, 'first question')
+      assert.equal(ok(await p.waitForAnswer(first), 'first wait').text, 'The FIRST answer')
+      const second = await ask(p, 'second question')
+      // The first answer, its done marker and its text still stand on the page: none of it is the new answer.
+      const early = await p.waitForAnswer(second, { timeoutMs: 800 })
+      assert.equal(early.status, 'unknown', JSON.stringify(early))
+      const waited = await p.waitForAnswer(second)
+      assert.equal(waited.value?.text, 'The SECOND answer')
+      assert.equal(ok(await p.readAnswer(second), 'readAnswer').text, 'The SECOND answer')
+      assert.equal(site.sent(), 2)
+    }, bound)
+
+    run('previous answer', {}, () => previous({}))
+
+    // The baseline alone, with no running or done marker to lean on: only the text holding still can end the wait.
+    run('previous answer, no markers', {}, () => previous({}, { ...map, answer: { ...map.answer, running: undefined, done: undefined } as UiMap['answer'] }))
+
+    run('labelled blocks', {}, () => on({ labelledBlocks: true, answer: withBlocks }, async (p) => {
+      await ready(p)
+      const baseline = await ask(p, 'Give blocks')
+      ok(await p.waitForAnswer(baseline), 'waitForAnswer')
+      const read = ok(await p.readAnswer(baseline), 'readAnswer')
+      // Labels and code as the page renders them: every character, row and blank line kept.
+      assert.deepEqual(read.blocks, BLOCKS)
+      for (const block of BLOCKS) assert.ok(read.text.includes(block.code), 'the text carries the block')
+      assert.deepEqual(read.links, [{ href: 'https://example.org/a', text: 'Example' }])
+    }))
+  })
+}
