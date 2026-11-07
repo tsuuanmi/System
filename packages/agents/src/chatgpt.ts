@@ -247,9 +247,9 @@ export const launch = async (web: WebConfig, display: Display): Promise<BrowserC
 /**
  * One working tab: the worker's own is opened first (closing the last page of a headed window may end the
  * browser), then every other page is closed, and so is any that arrives later, as a late session restore or a
- * popup does, until the context ends. Counts are of pages whose close was confirmed (one that cannot be closed fails the attempt, or is counted apart for a late one).
+ * popup does, until the context ends. Counts are of pages whose close was confirmed (one that cannot be closed fails the attempt: at once for an inherited one, at the next `check()` for a late one).
  */
-export async function singleTab(context: BrowserContext): Promise<{ page: Page; initial: number; closed: number; late: () => number; lateFailed: () => number }> {
+export async function singleTab(context: BrowserContext): Promise<{ page: Page; initial: number; closed: number; late: () => number; lateFailed: () => number; check: () => void }> {
   const inherited = context.pages()
   const page = await context.newPage()
   let late = 0
@@ -262,7 +262,8 @@ export async function singleTab(context: BrowserContext): Promise<{ page: Page; 
   const closes = await Promise.all(others.map((p) => p.close().then(() => true, () => false)))
   const stuck = closes.filter((ok) => !ok).length
   if (stuck) throw new Failure(`${stuck} other page(s) could not be closed; the one-tab invariant does not hold`)
-  return { page, initial: inherited.length, closed: others.length, late: () => late, lateFailed: () => lateFailed }
+  const check = () => { if (lateFailed) throw new Failure(`${lateFailed} late page(s) could not be closed; the one-tab invariant does not hold`) }
+  return { page, initial: inherited.length, closed: others.length, late: () => late, lateFailed: () => lateFailed, check }
 }
 
 /** The prompt of one attempt in its two parts (WW1g): what is typed in the composer, and what is pasted after it. */
@@ -340,6 +341,16 @@ async function gone(pid: number, ms: number): Promise<boolean> {
   return true
 }
 
+/** The parent of process `pid` (Linux `/proc`); undefined when it cannot be read. */
+function parentOf(pid: number): number | undefined {
+  try {
+    const parent = Number(readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /, '').split(' ')[1])
+    return Number.isInteger(parent) ? parent : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Kill the process group of the Chrome `pid` (Playwright starts it as a group of its own); the process alone when that fails. */
 function killChrome(pid: number): void {
   for (const target of [-pid, pid]) {
@@ -355,7 +366,7 @@ function killChrome(pid: number): void {
 /**
  * One launch, ended at the launch clock plus a margin even when it neither returns nor fails. A launch that
  * fails or is abandoned must not leave Chrome running: the process that took the profile's lock since the launch began
- * is killed (never one that held it before), and a context that comes up late is closed.
+ * is killed only when this process started it (its parent is this process): a Chrome that took the profile some other way is never ours. A context that comes up late is closed.
  */
 async function launchBounded(launcher: typeof launch, web: WebConfig, display: Display): Promise<BrowserContext> {
   const before = profileLockPid(web.profileDir)
@@ -368,7 +379,7 @@ async function launchBounded(launcher: typeof launch, web: WebConfig, display: D
     return await Promise.race([started, gaveUp])
   } catch (error) {
     const pid = profileLockPid(web.profileDir)
-    if (pid !== undefined && pid !== before && alive(pid)) killChrome(pid)
+    if (pid !== undefined && pid !== before && alive(pid) && parentOf(pid) === process.pid) killChrome(pid)
     void started.then((late) => late.close(), () => {})
     throw error
   } finally {
@@ -403,7 +414,9 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   // The browser's process, from the profile's lock once it is up: the close is ok only when that process has exited.
   let chromePid: number | undefined
   const survivor = async (): Promise<string | undefined> => {
-    if (chromePid === undefined || (await gone(chromePid, 3000))) return undefined
+    // A browser whose process was never identified cannot be shown to have exited.
+    if (chromePid === undefined) return context ? 'the browser process was not identified (no profile lock holder after launch); its exit is unverified' : undefined
+    if (await gone(chromePid, 3000)) return undefined
     killChrome(chromePid)
     return `close() returned but the browser process ${chromePid} did not exit; it was killed`
   }
@@ -419,7 +432,9 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   })
   driver.onSubmitted = () => evidence.set({ promptSubmitted: true })
   driver.onAttached = (attach) => evidence.set({ attach })
+  let driverFailed: string | undefined
   driver.onStage = ({ stage, status, error }) => {
+    if (status === 'failed') driverFailed = stage
     if (status === 'start') {
       evidence.begin(stage)
       if (stage === 'send') evidence.set({ promptSendAttempted: true })
@@ -438,13 +453,20 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     if (result.status !== 'succeeded') result.partial = { ...result.partial, evidence: await putFile(Buffer.from(evidence.json()), 'application/json') }
     return { ...result, log: logId, executor }
   }
-  /** A stage that ran out of time is a failure of that stage, named; the driver's own failures are told as it words them. */
-  const stage = async <T>(name: string, seconds: number, run: () => Promise<T>): Promise<T> => {
+  /** The limit each stage runs under, in seconds; none known for the stages that have no clock of their own. */
+  const limitOf = (name: string): number | undefined => ({ launch: launchTimeoutMs(web) / 1000, open: web.timeouts.load, auth: web.timeouts.load, mode: web.timeouts.mode, wait: web.timeouts.answer, read: web.timeouts.answer })[name]
+  /** A stage that ran out of time is a failure of that stage, named with its own limit (the driver's inner stage when it ran one); the driver's other failures are told as it words them. */
+  const stage = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
     note(`${name} stage`)
     try {
       return await run()
     } catch (error) {
-      if ((error as Error).name === 'TimeoutError' || (error instanceof ProviderError && (error.kind === 'timeout' || error.kind === 'provider_stalled'))) throw new Failure(`${account.ref}: the ${name} stage timed out after ${seconds} s: ${(error as Error).message.split('\n')[0]}`)
+      const failed = driverFailed ?? name
+      const seconds = limitOf(failed)
+      const first = (error as Error).message.split('\n')[0] ?? ''
+      const op = /^([\w.]+): Timeout/.exec(first)?.[1]
+      if ((error as Error).name === 'TimeoutError' && op !== undefined && seconds !== undefined) throw new Failure(`${account.ref}: ${failed}: ${op} timed out after ${seconds} s`)
+      if ((error as Error).name === 'TimeoutError' || (error instanceof ProviderError && (error.kind === 'timeout' || error.kind === 'provider_stalled'))) throw new Failure(`${account.ref}: the ${failed} stage timed out${seconds === undefined ? '' : ` after ${seconds} s`}: ${first}`)
       if (error instanceof ProviderError && error.kind !== 'aborted') throw new Failure(`${account.ref}: ${error.message}${error.kind === 'reauth_required' ? '; sign in again (system workers login)' : ''}`)
       throw error
     }
@@ -465,7 +487,7 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     const prompt = webPrompt(ws, request, driver.map.settings.attachMinChars)
     display = await acquireDisplay()
     check()
-    context = await recorded('launch', () => stage('launch', launchTimeoutMs(web) / 1000, () => launchBounded(launcher, web, display!)))
+    context = await recorded('launch', () => stage('launch', () => launchBounded(launcher, web, display!)))
     chromePid = profileLockPid(web.profileDir)
     stop.signal.addEventListener('abort', () => { void close() }, { once: true })
     check()
@@ -475,10 +497,12 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     page.setDefaultNavigationTimeout(web.timeouts.load * 1000)
     const size = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })).catch(() => undefined)
     evidence.set({ ...(size ? { viewport: size } : {}), pages: { initial: tabs.initial, beforeNavigation: context.pages().length, closedInherited: tabs.closed, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
+    tabs.check()
     const conversationKind = web.temporaryChat ? 'temporary' : 'persistent'
     // The driver opens the chat (a temporary one when asked, in Chat mode), checks the sign-in, sends the prompt and waits for the
     // finished answer, on the clocks it was built with (`chatGptDriver`).
-    const answer = await stage('answer', web.timeouts.answer, () => driver.ask(page!, prompt.header, { conversation: conversationKind, ...(prompt.body === undefined ? {} : { attachment: prompt.body }), signal: stop.signal }))
+    const answer = await stage('answer', () => driver.ask(page!, prompt.header, { conversation: conversationKind, ...(prompt.body === undefined ? {} : { attachment: prompt.body }), signal: stop.signal }))
+    tabs.check()
     const markdown = answer.text
     const links = [...new Set(markdown.match(/https?:\/\/[^\s)>"\]]+/g) ?? [])]
     note(`answer of ${markdown.length} characters, ${links.length} link(s)`)

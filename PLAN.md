@@ -724,6 +724,14 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      prompts stay one part. Evidence: the stages `insert` and `attach`, the outcome and
      the chip count. Tests on the fake page, in `test:web`. *Not yet checked on the real
      site: the selectors come from the DOM the operator's agent captured.*
+  1h. [x] The second opinion of WW1c (`work:ce23f210`, 7 defects), all seven fixed:
+     launch cleanup kills only a Chrome this process started (1); `close` is `ok`
+     only for an identified, exited process (2); only a known mode can settle (3);
+     each mode-wait operation ends at the deadline (4); a late page that will not
+     close fails the one-tab invariant (5); one `read` record, binding inside it (6);
+     the Xvfb leak test signals only its recorded pid (7). Also: a failure names the
+     stage that failed and its own limit ("open: page.goto timed out after 60 s"),
+     where an open failure was reported as the answer stage's 900 s.
   1d, 1e, 2p. *Moved to milestone CQ (PROP-0007 on branch `checks-and-merge-queue`,
      built from `dev` by the Development session; operator, 2026-11-07): the
      Worker tool policy and per-attempt budget, checks on the repository's

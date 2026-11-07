@@ -200,10 +200,13 @@ One attempt:
    (30 s unless set), apart from the page clocks: a short page clock in a
    test measured the host's load, not the driver. A launch that fails, times out
    or is abandoned does not leave Chrome running: the process group that took
-   the profile's lock since the launch began is killed (never one that held it
-   before), and a context that comes up late is closed. A page that will not
-   close fails the attempt: the one-tab invariant is not claimed when it does
-   not hold.
+   the profile's lock since the launch began is killed only if this process
+   started it (its parent is this process): a Chrome that took the profile
+   some other way is never touched. A context that comes up late is closed. A page that will
+   not close fails the attempt (a late one at the next check, before the
+   first navigation and after the answer): the one-tab invariant is not
+   claimed when it does not hold. A close is `ok` only when the browser
+   process was identified and has exited.
 2. **Open and send** with System 1's ChatGPT web driver, ported whole into
    [`@system/web-driver`](../web-driver/README.md): `open` loads the site's home
    and reads the page's state (`checkAuth`: up to `load` seconds; a visible

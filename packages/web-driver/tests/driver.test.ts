@@ -302,3 +302,37 @@ test('a chip still being added at the deadline fails in the attach stage, with n
   assert.deepEqual(stages, ['attach'])
   assert.equal(fake.sent.length, 0)
 })
+
+// WW1h: binding the conversation is part of the read stage: one start and one end of it, whichever way it ends.
+test('a persistent turn reports the read stage once, with the binding checked inside it', { skip, timeout: 60_000 }, async () => {
+  const { page, driver } = await start()
+  const events: string[] = []
+  driver.onStage = ({ stage, status }) => { if (stage === 'read') events.push(status) }
+  const result = await driver.ask(page, 'Persistent.', { conversation: 'persistent' })
+  assert.ok(result.binding)
+  assert.deepEqual(events, ['start', 'ok'])
+})
+
+// WW1h: the mode wait with a stand-in engine, so the cases a page cannot be made to show are reachable.
+type ModeEngine = { count: (element: string) => Promise<number>; resolve: (element: string, ms: number) => Promise<unknown>; state: (name: string) => Promise<boolean> }
+const awaitMode = (engine: Partial<ModeEngine>, timeouts: DriverTimeouts) => {
+  const driver = new ChatGptWebDriver({ origin: 'http://127.0.0.1:1', timeouts: { pollMs: 20, ...timeouts } })
+  const stand: ModeEngine = { count: async () => 1, resolve: async () => ({ locator: { getAttribute: async () => 'true' } }), state: async () => false, ...engine }
+  return (driver as unknown as { awaitModeSwitch(engine: ModeEngine): Promise<void> }).awaitModeSwitch(stand)
+}
+
+test('a mode the switch cannot tell is never stable: an unknown mode does not end the wait', { timeout: 30_000 }, async () => {
+  const unknown = { resolve: async () => { throw new Error('no such element') } }
+  await assert.rejects(awaitMode(unknown, { modeReadyMs: 500, modeSettleMs: 100 }), failure('ui_drift', /mode unknown/))
+  const noState = { resolve: async () => ({ locator: { getAttribute: async () => null } }) }
+  await assert.rejects(awaitMode(noState, { modeReadyMs: 500, modeSettleMs: 100 }), failure('ui_drift', /mode unknown/))
+  await awaitMode({}, { modeReadyMs: 500, modeSettleMs: 100 })
+})
+
+test('the mode wait ends at its deadline even when a page operation never returns', { timeout: 30_000 }, async () => {
+  for (const hung of [{ count: () => new Promise<number>(() => {}) }, { resolve: () => new Promise<never>(() => {}) }, { state: () => new Promise<boolean>(() => {}) }]) {
+    const started = Date.now()
+    await assert.rejects(awaitMode({ ...(hung.state ? { count: async () => 0 } : {}), ...hung }, { modeReadyMs: 300, modeSettleMs: 100 }), failure('ui_drift', /mode unknown/))
+    assert.ok(Date.now() - started < 4000, `${Date.now() - started} ms`)
+  }
+})

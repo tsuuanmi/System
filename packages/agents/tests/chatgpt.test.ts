@@ -6,7 +6,7 @@
  * is the driver's; these tests are what the Runtime does around it.
  */
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -361,7 +361,7 @@ test('a missing output block fails the attempt and keeps what was found as parti
 test('an answer that never starts fails at the answer timeout', { skip, timeout: 60_000 }, async () => {
   const { result } = await run({ thinkMs: 60_000 }, ['report'], { config: { timeouts: { load: 10, answer: 2, stable: 0.5 } } })
   assert.equal(result.status, 'failed')
-  assert.match(result.reason!, /answer stage timed out after 2 s/)
+  assert.match(result.reason!, /wait stage timed out after 2 s/)
   assert.ok(result.partial?.screenshot)
 })
 
@@ -745,4 +745,71 @@ test('a page that cannot be closed breaks the one-tab invariant loudly, and a la
   const stuck = { close: async () => { throw new Error('stuck') } }
   const context = { pages: () => [stuck], newPage: async () => ({ close: async () => {} }), on: () => {} }
   await assert.rejects(singleTab(context as never), /1 other page\(s\) could not be closed/)
+})
+
+test('a Chrome that took the profile during a failed launch is not the attempt\'s: it is never killed', { timeout: 30_000 }, async () => {
+  const fake = await site()
+  const config = web(fake)
+  const { artifacts } = memory()
+  // Started by a shell that has exited, so it is nobody's child here; this test signals only the pid it recorded.
+  const foreign = Number(spawnSync('sh', ['-c', 'setsid sleep 300 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).stdout)
+  assert.ok(foreign > 0)
+  try {
+    const result = await webAttempt(account(config), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), async () => {
+      mkdirSync(config.profileDir, { recursive: true })
+      symlinkSync(`host-${foreign}`, join(config.profileDir, 'SingletonLock'))
+      throw new Error('refused')
+    })
+    assert.equal(result.status, 'failed')
+    await sleep(200)
+    assert.ok(alive(foreign), 'the other Chrome was not touched')
+  } finally {
+    try { process.kill(foreign, 'SIGKILL') } catch { /* gone */ }
+  }
+})
+
+test('a close with no browser process to check is not ok', { timeout: 30_000 }, async () => {
+  const fake = await site()
+  const { artifacts } = memory()
+  const context = { close: async () => {}, pages: () => [], on: () => {}, newPage: async () => { throw new Error('no page') } }
+  const result = await webAttempt(account(web(fake)), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), async () => context as never)
+  const close = (await evidenceOf(artifacts, result)).stages.find((stage: { stage: string }) => stage.stage === 'close')
+  assert.equal(close.status, 'failed')
+  assert.match(close.error, /process was not identified/)
+})
+
+test('a late page that cannot be closed fails the one-tab invariant, before anything is opened', { timeout: 30_000 }, async () => {
+  let arrive!: (page: unknown) => void
+  const context = { pages: () => [], newPage: async () => ({ close: async () => {} }), on: (_event: string, fn: (page: unknown) => void) => { arrive = fn } }
+  const tabs = await singleTab(context as never)
+  tabs.check()
+  arrive({ close: async () => { throw new Error('stuck') } })
+  await sleep(20)
+  assert.throws(() => tabs.check(), /1 late page\(s\) could not be closed; the one-tab invariant does not hold/)
+  const fake = await site()
+  const { artifacts } = memory()
+  let gone = false
+  const page = {
+    close: async () => {}, setDefaultNavigationTimeout: () => {}, url: () => 'about:blank', screenshot: async () => { throw new Error('none') },
+    evaluate: async () => { arrive({ close: async () => { throw new Error('stuck') } }); await sleep(20); return { width: 1, height: 1 } },
+    goto: async () => { gone = true },
+  }
+  const result = await webAttempt(account(web(fake)), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), async () => ({ close: async () => {}, pages: () => [], on: (_event: string, fn: (page: unknown) => void) => { arrive = fn }, newPage: async () => page }) as never)
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /1 late page\(s\) could not be closed/)
+  assert.equal(gone, false, 'the page was never navigated')
+})
+
+test('a failure in the open stage names that stage and its own limit, not the answer clock', { timeout: 30_000 }, async () => {
+  const fake = await site()
+  const { artifacts } = memory()
+  const page = {
+    close: async () => {}, setDefaultNavigationTimeout: () => {}, url: () => 'about:blank', screenshot: async () => { throw new Error('none') },
+    evaluate: async () => ({ width: 1, height: 1 }),
+    goto: async () => { throw Object.assign(new Error('page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating'), { name: 'TimeoutError' }) },
+  }
+  const result = await webAttempt(account(web(fake, { timeouts: { load: 60, answer: 20, stable: 0.5 } })), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), async () => ({ close: async () => {}, pages: () => [], on: () => {}, newPage: async () => page }) as never)
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /: open: page\.goto timed out after 60 s$/)
+  assert.doesNotMatch(result.reason!, /answer/)
 })
