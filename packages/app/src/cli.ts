@@ -73,6 +73,13 @@ export interface WorkCommands {
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
 
+export interface LoginView {
+  signedIn: boolean
+  detail: string
+  imported?: number
+  skipped?: number
+}
+
 export interface WorkersView {
   registered: string[]
   accounts: { ref: string; available: boolean; reason: string; version?: string }[]
@@ -83,6 +90,7 @@ export interface AppHost extends DoctorHost {
   work(): WorkCommands
   credentials(): CredentialCommands
   workers(): Promise<WorkersView>
+  login(ref: string, cookies: string | undefined): Promise<LoginView>
   /** Run as the Host of this home until stopped by a signal; resolves once it has stopped. */
   runHost(): Promise<void>
 }
@@ -163,7 +171,7 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
     .description('deny what held Work awaits; the Work fails. A human at a terminal only')
     .requiredOption('--reason <text>', 'why')
     .action(decide('denied'))
-  program.command('workers')
+  const workers = program.command('workers')
     .description('registered Workers, and each configured agent account with why it is or is not available')
     .action(() => {
       select(async () => {
@@ -173,6 +181,17 @@ export function buildProgram(host: AppHost, io: CliIo, select: (run: Run) => voi
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}\n`)
         }
         return 0
+      })
+    })
+  workers.command('login <ref>')
+    .description('sign a chatgpt-web account in: import a cookie file, or without one open a window for a manual sign-in (needs a display on the Host); operators only')
+    .option('--cookies <file>', 'a JSON (browser-extension export) or Netscape cookie file for chatgpt.com; read once, never stored')
+    .action((ref: string, options: { cookies?: string }) => {
+      select(async () => {
+        const report = await host.login(ref, options.cookies === undefined ? undefined : readFileSync(options.cookies, 'utf8'))
+        if (report.imported !== undefined) io.out(`imported ${report.imported} cookie(s), skipped ${report.skipped ?? 0} of other sites\n`)
+        io.out(`${ref}: ${report.signedIn ? 'signed in' : `not signed in: ${report.detail}`}\n`)
+        return report.signedIn ? 0 : 1
       })
     })
   const task = program.command('task').description('task inputs for Work')

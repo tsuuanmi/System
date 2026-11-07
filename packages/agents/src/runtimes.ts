@@ -4,7 +4,7 @@
  */
 import type { Workspace } from './workspace.ts'
 
-export type Runtime = 'claude-code' | 'codex'
+export type Runtime = 'claude-code' | 'codex' | 'chatgpt-web'
 
 export interface Invocation {
   argv: string[]

@@ -391,17 +391,19 @@ and orchestrator scope; O3 completion notices.
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
-  (draft). The operator accepted the Terms-of-Use risk for their own account
+  (accepted 2026-11-07). The operator accepted the Terms-of-Use risk for their own account
   (2026-11-06).
 - [x] Re-run the three research Works (tokens, existing drivers, risks) after
   the verifier fix V1. *(2026-11-07, verifier v2, ratio 0.5: tokens `851ec77c`
   5/8 quotes confirmed, drivers `12143a0f` 5/7, risks `8aaea4d6` 8/9 (one
   page 403); all accepted, the unconfirmed listed in each verdict; 82-108 s
   and about $0.22-0.29 (estimate) each.)*
-- [ ] Build after R1: the `chatgpt-web` Runtime on Playwright, a dedicated
+- [x] Build after R1: the `chatgpt-web` Runtime on Playwright, a dedicated
   signed-in profile, one prompt per attempt, completion detection, answer
   and cited links as outputs, each exchange recorded as a `conversation@1`,
-  and deterministic tests on a local fake page.
+  and deterministic tests on a local fake page. *(2026-11-07, W1: PROP-0005
+  accepted; `system workers login`, cookie import; not enabled in the bundle;
+  the real-site run, `SYSTEM_REAL_WEB=1`, is still to do.)*
 
 ## 4. After Brainstorm — future, not current gates
 

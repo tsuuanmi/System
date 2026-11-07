@@ -24,6 +24,8 @@ export interface Services {
     describe(name: string): Promise<{ configured: boolean; source?: string }>
   }
   workers(): Promise<{ registered: string[]; accounts: unknown[] }>
+  /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
+  login(ref: string, cookies: string | undefined): Promise<{ signedIn: boolean; detail: string; imported?: number; skipped?: number }>
 }
 
 const commandId = z.string().min(1).optional()
@@ -185,6 +187,12 @@ export function operations(services: Services): Methods {
       summary: 'The registered Workers, and each configured agent account with why it is or is not available.',
       params: z.object({}).strict(),
       handler: () => services.workers(),
+    },
+    'workers.login': {
+      agent: false,
+      summary: 'Sign a browser Account (`chatgpt-web/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
+      params: z.object({ ref: z.string().min(1), cookies: z.string().max(MAX_FRAME).optional() }).strict(),
+      handler: (_host, p) => services.login(p.ref, p.cookies),
     },
     'credentials.status': {
       agent: false,

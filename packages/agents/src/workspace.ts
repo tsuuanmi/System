@@ -173,7 +173,7 @@ export async function capture(artifacts: Artifacts, ws: Workspace, request: Work
   return { outputs, missing }
 }
 
-function mediaTypeOf(data: Buffer): string {
+export function mediaTypeOf(data: Buffer): string {
   try {
     JSON.parse(data.toString('utf8'))
     return 'application/json'

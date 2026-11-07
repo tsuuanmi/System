@@ -1,7 +1,7 @@
 ---
 id: PROP-0005
 type: proposal
-status: draft
+status: accepted
 created: 2026-11-06
 summary: A Website Worker that runs a step in the operator's signed-in ChatGPT web session through Playwright, returns the answer and its cited links as Artifacts, and records each exchange as a conversation; built on the Host after milestone H's release R1.
 evidence: [RES-0008]
@@ -9,6 +9,8 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 ---
 
 # Proposal: the ChatGPT Website Worker
+
+**Status:** accepted and built (milestone W, step W1, 2026-11-07).
 
 ## Decision context
 
@@ -118,6 +120,33 @@ fallback.
   These tests are deterministic and need no account.
 - A real run, gated like `SYSTEM_REAL_AGENTS`: a Research Work on
   `chatgpt-web/default`, with its sources checked by the citation verifier.
+
+## Built
+
+- **Runtime:** `packages/agents/src/chatgpt.ts`, an Account `chatgpt-web/<name>`
+  of the `agents` row. It runs in the Host, launches Chrome through
+  `playwright-core` 1.64.1 per attempt on the persistent profile, and keeps
+  everything proposed above: temporary chat by default, one prompt with the
+  inputs inlined, completion by the copy action plus `stable` seconds of
+  unchanged text, Markdown and link extraction, slots from labelled fenced
+  blocks, a `conversation@1` (producer: the Worker; the cited hrefs as the
+  attachment `links.json`), usage unknown, a timeout per stage, and a
+  screenshot as partial output on a sign-in wall, a challenge or an unknown
+  page.
+- **Login:** `system workers login chatgpt-web/<name> [--cookies <file>]`, the
+  Host operation `workers.login` (`agent: false`). The cookie file is read once
+  by the CLI. Without it a visible window opens when the Host has a `DISPLAY`.
+- **Selectors:** one versioned table, `SELECTORS`. The page is read with
+  scripts instead of Playwright's `fill`, `click` and `waitForSelector`,
+  which need a Chrome newer than the 95 installed on the operator's machine.
+- **Not enabled in the bundle.** The runbook says how to add the account.
+- **Still to verify against the real site:** whether web search, model choice
+  and cited sources work in a temporary chat, and whether the operator's custom
+  instructions apply, as listed above; the model label is not recorded. The
+  selectors are those the site used when this was written, not checked on a
+  live page. `tests/real-web.test.ts` (`SYSTEM_REAL_WEB=1`) is the check.
+- **Tests:** a fake page in `packages/agents/tests/fake-chatgpt`, driven by
+  `packages/agents/tests/chatgpt.test.ts` and `tests/chatgpt-web.test.ts`.
 
 ## Out of scope
 
