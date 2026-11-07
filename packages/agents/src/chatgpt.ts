@@ -302,6 +302,9 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
   const check = () => stop.signal.throwIfAborted()
   let context: BrowserContext | undefined
+  // One close, shared by the abort and the end of the attempt: a second `close()` returns before the browser has exited.
+  let closing: Promise<void> | undefined
+  const close = async () => { if (context) await (closing ??= context.close().catch(() => {})) }
   let page: Page | undefined
   let display: Display | undefined
   const ws = await prepare(artifacts, request, join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')))
@@ -324,7 +327,7 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     display = await acquireDisplay()
     check()
     context = await launch(web, display)
-    stop.signal.addEventListener('abort', () => { void context?.close().catch(() => {}) }, { once: true })
+    stop.signal.addEventListener('abort', () => { void close() }, { once: true })
     check()
     page = context.pages()[0] ?? await context.newPage()
     const state = await stage('load', web.timeouts.load, async () => {
@@ -385,7 +388,7 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   } finally {
     clearTimeout(timer)
     request.signal.removeEventListener('abort', forward)
-    await context?.close().catch(() => {})
+    await close()
     await display?.stop()
     await cleanup(ws)
   }
