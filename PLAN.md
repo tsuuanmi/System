@@ -568,6 +568,19 @@ and orchestrator scope; O3 completion notices.
     under `packages/web-driver`, `@system/web-driver` under `packages/agents`),
     which `--frozen-lockfile` wants; regenerate it with
     `corepack pnpm install --no-frozen-lockfile` when merging.
+- [x] W8. Read a ChatGPT answer's output blocks with their fences (follow-up
+  to W7; operator's real-site run, 2026-11-07).
+  - Evidence: the whole turn worked through `packages/web-driver`, and ChatGPT
+    wrote a `report` and a `sources` block, but the attempt failed with "wrote
+    no output block": the answer recorded was the rendered text (header and
+    content, no fences). No "copy refused" note was logged because System 1's
+    `markdownOf` returns the rendered text silently when Copy's code blocks do
+    not pair with the page's `pre code`.
+  - Fix, from System 1's own `answer.code` map entry: when the answer text has
+    no fence, `withFencedBlocks` fences each `pre code` block again with its
+    header as the info string (README, "Fences without Copy").
+  - Red test first: driver tests where the fake page's Copy gives text without
+    fences, and where it gives nothing, must still fill `report` and `sources`.
 - [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
   temporary chats, two signed-in accounts (`chatgpt-web/default`,
   `chatgpt-web/second`) can each give an independent proposal. A Brainstorm

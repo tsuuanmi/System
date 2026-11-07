@@ -67,3 +67,17 @@ test('a temporary turn starts in Chat mode, sends once, and returns the answer, 
   assert.equal(fake.sent.length, 1)
   assert.deepEqual([fake.sent[0]!.prompt, fake.sent[0]!.mode, fake.sent[0]!.temporary], ['What is the answer?', 'chat', true])
 })
+
+// W8: the real site's answer came back as rendered text ("report\n...", no fences), so no output block was found.
+const FENCED = 'Here:\n```report\nThe capital of France is Paris. [s1]\n```\n```sources\n{"sources":[{"id":"s1","url":"https://example.test/paris"}]}\n```'
+for (const [name, copied] of [
+  ['its Copy gives the text without fences', (markdown: string) => markdown.replace(/```([^\n]*)\n([\s\S]*?)\n```/g, '$1\n$2')],
+  ['its Copy gives nothing', () => ''],
+] as const) {
+  test(`an answer's code blocks keep their fences when ${name}`, { skip, timeout: 60_000 }, async () => {
+    const { page, driver } = await start({ answer: FENCED, copied })
+    const result = await driver.ask(page, 'Report.', { conversation: 'temporary' })
+    assert.match(result.text, /^```report\nThe capital of France is Paris\. \[s1\]\n```$/m)
+    assert.match(result.text, /^```sources\n\{"sources":\[\{"id":"s1","url":"https:\/\/example\.test\/paris"\}\]\}\n```$/m)
+  })
+}
