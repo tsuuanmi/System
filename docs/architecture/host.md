@@ -223,10 +223,12 @@ attempt to do it.
   a few hundred small files. Not `fs.watch`: a build deletes and rewrites
   `lib/`, which loses watches on Linux, and it needs a debounce anyway. A
   change counts when two looks in a row find the same new hash, so a build
-  still writing its files does not restart the Host. A hello from a client
+  still writing its files does not restart the Host, and never while the
+  build's `.building` marker exists (a pause between two packages' compiles
+  could look stable). A hello from a client
   whose version differs from the Host's asks the disk at once, and the Host
-  upgrades if the disk's hash is that client's: the common idle case waits
-  for no timer.
+  upgrades if the disk's hash is that client's, unless a build runs: the
+  common idle case waits for no timer.
 - **Upgrading.** The Host logs why, stops dispatching new attempts (worker,
   verifier and effect; accepting a Work is none) and lets the running ones
   finish. `work.submit` and `work.run` are still accepted, so clients see
@@ -234,10 +236,14 @@ attempt to do it.
 - **Leaving.** With no attempt running, the Host stops accepting, writes the
   IDs of the Works whose runs it held to `$DSH_HOME/system/upgrade.json`,
   releases the lock and exits with status 75. A SIGTERM meanwhile wins: exit 0
-  and no file.
-- **Restart.** The unit has `Restart=on-failure` and `RestartForceExitStatus=75`;
-  `system host --supervise` re-executes the Host after 75 and after nothing
-  else. The new Host recovers as on any start, and then reads and deletes the
+  and no file. A process still alive `EXIT_GRACE` (10 s) after any stop is
+  made to exit with that status and logs what is still open
+  (`process.getActiveResourcesInfo()`): once, a stopped Host held its
+  supervisor for an hour (2026-11-08).
+- **Restart.** The unit has `Restart=on-failure`, `RestartForceExitStatus=75`,
+  `RestartSec=5` and at most 10 starts in 5 minutes; `system host --supervise`
+  re-executes the Host after 75, and a failure after an upgrade three times
+  more, after 2, 4 and 8 s. The new Host recovers as on any start, and then reads and deletes the
   file: it runs those Works, except any with an attempt it just marked lost,
   finished ones, and ones already driven. Nothing interrupted resumes; a Work
   that was only held at the gate has nothing in flight to interrupt. The file

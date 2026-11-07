@@ -122,7 +122,11 @@ code every 10 s and restarts itself on new code.
 2. With no attempt running it logs `stopped for the upgrade ... exiting 75`
    and exits 75. The unit restarts on that status (`RestartForceExitStatus=75`);
    `system host --supervise` runs it again (foreground, development: nothing
-   else restarts it, and a crash or a SIGTERM ends the supervisor).
+   else restarts it, and a SIGTERM ends the supervisor). A new Host that fails
+   to start after an upgrade is tried again: the supervisor waits 2, 4 and
+   8 s and logs each try; the unit every 5 s, at most 10 starts in 5 minutes.
+   A process still alive 10 s after it stopped is made to exit, and logs
+   `still running ... open: <resources>`: what held it, to report.
 3. The new Host recovers as on any start and logs `continuing N Works held for
    the upgrade`: the Works whose runs waited at the gate go on, and nothing
    that was interrupted does.
@@ -130,9 +134,10 @@ code every 10 s and restarts itself on new code.
 A command run meanwhile waits up to 3 s for the swap before it says the Host
 is not running. If the Host is still draining, `system host`'s log says what it
 waits for; `systemctl --user restart system` (or SIGTERM) stops it at once and
-interrupts the attempts, as any stop does. After a build that is still
-half-written the new Host may fail to start: build again, then
-`systemctl --user restart system`.
+interrupts the attempts, as any stop does. `corepack pnpm build` keeps a
+`.building` file at the repository's root while it runs, and the Host does not
+upgrade while it is there; a failed build leaves it, so the Host stays on its
+code until a build succeeds.
 
 ## Attempts at once, and held slots
 
