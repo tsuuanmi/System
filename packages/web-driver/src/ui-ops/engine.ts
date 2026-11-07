@@ -10,7 +10,7 @@ import { sleep } from '../core/util.ts'
 import type { Frame, Locator, Page } from 'patchright-core'
 import { type Scored, choose, parseAiSnapshot, scoreNodes } from './heal.ts'
 import { candidateFromLocator, toLocator } from './locate.ts'
-import type { ActionSpec, Candidate, Condition, ElementSpec, UiMap } from './map.ts'
+import { attachBinding, type ActionSpec, type Candidate, type Condition, type ElementSpec, type UiMap } from './map.ts'
 import { NetworkObserver } from './network.ts'
 import { outlineOf, type UiOutline } from './outline.ts'
 
@@ -271,8 +271,8 @@ export class UiEngine {
   /**
    * The Procedure "attach text": paste `body` into the composer, which already holds `header`, and accept
    * what the site made of it: (a) the composer holds header and body, as text, or (b) it holds the header and
-   * exactly one new chip (`composer.attachment`) whose label starts with the body's first characters, with
-   * nothing still being added (`composer.attachment-adding`). Anything else, still unsettled at the map's
+   * exactly one new chip (the map's `attach.chip`) whose label starts with the body's first characters, with
+   * nothing still being added (`attach.adding`). Anything else, still unsettled at the map's
    * `attachWaitMs`, is a failure that says what the page held (counts only, never text).
    */
   async attachText(action: string, body: string, header: string, waitMs?: number): Promise<AttachOutcome> {
@@ -280,17 +280,18 @@ export class UiEngine {
     const attachWaitMs = waitMs ?? this.map.settings.attachWaitMs
     const spec = this.map.actions[action]
     if (!spec) throw new ProviderError('config_error', `${this.map.provider}: unknown action ${action}`)
-    const before = await this.count('composer.attachment')
+    const { chip, adding: addingId, label: labelFrom } = attachBinding(this.map)
+    const before = await this.count(chip)
     await this.act(action, { text: body })
     const input = (await this.resolve(spec.target)).locator
     const collapse = (s: string): string => s.replace(/[\s\u00a0]+/g, ' ').trim()
     const start = collapse(body).slice(0, attachLabelChars)
     let seen = ''
     for (const end = Date.now() + attachWaitMs; ; await sleep(TICK_MS)) {
-      const adding = (await this.count('composer.attachment-adding')) > 0
+      const adding = (await this.count(addingId)) > 0
       const composer = lineText(await typedText(input))
-      const chips = await this.tryResolve('composer.attachment')
-      const labels = chips ? await chips.locator.filter({ visible: true }).evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? '')) : []
+      const chips = await this.tryResolve(chip)
+      const labels = chips ? await chips.locator.filter({ visible: true }).evaluateAll((els, from) => els.map((el) => (from === 'text' ? (el as HTMLElement).innerText : el.getAttribute('aria-label')) ?? ''), labelFrom) : []
       const added = labels.length - before
       const named = labels.filter((label) => collapse(label).startsWith(start)).length
       if (!adding) {
@@ -694,6 +695,7 @@ export class UiEngine {
       if (!found) return false
       const value = await found.locator.getAttribute(condition.attr.name)
       if (condition.attr.equals !== undefined) return value === condition.attr.equals
+      if (condition.attr.matches !== undefined) return value !== null && new RegExp(condition.attr.matches).test(value)
       return (value !== null) === (condition.attr.present ?? true)
     }
     if ('stableTextMs' in condition) {

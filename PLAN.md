@@ -821,6 +821,14 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      the hostile Site and on ChatGPT's map and fake. The bindings sufficed; no `steps`
      list. Gaps: [RES-0009 section 6](docs/research/RES-0009-web-driver-inspection.md#6-result-of-the-hostile-site).
      The ChatGPT driver is unchanged; moving it onto the Procedures is the rest of 2.
+  2-iii. [x] The `chatgpt-web` Runtime can run an attempt through the Procedures
+     (WW2-iii): the Account option `procedures: legacy | generic` (default `legacy`,
+     validated); the attempt around them is unchanged and its evidence says which ran.
+     A send of `unknown` fails as "send outcome unknown: not resent". Gaps of RES-0009
+     section 6 closed with a conformance test each: the attachment chip binding
+     (`attach`), the `attr` condition with a pattern (the Work composer), a snippet
+     with no label, and ChatGPT's unknown send. `chatgpt.test.ts` runs for both values.
+     The legacy path stays until the two are compared live; removing it is the rest of 2.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
   4. [x] Canary (WW4, `work:83bc6867`): `system work submit --worker <ref>`;
      a fixed canary Task; `tools/web-canary` (runs it on each web Account,

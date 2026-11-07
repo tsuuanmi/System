@@ -90,6 +90,17 @@
       },
       "additionalProperties": false
     },
+    "attach": {
+      "type": "object",
+      "description": "How a pasted text the site turns into an attachment shows (1.7); absent, the elements `composer.attachment` and `composer.attachment-adding` and the chip's `aria-label`. `chip`: the element of one finished attachment, one match each. `adding`: the element that shows while one is being added. `label`: where a chip's label, which starts with the pasted text, is read: its `aria-label` attribute or its own text.",
+      "required": ["chip"],
+      "properties": {
+        "chip": { "$ref": "#/$defs/id" },
+        "adding": { "$ref": "#/$defs/id" },
+        "label": { "enum": ["aria-label", "text"] }
+      },
+      "additionalProperties": false
+    },
     "answer": {
       "type": "object",
       "description": "How an answer is found and read. `turn`, `userTurn`: elements, one match per turn. `container`: the answer is the matched element (`self`) or its parent (`parent`). `prefix`: a regular expression for text the site puts before the answer, removed. `running`, `done`: page states for generating and finished; `error`: the site's own error, a state looked for inside the newest answer on every poll. `code`, `codeLabel`: elements inside the answer, one label per code block in order. `leakedTokens`: literal strings the site leaks into its visible text (a model's control tokens), removed where they sit at the very start or end of an output.",
@@ -383,6 +394,12 @@
                 "equals": {
                   "type": "string",
                   "maxLength": 256
+                },
+                "matches": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "A regular expression the attribute's value must match (an absent attribute never does)."
                 },
                 "present": {
                   "type": "boolean"

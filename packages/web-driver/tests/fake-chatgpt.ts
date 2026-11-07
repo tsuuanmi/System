@@ -130,6 +130,8 @@ export interface FakeOptions {
    * (2026-11-07): the answer holds only "This response couldn’t load", with no Copy and nothing running.
    */
   loadFailure?: boolean
+  /** The send reaches the site, but the page shows neither the user's turn nor an answer (the acknowledgement is lost). */
+  dropSend?: boolean
   /** Model radios in the model menu. */
   models?: string[]
   /** Models shown but locked for this account. */
@@ -453,7 +455,7 @@ async function send() {
   user.className = 'turn'
   user.innerHTML = '<h4 class="sr-only">You said:</h4><div></div><button aria-label="Copy message">c</button><button aria-label="Edit message">e</button>'
   user.querySelector('div').textContent = prompt
-  $('log').append(user)
+  if (!options.dropSend) $('log').append(user)
   running = true
   render()
   const res = await fetch('/backend-api/f/conversation', { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -477,7 +479,7 @@ async function send() {
         if (!temporary) history.pushState({}, '', '/c/' + convId)
       }
       if (event.delta !== undefined) {
-        if (!started) { $('log').append(answer); started = true }
+        if (!started) { if (!options.dropSend) $('log').append(answer); started = true }
         raw += event.delta
         answer.querySelector('p').textContent += event.delta
       }
@@ -600,7 +602,7 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loadFailure: false, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loadFailure: false, dropSend: false, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
       researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',

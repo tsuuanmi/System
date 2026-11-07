@@ -1,7 +1,7 @@
 # The map of tests/fake-other.ts, an invented Site made unlike chatgpt.com on purpose (WW2-ii): it is the proof that
 # the generic Procedures need only a map and a page. It has no temporary chat (no `site.temporaryChat`), no mode
 # switch (no `modes`), a plain textarea, no Stop button (a status element: "Generating…" / "Done"), its error inside
-# the answer, the code label in its own element above the code, and pasted text always kept as text.
+# the answer, the code label in its own element above the code, and a long paste turned into a file chip labelled by its text.
 schema: ui-map@1.7
 provider: fake-other
 uiRevision: '2026-11-08'
@@ -19,6 +19,12 @@ settings:
   answerPollMs: 100
   answerStableMs: 400
   answerTimeoutMs: 20000
+
+# The chip is this Site's own: other elements than ChatGPT's, and its label is its text, not an aria-label.
+attach:
+  chip: composer.file
+  adding: composer.file-reading
+  label: text
 
 answer:
   turn: turn.assistant
@@ -44,14 +50,14 @@ elements:
   composer.send:
     candidates:
       - { css: 'button.go' }
-  composer.attachment:
-    description: 'This Site keeps a pasted text as text: no chip ever shows.'
+  composer.file:
+    description: 'A long paste becomes a file chip: a list item whose own text starts with the pasted text.'
     cardinality: many
     candidates:
-      - { css: '[data-attachment]' }
-  composer.attachment-adding:
+      - { css: '#files li.file' }
+  composer.file-reading:
     candidates:
-      - { css: '[data-attachment-adding]' }
+      - { css: '#files li.reading' }
   turn.user:
     cardinality: many
     candidates:

@@ -355,10 +355,9 @@ export class Procedures {
       const container = (await this.container())!
       if (answer.error && (await engine.stateIn(answer.error, container))) return failed('site error: the answer did not load', { kind: 'site-error', retryable: true, turns })
       const text = await this.textOf(container)
-      const blocks = await this.blocksOf(container)
-      if (!Array.isArray(blocks)) return failed(blocks.problem, { blocks: blocks.codes, labels: blocks.labels })
+      const { blocks, labels } = await this.blocksOf(container)
       const links = [...(await linksIn(container))].map(([href, label]) => ({ href, text: label }))
-      return done({ turns, chars: text.length, blocks: blocks.length, links: links.length }, { text, blocks, links })
+      return done({ turns, chars: text.length, blocks: blocks.length, links: links.length, ...(labels === undefined ? {} : { labels }) }, { text, blocks, links })
     })
   }
 
@@ -378,18 +377,23 @@ export class Procedures {
     return (prefix ? text.replace(new RegExp(prefix, 'i'), '') : text).trim()
   }
 
-  private async blocksOf(container: Locator): Promise<Block[] | { problem: string; codes: number; labels: number }> {
+  /**
+   * The answer's code blocks. Labels pair with blocks by order; when their numbers differ (a snippet with no header among
+   * labelled ones) no label can be trusted, so every label is `''` and `labels` says how many the page showed: a block
+   * never fills an output by a name it was not shown with.
+   */
+  private async blocksOf(container: Locator): Promise<{ blocks: Block[]; labels?: number }> {
     const { code, codeLabel } = this.map.answer
-    if (!code) return []
+    if (!code) return { blocks: [] }
     const codes = await this.engine.findIn(code, container).catch(() => undefined)
     const texts = codes ? await codes.locator.evaluateAll((els) => els.map((el) => {
       ;(el as HTMLElement).style.whiteSpace = 'pre-wrap'
       return (el as HTMLElement).innerText.replace(/\n$/, '')
     })).catch(() => [] as string[]) : []
-    if (!codeLabel) return texts.map((text) => ({ label: '', code: text }))
+    if (!codeLabel) return { blocks: texts.map((text) => ({ label: '', code: text })) }
     const found = await this.engine.findIn(codeLabel, container).catch(() => undefined)
     const labels = found ? await found.locator.evaluateAll((els) => els.map((el) => ((el as HTMLElement).innerText ?? '').trim().split('\n')[0]!.trim())).catch(() => [] as string[]) : []
-    if (labels.length !== texts.length) return { problem: `${texts.length} code blocks and ${labels.length} labels: they do not pair`, codes: texts.length, labels: labels.length }
-    return texts.map((text, index) => ({ label: labels[index]!, code: text }))
+    if (labels.length !== texts.length) return { blocks: texts.map((text) => ({ label: '', code: text })), labels: labels.length }
+    return { blocks: texts.map((text, index) => ({ label: labels[index]!, code: text })) }
   }
 }

@@ -241,13 +241,19 @@ What the two Sites did show, each recorded here and not fixed beyond what a test
 |---|---|---|
 | A done marker under every answer (ChatGPT's Copy), as a per-answer count | ChatGPT | A condition `countAtLeast` (the hostile Site needed none). |
 | Chat is verified by its own state, but its switch is absent in a temporary chat | ChatGPT | `modes.required` is a state: Chat pressed, or `temporary.off` visible. An absent switch with neither is `unknown`. |
-| The `Work` label guard on the composer (`attr` with a pattern) | ChatGPT | Not expressed: the forbidden state is the Work button pressed. The condition stays `equals`/`present` only. |
-| The code label before a `pre` (System 1's older form) | ChatGPT | Not covered: one label element per block, paired by order; only the live widget's header bar is bound. |
-| The engine's attach Procedure names `composer.attachment`, `composer.attachment-adding` and reads a chip's `aria-label` | engine | The hostile Site declares both elements, which never match, and its text stays text. A Site with another chip form cannot express it yet. |
+| The `Work` label guard on the composer (`attr` with a pattern) | ChatGPT | Closed in WW2-iii: `attr` takes `matches`; `mode.work-composer` is a forbidden mode. Conformance case `work composer`. |
+| The code label before a `pre` (System 1's older form) | ChatGPT | Not covered: one label element per block, paired by order; only the live widget's header bar is bound. WW2-iii: a count that does not pair is not a failure; every label is `''` (case `plain blocks`). |
+| The engine's attach Procedure names `composer.attachment`, `composer.attachment-adding` and reads a chip's `aria-label` | engine | Closed in WW2-iii: the map's `attach` names the chip, the adding element and where the label is read; the hostile Site binds a file chip labelled by its text. Conformance case `attach as chip`. |
 | The action ids and the `auth.*` and `site.error-page` states are fixed names, not bindings | Procedures | By convention, checked by `bindingProblems`; not worth a schema field until a Site cannot use them. |
 | `openChat` after `ensureMode` | Procedures | A page already showing an empty new chat is kept, because ChatGPT chooses Chat on its home and then toggles temporary; a load may restore another mode. |
-| An unknown send on ChatGPT | its fake | Not covered: the fake shows the user turn at once. Covered on the hostile Site. |
+| An unknown send on ChatGPT | its fake | Closed in WW2-iii: the fake can lose the acknowledgement (`dropSend`); the case runs on both Sites. |
 | Leaked control tokens, the Copy-based Markdown and its fences | Runtime | Stay above the Procedures; `readAnswer` returns the rendered blocks and text only. |
 
 The site error is classified first on every poll (`failed`, `retryable`), so a "This response
 couldn't load" is never read as an answer, on either Site.
+
+Still open after WW2-iii (listed, not closed): the model picker and the model read-back (the
+Procedures select none; a `generic` attempt records no model), the stall clock of a wait (only
+the deadline), the Copy-based Markdown, answer-level `errors` rules (`on: answer`; the Procedures
+use the `answer.error` state), and the reload-once on the site's error page (the attempt does it
+around `checkAuth`).

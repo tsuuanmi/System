@@ -150,6 +150,12 @@ fallback.
       text and its Copy escapes the Markdown (`\~`, `https\://`; seen live
       2026-11-08, WW5d), slots are read from the answer's rendered text by the
       same rules; escaped Markdown never fills one.
+   5. The page logic is the Account option `procedures` (WW2-iii): `legacy`, System 1's
+      driver (default), or `generic`, the generic Procedures bound to the ChatGPT map,
+      so both can be compared on the real site before the legacy path goes. The
+      attempt around them is the same. `generic` reads no Markdown (the rendered
+      text and its labelled blocks only), reads no model, and fails a send it cannot
+      confirm as "send outcome unknown: not resent", never resending it.
 4. **Provenance.** Each attempt also stores the exchange as a
    `conversation@1` ([PROP-0003](PROP-0003-conversation-ingestion.md)): the
    prompt and response as parts, the conversation URL, the model the driver

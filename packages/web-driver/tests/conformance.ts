@@ -9,7 +9,7 @@ import { describe, test } from 'node:test'
 import type { Page } from 'patchright-core'
 import { type Baseline, Procedures, type Result, type UiMap } from '../src/index.ts'
 
-export type Case = 'happy' | 'attach' | 'temporary' | 'signed out' | 'challenge' | 'site error' | 'forbidden mode' | 'mode switch absent' | 'unknown send' | 'previous answer' | 'previous answer, no markers' | 'labelled blocks'
+export type Case = 'happy' | 'attach' | 'attach as chip' | 'temporary' | 'signed out' | 'challenge' | 'site error' | 'forbidden mode' | 'work composer' | 'mode switch absent' | 'unknown send' | 'previous answer' | 'previous answer, no markers' | 'labelled blocks' | 'plain blocks'
 
 /** What the page is made to do. A fixture maps each to its own page's options. */
 export interface Scenario {
@@ -23,12 +23,18 @@ export interface Scenario {
   loseSend?: boolean
   /** The Site starts in a forbidden mode and cannot leave it. */
   forbiddenMode?: boolean
+  /** The Site's input names the forbidden mode (a label that reads Work), whatever the switch shows. */
+  workComposer?: boolean
   /** The mode switch never renders. */
   noModeSwitch?: boolean
   /** The answer takes over a second to start. */
   slow?: boolean
+  /** A long paste becomes one attachment chip, finished a moment after the paste. */
+  attachChip?: boolean
   /** Answers show as the live widget's labelled blocks. */
   labelledBlocks?: boolean
+  /** Code blocks have no label at all (plain code, as the site shows an ordinary snippet). */
+  plainBlocks?: boolean
 }
 
 export interface RunningSite {
@@ -130,6 +136,18 @@ export function conformance(fixture: Fixture, env: Env): void {
       assert.deepEqual(outcome, { outcome: 'text' })
     }))
 
+    // The Site's own chip (its element, its label where its map says), never the engine's idea of one.
+    run('attach as chip', {}, () => on({ attachChip: true, answer: () => 'OK' }, async (p, site) => {
+      await ready(p)
+      const header = 'Header line.\n'
+      ok(await p.insertInstructions(header), 'insertInstructions')
+      const body = 'Body line one, long enough to be kept as a file.\n'.repeat(8)
+      assert.deepEqual(ok(await p.attachText(body, header), 'attachText'), { outcome: 'attachment' })
+      const baseline = ok(await p.send(), 'send')
+      assert.equal(site.sent(), 1)
+      assert.equal(ok(await p.waitForAnswer(baseline), 'waitForAnswer').text, 'OK')
+    }))
+
     run('temporary', {}, () => on({}, async (p) => {
       ok(await p.checkAuth(), 'checkAuth')
       ok(await p.ensureMode(), 'ensureMode')
@@ -191,6 +209,21 @@ export function conformance(fixture: Fixture, env: Env): void {
       })
     })
 
+    run('work composer', {}, () => {
+      if (!hasModes) return Promise.resolve()
+      return on({ workComposer: true }, async (p, site) => {
+        ok(await p.checkAuth(), 'checkAuth')
+        const mode = await p.ensureMode()
+        assert.equal(mode.status, 'failed', JSON.stringify(mode))
+        assert.equal(mode.evidence.mode, 'forbidden')
+        await p.insertInstructions('Do not send this').catch(() => undefined)
+        const sent = await p.send()
+        assert.equal(sent.status, 'failed')
+        assert.equal(sent.evidence.outcome, 'rejected')
+        assert.equal(site.sent(), 0)
+      })
+    })
+
     run('mode switch absent', {}, () => {
       if (!hasModes) return Promise.resolve()
       return on({ noModeSwitch: true }, async (p) => {
@@ -242,6 +275,17 @@ export function conformance(fixture: Fixture, env: Env): void {
       assert.deepEqual(read.blocks, BLOCKS)
       for (const block of BLOCKS) assert.ok(read.text.includes(block.code), 'the text carries the block')
       assert.deepEqual(read.links, [{ href: 'https://example.org/a', text: 'Example' }])
+    }))
+
+    // A snippet with no header is not a failure of the read: its label is unknown, so it never fills an output by name.
+    run('plain blocks', {}, () => on({ plainBlocks: true, answer: withBlocks }, async (p) => {
+      await ready(p)
+      const baseline = await ask(p, 'Give blocks')
+      ok(await p.waitForAnswer(baseline), 'waitForAnswer')
+      const read = await p.readAnswer(baseline)
+      assert.equal(read.status, 'ok', JSON.stringify(read))
+      assert.deepEqual(read.value!.blocks, BLOCKS.map((block) => ({ label: '', code: block.code })))
+      assert.deepEqual(read.evidence.labels, 0)
     }))
   })
 }

@@ -193,8 +193,9 @@ changed but the header line.
 `insertInstructions`, `attachText`, `send`, `waitForAnswer` and `readAnswer` as fixed
 TypeScript control flow over the UI engine, with no Site name in it. Each returns
 `{ status: 'ok' | 'failed' | 'unknown', reason?, evidence }` (counts and names, never prompt
-or page text) and throws only for the caller's abort. The ChatGPT driver does not use them
-yet (migrating it is the next step), so nothing of its behaviour changed.
+or page text) and throws only for the caller's abort. The ChatGPT driver does not use them;
+the Runtime can run an attempt through them instead of it (the account option `procedures:
+generic`, WW2-iii, see the [web-worker README](../web-worker/README.md)).
 
 - **The map binds, the code decides** (`ui-map@1.7`; 1.6 maps still load). `site` (origin,
   conversation URL pattern, `temporaryChat.action` or none), `modes` (`switch` element,
@@ -205,7 +206,11 @@ yet (migrating it is the next step), so nothing of its behaviour changed.
   `answerTimeoutMs`). By convention the states `auth.signed-in` (required),
   `auth.signed-out`, `auth.login-page`, `auth.challenge`, `site.error-page` and the actions
   `composer.clear`, `composer.insert`, `composer.send` (and `composer.attach`) keep their
-  names. One new condition, `countAtLeast` (a done marker under every answer).
+  names. One new condition, `countAtLeast` (a done marker under every answer), and `attr`
+  takes `matches`, a pattern over the attribute's value (ChatGPT's Work composer is the
+  forbidden state `mode.work-composer`). `attach` (`chip`, `adding`, `label: aria-label|text`)
+  binds the attachment chip a Site makes of a long paste; absent, the elements
+  `composer.attachment` and `composer.attachment-adding` and the chip's `aria-label`.
 - **Validated before a browser opens.** `loadUiMap` refuses a dangling binding (an unknown
   state, element or action, a bad regular expression); `bindingProblems(map)` lists what a
   map lacks for the Procedures, and the `Procedures` constructor throws on any.
@@ -219,14 +224,13 @@ yet (migrating it is the next step), so nothing of its behaviour changed.
   in this order: the Site's error inside the answer (`failed`, `retryable`, never an answer),
   a challenge or error page, running, the done marker (when the map has one), the text held
   for `answerStableMs`. The deadline is `unknown`. `readAnswer` returns the text, the code
-  blocks as `{ label, code }` (label element paired by order; a count that does not pair is
-  `failed`) and the outside links. Leaked tokens stay the Runtime's.
+  blocks as `{ label, code }` (label element paired by order; a count that does not pair gives
+  every block the label `''`, so none fills an output by name, and the evidence counts the
+  labels) and the outside links. Leaked tokens stay the Runtime's.
 - **Conformance.** [tests/conformance.ts](tests/conformance.ts) is the contract as a suite
   that runs on any map and fake page; [tests/conformance.test.ts](tests/conformance.test.ts)
   runs it on the hostile Site ([tests/fake-other.ts](tests/fake-other.ts),
-  [ui/fake-other.ui.yaml](ui/fake-other.ui.yaml)) and on ChatGPT's map and fake page. Not
-  covered yet, shown as a skipped test: ChatGPT's *unknown send* (its fake always shows the
-  user turn). Outside the binding model today, found by the hostile Site and ChatGPT's
+  [ui/fake-other.ui.yaml](ui/fake-other.ui.yaml)) and on ChatGPT's map and fake page. Outside the binding model today, found by the hostile Site and ChatGPT's
   map, and recorded with the verdict in
   [RES-0009](../../docs/research/RES-0009-web-driver-inspection.md#6-result-of-the-hostile-site).
 

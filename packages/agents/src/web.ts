@@ -18,6 +18,8 @@ export interface WebAccountSettings {
   timeouts?: Partial<Record<'load' | 'answer' | 'stable' | 'launch' | 'mode' | 'attach', number>>
   /** Characters (whitespace ignored) the answer may hold outside its output blocks (default 200); more fails the attempt, as an output may be cut short. */
   maxOutsideChars?: number
+  /** The page logic of an attempt: `legacy` (System 1's ChatGPT driver, default) or `generic` (the generic Procedures bound to the ChatGPT map); anything else is refused. */
+  procedures?: 'legacy' | 'generic'
 }
 
 /** An account entry as the `agents` row hands it over: its offered capabilities (tiers included) and its limits resolved. */
