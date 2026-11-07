@@ -8,7 +8,7 @@ import { startXvfb } from '../packages/agents/src/display.ts'
 const dir = mkdtempSync(join(tmpdir(), 'system-probe-'))
 const display = await startXvfb()
 try {
-  const context = await launch({ ...webDefaults(join(dir, 'profile')), executablePath: process.env.CHROME_FOR_PROBE, timeouts: { load: 15, send: 15, answer: 15, stable: 1 } }, display)
+  const context = await launch({ ...webDefaults(join(dir, 'profile')), executablePath: process.env.CHROME_FOR_PROBE, timeouts: { load: 15, answer: 15, stable: 1 } }, display)
   await (context.pages()[0] ?? await context.newPage()).goto('about:blank')
   await context.close()
 } catch (error) {

@@ -523,6 +523,51 @@ and orchestrator scope; O3 completion notices.
   - The one change to `pnpm-lock.yaml` is the dependency swap itself
     (`playwright-core` out; `patchright-core` and `@puppeteer/browsers` in),
     which `--frozen-lockfile` needs.
+- [x] W7. Port System 1's ChatGPT web driver, its UI map and its UI engine
+  (operator, 2026-11-07, said twice). *(Real-site result pending: the
+  operator's agent runs `SYSTEM_REAL_WEB=1 node --test tests/real-web.test.ts`
+  after the merge.)*
+  - Why: W5 and W6 re-implemented parts of System 1's driver as a small
+    selector table and met problems System 1 had already fixed (a stale send
+    selector, `?temporary-chat=true` navigation aborted, a false challenge).
+    System 1 works against chatgpt.com, so its logic is copied, with its
+    comments, and not written again.
+  - New package `packages/web-driver` ([README](packages/web-driver/README.md)):
+    System 1's `ui-ops` (engine, map, locate, outline, network, answers, site,
+    heal), its `provider-chatgpt-web` driver, UI map and fake site, and only the
+    parts of `provider-core` and `libs` they import. Each file names its source
+    path and System 1's commit (`f199a277`); the README lists every difference
+    and why (no Cordis glue; reports go to the attempt's log, heal off; the
+    map schema is checked with `ajv` without format checks; parameter
+    properties as fields; a fixture without `otpauth`). Dependencies: `yaml`
+    2.9.1 (System 1's pin) and `ajv` 8.20.0 (already in the lockfile through DSH).
+  - `packages/agents/src/chatgpt.ts` uses the driver: `ask` opens a temporary
+    chat in Chat mode (the operator's default), checks the sign-in, sends and
+    waits; the answer's Markdown comes from the page's Copy. Deleted: the
+    `SELECTORS` table, the page-state and send/wait scripts, `classify`,
+    `settle` and `pageState`, the stage `send` and its timeout, and the tests
+    the ported ones cover. Kept: never headless, the private Xvfb, the
+    persistent session-bound profile, the `conversation@1` record, the output
+    blocks, cancel and the attempt time limit. The remote login's Save check is
+    the driver's `checkAuth`.
+  - Test evidence here: the ported engine tests (9), the driver tests against
+    the ported fake site (3), the Runtime's attempt tests against it (24), the
+    remote-login tests (11) and the booted `chatgpt-web` smoke test (4) pass on
+    a headed Chrome on Xvfb.
+  - **Growth recorded** (lines of `.ts` and `.mjs`; the baseline is `dev` at
+    `a63457f`): the active core (`packages/work/src` + `packages/artifacts/src`)
+    is 3,076 before and after, **unchanged**; all package source 7,705 → 10,469
+    (+2,764: `packages/web-driver/src` 3,006, `packages/agents/src` 1,935 →
+    1,693); tests (`packages/*/tests`, `tests`, `test-support`) 8,603 → 9,421
+    (+818: System 1's fake site is 672 of them). The growth is the ported
+    code, which is the decision; it is outside the core's budget, and the
+    next milestone should check that none of System 1's unused procedures
+    (Deep research, deletion, credential sign-in, heal) is kept without a use.
+  - `pnpm-lock.yaml` is not part of this change (instructions): the new
+    workspace package needs its importer entry (`yaml`, `ajv`, `patchright-core`
+    under `packages/web-driver`, `@system/web-driver` under `packages/agents`),
+    which `--frozen-lockfile` wants; regenerate it with
+    `corepack pnpm install --no-frozen-lockfile` when merging.
 - [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
   temporary chats, two signed-in accounts (`chatgpt-web/default`,
   `chatgpt-web/second`) can each give an independent proposal. A Brainstorm

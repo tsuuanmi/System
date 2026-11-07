@@ -1,0 +1,21 @@
+{
+  "name": "@system/web-driver",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The ChatGPT web driver, its UI map and the UI engine, ported from System 1 (PROP-0005): the page logic the chatgpt-web Runtime runs through patchright-core",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "ui"
+  ],
+  "dependencies": {
+    "ajv": "8.20.0",
+    "patchright-core": "1.63.0",
+    "yaml": "2.9.1"
+  }
+}

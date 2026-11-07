@@ -1,7 +1,8 @@
 # Fake ChatGPT page
 
-[index.html](index.html) and [chat.js](chat.js): a page with the selector roles
-of `SELECTORS` in [chatgpt.ts](../../src/chatgpt.ts). The query string picks a
-scenario (`normal`, `late-copy`, `early-copy`, `links`, `signin`, `captcha`,
-`blank`, `session`, `forever`, `slow-session`, `logged-out-home`, `hidden-challenge`), the composer `mode` (`work`, `stuck`, `label`: see chat.js), the answer's `slots`, an `omit`ted block and the
-`delay` between chunks; `model=none` hides the model label. [serve.mjs](serve.mjs) serves it from its own process.
+[index.html](index.html) and [chat.js](chat.js): a small page for the remote
+sign-in tests ([remote-login.test.ts](../remote-login.test.ts)): a signed-out
+page whose "Log in" button sets the session cookie, a composer once it is
+set, and a report of every load, click and key to `POST /event`. The
+Runtime's attempts run against System 1's stand-in for chatgpt.com,
+[fake-chatgpt.ts](../../../web-driver/tests/fake-chatgpt.ts).

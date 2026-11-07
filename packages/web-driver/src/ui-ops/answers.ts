@@ -1,0 +1,63 @@
+// Ported from System 1 (tsuuanmi/system @ f199a277): packages/ui-ops/src/answers.ts. Changes: packages/web-driver/README.md.
+/**
+ * Reading an answer the way every website driver does (REQ-PRV-5): its rendered text with code
+ * indentation kept, its Markdown from the page's own Copy control, kept only when its words are
+ * the rendered answer's (the clipboard may be shared), and the targets of its links, which
+ * rendered text drops.
+ */
+import { compareWords } from '../core/answer-text.ts'
+import { withMissingSources, withoutTrackingLinks } from '../core/web-turns.ts'
+import type { Locator } from 'patchright-core'
+import type { UiEngine } from './engine.ts'
+
+/** An element's text under `white-space: pre-wrap`, so runs of spaces (code indentation) survive; trimmed. */
+export async function preWrapText(locator: Locator): Promise<string> {
+  return (await locator.evaluate((el) => {
+    ;(el as HTMLElement).style.whiteSpace = 'pre-wrap'
+    return (el as HTMLElement).innerText
+  }).catch(() => '')).trim()
+}
+
+/** The http(s) links in an element that leave the site (href → text, first text wins); empty when it cannot be read. */
+export async function linksIn(locator: Locator): Promise<Map<string, string>> {
+  const anchors = await locator.locator('a[href^="http"]').evaluateAll((links) => links
+    .filter((a) => new URL((a as HTMLAnchorElement).href).origin !== location.origin)
+    .map((a) => [(a as HTMLAnchorElement).href, (a.textContent ?? '').trim()]))
+    .catch(() => [] as string[][])
+  const links = new Map<string, string>()
+  for (const [href, text] of anchors) if (href && !links.has(href)) links.set(href, text ?? '')
+  return links
+}
+
+/**
+ * The answer's Markdown from its Copy control, tidied by the site's own rule; the rendered text
+ * when there is no control, nothing was copied, the words differ, or anything fails; a control
+ * whose Copy was not kept is reported (`engine.copyRefused`, counts only). Kept Markdown loses the
+ * tracking parameters of its link targets. Either way,
+ * the links of the answer element that the text does not carry follow it as its sources, so a
+ * cited answer keeps its URLs.
+ */
+export async function copiedMarkdown(engine: UiEngine, rendered: string, control: () => Promise<Locator | undefined>, tidy: (markdown: string) => string | Promise<string>, answer?: () => Promise<Locator | undefined>): Promise<string> {
+  const text = await (async () => {
+    try {
+      const copy = await control()
+      if (!copy) return rendered
+      const markdown = await engine.copied(copy)
+      if (!markdown) {
+        engine.copyRefused({ reason: 'empty' })
+        return rendered
+      }
+      const { same, ...counts } = compareWords(markdown, rendered)
+      if (!same) {
+        engine.copyRefused({ reason: 'words', ...counts })
+        return rendered
+      }
+      return withoutTrackingLinks(await tidy(markdown))
+    } catch {
+      engine.copyRefused({ reason: 'failed' })
+      return rendered
+    }
+  })()
+  const element = answer ? await answer().catch(() => undefined) : undefined
+  return element ? withMissingSources(text, await linksIn(element)) : text
+}

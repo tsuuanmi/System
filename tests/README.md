@@ -34,7 +34,7 @@ nothing else.
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
   through the operator's Host when one answers, or one the test starts.
 - [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `chatgpt-web` account on
-  the booted profile against the local fake page: `workers login --cookies`
+  the booted profile against the local fake site ([web-driver](../packages/web-driver/tests/fake-chatgpt.ts)): `workers login --cookies`
   (no value printed), a sign-in wall reported, a Work filling its slot and
   producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).
 - [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):

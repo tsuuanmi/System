@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'patchright-core'
+import { FakeChatGpt } from '../../web-driver/tests/fake-chatgpt.ts'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
@@ -53,7 +54,7 @@ after(() => {
 
 let count = 0
 function web(query: string, extra: Partial<WebConfig> = {}): WebConfig {
-  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${base}?${query}`, executablePath: CHROME, timeouts: { load: 10, send: 10, answer: 20, stable: 0.5 }, ...extra }
+  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${base}?${query}`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, ...extra }
 }
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 const until = async (what: string, check: () => boolean | Promise<boolean>, ms = 15_000) => {
@@ -225,22 +226,24 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
   events.length = 0
   const was = process.env.DISPLAY
   delete process.env.DISPLAY
+  // The answer never starts, so the attempt is still running while the browser is looked at.
+  const fake = new FakeChatGpt({ thinkMs: 60_000 })
+  await fake.start()
   try {
-    const config = web('scenario=forever')
+    const config = { ...web(''), url: `${fake.origin}/` }
     const account: Account = { ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config }
     const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...CONVERSATION_KIND, content: conversationSchema })
     const task = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'x' }, classification: 'local-private', producer: { type: 'operator', ref: 'tester' } })).id
     const stop = new AbortController()
     const request: WorkerRequest = { workId: 'work:test', attemptId: 'attempt:display', stepId: 'research', capabilities: ['research'], inputs: { task }, outputs: ['report'], signal: stop.signal }
     const running = agentWorker(account, artifacts, processSpawner, join(root, 'attempts')).run(request)
-    await until('the page to load', () => events.some((e) => e.type === 'load' && e.scenario === 'forever'))
+    await until('the prompt to be sent', () => fake.sent.length === 1)
     const chrome = profileLockPid(config.profileDir)!
     const env = readFileSync(`/proc/${chrome}/environ`, 'utf8').split('\0')
     const display = env.find((e) => e.startsWith('DISPLAY='))!.slice('DISPLAY='.length)
     assert.match(display, /^:\d+$/, 'the browser runs on a private display')
     assert.ok(existsSync(`/tmp/.X11-unix/X${display.slice(1)}`), 'the display is up')
     assert.doesNotMatch(readFileSync(`/proc/${chrome}/cmdline`, 'utf8'), /--headless/)
-    assert.doesNotMatch(events.find((e) => e.type === 'load')!.ua, /Headless/)
     const xvfb = execFileSync('pgrep', ['-f', `Xvfb ${display} `], { encoding: 'utf8' }).trim().split('\n').map(Number)
     assert.equal(xvfb.length, 1)
     stop.abort()
@@ -249,6 +252,7 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
     assert.equal(existsSync(`/tmp/.X11-unix/X${display.slice(1)}`), false)
     assert.equal(alive(chrome), false)
   } finally {
+    await fake.stop()
     if (was !== undefined) process.env.DISPLAY = was
   }
 })

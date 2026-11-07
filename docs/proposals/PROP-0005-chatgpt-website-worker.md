@@ -10,7 +10,7 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2 and W5, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1, W2, W5 and W7, 2026-11-07).
 
 ## Decision context
 
@@ -110,8 +110,9 @@ fallback.
    challenge still loops after W5, and the next step would then be a VNC
    server on the private display behind the same token and tunnel.
 3. **One attempt.**
-   1. Open a **temporary chat** (`https://chatgpt.com/?temporary-chat=true`),
-      the Account option `temporaryChat`, on by default: the account's memory
+   1. Open a **temporary chat** (W7: System 1's driver turns the page's own
+      Temporary chat control on; `?temporary-chat=true` is not used, see item
+      7), the Account option `temporaryChat`, on by default: the account's memory
       and history do not leak into the answer, so attempts stay independent,
       and the operator's history is not filled with Worker chats. System keeps
       the exchange as a `conversation@1`, whose manifest records whether the
@@ -119,25 +120,27 @@ fallback.
    2. Send one prompt, built as for the CLI Workers: the step and Task
       instructions, the inputs inlined as text with their names, and the
       required outputs.
-   3. Wait for completion: the newest turn's copy action appears, then the
-      text stays unchanged for `stable` seconds.
-   4. Extract the answer as Markdown and the cited links from the DOM. Output
+   3. Wait for completion (the driver's): the newest turn's finished marker
+      appears and Stop is gone, then the text stays unchanged for `stable`
+      seconds.
+   4. Extract the answer as Markdown (the page's own Copy, checked against the
+      rendered words) and the cited links. Output
       slots are filled from labelled, fenced blocks the prompt asks for (such
       as `report` and `sources`); a missing block fails the attempt, as a
       missing file does today.
 4. **Provenance.** Each attempt also stores the exchange as a
    `conversation@1` ([PROP-0003](PROP-0003-conversation-ingestion.md)): the
-   prompt and response as parts, the conversation URL, the model label the
-   page showed and the cited hrefs as the attachment `links.json`. System
+   prompt and response as parts, the conversation URL, the model the driver
+   read back and the cited hrefs as the attachment `links.json`. System
    observed the exchange itself, so the producer is the Worker attempt, not
    the operator. Usage is `unknown`: the web UI shows no token counts.
 5. **Limits and failure.** One attempt at a time per Account (the Host's slots,
-   PROP-0004 C3) and a timeout per stage (load, send, answer). A sign-in wall,
+   PROP-0004 C3) and a timeout per stage (load, answer; W7 dropped `send`, the
+   driver bounds each action itself). A sign-in wall,
    a CAPTCHA or an unknown page state fails the attempt with that reason and
    keeps a screenshot as partial output; it never hangs and never tries to get
-   round a check. Selectors live in one versioned table, `SELECTORS`, and the
-   page is read with a few `evaluate` scripts (not the engine's `fill` or
-   `click`), ported from System 1's `ui/chatgpt-web.ui.yaml` and driver.
+   round a check. The page is System 1's: its UI map, UI engine and driver
+   (item 7), not a selector table of this repository.
 6. **A genuine browser (W5, 2026-11-07).** Evidence from the real site: an
    account that was signed in was reported as challenged (a false positive of
    a check that looked at the DOM, not at what shows), and on another account
@@ -163,17 +166,36 @@ fallback.
    and a composer whose label names Work is refused: Work spends the Codex
    quota. Save in the remote viewer stops Chrome cleanly and checks the sign-in
    in the same profile (a session is bound to it: never a copy).
-   `SELECTORS.version` is 2. Not verified against the real site from here: the
-   operator runs it. If a challenge still loops, the difference left is the
-   input (above).
+   Not verified against the real site from here: the operator runs it. If a
+   challenge still loops, the difference left is the input (above). *(W5
+   wrote this logic again as a selector table and scripts; item 7 replaces
+   that.)*
+7. **System 1's driver, ported whole (W7, 2026-11-07; operator's decision,
+   said twice).** System 1 already works against chatgpt.com, so its logic is
+   ported, not written again. W5 and W6 re-implemented parts with a small
+   selector table and met problems System 1 had fixed: a stale send selector,
+   `?temporary-chat=true` navigation aborted by the site, and a false
+   challenge. `packages/web-driver` holds System 1's UI engine
+   (`packages/ui-ops`), its ChatGPT driver and UI map
+   (`packages/plugins/provider-chatgpt-web`) and the few parts of
+   `provider-core` and `libs` they import, each file headed with its source
+   path and commit, and the package README lists every difference. The
+   Runtime now only launches the browser, builds the prompt and records the
+   exchange; `checkAuth`, `open` (Chat mode, Temporary chat), `ask` and the
+   answer read are the driver's, and the remote login's Save check is its
+   `checkAuth`. What the driver reports goes to the attempt's log; self-heal
+   is off (no decision store exists). Not verified against the real site from
+   here: the operator's agent runs `SYSTEM_REAL_WEB=1 node --test
+   tests/real-web.test.ts` after the merge.
 
 ## Tests and what is still to verify
 
-A fake page with the same structure (`packages/agents/tests/fake-chatgpt`,
-driven by `packages/agents/tests/chatgpt.test.ts` and `tests/chatgpt-web.test.ts`)
-covers send, wait and extract, completion detection, a sign-in wall, a CAPTCHA
-page, a missing output block and cancel mid-answer, deterministically and
-without an account. `packages/agents/tests/remote-login.test.ts` covers the
+System 1's fake site (`packages/web-driver/tests/fake-chatgpt.ts`, ported with
+the driver, driven by `packages/agents/tests/chatgpt.test.ts` and
+`tests/chatgpt-web.test.ts`) covers send, wait and extract, a sign-in wall, a
+CAPTCHA page, the logged-out home, the site's error page, a composer on Work,
+a missing output block and cancel mid-answer, deterministically and without an
+account. The ported engine tests are in `packages/web-driver/tests`. `packages/agents/tests/remote-login.test.ts` covers the
 remote flow (token, frames, input, Save, Cancel, expiry, cleanup) and the
 private Xvfb. A headed Chrome that cannot start is a failure of these tests,
 not a skip (`test-support/headed.ts`; `SYSTEM_SKIP_HEADED=1` skips them on a
@@ -186,7 +208,8 @@ sources the citation verifier checks.
 **Still to verify against the real site:** whether web search, model choice
 and cited sources work in a temporary chat, and whether the operator's custom
 instructions apply. The selectors are those the site used when this was
-written, not checked on a live page.
+written, not checked on a live page (the UI map's own `uiRevision` is
+2026-10-11, System 1's last check).
 
 ## Out of scope
 

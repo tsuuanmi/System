@@ -1,51 +1,49 @@
 /**
- * The chatgpt-web Runtime against a local fake ChatGPT page (tests/fake-chatgpt):
- * the same selector roles, scenarios chosen by the query string. Drives the
- * Chrome the Runtime chooses, headed on a private Xvfb; no network and no account. A
- * Chrome that cannot start fails it (test-support/headed.ts).
+ * The chatgpt-web Runtime against System 1's local stand-in for chatgpt.com
+ * (packages/web-driver/tests/fake-chatgpt.ts): scenarios are options of the fake. Drives
+ * the Chrome the Runtime chooses, headed on a private Xvfb; no network and no account. A
+ * Chrome that cannot start fails it (test-support/headed.ts). The driver's own page logic
+ * is the driver's; these tests are what the Runtime does around it.
  */
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { after, before, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { after, test } from 'node:test'
 import type { Artifacts } from '@system/artifacts'
+import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatgpt.ts'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, SELECTORS, chromeTmpdir, classify, launch, parseBlocks, webDefaults, type PageFacts, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, parseBlocks, webDefaults, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
 const skip = skipHeaded
-const pages = join(dirname(fileURLToPath(import.meta.url)), 'fake-chatgpt')
 const root = mkdtempSync(join(tmpdir(), 'system-chatgpt-'))
-let server: Server
-let base = ''
-before(async () => {
-  server = createServer((req, res) => {
-    const file = req.url?.startsWith('/chat.js') ? 'chat.js' : 'index.html'
-    res.setHeader('content-type', file === 'chat.js' ? 'text/javascript' : 'text/html')
-    res.end(readFileSync(join(pages, file)))
-  })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
-})
-after(() => {
-  server.close()
+const fakes: FakeChatGpt[] = []
+/** The fake site with these options, stopped after the file's tests. The clipboard holds the answer's Markdown exactly unless a test says otherwise. */
+async function site(options: FakeOptions = {}): Promise<FakeChatGpt> {
+  const fake = new FakeChatGpt({ thinkMs: 100, copied: (markdown) => markdown, ...options })
+  await fake.start()
+  fakes.push(fake)
+  return fake
+}
+after(async () => {
+  await Promise.all(fakes.map((fake) => fake.stop()))
   rmSync(root, { recursive: true, force: true })
 })
+
+/** An answer that fills each of `slots` with a labelled block, as the prompt asks. */
+const blocks = (...slots: string[]) => ['Here is the **answer**.', '', ...slots.flatMap((slot) => ['```' + slot, `content of ${slot}`, 'second line', '```', ''])].join('\n')
 
 let count = 0
 const memory = () => memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...CONVERSATION_KIND, content: conversationSchema })
 
-function web(query: string, extra: Partial<WebConfig> = {}): WebConfig {
-  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${base}?${query}`, executablePath: CHROME, timeouts: { load: 10, send: 10, answer: 20, stable: 0.5 }, ...extra }
+function web(fake: FakeChatGpt, extra: Partial<WebConfig> = {}): WebConfig {
+  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, ...extra }
 }
 const account = (config: WebConfig, extra: Partial<Account> = {}): Account => ({
   ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
@@ -56,11 +54,13 @@ function request(inputs: Record<string, string>, outputs: string[], signal = new
 async function task(artifacts: Artifacts, instructions: string): Promise<string> {
   return (await artifacts.put({ ...TASK_KIND, content: { instructions }, classification: 'local-private', producer: { type: 'operator', ref: 'tester' } })).id
 }
-async function run(query: string, outputs = ['report'], options: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string } = {}) {
+/** One attempt on a fake site with `options`; `answer` defaults to a block for each of `outputs`. */
+async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string } = {}) {
+  const fake = await site({ answer: blocks(...outputs), ...options })
   const { artifacts } = memory()
-  const worker = agentWorker(account(web(query, options.config), options.extra), artifacts, processSpawner, join(root, 'attempts'))
-  const result = await worker.run(request({ task: await task(artifacts, options.instructions ?? 'Explain the fake topic.') }, outputs, options.signal))
-  return { artifacts, result }
+  const worker = agentWorker(account(web(fake, more.config), more.extra), artifacts, processSpawner, join(root, 'attempts'))
+  const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.') }, outputs, more.signal))
+  return { artifacts, result, fake }
 }
 const text = async (artifacts: Artifacts, id: string) => Buffer.from(await artifacts.readBytes(id)).toString('utf8')
 const conversationOf = (artifacts: Artifacts, result: WorkerResult, slot: 'outputs' | 'partial' = 'outputs') => {
@@ -105,30 +105,16 @@ test('Chrome starts when TMPDIR is too deep for its profile socket', { skip, tim
   mkdirSync(deep, { recursive: true })
   const was = process.env.TMPDIR
   process.env.TMPDIR = deep
+  const fake = await site()
   const display = await startXvfb()
   try {
-    const context = await launch(web('scenario=signin'), display)
+    const context = await launch(web(fake), display)
     await context.close()
   } finally {
     if (was === undefined) delete process.env.TMPDIR
     else process.env.TMPDIR = was
     await display.stop()
   }
-})
-
-const facts = (extra: Partial<PageFacts> = {}): PageFacts => ({ challenge: false, composer: false, loginPage: false, loggedOutHome: false, error: false, ...extra })
-
-test('a page is read as System 1 reads it: a visible composer is signed in, and a challenge only counts while it shows', () => {
-  assert.equal(classify(facts({ composer: true })), 'ready')
-  // The app with its chat box is signed in whatever else the page holds (a login control beside it, the shell of the logged-out home).
-  assert.equal(classify(facts({ composer: true, loginPage: false, loggedOutHome: false })), 'ready')
-  assert.equal(classify(facts({ challenge: true, composer: true })), 'challenge')
-  assert.equal(classify(facts({ challenge: true })), 'challenge')
-  assert.equal(classify(facts({ loginPage: true })), 'signin')
-  assert.equal(classify(facts({ error: true })), 'error')
-  // The logged-out home may be a signed-in app that has not loaded its session yet: settle holds it before it counts.
-  assert.equal(classify(facts({ loggedOutHome: true })), 'logged-out-home')
-  assert.equal(classify(facts()), 'unknown')
 })
 
 test('the browser is launched without the flags that advertise automation, and never headless', () => {
@@ -151,29 +137,29 @@ test('a short TMPDIR is kept, and a deep one is replaced by a short directory ow
   }
 })
 
-test('the selector table is versioned', () => {
-  assert.equal(typeof SELECTORS.version, 'number')
-})
-
-test('one prompt is sent, the answer is awaited, and each labelled block fills its slot', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('slots=report,sources', ['report', 'sources'])
+test('one prompt is sent in a temporary chat in Chat mode, the answer is awaited, and each labelled block fills its slot', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result, fake } = await run({}, ['report', 'sources'])
   assert.equal(result.status, 'succeeded', result.reason)
   assert.equal(await text(artifacts, result.outputs.report!), 'content of report\nsecond line')
   assert.equal(await text(artifacts, result.outputs.sources!), 'content of sources\nsecond line')
+  assert.equal(fake.sent.length, 1)
+  assert.equal(fake.sent[0]!.temporary, true)
+  assert.equal(fake.sent[0]!.mode, 'chat', 'the page started on Work: the driver switched it before anything was typed')
+  assert.match(fake.sent[0]!.prompt, /```report/)
   assert.equal(result.usage, undefined, 'the web UI shows no token counts')
   assert.deepEqual(result.executor, { ref: 'chatgpt-web/default', account: 'default', command: CHROME, version: 'fake' })
   assert.ok(result.log)
 })
 
-test('the exchange is stored as a conversation produced by the Worker, with the page URL and temporary-chat context', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('slots=report', ['report'], { instructions: 'Explain the fake topic.' })
+test('the exchange is stored as a conversation produced by the Worker, with the page URL, the model read back and temporary-chat context', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result } = await run({}, ['report'], { instructions: 'Explain the fake topic.' })
   assert.equal(result.status, 'succeeded', result.reason)
   const { occurrences, content } = conversationOf(artifacts, result)
   assert.deepEqual(occurrences.map((o) => o.producer), [{ type: 'worker', ref: 'chatgpt-web/default' }])
   assert.equal(content.asserted.provider, 'ChatGPT')
-  assert.match(content.asserted.url!, /^http:\/\/127\.0\.0\.1:\d+\/\?slots=report&temporary-chat=true$/)
-  assert.equal(content.asserted.model, 'Fake GPT 5', 'the label the page showed')
-  assert.deepEqual(content.asserted.context, [`selectors:${SELECTORS.version}`, 'temporary-chat'])
+  assert.match(content.asserted.url!, /^http:\/\/127\.0\.0\.1:\d+\/c\/[0-9a-f-]{36}\?temporary-chat=true$/, 'the site\'s own address of a temporary chat')
+  assert.equal(content.asserted.model, 'Latest', 'the model the page read back as selected')
+  assert.deepEqual(content.asserted.context, ['ui-map:2026-10-11', 'temporary-chat'])
   const [prompt, response] = content.parts
   assert.deepEqual([prompt!.role, response!.role], ['prompt', 'response'])
   const sent = await text(artifacts, prompt!.artifact)
@@ -184,35 +170,25 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.match(answer, /```report\ncontent of report\nsecond line\n```/)
 })
 
-test('a page that shows no model label asserts no model', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('slots=report&model=none')
-  assert.equal(result.status, 'succeeded', result.reason)
-  assert.equal(conversationOf(artifacts, result).content.asserted.model, undefined)
+test('a page with no model picker is refused before anything is sent', { skip, timeout: 60_000 }, async () => {
+  const { result, fake } = await run({ modelPicker: false })
+  assert.equal(result.status, 'failed')
+  assert.equal(fake.sent.length, 0)
+  assert.ok(result.partial?.screenshot)
 })
 
-test('with temporaryChat off the URL is not marked and only the selector version is asserted as context', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('slots=report', ['report'], { config: { temporaryChat: false } })
+test('with temporaryChat off the chat is a conversation of the account, bound by its id', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result, fake } = await run({}, ['report'], { config: { temporaryChat: false } })
   assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(fake.sent[0]!.temporary, false)
   const { content } = conversationOf(artifacts, result)
-  assert.doesNotMatch(content.asserted.url!, /temporary-chat/)
-  assert.deepEqual(content.asserted.context, [`selectors:${SELECTORS.version}`])
-})
-
-test('a copy action that appears late is waited for', { skip, timeout: 60_000 }, async () => {
-  const started = Date.now()
-  const { result } = await run('scenario=late-copy', ['report'])
-  assert.equal(result.status, 'succeeded', result.reason)
-  assert.ok(Date.now() - started >= 1500, 'finished before the copy action appeared')
-})
-
-test('text that keeps streaming after the copy action appeared is waited out until stable', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('scenario=early-copy&slots=a,b,c&delay=250', ['a', 'b', 'c'])
-  assert.equal(result.status, 'succeeded', result.reason)
-  assert.equal(await text(artifacts, result.outputs.c!), 'content of c\nsecond line')
+  assert.match(content.asserted.url!, /\/c\/[0-9a-f-]{36}$/)
+  assert.deepEqual(content.asserted.context, ['ui-map:2026-10-11'])
 })
 
 test('links inside the answer are kept as an attachment of the conversation', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('scenario=links', ['report'])
+  const answer = `${blocks('report')}\nSee [source A](https://example.org/a) and [source B](https://example.org/b?x=1).`
+  const { artifacts, result } = await run({ answer })
   assert.equal(result.status, 'succeeded', result.reason)
   const { content } = conversationOf(artifacts, result)
   const links = content.parts.find((p) => p.role === 'attachment')!
@@ -222,63 +198,62 @@ test('links inside the answer are kept as an attachment of the conversation', { 
 })
 
 test('a sign-in wall fails the attempt with a screenshot as partial output', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('scenario=signin')
+  const { artifacts, result, fake } = await run({ signedIn: false })
   assert.equal(result.status, 'failed')
-  assert.match(result.reason!, /sign-in wall/)
+  assert.match(result.reason!, /signed out; sign in again/)
   assert.deepEqual(result.outputs, {})
+  assert.equal(fake.sent.length, 0)
   assert.deepEqual([...(await artifacts.readBytes(result.partial!.screenshot!)).slice(1, 4)], [...Buffer.from('PNG')])
 })
 
 test('a CAPTCHA or Cloudflare challenge fails the attempt and is never typed into', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run('scenario=captcha')
+  const { result, fake } = await run({ captcha: true })
   assert.equal(result.status, 'failed')
-  assert.match(result.reason!, /CAPTCHA or Cloudflare challenge/)
+  assert.match(result.reason!, /challenge/)
+  assert.equal(fake.sent.length, 0)
   assert.ok(result.partial?.screenshot)
 })
 
-test('a signed-in page whose challenge frame and sign-in button are only in the DOM is not a challenge', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run('scenario=hidden-challenge')
-  assert.equal(result.status, 'succeeded', result.reason)
-})
-
 test('the logged-out shell of an app that is still loading its session is held, then the attempt goes on', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run('scenario=slow-session')
+  const { result } = await run({ logoutFlashMs: 1500 })
   assert.equal(result.status, 'succeeded', result.reason)
 })
 
 test('a logged-out home that stays without a composer counts as signed out, after being held', { skip, timeout: 60_000 }, async () => {
   const started = Date.now()
-  const { result } = await run('scenario=logged-out-home')
+  const { result } = await run({ loggedOutHome: true })
   assert.equal(result.status, 'failed')
-  assert.match(result.reason!, /sign-in wall/)
+  assert.match(result.reason!, /signed out/)
   assert.ok(Date.now() - started >= 3000, 'decided before the hold')
 })
 
-test('a composer on Work is switched to Chat before anything is typed', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run('mode=work')
+test('the site\'s own error page is loaded once more before anything is typed', { skip, timeout: 60_000 }, async () => {
+  const { result, fake } = await run({ errorPages: 1 })
   assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(fake.errorPagesShown, 1)
 })
 
 test('Work is never used: a switch that stays on Work, or a composer that names Work, ends the attempt before anything is sent', { skip, timeout: 60_000 }, async () => {
-  for (const [mode, reason] of [['stuck', /Chat mode could not be selected/], ['label', /refusing to use Work/]] as const) {
-    const { artifacts, result } = await run(`mode=${mode}`)
-    assert.equal(result.status, 'failed', mode)
+  for (const [options, reason] of [[{ chatToggleBroken: true }, /mode\.select-chat did not reach its postcondition/], [{ startOnWork: false, workComposer: true }, /refusing to use Work/]] as const) {
+    const { artifacts, result, fake } = await run(options)
+    assert.equal(result.status, 'failed', JSON.stringify(options))
     assert.match(result.reason!, reason)
+    assert.equal(fake.sent.length, 0, 'nothing was sent')
     assert.equal(result.partial?.conversation, undefined, 'nothing was sent, so nothing was recorded')
     assert.ok(result.partial?.screenshot)
     assert.ok(artifacts)
   }
 })
 
-test('an unknown page state fails when the load stage times out', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run('scenario=blank', ['report'], { config: { timeouts: { load: 1.5, send: 5, answer: 5, stable: 0.5 } } })
+test('a page that is neither signed in nor signed out fails with the unknown page state, outlined as drift', { skip, timeout: 60_000 }, async () => {
+  const { result } = await run({ interstitial: true }, ['report'], { config: { timeouts: { load: 1.5, answer: 5, stable: 0.5 } } })
   assert.equal(result.status, 'failed')
-  assert.match(result.reason!, /unknown page state/)
+  assert.match(result.reason!, /neither the composer nor a sign-in page/)
   assert.ok(result.partial?.screenshot)
 })
 
 test('a missing output block fails the attempt and keeps what was found as partial output', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run('slots=report,sources&omit=sources', ['report', 'sources'])
+  const { artifacts, result } = await run({ answer: blocks('report') }, ['report', 'sources'])
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /no output block for sources/)
   assert.deepEqual(result.outputs, {})
@@ -286,30 +261,31 @@ test('a missing output block fails the attempt and keeps what was found as parti
   assert.equal(conversationOf(artifacts, result, 'partial').content.parts.length, 2)
 })
 
-test('an answer that never completes fails at the answer timeout', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run('scenario=forever', ['report'], { config: { timeouts: { load: 10, send: 10, answer: 2, stable: 0.5 } } })
+test('an answer that never starts fails at the answer timeout', { skip, timeout: 60_000 }, async () => {
+  const { result } = await run({ thinkMs: 60_000 }, ['report'], { config: { timeouts: { load: 10, answer: 2, stable: 0.5 } } })
   assert.equal(result.status, 'failed')
-  assert.match(result.reason!, /answer did not complete within 2 s/)
+  assert.match(result.reason!, /answer stage timed out after 2 s/)
   assert.ok(result.partial?.screenshot)
 })
 
-test('cancel while the answer streams stops the attempt', { skip, timeout: 60_000 }, async () => {
+test('cancel while the answer is awaited stops the attempt', { skip, timeout: 60_000 }, async () => {
   const stop = new AbortController()
-  setTimeout(() => stop.abort(), 3000)
+  setTimeout(() => stop.abort(), 5000)
   const started = Date.now()
-  const { result } = await run('scenario=forever', ['report'], { signal: stop.signal })
+  const { result } = await run({ thinkMs: 60_000 }, ['report'], { signal: stop.signal })
   assert.equal(result.status, 'cancelled')
-  assert.ok(Date.now() - started < 15_000)
+  assert.ok(Date.now() - started < 20_000)
 })
 
-test('the attempt time limit stops a streaming answer and fails the attempt', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run('scenario=forever', ['report'], { extra: { attemptTimeoutMinutes: 0.05 } })
+test('the attempt time limit stops a waiting attempt and fails it', { skip, timeout: 60_000 }, async () => {
+  const { result } = await run({ thinkMs: 60_000 }, ['report'], { extra: { attemptTimeoutMinutes: 0.1 } })
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /exceeded its time limit/)
 })
 
 test('the profile is created owner-only and reused by the next attempt', { skip, timeout: 60_000 }, async () => {
-  const config = web('scenario=session')
+  const fake = await site({ requireCookie: true })
+  const config = web(fake)
   const { artifacts } = memory()
   const worker = agentWorker(account(config), artifacts, processSpawner, join(root, 'attempts'))
   for (let i = 0; i < 2; i++) {
@@ -321,20 +297,22 @@ test('the profile is created owner-only and reused by the next attempt', { skip,
 })
 
 test('login imports cookies into the profile, checks the signed-in state and never prints a value', { skip, timeout: 60_000 }, async () => {
-  const config = web('scenario=session')
-  const file = JSON.stringify([{ name: 'session', value: 'ok', domain: '127.0.0.1', path: '/' }])
+  const fake = await site({ requireCookie: true, answer: blocks('report') })
+  const config = web(fake)
+  const file = JSON.stringify([{ name: 'session', value: 'valid', domain: '127.0.0.1', path: '/' }])
   const report = await webLogin(config, { cookies: file, cookieDomains: ['127.0.0.1'] })
   assert.equal(report.signedIn, true, report.detail)
-  assert.doesNotMatch(JSON.stringify(report), /"ok"|session=ok/)
+  assert.doesNotMatch(JSON.stringify(report), /"valid"|session=valid/)
   const { artifacts } = memory()
   const worker = agentWorker(account(config), artifacts, processSpawner, join(root, 'attempts'))
   const result = await worker.run(request({ task: await task(artifacts, 'x') }, ['report']))
   assert.equal(result.status, 'succeeded', result.reason)
-  const anonymous = await webLogin(web('scenario=session'), { cookies: JSON.stringify([{ name: 'other', value: 'z', domain: '127.0.0.1', path: '/' }]), cookieDomains: ['127.0.0.1'] })
+  const anonymous = await webLogin(web(fake), { cookies: JSON.stringify([{ name: 'other', value: 'z', domain: '127.0.0.1', path: '/' }]), cookieDomains: ['127.0.0.1'] })
   assert.equal(anonymous.signedIn, false)
   assert.match(anonymous.detail, /sign-in wall/)
 })
 
 test('manual login needs a display', async () => {
-  await assert.rejects(webLogin(web('scenario=session'), { display: undefined }), /no display.*--cookies/)
+  const fake = await site()
+  await assert.rejects(webLogin(web(fake), { display: undefined }), /no display.*--cookies/)
 })

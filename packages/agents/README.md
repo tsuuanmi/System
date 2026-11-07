@@ -142,7 +142,7 @@ the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).
         temporaryChat: true                    # each attempt in a temporary chat
         url: https://chatgpt.com/
         executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
-        timeouts: {load: 60, send: 30, answer: 900, stable: 3}   # seconds
+        timeouts: {load: 60, answer: 900, stable: 3}   # seconds
 ```
 
 One attempt:
@@ -155,37 +155,43 @@ One attempt:
    also on cancel and on the time limit. Without Xvfb on `PATH` the Account is
    `unavailable`, with a reason naming it, and an account that sets `headless` is
    too.
-2. **Load** a new chat (`?temporary-chat=true` when `temporaryChat`) and wait,
-   up to `load` seconds, for the page state as System 1 reads it: a **visible**
-   chat box is ready; a challenge counts only while it is visible (or the URL
-   is under `/cdn-cgi/challenge-platform/`); the login host, or a login control
-   with no chat box, is a sign-in wall; the logged-out shell is held 3 s before
-   it counts as one; the site's own error page is its own failure. Anything
-   but ready fails the attempt with that reason. System never types into or
-   solves a challenge.
-3. **Send**, after pressing **Chat** in the "Composer mode" group (a composer
-   whose label names Work is refused: Work spends the Codex quota), one prompt built like the CLI prompt, with the inputs (and context)
-   inlined as text, and each output slot asked for as a fenced block labelled
-   with its name. At most 200 KiB.
-4. **Wait** until the newest assistant turn's copy action is present and its
-   text has been unchanged for `stable` seconds, within `answer` seconds.
-5. **Extract** that turn as Markdown from the DOM, and the hrefs of its links.
+2. **Open and send** with System 1's ChatGPT web driver, ported whole into
+   [`@system/web-driver`](../web-driver/README.md): `open` loads the site's home
+   and reads the page's state (`checkAuth`: up to `load` seconds; a visible
+   composer is signed in; a challenge, the login page, the logged-out home held
+   3 s and the site's own error page are each their own failure), selects
+   **Chat** (a composer that names Work is refused: Work spends the Codex
+   quota) and, when `temporaryChat`, **Temporary chat** by the page's own
+   control. System never types into or solves a challenge. The driver then
+   clears the composer, reads the model back and sends one prompt built like the
+   CLI prompt, with the inputs (and context) inlined as text, and each output
+   slot asked for as a fenced block labelled with its name. At most 200 KiB.
+   Nothing in the Runtime knows a selector: the UI map is the driver's.
+3. **Wait** as the driver does: the answer's finished marker and text unchanged
+   for `stable` seconds, within `answer` seconds (a stall clock of 3 minutes, or
+   half of `answer` when that is shorter).
+4. **Read** the answer as Markdown from the page's own Copy control (kept only
+   when its words are the rendered answer's; the rendered text otherwise),
+   followed by the cited links the text lacks. Its links are the URLs in it.
+5. **Drift and heal:** what the driver reports (a drifted element, a refused
+   Copy, a stall) goes to the attempt's log as counts and structure only.
+   Self-heal is off: no decision store exists.
 6. **Fill** each slot from its labelled block (a longer fence holds shorter
    ones; the first block of a name wins). A missing block fails the attempt;
    what was found stays as unaccepted partial output.
 7. **Record** a `conversation@1`: `prompt.md` and `response.md` as parts,
    `links.json` (the cited hrefs) as an attachment, asserted `provider:
-   ChatGPT`, the page `url`, the `model` label the page showed (when the
-   selector table finds one) and `context: [selectors:<version>,
-   temporary-chat]` (the latter when used). Its
+   ChatGPT`, the page `url`, the `model` the driver read back from the model
+   menu and `context: [ui-map:<uiRevision>, temporary-chat]` (the latter when
+   used). Its
    producer is the Worker (the attempt observed the exchange). It is returned as
    the extra output `conversation` (the controller records only a step's
    declared slots). Usage is unknown. The log is the stage notes.
 
 On any failure the page's screenshot is kept as partial output `screenshot`.
-Cancel and `attemptTimeoutMinutes` close the browser, as they stop a CLI. The
-selectors are one versioned table, `SELECTORS` (ported from System 1's UI map);
-the page is read with a few scripts, not the engine's `fill` or `click`. After a lost attempt the Account's slot is held while the
+Cancel and `attemptTimeoutMinutes` close the browser, as they stop a CLI. A UI
+change is a change to the driver's map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
+not to this Runtime. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.
 
 **Login** (`system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
@@ -209,7 +215,7 @@ and `Input.dispatchKeyEvent`, scaled to the page's pixels, with **Save** and
 **Cancel**. The CLI prints the `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
 line and the URL; the runbook has the steps. Save closes the browser cleanly (so
 `cf_clearance` and the session stay in the profile), checks the signed-in state
-and reports it; Cancel, Ctrl-C or the 15-minute TTL end the session without a
+(the driver's `checkAuth`) and reports it; Cancel, Ctrl-C or the 15-minute TTL end the session without a
 check. Everything it started (Xvfb, browser, server) is stopped. Nothing solves
 or clicks a challenge. Unlike System 1's VNC, its input is CDP-dispatched
 (PROP-0005 names that as the difference left).

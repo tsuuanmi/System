@@ -1,6 +1,6 @@
 /**
  * The chatgpt-web Runtime through the real Host and `bin/system`, against the
- * local fake ChatGPT page of packages/agents/tests/fake-chatgpt: login by
+ * local fake ChatGPT site of packages/web-driver/tests/fake-chatgpt.ts: login by
  * cookie file, then a Work whose answer fills the output slot and is stored as
  * a conversation. No network and no account. A headed Chrome that cannot start fails it (test-support/headed.ts).
  */
@@ -13,18 +13,24 @@ import { repo, systemCli } from '../test-support/cli.ts'
 import { skipHeaded } from '../test-support/headed.ts'
 
 const skip = skipHeaded
-const pages = join(repo, 'packages', 'agents', 'tests', 'fake-chatgpt')
+const serve = join(repo, 'packages', 'web-driver', 'tests', 'serve-fake-chatgpt.ts')
 const cli = systemCli('system-web')
 const { home } = cli
 const system = (args: string[], input?: string) => cli.run(args, { input })
-/** The fake page runs in its own process: the CLI runner blocks this one while it waits. */
-let server: ChildProcess | undefined
+/** The fake sites run in their own processes: the CLI runner blocks this one while it waits. */
+const servers: ChildProcess[] = []
+/** A fake site with these options; its origin. */
+async function site(options: object): Promise<string> {
+  const server = spawn(process.execPath, [serve, JSON.stringify(options)], { stdio: ['ignore', 'pipe', 'inherit'] })
+  servers.push(server)
+  return new Promise<string>((resolve) => server.stdout!.once('data', (d) => resolve(String(d).trim())))
+}
 
 before(async () => {
   if (skip) return
-  server = spawn(process.execPath, [join(pages, 'serve.mjs')], { stdio: ['ignore', 'pipe', 'inherit'] })
-  const port = await new Promise<string>((resolve) => server!.stdout!.once('data', (d) => resolve(String(d).trim())))
-  const base = `http://127.0.0.1:${port}/`
+  const answer = '```result\ncontent of result\nsecond line\n```'
+  const signedIn = await site({ answer })
+  const signedOut = await site({ answer, signedIn: false })
   assert.equal(system(['init']).status, 0)
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
   config:
@@ -32,20 +38,20 @@ before(async () => {
       - ref: chatgpt-web/default
         runtime: chatgpt-web
         capabilities: [research]
-        url: ${base}?slots=result
-        timeouts: {load: 20, send: 20, answer: 30, stable: 0.5}
+        url: ${signedIn}/
+        timeouts: {load: 20, answer: 30, stable: 0.5}
       - ref: chatgpt-web/anon
         runtime: chatgpt-web
         capabilities: [web-search]
-        url: ${base}?scenario=signin
-        timeouts: {load: 5, send: 5, answer: 5, stable: 0.5}
+        url: ${signedOut}/
+        timeouts: {load: 5, answer: 5, stable: 0.5}
 `)
   await cli.start()
 })
 
 after(async () => {
   await cli.stop()
-  server?.kill('SIGTERM')
+  for (const server of servers) server.kill('SIGTERM')
   rmSync(home, { recursive: true, force: true })
 })
 
