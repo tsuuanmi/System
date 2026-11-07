@@ -738,7 +738,7 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      Node with one-line reasons, checks selected by `paths`, the merge queue.
      They are not Website-Worker-specific.*
   Order from here (operator, 2026-11-07): 5, 2a, 2, 3, 4, 6, 2b, 7.
-  5. [ ] Output contract bake-off, on the real site with both Accounts:
+  5. [x] Output contract bake-off, on the real site with both Accounts:
      fences, per-output sentinels with the attempt id, JSON; then the second
      opinion of WW1c again. (The two second-opinion runs so far lost their
      `review` block: long Markdown with code fences inside.) Result
@@ -747,7 +747,9 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      both**; C, `===BEGIN/END===` sentinel lines, failed on both (Copy escapes
      them to `\===BEGIN`). B is safe by construction: only tildes close a
      tilde fence, and ChatGPT still renders one widget labelled with the name.
-     The second opinion of WW1c under B is still to be run.
+     The second opinion of WW1c under B ran on 2026-11-08 (`work:ce23f210`,
+     `second`): a complete 9 KB review read from the tilde block, 7 defects,
+     all fixed in 1h.
   5a. [x] Output blocks with a longer fence, or holding fenced code, read as
      the answer meant them (the driver's copy path and `parseBlocks`); found
      on the real site 2026-11-07 (`work:d72ce675`, `work:a4bd030d`).
@@ -804,9 +806,22 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      41). The core (`work` + `artifacts` source) is unchanged at 3,420. The growth buys
      the optional row; it is justified here, not paid for by removal.
   2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
-     Inspection of the driver, its callers and the engine: [RES-0009](docs/research/RES-0009-web-driver-inspection.md).
+     Designed by System's own Brainstorm (`work:2287a535`, proposals on both
+     ChatGPT Accounts, Claude synthesis): A's binding model (`ui-map@1.7`,
+     fixed TypeScript Procedures) checked first against a deliberately hostile
+     fake second Site; B's safety vocabulary (`ok / failed / unknown`, no
+     resend after `unknown`). Inspection of the driver, its callers and the
+     engine: [RES-0009](docs/research/RES-0009-web-driver-inspection.md)
+     (274 lines generic, 143 ChatGPT, 297 unused by the Runtime; four new map
+     kinds: `site`, `modes`, `answer`, `settings`).
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
-  4. [ ] Canary.
+  4. [x] Canary (WW4, `work:83bc6867`): `system work submit --worker <ref>`;
+     a fixed canary Task; `tools/web-canary` (runs it on each web Account,
+     `--report` with the gate); a systemd user timer every 6 h (the operator
+     installs it). First run (2026-11-08): `default` got the site error "This
+     response couldn't load" (WW6a recognises it), `second` answered but the
+     page it cited answered 403 to the verifier (WW4b: the canary cites
+     Wikipedia; the report separates Worker, site and verifier).
   6. [ ] Account supervision: preflight, spacing, cooldown, an
      `AUTH_REQUIRED` notice for re-login.
 - **What Website Workers do** (operator, 2026-11-07): `research` (web search
