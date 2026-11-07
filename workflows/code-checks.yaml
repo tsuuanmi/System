@@ -2,7 +2,8 @@
 # .system/checks.yaml, pinned from the base commit at admission, run on the
 # exact change. One verify step runs every check on one build. Used by
 # software-engineering.yaml as a Sub-workflow (its step checks.checks); on its
-# own, its input is the change (a git-tree@1). `system work retry --step
+# own, its input is a task@1 with a base (system task new --repo), and that
+# commit is checked as it is. `system work retry --step
 # checks.checks` verifies the same change again, as after fixing the Host's
 # environment.
 schema: system.workflow/v1

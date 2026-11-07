@@ -63,7 +63,8 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     ref: 'code.required-checks',
     version: '1',
     capabilities: ['code.required-checks'],
-    accepts: ['git-tree'],
+    // A task on its own (code-checks.yaml alone) has its base commit checked as it is.
+    accepts: ['git-tree', 'task'],
     async criteria({ name, input }) {
       if (!input) throw new Error('the Work has no input task naming a repository')
       // The checks come from a base the Worker did not write, never from the change itself.
@@ -85,7 +86,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     },
     async verify(request): Promise<VerifyResult> {
       const verdict = (v: VerifyResult['verdict'], reason: string, evidence: string[]): VerifyResult => ({ verdict: v, reason, subject: request.subject, criteria: request.criteria, evidence })
-      const tree = contentOf<GitTreeContent>(artifacts, request.subject, 'git-tree')
+      const subject = artifacts.get(request.subject)
+      const treeId = subject.state === 'stored' && subject.envelope.kind === TASK_KIND.kind ? (subject.envelope.content as Task).base ?? '' : request.subject
+      const tree = contentOf<GitTreeContent>(artifacts, treeId, 'git-tree')
       const checks = contentOf<Checks>(artifacts, request.criteria, CHECKS_KIND.kind)
       const scratch = mkdtempSync(join(tmpdir(), 'system-checks-'))
       const worktree = join(scratch, 'work')

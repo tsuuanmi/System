@@ -123,6 +123,17 @@ test('Software Engineering: a check failed by the environment is verified again 
   assert.equal(record.state.status, 'succeeded')
 })
 
+test('code-checks.yaml on its own checks the base commit of its input task, as it is', () => {
+  const repository = gitRepo('checks:\n  - name: readme-exists\n    run: test -f README.md\n')
+  const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'code-checks.yaml'), '--input', task('check it', repository)])
+  assert.equal(ran.status, 0, ran.stderr)
+  const record = show(ran.stdout.trim())
+  const verified = record.events.find((e) => e.type === 'verified')!
+  assert.equal(verified.verdict, 'pass')
+  const base = execFileSync('git', ['-C', repository, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  assert.equal(artifact(verified.evidence![0]!).envelope.content.commit, base)
+})
+
 test('Software Engineering: a base commit with no .system/checks.yaml is refused at admission', () => {
   const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit', gitRepo())])
   assert.equal(ran.status, 1)

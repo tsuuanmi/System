@@ -23,7 +23,7 @@ accept. A verdict about a subject that has since been replaced counts as
 
 ## `code.required-checks` (version 1)
 
-- **Accepts:** `git-tree`.
+- **Accepts:** `git-tree`, and a `task` (`code-checks.yaml` on its own), whose base commit is checked as it is.
 - **Criteria:** `.system/checks.yaml` read **from the task's base commit** at
   admission, stored as `checks@1`. A Worker editing that file cannot change
   the pinned checks. No file, or an invalid one, refuses admission.
