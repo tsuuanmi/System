@@ -98,6 +98,20 @@ test("an answer's code blocks get their names back from the widget headers when 
   assert.match(result.text, /^```sources\n\{"sources":\[\{"id":"s1","url":"https:\/\/example\.test\/paris"\}\]\}\n```$/m)
 })
 
+// WW5a (live 2026-11-07): a review that contains code is written in a four-backtick fence; the site shows one widget labelled "review".
+const NESTED = '````review\n## Verdict\nok\n```ts\nconst a = 1\n```\n````'
+for (const [name, copied] of [
+  ['drops the label', () => '````\n## Verdict\nok\n```ts\nconst a = 1\n```\n````'],
+  ['gives nothing', () => ''],
+  ['is right', () => NESTED],
+] as const) {
+  test(`a four-backtick block holding a code block is read whole when Copy ${name}`, { skip, timeout: 60_000 }, async () => {
+    const { page, driver } = await start({ answer: NESTED, copied, codeWidget: true })
+    const result = await driver.ask(page, 'Review.', { conversation: 'temporary' })
+    assert.equal(result.text, NESTED)
+  })
+}
+
 // WW1 defect 2: the Chat/Work switch was "not found" on the real site, with no page captured. A missing switch is no proof of
 // Chat mode: the driver waits for it, bounded by the map's `settings.modeReadyMs`, and fails closed with the page's state named.
 const MODE_WAIT = { modeReadyMs: 1500, modeSettleMs: 300 }

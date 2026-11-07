@@ -527,12 +527,15 @@ async function send() {
   }
 }
 function renderMarkdown(text) {
+  // Code blocks are set aside while the inline rules run, so their backticks stay as they are.
+  const blocks = []
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\x60\x60\x60([^\\n]*)\\n([\\s\\S]*?)\\n\x60\x60\x60/g, (_, lang, code) => options.codeWidget
+    .replace(/(\x60{3,})([^\\n]*)\\n([\\s\\S]*?)\\n\\1(?!\x60)/g, (_, _fence, lang, code) => '\x00' + (blocks.push(options.codeWidget
       ? '<div data-client-defined-widget="code_block"><div data-code-block="true" data-markdown-copy="code-block"><div data-markdown-copy="exclude" contenteditable="false"><div class="min-w-0 truncate flex-1">' + (lang || 'Code') + '</div><button type="button" aria-label="Copy code"></button></div><div data-code-block-source="true"><code><span><span>' + code + '</span></span></code></div></div></div>'
-      : '<div>' + (lang || 'Code') + '</div><pre><code>' + code + '</code></pre>')
+      : '<div>' + (lang || 'Code') + '</div><pre><code>' + code + '</code></pre>') - 1) + '\x00')
   return escaped.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>').replace(/\x60([^\x60]+)\x60/g, '<code>$1</code>')
     .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>')
+    .replace(/\x00(\\d+)\x00/g, (_, i) => blocks[i])
 }
 // The floating quick chat mirrors the conversation, its turns copied without their source pills.
 if (options.floatingChat) {

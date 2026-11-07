@@ -914,18 +914,22 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       // Copy rebuilds code blocks from the page and loses their line breaks: take each block's
       // text from its rendered element instead, or keep the rendered answer if they do not pair.
       const [fenced, rest] = splitAfterLastFence(markdown)
-      const fences = [...fenced.matchAll(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm)]
+      const fences = fencedBlocks(fenced)
       if (!fences.length) return markdown.trim()
       const blocks = await this.renderedBlocks(engine)
       if (blocks.length !== fences.length) return rendered
-      let index = 0
       // The live Copy (2026-11-07) drops a block's info string: the block's own header names it.
-      return `${fenced.replace(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm, (_, open: string) => {
-        const block = blocks[index++]!
-        return `${open === '```' && block.label ? `\`\`\`${block.label}` : open}\n${block.code}\n\`\`\``
-      })}${rest}`.trim()
+      let at = 0
+      let out = ''
+      fences.forEach((fence, index) => {
+        const block = blocks[index]!
+        out += fenced.slice(at, fence.start) + fencedText(fence.info || block.label, block.code)
+        at = fence.end
+      })
+      return `${out}${fenced.slice(at)}${rest}`.trim()
     }, async () => (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
-    return /^```/m.test(text) ? text : this.withFencedBlocks(engine, text)
+    // The rendered text stands in for a refused Copy: its own fence lines (a block's content) do not make it Markdown.
+    return /^```/m.test(text) && !text.startsWith(rendered) ? text : this.withFencedBlocks(engine, text)
   }
 
   /**
@@ -938,7 +942,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     const blocks = await this.renderedBlocks(engine)
     let result = text
     for (const { label, code: body } of blocks) {
-      const fenced = `\`\`\`${label}\n${body}\n\`\`\``
+      const fenced = fencedText(label, body)
       const where = new RegExp(`${label ? `${escapeRegExp(label)}[ \\t]*\\n+` : ''}${escapeRegExp(body)}`)
       result = where.test(result) ? result.replace(where, () => fenced) : `${result}\n\n${fenced}`
     }
@@ -990,6 +994,38 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     if (!this.onStall || !(error instanceof ProviderError) || (error.kind !== 'provider_stalled' && error.kind !== 'timeout')) return
     this.onStall(await engine.stall(phase))
   }
+}
+
+/**
+ * The fenced code blocks of Markdown by CommonMark's rule: a closing fence is the opening one's
+ * character, at least as long, with nothing after it; a shorter fence inside is content. `start`
+ * and `end` bound the block's lines in the text; an unclosed block is not one.
+ */
+function fencedBlocks(markdown: string): Array<{ start: number; end: number; info: string }> {
+  const found: Array<{ start: number; end: number; info: string }> = []
+  let open: { start: number; ticks: number; info: string } | undefined
+  let at = 0
+  for (const line of markdown.split('\n')) {
+    const end = at + line.length
+    if (!open) {
+      const start = /^ {0,3}(`{3,})([^`]*)$/.exec(line)
+      if (start) open = { start: at, ticks: start[1]!.length, info: start[2]!.trim() }
+    } else {
+      const close = /^ {0,3}(`{3,})[ \t]*$/.exec(line)
+      if (close && close[1]!.length >= open.ticks) {
+        found.push({ start: open.start, end, info: open.info })
+        open = undefined
+      }
+    }
+    at = end + 1
+  }
+  return found
+}
+
+/** A block written as Markdown: its fence one backtick longer than the longest run in its body (three at least). */
+function fencedText(label: string, body: string): string {
+  const fence = '`'.repeat(Math.max(3, 1 + Math.max(0, ...(body.match(/`+/g) ?? []).map((run) => run.length))))
+  return `${fence}${label}\n${body}\n${fence}`
 }
 
 function escapeRegExp(text: string): string {
