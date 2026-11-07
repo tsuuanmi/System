@@ -32,7 +32,7 @@ import type { Verdict } from './kinds.ts'
 import { Slots, type LostAttempt } from './slots.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
-import { isEffectStep, isVerifyStep, isWorkerStep, workflowSchema, type ResolvedSpec, type Step } from './workflow.ts'
+import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
 export interface WorkTable {
@@ -64,7 +64,7 @@ export const SPEC_SCHEMA_VERSION = 1
 /** The zod schema of a resolved spec, for the `workflow-spec@1` Artifact kind. */
 export const resolvedSpecSchema = z.object({
   workflow: z.object({ id: z.string(), version: z.number().int().positive() }).strict(),
-  steps: workflowSchema.shape.steps,
+  steps: z.array(stepSchema).min(1).max(32),
 }).strict()
 
 export interface Admission {
@@ -657,8 +657,9 @@ export class WorkController {
   /** Resolve a reference to an exact Artifact ID from recorded state. */
   private resolveRef(record: WorkRecord, ref: string): string {
     if (ref === '$work.input') return record.state.input!
-    const [, stepId, slot] = ref.split('.')
-    const id = record.state.steps[stepId!]?.outputs[slot!]
+    // `$steps.<step>.<slot>`: a joined Sub-workflow's step ID has dots of its own.
+    const names = ref.split('.')
+    const id = record.state.steps[names.slice(1, -1).join('.')]?.outputs[names.at(-1)!]
     if (!id) throw new WorkError(`${ref} has no recorded Artifact`)
     return id
   }

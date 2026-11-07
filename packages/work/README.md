@@ -16,7 +16,8 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 ## Pieces
 
 - [src/workflow.ts](src/workflow.ts) — parse (`yaml`, duplicate keys refused),
-  zod schema, preflight, resolve, and the direct Task's implicit spec. Pure.
+  zod schema, Sub-workflows joined (`uses`, from the files `resolve` is
+  given), preflight, resolve, and the direct Task's implicit spec. Pure.
 - [src/record.ts](src/record.ts) — event and state schemas and the pure `fold`.
 - [src/registry.ts](src/registry.ts) — `Capabilities`: register Workers and
   verifiers, route by capability with a reason for every candidate.

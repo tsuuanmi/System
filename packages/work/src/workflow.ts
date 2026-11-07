@@ -3,8 +3,18 @@
  * Workflow definitions are data files, never plugins.
  *
  * Vocabulary (`system.workflow/v1`): `steps`, each with exactly one of a Worker
- * step (`capabilities`, `outputs`, optional `inputs`), `verify` or `accept`,
- * and optional `dependsOn`. Everything else is refused before any Worker runs.
+ * step (`capabilities`, `outputs`, optional `inputs`), `verify`, `effect`,
+ * `accept` or `uses` (a Sub-workflow), and optional `dependsOn`. Everything
+ * else is refused before any Worker runs.
+ *
+ * Sub-workflows (ADR-0002 amendment) are joined at compile time, as GitHub
+ * Actions' composite actions are: a step `uses: <file>` is replaced by the
+ * steps of that Workflow, their IDs, references and requirements under the
+ * using step's ID (`checks.checks`). Its `inputs.input` stands for the
+ * Sub-workflow's `$work.input`, and its `outputs` name the Sub-workflow's
+ * outputs the using Workflow reads as `$steps.<step>.<slot>`. A `dependsOn`
+ * on the using step is one on all its steps. No recursion, at most three
+ * levels; the resolved spec has no `uses` left, so the controller is unchanged.
  * The cycle check and the "a step uses only what it depends on" rule follow
  * System 1's workflow preflight (tsuuanmi/system f199a27,
  * packages/plugins/workflow/src/spec.ts).
@@ -14,11 +24,19 @@ import { z } from 'zod'
 
 const WORKFLOW_SCHEMA = 'system.workflow/v1'
 const ID = /^[a-z][a-z0-9-]{0,62}$/
+/** A step ID: a name, or after Sub-workflows are joined, names under the using steps' (`checks.checks`). */
+const STEP_ID = /^[a-z][a-z0-9-]{0,62}(\.[a-z][a-z0-9-]{0,62}){0,3}$/
 const CAPABILITY = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/
-/** `$work.input`, or `$steps.<step>.<slot>`. */
-const REF = /^\$(work\.input|steps\.([a-z][a-z0-9-]*)\.([a-z][a-z0-9-]*))$/
+/** `$work.input`, or `$steps.<step>.<slot>`; the step is all but the last name. */
+const REF = /^\$(work\.input|steps\.((?:[a-z][a-z0-9-]*\.){0,3}[a-z][a-z0-9-]*)\.([a-z][a-z0-9-]*))$/
+/** The Workflow file a step uses: a file beside the using one. */
+const FILE = /^[a-z0-9][a-z0-9-]*\.ya?ml$/
+/** How many levels of Sub-workflows a Workflow may use. */
+const MAX_DEPTH = 3
+const MAX_STEPS = 32
 
-const id = z.string().regex(ID)
+const id = z.string().regex(STEP_ID)
+const slot = z.string().regex(ID)
 const capability = z.string().regex(CAPABILITY)
 const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<slot>')
 
@@ -26,8 +44,8 @@ const workerStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
   capabilities: z.array(capability).min(1),
-  inputs: z.record(id, ref).optional(),
-  outputs: z.array(id).min(1),
+  inputs: z.record(slot, ref).optional(),
+  outputs: z.array(slot).min(1),
   /** What this step's Worker is told besides the task, such as an output format. */
   instructions: z.string().min(1).max(8 * 1024).optional(),
 }).strict()
@@ -57,26 +75,40 @@ const effectStep = z.object({
   }).strict(),
 }).strict()
 
-const step = z.union([workerStep, verifyStep, effectStep, acceptStep])
+const usesStep = z.object({
+  id,
+  dependsOn: z.array(id).optional(),
+  uses: z.string().regex(FILE, 'uses names a Workflow file beside this one, such as code-checks.yaml'),
+  /** What the Sub-workflow reads as `$work.input`; without it, this Workflow's own input. */
+  inputs: z.object({ input: ref }).strict().optional(),
+  /** Slot -> a `$steps.<step>.<slot>` of the Sub-workflow, read by this Workflow as `$steps.<this step>.<slot>`. */
+  outputs: z.record(slot, ref).optional(),
+}).strict()
+
+/** A step of a resolved spec: every Sub-workflow joined. */
+export const stepSchema = z.union([workerStep, verifyStep, effectStep, acceptStep])
 
 export const workflowSchema = z.object({
   schema: z.literal(WORKFLOW_SCHEMA),
-  id,
+  id: z.string().regex(ID),
   version: z.number().int().positive(),
-  steps: z.array(step).min(1).max(32),
+  steps: z.array(z.union([workerStep, verifyStep, effectStep, acceptStep, usesStep])).min(1).max(MAX_STEPS),
 }).strict()
 
 export type Workflow = z.infer<typeof workflowSchema>
-export type Step = Workflow['steps'][number]
+export type Step = z.infer<typeof stepSchema>
+export type UsesStep = z.infer<typeof usesStep>
 export type WorkerStep = z.infer<typeof workerStep>
 export type VerifyStep = z.infer<typeof verifyStep>
 export type AcceptStep = z.infer<typeof acceptStep>
 export type EffectStep = z.infer<typeof effectStep>
 
-export const isWorkerStep = (s: Step): s is WorkerStep => 'capabilities' in s
-export const isVerifyStep = (s: Step): s is VerifyStep => 'verify' in s
-export const isAcceptStep = (s: Step): s is AcceptStep => 'accept' in s
-export const isEffectStep = (s: Step): s is EffectStep => 'effect' in s
+type AnyStep = Step | UsesStep
+export const isWorkerStep = (s: AnyStep): s is WorkerStep => 'capabilities' in s
+export const isVerifyStep = (s: AnyStep): s is VerifyStep => 'verify' in s
+export const isAcceptStep = (s: AnyStep): s is AcceptStep => 'accept' in s
+export const isEffectStep = (s: AnyStep): s is EffectStep => 'effect' in s
+const isUsesStep = (s: AnyStep): s is UsesStep => 'uses' in s
 
 /** What the effective composition can run, checked at admission. */
 export interface AvailableCapabilities {
@@ -134,7 +166,7 @@ function ancestors(steps: readonly Step[]): Map<string, Set<string>> {
  * order (stable: file order among ready steps). Throws `WorkflowError` with
  * every problem found.
  */
-export function preflight(workflow: Workflow, available: AvailableCapabilities): string[] {
+export function preflight(workflow: { steps: Step[] }, available: AvailableCapabilities): string[] {
   const problems: string[] = []
   const byId = new Map<string, Step>()
   for (const s of workflow.steps) {
@@ -221,9 +253,75 @@ export interface ResolvedSpec {
   steps: Step[]
 }
 
-export function resolve(workflow: Workflow, available: AvailableCapabilities): ResolvedSpec {
-  const order = preflight(workflow, available)
-  const byId = new Map(workflow.steps.map((s) => [s.id, s]))
+/** A used Workflow file's text by its name; throws `WorkflowError` when there is none. */
+export type WorkflowFiles = (name: string) => string
+
+/** Rename what a joined step refers to: step IDs by `id`, `$steps` references by `ref`. */
+function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {
+  const dependsOn = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
+  if (isWorkerStep(s)) return { ...s, ...dependsOn, ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
+  if (isVerifyStep(s)) return { ...s, ...dependsOn, verify: { ...s.verify, subject: ref(s.verify.subject) } }
+  if (isEffectStep(s)) return { ...s, ...dependsOn, effect: { ...s.effect, subject: ref(s.effect.subject), requires: s.effect.requires.map(id) } }
+  return { ...s, ...dependsOn, accept: { ...s.accept, requires: s.accept.requires.map(id) } }
+}
+
+/** Join every Sub-workflow of `workflow` into its steps; `chain` is the IDs of the Workflows using it, outermost first. */
+function join(workflow: Workflow, files: WorkflowFiles | undefined, chain: string[]): Step[] {
+  const problems: string[] = []
+  const joined: Step[] = []
+  /** For each using step: the IDs of its steps, and its outputs as references to them. */
+  const used = new Map<string, { ids: string[]; outputs: Record<string, string> }>()
+  for (const s of workflow.steps) {
+    if (s.id.includes('.')) problems.push(`step ${s.id}: a step ID has no "." (IDs under a step come from its uses)`)
+    if (!isUsesStep(s)) { joined.push(s); continue }
+    if (chain.length > MAX_DEPTH) { problems.push(`step ${s.id} uses ${s.uses}: Sub-workflows go no deeper than ${MAX_DEPTH} levels`); continue }
+    if (!files) { problems.push(`step ${s.id} uses ${s.uses}, but no Workflow files were given`); continue }
+    let inner: Workflow
+    try {
+      inner = parseWorkflow(files(s.uses))
+    } catch (error) {
+      if (!(error instanceof WorkflowError)) throw error
+      problems.push(...error.problems.map((problem) => `step ${s.id} uses ${s.uses}: ${problem}`))
+      continue
+    }
+    if (chain.includes(inner.id)) { problems.push(`recursion: ${[...chain, inner.id].join(' -> ')}`); continue }
+    const steps = join(inner, files, [...chain, inner.id])
+    const accept = steps.find(isAcceptStep)
+    if (accept) { problems.push(`step ${s.id} uses ${s.uses}, which has an accept step (${accept.id}); the using Workflow accepts`); continue }
+    const ids = new Set(steps.map((t) => t.id))
+    const under = (stepId: string) => (ids.has(stepId) ? `${s.id}.${stepId}` : stepId)
+    const ref = (value: string): string => {
+      if (value === '$work.input') return s.inputs?.input ?? value
+      const match = REF.exec(value)!
+      return ids.has(match[2]!) ? `$steps.${s.id}.${match[2]}.${match[3]}` : value
+    }
+    const names = steps.map((t) => `${s.id}.${t.id}`)
+    for (const t of steps) {
+      const renamed = rename(t, under, ref)
+      // A step with no dependency inside starts after what the using step depends on.
+      joined.push(t.dependsOn?.length ? renamed : { ...renamed, ...(s.dependsOn ? { dependsOn: [...s.dependsOn] } : {}) } as Step)
+    }
+    used.set(s.id, { ids: names, outputs: Object.fromEntries(Object.entries(s.outputs ?? {}).map(([name, value]) => [name, ref(value)])) })
+  }
+  if (problems.length) throw new WorkflowError(problems)
+  // What this Workflow says of a using step means its steps, or the output it names.
+  const ref = (value: string): string => {
+    const match = REF.exec(value)
+    const outputs = match?.[2] ? used.get(match[2])?.outputs : undefined
+    return outputs?.[match![3]!] ?? value
+  }
+  const deps = (stepId: string): string[] => used.get(stepId)?.ids ?? [stepId]
+  return joined.map((t) => {
+    const renamed = rename(t, (stepId) => stepId, ref)
+    return renamed.dependsOn ? { ...renamed, dependsOn: renamed.dependsOn.flatMap(deps) } as Step : renamed
+  })
+}
+
+export function resolve(workflow: Workflow, available: AvailableCapabilities, files?: WorkflowFiles): ResolvedSpec {
+  const steps = join(workflow, files, [workflow.id])
+  if (steps.length > MAX_STEPS) throw new WorkflowError([`with its Sub-workflows the workflow has ${steps.length} steps; at most ${MAX_STEPS}`])
+  const order = preflight({ steps }, available)
+  const byId = new Map(steps.map((s) => [s.id, s]))
   return {
     workflow: { id: workflow.id, version: workflow.version },
     steps: order.map((stepId) => {

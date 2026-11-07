@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, WorkError, contentIdSchema as artifactId, assertedSchema, decisionSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewDecision, type NewGoal, type StoredDecision, type WorkEvent, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, WorkError, WorkflowError, contentIdSchema as artifactId, assertedSchema, decisionSchema, goalSchema, TASK_KIND, directTask, parseWorkflow, previewConversation, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type NewDecision, type NewGoal, type StoredDecision, type WorkEvent, type WorkRecord } from '@system/work'
 import { brief } from './brief.ts'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, inScope, type Link, type Method, type Methods } from './index.ts'
 
@@ -50,6 +50,12 @@ const bytesOf = (p: z.infer<typeof part>) => ({ name: p.name, data: Buffer.from(
 const conversationOf = (p: z.infer<typeof parts>): ConversationParts => ({
   response: bytesOf(p.response), ...(p.prompt ? { prompt: bytesOf(p.prompt) } : {}), attachments: p.attachments.map(bytesOf),
 })
+
+/** The Workflow files a submit sent, by name. */
+const usedFile = (files: Record<string, string>) => (name: string): string => {
+  if (!Object.hasOwn(files, name)) throw new WorkflowError([`no file ${name} was sent with the Workflow (uses)`])
+  return files[name]!
+}
 
 const known = (host: Host, id: string): WorkRecord => {
   const record = host.get(id)
@@ -135,13 +141,13 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent.',
-      params: z.object({ workflow: z.string().min(1).optional(), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), commandId }).strict()
+      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` holds the contents of the Workflow files it uses (Sub-workflows), by file name; they are joined into the pinned spec now. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent.',
+      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
         const available = services.capabilities.available()
         const admission: Admission = p.workflow
-          ? { spec: resolve(parseWorkflow(p.workflow), available), input: p.input, goal: p.goal, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
+          ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses)), input: p.input, goal: p.goal, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
           : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId })
       },

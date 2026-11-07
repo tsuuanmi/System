@@ -634,3 +634,36 @@ test('goal.brief prints the Goal, its budget left, its running, failed and held 
   f.release('task')
   await terminal(human, running.id)
 })
+
+test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and replay exactly; recursion and depth 4 are refused at admission', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const client = await open()
+  const head = (id: string) => `schema: system.workflow/v1\nid: ${id}\nversion: 1\nsteps:\n`
+  const checks = `${head('checks')}  - id: checks\n    verify: { capability: code.required-checks, subject: $work.input, criteria: repo-checks-v1 }\n`
+  const outer = `${head('outer')}  - id: implement
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+  - id: checks
+    dependsOn: [implement]
+    uses: checks.yaml
+    inputs: { input: $steps.implement.change }
+  - id: accept
+    dependsOn: [checks]
+    accept: { requires: [checks.checks] }
+`
+  const work = await client.call('work.submit', { workflow: outer, uses: { 'checks.yaml': checks }, input: input(f) }) as { id: string; state: { steps: Record<string, unknown> } }
+  assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'accept'])
+  await client.call('work.run', { workId: work.id })
+  assert.equal((await terminal(client, work.id)).status, 'succeeded')
+  const shown = await client.call('work.show', { workId: work.id }) as { events: { type: string; stepId?: string; subject?: string }[]; state: { steps: Record<string, { outputs: Record<string, string> }> } }
+  const verified = shown.events.find((e) => e.type === 'verified')!
+  assert.deepEqual([verified.stepId, verified.subject], ['checks.checks', shown.state.steps.implement!.outputs.change])
+  assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
+
+  const using = (id: string, name: string) => `${head(id)}  - id: inner\n    uses: ${name}\n`
+  await assert.rejects(client.call('work.submit', { workflow: using('a', 'b.yaml'), uses: { 'b.yaml': using('b', 'a.yaml'), 'a.yaml': using('a', 'b.yaml') }, input: input(f) }), /recursion: a -> b -> a/)
+  const deep = { 'l1.yaml': using('l1', 'l2.yaml'), 'l2.yaml': using('l2', 'l3.yaml'), 'l3.yaml': using('l3', 'l4.yaml'), 'l4.yaml': checks }
+  await assert.rejects(client.call('work.submit', { workflow: using('top', 'l1.yaml'), uses: deep, input: input(f) }), /deeper than 3/)
+  await assert.rejects(client.call('work.submit', { workflow: outer, input: input(f) }), /checks\.yaml/)
+})
