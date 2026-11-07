@@ -16,6 +16,18 @@ export interface WorkerRequest {
   instructions?: string
   /** Aborted when the operator cancels; the Worker stops and reports `cancelled`. */
   signal: AbortSignal
+  /** Report what the attempt has done so far; each call is activity. Kept in memory by the Host, never recorded. */
+  progress?: (progress: Progress) => void
+}
+
+/** What a running attempt reports of itself, as far as its Runtime tells. */
+export interface Progress {
+  turns?: number
+  lastTool?: string
+  /** Tokens so far: fresh input, cache writes and output. */
+  tokens?: number
+  /** Where an attempt with stages is, such as a web Runtime's evidence stage. */
+  stage?: string
 }
 
 export interface WorkerResult {

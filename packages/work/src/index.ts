@@ -14,8 +14,8 @@ import { CONVERSATION_KIND, addConversation, conversationSchema, type Asserted, 
 import { snapshot } from './git.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
-import { CHARTER_PATH, goalStore } from './goal.ts'
-import { GIT_TREE_KIND, GOAL_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, goalSchema, taskSchema, verdictSchema, type NewGoal } from './kinds.ts'
+import { CHARTER_PATH, goalStore, type NewDecision, type StoredDecision } from './goal.ts'
+import { DECISION_KIND, GIT_TREE_KIND, GOAL_KIND, TASK_KIND, VERDICT_KIND, decisionSchema, gitTreeSchema, goalSchema, taskSchema, verdictSchema, type NewGoal } from './kinds.ts'
 import type { Caller } from './record.ts'
 import { workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
@@ -31,6 +31,7 @@ export * from './host.ts'
 export * from './host-lock.ts'
 export * from './kinds.ts'
 export * from './lane.ts'
+export * from './live.ts'
 export * from './record.ts'
 export * from './registry.ts'
 export * from './slots.ts'
@@ -50,6 +51,12 @@ export const workDomain = defineDomain({
   tables: { work: domainTable(workRecordSchema) },
 })
 
+/** The row's configuration. */
+export interface Config {
+  /** How long a running attempt may be quiet before the Host reports it stalled; default `DEFAULT_STALL_MINUTES` (10). */
+  stallMinutes?: number
+}
+
 /** What the Host core is built over: the row's own table and specs. */
 export interface HostStorage {
   table: WorkTable
@@ -61,16 +68,18 @@ export class WorkService {
   private readonly capabilities: Capabilities
   private readonly artifacts: Artifacts
   private readonly storage: HostStorage
+  private readonly config: Config
 
-  constructor(capabilities: Capabilities, artifacts: Artifacts, storage: HostStorage) {
+  constructor(capabilities: Capabilities, artifacts: Artifacts, storage: HostStorage, config: Config = {}) {
     this.capabilities = capabilities
     this.artifacts = artifacts
     this.storage = storage
+    this.config = config
   }
 
   /** The Host core over this row's table, specs and capabilities (PROP-0004 C1): takes the lock for `home`, then recovers. */
   startHost(home: string): Promise<Host> {
-    return Host.start({ home, capabilities: this.capabilities, ...this.storage })
+    return Host.start({ home, capabilities: this.capabilities, ...this.storage, stallMinutes: this.config.stallMinutes })
   }
 
   /**
@@ -113,6 +122,16 @@ export class WorkService {
       classification: 'operator-shared', producer,
     })
     return { id: stored.id }
+  }
+
+  /** Record a decision for a Goal (PROP-0006): a record, never an authority. */
+  addDecision(decision: NewDecision, caller: Caller): Promise<{ id: string }> {
+    return this.storage.specs.goals!.decide(decision, caller)
+  }
+
+  /** The decisions of the Goals in `chain` (all without it), oldest first. */
+  decisions(chain?: ReadonlySet<string>): StoredDecision[] {
+    return this.storage.specs.goals!.decisions(chain)
   }
 
   /** Store a conversation the operator had elsewhere (PROP-0003). */
@@ -163,7 +182,7 @@ export function systemPath(ctx: Context, ...segments: string[]): string {
   return homePath ? homePath('system', ...segments) : join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', ...segments)
 }
 
-export async function apply(ctx: Context): Promise<void> {
+export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const domains = ctx.get('storageDomain') as DomainFacility
   const domain = await domains.open(workDomain)
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
@@ -172,10 +191,11 @@ export async function apply(ctx: Context): Promise<void> {
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...GOAL_KIND, content: goalSchema })
+  artifacts.registerKind({ ...DECISION_KIND, content: decisionSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
   const capabilities = new Capabilities()
   const table = domain.table('work') as unknown as WorkTable
   const specs = specStore(artifacts)
   ctx.provide('capabilities', capabilities)
-  ctx.provide('work', new WorkService(capabilities, artifacts, { table, specs }))
+  ctx.provide('work', new WorkService(capabilities, artifacts, { table, specs }, config))
 }

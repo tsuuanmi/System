@@ -27,11 +27,12 @@ import { MemoryControl, type CancelRequest } from './control.ts'
 import { WorkError } from './errors.ts'
 import { overBudget, resolveGoal, spendOf, type GoalStore, type GoalView } from './goal.ts'
 import { noLane, type Lane } from './lane.ts'
+import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Verdict } from './kinds.ts'
 import { Slots, type LostAttempt } from './slots.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
-import { isEffectStep, isVerifyStep, isWorkerStep, workflowSchema, type ResolvedSpec, type Step } from './workflow.ts'
+import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
 export interface WorkTable {
@@ -63,7 +64,7 @@ export const SPEC_SCHEMA_VERSION = 1
 /** The zod schema of a resolved spec, for the `workflow-spec@1` Artifact kind. */
 export const resolvedSpecSchema = z.object({
   workflow: z.object({ id: z.string(), version: z.number().int().positive() }).strict(),
-  steps: workflowSchema.shape.steps,
+  steps: z.array(stepSchema).min(1).max(32),
 }).strict()
 
 export interface Admission {
@@ -89,8 +90,8 @@ export interface RetryOptions {
   reason: string
 }
 
-/** A human's decision on held Work. */
-export interface Decision {
+/** A human's approval or denial of what held Work awaits (GLOSSARY: Approval). */
+export interface Approval {
   decision: 'approved' | 'denied'
   caller: Caller
   reason: string
@@ -139,7 +140,8 @@ export interface WorkChange {
   status: WorkState['status']
   /** The `seq` of the event just committed: 0 for an admission. */
   seq: number
-  type: WorkEvent['type']
+  /** The event's type, or `stalled` when an attempt of the Work has been quiet for `stallMinutes` (no event). */
+  type: WorkEvent['type'] | 'stalled'
 }
 
 export class WorkController {
@@ -163,14 +165,20 @@ export class WorkController {
   private readonly quiet = new Set<() => void>()
   /** The Works a drive is advancing now. */
   private readonly driving = new Set<string>()
+  /** The running Worker attempts' progress, in memory only. */
+  private readonly running: LiveAttempts
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities)) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES) {
     this.table = table
     this.specs = specs
     this.capabilities = capabilities
     this.lane = lane
     this.slots = slots
     slots.onFree(() => this.notify())
+    this.running = new LiveAttempts(stallMinutes, (workId) => {
+      const record = this.table.get(workId)
+      if (record) this.tell({ workId, status: record.state.status, seq: record.events.at(-1)!.seq, type: 'stalled' })
+    })
   }
 
   /** Call `listener` after every committed event, in the lane; it must not throw or wait. Returns the way to stop. */
@@ -182,9 +190,18 @@ export class WorkController {
   /** The one change hook: every append, and the admission, end here. A listener's failure never reaches the Work. */
   private changed(record: WorkRecord): void {
     const event = record.events.at(-1)!
+    this.tell({ workId: record.id, status: record.state.status, seq: event.seq, type: event.type })
+  }
+
+  private tell(change: WorkChange): void {
     for (const listener of this.listeners) {
-      try { listener({ workId: record.id, status: record.state.status, seq: event.seq, type: event.type }) } catch { /* a listener is not the Work's concern */ }
+      try { listener(change) } catch { /* a listener is not the Work's concern */ }
     }
+  }
+
+  /** The Work's running Worker attempts and what they last reported; empty when none runs. */
+  live(workId: string): LiveAttempt[] {
+    return this.running.of(workId)
   }
 
   private now(): string {
@@ -443,7 +460,9 @@ export class WorkController {
   /**
    * Take over a failed or cancelled Worker step with a new attempt, optionally
    * only by `worker`. The new attempt gets the same recorded inputs plus, as
-   * `previous`, the partial output the last attempt left. Then run.
+   * `previous`, the partial output the last attempt left. A verify step is
+   * asked again on the same subject with the same pinned criteria; its last
+   * verdict stays recorded and no longer counts. Then run.
    */
   async retry(workId: string, options: RetryOptions, command?: Command, started?: () => void): Promise<WorkRecord> {
     const release = await this.enter(workId, command)
@@ -462,10 +481,12 @@ export class WorkController {
     if (options.worker && !this.capabilities.workerRefs().includes(options.worker)) throw new WorkError(`no enabled Worker ${options.worker}; enabled: ${this.capabilities.workerRefs().join(', ') || 'none'}`)
     const spec = this.specOf(record)
     const step = options.step
-      ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isEffectStep(s)))
+      ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isVerifyStep(s) || isEffectStep(s)))
       : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded'))
-    if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
-    if (isEffectStep(step) && options.worker) throw new WorkError(`${step.id} is an effect step; --worker names Workers only`)
+    if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker, verify or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
+    // Choosing among runs of a check would let an agent keep the lucky one: verifying again is the operator's.
+    if (isVerifyStep(step) && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} records a decision and tells the operator`)
+    if (!isWorkerStep(step) && options.worker) throw new WorkError(`${step.id} is ${isVerifyStep(step) ? 'a verify' : 'an effect'} step; --worker names Workers only`)
     if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
     const reset = [step.id, ...dependentsOf(spec, step.id)]
@@ -640,8 +661,9 @@ export class WorkController {
   /** Resolve a reference to an exact Artifact ID from recorded state. */
   private resolveRef(record: WorkRecord, ref: string): string {
     if (ref === '$work.input') return record.state.input!
-    const [, stepId, slot] = ref.split('.')
-    const id = record.state.steps[stepId!]?.outputs[slot!]
+    // `$steps.<step>.<slot>`: a joined Sub-workflow's step ID has dots of its own.
+    const names = ref.split('.')
+    const id = record.state.steps[names.slice(1, -1).join('.')]?.outputs[names.at(-1)!]
     if (!id) throw new WorkError(`${ref} has no recorded Artifact`)
     return id
   }
@@ -675,12 +697,14 @@ export class WorkController {
     const poll = setInterval(() => { if (this.control.cancelRequest(workId)) abort.abort() }, CANCEL_POLL_MS)
     // A poll never keeps the process alive by itself.
     poll.unref()
+    const progress = this.running.start({ workId, stepId: s.id, attemptId, worker: attempt.worker.ref })
     try {
-      return { result: await attempt.worker.run({ workId, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, instructions: s.instructions, signal: abort.signal }), aborted: abort.signal.aborted }
+      return { result: await attempt.worker.run({ workId, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, instructions: s.instructions, signal: abort.signal, progress }), aborted: abort.signal.aborted }
     } catch (error) {
       return { result: { status: abort.signal.aborted ? 'cancelled' : 'failed', outputs: {}, reason: `the Worker threw: ${(error as Error).message}` }, aborted: abort.signal.aborted }
     } finally {
       clearInterval(poll)
+      this.running.end(attemptId)
     }
   }
 
@@ -871,7 +895,7 @@ export class WorkController {
    * Record a human operator's decision on held Work; an approval runs it on.
    * Agent callers are refused (ADR-0004 decision 3).
    */
-  async decide(workId: string, decision: Decision, command?: Command, started?: () => void): Promise<WorkRecord> {
+  async decide(workId: string, decision: Approval, command?: Command, started?: () => void): Promise<WorkRecord> {
     if (decision.caller.type !== 'human') throw new WorkError('only a human operator approves; an agent caller cannot decide')
     const release = await this.enter(workId, command)
     try {

@@ -57,10 +57,25 @@ one form:
 | verify step | `verify: {capability, subject, criteria}` | one verifier call on the exact Artifact the `subject` reference resolves to |
 | effect step | `effect: {capability, subject, requires: [verify steps], params?}` | one external effect of the exact subject, only after every required verdict on that subject is `pass`; recorded as intent, then outcome |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
+| uses step | `uses: <file>`, optional `inputs: {input: <ref>}`, optional `outputs: {<slot>: $steps.<step>.<slot>}` | a Sub-workflow ([ADR-0002 amendment](../decisions/ADR-0002-work-primitive-configured-workflows.md)): the steps of the Workflow file beside this one, joined at admission |
 
 **Model tiers are capabilities.** A step asks for `tier.economy`,
 `tier.standard` or `tier.frontier` beside its other capabilities; an agent
 account offers the tiers it has a model for. Routing never names a model.
+
+**Sub-workflows** are joined by the compiler before preflight, as GitHub
+Actions' composite actions are expanded in place. A `uses` step is replaced
+by the used Workflow's steps, their IDs, references and requirements under the
+using step's ID (step `checks` of `code-checks.yaml`, used by step `checks`,
+becomes `checks.checks`). `inputs.input` is what the Sub-workflow reads as
+`$work.input` (default: the using Workflow's input), and `outputs` names the
+outputs the using Workflow reads as `$steps.<uses step>.<slot>`. A `dependsOn`
+on the using step means all its steps; `requires` names joined steps by their
+full ID. Refused: recursion (a Workflow ID already in the chain), more than
+three levels, a Sub-workflow with an accept step, a step ID with a `.`, more
+than 32 steps once joined. The resolved spec has no `uses` left, so the
+controller, replay, per-step retry, slots and budgets apply as written. The
+CLI sends each used file, read from beside the using file, with the Workflow.
 
 Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
 another schema version, duplicate steps, unknown or self dependencies, cycles
@@ -93,7 +108,11 @@ step `task`, output `result`.
 turns the `criteria` name into an Artifact, recorded on the Work, or refuses
 the Work. **`system work retry --step <id>`** reruns a Worker step of failed,
 cancelled or held Work and resets every step after it, so a verdict never
-outlives its subject.
+outlives its subject. On a verify step it asks the verifier again on the same
+subject with the same pinned criteria (PROP-0006 "verify again"), as after a
+check failed for a reason outside the change; only a human asks it, so no
+agent keeps the luckiest of several runs; the earlier verdict stays in
+the record and no longer counts.
 
 **Effects** (ADR-0004 decision 10): an effect step's provider validates its
 `params` at admission. Before `apply` the controller records

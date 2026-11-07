@@ -25,7 +25,7 @@ test('Software Engineering records Worker, verifier and effect events in order',
   assert.deepEqual(shape(done), [
     'admitted',
     'dispatched:implement', 'observed:implement',
-    'dispatched:checks', 'verified:checks',
+    'dispatched:checks.checks', 'verified:checks.checks',
     'effect-intended:publish', 'effect-observed:publish',
     'terminal:succeeded',
   ])

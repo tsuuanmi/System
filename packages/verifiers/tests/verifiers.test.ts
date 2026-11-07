@@ -93,6 +93,13 @@ test('criteria are pinned from .system/checks.yaml at the base commit, refused w
   await assert.rejects(async () => verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo('checks: []\n'))).task, operatorId: 't' }), /is invalid/)
 })
 
+test('a change given as the input is refused: the checks are read from a base the Worker did not write', async () => {
+  const artifacts = store()
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const { treeId } = await taskOn(artifacts, repo(CHECKS))
+  await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: treeId, operatorId: 't' }), /a task with a base commit/)
+})
+
 test('checks run on the exact subject commit: a good change passes with one evidence Artifact per check', async () => {
   const artifacts = store()
   const repository = repo(CHECKS)

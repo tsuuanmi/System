@@ -3,11 +3,13 @@
  *
  * - `task@1`: what to do, and optionally the exact repository commit to do it on.
  * - `goal@1`: an aim, its scope and its budget, written by the operator (ADR-0009).
+ * - `decision@1`: a choice made for a Goal, by the operator or an Orchestrator (PROP-0006).
  * - `git-tree@1`: one commit in one repository, with its tree; the subject of
  *   a code change (ADR-0003: a branch name or path is never the identity).
  */
 import { contentIdSchema } from '@system/artifacts'
 import { z } from 'zod'
+import { callerSchema } from './record.ts'
 
 const sha = z.string().regex(/^[0-9a-f]{40}$/)
 
@@ -33,6 +35,22 @@ export const goalSchema = z.object({
 export type Goal = z.infer<typeof goalSchema>
 /** A Goal as the operator writes it: without `context` the Charter is the context. */
 export type NewGoal = Omit<Goal, 'context'> & { context?: string[] }
+
+export const DECISION_KIND = { kind: 'decision', schemaVersion: 1 } as const
+/** A record, never an authority: approving, denying and merging stay the operator's. */
+export const decisionSchema = z.object({
+  goal: contentIdSchema,
+  question: z.string().min(1).max(4 * 1024),
+  options: z.array(z.string().min(1).max(1024)).min(1).max(16),
+  choice: z.string().min(1).max(1024),
+  reason: z.string().min(1).max(16 * 1024),
+  /** What it rests on, such as a synthesis, a review or a check-run. */
+  restsOn: z.array(contentIdSchema).max(16),
+  by: callerSchema,
+  /** The decision of the Goal's chain recorded just before it: the order of a Goal's decisions. */
+  previous: contentIdSchema.optional(),
+}).strict()
+export type RecordedDecision = z.infer<typeof decisionSchema>
 
 export const GIT_TREE_KIND = { kind: 'git-tree', schemaVersion: 1 } as const
 export const gitTreeSchema = z.object({

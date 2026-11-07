@@ -77,6 +77,21 @@ test('a Goal is written by a human at a terminal, its context reaches a Work, an
   const report = JSON.parse(system(['work', 'report', ran.stdout.trim()]).stdout) as { goal: { spend: { attempts: number }; budget: unknown } }
   assert.deepEqual([report.goal.spend.attempts, report.goal.budget], [1, { attempts: 1 }])
 
+  const decided = system(['decision', 'add', '--goal', goal, '--question', 'which direction?', '--option', 'x', '--option', 'y', '--choice', 'y', '--reason', 'the report says so', '--rests-on', record.state.steps.task.outputs.result])
+  assert.equal(decided.status, 0, decided.stderr)
+  assert.match(last(decided.stdout), /^sha256:[0-9a-f]{64}$/)
+  const refused = system(['decision', 'add', '--goal', goal, '--question', 'q', '--option', 'x', '--choice', 'z', '--reason', 'r'])
+  assert.equal(refused.status, 1)
+  const listed = JSON.parse(system(['decision', 'list', '--goal', goal]).stdout) as { id: string; choice: string; restsOn: string[] }[]
+  assert.deepEqual(listed.map((d) => [d.id, d.choice, d.restsOn]), [[last(decided.stdout), 'y', [record.state.steps.task.outputs.result]]])
+
+  const briefed = system(['goal', 'brief', goal])
+  assert.equal(briefed.status, 0, briefed.stderr)
+  assert.match(briefed.stdout, /^# Goal sha256:/)
+  assert.match(briefed.stdout, new RegExp(`${ran.stdout.trim()} succeeded`))
+  assert.match(briefed.stdout, new RegExp(`which direction\\? -> y: the report says so \\(${last(decided.stdout)}\\)`))
+  assert.equal(system(['goal', 'brief', goal]).stdout, briefed.stdout, 'the same records give the same text')
+
   const raise = onTerminal(['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '2', '--supersedes', goal], '\n')
   const raiseShort = raise.stdout.match(/type exactly ([0-9a-f]{8})/)![1]!
   const raised = last(onTerminal(['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '2', '--supersedes', goal], `${raiseShort}\n`).stdout)

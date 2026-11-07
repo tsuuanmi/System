@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
@@ -94,6 +94,7 @@ before(async () => {
   const merging = readFileSync(SE_MERGE, 'utf8')
   assert.ok(merging.includes('      params: { merge: true }\n'))
   writeFileSync(SE, merging.replace('      params: { merge: true }\n', ''))
+  copyFileSync(join(repo, 'workflows', 'code-checks.yaml'), join(home, 'code-checks.yaml'))
   for (const [name, value] of [['CLAUDE_CODE_OAUTH_TOKEN', 'fake'], ['GITHUB_TOKEN', 'ghs_test']]) {
     assert.equal(cli.run(['credentials', 'set', name!], { input: `${value}\n` }).status, 0)
   }
@@ -237,7 +238,7 @@ test('marking the pull request ready waits for a human at a terminal; an agent o
   await restart()
   const p = project()
   const ready = join(home, 'ready.yaml')
-  writeFileSync(ready, readFileSync(SE, 'utf8').replace('      requires: [checks]\n  - id: accept', '      requires: [checks]\n      params:\n        ready: true\n  - id: accept'))
+  writeFileSync(ready, readFileSync(SE, 'utf8').replace('      requires: [checks.checks]\n  - id: accept', '      requires: [checks.checks]\n      params:\n        ready: true\n  - id: accept'))
   const held = system(['work', 'submit', '--workflow', ready, '--input', p.task])
   assert.equal(held.status, 3, held.stderr)
   const workId = held.stdout.trim()
@@ -268,7 +269,7 @@ test('a human can deny instead; the Work fails and nothing is published', { skip
   await restart()
   const p = project()
   const ready = join(home, 'ready-deny.yaml')
-  writeFileSync(ready, readFileSync(SE, 'utf8').replace('      requires: [checks]\n  - id: accept', '      requires: [checks]\n      params:\n        ready: true\n  - id: accept'))
+  writeFileSync(ready, readFileSync(SE, 'utf8').replace('      requires: [checks.checks]\n  - id: accept', '      requires: [checks.checks]\n      params:\n        ready: true\n  - id: accept'))
   const workId = system(['work', 'submit', '--workflow', ready, '--input', p.task]).stdout.trim()
   const denied = onTerminal(['deny', workId, '--reason', 'not now'], `${workId.slice(5, 13)}\n`)
   assert.equal(denied.status, 1, denied.stdout)

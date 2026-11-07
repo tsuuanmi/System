@@ -17,11 +17,12 @@
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type WorkChange, type Command, type Decision, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type WorkChange, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import type { GoalView } from './goal.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
+import type { LiveAttempt } from './live.ts'
 import type { Capabilities } from './registry.ts'
 import { Slots } from './slots.ts'
 import { TERMINAL, type WorkRecord, type WorkState } from './record.ts'
@@ -32,6 +33,8 @@ export interface HostOptions {
   table: WorkTable
   specs: SpecStore
   capabilities: Capabilities
+  /** How long a running attempt may be quiet before it is reported stalled; default `DEFAULT_STALL_MINUTES`. */
+  stallMinutes?: number
 }
 
 /** An option every command takes: with it, a repeat is answered, not done again. */
@@ -75,7 +78,7 @@ export class Host {
       return section()
     })
     this.slots = new Slots(options.capabilities)
-    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots)
+    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes)
   }
 
   /** Take the lock for `options.home`, then recover, then accept operations. Refuses when another Host holds the home. */
@@ -149,6 +152,11 @@ export class Host {
     return this.controller.list()
   }
 
+  /** The Work's running Worker attempts and their progress, in memory only. */
+  live(workId: string): LiveAttempt[] {
+    return this.controller.live(workId)
+  }
+
   replay(workId: string): { state: WorkState; matches: boolean } {
     return this.controller.replay(workId)
   }
@@ -188,7 +196,7 @@ export class Host {
     return this.once({ commandId, op: 'cancel', args: { workId, ...request } }, (command) => this.controller.cancel(workId, request, command))
   }
 
-  decide(workId: string, options: Starting & Decision): Promise<WorkRecord> {
+  decide(workId: string, options: Starting & Approval): Promise<WorkRecord> {
     const { commandId, started, ...decision } = options
     return this.once({ commandId, op: 'decide', args: { workId, ...decision }, started }, (command, begun) => this.controller.decide(workId, decision, command, begun))
   }

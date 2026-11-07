@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
-import { GOAL_KIND, TASK_KIND, goalSchema, taskSchema } from '@system/work'
-import { fixture, type Fixture } from '../../../test-support/fixture.ts'
+import { DECISION_KIND, GOAL_KIND, TASK_KIND, decisionSchema, goalSchema, goalStore, taskSchema } from '@system/work'
+import { fixture, workflowFile, type Fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { NOT_ALLOWED, VERSION, connect, serve, tableOf, type Client } from '../src/index.ts'
 import { operations, type Services } from '../src/operations.ts'
@@ -25,6 +25,7 @@ const b64 = (text: string) => Buffer.from(text).toString('base64')
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
 function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
+  const goals = goalStore(artifacts)
   const seen: Record<string, unknown[]> = { credentials: [], conversations: [], goals: [], logins: [] }
   return {
     seen,
@@ -48,6 +49,8 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       const stored = await artifacts.put({ ...GOAL_KIND, content: { context: [charter.id], ...goal }, inputs: [charter.id], supersedes: supersedes ? [supersedes] : [], classification: 'public', producer })
       return { id: stored.id }
     },
+    addDecision: (decision, caller) => goals.decide(decision, caller),
+    decisions: (chain) => goals.decisions(chain),
     async addConversation(parts, asserted, supersedes, caller) { seen.conversations!.push({ parts, asserted, supersedes, caller }); return { id: 'conversation:1' } },
     credentials: {
       async set(name, value) { seen.credentials!.push([name, value]) },
@@ -60,12 +63,13 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
   }
 }
 
-async function started(options: { f?: Fixture } = {}) {
-  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema })
-  const f = options.f ?? fixture({ goals: artifacts })
+async function started(options: { setup?: (f: Fixture) => void; stallMinutes?: number } = {}) {
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema }, { ...DECISION_KIND, content: decisionSchema })
+  const f = fixture({ goals: artifacts })
+  options.setup?.(f)
   const home = join(dir, `n${count++}`)
   mkdirSync(home)
-  const host = await f.startHost(home)
+  const host = await f.startHost(home, { stallMinutes: options.stallMinutes })
   const svc = services(f, artifacts)
   const table = operations(svc)
   const path = join(sockets, `${count++}.sock`)
@@ -137,6 +141,9 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal((await call('goal.show', { goal: goal.id }) as { current: { id: string } }).current.id, raised.id)
   await call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id })
   await assert.rejects(call('goal.show', { goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
+  const decided = await call('decision.add', { goal: goal.id, question: 'which?', options: ['a', 'b'], choice: 'a', reason: 'cheaper' }) as { id: string }
+  assert.deepEqual((await call('decision.list', { goal: goal.id }) as { id: string }[]).map((d) => d.id), [decided.id])
+  assert.match((await call('goal.brief', { goal: goal.id }) as { text: string }).text, new RegExp(decided.id))
 
   const second = await call('work.submit', { capabilities: ['code-write'], input: input(f) }) as { id: string }
   await call('work.run', { workId: second.id })
@@ -389,7 +396,7 @@ test('an orchestrator reaches only the Works of its Goal, and the Artifacts of t
   await scoped(newer.call('work.show', { workId: workB.id }))
 })
 
-type Notice = { workId: string; status: string; seq: number }
+type Notice = { workId: string; status: string; seq: number; stalled?: boolean }
 
 /** A connection that keeps the `work.changed` notices it is sent. */
 async function listening(open: (caller?: { type: string; operatorId: string }) => Promise<Client>, caller?: { type: string; operatorId: string }) {
@@ -404,7 +411,8 @@ const settled = async (what: string, ok: () => boolean) => {
   assert.fail(`timed out waiting for ${what}`)
 }
 
-const heldWorkflow = `${readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'workflows', 'software-engineering.yaml'), 'utf8')}      approval: operator\n`
+const heldWorkflow = `${workflowFile('software-engineering.yaml')}      approval: operator\n`
+const seUses = { 'code-checks.yaml': workflowFile('code-checks.yaml') }
 
 test('work.watch sends one work.changed when the Work finishes, and one when it is held', { timeout: 60_000 }, async () => {
   const { f, open } = await started()
@@ -416,7 +424,7 @@ test('work.watch sends one work.changed when the Work finishes, and one when it 
   const last = (await events(client, done.id)).events.at(-1)!
   assert.deepEqual(notices, [{ workId: done.id, status: 'succeeded', seq: last.seq }])
 
-  const held = await client.call('work.submit', { workflow: heldWorkflow, input: input(f) }) as { id: string }
+  const held = await client.call('work.submit', { workflow: heldWorkflow, uses: seUses, input: input(f) }) as { id: string }
   await client.call('work.watch', { workId: held.id })
   await client.call('work.run', { workId: held.id })
   await settled('the held notice', () => notices.length > 1)
@@ -511,4 +519,183 @@ test('work.watch by goal tells of each new Work of the Goal, and an orchestrator
   await human1.call('work.run', { workId: mine.id })
   await terminal(human1, mine.id)
   assert.equal(orch.notices.length, 1)
+})
+
+test('a decision names its Goal: an orchestrator records only for its own, and decision.list returns them in order', async () => {
+  const { open, artifacts } = await started()
+  const human = await open()
+  const goal = async (aim: string, supersedes?: string) => (await human.call('goal.new', { aim, scope: 's', budget: {}, supersedes }) as { id: string }).id
+  const [a, b] = [await goal('a'), await goal('b')]
+  const synthesis = (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: new TextEncoder().encode('the synthesis'), mediaType: 'text/plain', classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
+  const ours = await open(orchestrator(a))
+  const scoped = (call: Promise<unknown>) => assert.rejects(call, (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /scope/.test(error.message))
+  const ask = { question: 'which direction?', options: ['x', 'y'], choice: 'x', reason: 'the synthesis favours it' }
+
+  const first = await ours.call('decision.add', { ...ask, restsOn: [synthesis] }) as { id: string }
+  const stored = artifacts.get(first.id)
+  assert.equal(stored.state, 'stored')
+  const content = (stored as { envelope: { kind: string; content: { goal: string; by: unknown; restsOn: string[] } } }).envelope
+  assert.deepEqual([content.kind, content.content.goal, content.content.by, content.content.restsOn], ['decision', a, orchestrator(a), [synthesis]])
+  await scoped(ours.call('decision.add', { ...ask, goal: b }))
+  await assert.rejects(ours.call('decision.add', { ...ask, choice: 'z' }), /choice z is not one of the options/)
+  await assert.rejects(human.call('decision.add', ask), /needs the Goal/)
+  await assert.rejects(human.call('decision.add', { ...ask, goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
+
+  // The same question asked again is a second decision, after the first.
+  const second = await human.call('decision.add', { ...ask, goal: a }) as { id: string }
+  const other = await human.call('decision.add', { ...ask, goal: b }) as { id: string }
+  const raised = await goal('a again', a)
+  const third = await (await open(orchestrator(raised))).call('decision.add', { ...ask, choice: 'y', reason: 'changed course' }) as { id: string }
+  const ids = (list: unknown) => (list as { id: string }[]).map((d) => d.id)
+  assert.deepEqual(ids(await ours.call('decision.list', {})), [first.id, second.id, third.id])
+  assert.deepEqual(ids(await human.call('decision.list', { goal: a })), [first.id, second.id, third.id])
+  assert.deepEqual(ids(await human.call('decision.list', { goal: b })), [other.id])
+  assert.equal((await human.call('decision.list', {}) as unknown[]).length, 4)
+  await scoped(ours.call('decision.list', { goal: b }))
+  const listed = (await ours.call('decision.list', {}) as { choice: string; previous?: string; at: string }[])
+  assert.deepEqual(listed.map((d) => [d.choice, d.previous]), [['x', undefined], ['x', first.id], ['y', second.id]])
+})
+
+test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 60_000 }, async () => {
+  let twoTurns!: () => void
+  const reported = new Promise<void>((resolve) => { twoTurns = resolve })
+  const { open } = await started({ stallMinutes: 0.005, setup: (f) => f.capabilities.registerWorker({
+    ref: 'fake/quiet', capabilities: ['quiet-work'],
+    async run(request) {
+      request.progress?.({ turns: 1, lastTool: 'Bash', tokens: 10 })
+      request.progress?.({ turns: 2, lastTool: 'Read', tokens: 25 })
+      twoTurns()
+      // Then nothing more, until it is cancelled.
+      await new Promise((resolve) => request.signal.addEventListener('abort', resolve, { once: true }))
+      return { status: 'cancelled', outputs: {} }
+    },
+  }) })
+  const { client, notices } = await listening(open)
+  const work = await client.call('work.submit', { capabilities: ['quiet-work'] }) as { id: string }
+  await client.call('work.watch', { workId: work.id })
+  await client.call('work.run', { workId: work.id })
+  await reported
+  type Live = { stepId: string; attemptId: string; worker: string; startedAt: string; lastActivityAt: string; elapsedSeconds: number; quietSeconds: number; stalled: boolean; progress: unknown }
+  const shown = await client.call('work.show', { workId: work.id }) as { live: Live[]; events: { type: string }[] }
+  assert.equal(shown.live.length, 1)
+  assert.deepEqual([shown.live[0]!.stepId, shown.live[0]!.worker, shown.live[0]!.progress], ['task', 'fake/quiet', { turns: 2, lastTool: 'Read', tokens: 25 }])
+  assert.ok(shown.live[0]!.lastActivityAt >= shown.live[0]!.startedAt)
+
+  await settled('the stall notice', () => notices.some((n) => n.stalled))
+  const seq = (await events(client, work.id)).events.at(-1)!.seq
+  assert.deepEqual(notices, [{ workId: work.id, status: 'running', seq, stalled: true }])
+  const stalled = await client.call('work.show', { workId: work.id }) as { live: Live[] }
+  assert.equal(stalled.live[0]!.stalled, true)
+
+  await client.call('work.cancel', { workId: work.id, reason: 'quiet too long' })
+  await settled('the end', () => notices.some((n) => n.status === 'cancelled'))
+  const record = await client.call('work.show', { workId: work.id }) as { live?: unknown; events: { type: string }[] }
+  assert.equal(record.live, undefined, 'nothing is live once the attempt reported')
+  assert.deepEqual(record.events.map((e) => e.type), ['admitted', 'dispatched', 'observed', 'terminal'])
+  assert.doesNotMatch(JSON.stringify(record), /turns|lastTool|stalled/, 'progress is an observation of the moment, not an event')
+})
+
+test('goal.brief prints the Goal, its budget left, its running, failed and held Works and its decisions; the same records give the same text', { timeout: 60_000 }, async () => {
+  const { f, open, artifacts } = await started({ setup: (f) => f.capabilities.registerWorker({ ref: 'fake/failing', capabilities: ['fail-work'], async run() { return { status: 'failed', outputs: {}, reason: 'the tests failed' } } }) })
+  const human = await open()
+  const goal = (await human.call('goal.new', { aim: 'ship OC', scope: 'the Host', budget: { attempts: 10 } }) as { id: string }).id
+  const other = (await human.call('goal.new', { aim: 'elsewhere', scope: 's', budget: {} }) as { id: string }).id
+  const task = async (text: string) => (await artifacts.put({ ...TASK_KIND, content: { instructions: text }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
+  const submit = async (params: object) => await human.call('work.submit', params) as { id: string }
+
+  const failed = await submit({ capabilities: ['fail-work'], input: await task('two'), goal })
+  await human.call('work.run', { workId: failed.id })
+  const held = await submit({ workflow: heldWorkflow, uses: seUses, input: await task('three'), goal })
+  await human.call('work.run', { workId: held.id })
+  await submit({ capabilities: ['code-write'], input: await task('not ours'), goal: other })
+  for (const id of [failed.id, held.id]) await terminal(human, id)
+  // Started last: it holds the fake Account's one slot until released.
+  f.hold('task')
+  const running = await submit({ capabilities: ['code-write'], input: await task('one'), goal })
+  await human.call('work.run', { workId: running.id })
+  await f.arrived('task')
+  const first = await human.call('decision.add', { goal, question: 'which direction?', options: ['x', 'y'], choice: 'x', reason: 'the synthesis' }) as { id: string }
+  const second = await human.call('decision.add', { goal, question: 'merge now?', options: ['yes', 'no'], choice: 'no', reason: 'wait for checks' }) as { id: string }
+
+  const orchestrated = await open(orchestrator(goal))
+  const { text } = await orchestrated.call('goal.brief', { goal }) as { text: string }
+  assert.match(text, /ship OC/)
+  assert.match(text, /attempts: \d+ of 10 spent, \d+ left/)
+  assert.match(text, new RegExp(`${running.id} running.*step task running`))
+  assert.match(text, new RegExp(`${failed.id} failed: step task failed \\(the tests failed\\)\n`))
+  assert.match(text, new RegExp(`${held.id} held.*awaits accept`))
+  assert.doesNotMatch(text, /not ours|elsewhere/)
+  assert.match(text, new RegExp(`which direction\\? -> x: the synthesis \\(${first.id}\\)`))
+  assert.match(text, new RegExp(`merge now\\? -> no: wait for checks \\(${second.id}\\)`))
+  assert.ok(text.indexOf(first.id) < text.indexOf(second.id), 'decisions oldest first')
+  assert.match(text, new RegExp(`approval: ${held.id}`))
+  assert.match(text, new RegExp(`failed: ${failed.id}`))
+  assert.equal((await orchestrated.call('goal.brief', { goal }) as { text: string }).text, text, 'the same records give the same text')
+  await assert.rejects(orchestrated.call('goal.brief', { goal: other }), (error: { code: number }) => error.code === NOT_ALLOWED)
+  f.release('task')
+  await terminal(human, running.id)
+})
+
+test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and replay exactly; recursion and depth 4 are refused at admission', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const client = await open()
+  const head = (id: string) => `schema: system.workflow/v1\nid: ${id}\nversion: 1\nsteps:\n`
+  const checks = `${head('checks')}  - id: checks\n    verify: { capability: code.required-checks, subject: $work.input, criteria: repo-checks-v1 }\n`
+  const outer = `${head('outer')}  - id: implement
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+  - id: checks
+    dependsOn: [implement]
+    uses: checks.yaml
+    inputs: { input: $steps.implement.change }
+  - id: accept
+    dependsOn: [checks]
+    accept: { requires: [checks.checks] }
+`
+  const work = await client.call('work.submit', { workflow: outer, uses: { 'checks.yaml': checks }, input: input(f) }) as { id: string; state: { steps: Record<string, unknown> } }
+  assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'accept'])
+  await client.call('work.run', { workId: work.id })
+  assert.equal((await terminal(client, work.id)).status, 'succeeded')
+  const shown = await client.call('work.show', { workId: work.id }) as { events: { type: string; stepId?: string; subject?: string }[]; state: { steps: Record<string, { outputs: Record<string, string> }> } }
+  const verified = shown.events.find((e) => e.type === 'verified')!
+  assert.deepEqual([verified.stepId, verified.subject], ['checks.checks', shown.state.steps.implement!.outputs.change])
+  assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
+
+  const using = (id: string, name: string) => `${head(id)}  - id: inner\n    uses: ${name}\n`
+  await assert.rejects(client.call('work.submit', { workflow: using('a', 'b.yaml'), uses: { 'b.yaml': using('b', 'a.yaml'), 'a.yaml': using('a', 'b.yaml') }, input: input(f) }), /recursion: a -> b -> a/)
+  const deep = { 'l1.yaml': using('l1', 'l2.yaml'), 'l2.yaml': using('l2', 'l3.yaml'), 'l3.yaml': using('l3', 'l4.yaml'), 'l4.yaml': checks }
+  await assert.rejects(client.call('work.submit', { workflow: using('top', 'l1.yaml'), uses: deep, input: input(f) }), /deeper than 3/)
+  await assert.rejects(client.call('work.submit', { workflow: outer, input: input(f) }), /checks\.yaml/)
+})
+
+test('software-engineering.yaml checks through code-checks.yaml: a failed check, retried on its own, passes on the same subject and the Work is accepted; the failed verdict is kept', { timeout: 60_000 }, async () => {
+  const { f, open } = await started()
+  const client = await open()
+  const se = f.files('software-engineering.yaml')
+  assert.match(se, /uses: code-checks\.yaml/)
+  f.verdicts.push('fail')
+  const work = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f) }) as { id: string; state: { steps: Record<string, unknown> } }
+  assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
+  await client.call('work.run', { workId: work.id })
+  assert.equal((await terminal(client, work.id)).status, 'failed')
+  type Shown = { events: { type: string; stepId?: string; subject?: string; verdict?: string; reset?: string[] }[]; state: { status: string; reason?: string; steps: Record<string, { verdict?: string; state: string; attempts: string[] }> } }
+  const failed = await client.call('work.show', { workId: work.id }) as Shown
+  assert.match(failed.state.reason!, /checks\.checks=fail/)
+  const implemented = failed.state.steps.implement!.attempts
+
+  // Choosing among runs of a check is the operator's: an agent is refused, and records a decision instead.
+  await assert.rejects((await open(agent)).call('work.retry', { workId: work.id, step: 'checks.checks' }), /only a human verifies again/)
+  // The environment is fixed; the same change is verified again, with the same pinned criteria.
+  await assert.rejects(client.call('work.retry', { workId: work.id, step: 'checks.checks', worker: 'fake/claude' }), /verify step/)
+  await client.call('work.retry', { workId: work.id, step: 'checks.checks', reason: 'the Host had Node 22 on its PATH' })
+  assert.equal((await terminal(client, work.id)).status, 'succeeded')
+  const done = await client.call('work.show', { workId: work.id }) as Shown
+  const verdicts = done.events.filter((e) => e.type === 'verified')
+  assert.deepEqual(verdicts.map((e) => [e.stepId, e.verdict]), [['checks.checks', 'fail'], ['checks.checks', 'pass']])
+  assert.equal(verdicts[0]!.subject, verdicts[1]!.subject, 'the same subject')
+  assert.deepEqual(done.state.steps.implement!.attempts, implemented, 'no new implement attempt')
+  assert.deepEqual(done.events.find((e) => e.type === 'reopened')!.reset, ['checks.checks', 'publish', 'accept'])
+  assert.equal(done.state.steps['checks.checks']!.verdict, 'pass')
+  assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
 })

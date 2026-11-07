@@ -1,5 +1,5 @@
 # Software Engineering (MVP-0). A coding Worker changes the repository, the
-# required checks verify the exact result, System pushes that exact commit to
+# required checks (the Sub-workflow code-checks.yaml) verify the exact result, System pushes that exact commit to
 # system/<work> and opens a draft pull request (never merges), and Work is
 # accepted on the verdict.
 schema: system.workflow/v1
@@ -13,18 +13,17 @@ steps:
     outputs: [change]
   - id: checks
     dependsOn: [implement]
-    verify:
-      capability: code.required-checks
-      subject: $steps.implement.change
-      criteria: repo-checks-v1
+    uses: code-checks.yaml
+    inputs:
+      input: $steps.implement.change
   - id: publish
     dependsOn: [checks]
     effect:
       capability: git.publish
       subject: $steps.implement.change
-      requires: [checks]
+      requires: [checks.checks]
       params: { merge: true }
   - id: accept
     dependsOn: [publish]
     accept:
-      requires: [checks]
+      requires: [checks.checks]

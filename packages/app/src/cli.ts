@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type GoalView, type NewGoal, type WorkRecord, type WorkState } from '@system/work'
+import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type GoalView, type NewDecision, type NewGoal, type StoredDecision, type WorkRecord, type WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 /** A repeatable option's values, in order. */
@@ -85,6 +85,10 @@ export interface WorkCommands {
   /** Store a Goal on the human's own connection, as the operator who confirmed it; `supersedes` is the Goal it raises or changes. */
   newGoal(goal: NewGoal, supersedes: string | undefined, operatorId: string): Promise<{ id: string }>
   goal(goalId: string): Promise<GoalView>
+  /** The Goal's brief: text written from records only. */
+  brief(goalId: string): Promise<string>
+  addDecision(decision: NewDecision): Promise<{ id: string }>
+  decisions(goalId: string | undefined): Promise<StoredDecision[]>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
@@ -290,6 +294,39 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  goal.command('brief <id>')
+    .description('what a new Orchestrator session starts from, written from records only: the Goal and its budget left, its Works, its decisions and what waits')
+    .action((id: string) => {
+      select(async () => {
+        io.out(await host.work().brief(id))
+        return 0
+      })
+    })
+  const decision = program.command('decision').description('choices made for a Goal, recorded as Artifacts: a record, never an authority')
+  decision.command('add')
+    .description('record a decision for a Goal and print its ID')
+    .requiredOption('--goal <id>', 'the Goal it is made for')
+    .requiredOption('--question <text>', 'what was decided')
+    .requiredOption('--option <text>', 'an option considered (repeatable)', collect, [])
+    .requiredOption('--choice <text>', 'the option chosen')
+    .requiredOption('--reason <text>', 'why')
+    .option('--rests-on <id>', 'an Artifact it rests on, such as a synthesis, a review or a check-run (repeatable)', collect, [])
+    .action((options: { goal: string; question: string; option: string[]; choice: string; reason: string; restsOn: string[] }) => {
+      select(async () => {
+        const { goal: goalId, question, option, choice, reason, restsOn } = options
+        io.out(`${(await host.work().addDecision({ goal: goalId, question, options: option, choice, reason, restsOn })).id}\n`)
+        return 0
+      })
+    })
+  decision.command('list')
+    .description('the decisions of a Goal and its chain (of every Goal without --goal), oldest first, as JSON')
+    .option('--goal <id>', 'the Goal')
+    .action((options: { goal?: string }) => {
+      select(async () => {
+        io.out(`${JSON.stringify(await host.work().decisions(options.goal), null, 2)}\n`)
+        return 0
+      })
+    })
   const conversation = program.command('conversation').description('take in a conversation held elsewhere, such as in a web chat, as operator-supplied Artifacts')
   conversation.command('add')
     .description('preview a conversation, or with --yes store it and print its ID')
@@ -405,8 +442,8 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('retry <workId>')
-    .description('run a Worker step of failed, cancelled or held Work again as a new attempt; the steps after it are reset')
-    .option('--step <id>', 'the Worker step to run again (default: the first one that did not succeed)')
+    .description('run a step of failed, cancelled or held Work again as a new attempt; the steps after it are reset. A verify step is asked again on the same subject and criteria')
+    .option('--step <id>', 'the Worker, verify or effect step to run again (default: the first Worker step that did not succeed)')
     .option('--worker <ref>', 'only this Worker may take it over (see system workers)')
     .option('--reason <text>', 'why', 'retried by the operator')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')

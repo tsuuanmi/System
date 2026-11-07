@@ -16,13 +16,18 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 ## Pieces
 
 - [src/workflow.ts](src/workflow.ts) — parse (`yaml`, duplicate keys refused),
-  zod schema, preflight, resolve, and the direct Task's implicit spec. Pure.
+  zod schema, Sub-workflows joined (`uses`, from the files `resolve` is
+  given), preflight, resolve, and the direct Task's implicit spec. Pure.
 - [src/record.ts](src/record.ts) — event and state schemas and the pure `fold`.
 - [src/registry.ts](src/registry.ts) — `Capabilities`: register Workers and
   verifiers, route by capability with a reason for every candidate.
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
+- [src/live.ts](src/live.ts) — `LiveAttempts`: each running Worker attempt's
+  start, last activity and the `progress` its Worker reported (in memory
+  only, never an event), and the stall notice after `stallMinutes` (the row's
+  config, default 10): a `WorkChange` of type `stalled`, once until it reports again.
 - [src/control.ts](src/control.ts) — `MemoryControl`: the per-Work lock and cancel request, in memory.
 - [src/host.ts](src/host.ts) — `Host` ([the Host](../../docs/architecture/host.md),
   H2, in process): takes the Host lock, owns the controller, runs every
@@ -44,7 +49,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   `resolveGoal` (a Goal's newest version and its chain), `spendOf` (the fold of
   attempts and tokens over the Works that name a Goal in the chain) and
   `overBudget`. `WorkController.goalView` and `Host.goal` report a Goal with
-  its spend.
+  its spend. The store also records decisions (`decide`, `decisions`): each
+  `decision@1` names the latest one of its Goal's chain as `previous`, which
+  orders them; they are recorded one at a time.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
   a conversation held elsewhere taken in as `file@1` parts under a manifest
   of what the operator asserts and a fixed notice; the preview and its
@@ -71,7 +78,11 @@ every 250 ms: the run aborts its attempt, records `observed` (`cancelled`, with
 partial output) and `terminal` (`cancelled`, with the caller). With no run, the
 cancel is recorded directly. `system work retry` appends `reopened` (caller,
 reason, optional Worker, the partial output as `previous`) and runs the step
-again as a new attempt: the Work keeps one history. `retry` and `decide` hold
+again as a new attempt: the Work keeps one history. On a verify step (`--step
+checks.checks`) the verifier is asked again on the same subject and pinned
+criteria; `reopened` clears the step's verdict in the state, and the earlier
+`verified` event stays. Only a human caller does this: an agent could keep
+asking until a run passes. `retry` and `decide` hold
 the Work's lock from their check to the end of the run.
 
 ## Under the Host
@@ -131,8 +142,9 @@ reruns the Work, a denial fails it.
 optional `context`: Artifacts the Worker reads as data, also listed as the
 task's inputs) and
 `git-tree@1` (`repository`, `commit`, `tree`, `parent`) and `goal@1` (`aim`,
-`scope`, `budget: { attempts?, tokens? }`, `context`: Artifact IDs), registered by
-this row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
+`scope`, `budget: { attempts?, tokens? }`, `context`: Artifact IDs) and
+`decision@1` (`goal`, `question`, `options`, `choice`, `reason`, `restsOn`,
+`by`, optional `previous`), registered by this row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 
 ## Crash boundaries
 

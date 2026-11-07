@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseClaude, parseCodex } from '../src/runtimes.ts'
+import { parseClaude, parseCodex, progressReader } from '../src/runtimes.ts'
 
 const line = (value: unknown) => JSON.stringify(value)
 
@@ -86,4 +86,22 @@ test('a stream with no result is unreadable output', () => {
   assert.equal(parsed.ok, false)
   assert.match(parsed.message, /^unreadable Claude Code output: /)
   assert.equal(parsed.usage, undefined)
+})
+
+test('Claude Code progress is read as the stream grows: turns are messages, tokens are fresh input, cache writes and output', () => {
+  const read = progressReader('claude-code')
+  const assistant = (id: string, tool: string | undefined, output: number) => line({ type: 'assistant', message: { id, content: [{ type: 'text', text: 'x' }, ...(tool ? [{ type: 'tool_use', name: tool }] : [])], usage: { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 100, output_tokens: output } } })
+  let stdout = `${line({ type: 'system', subtype: 'init' })}\n${assistant('m1', 'Bash', 3)}\n`
+  assert.deepEqual(read(stdout), { turns: 1, lastTool: 'Bash', tokens: 18 })
+  // A message streamed as several events is one turn, counted once; a half-written line waits for its end.
+  const half = assistant('m2', 'Read', 4)
+  stdout += `${assistant('m1', 'Bash', 3)}\n${half.slice(0, 20)}`
+  assert.deepEqual(read(stdout), { turns: 1, lastTool: 'Bash', tokens: 18 })
+  stdout += `${half.slice(20)}\n${assistant('m3', undefined, 1)}\nnot json\n`
+  assert.deepEqual(read(stdout), { turns: 3, lastTool: 'Read', tokens: 18 + 19 + 16 })
+})
+
+test('Codex progress counts completed turns and their tokens', () => {
+  const read = progressReader('codex')
+  assert.deepEqual(read(`${line({ type: 'item.completed', item: { type: 'command_execution' } })}\n${line({ type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 } })}\n`), { turns: 1, lastTool: 'command_execution', tokens: 8 })
 })
