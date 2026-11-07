@@ -138,6 +138,9 @@ export function prompt(ws: Workspace, request: WorkerRequest): string {
     ] : []),
     '',
     'Do not read or change anything outside these directories unless the instructions require it.',
+    ...(request.capabilities.includes('code-write') ? [
+      'Run each command in the foreground under `timeout` (for example `timeout 600 corepack pnpm test`) and wait for it; do not start background jobs or monitors.',
+    ] : []),
   ].join('\n')
 }
 

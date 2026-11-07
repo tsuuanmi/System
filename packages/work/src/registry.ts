@@ -26,6 +26,8 @@ export interface Progress {
   lastTool?: string
   /** Tokens so far: fresh input, cache writes and output. */
   tokens?: number
+  /** Input tokens so far, cache reads included: what a long wait re-reads (PROP-0007 decision 2). */
+  inputTokens?: number
   /** Where an attempt with stages is, such as a web Runtime's evidence stage. */
   stage?: string
 }
