@@ -56,6 +56,9 @@ nothing else.
   the lost step is dispatched once more; no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
+- [debate.test.ts](debate.test.ts) — WW2b: the Debate Workflow on the fake CLI: dispatch
+  order a1/b1, a2/b2, synthesis; each Round 2 step's inputs are exactly the
+  Round 1 proposals and the brief; the synthesis gets all four; replay.
 - [goal.test.ts](goal.test.ts) — ADR-0009 O1: `system goal new` behind a terminal
   confirmation (refused to a pipe or an agent), the Goal's context reaching the
   Worker, the budget refusal, `work report` with the spend, and a raise.

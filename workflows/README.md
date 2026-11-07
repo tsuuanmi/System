@@ -21,6 +21,11 @@ changes future admissions only.
   `synthesis` (`brainstorm.synthesis`) reads both exact proposals and writes a
   `summary`. No verifier: success means the three outputs exist. The bundle
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
+- [debate.yaml](debate.yaml) — a Debate of two Rounds: `a1` and `b1` write a
+  `proposal` each from the brief alone (the Brainstorm stances); in Round 2 `a2`
+  and `b2` read both proposals and write a `rebuttal` with a revised proposal,
+  on the same capabilities, so each side keeps its Account; `synthesis` reads
+  all four Artifacts and writes a `summary`. No verifier.
 
 Comparison configurations for the Brainstorm evaluation are in
 [experiments](experiments/README.md).
