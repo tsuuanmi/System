@@ -49,6 +49,8 @@ export interface RemoteView {
 export interface WebWorkerService {
   /** Check a `chatgpt-web` account and register it as a Worker; rejects with the reason it is unavailable. The registration ends with `dispose`. */
   register(account: WebRegistration): Promise<{ command: string; version: () => Promise<string>; dispose: () => void }>
+  /** Announce that the account's registration is in progress and ends with `done`: an operation on it waits, bounded, for it, and a rejection is its refusal reason. */
+  expect(ref: string, done: Promise<unknown>): void
   /** Sign a registered account in, by the contents of a cookie file or by hand in a window (needs a display). */
   login(ref: string, cookies: string | undefined): Promise<LoginReport>
   /** Start a remote sign-in (the viewer on 127.0.0.1, behind a token); one per account at a time. */

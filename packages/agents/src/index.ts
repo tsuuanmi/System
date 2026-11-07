@@ -56,6 +56,9 @@ export interface Config {
   accounts?: AccountConfig[]
 }
 
+/** The reason of an account whose registration is not done yet. */
+export const REGISTERING = 'registering'
+
 export interface AccountStatus {
   ref: string
   runtime: AccountRuntime
@@ -122,10 +125,28 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const attempts = systemPath(ctx, 'attempts')
   const statuses: AccountStatus[] = []
   const versions = new Map<string, () => Promise<string>>()
+  const accounts = () => Promise.all(statuses.map(async (status) => {
+    const askVersion = versions.get(status.ref)
+    return askVersion ? { ...status, version: await askVersion() } : { ...status }
+  }))
+  // Provided before the loop: `system workers` shows the accounts still registering.
+  ctx.provide('agents', { accounts } satisfies AgentsService)
   const dispose: (() => void)[] = []
-  for (const account of config.accounts ?? []) {
-    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, available: false, reason: '' }
+  // Every account is listed from the start, as registering: the Host serves while this loop is still going (WW6e).
+  const entries = (config.accounts ?? []).map((account) => {
+    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, available: false, reason: REGISTERING }
     statuses.push(status)
+    return { account, status }
+  })
+  // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
+  const outcomes = new Map<string, { done(): void; refuse(error: Error): void }>()
+  for (const { account } of entries) {
+    if (account.runtime !== 'chatgpt-web' || !webWorker) continue
+    const done = new Promise<void>((resolve, refuse) => outcomes.set(account.ref, { done: resolve, refuse }))
+    done.catch(() => {})
+    webWorker.expect(account.ref, done)
+  }
+  for (const { account, status } of entries) {
     try {
       if (account.runtime === 'chatgpt-web' && !webWorker) throw new Error(WEB_WORKER_DISABLED)
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
@@ -162,14 +183,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       status.available = true
       status.reason = 'registered'
       versions.set(account.ref, askVersion)
+      outcomes.get(account.ref)?.done()
     } catch (error) {
       status.reason = (error as Error).message
+      outcomes.get(account.ref)?.refuse(error as Error)
     }
   }
   ctx.effect(() => () => { for (const d of dispose) d() }, 'agent registrations')
-  const accounts = () => Promise.all(statuses.map(async (status) => {
-    const askVersion = versions.get(status.ref)
-    return askVersion ? { ...status, version: await askVersion() } : { ...status }
-  }))
-  ctx.provide('agents', { accounts } satisfies AgentsService)
 }

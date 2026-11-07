@@ -23,7 +23,12 @@ export * from './display.ts'
 export const name = 'system-web-worker'
 export const inject = ['capabilities', 'artifacts', 'subprocess']
 
-export function apply(ctx: Context): void {
+export interface Config {
+  /** How long an operation on an account waits for its registration in progress, in seconds (default 60). */
+  registerWaitSeconds?: number
+}
+
+export function apply(ctx: Context, config: Config = {}): void {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
   const subprocess = ctx.get('subprocess') as SubprocessRuntime
@@ -61,14 +66,35 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => { for (const dispose of [...disposers]) dispose() }, 'web worker registrations')
   const remotes = new Map<string, RemoteSession>()
   ctx.effect(() => () => { for (const remote of remotes.values()) void remote.cancel() }, 'remote sign-ins')
-  const account = (ref: string) => {
+  // WW6e: the Host reports "started" before the `agents` row has handed every account over, so an account the row has
+  // announced (`expect`) but not registered yet is waited for, bounded; only one never announced is "not configured".
+  const pending = new Map<string, Promise<unknown>>()
+  const expect = (ref: string, done: Promise<unknown>) => {
+    const entry = done.finally(() => { if (pending.get(ref) === entry) pending.delete(ref) })
+    pending.set(ref, entry)
+    entry.catch(() => {})
+  }
+  const waitSeconds = config.registerWaitSeconds ?? 60
+  const account = async (ref: string): Promise<WebConfig> => {
+    const waiting = pending.get(ref)
+    if (waiting) {
+      let timer: NodeJS.Timeout | undefined
+      const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${ref} is still registering after ${waitSeconds} s (system workers)`)), waitSeconds * 1000) })
+      try {
+        await Promise.race([waiting, late])
+      } catch (error) {
+        throw (error as Error).message.startsWith(`${ref} is still registering`) ? error : new Error(`${ref}: ${(error as Error).message}`)
+      } finally {
+        clearTimeout(timer)
+      }
+    }
     const web = webs.get(ref)
-    if (!web) throw new Error(`${ref} is not an available chatgpt-web account (system workers)`)
+    if (!web) throw new Error(`${ref} is not a configured chatgpt-web account (system workers)`)
     return web
   }
-  const login = async (ref: string, cookies: string | undefined) => webLogin(account(ref), { cookies, display: process.env.DISPLAY })
+  const login = async (ref: string, cookies: string | undefined) => webLogin(await account(ref), { cookies, display: process.env.DISPLAY })
   const loginRemote = async (ref: string): Promise<RemoteView> => {
-    const web = account(ref)
+    const web = await account(ref)
     if (remotes.has(ref)) throw new Error(`a remote sign-in of ${ref} is already running: finish it, or cancel it (system workers login ${ref} --remote, then Ctrl-C)`)
     const session = await startRemoteLogin(web)
     remotes.set(ref, session)
@@ -81,5 +107,5 @@ export function apply(ctx: Context): void {
     if (cancel) await session.cancel()
     return session.done
   }
-  ctx.provide('webWorker', { register, login, loginRemote, loginWait } satisfies WebWorkerService)
+  ctx.provide('webWorker', { register, expect, login, loginRemote, loginWait } satisfies WebWorkerService)
 }

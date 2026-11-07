@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
-import { skipHeaded } from '../test-support/headed.ts'
+import { CHROME, skipHeaded } from '../test-support/headed.ts'
 import { findVnc } from '../packages/web-worker/src/display.ts'
 
 const skip = skipHeaded
@@ -42,11 +42,13 @@ before(async () => {
         runtime: chatgpt-web
         capabilities: [research]
         url: ${signedIn}/
+        executablePath: ${CHROME}
         timeouts: {load: 20, answer: 30, stable: 0.5}
       - ref: chatgpt-web/anon
         runtime: chatgpt-web
         capabilities: [web-search]
         url: ${signedOut}/
+        executablePath: ${CHROME}
         timeouts: {load: 5, answer: 5, stable: 0.5}
 `)
   await cli.start()

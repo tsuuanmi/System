@@ -15,6 +15,12 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 - **Accounts** stay in the `agents` row's `accounts` (`runtime: chatgpt-web`).
   The `agents` row hands each to `register`, which checks it (Xvfb, no `headless`, the Chrome, the settings), registers its Worker
   and keeps its sign-in state; `system workers` shows the result.
+- **Registering (WW6e):** the Host serves while the `agents` row is still handing accounts over, so the row announces each
+  `chatgpt-web` account (`expect`) before the first registration. `system workers` lists one not yet registered as
+  `registering`; `login` and `login --remote` wait for it, at most `registerWaitSeconds` (row
+  config, default 60) and then fail "still registering after N s". An account whose registration failed is refused with that
+  reason (`chatgpt-web/<name>: <reason>`), one not configured with "is not a configured chatgpt-web account". An attempt needs no
+  wait: the Worker exists only once registered. [tests/accounts.test.ts](tests/accounts.test.ts) holds a registration open by hand.
 - **Row off:** such an account is reported `unavailable` with the reason
   "the web-worker row is disabled", `system workers login` says the same, and none of
   this package is loaded.
@@ -27,6 +33,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 # $DSH_HOME/profiles/system/cordis.patch.yml
 - id: web-worker
   disabled: false
+  # config: {registerWaitSeconds: 60}   # how long an operation on an account waits for its registration
 - id: agents
   config:
     accounts:
