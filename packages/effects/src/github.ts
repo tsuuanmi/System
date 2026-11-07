@@ -78,9 +78,6 @@ interface Pull {
   node_id: string
   draft: boolean
   base?: { ref: string }
-  head?: { sha: string }
-  merged_at?: string | null
-  merge_commit_sha?: string | null
 }
 
 class GitHubError extends Error {
@@ -140,12 +137,13 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
     return (await response.json()) as T
   }
 
-  const pullsOf = async (t: Awaited<ReturnType<typeof target>>, state: 'open' | 'all'): Promise<Pull[]> =>
-    api<Pull[]>(t, 'GET', `/repos/${t.slug}/pulls?head=${encodeURIComponent(`${t.slug.split('/')[0]}:${t.branch}`)}&state=${state}`)
+  /** The branch's open pull requests. */
+  const pullsOf = async (t: Awaited<ReturnType<typeof target>>): Promise<Pull[]> =>
+    api<Pull[]>(t, 'GET', `/repos/${t.slug}/pulls?head=${encodeURIComponent(`${t.slug.split('/')[0]}:${t.branch}`)}&state=open`)
 
   /** The open pull request for the branch that targets the configured base. */
   const openPull = async (t: Awaited<ReturnType<typeof target>>): Promise<Pull | undefined> =>
-    (await pullsOf(t, 'open')).find((p) => p.base?.ref === config.base)
+    (await pullsOf(t)).find((p) => p.base?.ref === config.base)
 
   /** The base's tip on the remote, fetched so it can be merged with; '' when the base does not exist. */
   async function baseTip(t: Awaited<ReturnType<typeof target>>): Promise<string> {
@@ -248,7 +246,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       const t = await target(intent)
       const merge = intent.params.merge === true
       // ADR-0008 decision 2: a pull request for the branch aimed elsewhere is never merged or retargeted.
-      const open = await pullsOf(t, 'open')
+      const open = await pullsOf(t)
       let pull = open.find((p) => p.base?.ref === config.base)
       const elsewhere = open.find((p) => p.base?.ref !== config.base)
       if (!pull && elsewhere) {
