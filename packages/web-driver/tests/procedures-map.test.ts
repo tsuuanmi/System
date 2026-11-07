@@ -100,3 +100,12 @@ describe('ui-map@1.7 kinds for the Procedures', () => {
     for (const file of ['chatgpt-web.ui.yaml', 'fake-other.ui.yaml']) assert.deepEqual(bindingProblems(loadUiMap(read(file))), [], file)
   })
 })
+
+// Live on chatgpt-web/second, 2026-11-08: `sources` began with "<escape>" (canary work:9b85a882) and ended in "</escape>"
+// (work:7fb04a70, work:8d9e3c45); both forms are ChatGPT's map data, not code.
+describe('the shipped ChatGPT map', () => {
+  it('lists both forms of the control token ChatGPT leaks', () => {
+    const map = loadUiMap(readFileSync(new URL('../ui/chatgpt-web.ui.yaml', import.meta.url), 'utf8'))
+    assert.deepEqual(map.answer.leakedTokens, ['<escape>', '</escape>'])
+  })
+})

@@ -99,6 +99,8 @@ test('stripLeaked removes a listed token at the very start or end of an output, 
   assert.deepEqual(stripLeaked('<escape>\n<escape>{"a": 1}\n<escape>', ['<escape>']), { content: '{"a": 1}', removed: ['<escape>', '<escape>', '<escape>'] })
   assert.deepEqual(stripLeaked('first <escape> last', ['<escape>']), { content: 'first <escape> last', removed: [] })
   assert.deepEqual(stripLeaked('<escape>x <escape> y', ['<escape>']), { content: 'x <escape> y', removed: ['<escape>'] })
+  // Live on second, 2026-11-08 (canary work:7fb04a70, work:8d9e3c45): the JSON ended in a closing form of the token.
+  assert.deepEqual(stripLeaked('{"a": 1}</escape>', ['<escape>', '</escape>']), { content: '{"a": 1}', removed: ['</escape>'] })
   assert.deepEqual(stripLeaked(' a\n', ['<escape>']), { content: ' a\n', removed: [] })
   assert.deepEqual(stripLeaked('<escape>x', []), { content: '<escape>x', removed: [] })
 })

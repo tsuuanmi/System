@@ -45,7 +45,7 @@ answer:
   error: answer.site-error
   code: answer.code
   codeLabel: answer.code-label
-  leakedTokens: ['<escape>']
+  leakedTokens: ['<escape>', '</escape>']
 
 elements:
   composer.attachment:
