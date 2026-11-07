@@ -52,6 +52,16 @@ export interface FakeOptions {
    * `[data-code-block-source] code`. Default: System 1's `pre > code` with a header before it.
    */
   codeWidget?: boolean
+  /** The Chat/Work switch is rendered at all (default true); false: it never appears (the driver must refuse to send). */
+  modeSwitch?: boolean
+  /** The switch appears this long after the page loads, the composer being there already (default 0). */
+  modeSwitchDelayMs?: number
+  /** This long after the switch appears the site flips the mode to Work (a late restore of the last mode; 0: never). */
+  modeFlipToWorkMs?: number
+  /** This long after load the app turns into the logged-out home (a session that ended; 0: never). */
+  signOutAfterMs?: number
+  /** This long after load a challenge heading appears (0: never). */
+  challengeAfterMs?: number
   /** Clicking Chat does nothing (the driver must refuse to send). */
   chatToggleBroken?: boolean
   signedIn?: boolean
@@ -298,13 +308,14 @@ let power = 0
 let model = options.models[0]
 let temporary = new URLSearchParams(location.search).get('temporary-chat') === 'true'
 let running = false
+let modesShown = false
 let convId = conversationId
 const $ = (id) => document.getElementById(id)
 function render() {
   $('mode-chat').setAttribute('aria-pressed', String(mode === 'chat'))
   $('mode-work').setAttribute('aria-pressed', String(mode === 'work'))
   $('input').setAttribute('aria-label', options.workComposer || mode === 'work' ? 'Work with ChatGPT' : 'Chat with ChatGPT')
-  $('modes').hidden = temporary
+  $('modes').hidden = temporary || !modesShown
   $('temp').hidden = temporary
   $('temp-off').hidden = !temporary
   $('title').textContent = temporary ? 'Temporary chat' : 'Where should we begin?'
@@ -368,6 +379,16 @@ $('conv-confirm').onclick = async () => {
   $('conv-dialog').hidden = true
   if (res.ok) location.assign('/')
 }
+if (options.modeSwitch) setTimeout(() => {
+  modesShown = true
+  render()
+  if (options.modeFlipToWorkMs) setTimeout(() => { mode = 'work'; render() }, options.modeFlipToWorkMs)
+}, options.modeSwitchDelayMs)
+if (options.signOutAfterMs) setTimeout(() => {
+  $('composer').remove()
+  document.body.insertAdjacentHTML('beforeend', '<form data-logged-out><input aria-label="Ask anything"></form><button data-login-button>Get started</button>')
+}, options.signOutAfterMs)
+if (options.challengeAfterMs) setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<h1>Verify you are human</h1>'), options.challengeAfterMs)
 $('mode-chat').onclick = () => { if (!options.chatToggleBroken) mode = 'chat'; render() }
 $('mode-work').onclick = () => { mode = 'work'; render() }
 $('temp').onclick = () => { temporary = true; history.pushState({}, '', '/?temporary-chat=true'); render() }
@@ -525,7 +546,7 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, modeSwitch: true, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
       researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',

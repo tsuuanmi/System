@@ -1,0 +1,85 @@
+/**
+ * The evidence record of one `chatgpt-web` attempt (WW1): a small JSON file made before Chrome
+ * launches and rewritten, atomically, at every stage start and end, so a failed or killed attempt
+ * still shows which stage it reached. The Runtime stores it as the attempt's partial output (and
+ * in its log), where System's records keep it. It holds counts, times and versions: no cookie,
+ * token, prompt or answer text.
+ */
+import { renameSync, writeFileSync } from 'node:fs'
+
+export interface StageRecord {
+  stage: string
+  status: 'started' | 'ok' | 'failed'
+  /** Milliseconds from the start of the attempt. */
+  startedMs: number
+  elapsedMs?: number
+  /** The first line of the failure. */
+  error?: string
+}
+
+export interface EvidenceData {
+  schema: 'chatgpt-web-evidence@1'
+  attempt: string
+  account: string
+  /** Chrome's version as the Account reports it. */
+  chrome: string | undefined
+  uiMap: { revision: string; hash: string }
+  launchTimeoutSeconds: number
+  viewport?: { width: number; height: number }
+  /** The pages Chrome came up with, how many were open before the first navigation, and how many were closed since (inherited, then late). */
+  pages?: { initial: number; beforeNavigation: number; closedInherited: number; closedLate: number }
+  /** True from the moment the send is attempted: a click that threw may still have sent, so a retry must not assume it did not. */
+  promptSubmitted: boolean
+  stages: StageRecord[]
+  lastCompleted?: string
+  failedStage?: string
+  /** Why the page could not be captured, when it could not (the original failure is the stage's). */
+  diagnosticsError?: string
+}
+
+export interface Evidence {
+  data: EvidenceData
+  begin(stage: string): void
+  end(stage: string, error?: string): void
+  /** Merge facts and write the file. */
+  set(facts: Partial<EvidenceData>): void
+  json(): string
+}
+
+export function createEvidence(file: string, initial: Omit<EvidenceData, 'schema' | 'promptSubmitted' | 'stages'>, now: () => number = Date.now): Evidence {
+  const origin = now()
+  const data: EvidenceData = { schema: 'chatgpt-web-evidence@1', ...initial, promptSubmitted: false, stages: [] }
+  const flush = (): void => {
+    try {
+      writeFileSync(`${file}.tmp`, JSON.stringify(data), { mode: 0o600 })
+      renameSync(`${file}.tmp`, file)
+    } catch {
+      // The record is also kept in memory and stored at the end; a full disk must not end the attempt.
+    }
+  }
+  flush()
+  return {
+    data,
+    begin(stage) {
+      // A stage that runs again (the same name twice) is one stage, not two.
+      if (!data.stages.some((s) => s.stage === stage)) data.stages.push({ stage, status: 'started', startedMs: now() - origin })
+      flush()
+    },
+    end(stage, error) {
+      const record = data.stages.find((s) => s.stage === stage)
+      if (record) {
+        record.status = error === undefined ? 'ok' : 'failed'
+        record.elapsedMs = now() - origin - record.startedMs
+        if (error !== undefined) record.error = error
+      }
+      if (error === undefined) data.lastCompleted = stage
+      else data.failedStage = stage
+      flush()
+    },
+    set(facts) {
+      Object.assign(data, facts)
+      flush()
+    },
+    json: () => JSON.stringify(data),
+  }
+}

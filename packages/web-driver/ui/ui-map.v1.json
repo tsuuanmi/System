@@ -18,9 +18,10 @@
         "ui-map@1.1",
         "ui-map@1.2",
         "ui-map@1.3",
-        "ui-map@1.4"
+        "ui-map@1.4",
+        "ui-map@1.5"
       ],
-      "description": "1.1 adds element `frames`; 1.2 adds `unverified` on elements and actions; 1.4 adds error-rule `feature` and `on`."
+      "description": "1.1 adds element `frames`; 1.2 adds `unverified` on elements and actions; 1.4 adds error-rule `feature` and `on`; 1.5 adds `settings`."
     },
     "provider": {
       "type": "string",
@@ -41,6 +42,15 @@
         "type": "string",
         "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$"
       }
+    },
+    "settings": {
+      "type": "object",
+      "description": "The site's own clocks, in milliseconds: `modeReadyMs` bounds the wait for the mode switch to render, `modeSettleMs` is how long the mode it shows must hold.",
+      "properties": {
+        "modeReadyMs": { "type": "integer", "minimum": 0, "maximum": 120000 },
+        "modeSettleMs": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      },
+      "additionalProperties": false
     },
     "elements": {
       "type": "object",

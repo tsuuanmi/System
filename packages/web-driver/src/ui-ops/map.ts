@@ -86,11 +86,21 @@ export interface ErrorRule {
   on?: 'act' | 'answer'
 }
 
+/** The site's own clocks (`ui-map@1.5`), milliseconds; a map without `settings` gets the defaults. */
+export interface UiSettings {
+  /** How long the mode switch may take to render before the mode counts as unknown. */
+  modeReadyMs: number
+  /** How long the mode the switch shows must hold before it is trusted. */
+  modeSettleMs: number
+}
+export const DEFAULT_SETTINGS: UiSettings = { modeReadyMs: 15_000, modeSettleMs: 600 }
+
 export interface UiMap {
-  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4'
+  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4' | 'ui-map@1.5'
   provider: string
   uiRevision: string
   locales: string[]
+  settings: UiSettings
   elements: Record<string, ElementSpec>
   actions: Record<string, ActionSpec>
   network: Record<string, NetworkPattern>
@@ -160,7 +170,7 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
 export function loadUiMap(text: string, overlayText?: string): UiMap {
   const raw = parse(text) as Record<string, unknown>
   assertMap(raw)
-  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
+  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
   const elements: Record<string, ElementSpec> = {}
   let overlayErrors: ErrorRule[] = []
   for (const [id, e] of Object.entries(shipped.elements)) {
@@ -180,6 +190,7 @@ export function loadUiMap(text: string, overlayText?: string): UiMap {
     provider: shipped.provider,
     uiRevision: shipped.uiRevision,
     locales: shipped.locales,
+    settings: { ...DEFAULT_SETTINGS, ...shipped.settings },
     elements,
     actions: shipped.actions ?? {},
     network: shipped.network ?? {},

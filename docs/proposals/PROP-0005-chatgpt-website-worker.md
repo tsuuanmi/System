@@ -10,7 +10,7 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1).
 
 ## Decision context
 
@@ -205,6 +205,29 @@ fallback.
    found. W8: the answer keeps its fences; where Copy does not give them, each
    rendered code block is fenced again from the page (`pre code`, its header
    as the info string).
+
+## Known defects, fixed in WW1 (2026-11-07)
+
+- **Restored tabs.** A profile that had held 14 to 17 tabs reopened them all:
+  5.5 GB, and on `second` Playwright's launch never returned within 60 s, so
+  cleaning up after launch could not help. Measured: moving only `Default/Sessions`
+  aside launched in 0.8 s, still signed in. The Runtime removes the tab sessions
+  before each launch and marks the last exit clean, then keeps one working tab
+  (its own, opened first). The preferences alone did not stop the restore: the
+  launch keeps `--restore-last-session`, which outranks them and which keeps
+  session-only cookies alive ([agents README](../../packages/agents/README.md)).
+  Cancel and the time limit end Chrome with `context.close()`, and a SIGKILL
+  relaunch is tested to open one tab.
+- **Chat/Work switch not found.** The switch is awaited (a bounded setting of
+  the UI map), then required to hold; a page that never shows it fails as
+  `mode unknown`, and a challenge or sign-out is named as such. No selector
+  changed: no failing page had been captured, and each failure now keeps the
+  screenshot, a redacted DOM, the URL, the viewport and the map version.
+- **A 1.5 s launch clock** in the Runtime's test was the page clock reused for
+  Chrome's launch; the test never asserted the timeout. Chrome has its own
+  `timeouts.launch` (30 s).
+- **Evidence.** Each attempt writes a stage chain as it happens, before Chrome
+  starts, with `promptSubmitted`, and keeps it as partial output.
 
 ## Tests and what is still to verify
 

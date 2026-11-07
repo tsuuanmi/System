@@ -142,7 +142,7 @@ the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).
         temporaryChat: true                    # each attempt in a temporary chat
         url: https://chatgpt.com/
         executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
-        timeouts: {load: 60, answer: 900, stable: 3}   # seconds
+        timeouts: {load: 60, answer: 900, stable: 3}   # seconds; also launch (30) and mode (the UI map's own, 15)
 ```
 
 One attempt:
@@ -154,7 +154,24 @@ One attempt:
    private Xvfb ([display.ts](src/display.ts)) that the attempt starts and stops,
    also on cancel and on the time limit. Without Xvfb on `PATH` the Account is
    `unavailable`, with a reason naming it, and an account that sets `headless` is
-   too.
+   too. **No restored tabs (WW1):** before every launch `prepareProfile` sets the
+   profile's startup preference to a new tab page, marks its last exit clean and
+   removes its tab sessions (`Default/Sessions`); Cookies, Login Data, Local
+   Storage, Session Storage and IndexedDB are never touched, and a profile a
+   running Chrome holds is left alone. The preferences alone do not stop the
+   restore, because the launch keeps `--restore-last-session` (it outranks them),
+   and the flag has to stay: without it Chrome drops the profile's session-only
+   cookies (measured on Chrome for Testing 155, 2026-11-07: preferences without
+   the flag opened one tab and lost the cookie; with it six tabs came back;
+   the flag with the sessions removed gave one tab and kept the cookie, after a
+   clean close; after a SIGKILL Chrome has not written session cookies either
+   way). The measured reason is that a profile with 17 restored tabs held
+   Playwright's `launchPersistentContext` for the full 60 s, so cleaning up
+   afterwards is too late. Then the worker's own tab is opened first, every
+   other page is closed, and so is any that arrives later (the context's `page`
+   event), before the first navigation. Chrome gets its own clock, `timeouts.launch`
+   (30 s unless set), apart from the page clocks: a short page clock in a
+   test measured the host's load, not the driver.
 2. **Open and send** with System 1's ChatGPT web driver, ported whole into
    [`@system/web-driver`](../web-driver/README.md): `open` loads the site's home
    and reads the page's state (`checkAuth`: up to `load` seconds; a visible
@@ -188,8 +205,24 @@ One attempt:
    the extra output `conversation` (the controller records only a step's
    declared slots). Usage is unknown. The log is the stage notes.
 
-On any failure the page's screenshot is kept as partial output `screenshot`.
-Cancel and `attemptTimeoutMinutes` close the browser, as they stop a CLI. A UI
+On any failure the page's screenshot is kept as partial output `screenshot`, with
+`snapshot`: its URL (no query), the viewport, the UI map's revision and hash and
+the DOM, bounded to 20,000 characters and with scripts, styles, input values,
+editable text, query strings and long text taken out; no cookie or storage is
+read. **Evidence (WW1):** each attempt makes a small JSON record before Chrome
+launches ([evidence.ts](src/evidence.ts)) and rewrites it, atomically, as each stage
+starts and ends: `launch`, `open`, `auth`, `mode`, `send`, `wait`, `read`,
+`close`, in the order they run, with elapsed times, `promptSubmitted` (true from
+the moment the send is tried, so a retry never assumes the prompt was not sent),
+the launch timeout, the page counts (initial, before the first navigation, closed
+inherited and late), the viewport, Chrome's version, the UI map's revision and hash,
+the failed stage and the last completed one. It is partial output `evidence` of
+every failed or cancelled attempt, and the last line of the log of every attempt.
+The `mode` stage waits for the Chat/Work switch (bounded by `timeouts.mode`, else the
+map's `settings.modeReadyMs`) and fails closed as `signed out`, `challenge` or
+`mode unknown`.
+Cancel and `attemptTimeoutMinutes` close the browser (`context.close()`, a clean
+exit, never a kill), as they stop a CLI; the record names that `close` stage. A UI
 change is a change to the driver's map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
 not to this Runtime. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.

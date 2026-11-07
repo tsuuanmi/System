@@ -6,7 +6,7 @@
  * is the driver's; these tests are what the Runtime does around it.
  */
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -17,7 +17,7 @@ import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, parseBlocks, webDefaults, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, profileLockPid, singleTab, webAttempt, webDefaults, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
@@ -55,8 +55,9 @@ async function task(artifacts: Artifacts, instructions: string): Promise<string>
   return (await artifacts.put({ ...TASK_KIND, content: { instructions }, classification: 'local-private', producer: { type: 'operator', ref: 'tester' } })).id
 }
 /** One attempt on a fake site with `options`; `answer` defaults to a block for each of `outputs`. */
-async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string } = {}) {
+async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string; started?: (fake: FakeChatGpt) => void } = {}) {
   const fake = await site({ answer: blocks(...outputs), ...options })
+  more.started?.(fake)
   const { artifacts } = memory()
   const worker = agentWorker(account(web(fake, more.config), more.extra), artifacts, processSpawner, join(root, 'attempts'))
   const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.') }, outputs, more.signal))
@@ -315,4 +316,186 @@ test('login imports cookies into the profile, checks the signed-in state and nev
 test('manual login needs a display', async () => {
   const fake = await site()
   await assert.rejects(webLogin(web(fake), { display: undefined }), /no display.*--cookies/)
+})
+
+// WW1 defect 3: the 1.5 s of `timeouts.load` that this file gives a slow page used to be Chrome's launch timeout too, and failed under load.
+test('Chrome gets a launch clock of its own, 30 s unless configured, whatever the page clocks are', () => {
+  const defaults = webDefaults(join(root, 'p'))
+  assert.equal(launchTimeoutMs(defaults), 30_000)
+  assert.equal(launchTimeoutMs({ ...defaults, timeouts: { load: 1.5, answer: 5, stable: 0.5 } }), 30_000, 'the 1.5 s of a page test is not a launch clock')
+  assert.equal(launchTimeoutMs({ ...defaults, timeouts: { ...defaults.timeouts, launch: 5 } }), 5000)
+})
+
+// WW1 defect 1: a profile that held 14 tabs (5.5 GB) stalled Chrome's launch for the 60 s limit, so restore is prevented before launch.
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+test('before launch the profile is told to open a new tab and its last exit is marked clean; sessions go, the signed-in state stays', () => {
+  const dir = join(root, 'prepare')
+  const keep = { Cookies: 'cookies', 'Login Data': 'logins', 'Local Storage/leveldb/000003.log': 'ls', 'IndexedDB/https_x/1.ldb': 'idb', 'Session Storage/000003.log': 'ss' }
+  for (const [name, data] of Object.entries(keep)) {
+    mkdirSync(join(dir, 'Default', name, '..'), { recursive: true })
+    writeFileSync(join(dir, 'Default', name), data)
+  }
+  mkdirSync(join(dir, 'Default', 'Sessions'), { recursive: true })
+  writeFileSync(join(dir, 'Default', 'Sessions', 'Session_13'), 'tabs')
+  writeFileSync(join(dir, 'Default', 'Preferences'), JSON.stringify({ session: { restore_on_startup: 1, startup_urls: ['https://a.test/'] }, profile: { exit_type: 'Crashed', exited_cleanly: false, name: 'kept' }, other: { x: 1 } }))
+  prepareProfile(dir)
+  const prefs = JSON.parse(readFileSync(join(dir, 'Default', 'Preferences'), 'utf8'))
+  assert.deepEqual(prefs, { session: { restore_on_startup: 5, startup_urls: ['https://a.test/'] }, profile: { exit_type: 'Normal', exited_cleanly: true, name: 'kept' }, other: { x: 1 } })
+  assert.ok(!existsSync(join(dir, 'Default', 'Sessions')))
+  for (const [name, data] of Object.entries(keep)) assert.equal(readFileSync(join(dir, 'Default', name), 'utf8'), data, name)
+  assert.deepEqual(readdirSync(join(dir, 'Default')).filter((name) => /tmp/i.test(name)), [], 'the atomic write leaves nothing behind')
+  prepareProfile(join(root, 'fresh-profile'))
+  assert.ok(!existsSync(join(root, 'fresh-profile', 'Default', 'Preferences')), 'a profile with no Preferences yet is left for Chrome to create')
+})
+
+test('a profile that a running Chrome holds is left alone', () => {
+  const dir = join(root, 'held')
+  mkdirSync(join(dir, 'Default', 'Sessions'), { recursive: true })
+  symlinkSync(`host-${process.pid}`, join(dir, 'SingletonLock'))
+  assert.equal(profileLockPid(dir), process.pid)
+  prepareProfile(dir)
+  assert.ok(existsSync(join(dir, 'Default', 'Sessions')))
+})
+
+for (const end of ['a clean close', 'a SIGKILL'] as const) {
+  test(`a profile that held several tabs opens one tab after ${end}, and its session cookie survives a clean one`, { skip, timeout: 120_000 }, async () => {
+    const fake = await site()
+    const config = web(fake)
+    const display = await startXvfb()
+    try {
+      const first = await launch(config, display)
+      await first.addCookies([{ name: 'kept', value: 'v', url: fake.origin }])
+      for (let i = 0; i < 4; i++) await (await first.newPage()).goto(`${fake.origin}/?tab=${i}`)
+      await sleep(1500)
+      assert.ok(first.pages().length >= 5)
+      if (end === 'a clean close') {
+        await first.close()
+      } else {
+        process.kill(profileLockPid(config.profileDir)!, 'SIGKILL')
+        await sleep(1500)
+      }
+      const second = await launch(config, display)
+      await sleep(2500)
+      assert.deepEqual(second.pages().map((page) => page.url()), ['about:blank'], 'nothing was restored')
+      if (end === 'a clean close') assert.ok((await second.cookies(fake.origin)).some((cookie) => cookie.name === 'kept'), 'the session-only cookie is still there')
+      await second.close()
+    } finally {
+      await display.stop()
+    }
+  })
+}
+
+test('the worker tab is opened first, every other page is closed, and a page that arrives late is closed too', { skip, timeout: 60_000 }, async () => {
+  const fake = await site()
+  const display = await startXvfb()
+  try {
+    const context = await launch(web(fake), display)
+    for (let i = 0; i < 3; i++) await (await context.newPage()).goto(`${fake.origin}/?tab=${i}`)
+    const tabs = await singleTab(context)
+    assert.equal(tabs.initial, 4)
+    assert.equal(tabs.closed, 4)
+    assert.deepEqual(context.pages(), [tabs.page], 'one working tab')
+    await tabs.page.goto(`${fake.origin}/`)
+    await tabs.page.evaluate(() => { window.open('about:blank') })
+    await sleep(1000)
+    assert.deepEqual(context.pages(), [tabs.page], 'the late tab is gone')
+    assert.equal(tabs.late(), 1)
+    await context.close()
+  } finally {
+    await display.stop()
+  }
+})
+
+// The stage chain of one attempt (evidence.ts): written as it happens, kept as partial output, and in the log on success.
+const STAGES = ['launch', 'open', 'auth', 'mode', 'send', 'wait', 'read', 'close']
+const evidenceOf = async (artifacts: Artifacts, result: WorkerResult) => JSON.parse(await text(artifacts, result.partial!.evidence!))
+
+test('a launch that never returns fails at its own clock, and the evidence names the launch stage', { timeout: 30_000 }, async () => {
+  const fake = await site()
+  const config = web(fake, { timeouts: { load: 10, answer: 20, stable: 0.5, launch: 0.2 } })
+  const { artifacts } = memory()
+  const result = await webAttempt(account(config), artifacts, join(root, 'attempts'), request({ task: await task(artifacts, 'x') }, ['report']), () => new Promise(() => {}))
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /launch stage timed out after 0\.2 s/)
+  const evidence = await evidenceOf(artifacts, result)
+  assert.equal(evidence.launchTimeoutSeconds, 0.2)
+  assert.equal(evidence.failedStage, 'launch')
+  assert.deepEqual(evidence.stages.map((stage: { stage: string; status: string }) => [stage.stage, stage.status]), [['launch', 'failed'], ['close', 'ok']])
+  assert.equal(evidence.promptSubmitted, false)
+  assert.equal(evidence.uiMap.revision, '2026-10-11')
+  assert.match(evidence.uiMap.hash, /^sha256:/)
+})
+
+test('a launch that fails is recorded as such; the record exists before Chrome starts', { timeout: 30_000 }, async () => {
+  const fake = await site()
+  const { artifacts } = memory()
+  const attemptsDir = join(root, 'attempts')
+  const req = request({ task: await task(artifacts, 'x') }, ['report'])
+  let onDisk: { stages: unknown[]; chrome: string } | undefined
+  const result = await webAttempt(account(web(fake)), artifacts, attemptsDir, req, async () => {
+    onDisk = JSON.parse(readFileSync(join(attemptsDir, req.attemptId.replace(/[^a-z0-9-]/gi, '_'), 'evidence.json'), 'utf8'))
+    throw new Error('Chrome exited\nwith a long log')
+  })
+  assert.deepEqual(onDisk!.stages.map((stage) => (stage as { stage: string }).stage), ['launch'], 'the launch stage was written before the launch ran')
+  assert.equal(onDisk!.chrome, 'fake')
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /Chrome exited/)
+  assert.equal((await evidenceOf(artifacts, result)).stages[0].error, 'Chrome exited')
+})
+
+test('a good attempt records every stage in order, with times, page counts, viewport and that the prompt was submitted', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result } = await run({}, ['report'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  const evidence = JSON.parse(line.slice(line.indexOf('{')))
+  assert.deepEqual(evidence.stages.map((stage: { stage: string; status: string }) => [stage.stage, stage.status]), STAGES.map((stage) => [stage, 'ok']))
+  assert.ok(evidence.stages.every((stage: { elapsedMs: number }) => stage.elapsedMs >= 0))
+  assert.equal(evidence.promptSubmitted, true)
+  assert.equal(evidence.launchTimeoutSeconds, 30)
+  assert.equal(evidence.chrome, 'fake')
+  assert.ok(evidence.pages.initial >= 1)
+  assert.equal(evidence.pages.beforeNavigation, 1)
+  assert.ok(evidence.viewport.width > 0 && evidence.viewport.height > 0)
+})
+
+test('a failure names its stage and keeps the page as evidence: screenshot, redacted DOM, URL, viewport, map version', { skip, timeout: 60_000 }, async () => {
+  const cases = [
+    ['auth', { signedIn: false }, {}, false],
+    ['mode', { modeSwitch: false }, { timeouts: { load: 10, answer: 20, stable: 0.5, mode: 1 } }, false],
+    ['wait', { thinkMs: 60_000 }, { timeouts: { load: 10, answer: 2, stable: 0.5 } }, true],
+  ] as const
+  for (const [stage, options, config, submitted] of cases) {
+    const { artifacts, result } = await run(options, ['report'], { config })
+    assert.equal(result.status, 'failed', stage)
+    const evidence = await evidenceOf(artifacts, result)
+    assert.equal(evidence.failedStage, stage)
+    assert.equal(evidence.promptSubmitted, submitted, stage)
+    assert.equal(evidence.stages.at(-1).stage, 'close', 'the browser is closed and that is recorded')
+    const snapshot = JSON.parse(await text(artifacts, result.partial!.snapshot!))
+    assert.match(snapshot.url, /^http:\/\/127\.0\.0\.1:\d+\//)
+    assert.ok(snapshot.viewport.width > 0)
+    assert.equal(snapshot.uiMap.revision, '2026-10-11')
+    assert.ok(snapshot.dom.includes('<'))
+    assert.ok(result.partial!.screenshot)
+  }
+})
+
+test('a cancel and the time limit end Chrome with a close, and leave the evidence as partial output', { skip, timeout: 60_000 }, async () => {
+  // Cancel once the page has the prompt, not after a fixed time: under load a fixed delay can come before the send.
+  const stop = new AbortController()
+  const cancelled = await run({ thinkMs: 60_000 }, ['report'], {
+    signal: stop.signal,
+    started: (fake) => { const poll = setInterval(() => { if (fake.sent.length) { clearInterval(poll); stop.abort() } }, 50) },
+  })
+  assert.equal(cancelled.result.status, 'cancelled')
+  const timedOut = await run({ thinkMs: 60_000 }, ['report'], { extra: { attemptTimeoutMinutes: 0.1 } })
+  assert.equal(timedOut.result.status, 'failed')
+  for (const { artifacts, result, fake } of [cancelled, timedOut]) {
+    const evidence = await evidenceOf(artifacts, result)
+    assert.equal(evidence.stages.find((stage: { stage: string }) => stage.stage === 'close').status, 'ok')
+    // The record says what the page received: the time limit may come before or after the send.
+    assert.equal(evidence.promptSubmitted, fake.sent.length > 0)
+  }
+  assert.equal(cancelled.fake.sent.length, 1)
 })

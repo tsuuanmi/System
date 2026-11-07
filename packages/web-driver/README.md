@@ -94,6 +94,19 @@ changed but the header line.
   `withFencedBlocks` share `renderedBlocks`, and a bare fence takes its
   block's header as its name. Checked on the real site: a Research Work on
   `chatgpt-web/default` was accepted with its citation found.
+- **The Chat/Work switch is awaited, never assumed (WW1).** System 1 refused at once
+  when `mode.group` was not there yet ("the Chat/Work switch was not found"), which
+  failed real attempts on a page that was only slow, with nothing captured. `open` now
+  waits for the switch, bounded by the map's new `settings.modeReadyMs` (`ui-map@1.5`;
+  15 s) and requires the mode it shows to hold for `settings.modeSettleMs` (a
+  site that restores its mode late changes it; the wait starts again). At the
+  deadline the failure says what the page is: `challenge`, `signed out` (positive
+  evidence only) or `mode unknown`. No selector changed: no real failing page has
+  been captured, so the fix is the wait and the evidence (`diagnostics(page)`: URL,
+  viewport, map version, a bounded redacted DOM). `onStage` reports the stages
+  (`open`, `auth`, `mode`, `send`, `wait`, `read`) for the Runtime's evidence
+  record; `send` is only the click, so a started `send` means the prompt may be out.
+  `ask` runs `open` as `reach` (load, sign-in) then `enterMode`; `open` is both.
 - **Tests:** vitest became `node:test` and `node:assert/strict`
   (`toMatchObject` is `assert.partialDeepStrictEqual`); the assertions are the
   same.

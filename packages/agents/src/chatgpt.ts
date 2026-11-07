@@ -13,16 +13,17 @@
  * Nothing here gets round a check: a sign-in wall, a CAPTCHA or an unknown
  * page ends the attempt with a screenshot.
  */
-import { chmodSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright-core'
 import type { Artifacts } from '@system/artifacts'
-import { ChatGptWebDriver, ProviderError } from '@system/web-driver'
+import { ChatGptWebDriver, ProviderError, type PageDiagnostics } from '@system/web-driver'
 import { addConversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import type { Account } from './agent.ts'
 import { ensureChrome } from './chrome.ts'
 import { acquireDisplay, type Display } from './display.ts'
+import { createEvidence } from './evidence.ts'
 import { cleanup, mediaTypeOf, prepare, type Workspace } from './workspace.ts'
 
 export interface WebConfig {
@@ -37,11 +38,18 @@ export interface WebConfig {
   /** Where the managed Chrome is installed. */
   managedDir?: string
   /**
-   * Seconds: `load` bounds opening the chat and reading the sign-in state, `answer` the wait for
-   * the answer, and `stable` is how long its text must stay unchanged once it can be complete.
+   * Seconds: `launch` bounds Chrome's start (30 unless set: it measures the host's load, not a page),
+   * `load` opening the chat and reading the sign-in state, `mode` the wait for the Chat/Work switch
+   * (unset: the UI map's own setting), `answer` the wait for the answer, and `stable` is how long its
+   * text must stay unchanged once it can be complete.
    */
-  timeouts: { load: number; answer: number; stable: number }
+  timeouts: { load: number; answer: number; stable: number; launch?: number; mode?: number }
 }
+
+/** Chrome's launch clock when the account sets none, in seconds. */
+export const LAUNCH_SECONDS = 30
+
+export const launchTimeoutMs = (web: WebConfig): number => (web.timeouts.launch ?? LAUNCH_SECONDS) * 1000
 
 export function webDefaults(profileDir: string): WebConfig {
   return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', timeouts: { load: 60, answer: 900, stable: 3 } }
@@ -58,7 +66,7 @@ export function chatGptDriver(web: WebConfig, note: (line: string) => void = () 
   const answerMs = web.timeouts.answer * 1000
   const driver = new ChatGptWebDriver({
     origin: new URL(web.url).origin,
-    timeouts: { readyMs: web.timeouts.load * 1000, turnMs: answerMs, stallMs: Math.min(3 * 60_000, Math.floor(answerMs / 2)), stableMs: web.timeouts.stable * 1000 },
+    timeouts: { readyMs: web.timeouts.load * 1000, turnMs: answerMs, stallMs: Math.min(3 * 60_000, Math.floor(answerMs / 2)), stableMs: web.timeouts.stable * 1000, ...(web.timeouts.mode ? { modeReadyMs: web.timeouts.mode * 1000 } : {}) },
   })
   driver.healEnabled = () => false
   driver.onDrift = (event) => note(`ui drift: ${event.kind} of ${event.element}`)
@@ -152,13 +160,52 @@ export const CHROME_ARGS = [
 /** Keep the sandbox and the OS keyring; never advertise automation (System 1's IGNORED_DEFAULT_ARGS). */
 export const IGNORED_DEFAULT_ARGS = ['--no-sandbox', '--password-store=basic', '--use-mock-keychain', '--enable-automation']
 
+/** Whether `pid` is a live process. */
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Keep Chrome from reopening old tabs, before it starts (WW1; measured 2026-11-07: a profile with 17
+ * restored tabs held Playwright's launch for the full 60 s, so cleaning up after launch is too late):
+ * the profile's startup preference is a new tab page and its last exit is marked clean, and its tab
+ * sessions (`Default/Sessions`) are removed. The preferences alone do not stop it: `--restore-last-session`
+ * (below) outranks them, and Chrome keeps the profile's session-only cookies only while it restores, so
+ * the flag stays and the sessions go. Cookies, Login Data, Local Storage, Session Storage and IndexedDB are
+ * never touched. A profile a running Chrome holds is left alone.
+ */
+export function prepareProfile(dir: string): void {
+  const pid = profileLockPid(dir)
+  if (pid !== undefined && alive(pid)) return
+  const file = join(dir, 'Default', 'Preferences')
+  let prefs: Record<string, Record<string, unknown>> | undefined
+  try {
+    prefs = JSON.parse(readFileSync(file, 'utf8')) as Record<string, Record<string, unknown>>
+  } catch {
+    // None yet (a new profile), or unreadable: Chrome writes its own.
+  }
+  if (prefs && typeof prefs === 'object') {
+    prefs.session = { ...prefs.session, restore_on_startup: 5 }
+    prefs.profile = { ...prefs.profile, exit_type: 'Normal', exited_cleanly: true }
+    writeFileSync(`${file}.system-tmp`, JSON.stringify(prefs), { mode: 0o600 })
+    renameSync(`${file}.system-tmp`, file)
+  }
+  rmSync(join(dir, 'Default', 'Sessions'), { recursive: true, force: true })
+}
+
 /**
  * Chrome on the profile, headed, on `display`: a genuine browser (no user-agent override, no fingerprint spoofing,
- * no automation flags), reopening the last session so the profile's session-only cookies survive. There is no
- * headless mode: a real window is closer to the operator's own browser and is challenged less.
+ * no automation flags), reopening the last session so the profile's session-only cookies survive (its tabs do not:
+ * `prepareProfile`). There is no headless mode: a real window is closer to the operator's own browser and is challenged less.
  */
 export const launch = async (web: WebConfig, display: Display): Promise<BrowserContext> => {
   ensureProfile(web.profileDir)
+  prepareProfile(web.profileDir)
   const chrome = await ensureChrome(web.executablePath, web.managedDir)
   return chromium.launchPersistentContext(web.profileDir, {
     executablePath: chrome.path,
@@ -167,8 +214,27 @@ export const launch = async (web: WebConfig, display: Display): Promise<BrowserC
     viewport: null,
     ignoreDefaultArgs: IGNORED_DEFAULT_ARGS,
     args: ['--restore-last-session', '--disable-background-mode', ...CHROME_ARGS],
-    timeout: web.timeouts.load * 1000,
+    timeout: launchTimeoutMs(web),
   })
+}
+
+/**
+ * One working tab: the worker's own is opened first (closing the last page of a headed window may end the
+ * browser), then every other page is closed, and so is any that arrives later, as a late session restore or a
+ * popup does, until the context ends. Counts are for the evidence record.
+ */
+export async function singleTab(context: BrowserContext): Promise<{ page: Page; initial: number; closed: number; late: () => number }> {
+  const inherited = context.pages()
+  const page = await context.newPage()
+  let late = 0
+  context.on('page', (arrived) => {
+    if (arrived === page) return
+    late += 1
+    void arrived.close().catch(() => {})
+  })
+  const others = context.pages().filter((p) => p !== page)
+  await Promise.all(others.map((p) => p.close().catch(() => {})))
+  return { page, initial: inherited.length, closed: others.length, late: () => late }
 }
 
 /** The prompt of one attempt: the step, the inputs inlined as text, and each output as a labelled fenced block. */
@@ -205,7 +271,38 @@ export function webPrompt(ws: Workspace, request: WorkerRequest): string {
   return prompt
 }
 
-export async function webAttempt(account: Account, artifacts: Artifacts, attemptsDir: string, request: WorkerRequest): Promise<WorkerResult> {
+/** Playwright enforces the launch clock itself; this is the margin after which the attempt gives up on a launch that does not even fail. */
+const LAUNCH_GRACE_MS = 2000
+
+/** `run`, or an error after `ms`; the timer never outlives the call. */
+async function within<T>(ms: number, run: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([run, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timed out')), ms) })])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** One launch, ended at the launch clock plus a margin even when it neither returns nor fails; a Chrome that comes up after that is closed. */
+async function launchBounded(launcher: typeof launch, web: WebConfig, display: Display): Promise<BrowserContext> {
+  const started = launcher(web, display)
+  let timer: NodeJS.Timeout | undefined
+  const gaveUp = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error(`launchPersistentContext did not return within ${launchTimeoutMs(web) / 1000} s`), { name: 'TimeoutError' })), launchTimeoutMs(web) + LAUNCH_GRACE_MS)
+  })
+  try {
+    return await Promise.race([started, gaveUp])
+  } catch (error) {
+    void started.then((late) => late.close(), () => {})
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** `launcher` is injectable for tests; a launch that never returns ends at the launch clock, and a Chrome that comes up late is closed. */
+export async function webAttempt(account: Account, artifacts: Artifacts, attemptsDir: string, request: WorkerRequest, launcher: typeof launch = launch): Promise<WorkerResult> {
   const web = account.web!
   const executor: NonNullable<WorkerResult['executor']> = { ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: await account.version() }
   const log: string[] = []
@@ -231,9 +328,30 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
   const driver = chatGptDriver(web, note)
   let page: Page | undefined
   let display: Display | undefined
+  let tabs: Awaited<ReturnType<typeof singleTab>> | undefined
   const ws = await prepare(artifacts, request, join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')))
+  // The evidence record exists before Chrome starts and follows each stage as it happens.
+  const evidence = createEvidence(join(ws.root, 'evidence.json'), {
+    attempt: request.attemptId, account: account.ref, chrome: executor.version,
+    uiMap: { revision: driver.map.uiRevision, hash: driver.map.hash }, launchTimeoutSeconds: launchTimeoutMs(web) / 1000,
+  })
+  driver.onStage = ({ stage, status, error }) => {
+    if (status === 'start') {
+      evidence.begin(stage)
+      if (stage === 'send') evidence.set({ promptSubmitted: true })
+    } else {
+      evidence.end(stage, status === 'failed' ? error ?? 'failed' : undefined)
+    }
+  }
   const finish = async (result: Omit<WorkerResult, 'executor' | 'log'>): Promise<WorkerResult> => {
+    // The browser is ended, and that recorded, before the evidence is stored.
+    if (tabs) evidence.set({ pages: { ...evidence.data.pages!, closedLate: tabs.late() } })
+    evidence.begin('close')
+    await close()
+    evidence.end('close')
+    note(`evidence ${evidence.json()}`)
     const logId = await putFile(Buffer.from(`${log.join('\n')}\n`), 'text/plain')
+    if (result.status !== 'succeeded') result.partial = { ...result.partial, evidence: await putFile(Buffer.from(evidence.json()), 'application/json') }
     return { ...result, log: logId, executor }
   }
   /** A stage that ran out of time is a failure of that stage, named; the driver's own failures are told as it words them. */
@@ -247,15 +365,31 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
       throw error
     }
   }
+  /** A stage of the attempt's own, recorded in the evidence (the driver's stages are recorded through `onStage`). */
+  const recorded = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
+    evidence.begin(name)
+    try {
+      const result = await run()
+      evidence.end(name)
+      return result
+    } catch (error) {
+      evidence.end(name, (error as Error).message.split('\n')[0] ?? 'failed')
+      throw error
+    }
+  }
   try {
     const prompt = webPrompt(ws, request)
     display = await acquireDisplay()
     check()
-    context = await launch(web, display)
+    context = await recorded('launch', () => stage('launch', launchTimeoutMs(web) / 1000, () => launchBounded(launcher, web, display!)))
     stop.signal.addEventListener('abort', () => { void close() }, { once: true })
     check()
-    page = context.pages()[0] ?? await context.newPage()
+    // One working tab, whatever Chrome brought up: the worker's own first, then the rest closed, before any navigation.
+    tabs = await singleTab(context)
+    page = tabs.page
     page.setDefaultNavigationTimeout(web.timeouts.load * 1000)
+    const size = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })).catch(() => undefined)
+    evidence.set({ ...(size ? { viewport: size } : {}), pages: { initial: tabs.initial, beforeNavigation: context.pages().length, closedInherited: tabs.closed, closedLate: tabs.late() } })
     const conversationKind = web.temporaryChat ? 'temporary' : 'persistent'
     // The driver opens the chat (a temporary one when asked, in Chat mode), checks the sign-in, sends the prompt and waits for the
     // finished answer, on the clocks it was built with (`chatGptDriver`).
@@ -283,6 +417,10 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     note(`failed: ${(error as Error).message}`)
     const shot = await page?.screenshot({ timeout: 5000 }).catch(() => undefined)
     if (shot) partial.screenshot = await putFile(shot, 'image/png')
+    if (page) {
+      const found = await within(5000, driver.diagnostics(page)).catch((e: Error) => { evidence.set({ diagnosticsError: e.message.split('\n')[0] ?? 'failed' }); return undefined })
+      if (found) partial.snapshot = await putFile(Buffer.from(JSON.stringify(found satisfies PageDiagnostics)), 'application/json')
+    }
     const reason = error instanceof Failure ? error.message : `${account.ref}: ${(error as Error).message.split('\n')[0]}`
     return finish({ status: 'failed', outputs: {}, ...(Object.keys(partial).length ? { partial } : {}), reason })
   } finally {
