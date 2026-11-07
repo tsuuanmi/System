@@ -346,6 +346,30 @@ test('a cancel during an attempt keeps its partial output, and retry hands it on
   assert.equal(h.controller.replay(admitted.id).matches, true)
 })
 
+test('a succeeded attempt keeps the Artifacts it reports beside its outputs, and replay matches', async () => {
+  const h = harness({
+    worker: {
+      async run(request) {
+        const out = id(`${request.attemptId}/done`)
+        const extra = id(`${request.attemptId}/evidence`)
+        h.specs.stored.add(out)
+        h.specs.stored.add(extra)
+        return { status: 'succeeded', outputs: Object.fromEntries(request.outputs.map((s) => [s, out])), partial: { evidence: extra } }
+      },
+    },
+  })
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
+  const done = await h.controller.run(admitted.id)
+  assert.equal(done.state.status, 'succeeded')
+  const step = done.state.steps.investigate!
+  assert.equal(step.state, 'succeeded')
+  assert.deepEqual(Object.keys(step.partial ?? {}), ['evidence'])
+  const observed = done.events.find((e) => e.type === 'observed')
+  assert.ok(observed?.type === 'observed' && observed.partial?.evidence, 'the observation records it')
+  assert.equal(h.controller.replay(admitted.id).matches, true)
+})
+
 test('a tier is a capability: a step asking for a tier no Worker offers is refused at preflight', () => {
   const capabilities = new Capabilities()
   capabilities.registerWorker({ ref: 'claude', capabilities: ['code-write', 'tier.standard', 'tier.frontier'], run: async () => ({ status: 'failed', outputs: {} }) })

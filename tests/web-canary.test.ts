@@ -70,6 +70,7 @@ const [a, b] = args
 if (a === 'workers') process.stdout.write(db.workers)
 else if (a === 'task') process.stdout.write((args.at(-1).includes('Cite one page') ? db.oldTask : db.task) + '\\n')
 else if (a === 'work' && b === 'list') for (const [id, r] of Object.entries(db.works)) process.stdout.write(id + '  ' + r.state.status.padEnd(9) + '  sha256:spec\\n')
+else if (a === 'artifact' && b === 'cat') process.stdout.write(db.artifacts[args[2]])
 else if (a === 'work' && b === 'show') process.stdout.write(JSON.stringify(db.works[args[2]]))
 else if (a === 'work' && b === 'submit') {
   const worker = args[args.indexOf('--worker') + 1]
@@ -113,12 +114,12 @@ function record(account: string, at: string, seconds: number, outcome: 'succeede
   return { events, state: { status: outcome, steps, reason: outcome === 'running' ? undefined : why } }
 }
 
-function setup(works: Record<string, unknown>, script: Record<string, { id: string; record: unknown }[]> = {}) {
+function setup(works: Record<string, unknown>, script: Record<string, { id: string; record: unknown }[]> = {}, artifacts: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'canary-fake-'))
   const bin = join(dir, 'system')
   writeFileSync(bin, fake)
   chmodSync(bin, 0o755)
-  writeFileSync(join(dir, 'db.json'), JSON.stringify({ workers: WEB, task: TASK, oldTask: OLD_TASK, works, script }))
+  writeFileSync(join(dir, 'db.json'), JSON.stringify({ workers: WEB, task: TASK, oldTask: OLD_TASK, works, script, artifacts }))
   const env = { SYSTEM_BIN: bin, FAKE_DB: join(dir, 'db.json'), FAKE_CALLS: join(dir, 'calls.json') }
   const calls = () => JSON.parse(readFileSync(env.FAKE_CALLS, 'utf8')) as string[][]
   return { dir, env, calls }
@@ -197,6 +198,28 @@ test('the report counts site errors apart from other Worker step failures', { ti
     assert.match(ran.stdout, /work:3 {2}chatgpt-web\/a {2}other: accept: denied/)
     assert.match(ran.stdout, /gate: does not hold \(4 of 50 runs; 25\.0% passed, needs 95%; only 1 Account\)/)
     assert.match(ran.stdout, /worker step: 50\.0% ok/)
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true })
+  }
+})
+
+test('the report prints the median and p95 of the launch and wait stages per Account from the evidence', { timeout: 60_000 }, () => {
+  const t = '2026-11-02T00:00:00Z'
+  const works: Record<string, unknown> = {}
+  const artifacts: Record<string, string> = {}
+  // Launch 1..5 s and wait 10..50 s on one Account; a run with no evidence on the other.
+  for (let i = 1; i <= 5; i++) {
+    const r = record('chatgpt-web/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+    r.state.steps.investigate!.partial = { evidence: `sha256:e${i}` }
+    works[`work:${i}`] = r
+    artifacts[`sha256:e${i}`] = JSON.stringify({ stages: [{ stage: 'launch', status: 'ok', elapsedMs: i * 1000 }, { stage: 'wait', status: 'ok', elapsedMs: i * 10_000 }, { stage: 'close', status: 'ok', elapsedMs: 5 }] })
+  }
+  works['work:6'] = record('chatgpt-web/b', t, 1, 'succeeded')
+  const s = setup(works, {}, artifacts)
+  try {
+    const ran = run(['--report'], s.env)
+    assert.match(ran.stdout, /chatgpt-web\/a\s+launch 3\.0 \/ 5\.0 \(n 5\)\s+wait 30\.0 \/ 50\.0 \(n 5\)/)
+    assert.match(ran.stdout, /chatgpt-web\/b\s+launch -\s+wait -\s+\(1 without evidence\)/)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }

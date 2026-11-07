@@ -129,7 +129,8 @@ One attempt:
    used). Its
    producer is the Worker (the attempt observed the exchange). It is returned as
    the extra output `conversation` (the controller records only a step's
-   declared slots). Usage is unknown. The log is the stage notes.
+   declared slots) and as partial output `conversation`, which the observation
+   records for a succeeded attempt too (WW6c). Usage is unknown. The log is the stage notes.
 
 On any failure the page's screenshot is kept as partial output `screenshot`, with
 `snapshot`: its URL (no query), the viewport, the UI map's revision and hash and
@@ -148,7 +149,7 @@ the failed stage and the last completed one, and for a two-part prompt `attach`:
 `attachment`) and the chip count, and `filled`: how each output was filled (`block`: the rendered
 code block labelled with its name, verbatim, two of one name being ambiguous and a failure; `text`: the
 Markdown's fenced block; `rendered`: the answer's rendered text, when Copy was escaped, WW5d; WW5b) and `outsideChars`, the characters outside the output blocks (WW5c). `stripped`: per output, each leaked control token removed from its edges (the UI map's `answer.leakedTokens`, WW6b), when any was. `waitEnded`: how the wait for the answer ended (`done`, `site error`, `timeout`), and `siteError`: true when the newest answer held the site's own error, "This response couldn’t load" (WW6a). That attempt fails at once with the reason "site error: the answer did not load (retryable)", the screenshot and the structure-only snapshot kept; it is never resent. It is partial output `evidence` of
-every failed or cancelled attempt, and the last line of the log of every attempt.
+every attempt, succeeded or not (WW6c: the observation records it, so `system work show` lists it and replay keeps it; no Workflow step declares it), and the last line of the log of every attempt.
 **A prompt in two parts (WW1g).** `webPrompt` returns the header (role line, step,
 instructions, the output-format request, and a line naming the attached inputs), which
 the `insert` stage puts in the composer and reads back exactly, and the body (the inputs
