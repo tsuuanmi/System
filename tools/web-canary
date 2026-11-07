@@ -6,7 +6,7 @@
 //
 //   tools/web-canary                       run it on every chatgpt-web Account, one at a time
 //   tools/web-canary --task                store the canary Task and print its Artifact ID
-//   tools/web-canary --report [--since T]  runs, accepted, failed and the WW gate (exit 3: not holding)
+//   tools/web-canary --report [--since T]  each run classified, the Worker step rate and the WW gate (exit 3: not holding)
 import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,10 +15,16 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const system = process.env.SYSTEM_BIN || join(repo, 'bin', 'system')
 const workflow = join(repo, 'workflows', 'research.yaml')
 
-// A question with a stable answer and one public page that states it. The text is
-// the Task's identity: `system task new` stores it content-addressed, so the
-// Artifact ID is the same every time. Changing a word starts a new series.
-const QUESTION = 'What is the capital of France? Cite one page that says so.'
+// A question with a stable answer and one page the citation verifier can read: the
+// canary measures the Website Worker, not whatever third-party page it picks. The
+// text is the Task's identity: `system task new` stores it content-addressed, so the
+// Artifact ID is the same every time. Changing a word starts a new series; the
+// earlier texts stay listed so the report still counts their Works, apart.
+const QUESTION = 'What is the capital of France? Cite the English Wikipedia article that says so (https://en.wikipedia.org/...).'
+const OLDER_QUESTIONS = ['What is the capital of France? Cite one page that says so.']
+// The Worker step of workflows/research.yaml; the verifier step is `citations`.
+const WORKER_STEP = 'investigate'
+const VERIFIER_STEP = 'citations'
 // The WW gate: at least this many runs over both Accounts, at least this share accepted.
 const GATE_RUNS = 50
 const GATE_RATE = 0.95
@@ -42,7 +48,8 @@ function ok(args) {
   return ran.stdout
 }
 
-const canaryTask = () => ok(['task', 'new', '--text', QUESTION]).trim().split('\n').at(-1)
+const taskFor = (text) => ok(['task', 'new', '--text', text]).trim().split('\n').at(-1)
+const canaryTask = () => taskFor(QUESTION)
 
 /** The Accounts of the chatgpt-web runtime that are registered Workers, from `system workers`. */
 function accounts() {
@@ -74,14 +81,54 @@ function runAll() {
   }
 }
 
-/** Where a Work stopped: its first failed step, else its status, and why. */
-function failure(record) {
-  const stage = Object.entries(record.state.steps).find(([, s]) => s.state === 'failed')?.[0] ?? record.state.status
-  return record.state.reason ? `${stage}: ${record.state.reason}` : stage
+/** The reason on the last event of `type` for a step, if any. */
+const eventReason = (record, type, stepId) => record.events.findLast((e) => e.type === type && e.stepId === stepId)?.reason || undefined
+
+/**
+ * One finished Work as a run: `workerOk` (the Worker step succeeded with all its outputs), `accepted`, and for a
+ * run that did not pass its `kind` and `detail`. A Worker step failure is `worker-failed` (a `site error:` reason
+ * also `site`); a succeeded Worker step with a citation check that did not pass is `verifier`; else `other`.
+ */
+function classify(record) {
+  const { status, steps, reason } = record.state
+  const worker = steps[WORKER_STEP]
+  const workerOk = worker?.state === 'succeeded' && Object.keys(worker.outputs ?? {}).length > 0
+  const accepted = status === 'succeeded'
+  const run = { workerOk, accepted, passed: workerOk && accepted }
+  if (run.passed) return run
+  const stage = Object.entries(steps).find(([, s]) => s.state === 'failed')?.[0]
+  if (!workerOk) {
+    const why = eventReason(record, 'observed', WORKER_STEP) ?? reason ?? status
+    return { ...run, kind: 'worker-failed', site: why.startsWith('site error:'), detail: `${WORKER_STEP}: ${why}` }
+  }
+  const verifier = steps[VERIFIER_STEP]
+  if (verifier && (verifier.state === 'failed' || (verifier.verdict && verifier.verdict !== 'pass'))) {
+    return { ...run, kind: 'verifier', detail: eventReason(record, 'verified', VERIFIER_STEP) ?? reason ?? `${VERIFIER_STEP} ${verifier.verdict ?? verifier.state}` }
+  }
+  return { ...run, kind: 'other', detail: reason ? `${stage ?? status}: ${reason}` : (stage ?? status) }
 }
 
-function report(since) {
-  const input = canaryTask()
+/** Print the per-Account and total lines of one canary version, then each run that did not pass. */
+function section(runs) {
+  const pct = (n, of) => (of ? `${((n / of) * 100).toFixed(1)}%` : '-')
+  const line = (name, set) => {
+    const count = (kind) => set.filter((r) => r.kind === kind).length
+    const passed = set.filter((r) => r.passed).length
+    const workerOk = set.filter((r) => r.workerOk).length
+    const sites = set.filter((r) => r.site).length
+    const site = sites ? ` (site error ${sites})` : ''
+    process.stdout.write(`${name.padEnd(18)} runs ${set.length}  passed ${passed} (${pct(passed, set.length)})  worker step ok ${workerOk} (${pct(workerOk, set.length)})  worker-failed ${count('worker-failed')}${site}  verifier ${count('verifier')}  other ${count('other')}\n`)
+    return { passed, workerOk, rate: set.length ? passed / set.length : 0, workerRate: set.length ? workerOk / set.length : 0 }
+  }
+  const names = [...new Set(runs.map((r) => r.account))].sort()
+  for (const name of names) line(name, runs.filter((r) => r.account === name))
+  const total = line('total', runs)
+  for (const r of runs.filter((r) => !r.passed)) process.stdout.write(`  ${r.workId}  ${r.account}  ${r.kind}: ${r.detail}\n`)
+  return { names, total }
+}
+
+/** The finished Works whose input is `input`, oldest first. */
+function runsOf(input, since) {
   const listed = ok(['work', 'list']).split('\n').filter(Boolean).map((line) => line.split(/\s+/)[0])
   const runs = []
   for (const workId of listed) {
@@ -89,24 +136,27 @@ function report(since) {
     const admitted = record.events[0]
     if (admitted.input !== input || record.state.status === 'running') continue
     if (since && Date.parse(admitted.at) < since) continue
-    runs.push({ at: admitted.at, account: admitted.worker ?? 'unknown', accepted: record.state.status === 'succeeded', failure: record.state.status === 'succeeded' ? undefined : failure(record) })
+    runs.push({ workId, at: admitted.at, account: admitted.worker ?? 'unknown', ...classify(record) })
   }
-  runs.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
-  const line = (name, set) => {
-    const accepted = set.filter((r) => r.accepted).length
-    const failed = set.filter((r) => !r.accepted)
-    const rate = set.length ? `${((accepted / set.length) * 100).toFixed(1)}%` : '-'
-    const first = failed[0] ? ` (${failed[0].failure})` : ''
-    process.stdout.write(`${name.padEnd(18)} runs ${set.length}  accepted ${accepted}  failed ${failed.length}${first}  ${rate}\n`)
-    return { accepted, rate: set.length ? accepted / set.length : 0 }
+  return runs.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+}
+
+function report(since) {
+  const current = runsOf(canaryTask(), since)
+  const older = OLDER_QUESTIONS.map((text) => runsOf(taskFor(text), since)).flat()
+  process.stdout.write('canary (current)\n')
+  const { names, total } = section(current)
+  if (older.length) {
+    process.stdout.write('\nolder canary version (not in the gate)\n')
+    section(older)
+    process.stdout.write('\n')
   }
-  const names = [...new Set(runs.map((r) => r.account))].sort()
-  for (const name of names) line(name, runs.filter((r) => r.account === name))
-  const total = line('total', runs)
+  // A run passes the gate when the Worker step succeeded with its outputs and the Work was accepted.
   const problems = []
-  if (runs.length < GATE_RUNS) problems.push(`${runs.length} of ${GATE_RUNS} runs`)
-  if (total.rate < GATE_RATE) problems.push(`${(total.rate * 100).toFixed(1)}% accepted, needs ${GATE_RATE * 100}%`)
+  if (current.length < GATE_RUNS) problems.push(`${current.length} of ${GATE_RUNS} runs`)
+  if (total.rate < GATE_RATE) problems.push(`${(total.rate * 100).toFixed(1)}% passed, needs ${GATE_RATE * 100}%`)
   if (names.length < GATE_ACCOUNTS) problems.push(`only ${names.length} Account${names.length === 1 ? '' : 's'}`)
+  process.stdout.write(`worker step: ${(total.workerRate * 100).toFixed(1)}% ok\n`)
   process.stdout.write(problems.length ? `gate: does not hold (${problems.join('; ')})\n` : 'gate: holds\n')
   process.exit(problems.length ? 3 : 0)
 }

@@ -46,7 +46,7 @@ nothing else.
   one Research Work on the operator's signed-in `chatgpt-web/default` profile.
 - [web-canary.test.ts](web-canary.test.ts) — WW4: the canary Task has the same
   Artifact ID every time, `work submit --worker` refuses an unregistered Worker, and
-  `tools/web-canary` runs and reports (counts, first failing stage, the WW gate)
+  `tools/web-canary` runs and reports (each run classified as passed, worker-failed, verifier or other, the Worker step rate, older version apart, the WW gate)
   through a fake `system` (`SYSTEM_BIN`) with scripted records; the timer units' fields.
 - [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
   accounts (CLI pointed at the fake): two proposals by different providers
