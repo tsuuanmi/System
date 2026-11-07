@@ -246,3 +246,51 @@ test('a ratio outside 0 to 1 is not valid criteria', () => {
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 1.5 })).success, false)
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 0 })).success, true)
 })
+
+/** A repository whose checks are `checks`, with `files` beside them (package.json, test files), and a change on it; returns the verdict. */
+async function verdictOf(checks: string, files: Record<string, string>) {
+  const artifacts = store()
+  const repository = repo(checks)
+  for (const [path, text] of Object.entries(files)) writeFileSync(join(repository, path), text)
+  execFileSync('git', ['-C', repository, 'add', '.'])
+  execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'files'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n' })
+  return verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
+}
+
+test('the checks run on the Node the repository asks for, whatever Node is first on the Host\'s PATH', async () => {
+  // A Node 22 first on PATH, as the Host had twice.
+  const old = mkdtempSync(join(root, 'node22-'))
+  writeFileSync(join(old, 'node'), '#!/bin/sh\necho v22.0.0\nexit 0\n', { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${old}:${path}`
+  try {
+    const result = await verdictOf('checks:\n  - name: node\n    run: test "$(node -p process.versions.node | cut -d. -f1)" = 24\n', { 'package.json': '{ "engines": { "node": ">=24.9.0" } }\n' })
+    assert.equal(result.verdict, 'pass', result.reason)
+  } finally {
+    process.env.PATH = path
+  }
+})
+
+test('a failed check says in one line which check, which test and its first error line', async () => {
+  const failing = "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\ntest('adds', () => { assert.equal(1 + 1, 3) })\ntest('fine', () => {})\n"
+  const result = await verdictOf('checks:\n  - name: unit\n    run: node --test adds.test.mjs\n', { 'adds.test.mjs': failing })
+  assert.equal(result.verdict, 'fail')
+  assert.equal(result.reason, 'failed: unit: adds.test.mjs "adds": Expected values to be strictly equal: 2 !== 3')
+})
+
+test('a timed-out check names the test that was running', { timeout: 60_000 }, async () => {
+  const hanging = "import { test } from 'node:test'\ntest('first', () => {})\ntest('waits forever', () => new Promise(() => { setInterval(() => {}, 1000) }))\n"
+  const result = await verdictOf('checks:\n  - name: unit\n    run: node --test hangs.test.mjs\n    timeoutSeconds: 3\n', { 'hangs.test.mjs': hanging })
+  assert.equal(result.verdict, 'fail')
+  assert.match(result.reason, /^failed: unit: timed out after 3 s while running hangs\.test\.mjs/)
+})
+
+test('engines.node ranges: the comparators package.json uses', async () => {
+  const { satisfies } = await import('../src/reasons.ts')
+  assert.deepEqual(['>=24.9.0', '^24.1.0', '24', '>=22 <24', '24.21.0'].map((range) => satisfies('v24.21.0', range)), [true, true, true, false, true])
+  assert.equal(satisfies('22.12.0', '>=24.9.0'), false)
+})

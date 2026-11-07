@@ -16,6 +16,7 @@ import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult } from '@system/work'
 import { parse } from 'yaml'
+import { firstFailure, interrupted, nodeBin } from './reasons.ts'
 import { z } from 'zod'
 
 export const CHECKS_FILE = '.system/checks.yaml'
@@ -101,28 +102,44 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const evidence: string[] = []
       const failed: string[] = []
       try {
+        // The repository's Node first on PATH, whatever the Host's PATH has (PROP-0007 decision 3).
+        let bin: string | undefined
+        try {
+          bin = nodeBin(worktree)
+        } catch (error) {
+          return verdict('error', (error as Error).message, [])
+        }
+        const path = [bin, process.env.PATH].filter(Boolean).join(':')
         for (const check of checks.checks) {
           const started = now()
-          const timeout = AbortSignal.timeout(check.timeoutSeconds * 1000)
+          // `timeout` interrupts the whole group first, so a test runner says what it was running; the abort is the backstop.
+          const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
           const spawned = spawner.spawn({
-            argv: ['/bin/sh', '-c', check.run], cwd: worktree, signal: timeout, graceMs: 5000,
-            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), PATH: process.env.PATH, LANG: process.env.LANG, HOME: scratch, CI: '1' },
+            argv: ['timeout', '-s', 'INT', '-k', '10', String(check.timeoutSeconds), '/bin/sh', '-c', check.run], cwd: worktree, signal: backstop, graceMs: 5000,
+            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), PATH: path, LANG: process.env.LANG, HOME: scratch, CI: '1' },
           })
           const outcome = await spawned.done
+          const output = `${spawned.stdout()}\n${spawned.stderr()}`
           const run = {
             name: check.name, run: check.run, commit: tree.commit, exitCode: outcome.exitCode, signal: outcome.signal,
-            timedOut: timeout.aborted, durationMs: Math.max(0, Math.round(now() - started)),
+            timedOut: backstop.aborted || outcome.exitCode === 124, durationMs: Math.max(0, Math.round(now() - started)),
             stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()),
           }
           evidence.push((await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id)
-          if (run.exitCode !== 0 || run.timedOut) failed.push(run.timedOut ? `${check.name} (timed out after ${check.timeoutSeconds} s)` : `${check.name} (exit ${run.exitCode ?? run.signal})`)
+          if (run.timedOut) {
+            const running = interrupted(output)
+            failed.push(running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`)
+          } else if (run.exitCode !== 0) {
+            const first = firstFailure(output)
+            failed.push(first ? `${check.name}: ${first}` : `${check.name} (exit ${run.exitCode ?? run.signal})`)
+          }
         }
       } finally {
         await removeWorktree(tree.repository, worktree)
         rmSync(scratch, { recursive: true, force: true })
       }
       return failed.length
-        ? verdict('fail', `failed: ${failed.join(', ')}`, evidence)
+        ? verdict('fail', `failed: ${failed.join('; ')}`, evidence)
         : verdict('pass', `all ${checks.checks.length} check(s) passed on ${tree.commit}`, evidence)
     },
   }
