@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
 import { skipHeaded } from '../test-support/headed.ts'
+import { findVnc } from '../packages/agents/src/display.ts'
 
 const skip = skipHeaded
 const serve = join(repo, 'packages', 'web-driver', 'tests', 'serve-fake-chatgpt.ts')
@@ -93,20 +94,22 @@ test('a Work runs on the account: the answer fills the slot and the exchange is 
   assert.match(workers.stdout, /chatgpt-web\/default\s+available/)
 })
 
-test('login --remote prints the tunnel and the address, serves the viewer behind the token, and Save reports the state', { skip, timeout: 120_000 }, async () => {
+// The remote login needs a VNC server (x11vnc or x0vncserver) as well.
+const skipRemote = skip || (findVnc() ? false : 'neither x11vnc nor x0vncserver is on PATH (docs/operations/runbook.md)')
+test('login --remote prints the tunnel and the address, serves noVNC behind the token, and Save reports the state', { skip: skipRemote, timeout: 120_000 }, async () => {
   const running = cli.runAsync(['workers', 'login', 'chatgpt-web/default', '--remote'])
   try {
     let url: string | undefined
     for (const end = Date.now() + 60_000; !url && Date.now() < end;) {
-      url = /(http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{64}\/)/.exec(running.stdout())?.[1]
+      url = /(http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]{43}\/)/.exec(running.stdout())?.[1]
       if (!url) await new Promise((r) => setTimeout(r, 100))
     }
     assert.ok(url, running.stdout() + running.stderr())
     const port = /127\.0\.0\.1:(\d+)/.exec(url)![1]
     assert.match(running.stdout(), new RegExp(`ssh -L ${port}:127\\.0\\.0\\.1:${port} \\S+@\\S+`))
-    assert.equal((await fetch(url.replace(/[0-9a-f]{64}/, 'wrong'))).status, 403)
+    assert.equal((await fetch(url.replace(/[A-Za-z0-9_-]{43}/, 'wrong'))).status, 404)
     assert.equal((await fetch(url)).status, 200)
-    assert.equal((await fetch(`${url}save`, { method: 'POST' })).status, 200)
+    assert.equal((await fetch(`${url}save`, { method: 'POST', headers: { origin: new URL(url).origin } })).status, 200)
     const ended = await running.done
     assert.equal(ended.status, 0, ended.stderr + ended.stdout)
     assert.match(ended.stdout, /chatgpt-web\/default: signed in/)

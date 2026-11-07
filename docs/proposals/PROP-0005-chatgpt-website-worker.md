@@ -10,7 +10,7 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2, W5 and W7, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1, W2, W5, W7 and W9, 2026-11-07).
 
 ## Decision context
 
@@ -79,36 +79,46 @@ fallback.
    - `--remote`, for a machine with no display (the operator's, checked
      2026-11-07), which also lets the operator clear a Cloudflare challenge
      that the cookies did not carry (W2).
-   **The remote flow, as built** (`packages/agents/src/remote-login.ts`; the
-   idea is System 1's "remote" flow, in pure Node):
-   1. The Host starts a private Xvfb and opens the account's profile headed on
-      it, with the engine's default pipe (no CDP port exists), and loads
-      chatgpt.com.
-   2. It serves a viewer on `127.0.0.1` on a random port, under a random
-      32-byte token in the path; a request without the token gets 403.
-   3. The page shows a CDP screencast of the tab (`Page.startScreencast`),
-      streamed with Server-Sent Events, and sends the operator's clicks,
-      scrolls and keys back as POSTs that become `Input.dispatchMouseEvent` and
-      `Input.dispatchKeyEvent`, scaled from the canvas to the page's pixels.
+   **The remote flow, as built** (`packages/agents/src/remote-login.ts`,
+   W9; a port of System 1's remote login, `packages/plugins/login/src/remote.ts`):
+   1. Without `x11vnc` or `x0vncserver` on `PATH` it fails at once, naming
+      both. Otherwise the Host starts a private Xvfb, a VNC server on it, and
+      opens the account's profile headed on it (the engine's pipe: no CDP
+      port exists), and loads chatgpt.com.
+   2. The VNC server is reachable only through an owner-only unix socket in a
+      directory of mode 0700 (no TCP port), and the Host serves noVNC
+      (`@novnc/novnc`, served unmodified) on `127.0.0.1` on a random port,
+      under a random 32-byte token in the path; a request without the token,
+      or with a Host header other than loopback, gets 404, and a WebSocket on
+      `<token>/websockify` is bridged to the VNC socket.
+   3. The page shows the **whole screen** of that Xvfb, scaled to the browser
+      window (`scaleViewport`), with real X input: every tab (a restored
+      one too), the popups and a challenge's checkbox are there, and the
+      browser sees what it sees from a person at a keyboard.
    4. The CLI prints the line `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
       and the URL. The operator opens the tunnel from their own machine, opens
       the URL, signs in, clears any check by hand, and presses **Save**.
    5. On Save the browser closes cleanly, so the profile keeps `cf_clearance`
       and the session; then the signed-in check of a normal login runs and its
-      result is reported. **Cancel**, Ctrl-C in the CLI, or 15 minutes, end the
-      session without a check. Either way the browser, the Xvfb and the server
+      result is reported. **Cancel** (accepted only from the page's own
+      origin), Ctrl-C in the CLI, or 15 minutes, end the session without a
+      check. Either way the browser, the VNC server, the Xvfb and the server
       are stopped.
    System never solves or clicks a challenge; the human does, in the viewer.
-   **Why not VNC:** `x11vnc` and noVNC/websockify are not installed here, and
-   a VNC server adds an extra listener and another password to guard. The
-   screencast needs only Node and the Chrome already in use, and the token
-   plus the loopback bind plus SSH are the whole access control.
-   System 1's remote login does use VNC (noVNC over a VNC server on the
-   display), so the operator's clicks are real X input events. Here they are
-   CDP-dispatched (`Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`):
-   **that is the remaining difference** from System 1 if a Cloudflare
-   challenge still loops after W5, and the next step would then be a VNC
-   server on the private display behind the same token and tunnel.
+   **Why VNC (reversed, W9).** W2 built a CDP screencast of one tab with
+   CDP-dispatched input, on the grounds that no VNC server was installed and
+   that one adds a listener. The operator's evidence of 2026-11-07 refuted
+   it: for `chatgpt-web/second` the profile had restored another tab (an
+   `auth.openai.com` "Session ended" page) and the screencast, which shows only
+   the page it attached to, was blank; its canvas did not fit the window; and
+   Cloudflare Turnstile looped on the dispatched clicks. System 1's remote
+   login, which works, shows the whole Xvfb screen through VNC and noVNC. The
+   listener is a unix socket with owner-only access, and the token, the
+   loopback bind and SSH remain the access control. `x11vnc` 0.9.16 has no
+   unix-socket-only mode (System 1's `-unixsockonly`; its `-unixsock` also
+   listens on TCP port 5900, with no password), so it is run once per
+   connection with `-inetd` behind a socket the Host itself listens on:
+   no TCP port is opened at all.
 3. **One attempt.**
    1. Open a **temporary chat** (W7: System 1's driver turns the page's own
       Temporary chat control on; `?temporary-chat=true` is not used, see item
