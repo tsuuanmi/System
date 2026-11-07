@@ -2,8 +2,10 @@
  * The System app row: reads the launcher's inner arguments, runs one command
  * after the host has started, and exits through the launcher's shutdown path.
  */
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { Storage } from '@deepseek-ai/dsh-storage'
@@ -11,7 +13,7 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts'
 import type { AgentsService } from '@system/agents'
-import { dshHome, type Capabilities, type WorkService } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
@@ -60,6 +62,30 @@ async function probeStorage(ctx: Context): Promise<StorageStatus> {
       : { ok: false, backend: REQUIRED_BACKEND, detail: 'read back a different record' }
   } finally {
     await domain.close()
+  }
+}
+
+/** The Workflow files beside the Host's own code. */
+const BUNDLED_WORKFLOWS = fileURLToPath(new URL('../../../workflows/', import.meta.url))
+
+/**
+ * A Workflow file a Workflow uses (PROP-0007 decision 7): `workflows/<name>` at
+ * the base commit of the input Task, so a Work pins the files of the commit it
+ * changes; else the Host's own. Undefined when neither has it.
+ */
+export function workflowFile(artifacts: Artifacts, name: string, input: string | undefined): string | undefined {
+  const content = <T>(id: string | undefined, kind: string): T | undefined => {
+    const read = id ? artifacts.get(id) : undefined
+    return read?.state === 'stored' && read.envelope.kind === kind ? read.envelope.content as T : undefined
+  }
+  const base = content<GitTreeContent>(content<Task>(input, TASK_KIND.kind)?.base, GIT_TREE_KIND.kind)
+  try {
+    if (base) return execFileSync('git', ['-C', base.repository, 'show', `${base.commit}:workflows/${name}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  } catch { /* not in that commit: the Host's own */ }
+  try {
+    return readFileSync(join(BUNDLED_WORKFLOWS, name), 'utf8')
+  } catch {
+    return undefined
   }
 }
 
@@ -123,6 +149,7 @@ async function runHost(ctx: Context): Promise<number> {
       newTask: (instructions, repository, ref, context, who) => work.newTask(instructions, repository, ref, who, context),
       newGoal: (goal, supersedes, who) => work.newGoal(goal, supersedes, who),
       addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
+      workflowFile: (name, input) => workflowFile(artifacts, name, input),
       addDecision: (decision, who) => work.addDecision(decision, who),
       decisions: (chain) => work.decisions(chain),
       credentials,
