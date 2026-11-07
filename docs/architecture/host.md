@@ -54,8 +54,8 @@ at the same time.
  service: user-systemd system.service (default DSH_HOME); `system host` otherwise
 ```
 
-Milestone O adds `system mcp`, an agent client of the same socket that offers
-only the operations the table marks for agents.
+`system mcp` is an agent client of the same socket: a stdio MCP server that
+offers only the operations the table marks for agents, and forwards each call.
 
 ## Parts
 
@@ -105,7 +105,7 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   a Host of different versions refuse each other and name the fix: restart
   the Host.
 - **Caller.** Every call records its caller: human at a terminal, agent, or
-  Orchestrator (milestone O).
+  Orchestrator (an agent scoped to one Goal, by the Host).
 - **Receipts.** `submit`, `run`, `retry`, `cancel` and `approve` carry a
   client `commandId`. A repeated `commandId` returns the stored result. The
   same `commandId` with different arguments is refused. A submitted Work's

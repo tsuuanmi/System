@@ -25,7 +25,8 @@ await serving.stop()                                // server, then the Host cor
 - **Limit.** A line is at most 1 MiB (`MAX_FRAME`). A larger one gets
   `-32600` with `id: null`, and the Host closes the connection.
 - **Handshake.** The first request must be `host.hello` with
-  `{ version, caller: { type: "human" | "agent", operatorId } }`. `version` is
+  `{ version, caller }`, where `caller` is `{ type: "human" | "agent", operatorId }`
+  or `{ type: "orchestrator", operatorId, goal }` (`system mcp --goal`). `version` is
   the code version (`VERSION`): a short sha256 over the built `lib/**/*.js`
   of the System packages, computed once when the Host starts and by each
   client for its own files. Another version is refused with an error that says
@@ -35,11 +36,27 @@ await serving.stop()                                // server, then the Host cor
   method is refused.
 - **Methods.** A table `method -> { params, handler, agent }`: `params` is a
   zod schema, and a call that does not fit it gets `-32602` before the handler
-  runs. A caller of type `agent` may call only rows with `agent: true`, and
-  `approval.decide` also checks, in its handler, that the caller is a human.
+  runs. A caller of type `agent` or `orchestrator` may call only rows with
+  `agent: true`, and `approval.decide` also checks, in its handler, that the
+  caller is a human.
   `operations(services)` (`src/operations.ts`) builds the rows of the Work
   operations; `Services` is what they need besides the `Host`: Artifacts,
   credentials and the Workers view; `system host` brings the DSH-backed ones.
+- **Orchestrator scope.** An `orchestrator` caller has an agent's authority and
+  is further confined to its Goal (ADR-0009 decision 4). A row's optional
+  `scope(host, params, caller)` runs for it before the handler: it throws
+  `-32001` naming the scope, or returns the params to run with.
+  - `work.submit` takes only the caller's own `goal`, and fills it in when
+    absent.
+  - `work.run`, `work.retry`, `work.cancel`, `work.show`, `work.events`,
+    `work.report` and `work.replay` take only Works whose `admitted` event
+    names the Goal or one in its supersedes chain; `work.list` shows only
+    those.
+  - `artifact.show` and `artifact.cat` take only Artifacts a scoped Work
+    names as input, output, evidence or criteria, or as context or base of
+    its Task. `goal.show` takes only the Goals of the chain.
+  - Rows without a scope (`task.new`, `artifact.put`, `workers.list`,
+    `conversation.preview`, `host.status`) are an agent's.
 - **Receipts.** `work.submit`, `work.run`, `work.retry`, `work.cancel` and
   `approval.decide` take an optional `commandId`, which the Host core turns
   into a receipt: the same call again answers from the record, and the same
@@ -58,7 +75,7 @@ await serving.stop()                                // server, then the Host cor
 
 | Method | Agent | Params | Result |
 | --- | --- | --- | --- |
-| `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string }` | The first request of a connection: `{ version, packageVersion }`. |
+| `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string } \| { type: "orchestrator", operatorId: string, goal: string }` | The first request of a connection: `{ version, packageVersion }`. |
 | `host.status` | yes | none | Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`. |
 | `work.submit` | yes | `workflow?: string`, `capabilities?: string[]`, `input?: string`, `goal?: string`, `commandId?: string` | Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent. |
 | `work.run` | yes | `workId: string`, `commandId?: string` | Start admitted or interrupted Work and return its record once it is running; follow it with `work.events`. |

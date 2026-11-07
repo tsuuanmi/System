@@ -54,7 +54,7 @@ export const INVALID_PARAMS = -32602
 export const INTERNAL_ERROR = -32603
 /** Refused by the Host: no hello yet, or a version mismatch. */
 export const REFUSED = -32000
-/** An operation flagged `agent: false`, called by an agent. */
+/** An operation flagged `agent: false`, called by an agent or an orchestrator; or a call outside an orchestrator's Goal. */
 export const NOT_ALLOWED = -32001
 
 export class RpcError extends Error {
@@ -77,6 +77,11 @@ export interface Method {
   /** The shape of `params`; a call that does not fit is refused with -32602, and the handler gets the parsed value. */
   params?: z.ZodType
   handler: (host: Host, params: any, caller: Caller) => unknown | Promise<unknown>
+  /**
+   * For an `orchestrator` caller only, before the handler: throw `NOT_ALLOWED` naming the scope when the call
+   * reaches outside its Goal, or return the params to run with (ADR-0009 decision 4). A row without one is not scoped.
+   */
+  scope?: (host: Host, params: any, caller: Caller & { type: 'orchestrator' }) => unknown
   /** Whether a caller of type `agent` may call it. */
   agent: boolean
 }
@@ -109,8 +114,13 @@ const builtin: Methods = {
 /** The whole table a Host serves: the built-in rows and `extra`. */
 export const tableOf = (extra: Methods = {}): Methods => ({ ...builtin, ...extra })
 
-const callerOf = (value: any): Caller | undefined =>
-  value && (value.type === 'human' || value.type === 'agent') && typeof value.operatorId === 'string' && value.operatorId ? { type: value.type, operatorId: value.operatorId } : undefined
+const GOAL_ID = /^sha256:[0-9a-f]{64}$/
+
+const callerOf = (value: any): Caller | undefined => {
+  if (!value || typeof value.operatorId !== 'string' || !value.operatorId) return undefined
+  if (value.type === 'human' || value.type === 'agent') return { type: value.type, operatorId: value.operatorId }
+  return value.type === 'orchestrator' && typeof value.goal === 'string' && GOAL_ID.test(value.goal) ? { type: 'orchestrator', operatorId: value.operatorId, goal: value.goal } : undefined
+}
 
 /** Listen on `options.path`; each connection must say `host.hello` before any other method. */
 export async function serve(host: Host, options: ServeOptions): Promise<Served> {
@@ -135,7 +145,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
       try {
         if (request.method === 'host.hello') {
           const next = callerOf(request.params?.caller)
-          if (!next) throw new RpcError(INVALID_PARAMS, 'host.hello needs caller: { type: "human" | "agent", operatorId }')
+          if (!next) throw new RpcError(INVALID_PARAMS, 'host.hello needs caller: { type: "human" | "agent", operatorId } or { type: "orchestrator", operatorId, goal }')
           if (request.params.version !== version) {
             throw new RpcError(REFUSED, `the Host runs code ${version} and the client ${String(request.params.version)}; restart the Host: systemctl --user restart system (or restart \`system host\`)`)
           }
@@ -145,13 +155,14 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         const method = Object.hasOwn(methods, request.method) ? methods[request.method] : undefined
         if (!method) throw new RpcError(METHOD_NOT_FOUND, `unknown method ${request.method}`)
         if (!caller) throw new RpcError(REFUSED, `say host.hello first: ${request.method} needs a version and a caller`)
-        if (caller.type === 'agent' && !method.agent) throw new RpcError(NOT_ALLOWED, `${request.method}: not allowed for agents`)
+        if (caller.type !== 'human' && !method.agent) throw new RpcError(NOT_ALLOWED, `${request.method}: not allowed for ${caller.type === 'agent' ? 'agents' : 'orchestrators'}`)
         let params = request.params
         if (method.params) {
           const parsed = method.params.safeParse(params ?? {})
           if (!parsed.success) throw new RpcError(INVALID_PARAMS, `invalid params for ${request.method}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'params'}: ${i.message}`).join('; ')}`)
           params = parsed.data
         }
+        if (caller.type === 'orchestrator' && method.scope) params = method.scope(host, params, caller)
         send({ jsonrpc: '2.0', id, result: await method.handler(host, params, caller) ?? null })
       } catch (error) {
         if (error instanceof RpcError) fail(id, error.code, error.message)

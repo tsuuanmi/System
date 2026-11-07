@@ -125,6 +125,11 @@ export class Host {
     return this.controller.goalView(goalId)
   }
 
+  /** The IDs of the Goals whose Works count for `goalId`: its chain of raises. Refuses an ID that is not a stored Goal. */
+  goalChain(goalId: string): ReadonlySet<string> {
+    return this.controller.goalChain(goalId)
+  }
+
   /** Works with work left to do and no run driving them: after a start, the interrupted ones. */
   interrupted(): string[] {
     return this.list().filter((r) => !TERMINAL.has(r.state.status) && !this.controller.runningElsewhere(r.id)).map((r) => r.id)

@@ -18,6 +18,7 @@ after(() => { rmSync(dir, { recursive: true, force: true }); rmSync(sockets, { r
 let count = 0
 const human = { type: 'human', operatorId: 'tan' } as const
 const agent = { type: 'agent', operatorId: 'a1' } as const
+const orchestrator = (goal: string) => ({ type: 'orchestrator', operatorId: 'o1', goal }) as const
 const workflow = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'workflows', 'brainstorm.yaml'), 'utf8')
 const b64 = (text: string) => Buffer.from(text).toString('base64')
 
@@ -33,7 +34,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       files.set(id, data)
       return { id, kind: 'file', mediaType, classification, producer: caller.operatorId }
     },
-    artifact: (id) => (files.has(id) ? { state: 'stored', envelope: { id } } : { state: 'missing', id }),
+    artifact: (id) => (files.has(id) ? { state: 'stored', envelope: { id } } : artifacts.get(id)),
     async readBytes(id) {
       const data = files.get(id)
       if (!data) throw new Error(`no Artifact ${id}`)
@@ -306,4 +307,76 @@ test('the same work.run with the same commandId while it runs answers at once an
   f.release('idea-a')
   assert.equal((await terminal(client, id)).status, 'succeeded')
   assert.equal(f.attempts.filter((s) => s === 'idea-a').length, 1)
+})
+
+test('an orchestrator connection is refused what an agent is refused, and is never listed more', async () => {
+  const { table, open } = await started()
+  const client = await open(orchestrator(`sha256:${'a'.repeat(64)}`))
+  for (const [name, method] of Object.entries(tableOf(table))) {
+    if (method.agent) continue
+    const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
+    assert.equal(outcome?.code, NOT_ALLOWED, `${name} must refuse an orchestrator`)
+  }
+  for (const name of ['approval.decide', 'credentials.set', 'conversation.add', 'goal.new']) assert.equal(table[name]!.agent, false)
+})
+
+test('a hello of type orchestrator needs a goal, and an agent hello has none', async () => {
+  const { path } = await started()
+  const client = await connect(path)
+  await assert.rejects(client.call('host.hello', { version: VERSION, caller: { type: 'orchestrator', operatorId: 'o1' } }), (error: { code: number }) => error.code === -32602)
+  await assert.rejects(client.call('host.hello', { version: VERSION, caller: { type: 'orchestrator', operatorId: 'o1', goal: 'not an id' } }), (error: { code: number }) => error.code === -32602)
+  client.close()
+})
+
+test('an orchestrator reaches only the Works of its Goal, and the Artifacts of those Works', async () => {
+  const { artifacts, open } = await started()
+  const human = await open()
+  const goal = async (aim: string, supersedes?: string) => (await human.call('goal.new', { aim, scope: 's', budget: {}, supersedes }) as { id: string }).id
+  const [a, b] = [await goal('a'), await goal('b')]
+  const task = async (text: string) => (await artifacts.put({ ...TASK_KIND, content: { instructions: text }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
+  const submit = async (goalId: string | undefined, text: string) => await human.call('work.submit', { capabilities: ['code-write'], input: await task(text), goal: goalId }) as { id: string; events: { input: string }[] }
+  const [workA, workB, workN] = [await submit(a, 'one'), await submit(b, 'two'), await submit(undefined, 'three')]
+  const ours = await open(orchestrator(a))
+  const scoped = (call: Promise<unknown>) => assert.rejects(call, (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /scope/.test(error.message))
+
+  assert.deepEqual((await ours.call('work.list') as { id: string }[]).map((r) => r.id), [workA.id])
+  assert.equal((await ours.call('work.show', { workId: workA.id }) as { id: string }).id, workA.id)
+  for (const other of [workB, workN]) {
+    await scoped(ours.call('work.show', { workId: other.id }))
+    await scoped(ours.call('work.events', { workId: other.id }))
+    await scoped(ours.call('work.report', { workId: other.id }))
+    await scoped(ours.call('work.replay', { workId: other.id }))
+    await scoped(ours.call('work.run', { workId: other.id }))
+    await scoped(ours.call('work.retry', { workId: other.id }))
+    await scoped(ours.call('work.cancel', { workId: other.id }))
+    await scoped(ours.call('artifact.show', { id: other.events[0]!.input }))
+    await scoped(ours.call('artifact.cat', { id: other.events[0]!.input }))
+  }
+  assert.equal((await human.call('work.show', { workId: workB.id }) as { state: { status: string } }).state.status, 'running')
+
+  const shown = await ours.call('artifact.show', { id: workA.events[0]!.input }) as { state: string }
+  assert.equal(shown.state, 'stored')
+  const context = (shown as unknown as { envelope: { content: { context: string[] } } }).envelope.content.context
+  assert.equal((await ours.call('artifact.show', { id: context[0] }) as { state: string }).state, 'stored')
+  await scoped(ours.call('artifact.show', { id: `sha256:${'5'.repeat(64)}` }))
+
+  await ours.call('work.run', { workId: workA.id })
+  assert.equal((await terminal(ours, workA.id)).status, 'succeeded')
+  const outputs = Object.values((await ours.call('work.show', { workId: workA.id }) as { state: { results: Record<string, string> } }).state.results)
+  for (const id of outputs) assert.notEqual(await ours.call('artifact.show', { id }).then(() => 'ok', (error: { code: number }) => error.code), NOT_ALLOWED)
+
+  const filled = await ours.call('work.submit', { capabilities: ['code-write'], input: await task('four') }) as { id: string; events: { goal?: string; caller: unknown }[] }
+  assert.equal(filled.events[0]!.goal, a)
+  assert.deepEqual(filled.events[0]!.caller, orchestrator(a))
+  await ours.call('work.submit', { capabilities: ['code-write'], input: await task('five'), goal: a })
+  await scoped(ours.call('work.submit', { capabilities: ['code-write'], input: await task('six'), goal: b }))
+  assert.equal((await ours.call('work.list') as unknown[]).length, 3)
+
+  // A raise of the Goal keeps the Works of the whole chain in scope, for the old and the new ID.
+  const raised = await goal('a again', a)
+  const later = await human.call('work.submit', { capabilities: ['code-write'], input: await task('seven'), goal: raised }) as { id: string }
+  assert.ok((await ours.call('work.list') as { id: string }[]).some((r) => r.id === later.id))
+  const newer = await open(orchestrator(raised))
+  assert.ok((await newer.call('work.list') as { id: string }[]).some((r) => r.id === workA.id))
+  await scoped(newer.call('work.show', { workId: workB.id }))
 })

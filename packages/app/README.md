@@ -13,6 +13,7 @@ prints `system: the System Host is not running for <home>: ...` and exits 1.
 |---|---|
 | `system doctor [--json]` | which rows are mounted, a write/read probe of the SQLite storage domain `system_doctor`, and whether a Host answers on the socket (reported, not a failure); exit 0 when every required row is mounted and the probe passes, 1 otherwise |
 | `system host` | run as the Host of this home: serve the operation table on `$DSH_HOME/system/host.sock` until SIGTERM or SIGINT, then stop and exit 0; one line to stderr at start and stop; a second one on the same home fails with the lock's message (see the [runbook](../../docs/operations/runbook.md)) |
+| `system mcp [--goal <id>]` | a stdio MCP server for an agent client such as Claude Code: one tool per operation the Host flags `agent: true`, each forwarded to the Host; with `--goal` the caller is an Orchestrator scoped to that Goal by the Host (see the [runbook](../../docs/operations/runbook.md#using-system-from-an-agent)) |
 | `system artifact put <file> [--media-type t] [--classification c]` | store the file as a `file@1` Artifact (default `local-private`, producer the operator) and print its ID |
 | `system artifact show <id>` | the envelope and occurrences as JSON; exit 1 when missing |
 | `system artifact cat <id>` | the bytes; exit 1 when unavailable |
@@ -50,6 +51,7 @@ a terminal, otherwise `agent`, unless `SYSTEM_CALLER` says `human` or `agent`.
   the thin client's commands over a `ClientHost`.
 - [src/remote.ts](src/remote.ts) — the `ClientHost` over the Host's socket;
   [src/client.ts](src/client.ts) — the entry `bin/system` runs for it;
+  [src/mcp.ts](src/mcp.ts) — `system mcp`;
   [src/io.ts](src/io.ts) — caller, secrets, confirmation and error lines.
 - [src/doctor.ts](src/doctor.ts) — the checks, behind a `DoctorHost` seam so
   [tests](tests/README.md) need no host.

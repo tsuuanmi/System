@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, type Asserted, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
+import { TERMINAL, type Asserted, type Caller, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { MAX_FRAME, NotAnswering, fitsFrame, type Client } from '../../host/lib/index.js'
 import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
@@ -23,7 +23,7 @@ const LOGIN_TIMEOUT = 11 * 60_000
 
 export interface Remote {
   /** A connection that has said `host.hello` as `caller`. */
-  open(caller: { type: 'human' | 'agent'; operatorId: string }): Promise<Client>
+  open(caller: Caller): Promise<Client>
   /** Notes for the operator, such as that a Work was left running. */
   err(text: string): void
 }

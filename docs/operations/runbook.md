@@ -279,6 +279,31 @@ of Goal ... is used up`; running Works finish. To go on, write a new Goal with
 `--supersedes <old id>` and the raised budget; the old ID then resolves to it,
 and the spend of the old versions still counts.
 
+## Using System from an agent
+
+`system mcp` lets an agent session such as Claude Code use System's agent
+operations as MCP tools. It runs without DSH and talks to the running Host, so
+start the Host first. Write a Goal (above), then add the server with its ID:
+
+```
+claude mcp add system -- system mcp --goal <goal-id>
+```
+
+Without `--goal` the session is a plain agent: it may use every agent
+operation on every Work.
+
+With `--goal` it is an Orchestrator for that Goal. It may:
+
+- submit Works, which always name its Goal, and run, retry and cancel them;
+- read the Works of the Goal and of the Goals it supersedes, their events,
+  reports and Artifacts;
+- store Tasks and files, and list the Workers.
+
+It cannot approve or deny, store a conversation, set credentials, write a Goal,
+sign an account in, or merge into `main`. It is refused, with the reason, any
+call on another Goal's Works or their Artifacts. The budget of the Goal still
+stops new Works.
+
 ## Errors
 
 An error is one line, `system: <message>`, never a stack. `SYSTEM_DEBUG=1`
