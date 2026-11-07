@@ -38,6 +38,27 @@ _Avoid_: persona, agent type
 
 ### Running and directing work
 
+**Task**:
+An immutable record of what to do: instructions, optionally the repository
+commit to start from, and Artifacts to read as context. A Task does not run;
+several Works can take the same Task.
+_Avoid_: job, ticket, Work (for the request)
+
+**Work**:
+One durable carrying-out of a Task through a pinned Workflow, with its
+attempts, verdicts and record; cancel, retry and approve act on a Work.
+_Avoid_: run, job, Task (for the execution)
+
+**Sub-workflow**:
+A Workflow used as one step of another Workflow; its steps are joined into
+the using Workflow's spec when the Work is admitted.
+_Avoid_: child Work, nested run, subroutine
+
+**Decision**:
+A recorded choice by the operator or an Orchestrator, with its options, its
+reason and the Artifacts it rests on; a record, never an authority.
+_Avoid_: note, log entry, approval
+
 **Host**:
 The one long-lived System process on a machine that owns every Work; the
 CLI and agents act on Work only by asking it.

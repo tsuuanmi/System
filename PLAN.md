@@ -588,6 +588,24 @@ and orchestrator scope; O3 completion notices.
   ChatGPT accounts through role capabilities. Compare it with the Claude/Codex
   default on real briefs, judged by the Sonnet evaluator (B3's method).
 
+### OC — A replaceable Orchestrator, and the checks as a Sub-workflow ([PROP-0006](docs/proposals/PROP-0006-replaceable-orchestrator-and-code-checks.md))
+
+Decided by the operator on 2026-11-07, built from `dev` as one pull request
+by the Development session, apart from the Website Worker programme on
+`web-workers` (whose PLAN records milestone WW). Each step with a test that
+failed first; the acceptance list is in PROP-0006.
+
+- [ ] OC1. `decision@1`, `system decision add|list` (`decision.add` agent,
+  Goal-scoped).
+- [ ] OC2. Live attempt progress in the Host (`work show`), and the stall
+  notice after `stallMinutes`.
+- [ ] OC3. `system goal brief` / `goal.brief`, generated from records.
+- [ ] OC4. Sub-workflows in the Workflow compiler (ADR-0002 amendment).
+- [ ] OC5. `workflows/code-checks.yaml`, used by `software-engineering.yaml`,
+  and `work retry --step` on a verify step ("verify again").
+- [ ] Growth recorded (core lines, docs, check time) and a simplification
+  pass, as for every milestone.
+
 ## 4. After Brainstorm — future, not current gates
 
 - [x] Website Worker for interactive/browser-assisted Research **only when**

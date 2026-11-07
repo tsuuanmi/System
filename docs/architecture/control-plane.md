@@ -73,7 +73,7 @@ contract gap; identify the authoritative record before implementing one.
 
 ## Work vs Workflow and deterministic Artifact-ID handoff
 
-**Work/Task is primitive; Workflow is an optional external configuration file**
+**Work is primitive (its input is a Task); Workflow is an optional external configuration file**
 that composes steps and dependencies. The admitted resolved config is pinned
 as a content-addressed artifact; changing files affects future work only.
 

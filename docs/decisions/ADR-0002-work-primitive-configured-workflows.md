@@ -71,6 +71,25 @@ some reference workflow definitions still live in TypeScript plugin code.
 - Dynamic graph growth, loops, compensation, conditionals and complex
   scheduling are deferred until concrete use cases demonstrate necessity.
 
+## Amendment (2026-11-07): Sub-workflows, joined at compile time
+
+The operator decided that a Workflow may use another Workflow as one of its
+steps (a Sub-workflow, [GLOSSARY](../../GLOSSARY.md)). Standards considered:
+GitHub Actions' composite actions (expanded in place) and reusable workflows
+(run as separate runs); System takes the composite model.
+
+- A step `uses: <workflow file>` with `inputs` and `outputs` mappings is
+  expanded by the Workflow compiler when the Work is admitted: the
+  Sub-workflow's steps join the spec under the using step's namespace (for
+  example `debate.round1.a`), and the expanded spec is pinned as any other.
+- The controller is unchanged: replay, Artifact IDs, per-step retry, slots
+  and Goal budgets apply to the expanded steps as written.
+- No recursion; a bounded depth (3). A Sub-workflow still runs on its own as
+  an ordinary Workflow.
+- Rejected for now: a step that submits a child Work and waits for it. It
+  needs parent and child Work in the core (cascading cancel, budgets, restart
+  recovery), a new layer Charter 11 asks to avoid until a need shows.
+
 See [workflow composition](../architecture/workflow-composition.md) for the
 target boundary and illustrative domain-neutral YAML, and
 [MVP acceptance](../requirements/mvp.md) for tests.

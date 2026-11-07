@@ -22,7 +22,7 @@ client -> work admission -> policy/capability check -> Worker execution
                  -> durable state, effect record and inspection
 ```
 
-**MVP-01 Work continuity:** a stable **Work/Task ID** is the primitive; it
+**MVP-01 Work continuity:** a stable **Work ID** is the primitive (its input is a Task); it
 survives interruption independently of model conversation/session or workflow
 configuration. A single Task does not require a public multi-step DAG.
 
