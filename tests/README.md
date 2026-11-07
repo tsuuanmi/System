@@ -32,7 +32,7 @@ GitHub credentials. Run with `corepack pnpm smoke`.
 - [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `chatgpt-web` account on
   the booted profile against the local fake page: `workers login --cookies`
   (no value printed), a sign-in wall reported, a Work filling its slot and
-  producing a conversation. Skipped without Chrome.
+  producing a conversation. Skipped, with the reason, where a headed Chrome cannot start on an Xvfb.
 - [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
   one Research Work on the operator's signed-in `chatgpt-web/default` profile.
 - [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own

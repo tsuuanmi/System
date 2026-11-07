@@ -115,7 +115,7 @@ const modifiers = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ?
 const BUTTONS = ['left', 'middle', 'right']
 let held = 'none'
 let lastMove = 0
-canvas.addEventListener('mousedown', (e) => { e.preventDefault(); canvas.focus(); held = BUTTONS[e.button] || 'left'; send({ type: 'mouse', kind: 'mousePressed', ...point(e), button: held, clickCount: e.detail || 1, modifiers: modifiers(e) }) })
+canvas.addEventListener('mousedown', (e) => { e.preventDefault(); canvas.focus({ preventScroll: true }); held = BUTTONS[e.button] || 'left'; send({ type: 'mouse', kind: 'mousePressed', ...point(e), button: held, clickCount: e.detail || 1, modifiers: modifiers(e) }) })
 canvas.addEventListener('mouseup', (e) => { e.preventDefault(); send({ type: 'mouse', kind: 'mouseReleased', ...point(e), button: BUTTONS[e.button] || 'left', clickCount: e.detail || 1, modifiers: modifiers(e) }); held = 'none' })
 canvas.addEventListener('mousemove', (e) => {
   if (Date.now() - lastMove < 40) return

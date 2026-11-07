@@ -94,10 +94,10 @@ async function workersView(ctx: Context): Promise<WorkersView> {
   return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
 }
 
-async function loginAccount(ctx: Context, ref: string, cookies: string | undefined) {
+async function agentsService(ctx: Context): Promise<AgentsService> {
   const agents = ctx.get('agents') as AgentsService | undefined
   if (!agents) throw new Error('the agents row is not mounted (run `system doctor`)')
-  return agents.login(ref, cookies)
+  return agents
 }
 
 /** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT. */
@@ -125,7 +125,9 @@ async function runHost(ctx: Context): Promise<void> {
       addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
       credentials,
       workers: () => workersView(ctx),
-      login: (ref, cookies) => loginAccount(ctx, ref, cookies),
+      login: async (ref, cookies) => (await agentsService(ctx)).login(ref, cookies),
+      loginRemote: async (ref) => (await agentsService(ctx)).loginRemote(ref),
+      loginWait: async (ref, cancel) => (await agentsService(ctx)).loginWait(ref, cancel),
     },
   }).catch(async (error: unknown) => {
     await host.close()

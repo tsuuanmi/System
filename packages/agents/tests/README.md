@@ -7,7 +7,12 @@ a real git repository, including a Codex takeover of cancelled Claude work.
 
 [chatgpt.test.ts](chatgpt.test.ts) runs the `chatgpt-web` Runtime against the
 fake ChatGPT page in [fake-chatgpt/](fake-chatgpt) (static HTML plus `chat.js`; scenarios by
-query string; the installed Chrome headless; skipped without it).
+query string; the installed Chrome, headed on a private Xvfb; skipped, with
+the reason, where it cannot start). [remote-login.test.ts](remote-login.test.ts)
+runs the remote sign-in against the same page (token, a screencast frame over
+SSE, a click and a key reaching the page, Save, Cancel, expiry and cleanup of
+Xvfb and the browser), an attempt on its own Xvfb, and the `unavailable` account
+without Xvfb or with `headless`.
 
 The booted profile is covered by [tests/agents.test.ts](../../../tests/README.md),
 and the real CLIs by the credential-gated `tests/real-agents.test.ts`

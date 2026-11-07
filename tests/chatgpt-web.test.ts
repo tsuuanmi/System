@@ -2,7 +2,7 @@
  * The chatgpt-web Runtime through the real Host and `bin/system`, against the
  * local fake ChatGPT page of packages/agents/tests/fake-chatgpt: login by
  * cookie file, then a Work whose answer fills the output slot and is stored as
- * a conversation. No network and no account. Skipped without Chrome.
+ * a conversation. No network and no account. Skipped, with the reason, when a headed Chrome cannot start on an Xvfb.
  */
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -10,9 +10,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
+import { skipHeaded } from '../test-support/headed.ts'
 
-const CHROME = '/usr/bin/google-chrome'
-const skip = !existsSync(CHROME) && `${CHROME} is not installed`
+const skip = skipHeaded
 const pages = join(repo, 'packages', 'agents', 'tests', 'fake-chatgpt')
 const cli = systemCli('system-web')
 const { home } = cli
@@ -85,4 +85,26 @@ test('a Work runs on the account: the answer fills the slot and the exchange is 
   assert.equal(system(['artifact', 'cat', record.state.steps.task.outputs.result]).stdout, 'content of result\nsecond line')
   const workers = system(['workers'])
   assert.match(workers.stdout, /chatgpt-web\/default\s+available/)
+})
+
+test('login --remote prints the tunnel and the address, serves the viewer behind the token, and Save reports the state', { skip, timeout: 120_000 }, async () => {
+  const running = cli.runAsync(['workers', 'login', 'chatgpt-web/default', '--remote'])
+  try {
+    let url: string | undefined
+    for (const end = Date.now() + 60_000; !url && Date.now() < end;) {
+      url = /(http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{64}\/)/.exec(running.stdout())?.[1]
+      if (!url) await new Promise((r) => setTimeout(r, 100))
+    }
+    assert.ok(url, running.stdout() + running.stderr())
+    const port = /127\.0\.0\.1:(\d+)/.exec(url)![1]
+    assert.match(running.stdout(), new RegExp(`ssh -L ${port}:127\\.0\\.0\\.1:${port} \\S+@\\S+`))
+    assert.equal((await fetch(url.replace(/[0-9a-f]{64}/, 'wrong'))).status, 403)
+    assert.equal((await fetch(url)).status, 200)
+    assert.equal((await fetch(`${url}save`, { method: 'POST' })).status, 200)
+    const ended = await running.done
+    assert.equal(ended.status, 0, ended.stderr + ended.stdout)
+    assert.match(ended.stdout, /chatgpt-web\/default: signed in/)
+  } finally {
+    running.child.kill('SIGKILL')
+  }
 })

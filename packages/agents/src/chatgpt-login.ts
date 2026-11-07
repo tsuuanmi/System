@@ -95,7 +95,7 @@ export async function checkSignedIn(web: WebConfig, display: Display): Promise<L
 
 /** Sign the profile in, by cookies or by hand in a visible window, then report whether it is signed in. A cookie value is never part of the report. */
 export async function webLogin(web: WebConfig, options: LoginOptions = {}): Promise<LoginReport> {
-  if (options.cookies === undefined && !options.display) throw new Error('no display is available for a manual sign-in (DISPLAY is not set): import cookies instead (system workers login <account> --cookies <file>)')
+  if (options.cookies === undefined && !options.display) throw new Error('no display is available for a manual sign-in (DISPLAY is not set): import cookies (system workers login <account> --cookies <file>) or sign in remotely (--remote)')
   const parsed = options.cookies === undefined ? undefined : parseCookies(options.cookies, options.cookieDomains)
   // The same headed browser as an attempt, on its own Xvfb unless the operator's display is given for a manual sign-in.
   const display = options.display ? visible(options.display) : await startXvfb()

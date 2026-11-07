@@ -461,19 +461,25 @@ and orchestrator scope; O3 completion notices.
   accepted; `system workers login`, cookie import; not enabled in the bundle;
   the real-site run, `SYSTEM_REAL_WEB=1`, is still to do.)*
 
-- [ ] W2. Remote sign-in over SSH, as System 1 does (operator, 2026-11-07).
-  - `system workers login <ref> --remote` opens Chrome for the account's
-    profile on its own Xvfb display, with a VNC server on an owner-only Unix
-    socket and a token-gated noVNC page on 127.0.0.1.
-  - The operator runs `ssh -L <port>:127.0.0.1:<port> host`, opens the printed
-    URL, signs in, and presses Save. The session expires after a short TTL.
-  - No CDP port is exposed.
-  - Reference: System 1, `docs/design/browser-runtime.md` ("remote" flow,
-    ported from tsuuanmi/internet).
-  - On this machine Xvfb is installed; `x11vnc` and websockify/noVNC are not.
-    Prefer pure-Node pieces where they exist, and otherwise name the packages
-    the operator must install.
+- [x] W2. Remote sign-in over SSH, as System 1 does (operator, 2026-11-07).
+  *(2026-11-07: pure Node, no VNC and no new package.)*
+  - `system workers login <ref> --remote` opens the account's profile headed
+    on its own Xvfb and serves a viewer on 127.0.0.1 behind a random 32-byte
+    token: a CDP screencast over Server-Sent Events, input sent back by POST,
+    **Save** and **Cancel**, a 15-minute TTL. The CLI prints the
+    `ssh -L <port>:127.0.0.1:<port> <user>@<host>` line and the URL.
+  - No CDP port is exposed (Playwright's pipe). A human clears a challenge in
+    the viewer; System never does.
+  - **System never runs the browser headless** (operator, 2026-11-07): attempts
+    and login use a real headed Chrome on the operator's `DISPLAY` or a private
+    Xvfb it stops with the attempt; the `headless` option is gone; without
+    Xvfb the account is `unavailable`.
+  - Reference: System 1, `docs/design/browser-runtime.md` ("remote" flow).
   - Cookie import (`--cookies`) stays as the quick path.
+  - Verified here by the unit and Host tests; the browser tests are skipped
+    where a headed Chrome does not start on an Xvfb (the Chrome 95 on this
+    machine crashes on start when headed), so a headed run is still to do on a
+    machine where it starts.
 - [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
   temporary chats, two signed-in accounts (`chatgpt-web/default`,
   `chatgpt-web/second`) can each give an independent proposal. A Brainstorm

@@ -10,7 +10,7 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, step W1, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1 and W2, 2026-11-07).
 
 ## Decision context
 
@@ -49,16 +49,55 @@ fallback.
    download and no ChatGPT-specific dependency. It runs in the Host: a
    browser is a long-lived resource the Host can keep between attempts.
    **Not enabled in the bundle**; the runbook says how to add it.
+   **Never headless** (operator, 2026-11-07). System always runs a real,
+   headed Chrome on an invisible display, a private Xvfb that it starts and
+   stops (`packages/agents/src/display.ts`). The option `headless` does not
+   exist, and an account that sets it is `unavailable`. The reason: a real
+   headed browser is closer to the operator's own and is challenged less. Each
+   attempt and each login uses the operator's `DISPLAY` when one is set, and
+   otherwise its own Xvfb, stopped with the attempt (on cancel and on the time
+   limit too). Other local users cannot reach it: it takes an X authority
+   cookie kept in a directory of mode 0700 and listens on no TCP port. Without
+   Xvfb on `PATH` the account is `unavailable` in `system workers`, with a
+   reason that names it.
 2. **The session.** A dedicated browser profile under
    `$DSH_HOME/system/chatgpt-web/<account>/`, owner-only and outside any
    sync, is the Account's credential and, like a token, never reaches other
    Workers. The operator signs in once with
-   `system workers login chatgpt-web/<name> [--cookies <file>]`, the Host
-   operation `workers.login` (`agent: false`). Without `--cookies` a visible
-   window opens when the Host has a `DISPLAY`; the operator's machine has none
-   (checked 2026-11-07), so login also accepts a session cookie export (JSON or
-   Netscape) from the operator's own browser, read once by the CLI into the
-   profile and stored nowhere else.
+   `system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
+   the Host operations `workers.login`, `workers.loginRemote` and
+   `workers.loginWait` (all `agent: false`). Three ways:
+   - `--cookies`: a session cookie export (JSON or Netscape) from the
+     operator's own browser, read once by the CLI into the profile and stored
+     nowhere else. The browser is the same headed one, on its own Xvfb.
+   - With neither, a visible window opens when the Host has a `DISPLAY`.
+   - `--remote`, for a machine with no display (the operator's, checked
+     2026-11-07), which also lets the operator clear a Cloudflare challenge
+     that the cookies did not carry (W2).
+   **The remote flow, as built** (`packages/agents/src/remote-login.ts`; the
+   idea is System 1's "remote" flow, in pure Node):
+   1. The Host starts a private Xvfb and opens the account's profile headed on
+      it, with Playwright's default pipe (no CDP port exists), and loads
+      chatgpt.com.
+   2. It serves a viewer on `127.0.0.1` on a random port, under a random
+      32-byte token in the path; a request without the token gets 403.
+   3. The page shows a CDP screencast of the tab (`Page.startScreencast`),
+      streamed with Server-Sent Events, and sends the operator's clicks,
+      scrolls and keys back as POSTs that become `Input.dispatchMouseEvent` and
+      `Input.dispatchKeyEvent`, scaled from the canvas to the page's pixels.
+   4. The CLI prints the line `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
+      and the URL. The operator opens the tunnel from their own machine, opens
+      the URL, signs in, clears any check by hand, and presses **Save**.
+   5. On Save the browser closes cleanly, so the profile keeps `cf_clearance`
+      and the session; then the signed-in check of a normal login runs and its
+      result is reported. **Cancel**, Ctrl-C in the CLI, or 15 minutes, end the
+      session without a check. Either way the browser, the Xvfb and the server
+      are stopped.
+   System never solves or clicks a challenge; the human does, in the viewer.
+   **Why not VNC:** `x11vnc` and noVNC/websockify are not installed here, and
+   a VNC server adds an extra listener and another password to guard. The
+   screencast needs only Node and the Chrome already in use, and the token
+   plus the loopback bind plus SSH are the whole access control.
 3. **One attempt.**
    1. Open a **temporary chat** (`https://chatgpt.com/?temporary-chat=true`),
       the Account option `temporaryChat`, on by default: the account's memory
@@ -96,7 +135,10 @@ A fake page with the same structure (`packages/agents/tests/fake-chatgpt`,
 driven by `packages/agents/tests/chatgpt.test.ts` and `tests/chatgpt-web.test.ts`)
 covers send, wait and extract, completion detection, a sign-in wall, a CAPTCHA
 page, a missing output block and cancel mid-answer, deterministically and
-without an account. A real run, gated by `SYSTEM_REAL_WEB=1`
+without an account. `packages/agents/tests/remote-login.test.ts` covers the
+remote flow (token, frames, input, Save, Cancel, expiry, cleanup) and the
+private Xvfb. Those tests are skipped, with the reason, where a headed Chrome
+cannot start on an Xvfb (`test-support/headed.ts`). A real run, gated by `SYSTEM_REAL_WEB=1`
 (`tests/real-web.test.ts`), is a Research Work on `chatgpt-web/default` whose
 sources the citation verifier checks.
 
@@ -107,7 +149,7 @@ written, not checked on a live page.
 
 ## Out of scope
 
-Other websites; automating sign-in; getting round bot checks; uploading files;
+Other websites; automating sign-in; getting round bot checks (the human clears one); a headless mode; uploading files;
 the ChatGPT API, which needs an API key the operator does not have. Codex with
 `--search`, the official route through the same subscription, stays available
 as a separate option.

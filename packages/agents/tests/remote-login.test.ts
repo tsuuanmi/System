@@ -2,7 +2,7 @@
  * The remote sign-in and the private display (PROP-0005), against the local
  * fake ChatGPT page: `startRemoteLogin` serves the viewer, forwards input and
  * saves; an attempt runs headed on its own Xvfb. No network and no account.
- * Skipped without Xvfb or Chrome. Every test stops what it starts.
+ * Skipped, with the reason, when a headed Chrome cannot start on an Xvfb. Every test stops what it starts.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -14,16 +14,16 @@ import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
+import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { TASK_KIND, CONVERSATION_KIND, conversationSchema, taskSchema, type WorkerRequest } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
 import { profileLockPid, webDefaults, type WebConfig } from '../src/chatgpt.ts'
-import { findXvfb } from '../src/display.ts'
+import { apply } from '../src/index.ts'
 import { startRemoteLogin, type RemoteSession } from '../src/remote-login.ts'
 
-const CHROME = '/usr/bin/google-chrome'
-const skip = (!existsSync(CHROME) && `${CHROME} is not installed`) || (!findXvfb() && 'Xvfb is not installed')
+const skip = skipHeaded
 const pages = join(dirname(fileURLToPath(import.meta.url)), 'fake-chatgpt')
 const root = mkdtempSync(join(tmpdir(), 'system-remote-'))
 const events: Record<string, any>[] = []
@@ -139,7 +139,9 @@ test('a click on the viewer lands where the operator pointed, at any scale', { s
       const viewer = await (await browser.newContext({ viewport: { width: 700, height: 500 } })).newPage()
       await viewer.goto(session.url)
       await viewer.waitForFunction(`(() => { const c = document.querySelector('canvas'); return c && c.width > 0 })()`)
-      const box = (await viewer.evaluate(`(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, cw: document.querySelector('canvas').width, ch: document.querySelector('canvas').height } })()`)) as { x: number; y: number; w: number; h: number; cw: number; ch: number }
+      type Box = { x: number; y: number; w: number; h: number; cw: number; ch: number }
+      const measure = () => viewer.evaluate(`(() => { const c = document.querySelector('canvas'); const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, cw: c.width, ch: c.height } })()`) as Promise<Box>
+      const box = await measure()
       assert.ok(box.w < box.cw, 'the viewer is scaled down')
       events.length = 0
       await viewer.mouse.click(box.x + box.w / 2, box.y + box.h / 4)
@@ -248,4 +250,33 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
   } finally {
     if (was !== undefined) process.env.DISPLAY = was
   }
+})
+
+/** Mount the `agents` row on a bare context and return the accounts it reports. */
+async function accountsOf(account: Record<string, unknown>, path?: string) {
+  let registered = 0
+  const provided: Record<string, any> = {}
+  const services: Record<string, unknown> = { capabilities: { registerWorker: () => { registered += 1; return () => {} } }, artifacts: {}, subprocess: { resolveExecutable: async (command: string) => command }, credentials: {} }
+  const ctx = { get: (key: string) => services[key], effect() {}, provide: (key: string, value: unknown) => { provided[key] = value } }
+  const was = process.env.PATH
+  if (path !== undefined) process.env.PATH = path
+  try {
+    await apply(ctx as never, { accounts: [{ ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], executablePath: CHROME, ...account }] })
+  } finally {
+    process.env.PATH = was
+  }
+  return { accounts: await provided.agents.accounts() as { available: boolean; reason: string }[], registered }
+}
+
+test('without Xvfb the account is unavailable and the reason names it', { timeout: 30_000 }, async () => {
+  const { accounts, registered } = await accountsOf({}, mkdtempSync(join(root, 'empty-path-')))
+  assert.equal(accounts[0]!.available, false)
+  assert.match(accounts[0]!.reason, /Xvfb is not installed/)
+  assert.equal(registered, 0)
+})
+
+test('headless is not an option: an account that asks for it is unavailable', { timeout: 30_000 }, async () => {
+  const { accounts } = await accountsOf({ headless: true })
+  assert.equal(accounts[0]!.available, false)
+  assert.match(accounts[0]!.reason, /headless is not an option/)
 })

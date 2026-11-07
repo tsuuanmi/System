@@ -28,6 +28,10 @@ export interface Services {
   workers(): Promise<{ registered: string[]; accounts: unknown[] }>
   /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
   login(ref: string, cookies: string | undefined): Promise<{ signedIn: boolean; detail: string; imported?: number; skipped?: number }>
+  /** Start the remote sign-in of a browser Account: where to reach its viewer, and until when. */
+  loginRemote(ref: string): Promise<{ url: string; port: number; ssh: string; expiresAt: number }>
+  /** Wait for the remote sign-in of `ref` to end (Save, Cancel, expiry), or end it first with `cancel`; the signed-in state. */
+  loginWait(ref: string, cancel: boolean): Promise<{ signedIn: boolean; detail: string }>
 }
 
 const commandId = z.string().min(1).optional()
@@ -306,6 +310,18 @@ export function operations(services: Services): Methods {
       summary: 'Sign a browser Account (`chatgpt-web/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
       params: z.object({ ref: z.string().min(1), cookies: z.string().max(MAX_FRAME).optional() }).strict(),
       handler: (_host, p) => services.login(p.ref, p.cookies),
+    },
+    'workers.loginRemote': {
+      agent: false,
+      summary: 'Start a remote sign-in of a browser Account: its profile opens headed on a private display and a viewer is served on 127.0.0.1 behind a random token. Returns `{ url, port, ssh, expiresAt }`; the operator tunnels to the port over SSH. Follow with `workers.loginWait`.',
+      params: z.object({ ref: z.string().min(1) }).strict(),
+      handler: (_host, p) => services.loginRemote(p.ref),
+    },
+    'workers.loginWait': {
+      agent: false,
+      summary: 'Wait until the remote sign-in of an Account ends (Save, Cancel in the viewer, or its 15 minutes), or with `cancel` end it now. Returns whether the profile is signed in.',
+      params: z.object({ ref: z.string().min(1), cancel: z.boolean().optional() }).strict(),
+      handler: (_host, p) => services.loginWait(p.ref, p.cancel === true),
     },
     'credentials.status': {
       agent: false,

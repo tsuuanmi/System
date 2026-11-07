@@ -152,24 +152,66 @@ bundle's accounts plus this one), then restart the Host:
 ```
 
 It needs Google Chrome (`/usr/bin/google-chrome`, or `executablePath`) recent
-enough for chatgpt.com. `system workers` shows it as `available` once Chrome is
-found; that says nothing about the sign-in.
+enough for chatgpt.com, and `Xvfb` (`apt install xvfb`). `system workers` shows
+it as `available` once both are found; that says nothing about the sign-in. It
+is `unavailable` with a reason that names whichever is missing.
 
-**Sign in, once.** Either:
+**The browser is never headless.** System always runs a real, headed Chrome, on
+your `DISPLAY` if the Host has one and otherwise on its own invisible Xvfb that
+it starts for each attempt and stops with it (also on cancel and on the time
+limit). A real headed browser is closer to yours and is challenged less. There
+is no `headless` option; an account that sets it is `unavailable`.
+
+**Sign in, once.** Three ways:
 - `system workers login chatgpt-web/default --cookies <file>`: a JSON export from
   a browser extension, or a Netscape `cookies.txt`, of chatgpt.com taken from
   your own signed-in browser. The CLI reads it once and sends it to the Host;
   only chatgpt.com and openai.com cookies are kept, a session cookie gets a
   30-day lifetime, and your file is left as it is: delete it yourself when done,
   because it is as good as a password.
-- With no `--cookies`, on a machine with a display: a window opens on the
-  **Host's** `DISPLAY` (a user service has none unless you run
+- `system workers login chatgpt-web/default --remote`: for a server with no
+  display, and for a Cloudflare challenge. See below.
+- With neither, on a machine with a display: a window opens on the **Host's**
+  `DISPLAY` (a user service has none unless you run
   `systemctl --user import-environment DISPLAY` and restart it). Sign in by hand;
-  it waits up to ten minutes. This machine has no display, so use cookies.
+  it waits up to ten minutes.
 
-Either way it then loads the page and prints `signed in`, or `not signed in:`
-and why (exit 1). It never prints a cookie value. Do not log in while an attempt
-of the account runs: Chrome holds the profile.
+Each then loads the page and prints `signed in`, or `not signed in:` and why
+(exit 1). It never prints a cookie value. Do not log in while an attempt of the
+account runs: Chrome holds the profile.
+
+**Sign in over SSH (`--remote`).** On the server, as the user that runs the
+Host:
+
+```
+system workers login chatgpt-web/default --remote
+```
+
+It prints three steps, for example:
+
+```
+1. On your own machine, open the tunnel (keep it running):
+     ssh -L 41873:127.0.0.1:41873 me@server
+2. Open this address in your browser:
+     http://127.0.0.1:41873/<64 hex characters>/
+3. Sign in and clear any check by hand, then press Save. ...
+```
+
+1. On **your own machine**, run the `ssh -L ...` line exactly as printed. The
+   `user@host` part is the Host's user and its host name; replace the host with
+   the name or address you reach the server by if they differ.
+2. Open the URL in your browser. It shows the ChatGPT tab; click, scroll and
+   type in it as in a normal browser. Anything without the long token in the
+   address gets `403`.
+3. Sign in, and if a "verify you are human" check shows, clear it yourself.
+   System never clicks it.
+4. Press **Save**. The page says `Signed in` or `Not signed in: <why>`, and the
+   command prints the same and exits 0 or 1. **Cancel**, Ctrl-C on the server,
+   or 15 minutes end the session without saving.
+
+The viewer listens on `127.0.0.1` only and no debugging port is opened; the
+browser, its Xvfb and the server are stopped when the session ends. One remote
+sign-in per account at a time, and not while an attempt of the account runs.
 
 **A sign-in wall.** An attempt that fails with `the page shows a sign-in wall`
 means the session ended (a sign-out, a password change, an expired cookie). Run
@@ -178,13 +220,13 @@ looked like: `system work show <id>`, then `system artifact cat <id> > shot.png`
 
 **A CAPTCHA or Cloudflare challenge.** The attempt fails with `a CAPTCHA or
 Cloudflare challenge is showing`; System never types into or solves one, and
-retrying at once will meet it again. Clear it by hand: stop the Host, open
-Chrome on the profile with a display
-(`google-chrome --user-data-dir=$DSH_HOME/system/chatgpt-web/default https://chatgpt.com/`),
-pass the check, close it, start the Host, and retry. If it keeps coming back,
-slow down or stop using the account for a while; an automated session is
-against OpenAI's Terms of Use, a risk the operator accepted for their own
-account.
+retrying at once will meet it again. Clear it by hand, in the profile the
+attempts use: run `system workers login chatgpt-web/default --remote` (as above),
+pass the check in the viewer, press **Save**, and retry the Work. The check
+stays cleared as long as `cf_clearance` lives, which Cloudflare decides. If it
+reappears, repeat the same steps. If it keeps coming back, slow down or stop
+using the account for a while; an automated session is against OpenAI's Terms of
+Use, a risk the operator accepted for their own account.
 
 **The profile** is `$DSH_HOME/system/chatgpt-web/<name>` (or `profileDir`), a
 Chrome user-data directory created mode 0700. It holds the live session: treat
