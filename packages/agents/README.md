@@ -142,15 +142,19 @@ the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).
         temporaryChat: true                    # each attempt in a temporary chat
         url: https://chatgpt.com/
         executablePath: /usr/bin/google-chrome
-        headless: true
         timeouts: {load: 60, send: 30, answer: 900, stable: 3}   # seconds
 ```
 
 One attempt:
 
-1. **Launch** a persistent Chrome context on `profileDir`: the profile is the
-   Account's credential and is reused by every attempt. One attempt at a time
-   per Account (Chrome locks the profile).
+1. **Launch** a persistent Chrome context on `profileDir`, **headed**: the
+   profile is the Account's credential and is reused by every attempt. One
+   attempt at a time per Account (Chrome locks the profile). The browser is
+   never headless: it runs on the Host's `DISPLAY`, or when there is none on a
+   private Xvfb ([display.ts](src/display.ts)) that the attempt starts and stops,
+   also on cancel and on the time limit. Without Xvfb on `PATH` the Account is
+   `unavailable`, with a reason naming it, and an account that sets `headless` is
+   too.
 2. **Load** a new chat (`?temporary-chat=true` when `temporaryChat`) and read
    the page state: a chat box and no sign-in button is ready; a sign-in wall,
    a CAPTCHA or Cloudflare challenge, or neither within `load` seconds fails
@@ -180,13 +184,30 @@ and Playwright's own `fill`, `click` and `waitForSelector` are not used, so an
 older Chrome works. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.
 
-**Login** (`system workers login chatgpt-web/<name> [--cookies <file>]`, an
-operator-only operation, `workers.login`): `--cookies` imports a JSON
-(browser-extension export) or Netscape cookie file, keeping only chatgpt.com
-and openai.com cookies and giving a session cookie a 30-day lifetime, and
-deletes nothing; the file is read once by the CLI. Without it, a visible window
-opens on the Host's `DISPLAY` and waits up to ten minutes for a sign-in. Either
-way the signed-in state is then checked and reported; no cookie value is printed.
+**Login** (`system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
+operator-only operations `workers.login`, `workers.loginRemote` and
+`workers.loginWait`): `--cookies` imports a JSON (browser-extension export) or
+Netscape cookie file, keeping only chatgpt.com and openai.com cookies and giving
+a session cookie a 30-day lifetime, and deletes nothing; the file is read once by
+the CLI. With neither flag, a visible window opens on the Host's `DISPLAY` and
+waits up to ten minutes for a sign-in. Each uses the same headed browser as an
+attempt, so a check cleared in one stays valid for attempts that share the
+profile. The signed-in state is then checked and reported; no cookie value is
+printed.
+
+`--remote` ([remote-login.ts](src/remote-login.ts)) is for a Host with no display
+and for a Cloudflare challenge that only a human can pass. It opens the profile
+headed on a private Xvfb (over Playwright's pipe: no CDP port) and serves a
+viewer on `127.0.0.1` on a random port under a random 32-byte token (403
+without it). The viewer shows a CDP screencast over Server-Sent Events and
+posts the operator's clicks, scrolls and keys back as `Input.dispatchMouseEvent`
+and `Input.dispatchKeyEvent`, scaled to the page's pixels, with **Save** and
+**Cancel**. The CLI prints the `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
+line and the URL; the runbook has the steps. Save closes the browser cleanly (so
+`cf_clearance` and the session stay in the profile), checks the signed-in state
+and reports it; Cancel, Ctrl-C or the 15-minute TTL end the session without a
+check. Everything it started (Xvfb, browser, server) is stopped. Nothing solves
+or clicks a challenge.
 
 ## Limits
 

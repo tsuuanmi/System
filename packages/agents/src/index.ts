@@ -13,11 +13,15 @@ import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from 
 import { agentWorker, recordingPid, type Account, type Spawner } from './agent.ts'
 import { webDefaults, type WebConfig } from './chatgpt.ts'
 import { webLogin, type LoginReport } from './chatgpt-login.ts'
+import { XVFB_MISSING, findXvfb } from './display.ts'
+import { startRemoteLogin, type RemoteSession } from './remote-login.ts'
 import type { Runtime } from './runtimes.ts'
 
 export * from './agent.ts'
 export * from './chatgpt.ts'
 export * from './chatgpt-login.ts'
+export * from './remote-login.ts'
+export * from './display.ts'
 export * from './runtimes.ts'
 export * from './workspace.ts'
 
@@ -42,8 +46,6 @@ export interface AccountConfig {
   url?: string
   /** chatgpt-web: the Google Chrome to drive (default /usr/bin/google-chrome). */
   executablePath?: string
-  /** chatgpt-web: run Chrome without a window (default true). */
-  headless?: boolean
   /** chatgpt-web: seconds per stage (`load`, `send`, `answer`) and how long the answer's text must stay unchanged (`stable`). */
   timeouts?: Partial<WebConfig['timeouts']>
   /** The model per tier; each listed tier adds the capability `tier.<name>`. */
@@ -72,11 +74,17 @@ export interface AccountStatus {
   version?: string
 }
 
+export type RemoteView = Pick<RemoteSession, 'url' | 'port' | 'ssh' | 'expiresAt'>
+
 export interface AgentsService {
   /** Every configured account; the CLI version of each available one is asked here, once. */
   accounts(): Promise<AccountStatus[]>
   /** Sign a chatgpt-web account in, by the contents of a cookie file or by hand in a window (needs a display). */
   login(ref: string, cookies: string | undefined): Promise<LoginReport>
+  /** Start a remote sign-in (the viewer on 127.0.0.1, behind a token); one per account at a time. */
+  loginRemote(ref: string): Promise<RemoteView>
+  /** Wait for the account's remote sign-in to end (Save, Cancel or expiry), or with `cancel` end it now, and report. */
+  loginWait(ref: string, cancel: boolean): Promise<LoginReport>
 }
 
 /** A `Spawner` over the DSH subprocess service, which owns each process range. */
@@ -128,6 +136,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     statuses.push(status)
     try {
       const web = account.runtime === 'chatgpt-web'
+      if (web && 'headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
+      if (web && !findXvfb()) throw new Error(XVFB_MISSING)
       const command = await subprocess.resolveExecutable(web ? account.executablePath ?? webDefaults('').executablePath : account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
       status.command = command
       const askVersion = lazyVersion(subprocess, command)
@@ -143,7 +153,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const profile = account.profileDir ?? `chatgpt-web/${account.ref.split('/')[1] ?? 'default'}`
         const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile))
         const config: WebConfig = {
-          ...defaults, executablePath: command, temporaryChat: account.temporaryChat ?? defaults.temporaryChat, headless: account.headless ?? defaults.headless,
+          ...defaults, executablePath: command, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,
           url: account.url ?? defaults.url, timeouts: { ...defaults.timeouts, ...account.timeouts },
         }
         new URL(config.url)
@@ -174,10 +184,27 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const askVersion = versions.get(status.ref)
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
+  const remotes = new Map<string, RemoteSession>()
+  ctx.effect(() => () => { for (const remote of remotes.values()) void remote.cancel() }, 'remote sign-ins')
   const login = async (ref: string, cookies: string | undefined) => {
     const config = webs.get(ref)
     if (!config) throw new Error(`${ref} is not an available chatgpt-web account (system workers)`)
     return webLogin(config, { cookies, display: process.env.DISPLAY })
   }
-  ctx.provide('agents', { accounts, login } satisfies AgentsService)
+  const loginRemote = async (ref: string): Promise<RemoteView> => {
+    const config = webs.get(ref)
+    if (!config) throw new Error(`${ref} is not an available chatgpt-web account (system workers)`)
+    if (remotes.has(ref)) throw new Error(`a remote sign-in of ${ref} is already running: finish it, or cancel it (system workers login ${ref} --remote, then Ctrl-C)`)
+    const session = await startRemoteLogin(config)
+    remotes.set(ref, session)
+    void session.done.then(() => { if (remotes.get(ref) === session) remotes.delete(ref) })
+    return { url: session.url, port: session.port, ssh: session.ssh, expiresAt: session.expiresAt }
+  }
+  const loginWait = async (ref: string, cancel: boolean) => {
+    const session = remotes.get(ref)
+    if (!session) throw new Error(`no remote sign-in of ${ref} is running`)
+    if (cancel) await session.cancel()
+    return session.done
+  }
+  ctx.provide('agents', { accounts, login, loginRemote, loginWait } satisfies AgentsService)
 }

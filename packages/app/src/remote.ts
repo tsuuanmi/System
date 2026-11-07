@@ -19,6 +19,8 @@ export const POLL_MS = 1000
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
 const LOGIN_TIMEOUT = 11 * 60_000
+/** How long `workers.loginWait` may take: the viewer's session is 15 minutes, then the check. */
+const REMOTE_LOGIN_TIMEOUT = 17 * 60_000
 
 
 export interface Remote {
@@ -158,6 +160,18 @@ export function remoteHost(remote: Remote): ClientHost {
     }),
     workers: () => read('workers.list'),
     // A manual sign-in waits for the operator, so this call outlasts the usual answer time.
+    loginRemote: async (ref, show) => {
+      show(await read('workers.loginRemote', { ref }))
+      const client = await link()
+      // Ctrl-C ends the session in the Host; the wait below then returns its report.
+      const onInterrupt = () => { void client.call('workers.loginWait', { ref, cancel: true }).catch(() => {}) }
+      process.once('SIGINT', onInterrupt)
+      try {
+        return await client.call('workers.loginWait', { ref }, REMOTE_LOGIN_TIMEOUT) as any
+      } finally {
+        process.off('SIGINT', onInterrupt)
+      }
+    },
     login: async (ref, cookies) => (await link()).call('workers.login', { ref, ...(cookies === undefined ? {} : { cookies }) }, LOGIN_TIMEOUT) as any,
   }
 }

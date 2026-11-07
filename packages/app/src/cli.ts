@@ -96,6 +96,13 @@ export interface LoginView {
   skipped?: number
 }
 
+export interface RemoteLoginView {
+  url: string
+  port: number
+  ssh: string
+  expiresAt: number
+}
+
 export interface WorkersView {
   registered: string[]
   accounts: { ref: string; available: boolean; reason: string; version?: string }[]
@@ -108,6 +115,8 @@ export interface ClientHost {
   credentials(): CredentialCommands
   workers(): Promise<WorkersView>
   login(ref: string, cookies: string | undefined): Promise<LoginView>
+  /** The remote sign-in: `show` is given where to reach the viewer once it is up; resolves when it ends. Ctrl-C cancels it. */
+  loginRemote(ref: string, show: (view: RemoteLoginView) => void): Promise<LoginView>
 }
 
 /** What `doctor` and `host` run against: the process that boots DSH. */
@@ -214,10 +223,21 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   workers.command('login <ref>')
-    .description('sign a chatgpt-web account in: import a cookie file, or without one open a window for a manual sign-in (needs a display on the Host); operators only')
+    .description('sign a chatgpt-web account in: import a cookie file, sign in remotely over SSH (--remote), or without either open a window for a manual sign-in (needs a display on the Host); operators only')
     .option('--cookies <file>', 'a JSON (browser-extension export) or Netscape cookie file for chatgpt.com; read once, never stored')
-    .action((ref: string, options: { cookies?: string }) => {
+    .option('--remote', 'sign in, and clear a Cloudflare challenge by hand, in a viewer you reach through an SSH tunnel; no display needed')
+    .action((ref: string, options: { cookies?: string; remote?: boolean }) => {
       select(async () => {
+        if (options.remote && options.cookies !== undefined) throw new Error('give --cookies or --remote, not both')
+        if (options.remote) {
+          const report = await host.loginRemote(ref, (view) => {
+            io.out(`1. On your own machine, open the tunnel (keep it running):\n     ${view.ssh}\n`)
+            io.out(`2. Open this address in your browser:\n     ${view.url}\n`)
+            io.out(`3. Sign in and clear any check by hand, then press Save. The session ends at ${new Date(view.expiresAt).toLocaleTimeString()}; Ctrl-C here cancels it.\n`)
+          })
+          io.out(`${ref}: ${report.signedIn ? 'signed in' : `not signed in: ${report.detail}`}\n`)
+          return report.signedIn ? 0 : 1
+        }
         const report = await host.login(ref, options.cookies === undefined ? undefined : readFileSync(options.cookies, 'utf8'))
         if (report.imported !== undefined) io.out(`imported ${report.imported} cookie(s), skipped ${report.skipped ?? 0} of other sites\n`)
         io.out(`${ref}: ${report.signedIn ? 'signed in' : `not signed in: ${report.detail}`}\n`)

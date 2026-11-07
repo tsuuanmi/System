@@ -1,7 +1,8 @@
 /**
  * The chatgpt-web Runtime against a local fake ChatGPT page (tests/fake-chatgpt):
  * the same selector roles, scenarios chosen by the query string. Drives the
- * installed Chrome headless; no network and no account. Skipped without Chrome.
+ * installed Chrome headed on a private Xvfb; no network and no account. Skipped,
+ * with the reason, when that Chrome cannot start.
  */
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
@@ -12,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
+import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
@@ -19,8 +21,7 @@ import { agentWorker, type Account } from '../src/agent.ts'
 import { SELECTORS, parseBlocks, webDefaults, type WebConfig } from '../src/chatgpt.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
-const CHROME = '/usr/bin/google-chrome'
-const skip = !existsSync(CHROME) && `${CHROME} is not installed`
+const skip = skipHeaded
 const pages = join(dirname(fileURLToPath(import.meta.url)), 'fake-chatgpt')
 const root = mkdtempSync(join(tmpdir(), 'system-chatgpt-'))
 let server: Server
