@@ -95,6 +95,13 @@ describe('loadUiMap', () => {
     assert.notEqual(overlaid.hash, shipped.hash)
   })
 
+  it('accepts answer.leakedTokens (a list of strings), defaults it to none, and rejects anything else', () => {
+    assert.deepEqual(loadUiMap(MAP).answer.leakedTokens, [])
+    assert.deepEqual(loadUiMap(MAP.replace('elements:', "answer: { leakedTokens: ['<escape>'] }\nelements:")).answer.leakedTokens, ['<escape>'])
+    assert.throws(() => loadUiMap(MAP.replace('elements:', 'answer: { leakedTokens: [1] }\nelements:')))
+    assert.throws(() => loadUiMap(MAP.replace('elements:', 'answer: { other: [] }\nelements:')))
+  })
+
   it('rejects an invalid map, an overlay element with no candidate, and an overlay rule naming an unknown element', () => {
     assert.throws(() => loadUiMap(MAP.replace('candidates:\n      - { css', 'candidates: []\n      - { css')))
     assert.throws(() => loadUiMap(MAP, 'elements:\n  answer.limit:\n    candidates: []\n'))

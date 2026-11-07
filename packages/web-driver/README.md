@@ -123,6 +123,14 @@ changed but the header line.
   unfenced-label guard read tilde fences beside backtick ones (a closing fence
   has the opening one's character and is at least as long); a rebuilt block is
   still written with backticks.
+- **Leaked control tokens (WW6b, `ui-map@1.7`).** ChatGPT sometimes leaks a model
+  control token into its visible text: a `sources` block began with `<escape>`
+  inside the rendered code block (canary, 2026-11-08), and the citation check
+  refused it as not JSON. The map's `answer.leakedTokens` lists such literal
+  strings (ChatGPT: `["<escape>"]`; default none). The Runtime removes a listed
+  token only where it sits at the very start or end of an output, repeatedly,
+  never inside the content, and records it in the evidence as
+  `stripped: { <output>: [token, ...] }`, one entry per removal.
 - **Long prompts are pasted (WW1c).** Typing a 66 KB prompt with
   `keyboard.insertText` into ChatGPT's editor took about 5.5 min (the whole `mode`
   stage of `work:d72ce675` was 336 s). The map's `composer.insert` is now `do:

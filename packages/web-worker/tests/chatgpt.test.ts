@@ -16,7 +16,7 @@ import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatg
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLeaked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
@@ -92,6 +92,15 @@ test('parseBlocks reads tilde fences by CommonMark: backtick code inside never e
   assert.deepEqual(parseBlocks(`~~~~~review\nx\n~~~~\ny\n~~~~~`, ['review']), { blocks: { review: 'x\n~~~~\ny' }, missing: [] })
   assert.deepEqual(parseBlocks('~~~~review\nx\n~~~', ['review']), { blocks: {}, missing: ['review'] })
   assert.deepEqual(parseBlocks('~~~~review\nx\n````', ['review']), { blocks: {}, missing: ['review'] })
+})
+
+test('stripLeaked removes a listed token at the very start or end of an output, repeatedly, and never inside it', () => {
+  assert.deepEqual(stripLeaked('<escape>{"a": 1}', ['<escape>']), { content: '{"a": 1}', removed: ['<escape>'] })
+  assert.deepEqual(stripLeaked('<escape>\n<escape>{"a": 1}\n<escape>', ['<escape>']), { content: '{"a": 1}', removed: ['<escape>', '<escape>', '<escape>'] })
+  assert.deepEqual(stripLeaked('first <escape> last', ['<escape>']), { content: 'first <escape> last', removed: [] })
+  assert.deepEqual(stripLeaked('<escape>x <escape> y', ['<escape>']), { content: 'x <escape> y', removed: ['<escape>'] })
+  assert.deepEqual(stripLeaked(' a\n', ['<escape>']), { content: ' a\n', removed: [] })
+  assert.deepEqual(stripLeaked('<escape>x', []), { content: '<escape>x', removed: [] })
 })
 
 test('webPrompt asks for each output in a four-tilde fence and nothing after the last', () => {
@@ -345,6 +354,17 @@ test('a page that is neither signed in nor signed out fails with the unknown pag
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /neither the composer nor a sign-in page/)
   assert.ok(result.partial?.screenshot)
+})
+
+test('a leaked control token at the edge of an output is removed and recorded; one inside the content is kept', { skip, timeout: 60_000 }, async () => {
+  const answer = ['```sources', '<escape>{"sources": []}', '```', '', '```report', 'a literal <escape> inside', '```'].join('\n')
+  const { artifacts, result } = await run({ answer }, ['sources', 'report'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(await text(artifacts, result.outputs.sources!), '{"sources": []}')
+  assert.equal(await text(artifacts, result.outputs.report!), 'a literal <escape> inside')
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  const evidence = JSON.parse(line.slice(line.indexOf('{')))
+  assert.deepEqual(evidence.stripped, { sources: ['<escape>'] })
 })
 
 test('a missing output block fails the attempt and keeps what was found as partial output', { skip, timeout: 60_000 }, async () => {

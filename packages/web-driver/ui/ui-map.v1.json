@@ -20,9 +20,10 @@
         "ui-map@1.3",
         "ui-map@1.4",
         "ui-map@1.5",
-        "ui-map@1.6"
+        "ui-map@1.6",
+        "ui-map@1.7"
       ],
-      "description": "1.1 adds element `frames`; 1.2 adds `unverified` on elements and actions; 1.4 adds error-rule `feature` and `on`; 1.5 adds `settings`; 1.6 adds the attachment settings and the action `attachText`."
+      "description": "1.1 adds element `frames`; 1.2 adds `unverified` on elements and actions; 1.4 adds error-rule `feature` and `on`; 1.5 adds `settings`; 1.6 adds the attachment settings and the action `attachText`; 1.7 adds `answer`."
     },
     "provider": {
       "type": "string",
@@ -53,6 +54,14 @@
         "attachMinChars": { "type": "integer", "minimum": 0, "maximum": 1000000 },
         "attachWaitMs": { "type": "integer", "minimum": 0, "maximum": 300000 },
         "attachLabelChars": { "type": "integer", "minimum": 1, "maximum": 200 }
+      },
+      "additionalProperties": false
+    },
+    "answer": {
+      "type": "object",
+      "description": "How an answer's outputs are read. `leakedTokens`: literal strings the site leaks into its visible text (a model's control tokens), removed where they sit at the very start or end of an output.",
+      "properties": {
+        "leakedTokens": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 64 } }
       },
       "additionalProperties": false
     },

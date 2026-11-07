@@ -101,12 +101,20 @@ export interface UiSettings {
 }
 export const DEFAULT_SETTINGS: UiSettings = { modeReadyMs: 15_000, modeSettleMs: 600, attachMinChars: 4000, attachWaitMs: 30_000, attachLabelChars: 24 }
 
+/** How an answer's outputs are read (`ui-map@1.7`); a map without `answer` lists nothing. */
+export interface UiAnswer {
+  /** Literal strings the site leaks into its visible text: removed where they sit at the very start or end of an output. */
+  leakedTokens: string[]
+}
+export const DEFAULT_ANSWER: UiAnswer = { leakedTokens: [] }
+
 export interface UiMap {
-  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4' | 'ui-map@1.5' | 'ui-map@1.6'
+  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4' | 'ui-map@1.5' | 'ui-map@1.6' | 'ui-map@1.7'
   provider: string
   uiRevision: string
   locales: string[]
   settings: UiSettings
+  answer: UiAnswer
   elements: Record<string, ElementSpec>
   actions: Record<string, ActionSpec>
   network: Record<string, NetworkPattern>
@@ -176,7 +184,7 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
 export function loadUiMap(text: string, overlayText?: string): UiMap {
   const raw = parse(text) as Record<string, unknown>
   assertMap(raw)
-  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
+  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'answer' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
   const elements: Record<string, ElementSpec> = {}
   let overlayErrors: ErrorRule[] = []
   for (const [id, e] of Object.entries(shipped.elements)) {
@@ -197,6 +205,7 @@ export function loadUiMap(text: string, overlayText?: string): UiMap {
     uiRevision: shipped.uiRevision,
     locales: shipped.locales,
     settings: { ...DEFAULT_SETTINGS, ...shipped.settings },
+    answer: { ...DEFAULT_ANSWER, ...shipped.answer },
     elements,
     actions: shipped.actions ?? {},
     network: shipped.network ?? {},

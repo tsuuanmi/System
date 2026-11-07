@@ -241,6 +241,13 @@ fallback.
    attempt fails with "site error: the answer did not load (retryable)"
    (evidence `siteError`, `waitEnded`), the screenshot and structure-only DOM
    kept. Nothing is resent or regenerated: a retry is `work retry`.
+   WW6b: a canary Worker step succeeded but its `sources` began with the literal
+   `<escape>`, a control token ChatGPT leaked inside the rendered code block, and
+   the citation check refused it as not JSON. The UI map's `answer.leakedTokens`
+   (ChatGPT: `<escape>`) lists such tokens; the Runtime removes one only at the
+   very start or end of an output, repeatedly, never inside the content, and the
+   evidence records `stripped` per output. An output still invalid for its
+   verifier fails as before.
 
 ## Known defects, fixed in WW1 (2026-11-07)
 

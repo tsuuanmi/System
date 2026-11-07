@@ -2,7 +2,7 @@
 # ChatGPT Web UI map (ui-map@1.0, ADR-0021). Checked against the live site on 2026-10-11
 # (a research note, now in Git history).
 # When the site changes, edit this file (and the fixture), not the driver code.
-schema: ui-map@1.6
+schema: ui-map@1.7
 provider: chatgpt-web
 uiRevision: '2026-10-11'
 locales: [en]
@@ -17,6 +17,11 @@ settings:
   attachMinChars: 4000
   attachWaitMs: 30000
   attachLabelChars: 24
+
+# WW6b: ChatGPT sometimes leaks a model control token into the visible text, inside a rendered code block
+# (live 2026-11-08: "<escape>" before a sources JSON). Removed at an output's start and end only.
+answer:
+  leakedTokens: ['<escape>']
 
 elements:
   composer.attachment:

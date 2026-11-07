@@ -142,6 +142,28 @@ export function parseBlocks(markdown: string, slots: readonly string[]): { block
   return { blocks, missing: slots.filter((slot) => !(slot in blocks)) }
 }
 
+/**
+ * An output without the control tokens its site leaks (the UI map's `answer.leakedTokens`), removed only where one sits at the very
+ * start or end (whitespace around it ignored), repeatedly; one inside the content is kept. `removed` lists each removal; content
+ * with none is returned as it was (WW6b).
+ */
+export function stripLeaked(content: string, tokens: readonly string[]): { content: string; removed: string[] } {
+  const removed: string[] = []
+  let text = content
+  for (let found = true; found;) {
+    found = false
+    for (const token of tokens) {
+      const trimmed = text.trim()
+      const rest = trimmed.startsWith(token) ? trimmed.slice(token.length) : trimmed.endsWith(token) ? trimmed.slice(0, -token.length) : undefined
+      if (rest === undefined) continue
+      text = rest
+      removed.push(token)
+      found = true
+    }
+  }
+  return { content: removed.length ? text.trim() : content, removed }
+}
+
 /** How many characters of the Markdown, whitespace ignored, are outside the blocks that fill `slots` (WW5c). */
 export function outsideChars(markdown: string, slots: readonly string[]): number {
   return readBlocks(markdown, slots).outside.replace(/\s/g, '').length
@@ -577,6 +599,15 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     }
     const outside = outsideChars(source, request.outputs)
     evidence.set({ filled, outsideChars: outside })
+    // The site's leaked control tokens are removed at each output's edges, and recorded.
+    const stripped: Record<string, string[]> = {}
+    for (const [slot, content] of Object.entries(contents)) {
+      const clean = stripLeaked(content, driver.map.answer.leakedTokens)
+      if (!clean.removed.length) continue
+      contents[slot] = clean.content
+      stripped[slot] = clean.removed
+    }
+    if (Object.keys(stripped).length) evidence.set({ stripped })
     const outputs: Record<string, string> = {}
     for (const [slot, content] of Object.entries(contents)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
     if (missing.length) {

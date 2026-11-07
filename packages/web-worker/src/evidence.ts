@@ -36,6 +36,8 @@ export interface EvidenceData {
   attach?: { outcome: 'text' | 'attachment'; chips: number }
   /** How each required output was filled: from the rendered block that carries its name, the Markdown text, or (the site showed the fences as text, its Copy escaped them) the answer's rendered text (WW5d). */
   filled?: Record<string, 'block' | 'text' | 'rendered'>
+  /** Per output, each leaked token removed from its edges, once per removal (WW6b: the UI map's `answer.leakedTokens`); only outputs that had one. */
+  stripped?: Record<string, string[]>
   /** Characters of the answer outside its output blocks, whitespace ignored (WW5c). */
   outsideChars?: number
   /** How the wait for the answer ended: it finished, the site showed its own error in its place, or the time ran out (WW6a). */
