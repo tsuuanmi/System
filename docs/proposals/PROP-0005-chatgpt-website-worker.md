@@ -10,7 +10,7 @@ related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2, W5 and W7, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1, W2, W5, W7 and W8, 2026-11-07).
 
 ## Decision context
 
@@ -186,7 +186,12 @@ fallback.
    `checkAuth`. What the driver reports goes to the attempt's log; self-heal
    is off (no decision store exists). Not verified against the real site from
    here: the operator's agent runs `SYSTEM_REAL_WEB=1 node --test
-   tests/real-web.test.ts` after the merge.
+   tests/real-web.test.ts` after the merge. That run (2026-11-07) worked
+   through the whole turn, but the answer was the page's rendered text, a code
+   block as its header and content with no fence, so no output block was
+   found. W8: the answer keeps its fences; where Copy does not give them, each
+   rendered code block is fenced again from the page (`pre code`, its header
+   as the info string).
 
 ## Tests and what is still to verify
 

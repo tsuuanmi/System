@@ -76,6 +76,16 @@ changed but the header line.
   dependency for one test helper). It lives in `tests/`, not `fixtures/`, so
   the root `tsconfig` checks it, and `tests/serve-fake-chatgpt.ts` (new)
   serves it from its own process for tests that block their event loop.
+- **Fences without Copy (W8).** System 1 kept an answer's Markdown fences only
+  when its Copy worked, and otherwise recorded the rendered text, in which a
+  code block shows as its language header and its content, with no fence. The
+  Runtime finds each output by its fence, so `markdownOf` now ends with
+  `withFencedBlocks`: when the text has no fence line, each `answer.code`
+  block (`pre code`, the header before its `pre` as the info string) is
+  written as a fenced block again, in place when the text still carries it,
+  else after the text. A Copy whose blocks do not pair with the page's was
+  silent in System 1 (it kept the rendered text, with no `onCopyRefused`);
+  that is how the real site's attempt got an unfenced answer. Still silent.
 - **Tests:** vitest became `node:test` and `node:assert/strict`
   (`toMatchObject` is `assert.partialDeepStrictEqual`); the assertions are the
   same.

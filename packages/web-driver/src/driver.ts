@@ -763,7 +763,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
    */
   private async markdownOf(page: Page, rendered: string): Promise<string> {
     const engine = this.engine(page)
-    return copiedMarkdown(engine, rendered, async () => (await engine.resolve('turn.assistant.done', 1000)).locator.last(), async (markdown) => {
+    const text = await copiedMarkdown(engine, rendered, async () => (await engine.resolve('turn.assistant.done', 1000)).locator.last(), async (markdown) => {
       // Copy rebuilds code blocks from the page and loses their line breaks: take each block's
       // text from its rendered element instead, or keep the rendered answer if they do not pair.
       const [fenced, rest] = splitAfterLastFence(markdown)
@@ -779,6 +779,38 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       let index = 0
       return `${fenced.replace(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm, (_, open: string) => `${open}\n${blocks[index++]}\n\`\`\``)}${rest}`.trim()
     }, async () => (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
+    return /^```/m.test(text) ? text : this.withFencedBlocks(engine, text)
+  }
+
+  /**
+   * An answer whose text lost its fences (Copy not used, empty, or its blocks not paired with the
+   * page's): each rendered code block (`answer.code`, the block's header as its info string) is
+   * written as a fenced block again, in place where the text still carries it, else after the text.
+   * Not in System 1's driver as such: it kept Markdown fences only when Copy worked (W8).
+   */
+  private async withFencedBlocks(engine: UiEngine, text: string): Promise<string> {
+    const answer = (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..')
+    const code = await engine.findIn('answer.code', answer).catch(() => undefined)
+    if (!code) return text
+    const blocks = await code.locator.evaluateAll((els) => els.map((el) => {
+      // The header sits before the block's `pre`, in it or in one of its wrappers.
+      let label = ''
+      for (let node: Element | null = el.closest('pre') ?? el; node && !label && node.tagName !== 'MAIN'; node = node.parentElement) {
+        const header = node.previousElementSibling
+        const line = header && !header.querySelector('pre') ? (header.textContent ?? '').trim() : ''
+        if (line && line.length <= 40 && !line.includes('\n')) label = line
+        if (header) break
+      }
+      ;(el as HTMLElement).style.whiteSpace = 'pre-wrap'
+      return { label, code: (el as HTMLElement).innerText.replace(/\n$/, '') }
+    })).catch(() => [])
+    let result = text
+    for (const { label, code: body } of blocks) {
+      const fenced = `\`\`\`${label}\n${body}\n\`\`\``
+      const where = new RegExp(`${label ? `${escapeRegExp(label)}[ \\t]*\\n+` : ''}${escapeRegExp(body)}`)
+      result = where.test(result) ? result.replace(where, () => fenced) : `${result}\n\n${fenced}`
+    }
+    return result
   }
 
   private async waitForAnswer(page: Page, before: number, signal: AbortSignal | undefined, deadlines: AskOptions['deadlines'], onBinding?: (binding: string) => void): Promise<string> {
@@ -805,4 +837,8 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     if (!this.onStall || !(error instanceof ProviderError) || (error.kind !== 'provider_stalled' && error.kind !== 'timeout')) return
     this.onStall(await engine.stall(phase))
   }
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
