@@ -829,7 +829,22 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      (`attach`), the `attr` condition with a pattern (the Work composer), a snippet
      with no label, and ChatGPT's unknown send. `chatgpt.test.ts` runs for both values.
      The legacy path stays until the two are compared live; removing it is the rest of 2.
-  3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close.
+  3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close. **Deferred
+     by measurement** (2026-11-08). System's own Brainstorm
+     (`work:deaecc61`, both ChatGPT Accounts and Claude) recommended
+     measuring first and building reuse only if the gain shows. The
+     records show Chrome launching in 1.8-2.4 s, 3-5% of an attempt
+     (34-65 s), and an Account's attempts minutes to hours apart (no gap
+     under 120 s): reuse would save about 2 s and keep an idle Chrome most
+     of the time. Fresh per attempt stays; the question returns with the
+     research fan-out (step 7), when one Account's attempts follow each
+     other closely. Measured from 6 attempts only, because successful
+     attempts dropped their evidence (WW6c). The operator's open questions
+     from that synthesis: whether a tail-latency gain alone justifies
+     reuse; the idle timeout (120 s); whether remote login may cancel a
+     running attempt or must wait; a cap on simultaneous cold launches
+     (about 3) before the research phase; a shared Xvfb against a few
+     displays.
   4. [x] Canary (WW4, `work:83bc6867`): `system work submit --worker <ref>`;
      a fixed canary Task; `tools/web-canary` (runs it on each web Account,
      `--report` with the gate); a systemd user timer every 6 h (the operator
