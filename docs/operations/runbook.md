@@ -304,8 +304,10 @@ state fails after the `load` timeout with that reason and a screenshot.
 
 `tools/web-canary` is the reliability gate of the `chatgpt-web` Workers read from
 System's own records: it stores the fixed Research question ("What is the capital
-of France? Cite one page that says so.") as a `task@1` (the same Artifact ID every
-time) and runs `workflows/research.yaml` on it, citation check included, once on
+of France? Cite the English Wikipedia article that says so
+(https://en.wikipedia.org/...).", a page the citation verifier can read, so the
+canary measures the Website Worker and not a third-party site) as a `task@1` (the
+same Artifact ID every time) and runs `workflows/research.yaml` on it, citation check included, once on
 each registered `chatgpt-web` Account, one after the other, with
 `system work submit --worker <ref>`. It prints one line per Work: Account, Work
 ID, status, seconds. Nothing is stored outside System's records.
@@ -316,11 +318,17 @@ tools/web-canary --task                       # the canary Task's Artifact ID
 tools/web-canary --report [--since <ISO>]     # read the records
 ```
 
-`--report` reads the finished Works whose input is the canary Task and prints,
-per Account and in total, `runs`, `accepted`, `failed` (with the first failing
-stage and its reason) and the pass rate, then `gate: holds` or `gate: does not
-hold (...)`: at least 50 runs over both Accounts and at least 95% accepted. It
-exits 3 when the gate does not hold. Run it after each merge into `web-workers`
+`--report` reads the finished Works whose input is the canary Task and classifies
+each: **passed** (the Worker step succeeded with its outputs and the Work was
+accepted), **worker-failed** (the Worker step failed: the line names the stage and
+reason, and a reason beginning `site error:` is also counted apart), **verifier**
+(the Worker step succeeded but the citation check held or failed: the line names the
+URL and reason) or **other**. Per Account and in total it prints `runs`, `passed`,
+`worker step ok` (the Worker step's success rate alone), those counts, then each run
+that did not pass, `worker step: N% ok`, and `gate: holds` or `gate: does not hold
+(...)`: at least 50 runs over both Accounts and at least 95% passed. Works of an older
+canary question are shown apart under "older canary version" and not counted in the
+gate. It exits 3 when the gate does not hold. Run it after each merge into `web-workers`
 (`tools/web-canary`), and the timer does so every six hours.
 
 Install the timer as a user unit (it needs the Host running; it is not installed
@@ -341,7 +349,8 @@ system-web-canary` for the lines of the last runs, and `tools/web-canary --repor
 for the numbers. Start a run now with `systemctl --user start system-web-canary`;
 stop the series with `systemctl --user disable --now system-web-canary.timer`.
 A Work that fails stays a record: the report counts it, and `system work show <id>`
-says why. Changing the question's text starts a new series (a new Task ID).
+says why. Changing the question's text starts a new series (a new Task ID); the tool keeps the
+earlier texts to report them as older versions.
 
 ## The dev branch
 

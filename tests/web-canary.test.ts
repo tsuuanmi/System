@@ -46,7 +46,7 @@ test('the canary Task has the same Artifact ID every time, and is what the Work 
   assert.equal(run(['--task']).stdout.trim(), id)
   const shown = JSON.parse(cli.run(['artifact', 'show', id]).stdout) as { state: string }
   assert.equal(shown.state, 'stored')
-  assert.match(cli.run(['artifact', 'show', id]).stdout, /capital of France/)
+  assert.match(cli.run(['artifact', 'show', id]).stdout, /capital of France.*English Wikipedia.*https:\/\/en\.wikipedia\.org\//)
 })
 
 test('work submit --worker is refused for a Worker that is not registered', { timeout: 120_000 }, () => {
@@ -68,7 +68,7 @@ log.push(args)
 fs.writeFileSync(process.env.FAKE_CALLS, JSON.stringify(log))
 const [a, b] = args
 if (a === 'workers') process.stdout.write(db.workers)
-else if (a === 'task') process.stdout.write(db.task + '\\n')
+else if (a === 'task') process.stdout.write((args.at(-1).includes('Cite one page') ? db.oldTask : db.task) + '\\n')
 else if (a === 'work' && b === 'list') for (const [id, r] of Object.entries(db.works)) process.stdout.write(id + '  ' + r.state.status.padEnd(9) + '  sha256:spec\\n')
 else if (a === 'work' && b === 'show') process.stdout.write(JSON.stringify(db.works[args[2]]))
 else if (a === 'work' && b === 'submit') {
@@ -82,21 +82,35 @@ else if (a === 'work' && b === 'submit') {
 `
 
 const TASK = `sha256:${createHash('sha256').update('canary').digest('hex')}`
+const OLD_TASK = `sha256:${createHash('sha256').update('old canary').digest('hex')}`
 const WEB = ['registered: chatgpt-web/a, chatgpt-web/b, claude-code/default',
   'chatgpt-web/a   available   (chatgpt-web)',
   'chatgpt-web/b   available   (chatgpt-web)',
   'chatgpt-web/c   unavailable - no sign-in (chatgpt-web)',
   'claude-code/default available 2.1.0 (claude-code)', ''].join('\n')
 
-/** A Work record as `work show` prints it, reduced to what the canary reads. */
-function record(account: string, at: string, seconds: number, outcome: 'succeeded' | 'failed' | 'running', stage?: string, reason?: string, input = TASK) {
+/**
+ * A Work record as `work show` prints it, reduced to what the canary reads. `stage` is where it stopped:
+ * investigate (the Worker step failed with `reason`), citations (the verifier's verdict, with `reason`, was not a pass)
+ * or accept (a later step; `reason` is the Work's).
+ */
+function record(account: string, at: string, seconds: number, outcome: 'succeeded' | 'failed' | 'held' | 'running', stage?: string, reason?: string, input = TASK) {
   const end = new Date(Date.parse(at) + seconds * 1000).toISOString()
-  const steps: Record<string, { state: string }> = { investigate: { state: 'succeeded' }, citations: { state: 'succeeded' }, accept: { state: 'succeeded' } }
-  if (stage) steps[stage] = { state: 'failed' }
-  return {
-    events: [{ type: 'admitted', at, input, worker: account }, ...(outcome === 'running' ? [] : [{ type: 'terminal', at: end, outcome, reason: reason ?? '' }])],
-    state: { status: outcome, steps, reason },
+  const done = { state: 'succeeded', outputs: {} }
+  const steps: Record<string, { state: string; outputs: Record<string, string>; verdict?: string }> = {
+    investigate: { state: 'succeeded', outputs: { report: 'sha256:r', sources: 'sha256:s' } }, citations: { ...done, verdict: 'pass' }, accept: done,
   }
+  const events: Record<string, unknown>[] = [{ type: 'admitted', at, input, worker: account }]
+  if (stage === 'investigate') {
+    steps.investigate = { state: 'failed', outputs: {} }
+    events.push({ type: 'observed', stepId: 'investigate', status: 'failed', at, reason })
+  } else if (stage === 'citations') {
+    steps.citations!.verdict = 'inconclusive'
+    events.push({ type: 'verified', stepId: 'citations', verdict: 'inconclusive', at, reason })
+  } else if (stage) steps[stage] = { state: 'failed', outputs: {} }
+  const why = stage === 'investigate' ? 'step investigate failed' : reason
+  if (outcome !== 'running') events.push({ type: 'terminal', at: end, outcome, reason: why ?? '' })
+  return { events, state: { status: outcome, steps, reason: outcome === 'running' ? undefined : why } }
 }
 
 function setup(works: Record<string, unknown>, script: Record<string, { id: string; record: unknown }[]> = {}) {
@@ -104,7 +118,7 @@ function setup(works: Record<string, unknown>, script: Record<string, { id: stri
   const bin = join(dir, 'system')
   writeFileSync(bin, fake)
   chmodSync(bin, 0o755)
-  writeFileSync(join(dir, 'db.json'), JSON.stringify({ workers: WEB, task: TASK, works, script }))
+  writeFileSync(join(dir, 'db.json'), JSON.stringify({ workers: WEB, task: TASK, oldTask: OLD_TASK, works, script }))
   const env = { SYSTEM_BIN: bin, FAKE_DB: join(dir, 'db.json'), FAKE_CALLS: join(dir, 'calls.json') }
   const calls = () => JSON.parse(readFileSync(env.FAKE_CALLS, 'utf8')) as string[][]
   return { dir, env, calls }
@@ -133,29 +147,30 @@ test('a run submits the canary once to each chatgpt-web Account, one after the o
   }
 })
 
-test('the report counts per Account and in total, names the first failing stage, and holds the gate at 50 runs and 95%', { timeout: 60_000 }, () => {
+test('the report classifies each run, counts the Worker step apart, and holds the gate at 50 passing runs and 95%', { timeout: 60_000 }, () => {
   const works: Record<string, unknown> = {}
   const at = (n: number) => new Date(Date.parse('2026-11-01T00:00:00Z') + n * 3600_000).toISOString()
   let n = 0
-  // a: 25 runs, 24 accepted, one failing at citations; b: 25 runs, 24 accepted, one failing at investigate.
+  // a: 25 runs, 24 pass, one held by the verifier; b: 25 runs, 24 pass, one Worker step failure.
   for (const account of ['chatgpt-web/a', 'chatgpt-web/b']) {
     for (let i = 0; i < 25; i++) {
-      const bad = i === 12
-      works[`work:${n}`] = bad
-        ? record(account, at(n), 5, 'failed', account.endsWith('a') ? 'citations' : 'investigate', account.endsWith('a') ? 'a quote is not on the page' : 'timed out')
-        : record(account, at(n), 5, 'succeeded')
+      works[`work:${n}`] = i !== 12 ? record(account, at(n), 5, 'succeeded')
+        : account.endsWith('a') ? record(account, at(n), 5, 'held', 'citations', '0 of 1 confirmed: s1 (HTTP 403, quote unreadable)')
+        : record(account, at(n), 5, 'failed', 'investigate', 'timed out')
       n++
     }
   }
-  works['work:other'] = record('chatgpt-web/a', at(1), 5, 'failed', 'investigate', 'x', 'sha256:' + 'f'.repeat(64))
+  works['work:old'] = record('chatgpt-web/a', at(1), 5, 'failed', 'investigate', 'x', 'sha256:' + 'f'.repeat(64))
   works['work:inflight'] = record('chatgpt-web/a', at(60), 0, 'running')
   const s = setup(works)
   try {
     const all = run(['--report'], s.env)
     assert.equal(all.status, 0, all.stdout + all.stderr)
-    assert.match(all.stdout, /chatgpt-web\/a\s+runs 25\s+accepted 24\s+failed 1 \(citations: a quote is not on the page\)\s+96\.0%/)
-    assert.match(all.stdout, /chatgpt-web\/b\s+runs 25\s+accepted 24\s+failed 1 \(investigate: timed out\)\s+96\.0%/)
-    assert.match(all.stdout, /total\s+runs 50\s+accepted 48\s+failed 2 \(citations: a quote is not on the page\)\s+96\.0%/)
+    assert.match(all.stdout, /chatgpt-web\/a\s+runs 25\s+passed 24 \(96\.0%\)\s+worker step ok 25 \(100\.0%\)\s+worker-failed 0\s+verifier 1\s+other 0/)
+    assert.match(all.stdout, /chatgpt-web\/b\s+runs 25\s+passed 24 \(96\.0%\)\s+worker step ok 24 \(96\.0%\)\s+worker-failed 1\s+verifier 0\s+other 0/)
+    assert.match(all.stdout, /total\s+runs 50\s+passed 48 \(96\.0%\)\s+worker step ok 49 \(98\.0%\)\s+worker-failed 1\s+verifier 1\s+other 0/)
+    assert.match(all.stdout, /work:12 {2}chatgpt-web\/a {2}verifier: 0 of 1 confirmed: s1 \(HTTP 403, quote unreadable\)/)
+    assert.match(all.stdout, /work:37 {2}chatgpt-web\/b {2}worker-failed: investigate: timed out/)
     assert.match(all.stdout, /gate: holds/)
     // --since drops the older runs: too few remain.
     const since = run(['--report', '--since', at(30)], s.env)
@@ -167,19 +182,48 @@ test('the report counts per Account and in total, names the first failing stage,
   }
 })
 
-test('the gate fails on a low pass rate even with enough runs, and on a missing second Account', { timeout: 60_000 }, () => {
-  const works: Record<string, unknown> = {}
-  for (let i = 0; i < 60; i++) works[`work:${i}`] = i % 10 === 0 ? record('chatgpt-web/a', '2026-11-02T00:00:00Z', 1, 'failed', 'accept', 'denied') : record('chatgpt-web/a', '2026-11-02T00:00:00Z', 1, 'succeeded')
-  const s = setup(works)
+test('the report counts site errors apart from other Worker step failures', { timeout: 60_000 }, () => {
+  const t = '2026-11-02T00:00:00Z'
+  const s = setup({
+    'work:1': record('chatgpt-web/a', t, 1, 'failed', 'investigate', 'site error: This response couldn’t load'),
+    'work:2': record('chatgpt-web/a', t, 1, 'failed', 'investigate', 'no answer within the time limit'),
+    'work:3': record('chatgpt-web/a', t, 1, 'failed', 'accept', 'denied'),
+    'work:4': record('chatgpt-web/a', t, 1, 'succeeded'),
+  })
   try {
-    const low = run(['--report'], s.env)
-    assert.equal(low.status, 3)
-    assert.match(low.stdout, /total\s+runs 60\s+accepted 54\s+failed 6 \(accept: denied\)\s+90\.0%/)
-    assert.match(low.stdout, /gate: does not hold \(90\.0% accepted, needs 95%; only 1 Account\)/)
-    assert.equal(run(['--report'], { ...s.env, SYSTEM_BIN: '/nonexistent/system' }).status, 1)
+    const ran = run(['--report'], s.env)
+    assert.match(ran.stdout, /total\s+runs 4\s+passed 1 \(25\.0%\)\s+worker step ok 2 \(50\.0%\)\s+worker-failed 2 \(site error 1\)\s+verifier 0\s+other 1/)
+    assert.match(ran.stdout, /work:1 {2}chatgpt-web\/a {2}worker-failed: investigate: site error: This response couldn’t load/)
+    assert.match(ran.stdout, /work:3 {2}chatgpt-web\/a {2}other: accept: denied/)
+    assert.match(ran.stdout, /gate: does not hold \(4 of 50 runs; 25\.0% passed, needs 95%; only 1 Account\)/)
+    assert.match(ran.stdout, /worker step: 50\.0% ok/)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }
+})
+
+test('the report shows the older canary version apart and the gate counts only the current one', { timeout: 60_000 }, () => {
+  const t = '2026-11-02T00:00:00Z'
+  const s = setup({
+    'work:1': record('chatgpt-web/a', t, 1, 'succeeded'),
+    'work:2': record('chatgpt-web/a', t, 1, 'held', 'citations', '0 of 1 confirmed: s1 (HTTP 403, quote unreadable)', OLD_TASK),
+    'work:3': record('chatgpt-web/b', t, 1, 'succeeded', undefined, undefined, OLD_TASK),
+  })
+  try {
+    const ran = run(['--report'], s.env)
+    const [current, older] = ran.stdout.split('older canary version')
+    assert.match(current!, /total\s+runs 1\s+passed 1 /)
+    assert.doesNotMatch(current!, /HTTP 403/)
+    assert.match(older!, /total\s+runs 2\s+passed 1 /)
+    assert.match(older!, /work:2 {2}chatgpt-web\/a {2}verifier: 0 of 1 confirmed/)
+    assert.match(ran.stdout, /gate: does not hold \(1 of 50 runs; only 1 Account\)/)
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true })
+  }
+})
+
+test('the report exits 1 when System cannot be run', { timeout: 60_000 }, () => {
+  assert.equal(run(['--report'], { SYSTEM_BIN: '/nonexistent/system' }).status, 1)
 })
 
 test('the systemd units run the tool every six hours, randomised and persistent', () => {
