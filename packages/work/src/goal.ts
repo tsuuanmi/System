@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
 import { WorkError } from './errors.ts'
 import { GOAL_KIND, TASK_KIND, taskSchema, type Goal } from './kinds.ts'
-import type { Caller, WorkRecord } from './record.ts'
+import { TERMINAL, type Caller, type WorkRecord } from './record.ts'
 import { summarize } from './summary.ts'
 
 /** The Charter, the default context of a Goal; stored as a file Artifact when the Goal is created. */
@@ -31,7 +31,7 @@ export interface GoalStore {
   wrapTask(task: string, context: string[], caller: Caller): Promise<string>
 }
 
-/** What a Goal's Works have spent. Tokens are fresh input plus output; an attempt with unknown usage adds none. */
+/** What a Goal's Works have spent. Tokens are fresh input, cache writes and output; an attempt with unknown usage adds none. */
 export interface Spend {
   works: number
   attempts: number
@@ -57,8 +57,9 @@ export function spendOf(records: readonly WorkRecord[], goals: ReadonlySet<strin
     if (admitted?.type !== 'admitted' || !admitted.goal || !goals.has(admitted.goal)) continue
     const { attempts, usage } = summarize(record)
     spend.works += 1
-    spend.attempts += attempts
-    spend.tokens += usage.freshInputTokens + usage.outputTokens
+    // A Work still to run or running is at least one attempt, so admitting cannot outrun the budget.
+    spend.attempts += TERMINAL.has(record.state.status) ? attempts : Math.max(attempts, 1)
+    spend.tokens += usage.freshInputTokens + usage.cacheWriteTokens + usage.outputTokens
     spend.unknownAttempts += usage.unknownAttempts
     spend.unsplitAttempts += usage.unsplitAttempts
   }
@@ -78,7 +79,7 @@ export function resolveGoal(store: GoalStore, id: string): { view: Omit<GoalView
   if (!first) throw new WorkError(`no Goal ${id}`)
   let current = { id, ...first }
   for (;;) {
-    // Branches of a raise are not expected; the latest stored wins, so the choice is deterministic.
+    // A raise supersedes only the newest version, so the chain is linear; the latest stored wins if a store holds a branch anyway.
     const next = store.successors(current.id).map((successorId) => ({ id: successorId, ...store.get(successorId)! }))
       .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : -1))[0]
     if (!next) break

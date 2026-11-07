@@ -484,15 +484,16 @@ test('a client that missed the notice reads on from its cursor and loses nothing
 })
 
 test('work.watch by goal tells of each new Work of the Goal, and an orchestrator watches only its own', { timeout: 60_000 }, async () => {
-  const { open } = await started()
+  const { open, artifacts } = await started()
   const human1 = await open()
   const [a, b] = [(await human1.call('goal.new', { aim: 'a', scope: 's' }) as { id: string }).id, (await human1.call('goal.new', { aim: 'b', scope: 's' }) as { id: string }).id]
+  const input = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'do it' }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
   const orch = await listening(open, orchestrator(a))
   await orch.client.call('work.watch', { goal: a })
   await assert.rejects(orch.client.call('work.watch', { goal: b }), (error: { code: number }) => error.code === NOT_ALLOWED)
   await assert.rejects(orch.client.call('work.watch', {}), /exactly one of workId and goal/)
-  const mine = await human1.call('work.submit', { capabilities: ['code-write'], goal: a }) as { id: string }
-  await human1.call('work.submit', { capabilities: ['code-write'], goal: b })
+  const mine = await human1.call('work.submit', { capabilities: ['code-write'], goal: a, input }) as { id: string }
+  await human1.call('work.submit', { capabilities: ['code-write'], goal: b, input })
   const free = await human1.call('work.submit', { capabilities: ['code-write'] }) as { id: string }
   await settled('the admission notice', () => orch.notices.length > 0)
   await human1.call('work.run', { workId: free.id })
@@ -500,7 +501,7 @@ test('work.watch by goal tells of each new Work of the Goal, and an orchestrator
   assert.deepEqual(orch.notices, [{ workId: mine.id, status: 'running', seq: 0 }])
   await assert.rejects(orch.client.call('work.watch', { workId: free.id }), (error: { code: number }) => error.code === NOT_ALLOWED)
   await orch.client.call('work.unwatch', { goal: a })
-  await human1.call('work.submit', { capabilities: ['code-write'], goal: a })
+  await human1.call('work.submit', { capabilities: ['code-write'], goal: a, input })
   await human1.call('work.run', { workId: mine.id })
   await terminal(human1, mine.id)
   assert.equal(orch.notices.length, 1)

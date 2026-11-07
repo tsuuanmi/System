@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createConnection, type Socket } from 'node:net'
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -99,6 +99,18 @@ test('the code version is a short hash of the built files: equal for equal build
   writeFileSync(join(two.a!, 'index.d.ts'), 'export {}\n')
   assert.equal(codeVersion({ b: two.b!, a: two.a! }), codeVersion(one))
   assert.match(VERSION, /^[0-9a-f]{12}$/)
+})
+
+test('the code version also covers the extra files that change behaviour, such as the bundle\'s Cordis patch', () => {
+  const dirs = build()
+  const file = join(fresh(), 'cordis.patch.yml')
+  writeFileSync(file, '- id: agents\n')
+  const before = codeVersion(dirs, [file])
+  assert.notEqual(before, codeVersion(dirs), 'the file is part of the hash')
+  assert.equal(codeVersion(dirs, [file]), before)
+  writeFileSync(file, '- id: agents\n  disabled: true\n')
+  assert.notEqual(codeVersion(dirs, [file]), before)
+  assert.match(readFileSync(new URL('../../bundle/cordis.patch.yml', import.meta.url), 'utf8'), /\S/, 'the default file exists')
 })
 
 test('a Host started, then a built file changed, refuses a client built from the new code and names the fix', async () => {

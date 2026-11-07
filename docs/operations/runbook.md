@@ -273,14 +273,16 @@ system goal new --aim "..." --scope "..." --attempts 10 --tokens 2000000
 ```
 
 It prints the Goal's ID after you type the code it shows. Submit Works under it
-with `system work submit ... --goal <id>`; each gets the Goal's context (the
+with `system work submit ... --goal <id> --input <task>` (a Goal's Work needs
+an input Task); each gets the Goal's context (the
 Charter by default) as Task context. `system goal show <id>` and
-`system work report <work>` show the spend: attempts, tokens (fresh input plus
-output), and how many attempts had unknown usage.
+`system work report <work>` show the spend: attempts, tokens (fresh input, cache
+writes and output), and how many attempts had unknown usage.
 
-Once the spend reaches the budget, `work submit --goal` fails with `the budget
+A Work that is admitted and not finished counts as at least one attempt, so
+many Works cannot be admitted before the first runs. Once the spend reaches the budget, `work submit --goal` fails with `the budget
 of Goal ... is used up`; running Works finish. To go on, write a new Goal with
-`--supersedes <old id>` and the raised budget; the old ID then resolves to it,
+`--supersedes <old id>` (the newest version only) and the raised budget; the old ID then resolves to it,
 and the spend of the old versions still counts.
 
 ## Using System from an agent

@@ -62,11 +62,15 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
     if (seq === 0) void server.sendResourceListChanged().catch(() => {})
     else if (subscribed.has(workId)) void server.sendResourceUpdated({ uri: `system://work/${workId}` }).catch(() => {})
   }
+  let connected = false
   const connectHost = async (): Promise<Client> => {
     const client = await open(who)
     client.onNotice(heard)
     const watches = [...subscribed].map((workId) => ({ workId }))
     await Promise.allSettled([...(goal ? [{ goal }] : []), ...watches].map((params) => client.call('work.watch', params)))
+    // Works may have been created while the connection was down: the client lists again once.
+    if (connected && goal) void server.sendResourceListChanged().catch(() => {})
+    connected = true
     return client
   }
   let session: Promise<Client> | undefined

@@ -36,6 +36,8 @@ export function webDefaults(profileDir: string): WebConfig {
 export const SELECTORS = {
   version: 1,
   composer: '#prompt-textarea',
+  /** The model the page shows as selected, recorded as provenance; it is not required. */
+  modelLabel: '[data-testid="model-switcher-dropdown-button"]',
   send: '[data-testid="send-button"]',
   userMessage: '[data-message-author-role="user"]',
   /** The turn that holds a message and its actions. */
@@ -70,6 +72,11 @@ const STATE_SCRIPT = String.raw`(s) => ({
   signIn: !!document.querySelector(s.signIn) || /^\/auth\/(login|signin)/.test(location.pathname) || /^auth\./.test(location.hostname),
   composer: !!document.querySelector(s.composer),
 })`
+
+const MODEL_SCRIPT = String.raw`(s) => {
+  const label = document.querySelector(s.modelLabel)
+  return label ? label.textContent.trim() : null
+}`
 
 const SNAPSHOT_SCRIPT = String.raw`(s) => {
   const messages = document.querySelectorAll(s.assistantMessage)
@@ -438,11 +445,12 @@ export async function webAttempt(account: Account, artifacts: Artifacts, attempt
     if (!read) throw new Failure(`${account.ref}: the answer could not be read from the page`)
     note(`answer of ${read.markdown.length} characters, ${read.links.length} link(s)`)
     const url = page.url()
+    const model = await inPage(page, MODEL_SCRIPT).catch(() => null) as string | null
     const conversation = await addConversation(artifacts, {
       prompt: { name: 'prompt.md', data: Buffer.from(prompt), mediaType: 'text/markdown' },
       response: { name: 'response.md', data: Buffer.from(read.markdown), mediaType: 'text/markdown' },
       attachments: read.links.length ? [{ name: 'links.json', data: Buffer.from(JSON.stringify(read.links, null, 2)), mediaType: 'application/json' }] : [],
-    }, { provider: 'ChatGPT', url, ...(web.temporaryChat ? { context: ['temporary-chat'] } : {}) }, { producer })
+    }, { provider: 'ChatGPT', url, ...(model ? { model } : {}), context: [`selectors:${SELECTORS.version}`, ...(web.temporaryChat ? ['temporary-chat'] : [])] }, { producer })
     const { blocks, missing } = parseBlocks(read.markdown, request.outputs)
     const outputs: Record<string, string> = {}
     for (const [slot, content] of Object.entries(blocks)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))

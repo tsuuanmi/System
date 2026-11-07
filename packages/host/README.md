@@ -34,7 +34,7 @@ await serving.stop()                                // server, then the Host cor
   `{ version, caller }`, where `caller` is `{ type: "human" | "agent", operatorId }`
   or `{ type: "orchestrator", operatorId, goal }` (`system mcp --goal`). `version` is
   the code version (`VERSION`): a short sha256 over the built `lib/**/*.js`
-  of the System packages, computed once when the Host starts and by each
+  of the System packages and the bundle's `cordis.patch.yml`, computed once when the Host starts and by each
   client for its own files. Another version is refused with an error that says
   `restart the Host: systemctl --user restart system` (or restart `system host`).
   The reply carries `packageVersion`, the `package.json` version, for display only. The caller is kept for

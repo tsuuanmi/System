@@ -198,8 +198,8 @@ export class WorkController {
       const { current, spend } = this.goalView(admission.goal)
       const used = overBudget(current.goal.budget, spend)
       if (used) throw new WorkError(`the budget of Goal ${current.id} is used up (${used}); a raise is a new Goal that supersedes it`)
-      // With no Task there is nothing to carry the context.
-      if (input) input = await this.specs.goals!.wrapTask(input, current.goal.context, admission.caller)
+      if (!input) throw new WorkError("a Goal's Work needs an input Task to carry the Goal's context")
+      input = await this.specs.goals!.wrapTask(input, current.goal.context, admission.caller)
     }
     // Pin every verify step's criteria now: later edits to a repository or a verifier's defaults cannot change them.
     const criteria: Record<string, string> = {}

@@ -406,6 +406,12 @@ and orchestrator scope; O3 completion notices.
   protocol. A notice is only a wake-up: the event log stays the source of
   truth, and a client that missed notices reads on from its last
   `work.events` cursor, so nothing is lost while it was away.
+- [x] Spec review fixes (F2): a Goal's Work needs an input Task for the Goal's
+  context; Goal tokens count cache writes; admitted, unfinished Works count as
+  attempts; only the newest Goal can be superseded; chatgpt-web records the
+  model label and `SELECTORS.version`; `system mcp` announces a changed
+  resource list after it reconnects; the code version covers
+  `cordis.patch.yml`.
 - [ ] Later, not in O: an Orchestrator that System spawns on a schedule.
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)

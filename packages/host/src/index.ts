@@ -18,19 +18,24 @@ const SYSTEM_PACKAGES = ['artifacts', 'work', 'agents', 'verifiers', 'effects', 
 const jsFiles = (dir: string, at = ''): string[] =>
   readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(dir, join(at, e.name)) : e.name.endsWith('.js') ? [join(at, e.name)] : []))
 
+/** Files besides the built code that change what the Host does. */
+const BEHAVIOUR_FILES = [new URL('../../bundle/cordis.patch.yml', import.meta.url).pathname]
+
 /**
  * What identifies the code: a short sha256 over the built `.js` files of the
- * System packages, in a stable order. A directory that is not built counts as
+ * System packages, in a stable order, and the `extra` files that change
+ * behaviour (the bundle's Cordis patch). A directory that is not built counts as
  * empty. The Host and each client compute it from their own files, so a
  * Host still running old code refuses a client built from new code.
  */
-export function codeVersion(libs: Record<string, string> = Object.fromEntries(SYSTEM_PACKAGES.map((name) => [name, new URL(`../../${name}/lib`, import.meta.url).pathname]))): string {
+export function codeVersion(libs: Record<string, string> = Object.fromEntries(SYSTEM_PACKAGES.map((name) => [name, new URL(`../../${name}/lib`, import.meta.url).pathname])), extra: string[] = BEHAVIOUR_FILES): string {
   const hash = createHash('sha256')
   for (const name of Object.keys(libs).sort()) {
     let files: string[] = []
     try { files = jsFiles(libs[name]!).sort() } catch { /* not built */ }
     for (const file of files) hash.update(`${name}/${file}\0`).update(readFileSync(join(libs[name]!, file))).update('\0')
   }
+  for (const file of extra) hash.update(`${file.split('/').at(-1)}\0`).update(readFileSync(file)).update('\0')
   return hash.digest('hex').slice(0, 12)
 }
 

@@ -4,4 +4,4 @@
 of `SELECTORS` in [chatgpt.ts](../../src/chatgpt.ts). The query string picks a
 scenario (`normal`, `late-copy`, `early-copy`, `links`, `signin`, `captcha`,
 `blank`, `session`, `forever`), the answer's `slots`, an `omit`ted block and the
-`delay` between chunks. [serve.mjs](serve.mjs) serves it from its own process.
+`delay` between chunks; `model=none` hides the model label. [serve.mjs](serve.mjs) serves it from its own process.

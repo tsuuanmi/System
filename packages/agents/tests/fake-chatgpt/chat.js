@@ -1,9 +1,11 @@
 // A fake ChatGPT page. Query: scenario=normal|late-copy|early-copy|links|signin|captcha|blank|session|forever,
-// slots=a,b (the fenced blocks it answers with), omit=a (leave one out), delay=ms between chunks.
+// slots=a,b (the fenced blocks it answers with), omit=a (leave one out), delay=ms between chunks,
+// model=none (show no model label).
 const q = new URLSearchParams(location.search)
 const scenario = q.get('scenario') ?? 'normal'
 const slots = (q.get('slots') ?? 'report').split(',')
 const omit = q.get('omit')
+const model = q.get('model')
 const delay = Number(q.get('delay') ?? 150)
 const turns = document.querySelector('#turns')
 const composer = document.querySelector('#prompt-textarea')
@@ -17,6 +19,7 @@ if (scenario === 'blank') {
   document.title = 'Just a moment...'
   document.body.innerHTML = '<form id="challenge-form"><p>Verify you are human</p><input type="checkbox"></form>'
 } else {
+  if (model !== 'none') document.body.insertAdjacentHTML('afterbegin', '<button data-testid="model-switcher-dropdown-button">Fake GPT 5</button>')
   if (!signedIn) document.body.insertAdjacentHTML('afterbegin', '<button data-testid="login-button">Log in</button>')
   composer.addEventListener('input', () => { send.disabled = !composer.innerText.trim() })
   send.addEventListener('click', () => { void answer(composer.innerText); composer.textContent = ''; send.disabled = true })
