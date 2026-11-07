@@ -142,7 +142,7 @@ fallback.
 - **Not enabled in the bundle.** The runbook says how to add the account.
 - **Still to verify against the real site:** whether web search, model choice
   and cited sources work in a temporary chat, and whether the operator's custom
-  instructions apply, as listed above; the model label is not recorded. The
+  instructions apply, as listed above. The
   selectors are those the site used when this was written, not checked on a
   live page. `tests/real-web.test.ts` (`SYSTEM_REAL_WEB=1`) is the check.
 - **Tests:** a fake page in `packages/agents/tests/fake-chatgpt`, driven by

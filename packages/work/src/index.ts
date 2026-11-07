@@ -96,10 +96,14 @@ export class WorkService {
 
   /**
    * Store a `goal@1` the operator wrote. Without `context` it is the Charter,
-   * stored as a file Artifact now. `supersedes` must name a stored Goal.
+   * stored as a file Artifact now. `supersedes` must name a stored Goal with no successor, so the chain stays linear.
    */
   async newGoal(goal: Omit<Goal, 'context'> & { context?: string[] }, supersedes: string | undefined, caller: Caller): Promise<{ id: string }> {
     if (supersedes && !this.storage.specs.goals?.get(supersedes)) throw new WorkError(`${supersedes} is not a stored Goal`)
+    if (supersedes) {
+      const [newer] = this.storage.specs.goals!.successors(supersedes)
+      if (newer) throw new WorkError(`Goal ${supersedes} is already superseded by ${newer}; supersede the newest version`)
+    }
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     const context = goal.context ?? [(await this.artifacts.putBytes({
       kind: 'file', schemaVersion: 1, data: await readFile(CHARTER_PATH), mediaType: 'text/markdown', classification: 'operator-shared', producer,

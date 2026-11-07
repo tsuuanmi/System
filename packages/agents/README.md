@@ -166,7 +166,9 @@ One attempt:
    what was found stays as unaccepted partial output.
 7. **Record** a `conversation@1`: `prompt.md` and `response.md` as parts,
    `links.json` (the cited hrefs) as an attachment, asserted `provider:
-   ChatGPT`, the page `url` and `context: [temporary-chat]` when used. Its
+   ChatGPT`, the page `url`, the `model` label the page showed (when the
+   selector table finds one) and `context: [selectors:<version>,
+   temporary-chat]` (the latter when used). Its
    producer is the Worker (the attempt observed the exchange). It is returned as
    the extra output `conversation` (the controller records only a step's
    declared slots). Usage is unknown. The log is the stage notes.

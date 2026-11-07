@@ -40,7 +40,7 @@ function setup() {
   const submit = async (goalId?: string, input?: string) => controller.admit({
     spec: directTask(['code-write'], true, capabilities.available()), input: input ?? await task('do it'), caller: human, source: { kind: 'direct-task' }, ...(goalId ? { goal: goalId } : {}),
   })
-  return { artifacts, controller, table, usages, requests, task, note, goal, submit }
+  return { artifacts, capabilities, controller, table, usages, requests, task, note, goal, submit }
 }
 
 const observed = (inputTokens: number, outputTokens: number, cacheReadTokens = 0, cacheWriteTokens = 0): Usage => ({ inputTokens, cacheReadTokens, cacheWriteTokens, outputTokens, source: 'test' })
@@ -103,17 +103,16 @@ test('admission is refused once the spend reached the budget, at the limit and n
   await s.submit()
 })
 
-test('the token budget counts fresh input plus output, not cache reads', async () => {
+test('the token budget counts fresh input, cache writes and output, not cache reads', async () => {
   const s = setup()
-  const goal = await s.goal({ aim: 'a', scope: 's', budget: { tokens: 100 } })
-  s.usages.push(observed(1000, 40, 900, 50)) // fresh 50 + output 40 = 90
+  const goal = await s.goal({ aim: 'a', scope: 's', budget: { tokens: 200 } })
+  s.usages.push(observed(1000, 40, 900, 50)) // fresh 50 + cache write 50 + output 40 = 140
   await s.controller.run((await s.submit(goal)).id)
-  assert.equal(s.controller.goalView(goal).spend.tokens, 90)
-  await s.submit(goal)
-  s.usages.push(observed(60, 20, 0, 0)) // +80 = 170
+  assert.equal(s.controller.goalView(goal).spend.tokens, 140)
+  s.usages.push(observed(60, 20, 0, 0)) // +80 = 220
   await s.controller.run((await s.submit(goal)).id)
-  assert.equal(s.controller.goalView(goal).spend.tokens, 170)
-  await assert.rejects(s.submit(goal), /budget.*100 tokens/)
+  assert.equal(s.controller.goalView(goal).spend.tokens, 220)
+  await assert.rejects(s.submit(goal), /budget.*200 tokens/)
 })
 
 test('unknown usage counts as an attempt, not as tokens, and is reported as unknown', async () => {
@@ -147,7 +146,7 @@ test('a raise lets admission continue, and the spend of the old versions still c
 
 test('a running Work is never stopped by the budget', async () => {
   const s = setup()
-  const goal = await s.goal({ aim: 'a', scope: 's', budget: { attempts: 1 } })
+  const goal = await s.goal({ aim: 'a', scope: 's', budget: { attempts: 2 } })
   const a = await s.submit(goal)
   const b = await s.submit(goal)
   const [x, y] = await Promise.all([s.controller.run(a.id), s.controller.run(b.id)])
@@ -164,9 +163,27 @@ test('the spend is a fold of the records: replayed from the events it equals the
   const stored = s.controller.list()
   const view = s.controller.goalView(raised).spend
   assert.deepEqual(spendOf(stored, new Set([first, raised])), view)
-  assert.deepEqual(view, { works: 4, attempts: 4, tokens: 75 + 10 + 7 + 3 + 2, unknownAttempts: 1, unsplitAttempts: 1 })
+  assert.deepEqual(view, { works: 4, attempts: 4, tokens: 80 + 10 + 7 + 3 + 2, unknownAttempts: 1, unsplitAttempts: 1 })
   // The same events with their states folded again give the same spend.
   const replayed = stored.map((record) => ({ ...record, state: s.controller.replay(record.id).state }))
   assert.deepEqual(spendOf(replayed, new Set([first, raised])), view)
   assert.deepEqual(spendOf(stored, new Set([id('5')])), { works: 0, attempts: 0, tokens: 0, unknownAttempts: 0, unsplitAttempts: 0 })
+})
+
+test('a Goal\'s Work needs an input Task to carry the Goal\'s context', async () => {
+  const s = setup()
+  const goal = await s.goal({ aim: 'a', scope: 's', budget: {} })
+  await assert.rejects(s.controller.admit({ spec: directTask(['code-write'], false, s.capabilities.available()), caller: human, source: { kind: 'direct-task' }, goal }), /needs an input Task to carry the Goal's context/)
+  assert.equal(s.controller.list().length, 0)
+})
+
+test('admitted Works that have not run yet count as attempts, so admission cannot outrun the budget', async () => {
+  const s = setup()
+  const goal = await s.goal({ aim: 'a', scope: 's', budget: { attempts: 2 } })
+  const a = await s.submit(goal)
+  await s.submit(goal)
+  assert.equal(s.controller.goalView(goal).spend.attempts, 2)
+  await assert.rejects(s.submit(goal), /budget.*2 attempts/)
+  await s.controller.run(a.id)
+  assert.equal(s.controller.goalView(goal).spend.attempts, 2, 'a finished Work counts its dispatched attempts')
 })

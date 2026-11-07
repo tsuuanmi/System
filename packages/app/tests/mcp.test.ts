@@ -32,8 +32,12 @@ const services = {
     return { id: stored.id }
   },
 } as Services
+/** A Task for a Work of a Goal, which needs one to carry the Goal's context. */
+const taskInput = async () => (await artifacts.put({ ...TASK_KIND, content: { instructions: 'do it' }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
 const table = tableOf(operations(services))
 let stop: () => Promise<void>
+/** Close the Host's socket and open it again: every connection to it is lost. */
+let restart: () => Promise<void>
 let human1: Awaited<ReturnType<typeof connect>>
 const clients: Client[] = []
 
@@ -43,7 +47,9 @@ before(async () => {
   const host = await f.startHost(join(home, 'data'))
   services.capabilities = f.capabilities
   mkdirSync(join(home, 'system'))
-  const server = await serve(host, { path: join(home, 'system', 'host.sock'), methods: operations(services) })
+  const listen = () => serve(host, { path: join(home, 'system', 'host.sock'), methods: operations(services) })
+  let server = await listen()
+  restart = async () => { await server.close(); server = await listen() }
   stop = async () => { await server.close(); await host.close() }
   human1 = await connect(join(home, 'system', 'host.sock'))
   await human1.call('host.hello', { version: VERSION, caller: human })
@@ -93,7 +99,7 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
 
 test('a tool call goes to the Host: submit a direct Task, run it and follow it with work.events', { timeout: 60_000 }, async () => {
   const client = await mcp()
-  const submitted = await call(client, 'work.submit', { capabilities: ['code-write'] })
+  const submitted = await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })
   const id = submitted.value.id as string
   assert.deepEqual(submitted.value.events[0].caller, { type: 'agent', operatorId: 'o1' })
   assert.equal((await call(client, 'work.run', { workId: id })).value.id, id)
@@ -106,14 +112,14 @@ test('a tool call goes to the Host: submit a direct Task, run it and follow it w
 test('with --goal the Host scopes the tools to the Goal of the orchestrator', { timeout: 60_000 }, async () => {
   const goal = async (aim: string) => (await human1.call('goal.new', { aim, scope: 's', budget: {} }) as { id: string }).id
   const [a, b] = [await goal('a'), await goal('b')]
-  const direct = async (goalId?: string) => (await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId }) as { id: string }).id
+  const direct = async (goalId?: string) => (await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId, ...(goalId ? { input: await taskInput() } : {}) }) as { id: string }).id
   const [other, free] = [await direct(b), await direct()]
   const client = await mcp('--goal', a)
 
-  const own = await call(client, 'work.submit', { capabilities: ['code-write'] })
+  const own = await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })
   assert.equal(own.value.events[0].goal, a)
   assert.deepEqual(own.value.events[0].caller, { type: 'orchestrator', operatorId: 'o1', goal: a })
-  assert.match((await call(client, 'work.submit', { capabilities: ['code-write'], goal: b })).error!, /scope/)
+  assert.match((await call(client, 'work.submit', { capabilities: ['code-write'], goal: b, input: await taskInput() })).error!, /scope/)
   assert.deepEqual((await call(client, 'work.list')).value.map((r: { id: string }) => r.id), [own.value.id])
   for (const id of [other, free]) {
     for (const tool of ['work.run', 'work.cancel', 'work.show']) assert.match((await call(client, tool, { workId: id })).error!, /scope/, `${tool} ${id}`)
@@ -140,7 +146,7 @@ test('a subscribed resource is updated when its Work ends; reading it gives work
   const client = await mcp('--goal', goalId)
   const updated: string[] = []
   client.setNotificationHandler(ResourceUpdatedNotificationSchema, (n) => { updated.push(n.params.uri) })
-  const id = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  const id = (await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })).value.id as string
   const uri = `system://work/${id}`
   assert.ok((await client.listResources()).resources.some((r) => r.uri === uri))
   await client.subscribeResource({ uri })
@@ -151,7 +157,7 @@ test('a subscribed resource is updated when its Work ends; reading it gives work
   assert.equal(shown.id, id)
   assert.equal(shown.state.status, 'succeeded')
   // After an unsubscribe a later change says nothing.
-  const quiet = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  const quiet = (await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })).value.id as string
   await client.subscribeResource({ uri: `system://work/${quiet}` })
   await client.unsubscribeResource({ uri: `system://work/${quiet}` })
   await call(client, 'work.run', { workId: quiet })
@@ -169,12 +175,29 @@ test('with --goal a new Work of the Goal changes the resource list, and a Work o
   client.setNotificationHandler(ResourceListChangedNotificationSchema, () => { changed++ })
   await client.listResources()
   const outside = await human1.call('work.submit', { capabilities: ['code-write'] }) as { id: string }
-  const own = await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId }) as { id: string }
+  const own = await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId, input: await taskInput() }) as { id: string }
   await until('list_changed', async () => changed > 0)
   assert.equal(changed, 1)
   const uris = (await client.listResources()).resources.map((r) => r.uri)
   assert.deepEqual(uris, [`system://work/${own.id}`])
   assert.ok(!uris.includes(`system://work/${outside.id}`))
+})
+
+test('after the Host connection is lost and opened again, the client is told the resource list changed once', { timeout: 60_000 }, async () => {
+  const goalId = (await human1.call('goal.new', { aim: 'outage', scope: 's', budget: {} }) as { id: string }).id
+  const client = await mcp('--goal', goalId)
+  let changed = 0
+  client.setNotificationHandler(ResourceListChangedNotificationSchema, () => { changed++ })
+  await client.listResources()
+  await restart()
+  human1 = await connect(join(home, 'system', 'host.sock'))
+  await human1.call('host.hello', { version: VERSION, caller: human })
+  const own = await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId, input: await taskInput() }) as { id: string }
+  // The first call after the outage finds the connection lost; the next one reconnects.
+  await until('list_changed', async () => { await client.listResources().catch(() => {}); return changed > 0 })
+  await new Promise((r) => setTimeout(r, 200))
+  assert.equal(changed, 1)
+  assert.ok((await client.listResources()).resources.some((r) => r.uri === `system://work/${own.id}`))
 })
 
 test('a notice only wakes the client: one that was away reads work.events from its cursor and misses nothing', { timeout: 60_000 }, async () => {

@@ -117,7 +117,8 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.deepEqual(occurrences.map((o) => o.producer), [{ type: 'worker', ref: 'chatgpt-web/default' }])
   assert.equal(content.asserted.provider, 'ChatGPT')
   assert.match(content.asserted.url!, /^http:\/\/127\.0\.0\.1:\d+\/\?slots=report&temporary-chat=true$/)
-  assert.deepEqual(content.asserted.context, ['temporary-chat'])
+  assert.equal(content.asserted.model, 'Fake GPT 5', 'the label the page showed')
+  assert.deepEqual(content.asserted.context, [`selectors:${SELECTORS.version}`, 'temporary-chat'])
   const [prompt, response] = content.parts
   assert.deepEqual([prompt!.role, response!.role], ['prompt', 'response'])
   const sent = await text(artifacts, prompt!.artifact)
@@ -128,12 +129,18 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.match(answer, /```report\ncontent of report\nsecond line\n```/)
 })
 
-test('with temporaryChat off the URL is not marked and the context is not asserted', { skip, timeout: 60_000 }, async () => {
+test('a page that shows no model label asserts no model', { skip, timeout: 60_000 }, async () => {
+  const { artifacts, result } = await run('slots=report&model=none')
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(conversationOf(artifacts, result).content.asserted.model, undefined)
+})
+
+test('with temporaryChat off the URL is not marked and only the selector version is asserted as context', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result } = await run('slots=report', ['report'], { config: { temporaryChat: false } })
   assert.equal(result.status, 'succeeded', result.reason)
   const { content } = conversationOf(artifacts, result)
   assert.doesNotMatch(content.asserted.url!, /temporary-chat/)
-  assert.equal(content.asserted.context, undefined)
+  assert.deepEqual(content.asserted.context, [`selectors:${SELECTORS.version}`])
 })
 
 test('a copy action that appears late is waited for', { skip, timeout: 60_000 }, async () => {

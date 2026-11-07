@@ -29,7 +29,7 @@ The terms are in [GLOSSARY.md](../../GLOSSARY.md).
    this content:
    - `aim`: what to achieve;
    - `scope`: what is in and out;
-   - `budget`: `attempts` and `tokens`. Tokens count fresh input plus output.
+   - `budget`: `attempts` and `tokens`. Tokens count fresh input (cache writes included) plus output.
      Cache reads are left out, because they are not comparable across
      Runtimes;
    - `context`: Artifact IDs every Work of the Goal receives as Task context.
@@ -68,6 +68,17 @@ The terms are in [GLOSSARY.md](../../GLOSSARY.md).
 
 ## Implemented
 
+- Decisions 1 and 2 (O1), as fixed by the spec review (F2):
+  - A Goal's Work needs an input Task to carry the Goal's context, so
+    admission with a Goal refuses a Work without one.
+  - Cache writes count as fresh input: Goal tokens are fresh input plus cache
+    writes plus output.
+  - For the attempts budget, an admitted Work that is not terminal counts as
+    at least one attempt, so admission cannot outrun the budget before the
+    first attempt runs. Terminal Works count their dispatched attempts.
+  - Only the newest version of a Goal can be superseded, so the chain stays
+    linear and every Work counts; `goal.new --supersedes` of an older version
+    is refused, naming the newer one.
 - Decision 3 (O2): `system mcp` is `packages/app/src/mcp.ts`, run by the thin
   client. Its tools are the table's `agent: true` rows, with JSON Schema from
   the row's params and the row's summary.

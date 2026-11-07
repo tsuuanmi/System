@@ -86,4 +86,11 @@ test('a Goal is written by a human at a terminal, its budget limits admission, a
   const raised = last(onTerminal(['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '2', '--supersedes', goal], `${raiseShort}\n`).stdout)
   assert.equal((JSON.parse(system(['goal', 'show', goal]).stdout) as { current: { id: string } }).current.id, raised)
   assert.equal(system(['work', 'submit', '--capability', 'research', '--input', task, '--goal', goal]).status, 0)
+
+  // Only the newest version can be raised again: the chain stays linear.
+  const branch = ['goal', 'new', '--aim', 'ship O1', '--scope', 'the work row only', '--attempts', '3', '--supersedes', goal]
+  const branchShort = onTerminal(branch, '\n').stdout.match(/type exactly ([0-9a-f]{8})/)![1]!
+  const branched = onTerminal(branch, `${branchShort}\n`)
+  assert.notEqual(branched.status, 0)
+  assert.match(branched.stdout + branched.stderr, new RegExp(`already superseded by ${raised}`))
 })
