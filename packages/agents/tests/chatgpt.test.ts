@@ -55,8 +55,9 @@ async function task(artifacts: Artifacts, instructions: string): Promise<string>
   return (await artifacts.put({ ...TASK_KIND, content: { instructions }, classification: 'local-private', producer: { type: 'operator', ref: 'tester' } })).id
 }
 /** One attempt on a fake site with `options`; `answer` defaults to a block for each of `outputs`. */
-async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string } = {}) {
+async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<Account>; instructions?: string; started?: (fake: FakeChatGpt) => void } = {}) {
   const fake = await site({ answer: blocks(...outputs), ...options })
+  more.started?.(fake)
   const { artifacts } = memory()
   const worker = agentWorker(account(web(fake, more.config), more.extra), artifacts, processSpawner, join(root, 'attempts'))
   const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.') }, outputs, more.signal))
@@ -481,15 +482,20 @@ test('a failure names its stage and keeps the page as evidence: screenshot, reda
 })
 
 test('a cancel and the time limit end Chrome with a close, and leave the evidence as partial output', { skip, timeout: 60_000 }, async () => {
+  // Cancel once the page has the prompt, not after a fixed time: under load a fixed delay can come before the send.
   const stop = new AbortController()
-  setTimeout(() => stop.abort(), 4000)
-  const cancelled = await run({ thinkMs: 60_000 }, ['report'], { signal: stop.signal })
+  const cancelled = await run({ thinkMs: 60_000 }, ['report'], {
+    signal: stop.signal,
+    started: (fake) => { const poll = setInterval(() => { if (fake.sent.length) { clearInterval(poll); stop.abort() } }, 50) },
+  })
   assert.equal(cancelled.result.status, 'cancelled')
   const timedOut = await run({ thinkMs: 60_000 }, ['report'], { extra: { attemptTimeoutMinutes: 0.1 } })
   assert.equal(timedOut.result.status, 'failed')
-  for (const { artifacts, result } of [cancelled, timedOut]) {
+  for (const { artifacts, result, fake } of [cancelled, timedOut]) {
     const evidence = await evidenceOf(artifacts, result)
     assert.equal(evidence.stages.find((stage: { stage: string }) => stage.stage === 'close').status, 'ok')
-    assert.equal(evidence.promptSubmitted, true)
+    // The record says what the page received: the time limit may come before or after the send.
+    assert.equal(evidence.promptSubmitted, fake.sent.length > 0)
   }
+  assert.equal(cancelled.fake.sent.length, 1)
 })
