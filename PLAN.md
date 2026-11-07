@@ -425,6 +425,26 @@ and orchestrator scope; O3 completion notices.
   accepted; `system workers login`, cookie import; not enabled in the bundle;
   the real-site run, `SYSTEM_REAL_WEB=1`, is still to do.)*
 
+- [ ] W2. Remote sign-in over SSH, as System 1 does (operator, 2026-11-07).
+  - `system workers login <ref> --remote` opens Chrome for the account's
+    profile on its own Xvfb display, with a VNC server on an owner-only Unix
+    socket and a token-gated noVNC page on 127.0.0.1.
+  - The operator runs `ssh -L <port>:127.0.0.1:<port> host`, opens the printed
+    URL, signs in, and presses Save. The session expires after a short TTL.
+  - No CDP port is exposed.
+  - Reference: System 1, `docs/design/browser-runtime.md` ("remote" flow,
+    ported from tsuuanmi/internet).
+  - On this machine Xvfb is installed; `x11vnc` and websockify/noVNC are not.
+    Prefer pure-Node pieces where they exist, and otherwise name the packages
+    the operator must install.
+  - Cookie import (`--cookies`) stays as the quick path.
+- [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
+  temporary chats, two signed-in accounts (`chatgpt-web/default`,
+  `chatgpt-web/second`) can each give an independent proposal. A Brainstorm
+  variant in `workflows/experiments/` routes `idea-a` and `idea-b` to the two
+  ChatGPT accounts through role capabilities. Compare it with the Claude/Codex
+  default on real briefs, judged by the Sonnet evaluator (B3's method).
+
 ## 4. After Brainstorm — future, not current gates
 
 - [x] Website Worker for interactive/browser-assisted Research **only when**
