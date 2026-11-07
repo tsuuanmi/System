@@ -4,6 +4,8 @@
  * open one draft pull request for that branch. It merges only with
  * `merge: true`, and only when the base branch is in `mergeInto`.
  *
+ * - A pull request is the branch's only when it targets `base`; an open one aimed
+ *   at another base makes apply `failed` (never merged, never retargeted).
  * - apply is idempotent per Work: a branch already at the commit is not
  *   pushed again, and an open pull request for the branch is reused.
  * - The branch moves only from a commit System published (pinned under
@@ -44,6 +46,7 @@ interface Pull {
   html_url: string
   node_id: string
   draft: boolean
+  base?: { ref: string }
   head?: { sha: string }
   merged_at?: string | null
   merge_commit_sha?: string | null
@@ -106,13 +109,16 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
     return (await response.json()) as T
   }
 
-  const openPull = async (t: Awaited<ReturnType<typeof target>>): Promise<Pull | undefined> =>
-    (await api<Pull[]>(t, 'GET', `/repos/${t.slug}/pulls?head=${encodeURIComponent(`${t.slug.split('/')[0]}:${t.branch}`)}&state=open`))[0]
+  const pullsOf = async (t: Awaited<ReturnType<typeof target>>, state: 'open' | 'all'): Promise<Pull[]> =>
+    api<Pull[]>(t, 'GET', `/repos/${t.slug}/pulls?head=${encodeURIComponent(`${t.slug.split('/')[0]}:${t.branch}`)}&state=${state}`)
 
-  /** The pull request for the branch that was merged at the commit, if any. */
+  /** The open pull request for the branch that targets the configured base. */
+  const openPull = async (t: Awaited<ReturnType<typeof target>>): Promise<Pull | undefined> =>
+    (await pullsOf(t, 'open')).find((p) => p.base?.ref === config.base)
+
+  /** The pull request for the branch that was merged into the configured base at the commit, if any. */
   const mergedPull = async (t: Awaited<ReturnType<typeof target>>): Promise<Pull | undefined> =>
-    (await api<Pull[]>(t, 'GET', `/repos/${t.slug}/pulls?head=${encodeURIComponent(`${t.slug.split('/')[0]}:${t.branch}`)}&state=all`))
-      .find((p) => p.merged_at && p.head?.sha === t.tree.commit)
+    (await pullsOf(t, 'all')).find((p) => p.merged_at && p.base?.ref === config.base && p.head?.sha === t.tree.commit)
 
   const detail = (t: Awaited<ReturnType<typeof target>>, pull: Pull, draft: boolean, merge?: string): Record<string, string> => ({
     repository: t.slug, branch: t.branch, commit: t.tree.commit, pullRequest: String(pull.number), url: pull.html_url, draft: String(draft),
@@ -141,6 +147,13 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         const done = await mergedPull(t)
         if (done) return { state: 'applied', reason: `pull request #${done.number} is already merged at ${t.tree.commit}`, detail: detail(t, done, false, done.merge_commit_sha ?? '') }
       }
+      // ADR-0008 decision 2: a pull request for the branch aimed elsewhere is never merged or retargeted.
+      const open = await pullsOf(t, 'open')
+      let pull = open.find((p) => p.base?.ref === config.base)
+      const elsewhere = open.find((p) => p.base?.ref !== config.base)
+      if (!pull && elsewhere) {
+        return { state: 'failed', reason: `pull request #${elsewhere.number} for ${t.branch} targets ${elsewhere.base?.ref ?? 'an unknown base'}, not ${config.base}; resolve it by hand`, detail: detail(t, elsewhere, elsewhere.draft) }
+      }
       const current = await remoteCommit(t)
       if (current !== t.tree.commit) {
         if (current) {
@@ -149,7 +162,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         }
         await git(t.tree.repository, ['push', '--quiet', t.url, `${t.tree.commit}:refs/heads/${t.branch}`, `--force-with-lease=refs/heads/${t.branch}:${current}`], t.env)
       }
-      const pull = (await openPull(t)) ?? await api<Pull>(t, 'POST', `/repos/${t.slug}/pulls`, {
+      pull ??= await api<Pull>(t, 'POST', `/repos/${t.slug}/pulls`, {
         title: `System ${t.branch.slice('system/'.length, 'system/'.length + 8)}: ${t.tree.commit.slice(0, 12)}`,
         head: t.branch, base: config.base, draft: !merge,
         body: [`Opened by System for Work \`${intent.workId}\`.`, '', `- commit: \`${t.tree.commit}\``, `- operation: \`${intent.operationId}\``, '', merge ? `System merges this pull request into ${config.base} once the checks have passed on this commit.` : 'System does not merge this pull request; review and merge by hand.'].join('\n'),

@@ -4,11 +4,37 @@
  * are a table, `method -> { handler, agent }`; the Work operations are rows
  * added to it.
  */
-import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
+import { join } from 'node:path'
 import type { Caller, Host, z } from '@system/work'
 
-export const VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+/** The package version, shown by `host.hello`; it does not tell two builds apart. */
+export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+
+const SYSTEM_PACKAGES = ['artifacts', 'work', 'agents', 'verifiers', 'effects', 'host', 'app']
+
+const jsFiles = (dir: string, at = ''): string[] =>
+  readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(dir, join(at, e.name)) : e.name.endsWith('.js') ? [join(at, e.name)] : []))
+
+/**
+ * What identifies the code: a short sha256 over the built `.js` files of the
+ * System packages, in a stable order. A directory that is not built counts as
+ * empty. The Host and each client compute it from their own files, so a
+ * Host still running old code refuses a client built from new code.
+ */
+export function codeVersion(libs: Record<string, string> = Object.fromEntries(SYSTEM_PACKAGES.map((name) => [name, new URL(`../../${name}/lib`, import.meta.url).pathname]))): string {
+  const hash = createHash('sha256')
+  for (const name of Object.keys(libs).sort()) {
+    let files: string[] = []
+    try { files = jsFiles(libs[name]!).sort() } catch { /* not built */ }
+    for (const file of files) hash.update(`${name}/${file}\0`).update(readFileSync(join(libs[name]!, file))).update('\0')
+  }
+  return hash.digest('hex').slice(0, 12)
+}
+
+export const VERSION: string = codeVersion()
 
 /** The largest line, in bytes, either side accepts. */
 export const MAX_FRAME = 1024 * 1024
@@ -53,7 +79,7 @@ export interface ServeOptions {
   path: string
   /** Extra rows over the built-in `host.*` ones. */
   methods?: Methods
-  /** The version a hello must carry; the CLI package version. */
+  /** The code version a hello must carry; default: this build's `VERSION`. */
   version?: string
 }
 
@@ -104,10 +130,10 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
           const next = callerOf(request.params?.caller)
           if (!next) throw new RpcError(INVALID_PARAMS, 'host.hello needs caller: { type: "human" | "agent", operatorId }')
           if (request.params.version !== version) {
-            throw new RpcError(REFUSED, `the Host runs version ${version} and the client ${String(request.params.version)}; restart the Host: systemctl --user restart system`)
+            throw new RpcError(REFUSED, `the Host runs code ${version} and the client ${String(request.params.version)}; restart the Host: systemctl --user restart system (or restart \`system host\`)`)
           }
           caller = next
-          return send({ jsonrpc: '2.0', id, result: { version } })
+          return send({ jsonrpc: '2.0', id, result: { version, packageVersion: PACKAGE_VERSION } })
         }
         const method = Object.hasOwn(methods, request.method) ? methods[request.method] : undefined
         if (!method) throw new RpcError(METHOD_NOT_FOUND, `unknown method ${request.method}`)

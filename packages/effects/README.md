@@ -54,8 +54,16 @@ The controller records `effect-intended` before `apply` and
   adds `merged: "true"` and `mergeCommit`. A 405 (not mergeable) or 409 (head
   changed) is `failed` with GitHub's message and is never retried; a pull
   request already merged at the commit is `applied` without a second call.
-  Without `merge: true` there is no merge call. Only the operator merges `dev`
-  into `main`.
+  Without `merge: true` there is no merge call.
+- **Required checks (ADR-0008, clarified 2026-11-07):** System merges once its
+  own verifier (`code.required-checks` over `.system/checks.yaml`) has passed
+  on the exact commit. It does not wait for GitHub's CI; branch protection, if
+  configured, can still refuse the merge with 405, recorded as `failed`.
+- **Base:** a pull request is the branch's only when its `base` is the
+  configured one. An open pull request for the branch that targets another
+  base makes `apply` `failed`, naming both bases; it is never merged or
+  retargeted. A pull request merged into another base does not count as
+  merged. Only the operator merges `dev` into `main`.
 
 ## Verified
 

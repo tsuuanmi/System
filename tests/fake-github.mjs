@@ -33,7 +33,7 @@ const server = createServer((req, res) => {
     calls.push(`${req.method} ${req.url}`)
     const url = new URL(req.url, 'http://x')
     const send = (status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
-    const view = (p) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, head: { ref: p.head, sha: bare ? headSha(p.head) : '' }, merged_at: p.merged ? '2026-11-06T00:00:00Z' : null, merge_commit_sha: p.mergeCommit ?? null })
+    const view = (p) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, base: { ref: p.base }, head: { ref: p.head, sha: bare ? headSha(p.head) : '' }, merged_at: p.merged ? '2026-11-06T00:00:00Z' : null, merge_commit_sha: p.mergeCommit ?? null })
     if (url.pathname === '/_state') return send(200, { pulls, calls })
     const match = /^\/repos\/([^/]+\/[^/]+)\/pulls$/.exec(url.pathname)
     if (req.method === 'GET' && match) {

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { VERSION, connect } from '../packages/host/src/index.ts'
+import { PACKAGE_VERSION, VERSION, connect } from '../packages/host/src/index.ts'
 import { systemCli } from '../test-support/cli.ts'
 
 const cli = systemCli('system-host-process', { SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human', SYSTEM_NO_SERVICE: '1' })
@@ -28,7 +28,7 @@ test('system host serves hello and ping on host.sock, and logs its start', { tim
   const host = await cli.start()
   const client = await connect(socket)
   try {
-    assert.deepEqual(await client.call('host.hello', { version: VERSION, caller: human }), { version: VERSION })
+    assert.deepEqual(await client.call('host.hello', { version: VERSION, caller: human }), { version: VERSION, packageVersion: PACKAGE_VERSION })
     const ping = await client.call('host.ping') as { version: string; pid: number; works: number }
     assert.equal(ping.version, VERSION)
     assert.equal(ping.pid > 0, true)
