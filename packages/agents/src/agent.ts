@@ -7,11 +7,11 @@
  * An attempt past its time limit is stopped the same way but fails: nobody cancelled it.
  */
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
-import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
+import { acpInvocation, claudeInvocation, codexInvocation, parseAcp, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
 import { profileLockPid, webAttempt, type WebConfig } from './chatgpt.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
@@ -53,6 +53,8 @@ export interface Account {
   capabilities: string[]
   /** chatgpt-web: the profile, page and timeouts; `command` is then the path of Chrome. */
   web?: WebConfig
+  /** acp: external executable implementing ACP v1, not the agent vendor CLI. */
+  acp?: { agentCommand: string; agentArgs: string[] }
   /** Absolute path of the CLI. */
   command: string
   /** Its `--version` output, asked when first needed. */
@@ -132,7 +134,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const token = await account.token?.()
       if (!token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
       invocation = claudeInvocation(account.command, ws, text, token, model, request.capabilities.includes('code-write'))
-    } else {
+    } else if (account.runtime === 'codex' || account.runtime === 'acp' && account.codexHome) {
       const home = join(ws.root, 'codex-home')
       mkdirSync(home, { mode: 0o700 })
       const source = join(account.codexHome!, 'auth.json')
@@ -140,7 +142,20 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       // A fresh CODEX_HOME per attempt holding only auth.json: no memories or history carry over (ADR-0005).
       copyFileSync(source, join(home, 'auth.json'))
       codexAuth = { attempt: join(home, 'auth.json'), account: source, before: digest(source) }
-      invocation = codexInvocation(account.command, ws, text, home, model)
+      if (account.runtime === 'codex') invocation = codexInvocation(account.command, ws, text, home, model)
+      else {
+        const file = join(ws.root, 'acp-prompt.txt')
+        writeFileSync(file, text, { mode: 0o600 })
+        invocation = acpInvocation(account.command, ws, file, account.acp!.agentCommand, account.acp!.agentArgs, undefined, home)
+      }
+    } else if (account.runtime === 'acp') {
+      const token = await account.token?.()
+      if (account.token && !token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured`, executor }
+      const file = join(ws.root, 'acp-prompt.txt')
+      writeFileSync(file, text, { mode: 0o600 })
+      invocation = acpInvocation(account.command, ws, file, account.acp!.agentCommand, account.acp!.agentArgs, token)
+    } else {
+      throw new Error(`unexpected runtime ${account.runtime}`)
     }
     // Remove every host variable the agent was not given (SSH agent, tokens, ...).
     const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
@@ -179,7 +194,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
     })
     const stdout = spawned.stdout()
-    const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
+    const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : account.runtime === 'codex' ? parseCodex(stdout) : parseAcp(stdout)
     if (codexAuth) keepRefreshedAuth(codexAuth)
     if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
     const log = (await artifacts.putBytes({
