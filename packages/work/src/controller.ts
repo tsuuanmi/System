@@ -133,6 +133,8 @@ interface VerifierAttempt {
   verifier: VerifierPort
   subject: string
   criteria: string
+  /** The step's further inputs, resolved. */
+  inputs: Record<string, string>
   refusal?: string
 }
 
@@ -771,6 +773,7 @@ export class WorkController {
   /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
   private async dispatchVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<{ record: WorkRecord; attempt?: VerifierAttempt }> {
     const subject = this.resolveRef(record, s.verify.subject)
+    const inputs = Object.fromEntries(Object.entries(s.verify.inputs ?? {}).map(([name, ref]) => [name, this.resolveRef(record, ref)]))
     const criteria = record.state.criteria[s.id]
     if (!criteria) return { record: await this.finish(record, 'failed', `step ${s.id} has no pinned criteria`) }
     const route = this.capabilities.routeVerifier(s.verify.capability)
@@ -785,16 +788,16 @@ export class WorkController {
     else if (!kind || !verifier.accepts.includes(kind)) refusal = `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`
     record = await this.append(record, {
       type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
-      selected: verifier.ref, candidates: route.candidates, inputs: { subject, criteria },
+      selected: verifier.ref, candidates: route.candidates, inputs: { ...inputs, subject, criteria },
     })
-    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, refusal } }
+    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, refusal } }
   }
 
   /** Outside the lane: ask the verifier, touching no Work state. */
-  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, refusal }: VerifierAttempt): Promise<VerifyResult> {
+  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, inputs, refusal }: VerifierAttempt): Promise<VerifyResult> {
     if (refusal) return { verdict: 'error', reason: refusal, subject, criteria, evidence: [] }
     try {
-      return await verifier.verify({ workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria })
+      return await verifier.verify({ workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria, ...(Object.keys(inputs).length ? { inputs } : {}) })
     } catch (error) {
       return { verdict: 'error', reason: `the verifier threw: ${(error as Error).message}`, subject, criteria, evidence: [] }
     }
@@ -959,7 +962,7 @@ function lastReason(record: WorkRecord, stepId: string): string {
 
 function refsOf(s: Step): string[] {
   if (isWorkerStep(s)) return Object.values(s.inputs ?? {})
-  if (isVerifyStep(s)) return [s.verify.subject]
+  if (isVerifyStep(s)) return [s.verify.subject, ...Object.values(s.verify.inputs ?? {})]
   if (isEffectStep(s)) return [s.effect.subject]
   return []
 }

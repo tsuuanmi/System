@@ -111,6 +111,19 @@ async function runFixture(h: Harness, name: string) {
   return h.controller.run(admitted.id)
 }
 
+test('a verify step\'s further inputs reach the verifier as exact Artifact IDs (the report beside the sources)', async () => {
+  const seen: Record<string, string>[] = []
+  const h = harness({ verifier: { async verify(request) {
+    seen.push(request.inputs ?? {})
+    const evidence = id(`evidence/${request.attemptId}`)
+    h.specs.stored.add(evidence)
+    return { verdict: 'pass', reason: 'scripted', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
+  } } })
+  const done = await runFixture(h, 'research.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(seen, [{ report: done.state.steps.investigate!.outputs.report! }])
+})
+
 test('a direct Task with no Workflow file runs one attempt to a result', async () => {
   const h = harness()
   const spec = directTask(['code-write'], false, h.capabilities.available())

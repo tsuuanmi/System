@@ -5,7 +5,7 @@
 //   FAKE:outputs  write every listed output file
 //   FAKE:sign     with FAKE:outputs, each file names its runtime, repeats the prompt's Context header and quotes every input file listed
 //   FAKE:hang=STEP:FILE  at step STEP, unless FILE exists: create it and wait (until SIGTERM, then exit 143)
-//   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below
+//   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below, and every other output ends with the citation [s1]
 //   FAKE:sleep    unless PARTIAL.md exists: wait; on SIGTERM write PARTIAL.md and exit 143
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
 //   FAKE:grandchild=FILE  start a process in the agent's own group that waits, and write its pid to FILE
@@ -88,7 +88,7 @@ const cited = /FAKE:cite=(\S+)/.exec(prompt)?.[1]
 if (has('outputs')) {
   for (const [, slot, path] of prompt.matchAll(/^- ([a-z][a-z0-9-]*) \(the file (\/[^)]+)\)$/gm)) {
     const sources = { sources: cited ? [{ id: 's1', url: cited, quote: QUOTE, claims: ['System checks quotes'] }] : [] }
-    writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : has('sign') ? signed(slot) : `# ${slot} [s1]\n`)
+    writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : has('sign') ? `${signed(slot)}${cited ? '\n[s1]\n' : ''}` : `# ${slot} [s1]\n`)
   }
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')

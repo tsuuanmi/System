@@ -25,6 +25,15 @@ before(async () => {
     if (req.url === '/article') {
       res.writeHead(200, { 'content-type': 'text/html' })
       res.end('<html><body><p>System verifies <b>citations</b>&nbsp;exactly &amp; carefully.</p><script>var hidden = "secret quote here"</script></body></html>')
+    } else if (req.url === '/paris') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<p>Its capital, largest city and main cultural and economic centre is <a href="/wiki/Paris">Paris</a>, with a metropolitan population of over 13 million.</p>')
+    } else if (req.url === '/france') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<p>Paris is the capital and most populous city of France.</p>')
+    } else if (req.url === '/forbidden') {
+      res.writeHead(403)
+      res.end('no bots')
     } else {
       res.writeHead(404)
       res.end('not found')
@@ -181,6 +190,83 @@ test('a malformed sources file, no sources, or an empty quote fails', async () =
   assert.equal((await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: 'short', claims: ['c'] }] })).result.verdict, 'fail')
   assert.equal((await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: 'system verifies citations', claims: [] }] })).result.verdict, 'fail')
   assert.equal((await cite('not an object')).result.verdict, 'fail')
+})
+
+/** Like `cite`, with the `citations-v2` criteria the verifier pins itself, and the report as a second input when given. */
+async function citeV2(json: unknown, report?: string) {
+  const artifacts = store()
+  const verifier = citationCheck(artifacts)
+  const criteria = await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
+  const subject = await sources(artifacts, json)
+  const reportId = report === undefined ? undefined : (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(report), mediaType: 'text/markdown', classification: 'public', producer })).id
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'citations', capability: 'research.citation-check', subject, criteria, ...(reportId ? { inputs: { report: reportId } } : {}) })
+  const evidence = artifacts.get(result.evidence[0]!)
+  return { result, evidence: evidence.state === 'stored' ? evidence.envelope.content as { problems: string[]; confirmedRatio?: number; results: { id: string; found: boolean; readable?: boolean; wordRatio?: number; passage?: string }[] } : undefined }
+}
+
+const parisQuote = 'Its capital, largest city and main cultural and economic centre is Paris.'
+const franceQuote = 'Paris is the capital and largest city of France.'
+
+test('v2: the shortened and the reworded canary quotes pass; v1 still rejects both', async () => {
+  for (const [path, quote] of [['paris', parisQuote], ['france', franceQuote]] as const) {
+    const json = { sources: [{ id: 's1', url: `${base}/${path}`, quote, claims: ['c'] }] }
+    const v2 = await citeV2(json)
+    assert.equal(v2.result.verdict, 'pass', v2.result.reason)
+    assert.ok((v2.evidence?.results[0]?.wordRatio ?? 0) >= 0.8)
+    assert.match(v2.evidence?.results[0]?.passage ?? '', /paris/)
+    assert.ok((v2.evidence?.results[0]?.passage ?? '').length <= 300)
+    assert.equal((await cite(json)).result.verdict, 'inconclusive')
+  }
+})
+
+test('v2: a quote of other words is not confirmed; the reason names the source with its ratio', async () => {
+  const { result, evidence } = await citeV2({ sources: [{ id: 's1', url: `${base}/france`, quote: 'Berlin is the largest metropolis on the river Spree', claims: ['c'] }] })
+  assert.equal(result.verdict, 'inconclusive')
+  assert.match(result.reason, /s1 \(HTTP 200, 22% of the quote/)
+  assert.equal(evidence?.results[0]?.found, false)
+})
+
+test('v2: the words must come in order', async () => {
+  const { evidence } = await citeV2({ sources: [{ id: 's1', url: `${base}/france`, quote: 'France of city populous most and capital the is Paris', claims: ['c'] }] })
+  assert.equal(evidence?.results[0]?.found, false)
+})
+
+test('v2: a report citing [s2] with only s1 in sources fails, naming s2', async () => {
+  const { result } = await citeV2({ sources: [{ id: 's1', url: `${base}/france`, quote: franceQuote, claims: ['c'] }] }, 'Paris is the capital [s1]. It is big [s2].')
+  assert.equal(result.verdict, 'fail')
+  assert.match(result.reason, /s2/)
+  assert.doesNotMatch(result.reason, /s1/)
+})
+
+test('v2: a source the report never cites fails, naming it; Markdown links are not citations', async () => {
+  const two = { sources: [
+    { id: 's1', url: `${base}/france`, quote: franceQuote, claims: ['c'] },
+    { id: 's2', url: `${base}/paris`, quote: parisQuote, claims: ['c'] },
+  ] }
+  const unused = await citeV2(two, 'Paris is the capital [s1]. See [the guide](https://example.com).')
+  assert.equal(unused.result.verdict, 'fail')
+  assert.match(unused.result.reason, /s2/)
+  assert.equal((await citeV2(two, 'Paris [s1] [s2], [s1].')).result.verdict, 'pass')
+})
+
+test('v2: a 403 source is unreadable, not wrong: with one confirmed readable source it passes', async () => {
+  const { result, evidence } = await citeV2({ sources: [
+    { id: 's1', url: `${base}/france`, quote: franceQuote, claims: ['c'] },
+    { id: 's2', url: `${base}/forbidden`, quote: parisQuote, claims: ['c'] },
+  ] })
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.equal(evidence?.confirmedRatio, 1)
+  assert.equal(evidence?.results[1]?.readable, false)
+  assert.match(result.reason, /s2 \(HTTP 403/)
+})
+
+test('v2: when no source is readable the verdict is inconclusive', async () => {
+  const { result, evidence } = await citeV2({ sources: [
+    { id: 's1', url: `${base}/forbidden`, quote: franceQuote, claims: ['c'] },
+    { id: 's2', url: 'http://127.0.0.1:1/x', quote: parisQuote, claims: ['c'] },
+  ] })
+  assert.equal(result.verdict, 'inconclusive')
+  assert.equal(evidence?.confirmedRatio, undefined)
 })
 
 test('normalize folds markup, entities, typographic quotes and whitespace', () => {

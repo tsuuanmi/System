@@ -140,6 +140,12 @@ test('accept must require verify steps it depends on, appear once, and come last
   assert.match(problems(`${head}  - id: ok\n    dependsOn: [v]\n    accept:\n      requires: [v]\n  - id: after\n    dependsOn: [ok]\n    capabilities: [research]\n    outputs: [z]\n`).join(';'), /must be last/)
 })
 
+test('a verify step\'s inputs are checked like a Worker step\'s: the slot must exist and its step be depended on', () => {
+  const head = `${base}  - id: a\n    capabilities: [research]\n    outputs: [x]\n  - id: v\n    dependsOn: [a]\n    verify:\n      capability: research.citation-check\n      subject: $steps.a.x\n      criteria: c1\n`
+  assert.doesNotThrow(() => resolve(parseWorkflow(`${head}      inputs:\n        report: $steps.a.x\n`), available))
+  assert.match(problems(`${head}      inputs:\n        report: $steps.a.nope\n`).join(';'), /input report uses \$steps\.a\.nope: step a has no output nope/)
+})
+
 test('how dependsOn is written never changes the resolved spec', () => {
   const steps = (deps: string) => `${base}  - id: a\n    capabilities: [research]\n    outputs: [x]\n  - id: b\n    capabilities: [research]\n    outputs: [x]\n  - id: c\n    dependsOn: ${deps}\n    capabilities: [research]\n    outputs: [x]\n`
   assert.deepEqual(resolve(parseWorkflow(steps('[b, a]')), available), resolve(parseWorkflow(steps('[a, b, a]')), available))

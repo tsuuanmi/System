@@ -14,7 +14,7 @@ changes future admissions only.
   `system work retry <work> --step checks.checks` verifies the same change again.
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
-  `sources`) → `accept`.
+  `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`.
 - [brainstorm.yaml](brainstorm.yaml) — `idea-a` (`brainstorm.idea-a`) and
   `idea-b` (`brainstorm.idea-b`) each write a `proposal` from the brief alone,
   with a stance each (pragmatist, skeptic);

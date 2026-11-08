@@ -75,6 +75,8 @@ export interface VerifyRequest {
   subject: string
   /** The criteria Artifact ID pinned at admission. */
   criteria: string
+  /** Further exact Artifact IDs the step names (`verify.inputs`), by slot. */
+  inputs?: Record<string, string>
 }
 
 /**

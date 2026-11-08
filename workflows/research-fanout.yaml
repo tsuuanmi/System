@@ -9,7 +9,7 @@
 # controller as research.yaml: no engine change.
 schema: system.workflow/v1
 id: research-fanout
-version: 1
+version: 2
 steps:
   - id: plan
     capabilities: [research.plan]
@@ -48,13 +48,17 @@ steps:
     verify:
       capability: research.citation-check
       subject: $steps.investigate-a.sources
-      criteria: citations-v1
+      criteria: citations-v2
+      inputs:
+        report: $steps.investigate-a.report
   - id: citations-b
     dependsOn: [investigate-b]
     verify:
       capability: research.citation-check
       subject: $steps.investigate-b.sources
-      criteria: citations-v1
+      criteria: citations-v2
+      inputs:
+        report: $steps.investigate-b.report
   - id: synthesis
     dependsOn: [citations-a, citations-b]
     capabilities: [research.synthesis]
@@ -82,7 +86,9 @@ steps:
     verify:
       capability: research.citation-check
       subject: $steps.synthesis.sources
-      criteria: citations-v1
+      criteria: citations-v2
+      inputs:
+        report: $steps.synthesis.report
   - id: accept
     dependsOn: [citations-a, citations-b, citations]
     accept:
