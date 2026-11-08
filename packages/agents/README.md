@@ -31,6 +31,45 @@ the operator's ChatGPT website session) becomes a System Worker
       # A second account is another entry with its own ref and credential.
 ```
 
+## Optional ACP Worker (first Rust component)
+
+The account runtime `acp` uses [`system-acp-bridge`](../acp-bridge/README.md),
+an **optional Rust ACP v1 client** built using the official SDK. The bridge
+speaks to an installed ACP-capable agent executable (e.g. `codex-acp` or
+`claude-agent-acp`), not the Claude/Codex CLI wire format. System still owns
+`WorkerPort`, per-attempt worktree, immutable Artifacts, cancellation and
+verification. No ACP account is enabled in the default bundle.
+
+Example **explicit opt-in** account added to the local `agents` profile
+patch after building the Rust binary and installing an ACP agent:
+
+```yaml
+- ref: acp/research-demo
+  runtime: acp
+  command: /absolute/path/to/system-acp-bridge
+  agentCommand: /absolute/path/to/acp-agent
+  agentArgs: []
+  capabilities: [research]
+  maxConcurrentAttempts: 1
+  # Optional and mutually exclusive authentication inputs:
+  # tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # passed as CLAUDE_CODE_OAUTH_TOKEN
+  # codexHome: codex/default           # fresh per-attempt auth.json copy
+```
+
+The bridge reads a 0600 prompt file in the ephemeral attempt workspace;
+the TypeScript adapter parses **only** its structural NDJSON. A successful
+ACP v1 `EndTurn` still needs System's expected output files or captured tree
+and configured verifier. Unknown usage stays unknown. Permission requests
+are **always cancelled** in this first implementation; nothing is silently
+approved, and real coding tasks that need approvals may fail. The process
+still has the operator's OS privileges unless isolated by a separate sandbox.
+
+No tier mapping, token-budget enforcement, ACP v2, session resume or explicit
+operator permission broker is implemented. Configuring model tiers or an
+input-token budget for an ACP account is refused during registration. For
+now, existing structured Claude/Codex Worker runtimes remain the default and
+can be used for the same Work via normal retry/takeover.
+
 ## Software Engineering policy and the attempt budget
 
 A `code-write` attempt runs every command in the foreground (PROP-0007
