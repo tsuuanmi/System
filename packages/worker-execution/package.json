@@ -1,0 +1,23 @@
+{
+  "name": "@system/worker-execution",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared System attempt workspaces, Artifact capture and DSH subprocess utilities",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.1",
+    "@system/artifacts": "workspace:*",
+    "@system/work": "workspace:*"
+  }
+}
