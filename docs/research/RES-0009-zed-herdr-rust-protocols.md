@@ -4,14 +4,17 @@ type: research
 status: active
 date: 2026-11-08
 summary: Compare Zed, Herdr and tmux mechanisms with System; evaluate ACP, MCP, IPC and observability standards, and gate selective Rust adoption on evidence.
-related: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, RES-0005, RES-0007]
+related: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0011, RES-0005, RES-0007]
 ---
 
 # Zed and Herdr: interoperability, agent runtime and selective Rust adoption
 
 **Desk research as of 2026-11-08; no code or benchmark has been run for this study.**
-This is exploratory evidence and recommended experiments, **not** an accepted
-architecture, implementation claim, or approval to migrate code. The canonical
+This remains exploratory evidence, not an implementation claim. The operator
+has subsequently accepted a focused design choice in
+[ADR-0011](../decisions/ADR-0011-rust-acp-worker-adapter.md): the optional
+ACP Worker Adapter is System's **first Rust component**, using the official
+ACP Rust SDK, without rewriting the TypeScript/DSH control plane. The canonical
 System contracts remain in [control plane](../architecture/control-plane.md),
 [workflow composition](../architecture/workflow-composition.md) and
 [artifact verification](../architecture/artifact-verification.md).
@@ -23,10 +26,11 @@ protocols? **Keep the DSH/Cordis-hosted TypeScript control plane and one
 provider-neutral WorkerPort.** Standardize the Worker-facing contract and
 capability negotiation before choosing execution transports; test read-only
 Herdr observation and ACP interoperability without demanding ACP from every
-Worker. Treat
-Rust as an implementation option for a separately bounded, demonstrably
-problematic hot path, not as a goal. Do not introduce another authoritative
-Work state machine, approval gate, scheduler or agent loop.
+Worker. Per ADR-0011, use **Rust + the official ACP Rust SDK** for the first
+optional ACP integration, chosen for interoperable implementation reuse,
+**not** an assumed speedup. Other Rust ports still require measured
+performance or a proven correctness/portability gap. Do not introduce another
+authoritative Work state machine, approval gate, scheduler or agent loop.
 
 The relevant System principle is in [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md):
 System owns durable Work, Artifact handoff, policy, verification and effects;
@@ -269,10 +273,11 @@ remain in Development.
 4. **Observation separate from outcome:** follow Herdr's useful
    attention/reconnect patterns, but favor structured events and current
    System result/verification contracts over heuristics.
-5. **Rust follows measured need:** Zed's Rust modularity and Herdr's Rust
-   session server are architectural examples. A Rust sidecar is justified
-   only by a demonstrated process/stream bottleneck or correctness gap,
-   with stable child-process/IPC contract, not by a language preference.
+5. **Rust follows a specific justified boundary:** the first Rust
+   component is the optional ACP Worker Adapter under ADR-0011, chosen to
+   reuse the official ACP SDK. No general-purpose Rust rewrite or Rust
+   process/stream optimization is justified without benchmark or
+   correctness evidence.
 
 ### Additional interoperability test matrix
 
@@ -303,7 +308,7 @@ integration in the operator/UI plane rather than replacing headless Workers.
 | DSH subprocess/process groups and per-attempt isolation | Rust sidecar/process supervisor | **Conditional spike** | Potential operational benefit for process trees, PTYs or cross-platform behavior, but must preserve cancel, timeout, credential isolation and crash recovery; Rust is not a sandbox. |
 | Existing headless Claude/Codex Worker adapters | Herdr pane driver | **Keep headless default** | PTY/screen scraping weakens structured results and usage provenance. Consider interactive mode separately. |
 | Work events and live attempts | Herdr agent-status/events | **Adapt via observer** | Feed a non-authoritative attention view; map explicit Attempt IDs, snapshot/reconcile after missed notifications. |
-| Interactive Worker interoperability and UI handoff | ACP | **Prioritize protocol spike** | Real use case: unified Worker behavior with Claude/Codex while keeping a generic System contract. Prove ACP mapping, Zed client integration only if needed; do not expose Work Controller as a fake conversation agent. |
+| Interactive Worker interoperability and UI handoff | Official Rust ACP SDK | **First Rust component selected (ADR-0011)** | Optional bridge behind System WorkerPort; pin stable ACP v1, verify Claude/Codex agent compatibility and exact Artifact/cancel/policy parity; not a new Work authority. |
 | Artifact bytes, DSH SQLite | Rust store | **Keep** | No measured bottleneck or semantic gap; no dual databases or migrations just for language choice. |
 | Documentation and workflow YAML compiler | Rust | **Keep** | Low-value rewrite; existing source/tests govern v1 semantics. |
 | Zed GPUI/editor mechanisms | Direct reuse | **Do not adopt** | Not relevant to headless service, large dependency and licensing boundary. |
@@ -328,15 +333,18 @@ integration in the operator/UI plane rather than replacing headless Workers.
 - Keep dependencies out of the default DSH bundle; define the minimal
   administrative trust required for Herdr and its plugins.
 
-### E1: ACP-capable Worker interoperability (P1, now a concrete user goal)
+### E1: Rust ACP Worker Adapter interoperability (P1, selected first Rust component)
 
 - The user requirement is **one provider-agnostic Worker contract**, with
   Claude Code/Codex interactive operation through ACP when supported, a
   terminal-thread fallback, and a Website Worker that obeys System's own
   Worker contract without pretending to speak ACP. Test this contract before
   replacing any existing headless Worker.
-- Prototype an **optional ACP client-side adapter** against a pinned,
-  known-compatible agent executable. Support ACP v1 first. Negotiate
+- Prototype an **optional Rust ACP client adapter using the official
+  [agent-client-protocol Rust SDK](https://github.com/agentclientprotocol/rust-sdk)**
+  against a pinned, compatible agent executable. Keep a narrow versioned
+  System WorkerPort-to-Rust IPC boundary, preferably the existing DSH
+  subprocess facilities. Support ACP v1 first. Negotiate
   versions; gate v2 draft behind explicit feature flags. Test initialize,
   auth, session/new, load or resume according to version/capability,
   prompt/update, cancel, session loss, tool calls and user permission.
@@ -420,18 +428,19 @@ option if measured boundary overhead dominates; it adds per-target builds.
 2. **Next optional proposal:** run E0 read-only observer; capture before/after
    operator experience and failure cases. An accepted proposal/ADR is required
    before introducing a new active DSH capability.
-3. **Next parallel protocol experiment:** run E1 against a real interactive
-   Claude/Codex ACP integration under the same System WorkerPort contract;
-   preserve headless as default. Choose E2 only after profiling. Do not make
-   Rust a prerequisite for ACP/MCP.
+3. **First Rust integration selected:** implement E1 as a separate optional
+   Rust ACP bridge using the official SDK, with a TypeScript WorkerPort
+   adapter. Preserve headless as default until parity tests pass. Choose
+   E2 only after profiling; Rust is not a prerequisite for other ACP/MCP
+   use cases.
 4. **Do not:** rewrite core state, duplicate orchestration, add a desktop
    editor to System, or merge runtime implementation under this research PR.
 
 **Unresolved evidence to collect:** current host CPU/RSS profiles under
 representative workloads; Herdr socket version/support in the chosen binary;
 concrete ACP use case; plugin security review; Rust sidecar packaging costs.
-Any accepted result should be promoted to a Proposal or ADR; this research
-file remains non-normative.
+The operator's Rust ACP choice is recorded in ADR-0011; all other
+experiments and performance assumptions here remain non-normative.
 
 ## Sources (accessed 2026-11-08)
 
@@ -448,6 +457,8 @@ file remains non-normative.
   [Herdr Socket API](https://herdr.dev/tui/docs/socket-api/).
 - [MCP 2026-07-28 transport specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/index.mdx).
 - [OpenTelemetry GenAI agent semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md).
+- [Official ACP Rust SDK](https://github.com/agentclientprotocol/rust-sdk)
+  and [Rust SDK documentation](https://agentclientprotocol.github.io/rust-sdk/).
 - [NAPI-RS setup and distribution](https://napi.rs/docs/introduction/getting-started).
 - [Zed licensing](https://github.com/zed-industries/zed#licensing),
   [Herdr license](https://github.com/herdrdev/herdr/blob/master/LICENSE).
