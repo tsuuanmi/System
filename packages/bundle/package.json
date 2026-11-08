@@ -28,6 +28,7 @@
     "@system/effects": "workspace:*",
     "@system/fakes": "workspace:*",
     "@system/verifiers": "workspace:*",
-    "@system/work": "workspace:*"
+    "@system/work": "workspace:*",
+    "@system/worker-acp": "workspace:*"
   }
 }
