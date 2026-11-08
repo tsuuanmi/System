@@ -10,7 +10,8 @@
  * never proves what the Worker read). A pass can include unconfirmed quotes:
  * the reason names each with why, and the evidence lists every result with
  * the ratio and threshold used. Criteria pinned without `minConfirmedRatio`
- * mean 1.0: every quote must be found, as before version 2.
+ * mean 1.0: every quote must be found, as before version 2. Version 3:
+ * `normalize` finds quotes beside links and table cells (see there).
  */
 import { createHash } from 'node:crypto'
 import type { Artifacts } from '@system/artifacts'
@@ -51,7 +52,7 @@ export const citationCheckSchema = z.object({
 }).strict()
 type CheckResult = z.infer<typeof citationCheckSchema>['results'][number]
 
-/** Text for matching: tags, scripts and styles removed, Markdown links reduced to their text and code/emphasis marks dropped, common entities decoded, case and whitespace folded. */
+/** Text for matching: tags, scripts and styles removed, Markdown links reduced to their text and code/emphasis marks dropped, common entities decoded, `|` read as whitespace, case and whitespace folded, and no space before `,.;:!?)` or after `(` (a tag leaves one). */
 export function normalize(text: string): string {
   return text
     .replace(/\[([^\]]*)\]\([^)\s]*\)/g, '$1')
@@ -61,7 +62,7 @@ export function normalize(text: string): string {
     .replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;|&#34;/g, '"').replace(/&#39;|&apos;/g, "'")
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
-    .replace(/\s+/g, ' ').trim().toLowerCase()
+    .replace(/[\s|]+/g, ' ').replace(/ ([,.;:!?)])/g, '$1').replace(/\( /g, '(').trim().toLowerCase()
 }
 
 async function fetchText(url: string, criteria: CitationCriteria): Promise<{ status: number; text: string; contentHash: string }> {
@@ -84,7 +85,7 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
   const producer = { type: 'verifier' as const, ref: 'research.citation-check' }
   return {
     ref: 'research.citation-check',
-    version: '2',
+    version: '3',
     capabilities: ['research.citation-check'],
     accepts: ['file'],
     async criteria({ name }) {
