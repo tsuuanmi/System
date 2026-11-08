@@ -17,6 +17,8 @@ export interface AcpAccount {
   agentArgs: string[]
   version: () => Promise<string>
   token?: () => Promise<string | undefined>
+  /** Explicit per-account variable -> stored secret; provider-neutral. */
+  credentialEnv?: Record<string, () => Promise<string | undefined>>
   codexHome?: string
   maxConcurrentAttempts?: number
   attemptTimeoutMinutes?: number
@@ -77,11 +79,18 @@ async function attempt(
       codexAuth = { attempt: attemptAuth, account: source, before: digest(source) }
     }
 
-    // DSH's subprocess provider scrubs ambient secrets. This account opts in
-    // only to explicitly configured credentials and a private per-attempt home.
+    // DSH scrubs ambient credentials; only explicit account secrets reach this
+    // child. Unsupported/missing secrets fail before any ACP process is started.
     const env: NodeJS.ProcessEnv = { HOME: ws.home, TMPDIR: ws.home }
     if (token) env.CLAUDE_CODE_OAUTH_TOKEN = token
     if (codexHome) env.CODEX_HOME = codexHome
+    for (const [envName, resolveSecret] of Object.entries(account.credentialEnv ?? {})) {
+      const secret = await resolveSecret()
+      if (!secret) {
+        return { status: 'failed', outputs: {}, reason: account.ref + ': credential for ' + envName + ' is unavailable', executor }
+      }
+      env[envName] = secret
+    }
 
     const limit = account.attemptTimeoutMinutes ?? DEFAULT_ATTEMPT_TIMEOUT_MINUTES
     const stop = new AbortController()
