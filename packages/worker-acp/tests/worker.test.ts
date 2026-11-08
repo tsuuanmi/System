@@ -7,6 +7,7 @@ import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { TASK_KIND, taskSchema, type WorkerRequest } from '@system/work'
 import { acpWorker, type AcpAccount } from '../src/worker.ts'
+import { validateCredentialEnv } from '../src/index.ts'
 import type { AcpRunner } from '../src/transport.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'system-acp-'))
@@ -95,4 +96,58 @@ test('ACP transport failure never asserts a successful Worker result', async () 
   const done = await acpWorker(account(), artifacts, runner, join(root, 'failure')).run(request(await task(artifacts)))
   assert.equal(done.status, 'failed')
   assert.equal(done.outputs.report, undefined)
+})
+
+test('credential environment names cannot override process or DSH controls', () => {
+  for (const name of ['GEMINI_API_KEY', 'ANTIGRAVITY_TOKEN', 'OPENAI_API_KEY']) {
+    assert.doesNotThrow(() => validateCredentialEnv(name))
+  }
+  for (const name of ['HOME', 'PATH', 'CODEX_HOME', 'CLAUDE_CODE_OAUTH_TOKEN', 'NODE_OPTIONS', 'LD_PRELOAD', 'DSH_HOME', 'SYSTEM_CONFIG', 'bad-name']) {
+    assert.throws(() => validateCredentialEnv(name), /unsafe environment variable/)
+  }
+})
+
+test('ACP plugin forwards only selected provider credentials without vendor branches', async () => {
+  const { artifacts } = fixture()
+  let reached = false
+  const runner: AcpRunner = {
+    async run(spec) {
+      reached = true
+      assert.equal(spec.env.GEMINI_API_KEY, 'mock-gemini-key')
+      assert.equal(spec.env.OPENAI_API_KEY, 'mock-provider-key')
+      assert.equal(spec.env.GITHUB_TOKEN, undefined)
+      assert.equal(spec.env.CLAUDE_CODE_OAUTH_TOKEN, undefined)
+      writeFileSync(join(dirname(spec.cwd), 'out', 'report'), 'provider-neutral output')
+      return { stopReason: 'end_turn', permissionDenied: false, events: [], exitCode: 0 }
+    },
+  }
+  const configured = account()
+  configured.credentialEnv = {
+    GEMINI_API_KEY: async () => 'mock-gemini-key',
+    OPENAI_API_KEY: async () => 'mock-provider-key',
+  }
+  const done = await acpWorker(configured, artifacts, runner, join(root, 'environment'))
+    .run(request(await task(artifacts)))
+  assert.equal(reached, true)
+  assert.equal(done.status, 'succeeded')
+  assert.ok(done.outputs.report?.startsWith('sha256:'))
+})
+
+test('missing provider credential refuses execution without spawning an ACP agent', async () => {
+  const { artifacts } = fixture()
+  let launched = false
+  const runner: AcpRunner = {
+    async run() {
+      launched = true
+      throw new Error('must not run without credentials')
+    },
+  }
+  const configured = account()
+  configured.credentialEnv = { GEMINI_API_KEY: async () => undefined }
+  const done = await acpWorker(configured, artifacts, runner, join(root, 'missing-credential'))
+    .run(request(await task(artifacts)))
+  assert.equal(launched, false)
+  assert.equal(done.status, 'failed')
+  assert.match(done.reason ?? '', /credential for GEMINI_API_KEY is unavailable/)
+  assert.deepEqual(done.outputs, {})
 })
