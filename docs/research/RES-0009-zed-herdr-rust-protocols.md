@@ -137,26 +137,26 @@ editor/GPUI stack or assume ACP handles every session type.
 
 | ID or state | Meaning | May be shared as substitute? |
 | --- | --- | --- |
-| \`workId\` / \`attemptId\` | Durable System work and a concrete execution | No: authoritative in System. |
-| \`workerRef\` | Selected account/capability offering | No: runtime identity, not work identity. |
-| ACP \`sessionId\` | Agent-owned interactive conversation/session | No: may expire, resume or outlive an attempt. |
+| `workId` / `attemptId` | Durable System work and a concrete execution | No: authoritative in System. |
+| `workerRef` | Selected account/capability offering | No: runtime identity, not work identity. |
+| ACP `sessionId` | Agent-owned interactive conversation/session | No: may expire, resume or outlive an attempt. |
 | Herdr pane/machine ID / terminal thread | Transport and presentation location | No: panes may be detached, recycled or misleading. |
-| \`ArtifactId\` / verifier verdict | Immutable content and exact-subject evidence | Never inferred from a terminal or ACP idle state. |
+| `ArtifactId` / verifier verdict | Immutable content and exact-subject evidence | Never inferred from a terminal or ACP idle state. |
 
 Proposed **explicit, ephemeral mapping**:
-\`{workId, attemptId, workerRef, transportKind, externalSessionRef,
-externalHost?, protocolVersion?, observedAt}\`. Treat the session reference
+`{workId, attemptId, workerRef, transportKind, externalSessionRef,
+externalHost?, protocolVersion?, observedAt}`. Treat the session reference
 as secret-adjacent metadata, never as an authorization token or Artifact ID;
 make it optional for non-interactive Workers. Missing or stale mapping must
 not be guessed from process names, pane titles or repository paths.
 
 ### System Worker contract: strengthen, do not replace
 
-The existing TypeScript \`WorkerPort\` is already the common interface; the
+The existing TypeScript `WorkerPort` is already the common interface; the
 following is **conceptual delta**, not implemented TypeScript or new API
 schema:
 
-\`\`\`text
+```text
 WorkerDescriptor {
   ref; capabilities[]; maxConcurrentAttempts;
   supportedModes[];  // batch, interactive; descriptive, not grant of authority
@@ -167,17 +167,17 @@ run(WorkerRequest: pinned Artifact IDs, AbortSignal, progress) -> WorkerResult
 observe?(attemptId) -> advisory live observations
 attach?(attemptId) -> operator-accessible session reference, if available
 gone?(attemptId) -> positive process-exit evidence or unknown
-\`\`\`
+```
 
-Keep \`WorkerRequest\` and \`WorkerResult\` **canonical and transport-neutral**.
-Do not require every Worker to implement \`attach\`, \`resume\`, \`ACP\`, or token
+Keep `WorkerRequest` and `WorkerResult` **canonical and transport-neutral**.
+Do not require every Worker to implement `attach`, `resume`, `ACP`, or token
 metering it cannot provide. Missing usage remains unknown with provenance;
 do not synthesize zero. Only an advertised capability may be relied on at
 preflight. A runtime adapter normalizes provider output into typed slots and
 preserves partial results on cancel/failure. Unsupported or unknown
 capabilities must fail preflight rather than silently downgrade.
 
-A separate \`SessionAdapter\` may be warranted for live interaction, but only
+A separate `SessionAdapter` may be warranted for live interaction, but only
 if experiments demonstrate more than one real implementation. Avoid a
 duplicate plugin framework, generic session database or universal method
 set beyond what System actually needs.
@@ -185,12 +185,12 @@ set beyond what System actually needs.
 ### The ACP detail System must get right
 
 ACP [v1 protocol](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v1/overview.mdx)
-uses JSON-RPC; \`session/prompt\` responds at turn completion and streams
-\`session/update\` notifications. ACP
+uses JSON-RPC; `session/prompt` responds at turn completion and streams
+`session/update` notifications. ACP
 [v2 draft](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v2/migration.mdx)
 changes prompt response into **acceptance**, while foreground lifecycle and
-stop reason appear in \`state_update\` events. v2 explicitly distinguishes
-\`running\`, \`idle\` and \`requires_action\`; background activity can still
+stop reason appear in `state_update` events. v2 explicitly distinguishes
+`running`, `idle` and `requires_action`; background activity can still
 continue after idle. Its
 [July 2026 draft announcement](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/announcements/acp-v2-draft.mdx)
 asks implementations to keep v1 and feature-flag v2. Treat v2 as a
@@ -199,9 +199,9 @@ asks implementations to keep v1 and feature-flag v2. Treat v2 as a
 Both ACP versions require handshake/capabilities and version-specific session
 handling. An adapter must test the actual agent's advertised functionality,
 including session creation/reload/resume, permission requests, cancel and
-disconnect. Session-level \`requires_action\` is **not** the System \`held\`
+disconnect. Session-level `requires_action` is **not** the System `held`
 decision: a tool permission or question may require operator interaction,
-but cannot authorize \`git.publish\`, approve Work, or bypass System policy.
+but cannot authorize `git.publish`, approve Work, or bypass System policy.
 ACP cancellation must be reconciled with System AbortSignal, process scope
 and durable attempt outcome; it is not equivalent to confirmed process exit.
 
@@ -209,7 +209,7 @@ and durable attempt outcome; it is not equivalent to confirmed process exit.
 
 | Transport | Example | Strength | Limitation / policy |
 | --- | --- | --- | --- |
-| Headless structured CLI (current default) | Claude \`stream-json\`, Codex \`exec --json\` | Typed results, usage and deterministic capture boundaries | Limited interactive UI; continue to own process, timeout and worktree. |
+| Headless structured CLI (current default) | Claude `stream-json`, Codex `exec --json` | Typed results, usage and deterministic capture boundaries | Limited interactive UI; continue to own process, timeout and worktree. |
 | ACP-capable interactive client (experiment) | Claude/Codex via compatible agent/adapter | Structured session updates, permission requests, reconnect possibilities | Version/capability differences; needs result extraction and sandbox/approval parity. |
 | Terminal/Herdr observer or attached PTY | Terminal Threads, Herdr pane | Native TUI, cross-host interaction, attention signals | Screen heuristics do not certify completion, usage or authority. |
 | Browser Website Worker (existing) | ChatGPT web runtime | Can normalize results through WorkerPort with provenance | UI automation has weaker structural guarantees; no ACP requirement, explicit limits. |
@@ -225,7 +225,7 @@ portable session transcripts.
 [Herdr's agent detection](https://herdr.dev/tui/docs/agents/)
 combines foreground-process detection, screen heuristics and integrations;
 its [Socket API](https://herdr.dev/tui/docs/socket-api/) exposes a
-versioned machine-readable schema (\`herdr api schema --json\`) and event
+versioned machine-readable schema (`herdr api schema --json`) and event
 subscriptions. These are useful **observation patterns**, not a source of
 truth. An unfamiliar prompt may be reported idle rather than blocked.
 Operator actions must not be auto-authorized by a status heuristic.
@@ -234,17 +234,17 @@ Conceptual projection (not a proposed Work event schema):
 
 | Incoming signal | Show in attention UI | Authoritative System transition? |
 | --- | --- | --- |
-| ACP v2 \`requires_action\` / v1 permission request | "Input needed" with session and source | **No**; only authorized decision path can hold/approve. |
-| ACP \`running\` or Herdr \`working\` | "Active" (observed, timestamped) | No. |
-| ACP \`idle\`, Herdr \`idle/done\` | "Possibly ready", inspect result | No; await WorkerResult and exact verifiers. |
-| Herdr \`blocked\` inferred from screen | "Likely needs input", lower confidence | No. |
-| WorkerResult + captured output Artifacts | Durable \`observed\` result | **Yes**, under current Work Controller gates. |
+| ACP v2 `requires_action` / v1 permission request | "Input needed" with session and source | **No**; only authorized decision path can hold/approve. |
+| ACP `running` or Herdr `working` | "Active" (observed, timestamped) | No. |
+| ACP `idle`, Herdr `idle/done` | "Possibly ready", inspect result | No; await WorkerResult and exact verifiers. |
+| Herdr `blocked` inferred from screen | "Likely needs input", lower confidence | No. |
+| WorkerResult + captured output Artifacts | Durable `observed` result | **Yes**, under current Work Controller gates. |
 | Verifier verdict on pinned subject | Verified/rejected outcome | **Yes**, under System's policy. |
 
-Every observation should include \`source\`, \`timestamp\`, external sequence
+Every observation should include `source`, `timestamp`, external sequence
 if available, confidence/typed-vs-heuristic marker, and linked Attempt when
 verified. Detect stale/lost/duplicate/reordered notifications; resnapshot
-on reconnect. Extend \`LiveAttempts\` and \`work.watch\` projections where
+on reconnect. Extend `LiveAttempts` and `work.watch` projections where
 sensible, never persist terminal guesses as canonical replayable events.
 Consider OpenTelemetry as an **export-only derived trace view**, with
 prompts, secrets and Artifact bytes excluded by default; relevant
