@@ -18,7 +18,6 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
   `chatgpt-web` Runtime.
 - [worker-execution](worker-execution/README.md) — shared TypeScript workspace, Artifact capture and DSH process helpers; library, not a plugin.
 - [worker-acp](worker-acp/README.md) — optional Cordis ACP WorkerPort plugin, disabled in the default profile; reusable DSH lifecycle.
-- [acp-bridge](acp-bridge/README.md) — optional Rust ACP v1 client, selected first Rust component (ADR-0011); no default profile dependency.
 - [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code
   and Codex accounts as Workers.
 - [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
