@@ -219,6 +219,9 @@ importers:
       '@system/work':
         specifier: workspace:*
         version: link:../work
+      '@system/worker-execution':
+        specifier: workspace:*
+        version: link:../worker-execution
       patchright-core:
         specifier: 1.63.0
         version: 1.63.0
@@ -315,6 +318,9 @@ importers:
       '@system/fakes':
         specifier: workspace:*
         version: link:../fakes
+      '@system/worker-acp':
+        specifier: workspace:*
+        version: link:../worker-acp
       '@system/verifiers':
         specifier: workspace:*
         version: link:../verifiers
@@ -415,6 +421,41 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 4.1.0
         version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+
+  packages/worker-acp:
+    dependencies:
+      '@deepseek-ai/dsh-credentials':
+        specifier: 0.2.2-rc.1
+        version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-subprocess':
+        specifier: 0.2.2-rc.1
+        version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-http-proxy@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+      '@system/worker-execution':
+        specifier: workspace:*
+        version: link:../worker-execution
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+
+  packages/worker-execution:
+    dependencies:
+      '@deepseek-ai/dsh-subprocess':
+        specifier: 0.2.2-rc.1
+        version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-http-proxy@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+
 
 packages:
 
