@@ -1,8 +1,10 @@
 # ACP Worker plugin tests
 
-`worker.test.ts` proves the independent WorkerPort adapter's structural ACP
-result handling, Artifact capture, denied permission, cancellation, and minimal
-environment without a live agent subscription. The official Rust SDK's ACP
-wire conformance tests remain in `../acp-bridge/tests/`.
+- \`worker.test.ts\` — provider-neutral WorkerPort status/Artifact outcomes,
+  cancellation, exact output capture and fail-closed permissions.
+- \`transport.test.ts\` and \`mock-agent.mjs\` — real official ACP SDK v1
+  handshake/prompt/denial/abort over stdio, with a local fake subprocess
+  service and no model credentials.
 
-System profile smoke tests cover the default-disabled plugin row.
+Tests do not establish live Claude/Codex compatibility, sandboxing or safe
+in-flight hot reload. Those remain separate release gates.
