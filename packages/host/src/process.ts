@@ -6,9 +6,8 @@
  */
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { WorkError, type Host } from '@system/work'
-import { VERSION, codeVersion as diskVersion, serve } from './index.ts'
+import { VERSION, codeRoot, codeVersionAt, serve } from './index.ts'
 import { operations, type Services } from './operations.ts'
 
 /** Where a home's Host listens. */
@@ -31,16 +30,13 @@ export interface ServeHostOptions {
   log(line: string): void
   /** The code version this Host serves; default: this build's `VERSION`. */
   version?: string
-  /** Recompute the code version from the files on disk; default: the `codeVersion` of this package. */
+  /** Recompute the code version from the files on disk; default: the code under `codeRoot()`, an install's `current` link or this checkout. */
   codeVersion?: () => string
   /** Milliseconds between looks at the disk; default `UPGRADE_POLL`. */
   upgradePoll?: number
-  /** Whether a build is rewriting the code on disk now; default: the build's marker, `BUILDING`, exists. */
+  /** Whether a build is rewriting the code on disk now; default: the build's marker, `.building`, exists under `codeRoot()`. */
   building?: () => boolean
 }
-
-/** The marker `corepack pnpm build` keeps at the repository's root while it runs (and leaves when it fails). */
-export const BUILDING = fileURLToPath(new URL('../../../.building', import.meta.url))
 
 export interface ServingHost {
   /** The exit status once the Host has stopped: `UPGRADE_EXIT` after an upgrade, 0 after `stop`. */
@@ -56,9 +52,9 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   if (lstatSync(path, { throwIfNoEntry: false })?.isSocket()) rmSync(path)
   const version = options.version ?? VERSION
-  const onDisk = options.codeVersion ?? (() => diskVersion())
+  const onDisk = options.codeVersion ?? (() => codeVersionAt(codeRoot()))
   // Code being built is no code to upgrade to: a Host started on a half-built tree fails (2026-11-08).
-  const building = options.building ?? (() => existsSync(BUILDING))
+  const building = options.building ?? (() => existsSync(join(codeRoot(), '.building')))
   let stopping: Promise<void> | undefined
   let upgrading = false
   /** The code this Host is upgrading to, once it is. */

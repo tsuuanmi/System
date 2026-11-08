@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { callerSchema, type Caller, type Host, type WorkChange, type z } from '@system/work'
 
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
@@ -40,6 +41,14 @@ export function codeVersion(libs: Record<string, string> = Object.fromEntries(SY
 }
 
 export const VERSION: string = codeVersion()
+
+/** The code a Host watches for an upgrade: `SYSTEM_CODE` (an install's `current` link, set by `bin/system`), else this checkout. */
+export const codeRoot = (env: Record<string, string | undefined> = process.env): string =>
+  env.SYSTEM_CODE ?? fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, '')
+
+/** The code version of the code under `root`, read through it at each call, so a switched link reads the other code. */
+export const codeVersionAt = (root: string): string =>
+  codeVersion(Object.fromEntries(SYSTEM_PACKAGES.map((name) => [name, join(root, 'packages', name, 'lib')])), [join(root, 'packages', 'bundle', 'cordis.patch.yml')])
 
 /** The largest line, in bytes, either side accepts. */
 export const MAX_FRAME = 1024 * 1024

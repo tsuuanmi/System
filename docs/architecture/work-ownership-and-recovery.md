@@ -50,7 +50,7 @@ contract covers effects.
    explainable after recovery.
 
 Old `$DSH_HOME/system/control/*.lock`, `*.takeover` and `*.written` files are
-ignored by the Host; the [runbook](../operations/runbook.md#cutover-to-the-host-r1)
+ignored by the Host; the [runbook](../operations/runbook.md#moving-to-the-install-df0b)
 has the operator delete them. The two SQLite and profile-config defects stay
 covered by `concurrency.test.ts`, which now runs through the Host.
 
