@@ -97,7 +97,7 @@ test('the fakes row is installed but off by default', () => {
   assert.match(ran.stdout, /- id: fakes\n  name: '@system\/fakes'\n  disabled: true/)
 })
 
-test('the optional ACP Worker plugin is installed but disabled without a Rust binary', () => {
+test('the optional ACP Worker plugin is installed but disabled without an ACP agent binary', () => {
   const config = system('--dump-config')
   assert.equal(config.status, 0, config.stderr)
   assert.match(config.stdout, /- id: worker-acp\n  name: '@system\/worker-acp'\n  disabled: true/)
