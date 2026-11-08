@@ -9,7 +9,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'utf8')
 
 const available: AvailableCapabilities = {
-  workers: new Set(['code-write', 'research', 'web-search']),
+  workers: new Set(['code-write', 'research', 'web-search', 'tier.standard']),
   verifiers: new Set(['code.required-checks', 'research.citation-check']),
   effects: new Set(['git.publish']),
 }

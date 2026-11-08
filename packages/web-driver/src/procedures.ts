@@ -78,6 +78,19 @@ const GUARD_KINDS = new Set(['challenge', 'reauth_required', 'invalid_input', 'q
 const AUTH = ['auth.signed-in', 'auth.signed-out', 'auth.login-page', 'auth.challenge', 'site.error-page'] as const
 const ACTIONS = ['composer.clear', 'composer.insert', 'composer.send'] as const
 
+/** The tiers a step may ask of a Site's Power control (WW8b): the lowest level, the middle one, the highest. */
+export type PowerTier = 'economy' | 'standard' | 'frontier'
+
+/** Whether the map binds a Power control (WW8b): the menu's actions and the slider with its status. Without one a Site offers no tiers. */
+export const bindsPower = (map: UiMap): boolean =>
+  !!(map.actions['model.open'] && map.actions['model.close'] && map.elements['model.menu'] && map.elements['model.power'] && map.elements['model.power-status'])
+
+/** The status's text, "<level>, <n> of <total>."; undefined when it reads otherwise. */
+function powerReading(text: string): { power: string; level: number; total: number } | undefined {
+  const m = /^\s*([^,\n]+),\s*(\d+)\s+of\s+(\d+)/.exec(text)
+  return m ? { power: m[1]!.trim(), level: Number(m[2]), total: Number(m[3]) } : undefined
+}
+
 /** What a map still lacks for the Procedures; checked before any browser opens. */
 export function bindingProblems(map: UiMap): string[] {
   const problems: string[] = []
@@ -267,6 +280,65 @@ export class Procedures {
         return { ...failed<typeof seen>(`the model menu did not close: ${error.message}`, { observed: true }), value: seen }
       }
       return done({ observed: true, model: seen.model !== null, power: seen.power !== null }, seen)
+    })
+  }
+
+  /**
+   * Select the Power level of a tier by position (WW8b): the levels are read from the live menu, never named. `economy` is the
+   * first, `standard` the middle (also when no tier is asked), `frontier` the last. The slider moves by arrow key until the status
+   * shows the target, which is read again to verify it; the menu is then closed and verified gone. A level that cannot be reached
+   * or read back is `failed`, nothing selected is assumed, and the menu is closed again when it can be. A Site that binds no
+   * Power control has nothing to select: ok with null values, but a tier asked of it is `failed`.
+   */
+  selectPower(tier?: PowerTier): Promise<Result<{ power: string | null; level: number | null; total: number | null }>> {
+    return expected(async () => {
+      const { engine, map } = this
+      if (!bindsPower(map)) {
+        return tier ? failed(`the map binds no Power control, so tier ${tier} cannot be selected`, { selected: false }) : done({ selected: false }, { power: null, level: null, total: null })
+      }
+      const reading = async () => powerReading(await engine.text('model.power-status').catch(() => ''))
+      const closeMenu = async (): Promise<string | undefined> => {
+        try {
+          if ((await engine.count('model.menu')) > 0) await engine.act('model.close')
+          return undefined
+        } catch (error) {
+          if (!(error instanceof ProviderError) || error.kind === 'aborted') throw error
+          return `the model menu did not close: ${error.message}`
+        }
+      }
+      let outcome: Result<{ power: string | null; level: number | null; total: number | null }>
+      try {
+        if ((await engine.count('model.menu')) === 0) await engine.act('model.open')
+        let now = await reading()
+        if (!now || now.total < 1) {
+          outcome = failed('the Power level cannot be read', { selected: false })
+        } else {
+          const { total } = now
+          const target = tier === 'economy' ? 1 : tier === 'frontier' ? total : Math.ceil(total / 2)
+          const control = (await engine.resolve('model.power', 3000)).locator
+          await control.focus()
+          // At most one step per level; a slider that does not move ends the loop, and the read-back below says so.
+          for (let step = 0; now && now.level !== target && step < total; step++) {
+            const before: number = now.level
+            await control.press(before < target ? 'ArrowRight' : 'ArrowLeft')
+            for (let waited = 0; waited < 1000; waited += 50) {
+              now = await reading()
+              if (now?.level !== before) break
+              await sleep(50)
+            }
+            if (now?.level === before) break
+          }
+          now = await reading()
+          outcome = now?.level === target && now.total === total
+            ? done({ selected: true, level: target, total }, { power: now.power, level: target, total })
+            : failed(`Power level ${target} of ${total} could not be set (reads ${now ? `${now.level} of ${now.total}` : 'nothing'})`, { selected: false, level: target, total })
+        }
+      } catch (error) {
+        if (!(error instanceof ProviderError) || error.kind === 'aborted') throw error
+        outcome = failed(error.message, { selected: false, error: error.kind })
+      }
+      const stuck = await closeMenu()
+      return stuck ? failed(stuck, { ...outcome.evidence, selected: false }) : outcome
     })
   }
 

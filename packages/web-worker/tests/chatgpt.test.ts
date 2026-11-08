@@ -53,8 +53,8 @@ function web(fake: FakeChatGpt, extra: Partial<WebConfig> = {}): WebConfig {
 const account = (config: WebConfig, extra: Partial<WebAccount> = {}): WebAccount => ({
   ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
 })
-function request(inputs: Record<string, string>, outputs: string[], signal = new AbortController().signal): WorkerRequest {
-  return { workId: 'work:test', attemptId: `attempt:${count++}`, stepId: 'research', capabilities: ['research'], inputs, outputs, signal }
+function request(inputs: Record<string, string>, outputs: string[], signal = new AbortController().signal, tier?: string): WorkerRequest {
+  return { workId: 'work:test', attemptId: `attempt:${count++}`, stepId: 'research', capabilities: tier ? ['research', `tier.${tier}`] : ['research'], inputs, outputs, signal }
 }
 async function task(artifacts: Artifacts, instructions: string, note?: string): Promise<string> {
   const producer = { type: 'operator' as const, ref: 'tester' }
@@ -62,12 +62,12 @@ async function task(artifacts: Artifacts, instructions: string, note?: string): 
   return (await artifacts.put({ ...TASK_KIND, content: { instructions, ...(context.length ? { context } : {}) }, ...(context.length ? { inputs: context } : {}), classification: 'local-private', producer })).id
 }
 /** One attempt on a fake site with `options`; `answer` defaults to a block for each of `outputs`. */
-async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; extra?: Partial<WebAccount>; instructions?: string; note?: string; started?: (fake: FakeChatGpt) => void } = {}) {
+async function run(options: FakeOptions = {}, outputs = ['report'], more: { config?: Partial<WebConfig>; signal?: AbortSignal; tier?: string; extra?: Partial<WebAccount>; instructions?: string; note?: string; started?: (fake: FakeChatGpt) => void } = {}) {
   const fake = await site({ answer: blocks(...outputs), ...options })
   more.started?.(fake)
   const { artifacts } = memory()
   const worker = webWorker(account(web(fake, more.config), more.extra), artifacts, join(root, 'attempts'))
-  const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.', more.note) }, outputs, more.signal))
+  const result = await worker.run(request({ task: await task(artifacts, more.instructions ?? 'Explain the fake topic.', more.note) }, outputs, more.signal, more.tier))
   return { artifacts, result, fake }
 }
 const text = async (artifacts: Artifacts, id: string) => Buffer.from(await artifacts.readBytes(id)).toString('utf8')
@@ -250,7 +250,7 @@ test('a prompt with inputs is a header and a body: the body is accepted as a chi
     assert.ok(sent.indexOf('Complete this one step') < sent.indexOf('note 0:'), 'the header comes before the body')
     const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
     const evidence = JSON.parse(line.slice(line.indexOf('{')))
-    assert.deepEqual(evidence.stages.map((stage: { stage: string }) => stage.stage), ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe'] : []), 'insert', 'attach', 'send', 'wait', 'read', 'close'])
+    assert.deepEqual(evidence.stages.map((stage: { stage: string }) => stage.stage), ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe', 'power'] : []), 'insert', 'attach', 'send', 'wait', 'read', 'close'])
     assert.deepEqual(evidence.attach, { outcome, chips })
   }
 })
@@ -658,28 +658,55 @@ test('the outside limit is a setting: a short remark outside the block is fine, 
   assert.match(tight.result.reason!, /continues outside its output blocks \(14 characters\)/)
 })
 
-// WW8a: the model and Power the attempt ran with are recorded, never set; the legacy driver records none.
-test('the evidence records the model and Power the page showed, and a menu left open is closed before the insert', { skip: skip || !generic, timeout: 120_000 }, async () => {
+// WW8a: the model and Power the page showed are recorded; WW8b: the Power is then selected from the step's tier.
+test('the evidence records the model and Power the page showed before, and a menu left open is closed before the insert', { skip: skip || !generic, timeout: 120_000 }, async () => {
   for (const menuOpen of [false, true]) {
     const { artifacts, result, fake } = await run({ menuOpen }, ['report'])
     assert.equal(result.status, 'succeeded', result.reason)
     const evidence = await evidenceOf(artifacts, result)
-    assert.deepEqual([evidence.model, evidence.power], ['Latest', 'Instant'], `menuOpen ${menuOpen}`)
+    assert.deepEqual([evidence.model, evidence.powerBefore], ['Latest', 'Instant'], `menuOpen ${menuOpen}`)
     const observe = evidence.stages.find((stage: { stage: string }) => stage.stage === 'observe')
     assert.deepEqual([observe.status, typeof observe.elapsedMs], ['ok', 'number'])
-    assert.deepEqual([fake.sent[0]!.model, fake.sent[0]!.power], ['Latest', 'Instant'], 'nothing was selected')
+    assert.equal(fake.sent[0]!.model, 'Latest', 'no model was selected')
+    assert.equal(fake.sent[0]!.menuOpen, false, 'the menu was closed before the insert')
   }
 })
 
-test('a page with no model control records null, and the attempt goes on', { skip: skip || !generic, timeout: 120_000 }, async () => {
-  const { artifacts, result } = await run({ modelPicker: false }, ['report'])
-  assert.equal(result.status, 'succeeded', result.reason)
+// The levels come from the live menu (five on this page): economy is the first, standard the middle, frontier the last, no tier the middle.
+test('a step selects the Power level of its tier before the send, and the evidence says what was chosen', { skip: skip || !generic, timeout: 180_000 }, async () => {
+  for (const [tier, power, target] of [['economy', 'Instant', 'economy'], ['standard', 'Medium', 'standard'], ['frontier', 'Max', 'frontier'], [undefined, 'Medium', 'standard']] as const) {
+    const { artifacts, result, fake } = await run({}, ['report'], { tier })
+    assert.equal(result.status, 'succeeded', `${tier}: ${result.reason}`)
+    const evidence = await evidenceOf(artifacts, result)
+    assert.deepEqual([evidence.power, evidence.powerTarget, evidence.powerLevels, evidence.powerBefore], [power, target, 5, 'Instant'], `${tier}`)
+    assert.deepEqual([fake.sent[0]!.power, fake.sent[0]!.menuOpen], [power, false], `${tier}`)
+    const stages = evidence.stages.map((stage: { stage: string }) => stage.stage)
+    assert.ok(stages.indexOf('power') > stages.indexOf('observe') && stages.indexOf('power') < stages.indexOf('insert'), 'selected between the observation and the insert')
+  }
+})
+
+test('a Power slider that stays at one level fails before the send, and the evidence says why', { skip: skip || !generic, timeout: 120_000 }, async () => {
+  const { artifacts, result, fake } = await run({ powerStuck: true }, ['report'], { tier: 'frontier' })
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /Power level 5 of 5 could not be set \(reads 1 of 5\)/)
+  assert.equal(fake.sent.length, 0)
   const evidence = await evidenceOf(artifacts, result)
-  assert.deepEqual([evidence.model, evidence.power], [null, null])
+  assert.deepEqual([evidence.promptSendAttempted, evidence.promptSubmitted, evidence.failedStage, evidence.powerTarget, evidence.powerLevels], [false, false, 'power', 'frontier', 5])
+  assert.equal(evidence.power, undefined)
+})
+
+// The map binds a Power control: a page that has lost it is drift, and the attempt stops before anything is typed.
+test('a page whose model control is gone records null and stops before the send', { skip: skip || !generic, timeout: 120_000 }, async () => {
+  const { artifacts, result, fake } = await run({ modelPicker: false }, ['report'])
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /no candidate of composer\.model matched/)
+  assert.equal(fake.sent.length, 0)
+  const evidence = await evidenceOf(artifacts, result)
+  assert.deepEqual([evidence.model, evidence.powerBefore, evidence.failedStage, evidence.promptSendAttempted], [null, null, 'power', false])
 })
 
 // The stage chain of one attempt (evidence.ts): written as it happens, kept as partial output, and in the log on success.
-const STAGES = ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe'] : []), 'insert', 'send', 'wait', 'read', 'close']
+const STAGES = ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe', 'power'] : []), 'insert', 'send', 'wait', 'read', 'close']
 const evidenceOf = async (artifacts: Artifacts, result: WorkerResult) => JSON.parse(await text(artifacts, result.partial!.evidence!))
 
 test('a launch that never returns fails at its own clock, and the evidence names the launch stage', { timeout: 30_000 }, async () => {

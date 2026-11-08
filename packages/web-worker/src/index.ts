@@ -6,11 +6,11 @@
 import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { shippedMapProblem } from '@system/web-driver'
+import { shippedMap, shippedMapProblem } from '@system/web-driver'
 import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { systemPath, type Capabilities } from '@system/work'
-import { checkProcedures, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
+import { checkProcedures, offeredTiers, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
 import { webLogin } from './chatgpt-login.ts'
 import { discoverChrome } from './chrome.ts'
 import { XVFB_MISSING, findXvfb } from './display.ts'
@@ -69,7 +69,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     // The Account's state lives in its directory, beside the profile, and survives a restart.
     const health = new AccountHealth(web.profileDir, account.ref, { log, settings: healthSettings })
     const version = lazyVersion(subprocess, command)
-    const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: account.capabilities, command, version, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts))
+    const offered = [...new Set([...account.capabilities, ...offeredTiers(web, shippedMap())])]
+    const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: offered, command, version, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts))
     const entry = { web, health }
     webs.set(account.ref, entry)
     const dispose = () => {
@@ -78,7 +79,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       off()
     }
     disposers.add(dispose)
-    return { command, version, dispose, unavailable: () => unavailableReason(health) }
+    return { command, version, capabilities: offered, dispose, unavailable: () => unavailableReason(health) }
   }
   ctx.effect(() => () => { for (const dispose of [...disposers]) dispose() }, 'web worker registrations')
   const remotes = new Map<string, RemoteSession>()

@@ -52,7 +52,7 @@ Tiers are those of System 1: `economy`, `standard`, `frontier`. An account's
 `models` maps each tier it offers to a model; each listed tier adds the
 capability `tier.<name>`, so a Workflow step asks for one like any other
 capability (`capabilities: [code-write, tier.frontier]`) and preflight refuses
-a tier no enabled account offers. A step with no tier gets the `standard`
+a tier no enabled account offers. A `chatgpt-web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../web-worker/README.md)). A step with no tier gets the `standard`
 model, or the CLI's default when the account lists none. Each attempt records
 the tier, the configured model, and the models the CLI reports it served.
 

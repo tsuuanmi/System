@@ -58,8 +58,8 @@ export interface RemoteView {
 
 /** `ctx.webWorker`, provided by the `web-worker` row. */
 export interface WebWorkerService {
-  /** Check a `chatgpt-web` account and register it as a Worker; rejects with the reason it is unavailable. The registration ends with `dispose`. */
-  register(account: WebRegistration): Promise<{ command: string; version: () => Promise<string>; dispose: () => void; unavailable: () => string | undefined }>
+  /** Check a `chatgpt-web` account and register it as a Worker; rejects with the reason it is unavailable. `capabilities` are those it offers (the entry's, and the tiers its Site map binds); the registration ends with `dispose`. */
+  register(account: WebRegistration): Promise<{ command: string; version: () => Promise<string>; capabilities?: string[]; dispose: () => void; unavailable: () => string | undefined }>
   /** Announce that the account's registration is in progress and ends with `done`: an operation on it waits, bounded, for it, and a rejection is its refusal reason. */
   expect(ref: string, done: Promise<unknown>): void
   /** Sign a registered account in, by the contents of a cookie file or by hand in a window (needs a display). */

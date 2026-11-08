@@ -50,7 +50,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
         url: https://chatgpt.com/
         executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
         timeouts: {load: 60, answer: 900, stable: 3}   # seconds; also launch (30) and mode (the UI map's own, 15)
-        procedures: legacy                     # or generic: the page logic of an attempt (see below)
+        procedures: legacy                     # or generic: the page logic of an attempt (see below); only generic offers tiers, which research steps ask
         cooldownSeconds: [120, 300]            # cooldown after the 1st, 2nd... consecutive site error (see Account health)
         hostLoad: 8                            # 1-minute load average above which a page timeout is the Host's; default 2 x CPUs
 ```
@@ -189,7 +189,7 @@ process in Chrome's `SingletonLock` lives.
 driver, as above. `generic` runs the same attempt through the generic Procedures
 ([web-driver](../web-driver/README.md#generic-procedures-ww2-ii-new-here)) bound to the ChatGPT map:
 `checkAuth`, `openChat` (a temporary chat when `temporaryChat`), `ensureMode`,
-`observeModel` (the `observe` stage), `insertInstructions`, `attachText` (the body, when the prompt has two parts), `send`,
+`observeModel` (the `observe` stage), `selectPower` (the `power` stage), `insertInstructions`, `attachText` (the body, when the prompt has two parts), `send`,
 `waitForAnswer`, `readAnswer`, so the two can be compared on the real site. Anything but
 `legacy` or `generic` makes the account `unavailable`. Everything around the page logic is
 the same: launch, profile preparation, the one-tab invariant, the stages and their names
@@ -205,10 +205,25 @@ and then the rendered text, leaked tokens, the `maxOutsideChars` guard, the
   text, `response.md` is that text, and `links.json` holds the links' targets.
 - No model is selected (the `conversation@1` has none). The `observe` stage, after `mode`
   and before `insert`, only reads the model and Power the page shows, and the evidence records
-  them as `model` and `power` (WW8a; a string, or null when unreadable or the map binds no such
+  them as `model` and `powerBefore` (WW8a; a string, or null when unreadable or the map binds no such
   control; never a failure). It opens the model menu, reads, and closes it with Escape, verified
   closed (a menu already open is read as it is and closed too); it never clicks a model or moves
-  the slider. `tools/web-canary --report` counts the distinct values per Account. The wait has no
+  the slider.
+- The Power level comes from the step's tier (WW8b). The `power` stage, after `observe` and
+  before `insert`, opens the menu, moves the slider with the arrow keys until the status shows
+  the target, reads it back, and closes the menu, verified closed. The levels are read from the
+  live menu, never named: `tier.economy` is the first, `tier.standard` the middle one
+  (`ceil(total / 2)`), `tier.frontier` the last; a step that asks no tier gets the middle one.
+  A level that cannot be reached or read back (a slider that does not move, a menu that
+  does not close, a page that has lost the control) fails the attempt in the `power` stage
+  before anything is typed, so `promptSendAttempted` is false. The evidence records
+  `powerTarget` (`economy`, `standard` or `frontier`), `powerLevels` (the total) and `power`
+  (the level the status shows after the selection). A map that binds no Power control has no
+  such stage. An Account offers `tier.economy`, `tier.standard` and `tier.frontier` when it runs
+  `procedures: generic` and the map binds the control (the `model.open`, `model.close`, `model.power`
+  and `model.power-status` entries); on `legacy`, which selects nothing, it offers none, and a step
+  that asks a tier (`workflows/research.yaml` asks `tier.standard`) does not route to it.
+  `tools/web-canary --report` counts the distinct values per Account. The wait has no
   stall clock, only its deadline (`timeouts.answer`).
 - `outsideChars` counts the page text outside the label and code of the blocks that fill
   outputs.

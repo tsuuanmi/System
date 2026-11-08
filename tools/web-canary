@@ -6,7 +6,7 @@
 //
 //   tools/web-canary                       run it on every chatgpt-web Account, one at a time
 //   tools/web-canary --task                store the canary Task and print its Artifact ID
-//   tools/web-canary --report [--since T]  each run classified, the Worker step rate, the launch and wait times and the model and Power seen per Account and the WW gate (exit 3: not holding)
+//   tools/web-canary --report [--since T]  each run classified, the Worker step rate, the launch and wait times and the model, Power before and after selection, and target per Account and the WW gate (exit 3: not holding)
 import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,6 +22,10 @@ const workflow = join(repo, 'workflows', 'research.yaml')
 // earlier texts stay listed so the report still counts their Works, apart.
 const QUESTION = 'What is the capital of France? Cite the English Wikipedia article that says so (https://en.wikipedia.org/...).'
 const OLDER_QUESTIONS = ['What is the capital of France? Cite one page that says so.']
+// WW8b: the step asks tier.standard, so the Power level is the middle one. The Task text is unchanged, so the series
+// is told by the target the run chose (its evidence's `powerTarget`, else the tier its step was dispatched with):
+// runs at another target, or before there was one, are an older series.
+const SERIES_TARGET = 'standard'
 // The Worker step of workflows/research.yaml; the verifier step is `citations`.
 const WORKER_STEP = 'investigate'
 const VERIFIER_STEP = 'citations'
@@ -139,7 +143,11 @@ function runsOf(input, since) {
     const admitted = record.events[0]
     if (admitted.input !== input || record.state.status === 'running') continue
     if (since && Date.parse(admitted.at) < since) continue
-    runs.push({ workId, at: admitted.at, account: admitted.worker ?? 'unknown', evidence: record.state.steps[WORKER_STEP]?.partial?.evidence, ...classify(record) })
+    const evidenceId = record.state.steps[WORKER_STEP]?.partial?.evidence
+    const read = evidenceId ? sys(['artifact', 'cat', evidenceId]) : undefined
+    const evidence = read?.status === 0 ? JSON.parse(read.stdout) : undefined
+    const asked = record.events.findLast((e) => e.type === 'dispatched' && e.stepId === WORKER_STEP)?.capability?.split(',').find((c) => c.startsWith('tier.'))
+    runs.push({ workId, at: admitted.at, account: admitted.worker ?? 'unknown', evidence, target: evidence?.powerTarget ?? asked?.slice('tier.'.length), ...classify(record) })
   }
   return runs.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
 }
@@ -151,37 +159,41 @@ const quantile = (values, q) => values[Math.max(0, Math.ceil(q * values.length) 
 function stageTimes(runs) {
   const times = new Map()
   const without = new Map()
+  const empty = () => ({ launch: [], wait: [], model: new Map(), powerBefore: new Map(), power: new Map(), target: new Map() })
   for (const run of runs) {
     if (!run.evidence) {
       without.set(run.account, (without.get(run.account) ?? 0) + 1)
       continue
     }
-    const read = sys(['artifact', 'cat', run.evidence])
-    if (read.status !== 0) continue
-    const evidence = JSON.parse(read.stdout)
-    const byStage = times.get(run.account) ?? { launch: [], wait: [], model: new Map(), power: new Map() }
-    // WW8a: what the page showed, never set; an attempt that read none (older evidence, an unreadable control) counts as "unread".
-    for (const key of ['model', 'power']) byStage[key].set(evidence[key] ?? 'unread', (byStage[key].get(evidence[key] ?? 'unread') ?? 0) + 1)
+    const { evidence } = run
+    const byStage = times.get(run.account) ?? empty()
+    // WW8a, WW8b: what the page showed before, the level chosen and the tier it was chosen for; an attempt that read none (older evidence, an unreadable control) counts as "unread".
+    for (const key of ['model', 'powerBefore', 'power', 'target']) {
+      const value = (key === 'target' ? evidence.powerTarget : evidence[key]) ?? 'unread'
+      byStage[key].set(value, (byStage[key].get(value) ?? 0) + 1)
+    }
     for (const stage of evidence.stages ?? []) if (stage.stage in byStage && typeof stage.elapsedMs === 'number') byStage[stage.stage].push(stage.elapsedMs / 1000)
     times.set(run.account, byStage)
   }
   process.stdout.write('stage times (s, median / p95 of runs with evidence)\n')
   for (const name of [...new Set([...times.keys(), ...without.keys()])].sort()) {
-    const byStage = times.get(name) ?? { launch: [], wait: [], model: new Map(), power: new Map() }
+    const byStage = times.get(name) ?? empty()
     const cell = (list) => (list.length ? `${quantile([...list].sort((a, b) => a - b), 0.5).toFixed(1)} / ${quantile([...list].sort((a, b) => a - b), 0.95).toFixed(1)} (n ${list.length})` : '-')
     const missing = without.get(name) ? `  (${without.get(name)} without evidence)` : ''
     process.stdout.write(`  ${name.padEnd(18)} launch ${cell(byStage.launch)}  wait ${cell(byStage.wait)}${missing}\n`)
   }
-  process.stdout.write('model and Power seen (runs with evidence)\n')
+  process.stdout.write('model, Power before and after selection, and target (runs with evidence)\n')
   for (const name of [...times.keys()].sort()) {
     const counts = (map) => [...map].sort(([a], [b]) => (a < b ? -1 : 1)).map(([value, n]) => `${value} ${n}`).join(', ')
-    process.stdout.write(`  ${name.padEnd(18)} model ${counts(times.get(name).model)}  power ${counts(times.get(name).power)}\n`)
+    const t = times.get(name)
+    process.stdout.write(`  ${name.padEnd(18)} model ${counts(t.model)}  power before ${counts(t.powerBefore)}  power ${counts(t.power)}  target ${counts(t.target)}\n`)
   }
 }
 
 function report(since) {
-  const current = runsOf(canaryTask(), since)
-  const older = OLDER_QUESTIONS.map((text) => runsOf(taskFor(text), since)).flat()
+  const ofTask = runsOf(canaryTask(), since)
+  const current = ofTask.filter((r) => r.target === SERIES_TARGET)
+  const older = [...OLDER_QUESTIONS.map((text) => runsOf(taskFor(text), since)).flat(), ...ofTask.filter((r) => r.target !== SERIES_TARGET)]
   process.stdout.write('canary (current)\n')
   const { names, total } = section(current)
   stageTimes(current)

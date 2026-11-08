@@ -169,6 +169,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         // The web-worker row checks the account, registers its Worker and owns its sign-in.
         const registered = await webWorker!.register({ ...account, capabilities: offered, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
         status.command = registered.command
+        status.capabilities = registered.capabilities ?? offered
         askVersion = registered.version
         unavailable.set(account.ref, registered.unavailable)
         dispose.push(registered.dispose)

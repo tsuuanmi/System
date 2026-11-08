@@ -5,7 +5,8 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { apply } from '../src/index.ts'
+import { shippedMap } from '@system/web-driver'
+import { apply, offeredTiers } from '../src/index.ts'
 
 /** Mount the row on a bare context; its service. */
 function mount(config?: { registerWaitSeconds?: number }) {
@@ -47,4 +48,14 @@ test('an account whose registration failed before the operation came is refused 
   await failed.catch(() => {})
   await new Promise((r) => setTimeout(r, 50))
   await assert.rejects(web.loginRemote('chatgpt-web/default'), /chatgpt-web\/default: the configured Chrome path does not exist: \/gone/)
+})
+
+// WW8b: an Account offers the tiers when its Site map binds a Power control and the generic Procedures run it, as a CLI Account offers them from `models`.
+test('a chatgpt-web account offers the three tiers when the map binds Power and the procedures are generic', () => {
+  const map = shippedMap()
+  assert.deepEqual(offeredTiers({ procedures: 'generic' }, map), ['tier.economy', 'tier.standard', 'tier.frontier'])
+  assert.deepEqual(offeredTiers({ procedures: 'legacy' }, map), [], 'the legacy driver selects no Power')
+  assert.deepEqual(offeredTiers({ procedures: 'generic' }, { ...map, actions: { ...map.actions, 'model.close': undefined as never } }), [], 'a map without the control')
+  const { 'model.power': _, ...elements } = map.elements
+  assert.deepEqual(offeredTiers({ procedures: 'generic' }, { ...map, elements }), [])
 })

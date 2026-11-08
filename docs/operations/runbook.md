@@ -382,8 +382,8 @@ reason, and a reason beginning `site error:` is also counted apart), **verifier*
 URL and reason) or **other**. Per Account and in total it prints `runs`, `passed`,
 `worker step ok` (the Worker step's success rate alone), those counts, then each run
 that did not pass, the median and p95 of the `launch` and `wait` stages per Account (read
-from each Worker step's `evidence`; runs without it are counted apart), the distinct `model` and Power each Account's attempts showed, with counts (WW8a: recorded, never set; `unread` when the page showed none), `worker step: N% ok`, and `gate: holds` or `gate: does not hold
-(...)`: at least 50 runs over both Accounts and at least 95% passed. Works of an older
+from each Worker step's `evidence`; runs without it are counted apart), the distinct `model`, the Power before and after selection, and the target each Account's attempts had, with counts (WW8a, WW8b: `unread` when the page showed none), `worker step: N% ok`, and `gate: holds` or `gate: does not hold
+(...)`: at least 50 runs over both Accounts and at least 95% passed. The canary asks `tier.standard` (WW8b), so the current series is the runs whose target is `standard`; runs of an earlier target, or from before there was one, and Works of an older
 canary question are shown apart under "older canary version" and not counted in the
 gate. It exits 3 when the gate does not hold. Run it after each merge into `web-workers`
 (`tools/web-canary`), and the timer does so every six hours.
