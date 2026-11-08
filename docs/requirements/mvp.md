@@ -99,7 +99,7 @@ Work Controller for individual vendors. It MUST pin and test any external
 standard/SDK used at its boundary; unsupported features must be explicit,
 not silently emulated or inferred from terminal activity.
 
-The [optional Rust ACP Worker Adapter decision](../decisions/ADR-0011-rust-acp-worker-adapter.md)
+The [optional ACP Worker plugin decision](../decisions/ADR-0011-acp-worker-plugin.md)
 is post-MVP-0 integration work, not a new prerequisite for existing
 Software Engineering or Research MVP acceptance. Existing headless Workers
 remain valid while interactive compatibility is experimentally validated.
