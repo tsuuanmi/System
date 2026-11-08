@@ -12,9 +12,9 @@ related: [ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0011, RES-0005, RES-0007]
 **Desk research as of 2026-11-08; no code or benchmark has been run for this study.**
 This remains exploratory evidence, not an implementation claim. The operator
 has subsequently accepted a focused design choice in
-[ADR-0011](../decisions/ADR-0011-rust-acp-worker-adapter.md): the optional
-ACP Worker Adapter is System's **first Rust component**, using the official
-ACP Rust SDK, without rewriting the TypeScript/DSH control plane. The canonical
+[ADR-0011](../decisions/ADR-0011-acp-worker-plugin.md): the optional
+ACP Worker plugin uses the official TypeScript ACP SDK and existing DSH
+subprocess service; the earlier unmerged Rust bridge proposal was withdrawn. The canonical
 System contracts remain in [control plane](../architecture/control-plane.md),
 [workflow composition](../architecture/workflow-composition.md) and
 [artifact verification](../architecture/artifact-verification.md).
@@ -26,9 +26,9 @@ protocols? **Keep the DSH/Cordis-hosted TypeScript control plane and one
 provider-neutral WorkerPort.** Standardize the Worker-facing contract and
 capability negotiation before choosing execution transports; test read-only
 Herdr observation and ACP interoperability without demanding ACP from every
-Worker. Per ADR-0011, use **Rust + the official ACP Rust SDK** for the first
-optional ACP integration, chosen for interoperable implementation reuse,
-**not** an assumed speedup. Other Rust ports still require measured
+Worker. Per ADR-0011, prefer the **official ACP TypeScript SDK and DSH
+subprocess** for the optional ACP Worker plugin; do not add a Rust bridge
+without an independently demonstrated gap. Other Rust ports require measured
 performance or a proven correctness/portability gap. Do not introduce another
 authoritative Work state machine, approval gate, scheduler or agent loop.
 
@@ -273,11 +273,10 @@ remain in Development.
 4. **Observation separate from outcome:** follow Herdr's useful
    attention/reconnect patterns, but favor structured events and current
    System result/verification contracts over heuristics.
-5. **Rust follows a specific justified boundary:** the first Rust
-   component is the optional ACP Worker Adapter under ADR-0011, chosen to
-   reuse the official ACP SDK. No general-purpose Rust rewrite or Rust
-   process/stream optimization is justified without benchmark or
-   correctness evidence.
+5. **Reuse standards before adding Rust:** ADR-0011 selects the official
+   TypeScript ACP SDK and existing DSH subprocess API for the ACP Worker.
+   Rust components require a separate measurable interoperability,
+   correctness or performance need rather than a language preference.
 
 ### Additional interoperability test matrix
 
@@ -308,7 +307,7 @@ integration in the operator/UI plane rather than replacing headless Workers.
 | DSH subprocess/process groups and per-attempt isolation | Rust sidecar/process supervisor | **Conditional spike** | Potential operational benefit for process trees, PTYs or cross-platform behavior, but must preserve cancel, timeout, credential isolation and crash recovery; Rust is not a sandbox. |
 | Existing headless Claude/Codex Worker adapters | Herdr pane driver | **Keep headless default** | PTY/screen scraping weakens structured results and usage provenance. Consider interactive mode separately. |
 | Work events and live attempts | Herdr agent-status/events | **Adapt via observer** | Feed a non-authoritative attention view; map explicit Attempt IDs, snapshot/reconcile after missed notifications. |
-| Interactive Worker interoperability and UI handoff | Official Rust ACP SDK | **First Rust component selected (ADR-0011)** | Optional bridge behind System WorkerPort; pin stable ACP v1, verify Claude/Codex agent compatibility and exact Artifact/cancel/policy parity; not a new Work authority. |
+| Interactive Worker interoperability and UI handoff | Official ACP TypeScript SDK + DSH subprocess | **Selected (ADR-0011)** | Optional Cordis WorkerPort plugin; pin stable ACP v1, verify agent compatibility and Artifact/cancel/policy parity without an additional Rust IPC bridge. |
 | Artifact bytes, DSH SQLite | Rust store | **Keep** | No measured bottleneck or semantic gap; no dual databases or migrations just for language choice. |
 | Documentation and workflow YAML compiler | Rust | **Keep** | Low-value rewrite; existing source/tests govern v1 semantics. |
 | Zed GPUI/editor mechanisms | Direct reuse | **Do not adopt** | Not relevant to headless service, large dependency and licensing boundary. |
@@ -333,18 +332,18 @@ integration in the operator/UI plane rather than replacing headless Workers.
 - Keep dependencies out of the default DSH bundle; define the minimal
   administrative trust required for Herdr and its plugins.
 
-### E1: Rust ACP Worker Adapter interoperability (P1, selected first Rust component)
+### E1: Standards-based ACP Worker plugin interoperability (P1, selected design)
 
 - The user requirement is **one provider-agnostic Worker contract**, with
   Claude Code/Codex interactive operation through ACP when supported, a
   terminal-thread fallback, and a Website Worker that obeys System's own
   Worker contract without pretending to speak ACP. Test this contract before
   replacing any existing headless Worker.
-- Prototype an **optional Rust ACP client adapter using the official
-  [agent-client-protocol Rust SDK](https://github.com/agentclientprotocol/rust-sdk)**
-  against a pinned, compatible agent executable. Keep a narrow versioned
-  System WorkerPort-to-Rust IPC boundary, preferably the existing DSH
-  subprocess facilities. Support ACP v1 first. Negotiate
+- Prototype an **optional Cordis ACP WorkerPort adapter with the official
+  [ACP TypeScript SDK](https://github.com/agentclientprotocol/typescript-sdk)**
+  and DSH-managed subprocess pipes against a pinned, compatible agent.
+  Avoid a second ACP wire parser, Rust binary or private DSH source imports.
+  Support ACP v1 first. Negotiate
   versions; gate v2 draft behind explicit feature flags. Test initialize,
   auth, session/new, load or resume according to version/capability,
   prompt/update, cancel, session loss, tool calls and user permission.
@@ -428,11 +427,10 @@ option if measured boundary overhead dominates; it adds per-target builds.
 2. **Next optional proposal:** run E0 read-only observer; capture before/after
    operator experience and failure cases. An accepted proposal/ADR is required
    before introducing a new active DSH capability.
-3. **First Rust integration selected:** implement E1 as a separate optional
-   Rust ACP bridge using the official SDK, with a TypeScript WorkerPort
-   adapter. Preserve headless as default until parity tests pass. Choose
-   E2 only after profiling; Rust is not a prerequisite for other ACP/MCP
-   use cases.
+3. **Selected ACP integration:** implement E1 as an independent optional
+   Cordis Worker plugin using the official TypeScript SDK and DSH subprocess.
+   Preserve headless as default until parity tests pass; choose E2 only after
+   profiling. No Rust dependency is required for ACP/MCP.
 4. **Do not:** rewrite core state, duplicate orchestration, add a desktop
    editor to System, or merge runtime implementation under this research PR.
 
