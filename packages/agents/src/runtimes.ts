@@ -5,7 +5,7 @@
 import type { Progress } from '@system/work'
 import type { Workspace } from './workspace.ts'
 
-export type Runtime = 'claude-code' | 'codex' | 'chatgpt-web'
+export type Runtime = 'claude-code' | 'codex' | 'chatgpt-web' | 'acp'
 
 export interface Invocation {
   argv: string[]
@@ -124,6 +124,42 @@ export function parseClaude(stdout: string): Parsed {
   }
 }
 
+
+/** ACP v1 bridge invocation: prompt lives in a private file, never argv. */
+export function acpInvocation(
+  bridge: string, ws: Workspace, promptFile: string,
+  agentCommand: string, agentArgs: string[],
+  token?: string, codexHome?: string,
+): Invocation {
+  return {
+    argv: [bridge, '--agent', agentCommand, '--args-json', JSON.stringify(agentArgs), '--prompt-file', promptFile],
+    env: {
+      ...baseEnv(ws), NO_BROWSER: '1',
+      ...(token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}),
+      ...(codexHome ? { CODEX_HOME: codexHome } : {}),
+    },
+  }
+}
+
+/** Only an SDK-reported EndTurn with no denied permission is a successful ACP attempt.
+ * ACP has no stable per-turn usage in this initial bridge; do not invent token totals. */
+export function parseAcp(stdout: string): Parsed {
+  let denied = false
+  let completion: { ok?: unknown; stopReason?: unknown } | undefined
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const event = JSON.parse(line)
+      if (event?.type === 'acp.permission_denied') denied = true
+      if (event?.type === 'acp.result') completion = event
+    } catch { /* invalid lines are not ACP evidence */ }
+  }
+  if (denied) return { ok: false, message: 'ACP agent requested permissions denied by System; no automatic approval' }
+  if (!completion) return { ok: false, message: 'ACP bridge did not report a completed turn' }
+  const ok = completion.ok === true && completion.stopReason === 'EndTurn'
+  return { ok, message: ok ? 'ACP v1 EndTurn' : `ACP did not end normally: ${String(completion.stopReason ?? 'unknown')}` }
+}
+
 export function codexInvocation(command: string, ws: Workspace, prompt: string, codexHome: string, model?: string): Invocation {
   return {
     argv: [
@@ -191,19 +227,21 @@ export function parseCodex(stdout: string): Parsed {
  * input, cache writes and output per message. Codex: a turn is a
  * `turn.completed`, the last tool the type of the last item completed.
  */
-export function progressReader(runtime: 'claude-code' | 'codex'): (stdout: string) => Progress {
+export function progressReader(runtime: Exclude<Runtime, 'chatgpt-web'>): (stdout: string) => Progress {
   let consumed = 0
   const messages = new Map<string, { tokens: number; input: number }>()
   let turns = 0
   let tokens = 0
   let input = 0
   let lastTool: string | undefined
+  let stage: string | undefined
   const n = (value: unknown) => (Number.isInteger(value) ? (value as number) : 0)
   return (stdout) => {
     const end = stdout.lastIndexOf('\n') + 1
     for (const line of stdout.slice(consumed, Math.max(consumed, end)).split('\n')) {
       let event: any
       try { event = JSON.parse(line) } catch { continue }
+      if (runtime === 'acp' && typeof event?.type === 'string' && event.type.startsWith('acp.')) stage = event.type.slice(4)
       if (runtime === 'claude-code' && event?.type === 'assistant' && event.message) {
         const u = event.message.usage ?? {}
         messages.set(String(event.message.id ?? messages.size), {
@@ -224,6 +262,7 @@ export function progressReader(runtime: 'claude-code' | 'codex'): (stdout: strin
     const counted = runtime === 'claude-code'
       ? { turns: messages.size, tokens: all.reduce((a, m) => a + m.tokens, 0), inputTokens: all.reduce((a, m) => a + m.input, 0) }
       : { turns, tokens, inputTokens: input }
+    if (runtime === 'acp') return stage ? { stage: `acp.${stage}` } : {}
     return { turns: counted.turns, ...(lastTool ? { lastTool } : {}), tokens: counted.tokens, inputTokens: counted.inputTokens }
   }
 }
