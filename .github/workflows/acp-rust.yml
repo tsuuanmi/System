@@ -1,0 +1,23 @@
+name: Rust ACP
+
+on:
+  pull_request:
+    paths:
+      - 'packages/acp-bridge/**'
+      - 'packages/agents/src/agent.ts'
+      - 'packages/agents/src/index.ts'
+      - 'packages/agents/src/runtimes.ts'
+      - 'packages/agents/tests/acp.test.ts'
+      - '.github/workflows/acp-rust.yml'
+  workflow_dispatch:
+
+jobs:
+  acp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+      - name: Build and test official SDK adapter
+        run: cargo test --manifest-path packages/acp-bridge/Cargo.toml
