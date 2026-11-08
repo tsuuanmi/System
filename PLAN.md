@@ -79,14 +79,36 @@ Works, so trimming the core and proving the dogfood are one job.
 
 **Sessions** are replaceable ([AGENTS.md](AGENTS.md#sessions)).
 
-- [ ] DF0. Release: the operator merges `dev` into `main` with
-  [the release report](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/docs/operations/release-dev-to-main.md),
-  and closes PRs #3 and #4 (their content is on `dev`). This PR deletes the
-  report; merge it after that release.
+- [x] DF0. Release: `dev` merged into `main` (PR #71); PR #3 closed, PR #4
+  was already merged; the release report deleted (PR #70).
+- [ ] DF0b. An install apart from the development checkouts (operator,
+  2026-11-08). Today the live Host runs from the development checkout with
+  its config in a session's `/tmp` scratchpad, against the Sessions rule.
+  Done by the Development session as a blocker fix ("fixed outside System"):
+  - `~/.system/releases/<commit>/`, one install per commit of `main`, never
+    edited by hand; `~/.system/current` points to the one the Host runs;
+    `~/.local/bin/system` links to `~/.system/current/bin/system`;
+  - `~/.system/profile.yml` holds the Accounts and Effects (replacing the
+    `/tmp` patch); the store and secrets stay in `~/.dsh/system` (DSH's);
+  - the Host runs as the `system.service` user unit, from `current`;
+  - `system update`: fetch `main`, install and build it into a new release,
+    run that commit's own `.system/checks.yaml` there, and only when they
+    pass switch `current`, so the Host restarts on it (D); if the new Host
+    does not come up, switch back. Code that has not passed its checks on
+    this machine never runs live. A script outside the core;
+  - System 1 is only a reference now: its launcher and its install
+    (`system-live`) go; the source `~/workspaces/system` stays;
+  - last, `system mcp` without `--goal` registered at user scope, so a
+    session in any repository has System's agent tools (no approval: that
+    stays human, at a terminal). A Goal-scoped Orchestrator stays a folder
+    of its own (`~/workspaces/system-orchestrator`).
 - [ ] DF1. One Goal, "a smaller core, the same behaviour", with an attempt and
   token budget. The Orchestrator is a **new** Claude Code session connected
-  only to `system mcp`, with no push or direct write to the repository. It
-  runs Works up to their approval; the operator approves and merges.
+  only to `system mcp --goal`, with no shell, edit or push. It runs Works up
+  to their approval; the operator approves and merges. Claude Code's `/goal`
+  keeps the session going, with a stop condition read from System (every
+  scope item has a Work at approval, or the budget is spent); System's Goal
+  holds the budget, the authority and the state any session takes over from.
 - [ ] DF2. Core debt, each cut one Work and one pull request, with tests
   showing the rest behaves the same, and the core's line count recorded
   after each:
@@ -265,6 +287,12 @@ System's pull requests when the operator asks, and writes docs pull requests.
 
 
 ## 4. Future, not current gates
+
+- [ ] Publishing for other repositories (operator, 2026-11-08; right after
+  DF): each repository names its branches beside its checks (`.system/`,
+  pinned from the base commit); the Host keeps the allowlist of branches it
+  may merge into, since that is authority a repository cannot grant itself.
+  Until then, a Work on another repository ends at its checked change.
 
 - [ ] An Orchestrator that System spawns on a schedule (after O).
 - [ ] Research quality capabilities (source snapshots, citation consistency,
