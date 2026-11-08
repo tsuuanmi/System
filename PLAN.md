@@ -943,6 +943,24 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
     name (no alias); state moves once from `system/chatgpt-web/<name>` to
     `system/web/chatgpt/<name>`; old records keep their refs and the canary
     report reads both.
+- **Decisions of 2026-11-08, second round (operator).**
+  - Power by tier (8b): the levels are read from the live menu, never
+    guessed; `tier.economy` is the lowest, `tier.standard` the middle,
+    `tier.frontier` the highest; a step that asks no tier gets the middle.
+    A level that cannot be selected stops the attempt before the send. The
+    canary runs at `tier.standard`, like research (a new series).
+  - `legacy` goes when no attempt failed at a UI stage (launch, auth, mode,
+    insert, send, wait, read) in at least 20 runs per Account; model faults
+    (a missing output block, a reworded quote) do not count. `generic`
+    meets it (82 runs); removal follows the running canary series, then the
+    rename to Runtime `web`.
+  - One automatic fresh attempt per Work after a conclusive failure (before
+    the send, a site error, an answer complete but malformed); never after
+    an unknown send. It is the controller's, so it goes to `dev` as a PR from
+    the Development session.
+  - After the gate: merge into `dev` and use Website Workers for System's
+    own work (research fan-out for design questions, second opinions on
+    PRs); a second Site and long-lived Chrome wait for that evidence.
 - **Gate to merge into `dev`.** Canary ≥95% over ≥50 attempts across both
   Accounts; zero wrong-Account, wrong-mode or malformed-output acceptances;
   operator touches other than re-login under 5%; no flaky test; required
