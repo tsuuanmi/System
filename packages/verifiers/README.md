@@ -68,7 +68,7 @@ checks:
   `check-run@1`. The verdict's reason lists what ran, with its time, and what
   was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
 
-## `research.citation-check` (version 2)
+## `research.citation-check` (version 3)
 
 - **Accepts:** `file` (the Worker's `sources` output).
 - **Criteria:** `citation-criteria@1`: at least 1 source, quotes of at least
@@ -79,8 +79,9 @@ checks:
   Research Workflow's step instructions tell the Worker this shape.
 - **Verify:** fetch each URL and search its text for the quote, ignoring
   markup, scripts, entities, Markdown code/emphasis marks (`` ` ``, `*`, `_`),
-  Markdown link syntax (`[text](url)` reads as `text`), case and whitespace,
-  on both the page and the quote. One `citation-check@1` evidence Artifact
+  Markdown link syntax (`[text](url)` reads as `text`), `|` (a table cell
+  separator), case, whitespace and a space before `,.;:!?)` or after `(` (left
+  by a tag, as in `<a>Paris</a>,`), on both the page and the quote. One `citation-check@1` evidence Artifact
   records each URL's status and page hash, plus the confirmed ratio and the
   threshold used.
   - `fail`: a malformed file, too few sources or too-short quotes.

@@ -195,6 +195,30 @@ test('normalize drops Markdown code and emphasis marks and keeps link text (real
   assert.equal(normalize('[`fetch`](https://example.com) returns **`ok`**'), 'fetch returns ok')
 })
 
+test('normalize finds a quote whose punctuation follows a link (France, Wikipedia)', () => {
+  const page = '<p>Its capital, largest city and main cultural and economic centre is <a href="/wiki/Paris">Paris</a>, with a metropolitan population of over 13 million.</p>'
+  const quote = 'Its capital, largest city and main cultural and economic centre is Paris, with a metropolitan population of over 13 million.'
+  assert.ok(normalize(page).includes(normalize(quote)))
+})
+
+test('normalize finds a quote that ends a link before a full stop (Paris, Wikipedia)', () => {
+  const page = "<p>As the capital of France, Paris is the seat of France's national government<a href=\"#cite\">.</a> As the capital of France, Paris is the seat of France's <a href=\"/wiki/Government\">national government</a>.</p>"
+  const quote = "As the capital of France, Paris is the seat of France's national government."
+  assert.ok(normalize(page).includes(normalize(quote)))
+  assert.ok(normalize("see (<a href=\"/x\">this</a> ) one").includes(normalize('see (this) one')))
+})
+
+test('normalize reads a Markdown table cell separator as whitespace (France infobox)', () => {
+  const page = '<tr><th>Capital and largest city</th><td><a href="/wiki/Paris">Paris</a> (de facto)</td></tr>'
+  const quote = 'Capital and largest city | Paris (de facto)'
+  assert.ok(normalize(page).includes(normalize(quote)))
+})
+
+test('normalize does not find a quote with different words', () => {
+  const page = '<p>The capital is <a href="/wiki/Paris">Paris</a>, with many people.</p>'
+  assert.ok(!normalize(page).includes(normalize('The capital is Lyon, with many people.')))
+})
+
 test('a quote that differs from the page only in Markdown formatting is found', async () => {
   const { result } = await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: '**System** verifies [`citations`](https://example.com/x) _exactly_', claims: ['c'] }] })
   assert.equal(result.verdict, 'pass', result.reason)
