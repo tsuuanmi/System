@@ -39,7 +39,7 @@ test('with the row on, the account goes to its service with its offered capabili
 
 test('an account the web-worker row says is not ready is unavailable with its reason, until it is ready again', async () => {
   let reason: string | undefined = 'needs sign-in since 05:10: run `system workers login chatgpt-web/default --remote`, then `system workers recheck chatgpt-web/default`'
-  const web = { register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => reason }) }
+  const web = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => reason }) }
   const first = await mount(web)
   assert.deepEqual([first.accounts[0]!.available, first.accounts[0]!.reason, first.accounts[0]!.version], [false, reason, '155'])
   reason = undefined
