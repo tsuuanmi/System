@@ -956,8 +956,8 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
     rename to Runtime `web`.
   - One automatic fresh attempt per Work after a conclusive failure (before
     the send, a site error, an answer complete but malformed); never after
-    an unknown send. It is the controller's, so it goes to `dev` as a PR from
-    the Development session.
+    an unknown send. It is the controller's: a System Work of milestone DF,
+    after DF0b (operator); until then a manual `work retry`.
   - After the gate: merge into `dev` and use Website Workers for System's
     own work (research fan-out for design questions, second opinions on
     PRs); a second Site and long-lived Chrome wait for that evidence.
