@@ -202,7 +202,7 @@ test('one prompt is sent in a temporary chat in Chat mode, the answer is awaited
   assert.equal(fake.sent[0]!.mode, 'chat', 'the page started on Work: the driver switched it before anything was typed')
   assert.match(fake.sent[0]!.prompt, /"~~~~report"/)
   assert.equal(result.usage, undefined, 'the web UI shows no token counts')
-  assert.deepEqual(result.executor, { ref: 'web/chatgpt/default', account: 'default', command: CHROME, version: 'fake' })
+  assert.deepEqual(result.executor, { ref: 'web/chatgpt/default', account: 'chatgpt/default', command: CHROME, version: 'fake' })
   assert.ok(result.log)
 })
 

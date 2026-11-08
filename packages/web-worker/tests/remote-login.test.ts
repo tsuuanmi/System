@@ -329,7 +329,7 @@ async function accountsOf(account: Record<string, unknown>, path?: string) {
   let reason = 'registered'
   try {
     apply(ctx as never)
-    await provided.webWorker.register({ ref: 'web/chatgpt/default', capabilities: ['research'], executablePath: CHROME, ...account })
+    await provided.webWorker.register({ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], executablePath: CHROME, ...account })
   } catch (error) {
     reason = (error as Error).message
   } finally {
