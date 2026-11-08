@@ -39,3 +39,12 @@ test('the wait is bounded by registerWaitSeconds', { timeout: 10_000 }, async ()
   web.expect('chatgpt-web/default', new Promise(() => {}))
   await assert.rejects(web.loginRemote('chatgpt-web/default'), /chatgpt-web\/default is still registering after 0\.2 s/)
 })
+
+test('an account whose registration failed before the operation came is refused with that reason, not as "not configured"', { timeout: 10_000 }, async () => {
+  const web = mount()
+  const failed = Promise.reject(new Error('the configured Chrome path does not exist: /gone'))
+  web.expect('chatgpt-web/default', failed)
+  await failed.catch(() => {})
+  await new Promise((r) => setTimeout(r, 50))
+  await assert.rejects(web.loginRemote('chatgpt-web/default'), /chatgpt-web\/default: the configured Chrome path does not exist: \/gone/)
+})

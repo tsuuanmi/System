@@ -37,6 +37,7 @@ import type { BrowserContext } from 'patchright-core'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { LoginReport } from '@system/agents'
 import { checkSignedIn, keepSessionCookies } from './chatgpt-login.ts'
+import { refuseBrowser } from './no-browser.ts'
 import { chromeTmpdir, launch, type WebConfig } from './chatgpt.ts'
 import { findVnc, startXvfb, VNC_MISSING, type Display } from './display.ts'
 
@@ -190,6 +191,7 @@ document.getElementById('cancel').onclick = () => post('cancel')
 
 /** Start Xvfb, the VNC server and the profile's headed browser on it, and serve noVNC. Everything it started is stopped on Save, Cancel, expiry or the browser closing. */
 export async function startRemoteLogin(web: WebConfig, options: RemoteOptions = {}): Promise<RemoteSession> {
+  refuseBrowser()
   // Before anything starts: without a VNC server there is nothing to show.
   const vncPath = findVnc()
   if (!vncPath) throw new Error(VNC_MISSING)

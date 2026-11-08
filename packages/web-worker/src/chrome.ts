@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { refuseBrowser } from './no-browser.ts'
 import { Browser, computeExecutablePath, install as puppeteerInstall } from '@puppeteer/browsers'
 
 export interface ChromeLock {
@@ -33,6 +34,7 @@ export function engineChromiumMajor(): number {
 
 /** The major version `path --version` reports, or undefined when it does not run. */
 export function chromeMajor(path: string): number | undefined {
+  refuseBrowser()
   try {
     const major = /(\d+)\.\d+\.\d+/.exec(execFileSync(path, ['--version'], { encoding: 'utf8', timeout: 10_000 }))?.[1]
     return major === undefined ? undefined : Number(major)

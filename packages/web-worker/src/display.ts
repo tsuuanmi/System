@@ -10,6 +10,7 @@ import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, w
 import { hostname, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { refuseBrowser } from './no-browser.ts'
 
 export const XVFB_MISSING = 'Xvfb is not installed (apt install xvfb): System runs the browser headed on a private display, never headless'
 
@@ -70,6 +71,7 @@ const owns = (number: number, pid: number) => {
 
 /** Start an Xvfb on the first free display number from a random start; one that loses a race for a number exits, and the next number is tried. */
 export async function startXvfb(): Promise<Display> {
+  refuseBrowser()
   const xvfb = findXvfb()
   if (!xvfb) throw new Error(XVFB_MISSING)
   const dir = mkdtempSync(join(tmpdir(), 'system-xvfb-'))
