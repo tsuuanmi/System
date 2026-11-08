@@ -105,6 +105,11 @@ A Workflow of several Rounds between independent Workers, ended by a
 synthesis; the number of Rounds is fixed in the Workflow.
 _Avoid_: discussion, conversation (a Conversation is outside material)
 
+**Lane**:
+One of the k parallel branches of a fan-out Workflow, each on a capability of its
+own so that a profile gives it to its own Account; k is fixed in the Workflow.
+_Avoid_: track, thread, branch (a branch is a git term)
+
 **Release**:
 The operator merging `dev` into `main` after reading a release report. System
 never makes a Release.

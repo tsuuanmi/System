@@ -26,6 +26,12 @@ changes future admissions only.
   and `b2` read both proposals and write a `rebuttal` with a revised proposal,
   on the same capabilities, so each side keeps its Account; `synthesis` reads
   all four Artifacts and writes a `summary`. No verifier.
+- [research-fanout.yaml](research-fanout.yaml) — `plan` (`research.plan`) splits the
+  question into `question-a` and `question-b`; two Lanes, `investigate-a`
+  (`research.lane-a`) and `investigate-b` (`research.lane-b`), each run the
+  `research.yaml` investigation (shared by a YAML anchor) and have their `sources`
+  checked; `synthesis` (`research.synthesis`) merges both into one `report` and
+  `sources`, checked again. A profile gives each Lane to a different Account.
 
 Comparison configurations for the Brainstorm evaluation are in
 [experiments](experiments/README.md).

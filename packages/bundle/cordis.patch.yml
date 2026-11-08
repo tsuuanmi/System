@@ -71,7 +71,8 @@
     # or credential is missing is skipped with its reason (`system workers`).
     # One entry per account; routing takes the first capable one. Brainstorm
     # roles (workflows/brainstorm.yaml) are capabilities too: the two
-    # independent proposals go to different providers.
+    # independent proposals go to different providers. So are the lanes of
+    # research-fanout: a profile gives each lane to a different web Account.
     - id: agents
       name: '@system/agents'
       config:
@@ -82,7 +83,7 @@
         accounts:
           - ref: claude-code/default
             runtime: claude-code
-            capabilities: [code-write, research, web-search, brainstorm.idea-a, brainstorm.synthesis]
+            capabilities: [code-write, research, web-search, brainstorm.idea-a, brainstorm.synthesis, research.plan, research.lane-a, research.lane-b, research.synthesis]
             tokenRef: CLAUDE_CODE_OAUTH_TOKEN
             # A step asks for a tier with the capability tier.<name>.
             models:

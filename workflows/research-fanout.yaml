@@ -1,0 +1,89 @@
+# Research fan-out (PLAN WW7a). A plan splits the question into two
+# sub-questions; one investigation per Lane answers each on the web; each Lane's
+# sources are checked; a synthesis merges both Lanes into one report and one
+# sources file, which is checked again. The number of Lanes (2) is fixed here and
+# equals the web Accounts. Routing takes the first capable Account, so each Lane
+# has a capability of its own (research.lane-a, research.lane-b), which a profile
+# gives to a different Account (as brainstorm.yaml does with its ideas). The two
+# investigations share their instructions through a YAML anchor. Same schema and
+# controller as research.yaml: no engine change.
+schema: system.workflow/v1
+id: research-fanout
+version: 1
+steps:
+  - id: plan
+    capabilities: [research.plan]
+    inputs:
+      question: $work.input
+    outputs: [question-a, question-b]
+    instructions: |
+      Split the question into two sub-questions that together answer it. Each
+      must be answerable on its own with sources on the web, without the other.
+      Write the output "question-a" and the output "question-b" as plain text:
+      one sub-question each, with the context a reader needs to answer it.
+  - id: investigate-a
+    dependsOn: [plan]
+    capabilities: [research, web-search, research.lane-a]
+    inputs:
+      question: $steps.plan.question-a
+    outputs: [report, sources]
+    instructions: &investigate |
+      Answer the question with sources you actually read on the web.
+      Write the output "report" as Markdown: the answer, with each claim
+      followed by the id of its source in brackets, such as [s1].
+      Write the output "sources" as JSON, exactly in this shape:
+      {"sources": [{"id": "s1", "url": "https://...", "quote": "...", "claims": ["..."]}]}
+      Each "quote" is a sentence copied word for word from the page at "url"
+      that supports its "claims". Use only http or https URLs that are publicly
+      readable without signing in.
+  - id: investigate-b
+    dependsOn: [plan]
+    capabilities: [research, web-search, research.lane-b]
+    inputs:
+      question: $steps.plan.question-b
+    outputs: [report, sources]
+    instructions: *investigate
+  - id: citations-a
+    dependsOn: [investigate-a]
+    verify:
+      capability: research.citation-check
+      subject: $steps.investigate-a.sources
+      criteria: citations-v1
+  - id: citations-b
+    dependsOn: [investigate-b]
+    verify:
+      capability: research.citation-check
+      subject: $steps.investigate-b.sources
+      criteria: citations-v1
+  - id: synthesis
+    dependsOn: [citations-a, citations-b]
+    capabilities: [research.synthesis]
+    inputs:
+      question: $work.input
+      report-a: $steps.investigate-a.report
+      sources-a: $steps.investigate-a.sources
+      report-b: $steps.investigate-b.report
+      sources-b: $steps.investigate-b.sources
+    outputs: [report, sources]
+    instructions: |
+      Two investigations answered two sub-questions of the question: the inputs
+      "report-a" and "sources-a", and "report-b" and "sources-b".
+      Write the output "report" as one Markdown report that answers the
+      original question, with each claim followed by the id of its source in
+      brackets. Do not invent a consensus where the lanes disagree: say so.
+      Write the output "sources" as JSON in the same shape as the lanes':
+      {"sources": [{"id": "a-s1", "url": "https://...", "quote": "...", "claims": ["..."]}]}
+      It holds the sources of both lanes merged, each as the lane gave it, with
+      its id renamed to a-s1, a-s2, ... for lane a and b-s1, b-s2, ... for lane b.
+      Rename the brackets in the report to match. Do not add any source the
+      lanes did not have, and do not change a url or a quote.
+  - id: citations
+    dependsOn: [synthesis]
+    verify:
+      capability: research.citation-check
+      subject: $steps.synthesis.sources
+      criteria: citations-v1
+  - id: accept
+    dependsOn: [citations-a, citations-b, citations]
+    accept:
+      requires: [citations-a, citations-b, citations]
