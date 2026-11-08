@@ -24,6 +24,7 @@ import { addConversation, type WorkerPort, type WorkerRequest, type WorkerResult
 import { ensureChrome } from './chrome.ts'
 import { acquireDisplay, type Display } from './display.ts'
 import { createEvidence, type Evidence } from './evidence.ts'
+import { HEALTH_DEFAULTS, hostBusy, healthWorker, type AccountHealth, type HealthSettings } from './health.ts'
 
 export interface WebConfig {
   /** The Chrome user-data directory: the signed-in session. Owner-only; never shared. */
@@ -71,6 +72,10 @@ export interface WebAccount {
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
   web: WebConfig
+  /** The Account's circuit breaker (WW6d): fed by every attempt's outcome, and what keeps the Worker out of routing while the Account is not ready. */
+  health?: AccountHealth
+  /** When the Host counts as busy (load average); only a page timeout under load is the Host's. */
+  healthSettings?: HealthSettings
 }
 
 /** Chrome's launch clock when the account sets none, in seconds. */
@@ -572,17 +577,18 @@ async function launchBounded(launcher: typeof launch, web: WebConfig, display: D
 }
 
 /** The account as a `WorkerPort`; the Host's slots limit how many attempts run at once. A browser attempt has no pid file: Chrome's own profile lock names the process that may still hold the Account. */
-export function webWorker(account: WebAccount, artifacts: Artifacts, attemptsDir: string): WorkerPort {
-  return {
+export function webWorker(account: WebAccount, artifacts: Artifacts, attemptsDir: string, launcher: typeof launch = launch): WorkerPort {
+  const port: WorkerPort = {
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
-    run: (request) => webAttempt(account, artifacts, attemptsDir, request),
+    run: (request) => webAttempt(account, artifacts, attemptsDir, request, launcher),
     async gone() {
       const pid = profileLockPid(account.web.profileDir)
       return pid === undefined || exited(pid)
     },
   }
+  return account.health ? healthWorker(port, account.health) : port
 }
 
 /** `launcher` is injectable for tests; a launch that never returns ends at the launch clock, and a Chrome that comes up late is closed. */
@@ -619,6 +625,9 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     return `close() returned but the browser process ${chromePid} did not exit; it was killed`
   }
   const driver = chatGptDriver(web, note)
+  // The Host's load while the attempt ran, at its start and at its end: a page timeout under load is the Host's, not the Account's.
+  const healthSettings = account.healthSettings ?? HEALTH_DEFAULTS
+  const busyAtStart = hostBusy(healthSettings)
   let page: Page | undefined
   let display: Display | undefined
   let tabs: Awaited<ReturnType<typeof singleTab>> | undefined
@@ -640,6 +649,17 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       evidence.end(stage, status === 'failed' ? error ?? 'failed' : undefined)
     }
   }
+  // What the attempt says about the Account (WW6d). A cancel or the time limit says nothing; a failure of the Host's does not count.
+  const recordHealth = (result: Omit<WorkerResult, 'executor' | 'log'>) => {
+    if (!account.health) return
+    if (result.status === 'succeeded') return account.health.success()
+    if (result.status !== 'failed') return
+    const data = evidence.data
+    account.health.failure({
+      failedStage: data.failedStage, reason: result.reason ?? '', reachedSite: data.stages.some((s) => s.stage === 'open' || s.stage === 'auth'),
+      hostBusy: busyAtStart || hostBusy(healthSettings),
+    })
+  }
   const finish = async (result: Omit<WorkerResult, 'executor' | 'log'>): Promise<WorkerResult> => {
     // The browser is ended, and that recorded, before the evidence is stored.
     if (tabs) evidence.set({ pages: { ...evidence.data.pages!, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
@@ -647,6 +667,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     await close()
     evidence.end('close', await survivor())
     note(`evidence ${evidence.json()}`)
+    recordHealth(result)
     const logId = await putFile(Buffer.from(`${log.join('\n')}\n`), 'text/plain')
     // Kept whatever the status: a succeeded attempt reports it beside its outputs (the controller records `partial` for it too).
     result.partial = { ...result.partial, evidence: await putFile(Buffer.from(evidence.json()), 'application/json') }

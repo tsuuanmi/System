@@ -170,6 +170,7 @@ async function runHost(ctx: Context): Promise<number> {
       login: async (ref, cookies) => webWorkerService(ctx).login(ref, cookies),
       loginRemote: async (ref) => webWorkerService(ctx).loginRemote(ref),
       loginWait: async (ref, cancel) => webWorkerService(ctx).loginWait(ref, cancel),
+      recheck: async (ref) => webWorkerService(ctx).recheck(ref),
     },
   }).catch(async (error: unknown) => {
     await host.close()

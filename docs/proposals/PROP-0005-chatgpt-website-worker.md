@@ -76,7 +76,7 @@ fallback.
    Workers. The operator signs in once with
    `system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
    the Host operations `workers.login`, `workers.loginRemote` and
-   `workers.loginWait` (all `agent: false`). Three ways:
+   `workers.loginWait` (all `agent: false`; `workers.recheck` checks an Account afterwards, WW6d). Three ways:
    - `--cookies`: a session cookie export (JSON or Netscape) from the
      operator's own browser, read once by the CLI into the profile and stored
      nowhere else. The browser is the same headed one, on its own Xvfb.
@@ -254,6 +254,20 @@ fallback.
    very start or end of an output, repeatedly, never inside the content, and the
    evidence records `stripped` per output. An output still invalid for its
    verifier fails as before.
+
+WW6d (the circuit breaker; System's Debate `work:3a6ac1f1`): each Account has a durable state
+(`ready | cooling | needs-sign-in | challenged`, in `state.json` in its directory) moved by the
+attempts' outcomes: a sign-in wall, the login page, "Session ended, invalid_state" and a
+Cloudflare/CAPTCHA challenge quarantine at once; a site error or a suspected rate limit cools it down
+(2, then 5 minutes after consecutive ones, cleared by a success); a failure attributable to the Host
+(a launch failure, anything before the browser reached the Site, a page timeout while the Host's load is
+high) never counts. While not `ready` the Worker offers no capability (routing skips it; the Work
+controller and slots are unchanged) and `system workers` says why and what to do. One notice per state
+change (Host log, `lastNotice`). `system workers recheck` (`workers.recheck`, `agent: false`) opens the
+profile on its own Xvfb, runs `checkAuth` and the mode and temporary-chat checks without sending, and is
+the only way out of a quarantine; a successful remote login does it itself. Not in this change, by
+decision: automatic retry and the uncertain-send marker (a prompt is still never resent), the canary and
+the metrics.
 
 ## Known defects, fixed in WW1 (2026-11-07)
 

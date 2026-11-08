@@ -11,7 +11,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 
 - **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH).
   **Provides:** `ctx.webWorker`, the `WebWorkerService` contract that
-  [`@system/agents`](../agents/src/web.ts) declares: `register` (an account), `login`, `loginRemote`, `loginWait`.
+  [`@system/agents`](../agents/src/web.ts) declares: `register` (an account), `login`, `loginRemote`, `loginWait`, `recheck`.
 - **Accounts** stay in the `agents` row's `accounts` (`runtime: chatgpt-web`).
   The `agents` row hands each to `register`, which checks it (Xvfb, no `headless`, the Chrome, the settings), registers its Worker
   and keeps its sign-in state; `system workers` shows the result.
@@ -48,6 +48,8 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
         executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
         timeouts: {load: 60, answer: 900, stable: 3}   # seconds; also launch (30) and mode (the UI map's own, 15)
         procedures: legacy                     # or generic: the page logic of an attempt (see below)
+        cooldownSeconds: [120, 300]            # cooldown after the 1st, 2nd... consecutive site error (see Account health)
+        hostLoad: 8                            # 1-minute load average above which a page timeout is the Host's; default 2 x CPUs
 ```
 
 ## Accounts and attempts
@@ -236,6 +238,35 @@ line and the URL; the runbook has the steps. Save closes the browser cleanly (so
 (the driver's `checkAuth`) and reports it; Cancel, Ctrl-C or the 15-minute TTL end the session without a
 check. Everything it started (Xvfb, VNC server, browser, server) is stopped. Nothing
 solves or clicks a challenge.
+
+## Account health (WW6d)
+
+Each Account has a circuit breaker ([health.ts](src/health.ts)): a durable state in its directory, `state.json` beside the profile
+(owner-only, written atomically, kept across a Host restart): `ready | cooling | needs-sign-in | challenged`, with the reason,
+`since`, `cooldownUntil`, the last success and the last notice. An attempt's outcome moves it, by the evidence's failed stage and
+reason:
+
+- **Quarantine at once:** a sign-in wall, the login page or "Session ended, invalid_state" is `needs-sign-in`; a Cloudflare or CAPTCHA
+  challenge is `challenged`. A success of another attempt does not clear a quarantine.
+- **Cooldown:** a site error ("site error: the answer did not load", the site's own error page) or a suspected rate limit is `cooling`
+  for the first of `cooldownSeconds` (account setting, default `[120, 300]`: 2 minutes, then 5 after a consecutive one; the last repeats),
+  and ends by itself at `cooldownUntil`. A success clears it and the count.
+- **Never the Account's:** a failure attributed to the Host changes nothing: a launch failure, anything before the browser opened the
+  Site (the `open` stage did not begin), and a failure while the Host's 1-minute load average is above `hostLoad` (default twice the
+  CPUs) at the start or end of the attempt. Cancels, the time limit and failures that say nothing about the Account (a bare timeout, a
+  missing output block) leave the state alone; a bare timeout is never read as a rate limit.
+
+While not `ready` the Account's Worker offers no capability, so routing skips it as any unavailable Worker, and the Work controller and
+the slots are untouched; it stays registered for a Work that names it. `system workers` shows it `unavailable` with the state and the
+action, for example "needs sign-in since 05:10: run `system workers login chatgpt-web/second --remote`, then `system workers recheck
+chatgpt-web/second`" (the time is the Host's local time). A state change is noticed once: a line in the Host log and `lastNotice` in the
+state; the same state seen again, or a longer cooldown in `cooling`, gives none. There is no automatic retry: a prompt is never resent.
+
+**Recheck** (`system workers recheck <ref>`, operator-only `workers.recheck`, [recheck.ts](src/recheck.ts)) opens the profile headed on its
+own Xvfb and runs the driver's `checkAuth`, the Chat mode and, with `temporaryChat`, the temporary chat, without typing or sending. The
+Account moves to `ready` only when they pass; it is the only way out of `needs-sign-in` and `challenged` (also from a cooldown, early).
+What it finds on the page moves the state as an attempt's failure does; a Chrome that cannot start or a held profile changes nothing. A
+successful `login --remote` does the recheck itself, and reports "signed in, but ..." when it fails.
 
 ## Limits
 

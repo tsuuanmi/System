@@ -125,8 +125,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const attempts = systemPath(ctx, 'attempts')
   const statuses: AccountStatus[] = []
   const versions = new Map<string, () => Promise<string>>()
+  // An account the web-worker row quarantines or cools down is unavailable, with what to do, until it is ready again.
+  const unavailable = new Map<string, () => string | undefined>()
   const accounts = () => Promise.all(statuses.map(async (status) => {
     const askVersion = versions.get(status.ref)
+    const reason = unavailable.get(status.ref)?.()
+    if (reason) return { ...status, available: false, reason, ...(askVersion ? { version: await askVersion() } : {}) }
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
   // Provided before the loop: `system workers` shows the accounts still registering.
@@ -163,6 +167,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const registered = await webWorker!.register({ ...account, capabilities: offered, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
         status.command = registered.command
         askVersion = registered.version
+        unavailable.set(account.ref, registered.unavailable)
         dispose.push(registered.dispose)
       } else {
         const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))

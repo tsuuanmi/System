@@ -39,6 +39,8 @@ export interface Services {
   loginRemote(ref: string): Promise<{ url: string; port: number; ssh: string; expiresAt: number }>
   /** Wait for the remote sign-in of `ref` to end (Save, Cancel, expiry), or end it first with `cancel`; the signed-in state. */
   loginWait(ref: string, cancel: boolean): Promise<{ signedIn: boolean; detail: string }>
+  /** Check a browser Account without sending anything; it is `ready` again only when the check passes. */
+  recheck(ref: string): Promise<{ ready: boolean; state: string; detail: string }>
 }
 
 const commandId = z.string().min(1).optional()
@@ -374,6 +376,12 @@ export function operations(services: Services): Methods {
       summary: 'Wait until the remote sign-in of an Account ends (Save, Cancel in the viewer, or its 15 minutes), or with `cancel` end it now. Returns whether the profile is signed in.',
       params: z.object({ ref: z.string().min(1), cancel: z.boolean().optional() }).strict(),
       handler: (_host, p) => services.loginWait(p.ref, p.cancel === true),
+    },
+    'workers.recheck': {
+      agent: false,
+      summary: 'Recheck a browser Account that is quarantined or cooling down: its profile opens headed on a private display and the sign-in, Chat mode and temporary chat are checked; nothing is sent. Returns `{ ready, state, detail }`; the Account is `ready` again only when the check passes, and this is the only way out of `needs-sign-in` and `challenged`.',
+      params: z.object({ ref: z.string().min(1) }).strict(),
+      handler: (_host, p) => services.recheck(p.ref),
     },
     'credentials.status': {
       agent: false,
