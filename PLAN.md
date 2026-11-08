@@ -870,6 +870,19 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      under load, to fix here: `tests/chatgpt-web.test.ts` "login imports a
      cookie file ..." failed once in a merge re-check (passed 2/2 alone and
      on the retried publish).
+     Since (2026-11-08): 6d merged by hand (a real conflict with 6e in the
+     row's service; the Work is recorded as failed at publish); 6e
+     operations wait up to 60 s for a pending registration (`work:900a8a44`,
+     the cause of the flaky re-check above); 6f the UI maps are read once
+     at load and hashed into the Host's code version (`work:24214200`):
+     rounds 5-12 of the canary failed because an old Host read the new
+     `ui-map@1.7` from disk. Canary after that window (26 runs, 13 per
+     Account): the Worker step 26/26, accepted 18; all 8 rejections were
+     the citation verifier's false "quote not found" (the quotes are on the
+     page; tag removal left a space before punctuation, and an infobox row
+     quoted with `|`), fixed by 6g. From 6g on, both Accounts run
+     `procedures: generic`: the comparison with `legacy` on one Account
+     (`default`) decides removing the legacy path (2-iv).
 - **What Website Workers do** (operator, 2026-11-07): `research` (web search
   with citations, checked by the citation verifier), `brainstorm.idea-*`,
   `review.second-opinion` (a diff or document given as text; a reference
