@@ -75,6 +75,10 @@ benchmark result or an assertion that the Rust code already exists.
 
 - Official Rust SDK reuse offers a supported ACP implementation with typed
   protocol facilities and a narrower surface for interoperability testing.
+  The [official TypeScript SDK](https://github.com/agentclientprotocol/typescript-sdk)
+  is also viable: choosing Rust is the operator's explicit selection for
+  System's first **bounded, optional cross-language component**, not a claim
+  that TypeScript cannot implement ACP or that Rust is necessarily faster.
 - A standalone process preserves failure isolation and existing DSH/Node
   responsibilities. A native Node addon or embedded library is not chosen
   without evidence that the process boundary is insufficient.
@@ -87,6 +91,7 @@ benchmark result or an assertion that the Rust code already exists.
 
 | Alternative | Outcome | Reason |
 | --- | --- | --- |
+| Official TypeScript ACP SDK, no Rust bridge | Valid, simpler alternative; not chosen for this first Rust component | Maintained and standards-compliant; fewer build/IPC dependencies. Reconsider if optional Rust packaging or integration overhead outweighs the explicit Rust adoption goal. |
 | Reimplement ACP in bespoke TS or Rust | Rejected for initial adapter | Duplicates standard protocol/SDK; adds drift risk. |
 | Migrate the TypeScript control plane to Rust | Rejected | Violates a stable authority boundary without evidence. |
 | Require all Workers to expose ACP | Rejected | ACP does not describe browser or generic batch Worker semantics. |
@@ -117,6 +122,7 @@ be separately reviewed against this decision and [RES-0009](../research/RES-0009
 ## References
 
 - [Official ACP Rust SDK](https://github.com/agentclientprotocol/rust-sdk)
+- [Official ACP TypeScript SDK](https://github.com/agentclientprotocol/typescript-sdk)
 - [ACP specification and Rust schema](https://github.com/agentclientprotocol/agent-client-protocol)
 - [Zed External Agents](https://zed.dev/docs/ai/external-agents)
 - [Zed Terminal Threads](https://zed.dev/docs/ai/terminal-threads)
