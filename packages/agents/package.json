@@ -23,7 +23,8 @@
     "@system/artifacts": "workspace:*",
     "@system/web-driver": "workspace:*",
     "@system/work": "workspace:*",
-    "patchright-core": "1.63.0"
+    "patchright-core": "1.63.0",
+    "@system/worker-execution": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0"
