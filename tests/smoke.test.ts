@@ -106,6 +106,18 @@ test('the optional ACP Worker plugin is installed but disabled without a Rust bi
   assert.equal(report.rows.find((row) => row.id === 'worker-acp')?.mounted, false)
 })
 
+test('ACP Worker row is independently enableable with no accounts while agents is disabled', () => {
+  writeFileSync(patch, '- id: agents\n  disabled: true\n- id: worker-acp\n  disabled: false\n')
+  try {
+    const { status, report } = doctor()
+    assert.equal(status, 0)
+    assert.equal(report.rows.find((row) => row.id === 'agents')?.mounted, false)
+    assert.equal(report.rows.find((row) => row.id === 'worker-acp')?.mounted, true)
+  } finally {
+    writeFileSync(patch, '[]\n')
+  }
+})
+
 test('an Artifact stored in one Host is read by ID alone after a restart', async () => {
   const file = join(home, 'input.txt')
   writeFileSync(file, 'durable bytes\n')
