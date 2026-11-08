@@ -167,14 +167,13 @@ A list of names (such as `capabilities`) is replaced whole. `$patch: replace`
 in the `config` takes it whole, as the overlay used to. `system workers` shows
 the accounts that result.
 
-## Optional ACP Worker plugin (Rust bridge)
+## Optional ACP Worker plugin (DSH + official TypeScript SDK)
 
 The ACP Worker is a distinct, **disabled-by-default** Cordis row,
 [`worker-acp`](../../packages/worker-acp/README.md), not a provider branch
 inside `agents`. The existing Claude/Codex headless and Website Worker
-accounts do not need the Rust bridge and continue to work when it is absent.
-Install/build the Rust binary and an ACP-compatible agent only if enabling
-ACP explicitly. In the operator's profile patch:
+accounts do not need any ACP runtime and continue to work when the plugin is
+absent. Install an ACP-compatible agent executable only when enabling ACP. In the operator's profile patch:
 
 ```yaml
 - id: worker-acp
@@ -183,14 +182,13 @@ ACP explicitly. In the operator's profile patch:
     accounts:
       - ref: acp/research
         capabilities: [research]
-        command: /absolute/path/to/system-acp-bridge
         agentCommand: /absolute/path/to/acp-agent
         agentArgs: []
         # codexHome: codex/default    # OR tokenRef for Claude auth
 ```
 
 After a controlled Host restart, `system workers` reports the registered
-ACP account or its reason for being unavailable. A missing binary, agent or
+ACP account or its reason for being unavailable. A missing ACP agent executable or
 credential **never silently falls back** to a different Worker provider.
 `system doctor` marks `worker-acp` as optional; when disabled, it is shown
 as disabled without failing the Host.
@@ -209,7 +207,7 @@ that a child process has exited**; hot-toggle with in-flight ACP attempts has
 not passed release testing and is not a supported claim in this draft.
 Retained Work/Artifact IDs and effect authorization remain with System.
 
-ACP v1 tool permission requests are denied by the Rust bridge; it has no
+ACP v1 tool permission requests are denied by the SDK-based plugin; it has no
 human approval broker yet. A session's `EndTurn` cannot bypass System's
 Artifact verification. Read the
 [pinned DSH ACP reuse research](../research/RES-0010-dsh-acp-reuse-and-worker-plugin.md)
