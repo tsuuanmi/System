@@ -9,7 +9,7 @@ import { describe, test } from 'node:test'
 import type { Page } from 'patchright-core'
 import { type Baseline, Procedures, type Result, type UiMap } from '../src/index.ts'
 
-export type Case = 'happy' | 'attach' | 'attach as chip' | 'temporary' | 'signed out' | 'challenge' | 'site error' | 'forbidden mode' | 'work composer' | 'mode switch absent' | 'unknown send' | 'previous answer' | 'previous answer, no markers' | 'labelled blocks' | 'plain blocks' | 'observe model' | 'observe model, menu left open'
+export type Case = 'happy' | 'attach' | 'attach as chip' | 'temporary' | 'signed out' | 'challenge' | 'site error' | 'forbidden mode' | 'work composer' | 'mode switch absent' | 'unknown send' | 'previous answer' | 'previous answer, no markers' | 'labelled blocks' | 'plain blocks' | 'observe model' | 'observe model, menu left open' | 'select power' | 'select power, stuck'
 
 /** What the page is made to do. A fixture maps each to its own page's options. */
 export interface Scenario {
@@ -37,6 +37,8 @@ export interface Scenario {
   plainBlocks?: boolean
   /** The Site's model menu is open when the page loads. */
   menuOpen?: boolean
+  /** The Site's Power control ignores the keys: it never leaves its first level. */
+  powerStuck?: boolean
 }
 
 export interface RunningSite {
@@ -52,6 +54,8 @@ export interface Fixture {
   start(scenario: Scenario): Promise<RunningSite>
   /** The model and Power the page shows; none when the Site has no such control (the observation is then skipped). */
   shows?: { model: string; power: string }
+  /** The Power levels the page offers, lowest first; none when the Site has no such control (a tier is then refused). */
+  levels?: string[]
   /** Cases the fixture cannot run yet, with why. */
   unsupported?: Partial<Record<Case, string>>
 }
@@ -140,6 +144,36 @@ export function conformance(fixture: Fixture, env: Env): void {
         assert.equal(site.sent(), 0)
       }))
     }
+
+    // The levels come from the live menu: economy is the first, standard the middle, frontier the last, and no tier is the middle.
+    run('select power', {}, () => on({}, async (p, site) => {
+      await ready(p)
+      const levels = fixture.levels
+      if (!levels) {
+        // No such control: nothing is selected, and a tier asked of it is refused.
+        assert.deepEqual(ok(await p.selectPower(), 'selectPower'), { power: null, level: null, total: null })
+        const refused = await p.selectPower('standard')
+        assert.equal(refused.status, 'failed', refused.reason)
+        return
+      }
+      const middle = Math.ceil(levels.length / 2)
+      for (const [tier, level] of [['economy', 1], ['standard', middle], ['frontier', levels.length], [undefined, middle], ['economy', 1]] as const) {
+        assert.deepEqual(ok(await p.selectPower(tier), `selectPower ${tier}`), { power: levels[level - 1], level, total: levels.length }, `${tier}`)
+        assert.equal(await p.engine.count('model.menu'), 0, 'the menu is closed')
+      }
+      ok(await p.insertInstructions('x'), 'insertInstructions')
+      assert.equal(site.sent(), 0)
+    }))
+
+    run('select power, stuck', {}, () => on({ powerStuck: true }, async (p, site) => {
+      await ready(p)
+      if (!fixture.levels) return
+      const result = await p.selectPower('frontier')
+      assert.equal(result.status, 'failed')
+      assert.match(result.reason!, /Power level 5 of 5 could not be set \(reads 1 of 5\)/)
+      assert.equal(await p.engine.count('model.menu'), 0, 'the menu is closed')
+      assert.equal(site.sent(), 0)
+    }))
 
     run('attach', {}, () => on({}, async (p) => {
       await ready(p)

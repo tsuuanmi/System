@@ -199,7 +199,7 @@ changed but the header line.
 ## Generic Procedures (WW2-ii, new here)
 
 [`src/procedures.ts`](src/procedures.ts): `checkAuth`, `openChat`, `ensureMode`,
-`observeModel` (WW8a: the model and Power shown, read only, bound by the map's `model.open`/`model.close` actions and `model.power-status`/`model.selected` elements; null for a Site without them), `insertInstructions`, `attachText`, `send`, `waitForAnswer` and `readAnswer` as fixed
+`observeModel` (WW8a: the model and Power shown, read only, bound by the map's `model.open`/`model.close` actions and `model.power-status`/`model.selected` elements; null for a Site without them), `selectPower` (WW8b: the Power level of a tier by position, `economy` the first, `standard` the middle one, `frontier` the last, read from the status "<level>, <n> of <total>." and moved by arrow keys, verified, with the menu closed and verified closed; `bindsPower(map)` says whether the map binds the control, and a tier asked of a Site that does not is `failed`), `insertInstructions`, `attachText`, `send`, `waitForAnswer` and `readAnswer` as fixed
 TypeScript control flow over the UI engine, with no Site name in it. Each returns
 `{ status: 'ok' | 'failed' | 'unknown', reason?, evidence }` (counts and names, never prompt
 or page text) and throws only for the caller's abort. The ChatGPT driver does not use them;

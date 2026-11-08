@@ -101,7 +101,8 @@ function record(account: string, at: string, seconds: number, outcome: 'succeede
   const steps: Record<string, { state: string; outputs: Record<string, string>; verdict?: string }> = {
     investigate: { state: 'succeeded', outputs: { report: 'sha256:r', sources: 'sha256:s' } }, citations: { ...done, verdict: 'pass' }, accept: done,
   }
-  const events: Record<string, unknown>[] = [{ type: 'admitted', at, input, worker: account }]
+  // The step asks tier.standard (workflows/research.yaml, WW8b): a run dispatched without a tier is of an older series.
+  const events: Record<string, unknown>[] = [{ type: 'admitted', at, input, worker: account }, { type: 'dispatched', stepId: 'investigate', at, capability: 'research,web-search,tier.standard' }]
   if (stage === 'investigate') {
     steps.investigate = { state: 'failed', outputs: {} }
     events.push({ type: 'observed', stepId: 'investigate', status: 'failed', at, reason })
@@ -238,7 +239,7 @@ test('the report prints the median and p95 of the launch and wait stages per Acc
   }
 })
 
-test('the report counts the distinct model and Power seen per Account (WW8a), unread ones apart', { timeout: 60_000 }, () => {
+test('the report counts the distinct model and Power per Account (WW8a), unread ones apart', { timeout: 60_000 }, () => {
   const t = '2026-11-02T00:00:00Z'
   const works: Record<string, unknown> = {}
   const artifacts: Record<string, string> = {}
@@ -252,7 +253,50 @@ test('the report counts the distinct model and Power seen per Account (WW8a), un
   const s = setup(works, {}, artifacts)
   try {
     const ran = run(['--report'], s.env)
-    assert.match(ran.stdout, /chatgpt-web\/a\s+model Latest 3, unread 2\s+power High 1, Instant 2, unread 2/)
+    assert.match(ran.stdout, /chatgpt-web\/a\s+model Latest 3, unread 2\s+power before unread 5\s+power High 1, Instant 2, unread 2\s+target unread 5/)
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true })
+  }
+})
+
+test('the report shows the Power before and after selection and the target per Account (WW8b)', { timeout: 60_000 }, () => {
+  const t = '2026-11-02T00:00:00Z'
+  const works: Record<string, unknown> = {}
+  const artifacts: Record<string, string> = {}
+  const seen = [['Instant', 'Medium'], ['Instant', 'Medium'], ['High', 'Medium']]
+  seen.forEach(([before, after], i) => {
+    const r = record('chatgpt-web/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+    r.state.steps.investigate!.partial = { evidence: `sha256:e${i}` }
+    works[`work:${i}`] = r
+    artifacts[`sha256:e${i}`] = JSON.stringify({ stages: [], model: 'Latest', powerBefore: before, power: after, powerTarget: 'standard', powerLevels: 5 })
+  })
+  const s = setup(works, {}, artifacts)
+  try {
+    const ran = run(['--report'], s.env)
+    assert.match(ran.stdout, /chatgpt-web\/a\s+model Latest 3\s+power before High 1, Instant 2\s+power Medium 3\s+target standard 3/)
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true })
+  }
+})
+
+// Changing the canary to tier.standard starts a new series: the Task text is the same, so the runs are told apart by their target.
+test('runs of the canary Task before it asked tier.standard, or at another target, are an older series outside the gate', { timeout: 60_000 }, () => {
+  const t = '2026-11-02T00:00:00Z'
+  const untiered = record('chatgpt-web/a', t, 1, 'succeeded') as { events: Record<string, unknown>[] }
+  untiered.events = untiered.events.filter((e) => e.type !== 'dispatched')
+  const economy = record('chatgpt-web/b', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+  economy.state.steps.investigate!.partial = { evidence: 'sha256:eco' }
+  const s = setup({
+    'work:1': record('chatgpt-web/a', t, 1, 'succeeded'),
+    'work:2': untiered,
+    'work:3': economy,
+  }, {}, { 'sha256:eco': JSON.stringify({ stages: [], powerTarget: 'economy' }) })
+  try {
+    const ran = run(['--report'], s.env)
+    const [current, older] = ran.stdout.split('older canary version')
+    assert.match(current!, /total\s+runs 1\s+passed 1 /)
+    assert.match(older!, /total\s+runs 2\s+passed 2 /)
+    assert.match(ran.stdout, /gate: does not hold \(1 of 50 runs; only 1 Account\)/)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }

@@ -37,6 +37,12 @@ test('with the row on, the account goes to its service with its offered capabili
   assert.equal(disposed, 1)
 })
 
+test('the capabilities the web-worker row reports (the tiers its Site map binds) are the account\'s', async () => {
+  const offered = ['research', 'tier.economy', 'tier.standard', 'tier.frontier']
+  const { accounts } = await mount({ expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', capabilities: offered, dispose: () => {}, unavailable: () => undefined }) })
+  assert.deepEqual(accounts[0]!.capabilities, offered)
+})
+
 test('an account the web-worker row says is not ready is unavailable with its reason, until it is ready again', async () => {
   let reason: string | undefined = 'needs sign-in since 05:10: run `system workers login chatgpt-web/default --remote`, then `system workers recheck chatgpt-web/default`'
   const web = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => reason }) }

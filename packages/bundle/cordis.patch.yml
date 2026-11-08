@@ -34,7 +34,7 @@
       name: '@system/fakes'
       disabled: true
       config:
-        workers: [code-write, research, web-search]
+        workers: [code-write, research, web-search, tier.standard]
         verifiers: [code.required-checks, research.citation-check]
         effects: [git.publish]
 

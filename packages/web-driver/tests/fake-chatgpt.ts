@@ -13,7 +13,7 @@
  *   visible form does too, without the textbox;
  * - the textbox's accessible name is no longer "Ask ChatGPT" (since 2026-10-11; the new text is a stand-in);
  * - the model menu (`menu "Select ChatGPT model"`) has two views, as checked live on 2026-10-12: view A shows
- *   the Power slider (arrow keys; `status` "Instant, 1 of 3."; levels Instant, Medium, High) and a view toggle
+ *   the Power slider (arrow keys; `status` "Instant, 1 of 5."; levels Instant, Low, Medium, High, Max, or `powers`) and a view toggle
  *   (`[data-model-picker-view-toggle]`) labelled with the level; view B, after the toggle, shows only the model
  *   radios. Choosing a model returns to view A;
  * - the "+" popover lists tools as buttons ("Deep research Get a detailed report"); Deep research inserts a
@@ -175,6 +175,10 @@ export interface FakeOptions {
   modelPicker?: boolean
   /** The model menu is already open when the page loads (a previous attempt left it so). */
   menuOpen?: boolean
+  /** The Power levels, lowest first (default five). */
+  powers?: string[]
+  /** The Power slider ignores the arrow keys: it stays at the first level. */
+  powerStuck?: boolean
   /** Features this account's tools popover offers (default all). */
   features?: string[]
   /** Deep research asks a clarifying question instead of starting. */
@@ -195,6 +199,8 @@ export interface Sent {
   conversationId: string | undefined
   model: string
   power: string
+  /** The model menu was open when the prompt went in. */
+  menuOpen: boolean
   deepResearch: boolean
   webSearch: boolean
 }
@@ -309,7 +315,7 @@ ${options.floatingChat ? '<section role="dialog" aria-label="Quick chat" data-fl
 <div role="menu" aria-label="Select ChatGPT model" id="model-menu" hidden>
   <div role="menuitem" data-model-picker-view-toggle id="power-label">Instant</div>
   <div id="view-a">
-    <div role="status" id="power-status">Instant, 1 of 3.</div>
+    <div role="status" id="power-status">Instant, 1 of ${options.powers.length}.</div>
     <div role="menuitem" aria-label="Power" tabindex="0" id="power" data-reasoning-slider><span role="slider" aria-hidden="true">●──</span></div>
   </div>
   <div id="model-radios" hidden></div>
@@ -323,7 +329,7 @@ ${options.floatingChat ? '<section role="dialog" aria-label="Quick chat" data-fl
 <script>
 const { options, conversationId } = ${state}
 let mode = options.startOnWork ? 'work' : 'chat'
-const POWERS = ['Instant', 'Medium', 'High']
+const POWERS = options.powers
 let power = 0
 let model = options.models[0]
 let temporary = new URLSearchParams(location.search).get('temporary-chat') === 'true'
@@ -351,7 +357,7 @@ function render() {
 }
 function renderMenu() {
   $('power-label').textContent = POWERS[power]
-  $('power-status').textContent = POWERS[power] + ', ' + (power + 1) + ' of 3.'
+  $('power-status').textContent = POWERS[power] + ', ' + (power + 1) + ' of ' + POWERS.length + '.'
   $('picker').textContent = POWERS[power]
   $('model-radios').innerHTML = options.models.map((m) => '<div role="menuitemradio" aria-checked="' + (m === model) + '"'
     + (options.lockedModels.includes(m) ? ' aria-disabled="true"' : '') + ' data-model="' + m + '">' + m + '</div>').join('')
@@ -363,7 +369,8 @@ function showView(view) { $('view-a').hidden = view !== 'a'; $('model-radios').h
 $('power-label').onclick = () => showView($('model-radios').hidden ? 'b' : 'a')
 $('picker').onclick = () => { const open = $('model-menu').hidden; $('model-menu').hidden = !open; $('picker').setAttribute('aria-expanded', String(open)); showView('a'); renderMenu() }
 $('power').addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowRight') power = Math.min(2, power + 1)
+  if (options.powerStuck) return
+  if (e.key === 'ArrowRight') power = Math.min(POWERS.length - 1, power + 1)
   if (e.key === 'ArrowLeft') power = Math.max(0, power - 1)
   renderMenu()
 })
@@ -462,7 +469,7 @@ async function send() {
   running = true
   render()
   const res = await fetch('/backend-api/f/conversation', { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ prompt, mode, temporary, conversationId: convId, model, power: POWERS[power], deepResearch, webSearch }) })
+    body: JSON.stringify({ prompt, mode, temporary, conversationId: convId, model, power: POWERS[power], menuOpen: !$('model-menu').hidden, deepResearch, webSearch }) })
   const reader = res.body.getReader()
   const answer = document.createElement('div')
   answer.className = 'turn'
@@ -607,7 +614,7 @@ export class FakeChatGpt {
     this.options = {
       startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loadFailure: false, dropSend: false, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
-      researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true, menuOpen: false,
+      researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true, menuOpen: false, powers: ['Instant', 'Low', 'Medium', 'High', 'Max'], powerStuck: false,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',
       copied: (markdown) => markdown.replace(/(```)[^\n]*\n([\s\S]*?)\n```/g, (_, fence: string, code: string) => `${fence}\n${code.split('\n').join('')}\n${fence}`), ...options,
     }

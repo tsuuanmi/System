@@ -9,7 +9,7 @@
 # controller as research.yaml: no engine change.
 schema: system.workflow/v1
 id: research-fanout
-version: 2
+version: 3
 steps:
   - id: plan
     capabilities: [research.plan]
@@ -23,7 +23,7 @@ steps:
       one sub-question each, with the context a reader needs to answer it.
   - id: investigate-a
     dependsOn: [plan]
-    capabilities: [research, web-search, research.lane-a]
+    capabilities: [research, web-search, research.lane-a, tier.standard]
     inputs:
       question: $steps.plan.question-a
     outputs: [report, sources]
@@ -38,7 +38,7 @@ steps:
       readable without signing in.
   - id: investigate-b
     dependsOn: [plan]
-    capabilities: [research, web-search, research.lane-b]
+    capabilities: [research, web-search, research.lane-b, tier.standard]
     inputs:
       question: $steps.plan.question-b
     outputs: [report, sources]

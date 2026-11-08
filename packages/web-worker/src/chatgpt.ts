@@ -18,9 +18,9 @@ import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright-core'
 import type { Artifacts } from '@system/artifacts'
-import { ChatGptWebDriver, Procedures, ProviderError, type AskResult, type PageDiagnostics, type ProviderErrorKind, type Result, type UiMap } from '@system/web-driver'
+import { bindsPower, ChatGptWebDriver, Procedures, ProviderError, type AskResult, type PageDiagnostics, type PowerTier, type ProviderErrorKind, type Result, type UiMap } from '@system/web-driver'
 import { cleanup, exited, mediaTypeOf, prepare, type Workspace } from '@system/agents'
-import { addConversation, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
+import { addConversation, requestedTier, TIERS, tierCapability, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { ensureChrome } from './chrome.ts'
 import { refuseBrowser } from './no-browser.ts'
 import { acquireDisplay, type Display } from './display.ts'
@@ -59,6 +59,11 @@ export function checkProcedures(value: unknown): WebConfig['procedures'] {
   if (value === undefined) return 'legacy'
   if (value === 'legacy' || value === 'generic') return value
   throw new Error(`procedures is ${typeof value === 'string' ? `"${value}"` : String(value)}; it must be "legacy" or "generic"`)
+}
+
+/** The tier capabilities an account offers beyond its entry's (WW8b): all three when its map binds a Power control and the generic Procedures run it, none otherwise. */
+export function offeredTiers(web: Pick<WebConfig, 'procedures'>, map: UiMap): string[] {
+  return web.procedures === 'generic' && bindsPower(map) ? TIERS.map(tierCapability) : []
 }
 
 /** One `chatgpt-web` account as the web Runtime runs it: `command` is the path of Chrome. */
@@ -416,6 +421,8 @@ interface TurnPort {
   map: UiMap
   web: WebConfig
   prompt: WebPrompt
+  /** The tier the step asked; none gets the middle Power level. */
+  tier: PowerTier | undefined
   signal: AbortSignal
   note: (line: string) => void
   evidence: Evidence
@@ -425,13 +432,13 @@ interface TurnPort {
 
 /**
  * One turn through the generic Procedures (`procedures: generic`), in the stages the driver's turn has: open, auth, mode
- * (a temporary chat when the account asks, Chat verified), observe (the model and Power shown), insert, attach (the body, when the prompt has two parts), send,
+ * (a temporary chat when the account asks, Chat verified), observe (the model and Power shown), power (the step's tier selected and verified, the menu closed), insert, attach (the body, when the prompt has two parts), send,
  * wait, read. A Procedure that does not return `ok` becomes the failure its stage names; a send of `unknown` is never
  * sent again. The answer has no Markdown (the Procedures never press Copy): its rendered text is the text, its code
- * blocks carry their labels and its links their targets. The model and Power shown are recorded, never set; a wait has no stall clock but its deadline.
+ * blocks carry their labels and its links their targets. The model and Power shown are recorded before the Power is selected (WW8b); a wait has no stall clock but its deadline.
  */
 async function genericTurn(port: TurnPort): Promise<AskResult & { links: string[] }> {
-  const { page, web, prompt, evidence, staged } = port
+  const { page, web, prompt, tier, evidence, staged } = port
   const origin = new URL(web.url).origin
   /** The value of a Procedure that went well; else the failure of its stage, in the kind its result names (`kind`, else the stage's own). */
   const need = <T>(result: Result<T>, kind: ProviderErrorKind): T => {
@@ -490,9 +497,20 @@ async function genericTurn(port: TurnPort): Promise<AskResult & { links: string[
     // Read-only (WW8a): the model and Power as the page shows them, the menu closed again; an unreadable value is null and never fails the attempt.
     await staged('observe', async () => {
       const seen = await procedures.observeModel()
-      evidence.set({ model: seen.value?.model ?? null, power: seen.value?.power ?? null })
+      evidence.set({ model: seen.value?.model ?? null, powerBefore: seen.value?.power ?? null })
       if (seen.status !== 'ok') port.note(`model menu: ${seen.reason ?? seen.status}`)
     })
+    // WW8b: the Power level of the step's tier (the middle one when it asks none), by position in the live menu; one that cannot be set stops the attempt before anything is typed.
+    if (bindsPower(port.map) || tier) {
+      await staged('power', async () => {
+        const target = tier ?? 'standard'
+        evidence.set({ powerTarget: target })
+        const selected = await procedures.selectPower(target)
+        if (typeof selected.evidence.total === 'number') evidence.set({ powerLevels: selected.evidence.total })
+        const { power } = need(selected, 'ui_drift')
+        if (power !== null) evidence.set({ power })
+      })
+    }
     await staged('insert', () => unsent(async () => need(await procedures.insertInstructions(prompt.header), 'ui_drift')))
     if (prompt.body !== undefined) {
       const body = prompt.body
@@ -750,7 +768,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     // finished answer, on the clocks it was built with (`chatGptDriver`).
     const generic = web.procedures === 'generic'
     const answer = await stage('answer', () => generic
-      ? genericTurn({ page: page!, map: driver.map, web, prompt, signal: stop.signal, note, evidence, staged })
+      ? genericTurn({ page: page!, map: driver.map, web, prompt, tier: requestedTier(request.capabilities), signal: stop.signal, note, evidence, staged })
       : driver.ask(page!, prompt.header, { conversation: conversationKind, ...(prompt.body === undefined ? {} : { attachment: prompt.body }), signal: stop.signal }))
     tabs.check()
     evidence.set({ waitEnded: 'done' })

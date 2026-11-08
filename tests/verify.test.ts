@@ -60,6 +60,7 @@ before(async () => {
         capabilities: [code-write, research, web-search]
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
+        models: { standard: sonnet }
 `)
   // The Host reads its credentials when it starts: store the token, then start it again.
   await cli.start()

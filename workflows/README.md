@@ -12,7 +12,7 @@ changes future admissions only.
   on the input change, criteria pinned from its base). A Sub-workflow of
   `software-engineering.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
-- [research.yaml](research.yaml) — `investigate` (`research`, `web-search`;
+- [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`.
 - [brainstorm.yaml](brainstorm.yaml) — `idea-a` (`brainstorm.idea-a`) and
@@ -31,7 +31,8 @@ changes future admissions only.
   (`research.lane-a`) and `investigate-b` (`research.lane-b`), each run the
   `research.yaml` investigation (shared by a YAML anchor) and have their `sources`
   checked; `synthesis` (`research.synthesis`) merges both into one `report` and
-  `sources`, checked again. A profile gives each Lane to a different Account.
+  `sources`, checked again. A profile gives each Lane to a different Account. Each Lane
+  asks `tier.standard`, like `research.yaml`.
 
 Comparison configurations for the Brainstorm evaluation are in
 [experiments](experiments/README.md).

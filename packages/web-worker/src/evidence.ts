@@ -40,9 +40,13 @@ export interface EvidenceData {
   filled?: Record<string, 'block' | 'text' | 'rendered'>
   /** Per output, each leaked token removed from its edges, once per removal (WW6b: the UI map's `answer.leakedTokens`); only outputs that had one. */
   stripped?: Record<string, string[]>
-  /** The model and Power level the page showed before the prompt went in, read and never set (WW8a; generic Procedures only); null when unreadable or the Site has no such control. */
+  /** The model and Power level the page showed before anything was selected, read and never set (WW8a; generic Procedures only); null when unreadable or the Site has no such control. */
   model?: string | null
-  power?: string | null
+  powerBefore?: string | null
+  /** The tier the step asked (the middle one when it asked none), the number of Power levels the menu showed, and the level shown once it was selected (WW8b); each set when known, `power` only after the read-back. */
+  powerTarget?: 'economy' | 'standard' | 'frontier'
+  powerLevels?: number
+  power?: string
   /** Characters of the answer outside its output blocks, whitespace ignored (WW5c). */
   outsideChars?: number
   /** How the wait for the answer ended: it finished, the site showed its own error in its place, or the time ran out (WW6a). */

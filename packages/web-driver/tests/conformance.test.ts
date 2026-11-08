@@ -54,9 +54,10 @@ const chatgpt: Fixture = {
   name: 'chatgpt-web',
   map: shippedMap(),
   shows: { model: 'Latest', power: 'Instant' },
+  levels: ['Instant', 'Low', 'Medium', 'High', 'Max'],
   async start(scenario: Scenario) {
     const fake = new FakeChatGpt({
-      thinkMs: scenario.slow ? 1500 : 300, menuOpen: scenario.menuOpen ?? false, copied: (markdown) => markdown, codeWidget: !scenario.plainBlocks,
+      thinkMs: scenario.slow ? 1500 : 300, menuOpen: scenario.menuOpen ?? false, powerStuck: scenario.powerStuck ?? false, copied: (markdown) => markdown, codeWidget: !scenario.plainBlocks,
       signedIn: !scenario.signedOut, captcha: scenario.challenge ?? false, loadFailure: scenario.siteError ?? false, dropSend: scenario.loseSend ?? false,
       ...(scenario.attachChip ? { attachOver: 100, attachAddingMs: 300 } : {}),
       chatToggleBroken: scenario.forbiddenMode ?? false, ...(scenario.workComposer ? { startOnWork: false, workComposer: true } : {}), modeSwitch: !scenario.noModeSwitch, ...(scenario.noModeSwitch ? { startOnWork: false } : {}),
