@@ -6,11 +6,12 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { systemPath, type Capabilities, type WorkerAccountStatus } from '@system/work'
-import { lazyVersion, subprocessSpawner } from '@system/worker-execution'
+import { lazyVersion } from '@system/worker-execution'
+import { dshAcpRunner } from './transport.ts'
 import { acpWorker, type AcpAccount } from './worker.ts'
 
 export * from './worker.ts'
-export * from './protocol.ts'
+export * from './transport.ts'
 
 export const name = 'system-worker-acp'
 export const inject = ['capabilities', 'artifacts', 'subprocess']
@@ -18,9 +19,7 @@ export const inject = ['capabilities', 'artifacts', 'subprocess']
 export interface AccountConfig {
   ref: string
   capabilities: string[]
-  /** Rust ACP v1 bridge executable, resolved on PATH unless absolute. */
-  command?: string
-  /** Installed external agent binary that implements ACP v1. */
+  /** Installed external agent executable speaking stable ACP v1. */
   agentCommand: string
   /** Separate argv entries; shell strings are not interpreted. */
   agentArgs?: string[]
@@ -55,6 +54,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const statuses: WorkerAccountStatus[] = []
   const versions = new Map<string, () => Promise<string>>()
   const dispose: (() => void)[] = []
+  const runner = dshAcpRunner(subprocess)
 
   for (const entry of config.accounts ?? []) {
     const status: WorkerAccountStatus = {
@@ -64,6 +64,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     statuses.push(status)
     try {
       if (!entry.ref || !entry.agentCommand) throw new Error('acp account needs ref and agentCommand')
+      if ('command' in entry) throw new Error('ACP no longer needs a Rust bridge command; remove command from the account')
       if (!entry.capabilities?.length) throw new Error('acp account must advertise at least one capability')
       if (entry.models && Object.keys(entry.models).length) throw new Error('ACP v1 bridge cannot guarantee model tier selection')
       if (entry.tokenRef && entry.codexHome) throw new Error('choose tokenRef or codexHome, not both')
@@ -77,12 +78,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       const budget = entry.attemptBudget ?? config.attemptBudget
       if (budget?.minutes !== undefined && !(Number.isFinite(budget.minutes) && budget.minutes > 0)) throw new Error('attemptBudget.minutes must be positive')
 
-      const command = await subprocess.resolveExecutable(entry.command ?? 'system-acp-bridge')
       const agentCommand = await subprocess.resolveExecutable(entry.agentCommand)
-      status.command = command
-      const version = lazyVersion(subprocess, command)
+      status.command = agentCommand
+      const version = lazyVersion(subprocess, agentCommand)
       const resolved: AcpAccount = {
-        ref: entry.ref, capabilities: entry.capabilities, command, agentCommand,
+        ref: entry.ref, capabilities: entry.capabilities, agentCommand,
         agentArgs: entry.agentArgs ?? [], version,
         maxConcurrentAttempts: slots, attemptTimeoutMinutes: limit,
         attemptBudget: budget?.minutes === undefined ? undefined : { minutes: budget.minutes },
@@ -98,7 +98,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         resolved.codexHome = isAbsolute(home) ? home : systemPath(ctx, home)
         if (!existsSync(join(resolved.codexHome, 'auth.json'))) throw new Error('Codex auth.json unavailable')
       }
-      dispose.push(capabilities.registerWorker(acpWorker(resolved, artifacts, subprocessSpawner(subprocess), attemptsDir)))
+      dispose.push(capabilities.registerWorker(acpWorker(resolved, artifacts, runner, attemptsDir)))
       versions.set(entry.ref, version)
       status.available = true
       status.reason = 'registered'
