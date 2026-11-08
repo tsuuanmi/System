@@ -11,9 +11,12 @@ send one prompt, fail closed on permission requests, emit structural NDJSON and
 exit. **Non-responsibility:** Work/Attempt state, approvals, effects, Git
 publishing, sandboxing, Artifact capture, durable replay or agent authentication.
 
-The TypeScript [agents WorkerPort](../agents/README.md) owns the attempt,
-workspace, inputs, outputs, cancellation, process scope and logging. This
-binary is opt-in, absent from the default DSH bundle.
+The TypeScript [`@system/worker-acp` plugin](../worker-acp/README.md)
+owns the provider-neutral WorkerPort adapter; its shared
+[`worker-execution` library](../worker-execution/README.md) owns workspace,
+Artifact inputs/outputs, cancellation, process scope and logging. The
+`worker-acp` Cordis row is installed but **disabled by default** and this
+binary is not needed by headless or Website Workers.
 
 ## Build and run
 
@@ -62,4 +65,4 @@ independent.
 
 - [`src/main.rs`](src/main.rs) — CLI and ACP v1 adapter.
 - [`src/README.md`](src/README.md) — source ownership.
-- [agents tests](../agents/tests/) — provider-neutral parser and invocation.
+- [worker-acp tests](../worker-acp/tests/) — provider-neutral WorkerPort capture, fail-closed parsing and invocation.
