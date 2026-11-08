@@ -65,6 +65,14 @@ test stand-ins. Changes to this repository are checked by
   MCP, systemd...). What System records stays deterministic and
   artifact-based.
 
+## Sessions
+
+A session (Claude Code or another) is only how the operator talks to
+System: any session can be replaced by a new one and everything keeps
+working. Keep project state in the repository (PLAN, pull requests, docs) or
+in System (Goals, decisions, Artifacts), never in a session's own memory or
+chat.
+
 ## Documentation change rules
 
 Use [the portable standard](docs/governance/documentation-architecture.md).
