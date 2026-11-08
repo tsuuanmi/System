@@ -1,6 +1,6 @@
 /**
  * The thin client entry of `bin/system` (PROP-0004 C6): every command but
- * `init`, `host` and `doctor` runs here, in a process that does not boot DSH
+ * `init`, `update`, `host` and `doctor` runs here, in a process that does not boot DSH
  * and talks to the Host on `$DSH_HOME/system/host.sock`.
  */
 // By path, not by package: declaring @system/host here would change the lockfile.

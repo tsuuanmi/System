@@ -70,7 +70,7 @@ says so. A Host keeps its Works' locks and cancel requests in memory
 The old per-Work lock files, takeover mutex and write marks
 (`$DSH_HOME/system/control/*.lock`, `*.takeover`, `*.written`) are gone from
 the code (H4b-2). The Host ignores any left over and deletes none; the
-[cutover checklist](../operations/runbook.md#cutover-to-the-host-r1) deletes
+[move to the install](../operations/runbook.md#moving-to-the-install-df0b) deletes
 them by hand.
 
 ### The commit lane
@@ -220,7 +220,9 @@ new client is refused. The Host restarts itself, and never interrupts an
 attempt to do it.
 
 - **Noticing.** A timer (`UPGRADE_POLL`, 10 s) recomputes the code-version hash,
-  a few hundred small files. Not `fs.watch`: a build deletes and rewrites
+  a few hundred small files, of the code it was started as: an install's
+  `current` link (`SYSTEM_CODE`), so `system update` switching it is new code,
+  or the checkout. Not `fs.watch`: a build deletes and rewrites
   `lib/`, which loses watches on Linux, and it needs a debounce anyway. A
   change counts when two looks in a row find the same new hash, so a build
   still writing its files does not restart the Host, and never while the
