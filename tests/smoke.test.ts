@@ -100,7 +100,7 @@ test('the fakes row is installed but off by default', () => {
 test('the optional ACP Worker plugin is installed but disabled without a Rust binary', () => {
   const config = system('--dump-config')
   assert.equal(config.status, 0, config.stderr)
-  assert.match(config.stdout, /- id: worker-acp\\n  name: '@system\\/worker-acp'\\n  disabled: true/)
+  assert.match(config.stdout, /- id: worker-acp\n  name: '@system\/worker-acp'\n  disabled: true/)
   const { status, report } = doctor()
   assert.equal(status, 0)
   assert.equal(report.rows.find((row) => row.id === 'worker-acp')?.mounted, false)
