@@ -8,17 +8,17 @@ process lifetime and credentials scrubbing. No Rust binary, custom ACP wire
 parser, agent loop or additional process supervisor is required.
 
 The [DSH ACP reuse assessment](../../docs/research/RES-0010-dsh-acp-reuse-and-worker-plugin.md)
-explains why \`dsh-acp\` (an ACP **server**) is not the client System needs,
-and why the public \`dsh-subagent-acp\` provider requires a parent DSH Agent.
+explains why `dsh-acp` (an ACP **server**) is not the client System needs,
+and why the public `dsh-subagent-acp` provider requires a parent DSH Agent.
 The ACP client is built using the same **official SDK version DSH pins**,
 not by importing private DSH implementation files or forking DSH.
 
 ## Enable / disable
 
-The \`worker-acp\` bundle row is installed but **disabled: true**. To opt in,
+The `worker-acp` bundle row is installed but **disabled: true**. To opt in,
 install an ACP-compatible agent binary and add this local profile patch:
 
-\`\`\`yaml
+```yaml
 - id: worker-acp
   disabled: false
   config:
@@ -29,14 +29,14 @@ install an ACP-compatible agent binary and add this local profile patch:
         agentArgs: []
         # codexHome: codex/default
         # OR tokenRef: CLAUDE_CODE_OAUTH_TOKEN
-\`\`\`
+```
 
-Restart the System Host. \`system workers\` reports registered WorkerRefs and
+Restart the System Host. `system workers` reports registered WorkerRefs and
 unavailable reasons. A missing ACP agent executable or auth is **not silently
-replaced** with a vendor CLI. An obsolete \`command\` (Rust bridge) setting is
+replaced** with a vendor CLI. An obsolete `command` (Rust bridge) setting is
 explicitly rejected.
 
-An empty \`accounts\` list leaves ACP enabled as a plugin but registers no
+An empty `accounts` list leaves ACP enabled as a plugin but registers no
 Workers and starts no processes. Disabling removes plugin registrations; the
 default headless Claude/Codex and Website Workers stay independent. For
 in-flight work use a controlled drain/restart — hot-disable is not certified
@@ -48,10 +48,10 @@ to safely reclaim every active process.
   prompt and streamed updates through the **official SDK**, not custom JSON-RPC.
 - DSH owns subprocess ranges, explicit environment forwarding, cancellation,
   EOF/termination escalation and observed exit. Workspace and exact Artifact
-  capture live in the shared \`@system/worker-execution\` library.
+  capture live in the shared `@system/worker-execution` library.
 - ACP permission prompts are **rejected**. No implicit agent tool approval,
   no System publish/merge privilege and no claim that a subprocess is sandboxed.
-- Agent stop reason \`end_turn\` is not accepted Work by itself: exact requested
+- Agent stop reason `end_turn` is not accepted Work by itself: exact requested
   output files/Git-tree must be captured, then System verification/approval
   gates apply. Abnormal stop/cancel/unknown process exit fails closed.
 - Token usage is **unknown**, not zero. Model tiers, token-budget enforcement,
@@ -60,12 +60,12 @@ to safely reclaim every active process.
 
 ## Tests
 
-\`\`\`sh
+```sh
 corepack pnpm install --frozen-lockfile
 corepack pnpm check
 python3 tools/docs.py check
 python3 tools/docs.py sync --check
-\`\`\`
+```
 
 Offline tests cover SDK handshake, per-agent permission refusal, cancellation,
 WorkerPort Artifact capture and default-disabled composition. A smoke test
