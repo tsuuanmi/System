@@ -10,7 +10,9 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
-import { agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
+import { agentWorker, type Account, type AttemptBudget } from './agent.ts'
+import { lazyVersion, subprocessSpawner } from '@system/worker-execution'
+export { lazyVersion, subprocessSpawner } from '@system/worker-execution'
 import { webDefaults, type WebConfig } from './chatgpt.ts'
 import { discoverChrome } from './chrome.ts'
 import { webLogin, type LoginReport } from './chatgpt-login.ts'
@@ -39,10 +41,6 @@ export interface AccountConfig {
   tokenRef?: string
   /** codex: CODEX_HOME, relative to $DSH_HOME/system unless absolute. */
   codexHome?: string
-  /** acp: path to an ACP-capable agent executable (e.g. installed codex-acp). */
-  agentCommand?: string
-  /** acp: executable arguments as separate argv entries, never shell text. */
-  agentArgs?: string[]
   /** chatgpt-web: the Chrome profile (the signed-in session), relative to $DSH_HOME/system unless absolute; default `chatgpt-web/<name>`. */
   profileDir?: string
   /** chatgpt-web: open each attempt in a temporary chat (default true). */
@@ -96,45 +94,6 @@ export interface AgentsService {
   loginWait(ref: string, cancel: boolean): Promise<LoginReport>
 }
 
-/** A `Spawner` over the DSH subprocess service, which owns each process range. */
-export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
-  return {
-    spawn(spec) {
-      const handle = subprocess.spawn({
-        argv: recordingPid(spec), cwd: spec.cwd, env: spec.env, signal: spec.signal, graceMs: spec.graceMs,
-        stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
-      })
-      return {
-        // Settle only once the whole process range is gone, not just the direct child.
-        done: handle.done.then(async (outcome) => {
-          await handle.waitForExit().catch(() => false)
-          return { exitCode: outcome.exitCode, signal: outcome.signal }
-        }),
-        stdout: () => handle.collected.stdout?.readFrom(0).text ?? '',
-        stderr: () => handle.collected.stderr?.readFrom(0).text ?? '',
-      }
-    },
-  }
-}
-
-/** `<command> --version`, spawned once, on first use: startup spawns nothing. */
-export function lazyVersion(subprocess: SubprocessRuntime, command: string): () => Promise<string> {
-  let asked: Promise<string> | undefined
-  return () => {
-    asked ??= (async () => {
-      try {
-        const handle = subprocess.spawn({ argv: [command, '--version'], cwd: process.cwd(), graceMs: 2000, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } } })
-        await handle.done
-        return (handle.collected.stdout?.readFrom(0).text ?? '').trim().split('\n')[0] ?? ''
-      } catch {
-        // A managed Chrome that is not installed yet has no version to report.
-        return ''
-      }
-    })()
-    return asked
-  }
-}
-
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
@@ -150,39 +109,21 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     statuses.push(status)
     try {
       const web = account.runtime === 'chatgpt-web'
-      const acp = account.runtime === 'acp'
       if (web && 'headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
       if (web && !findXvfb()) throw new Error(XVFB_MISSING)
       const browsers = systemPath(ctx, 'browsers')
-      const command = web ? discoverChrome(account.executablePath, { managedDir: browsers }).path : await subprocess.resolveExecutable(account.command ?? (acp ? 'system-acp-bridge' : account.runtime === 'claude-code' ? 'claude' : 'codex'))
-      const acpAgent = acp ? await subprocess.resolveExecutable(account.agentCommand || (() => { throw new Error('acp account requires agentCommand') })()) : undefined
+      const command = web ? discoverChrome(account.executablePath, { managedDir: browsers }).path : await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
       status.command = command
       const askVersion = lazyVersion(subprocess, command)
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
-      if (acp && account.models && Object.keys(account.models).length) throw new Error('acp adapter cannot guarantee model-tier selection; do not configure models')
-      if (acp && (account.attemptBudget ?? config.attemptBudget)?.inputTokens !== undefined) throw new Error('acp bridge does not provide live token metering; inputTokens budget cannot be enforced')
-      if (acp && account.tokenRef && account.codexHome) throw new Error('acp account must choose tokenRef or codexHome, not both')
       const tiers = TIERS.filter((tier) => account.models?.[tier])
       const slots = account.maxConcurrentAttempts ?? config.maxConcurrentAttempts
       if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error(`maxConcurrentAttempts is ${slots}; it must be a whole number of at least 1`)
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
       const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes: account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots }
-      if (acp) {
-        if (!acpAgent) throw new Error('acp agent is unavailable')
-        resolved.acp = { agentCommand: acpAgent, agentArgs: account.agentArgs ?? [] }
-        if (account.tokenRef) {
-          const ref = credentialRef(account.tokenRef)
-          if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)
-          resolved.token = async () => (await credentials.resolve(ref))?.value
-        }
-        if (account.codexHome) {
-          const home = account.codexHome
-          resolved.codexHome = isAbsolute(home) ? home : systemPath(ctx, home)
-          if (!existsSync(join(resolved.codexHome, 'auth.json'))) throw new Error(`no auth.json in ${resolved.codexHome}`)
-        }
-      } else if (web) {
+      if (web) {
         const profile = account.profileDir ?? `chatgpt-web/${account.ref.split('/')[1] ?? 'default'}`
         const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile))
         const config: WebConfig = {
