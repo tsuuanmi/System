@@ -10,7 +10,7 @@ use agent_client_protocol::v1::schema::{
 };
 use agent_client_protocol::{AcpAgent, Agent, Client};
 use serde_json::json;
-use std::{env, fs, io, path::PathBuf};
+use std::{env, fs, io, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}}};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Cli {
@@ -56,6 +56,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut command = vec![cli.agent];
     command.extend(cli.args);
     let agent = AcpAgent::from_args(&command)?;
+    let permission_denied = Arc::new(AtomicBool::new(false));
+    let denied_in_handler = Arc::clone(&permission_denied);
 
     let reason = Client
         .v1()
@@ -67,7 +69,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             agent_client_protocol::on_receive_notification!(),
         )
         .on_receive_request(
-            async |_request: RequestPermissionRequest, responder, _connection| {
+            async move |_request: RequestPermissionRequest, responder, _connection| {
+                denied_in_handler.store(true, Ordering::SeqCst);
                 // No System policy token or human is present at this boundary:
                 // reject every permission prompt, never auto-select "allow once".
                 println!("{}", json!({"type":"acp.permission_denied"}));
@@ -99,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
-    let ok = success(&reason);
+    let ok = success(&reason) && !permission_denied.load(Ordering::SeqCst);
     println!("{}", json!({
         "type":"acp.result",
         "ok":ok,
