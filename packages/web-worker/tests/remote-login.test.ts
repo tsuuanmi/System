@@ -256,6 +256,13 @@ test('the session expires after its time, and Xvfb, the VNC server, the browser 
   }
 })
 
+/** The Xvfb processes this process started, with their displays. */
+function xvfbChildren(): { pid: number; display: string }[] {
+  let out = ''
+  try { out = execFileSync('pgrep', ['-a', '-P', String(process.pid), '-x', 'Xvfb'], { encoding: 'utf8' }) } catch { /* none: pgrep exits 1 */ }
+  return out.split('\n').flatMap((line) => { const m = /^(\d+) \S*Xvfb (:\d+)/.exec(line); return m ? [{ pid: Number(m[1]), display: m[2]! }] : [] })
+}
+
 test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards', { skip, timeout: 60_000 }, async () => {
   events.length = 0
   const was = process.env.DISPLAY
@@ -263,6 +270,7 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
   // The answer never starts, so the attempt is still running while the browser is looked at.
   const fake = new FakeChatGpt({ thinkMs: 60_000 })
   await fake.start()
+  const before = xvfbChildren()
   try {
     const config = { ...web(''), url: `${fake.origin}/` }
     const account: WebAccount = { ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config }
@@ -273,12 +281,15 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
     const running = webWorker(account, artifacts, join(root, 'attempts')).run(request)
     await until('the prompt to be sent', () => fake.sent.length === 1)
     const chrome = profileLockPid(config.profileDir)!
-    const env = readFileSync(`/proc/${chrome}/environ`, 'utf8').split('\0')
-    const display = env.find((e) => e.startsWith('DISPLAY='))!.slice('DISPLAY='.length)
+    // The display is the one of the Xvfb the attempt started: a child of this process that did not exist before it.
+    // (The browser's own environ is not readable for it: Chrome reuses that memory for its process title.)
+    const started = xvfbChildren().filter((x) => !before.some((b) => b.pid === x.pid))
+    assert.equal(started.length, 1, 'the attempt started one Xvfb')
+    const display = started[0]!.display
     assert.match(display, /^:\d+$/, 'the browser runs on a private display')
     assert.ok(existsSync(`/tmp/.X11-unix/X${display.slice(1)}`), 'the display is up')
     assert.doesNotMatch(readFileSync(`/proc/${chrome}/cmdline`, 'utf8'), /--headless/)
-    const xvfb = execFileSync('pgrep', ['-f', `Xvfb ${display} `], { encoding: 'utf8' }).trim().split('\n').map(Number)
+    const xvfb = xvfbChildren().filter((x) => x.display === display).map((x) => x.pid)
     assert.equal(xvfb.length, 1)
     stop.abort()
     assert.equal((await running).status, 'cancelled')
