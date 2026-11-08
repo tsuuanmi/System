@@ -123,9 +123,10 @@ retroactively change MVP-0's already-implemented acceptance evidence.
   Prefer optional adapters over mandatory new stacks. Performance claims
   require measurement; implementation language alone is not evidence.
 
-The first selected Rust integration is the optional ACP Worker Adapter in
-[ADR-0011](../decisions/ADR-0011-rust-acp-worker-adapter.md). This is an
-accepted design direction, not an implemented feature.
+The [optional ACP Worker plugin decision](../decisions/ADR-0011-acp-worker-plugin.md)
+selects the official ACP TypeScript SDK and existing DSH subprocess service
+instead of an additional Rust bridge. Admission remains dependent on
+provider compatibility, process recovery and Artifact/verification tests.
 
 ## Success means
 
