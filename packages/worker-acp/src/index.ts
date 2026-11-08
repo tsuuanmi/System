@@ -23,8 +23,10 @@ export interface AccountConfig {
   agentCommand: string
   /** Separate argv entries; shell strings are not interpreted. */
   agentArgs?: string[]
-  /** Optional System credential reference forwarded to the ACP child. */
+  /** Legacy Claude-specific secret; prefer envRefs for new providers. */
   tokenRef?: string
+  /** Environment variable name -> System credential reference. Resolved only per Attempt. */
+  envRefs?: Record<string, string>
   /** Optional isolated Codex auth directory, relative to $DSH_HOME/system. */
   codexHome?: string
   attemptTimeoutMinutes?: number
@@ -45,6 +47,21 @@ export interface AcpWorkersService {
   accounts(): Promise<WorkerAccountStatus[]>
 }
 
+/** No ambient shell/runtime settings can be overwritten by stored secrets. */
+const FORBIDDEN_CREDENTIAL_ENV = new Set([
+  'HOME', 'TMPDIR', 'TMP', 'TEMP', 'PATH', 'PWD', 'SHELL',
+  'NODE_OPTIONS', 'NODE_PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+  'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH',
+  'CODEX_HOME', 'CLAUDE_CODE_OAUTH_TOKEN',
+])
+
+export function validateCredentialEnv(name: string): void {
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || name.startsWith('DSH_') ||
+      name.startsWith('SYSTEM_') || FORBIDDEN_CREDENTIAL_ENV.has(name)) {
+    throw new Error(`ACP envRefs: unsafe environment variable ${JSON.stringify(name)}`)
+  }
+}
+
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
@@ -55,6 +72,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const versions = new Map<string, () => Promise<string>>()
   const dispose: (() => void)[] = []
   const runner = dshAcpRunner(subprocess)
+  const seen = new Set<string>()
 
   for (const entry of config.accounts ?? []) {
     const status: WorkerAccountStatus = {
@@ -64,12 +82,20 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     statuses.push(status)
     try {
       if (!entry.ref || !entry.agentCommand) throw new Error('acp account needs ref and agentCommand')
+      if (seen.has(entry.ref) || capabilities.workerFor(entry.ref)) throw new Error(`duplicate Worker ref: ${entry.ref}`)
+      seen.add(entry.ref)
+      if (!Array.isArray(entry.agentArgs ?? []) || !(entry.agentArgs ?? []).every((arg) => typeof arg === 'string')) {
+        throw new Error('agentArgs must be an array of strings')
+      }
+      if (entry.capabilities?.some((capability) => capability.startsWith('tier.'))) {
+        throw new Error('ACP v1 does not guarantee tier capabilities; remove tier.* from the account')
+      }
       if ('command' in entry) throw new Error('ACP no longer needs a Rust bridge command; remove command from the account')
       if (!entry.capabilities?.length) throw new Error('acp account must advertise at least one capability')
-      if (entry.models && Object.keys(entry.models).length) throw new Error('ACP v1 bridge cannot guarantee model tier selection')
+      if (entry.models && Object.keys(entry.models).length) throw new Error('ACP plugin cannot guarantee model tier selection')
       if (entry.tokenRef && entry.codexHome) throw new Error('choose tokenRef or codexHome, not both')
       if (entry.attemptBudget?.inputTokens !== undefined || config.attemptBudget?.inputTokens !== undefined) {
-        throw new Error('ACP bridge has no token metering; inputTokens budget cannot be enforced')
+        throw new Error('ACP adapter has no token metering; inputTokens budget cannot be enforced')
       }
       const slots = entry.maxConcurrentAttempts ?? config.maxConcurrentAttempts
       if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error('maxConcurrentAttempts must be a positive integer')
@@ -92,6 +118,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const ref = credentialRef(entry.tokenRef)
         if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} not configured`)
         resolved.token = async () => (await credentials.resolve(ref))?.value
+      }
+      for (const [envName, secretName] of Object.entries(entry.envRefs ?? {})) {
+        validateCredentialEnv(envName)
+        if (!credentials) throw new Error('credentials service is not mounted')
+        if (!secretName || typeof secretName !== 'string') throw new Error(`envRefs.${envName}: expected credential reference`)
+        const ref = credentialRef(secretName)
+        if (!(await credentials.describe(ref)).configured) throw new Error(`credential ${ref} for ${envName} is not configured`)
+        resolved.credentialEnv ??= {}
+        resolved.credentialEnv[envName] = async () => (await credentials.resolve(ref))?.value
       }
       if (entry.codexHome) {
         const home = entry.codexHome
