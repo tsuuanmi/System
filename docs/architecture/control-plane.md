@@ -71,6 +71,75 @@ responsibility for correct work semantics, permission enforcement or safe
 recovery. Do not build a duplicate store or approval gate without an identified
 contract gap; identify the authoritative record before implementing one.
 
+## Provider-neutral Worker boundary
+
+**Invariant: System manages Work, not the implementation of a Worker.** The
+Work Controller MUST NOT depend on whether an assigned Worker uses Claude
+Code, Codex, Antigravity, ChatGPT Web or another runtime. It uses declared
+capabilities, an admitted Attempt, exact Artifact IDs and a verified outcome.
+See [STD-003](../requirements/purpose.md#product-wide-standards-and-interoperability-requirements)
+and [MVP-02](../requirements/mvp.md#required-common-path).
+Provider identity remains an **opaque Worker reference** for routing
+overrides, accounting, provenance and operator inspection, not a branch in
+the Work state machine.
+
+**The canonical interface is System's
+[`WorkerPort`](../../packages/work/src/registry.ts), not ACP or MCP:**
+
+| Contract surface | Controller relies on | Provider adapter owns |
+| --- | --- | --- |
+| Discovery/admission | `ref`, offered `capabilities`, concurrency availability; preflight checks | Map a real account/runtime to supportable capabilities; report unavailable or unsupported features honestly |
+| Input | `WorkerRequest`: `workId`, `attemptId`, `stepId`, pinned input Artifact IDs, expected output slots, instructions and abort signal | Authenticate, materialize inputs and prepare isolated execution/session context |
+| Live observation | Optional progress as advisory activity; cancellation and `gone(attemptId)` for process-exit/recovery evidence | Map native CLI events, ACP updates or browser stages; do not turn heuristics into completion |
+| Output | `WorkerResult` status, output-slot → immutable Artifact ID, optional partial/log/usage/executor provenance | Capture actual files, text or trees and normalize provider-specific failure, usage and provenance |
+| Acceptance | System verifier checks the **exact Artifact ID** and pinned criteria; policy/approval/effect gates remain authoritative | Never approve effects, invent usage, infer verified success from `end_turn`, idle or a web page saying "done" |
+
+These adapters are interchangeable at the **System contract** boundary,
+not identical in model behavior, permissions, model tiers, token usage,
+interactive session resume, browser accessibility or sandbox guarantees.
+Capabilities MUST describe only functions actually supported and tested.
+Unavailable or incomplete capabilities fail preflight; there is no silent
+fallback to another provider or weaker execution mode.
+
+```text
+               System Work Controller
+            (one Work/Attempt authority)
+                        |
+           capability routing + WorkerPort
+               /         |         \
+     headless CLI     ACP client    Website driver
+      Claude/Codex   compatible     ChatGPT Web or
+                     coding agent   future website
+               \         |         /
+                WorkerResult + Artifact IDs
+                        |
+             exact verifier + policy gate
+                        |
+                 accepted Work
+```
+
+**Protocol responsibility:** [ACP v1](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v1/overview.mdx)
+defines client ↔ interactive-agent sessions; [MCP](https://modelcontextprotocol.io/specification/2025-06-18)
+defines agent/tool-resource communication. Neither replaces System's durable
+Work/Attempt/Artifact and verification contract. A Website Worker is a
+valid WorkerPort without speaking ACP; an ACP agent need not speak the
+Website driver's UI protocol. Reuse official SDKs and existing DSH services
+rather than inventing another common wire protocol.
+
+**Provider substitution:** a retry/takeover may select a different capable
+Worker without changing the Work Controller or rewriting the Workflow's
+semantics. It starts a distinct Attempt from pinned Artifact inputs; it
+does **not** assume transferable provider conversations, authentication,
+ACP sessions, browser sessions or mutable filesystem state. Record the
+selected Worker ref and execution evidence for audit.
+
+**Status of implementation:** the System WorkerPort and headless/Website
+adapters already exist; the optional ACP plugin is being evaluated in
+[ADR-0011](../decisions/ADR-0011-acp-worker-plugin.md) and its
+[implementation PR](https://github.com/tsuuanmi/System/pull/73).
+This section is an architectural contract, **not** a claim that all
+agents/providers have passed cross-adapter acceptance tests.
+
 ## Work vs Workflow and deterministic Artifact-ID handoff
 
 **Work is primitive (its input is a Task); Workflow is an optional external configuration file**
@@ -92,7 +161,7 @@ the System work services and the DSH hosting/execution capabilities needed
 to satisfy their contracts. Every additional plugin has an explicit reason and
 dependency. The complete list is determined by an actual profile dependency
 audit, **not** by copying a reference bundle. The current tree is
-[`@system/bundle`](../../packages/bundle/README.md): fourteen rows (two, `fakes` and `worker-acp`, disabled), no `dsh-base`,
+[`@system/bundle`](../../packages/bundle/README.md): thirteen rows (one, `fakes`, disabled), no `dsh-base`,
 checked by `system doctor` and the offline smoke test.
 
 **Configuration-first plugin lifecycle:**
