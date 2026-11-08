@@ -55,6 +55,17 @@ export function requestedTier(capabilities: readonly string[]): Tier | undefined
   return TIERS.find((tier) => capabilities.includes(tierCapability(tier)))
 }
 
+/** A plugin-owned account's availability; not authoritative Work state. */
+export interface WorkerAccountStatus {
+  ref: string
+  runtime: string
+  capabilities: string[]
+  available: boolean
+  reason: string
+  command?: string
+  version?: string
+}
+
 export interface WorkerPort {
   /** A stable name, recorded in routing decisions. */
   ref: string
@@ -163,6 +174,7 @@ export interface Route<P> {
 
 export class Capabilities {
   private readonly workers: WorkerPort[] = []
+  private readonly workerStatusProviders = new Set<() => Promise<WorkerAccountStatus[]>>()
   private readonly verifiers: VerifierPort[] = []
   private readonly effects: EffectPort[] = []
 
@@ -170,6 +182,18 @@ export class Capabilities {
     this.workers.push(port)
     return () => { this.workers.splice(this.workers.indexOf(port), 1) }
   }
+  
+  /** Each optional Worker plugin reports its own configured and unavailable accounts. */
+  registerWorkerStatusProvider(provider: () => Promise<WorkerAccountStatus[]>): () => void {
+    this.workerStatusProviders.add(provider)
+    return () => { this.workerStatusProviders.delete(provider) }
+  }
+
+  async accountStatuses(): Promise<WorkerAccountStatus[]> {
+    const reports = await Promise.all([...this.workerStatusProviders].map((provider) => provider()))
+    return reports.flat()
+  }
+
 
   registerVerifier(port: VerifierPort): () => void {
     this.verifiers.push(port)
