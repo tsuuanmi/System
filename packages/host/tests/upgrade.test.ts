@@ -27,9 +27,9 @@ async function until(condition: () => boolean, what: string): Promise<void> {
 }
 
 /** One Host incarnation over the fixture: what `system host` does with `codeVersion` standing for the files on disk. */
-async function incarnate(f: Fixture, home: string, version: string, codeVersion: () => string, log: (line: string) => void, upgradePoll = 5): Promise<ServingHost> {
+async function incarnate(f: Fixture, home: string, version: string, codeVersion: () => string, log: (line: string) => void, upgradePoll = 5, building?: () => boolean): Promise<ServingHost> {
   const host = await f.startHost(home)
-  const serving = await serveHost({ host, home, services: { capabilities: f.capabilities } as unknown as Services, log, version, codeVersion, upgradePoll })
+  const serving = await serveHost({ host, home, services: { capabilities: f.capabilities } as unknown as Services, log, version, codeVersion, upgradePoll, building })
   running.push(serving)
   return serving
 }
@@ -164,6 +164,23 @@ test('a connection retries while the Host is away, and says not running once the
   await assert.rejects(connectHello(socketPath(home), { version: 'code-1', caller: human, retry: 200 }), /the Host is not running/)
   assert.equal(Date.now() - started >= 200, true)
   await assert.rejects(connectHello(socketPath(home), { version: 'code-1', caller: human }), /the Host is not running/)
+})
+
+test('while a build runs, the Host does not upgrade: not from its own looks, nor for a client built from the half-built tree', { timeout: 30_000 }, async () => {
+  const f = fixture()
+  const home = fresh()
+  const logs: string[] = []
+  let asks = 0
+  let building = true
+  const serving = await incarnate(f, home, 'code-1', () => 'code-2', (line) => logs.push(line), 5, () => { asks++; return building })
+  await until(() => asks > 10 || logs.length > 1, 'the Host looked again')
+  const refused = await connectHello(socketPath(home), { version: 'code-2', caller: human }).then(() => 'answered', (error: { code: number }) => error.code)
+  assert.notEqual(refused, UPGRADING, 'a client of the half-built code is refused, not upgraded to')
+  assert.doesNotMatch(logs.join('\n'), /upgrading/)
+  // The build ends: the same code, seen stable, is upgraded to.
+  building = false
+  await until(() => /upgrading/.test(logs.join('\n')), 'the upgrade once the build ended')
+  assert.equal(await serving.exited, UPGRADE_EXIT)
 })
 
 test('while a Host waits on a long attempt to upgrade, a client of any version reads, and is told to retry anything else', { timeout: 30_000 }, async () => {

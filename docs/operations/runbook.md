@@ -122,7 +122,11 @@ code every 10 s and restarts itself on new code.
 2. With no attempt running it logs `stopped for the upgrade ... exiting 75`
    and exits 75. The unit restarts on that status (`RestartForceExitStatus=75`);
    `system host --supervise` runs it again (foreground, development: nothing
-   else restarts it, and a crash or a SIGTERM ends the supervisor).
+   else restarts it, and a SIGTERM ends the supervisor). A new Host that fails
+   to start after an upgrade is tried again: the supervisor waits 2, 4 and
+   8 s and logs each try; the unit every 5 s, at most 10 starts in 5 minutes.
+   A process still alive 10 s after it stopped is made to exit, and logs
+   `still running ... open: <resources>`: what held it, to report.
 3. The new Host recovers as on any start and logs `continuing N Works held for
    the upgrade`: the Works whose runs waited at the gate go on, and nothing
    that was interrupted does.
@@ -132,9 +136,36 @@ is not running. While the Host waits on a long attempt, a CLI of the new code
 can still read (`work show`, `work list`, `workers`); a command that changes
 something says the Host is upgrading, and to retry once it has restarted. If the Host is still draining, `system host`'s log says what it
 waits for; `systemctl --user restart system` (or SIGTERM) stops it at once and
-interrupts the attempts, as any stop does. After a build that is still
-half-written the new Host may fail to start: build again, then
-`systemctl --user restart system`.
+interrupts the attempts, as any stop does. `corepack pnpm build` keeps a
+`.building` file at the repository's root while it runs, and the Host does not
+upgrade while it is there; a failed build leaves it, so the Host stays on its
+code until a build succeeds.
+
+## Changing the profile's config
+
+An entry of the profile's own patch (`$DSH_HOME/profiles/system/cordis.patch.yml`,
+or a `--patch` file) changes the bundle's `config` of that row instead of
+replacing it (milestone B; [patches](../../patches/README.md)): objects merge
+as JSON Merge Patch (RFC 7386, `null` removes a key), and a list of objects
+with a `ref` (or `id`) merges item by item on it, as Kubernetes' strategic
+merge patch does. So one account is changed, added or removed alone:
+
+```yaml
+- id: agents
+  config:
+    accounts:
+      - ref: codex/default                # change: only what is named
+        capabilities: [code-write, brainstorm.idea-b, research]
+      - ref: chatgpt-web/second           # add
+        runtime: chatgpt-web
+        capabilities: [research]
+      - ref: claude-code/default          # remove
+        $patch: delete
+```
+
+A list of names (such as `capabilities`) is replaced whole. `$patch: replace`
+in the `config` takes it whole, as the overlay used to. `system workers` shows
+the accounts that result.
 
 ## Attempts at once, and held slots
 
@@ -170,8 +201,8 @@ A Worker that runs a step in the operator's signed-in ChatGPT web session
 ([PROP-0005](../proposals/PROP-0005-chatgpt-website-worker.md); options in the
 [agents README](../../packages/agents/README.md#the-chatgpt-web-runtime)). It is
 **not enabled by default**: add it to the profile's `agents` row (for example in
-`$DSH_HOME/profiles/system/cordis.patch.yml`, replacing `accounts` with the
-bundle's accounts plus this one), then restart the Host:
+`$DSH_HOME/profiles/system/cordis.patch.yml`; it is added to the bundle's
+accounts, see above), then restart the Host:
 
 ```yaml
 - ref: chatgpt-web/default
