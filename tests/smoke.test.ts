@@ -13,7 +13,7 @@ const home = cli.home
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
-const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'agents', 'credentials', 'system-app']
+const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'agents', 'worker-acp', 'credentials', 'system-app']
 
 const system = (...args: string[]) => cli.run(args)
 const human = { SYSTEM_CALLER: 'human' }
@@ -49,7 +49,7 @@ test('the profile boots and doctor reports every row and durable storage', () =>
   const { status, report } = doctor()
   assert.equal(status, 0)
   assert.equal(report.ok, true)
-  assert.ok(report.rows.every((row) => row.mounted))
+  assert.ok(report.rows.every((row) => row.mounted || row.id === 'worker-acp'), 'only the optional ACP plugin starts disabled')
 })
 
 test('the effective composition is exactly the System bundle', () => {
@@ -95,6 +95,15 @@ test('init is repeatable and keeps the operator patch', () => {
 test('the fakes row is installed but off by default', () => {
   const ran = system('--dump-config')
   assert.match(ran.stdout, /- id: fakes\n  name: '@system\/fakes'\n  disabled: true/)
+})
+
+test('the optional ACP Worker plugin is installed but disabled without a Rust binary', () => {
+  const config = system('--dump-config')
+  assert.equal(config.status, 0, config.stderr)
+  assert.match(config.stdout, /- id: worker-acp\\n  name: '@system\\/worker-acp'\\n  disabled: true/)
+  const { status, report } = doctor()
+  assert.equal(status, 0)
+  assert.equal(report.rows.find((row) => row.id === 'worker-acp')?.mounted, false)
 })
 
 test('an Artifact stored in one Host is read by ID alone after a restart', async () => {
