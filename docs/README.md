@@ -10,6 +10,7 @@ source and tests are the authority for implementation behavior.
 |---|---|---|
 | Why does System exist? | [Product Charter](requirements/purpose.md) | Accepted product intent |
 | Which standards must integrations reuse first? | [Standards-first requirements](requirements/purpose.md#product-wide-standards-and-interoperability-requirements) | Product-wide acceptance |
+| Why does the Controller not depend on Claude, Codex, Antigravity or a Website Worker? | [Provider-neutral Worker boundary](architecture/control-plane.md#provider-neutral-worker-boundary) | Canonical Worker contract |
 | What must the smallest product prove? | [MVP requirements](requirements/mvp.md) | Current acceptance contract |
 | Which responsibilities belong to System vs DSH? | [Control-plane architecture](architecture/README.md) | Selected target, not shipped |
 | Where does Workflow step order live? | [Workflow composition](architecture/workflow-composition.md) | External config, accepted target |
