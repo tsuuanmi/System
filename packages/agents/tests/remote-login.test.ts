@@ -277,7 +277,7 @@ test('Xvfbs that start together from the same display number each get their own 
 async function accountsOf(account: Record<string, unknown>, path?: string) {
   let registered = 0
   const provided: Record<string, any> = {}
-  const services: Record<string, unknown> = { capabilities: { registerWorker: () => { registered += 1; return () => {} } }, artifacts: {}, subprocess: { resolveExecutable: async (command: string) => command }, credentials: {} }
+  const services: Record<string, unknown> = { capabilities: { registerWorker: () => { registered += 1; return () => {} }, registerWorkerStatusProvider: () => () => {} }, artifacts: {}, subprocess: { resolveExecutable: async (command: string) => command }, credentials: {} }
   const ctx = { get: (key: string) => services[key], effect() {}, provide: (key: string, value: unknown) => { provided[key] = value } }
   const was = process.env.PATH
   if (path !== undefined) process.env.PATH = path
