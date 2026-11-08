@@ -18,3 +18,5 @@ without Xvfb or with `headless`.
 The booted profile is covered by [tests/agents.test.ts](../../../tests/README.md),
 and the real CLIs by the credential-gated `tests/real-agents.test.ts`
 (the website by `tests/real-web.test.ts`).
+
+- [acp.test.ts](acp.test.ts) — optional Rust ACP bridge account invocation, strict parser, permission refusal and fake WorkerPort/Artifact capture (no model credentials).
