@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'packages/acp-bridge/**'
+      - 'packages/worker-acp/**'
+      - 'packages/worker-execution/**'
       - 'packages/agents/src/agent.ts'
       - 'packages/agents/src/index.ts'
       - 'packages/agents/src/runtimes.ts'
