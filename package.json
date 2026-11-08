@@ -7,7 +7,7 @@
     "node": ">=24.9.0"
   },
   "scripts": {
-    "build": "tsc -p packages/artifacts/tsconfig.build.json && tsc -p packages/work/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && tsc -p packages/fakes/tsconfig.build.json && tsc -p packages/web-driver/tsconfig.build.json && tsc -p packages/agents/tsconfig.build.json && tsc -p packages/web-worker/tsconfig.build.json && tsc -p packages/verifiers/tsconfig.build.json && tsc -p packages/effects/tsconfig.build.json && tsc -p packages/app/tsconfig.build.json",
+    "build": "touch .building && tsc -p packages/artifacts/tsconfig.build.json && tsc -p packages/work/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && tsc -p packages/fakes/tsconfig.build.json && tsc -p packages/web-driver/tsconfig.build.json && tsc -p packages/agents/tsconfig.build.json && tsc -p packages/web-worker/tsconfig.build.json && tsc -p packages/verifiers/tsconfig.build.json && tsc -p packages/effects/tsconfig.build.json && tsc -p packages/app/tsconfig.build.json && rm -f .building",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test $(ls packages/*/tests/*.test.ts | grep -Ev '^packages/web-worker/tests/(chatgpt|chrome|remote)|/(driver|conformance)\\.test\\.ts$')",
     "test:web": "node --test --test-timeout=300000 packages/web-worker/tests/*.test.ts packages/web-driver/tests/driver.test.ts packages/web-driver/tests/conformance.test.ts tests/chatgpt-web.test.ts",

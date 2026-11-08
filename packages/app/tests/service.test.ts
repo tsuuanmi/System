@@ -58,23 +58,38 @@ test('only the default home gets the unit; --no-service and SYSTEM_NO_SERVICE=1 
   assert.equal(serviceMode({ ...base, home: '/home/tan/.dsh', platform: 'darwin' }), 'skip')
 })
 
-test('the unit restarts on exit 75, the status of a Host that stopped to upgrade', () => {
+test('the unit restarts on exit 75, the status of a Host that stopped to upgrade, and retries a failed start for minutes, not 100 ms', () => {
   const text = unitText({ node: '/n', entry: '/e', home: '/h', path: '/p' })
   assert.match(text, /^RestartForceExitStatus=75$/m)
+  assert.match(text, /^RestartSec=5$/m)
+  // StartLimit* belong to [Unit]: at most 10 starts in 5 minutes, not systemd's default of 5 in 10 s.
+  assert.match(text, /\[Unit\][^[]*^StartLimitIntervalSec=300$/m)
+  assert.match(text, /\[Unit\][^[]*^StartLimitBurst=10$/m)
   assert.equal(UPGRADE_EXIT, 75)
 })
 
-test('the supervisor runs the Host again after exit 75 and after nothing else', async () => {
+test('the supervisor runs the Host again after exit 75; a Host that fails to come back is tried again, with backoff, three times', async () => {
   const run = (codes: number[], stopped = () => false) => {
     const log: string[] = []
+    const waited: number[] = []
     let runs = 0
-    return supervise({ run: async () => codes[runs++]!, stopped, log: (line: string) => log.push(line) }).then((code: number) => ({ code, runs, log }))
+    return supervise({ run: async () => codes[runs++]!, stopped, log: (line: string) => log.push(line), wait: async (ms: number) => { waited.push(ms) } })
+      .then((code: number) => ({ code, runs, log, waited }))
   }
   assert.deepEqual((await run([75, 75, 0])).code, 0)
   assert.equal((await run([75, 75, 0])).runs, 3)
-  const failed = await run([75, 1, 0])
-  assert.deepEqual([failed.code, failed.runs], [1, 2])
-  assert.match(failed.log.join('\n'), /restarting: the Host stopped to upgrade/)
+  // The new code may be half built when the Host stops for it: its first starts can fail.
+  const recovered = await run([75, 1, 1, 0])
+  assert.deepEqual([recovered.code, recovered.runs, recovered.waited], [0, 4, [2000, 4000]])
+  assert.match(recovered.log.join('\n'), /restarting: the Host stopped to upgrade/)
+  assert.match(recovered.log.join('\n'), /the Host exited 1 after the upgrade; trying again in 2 s \(1 of 3\)/)
+  const failed = await run([75, 1, 1, 1, 1, 0])
+  assert.deepEqual([failed.code, failed.runs, failed.waited], [1, 5, [2000, 4000, 8000]])
+  assert.match(failed.log.at(-1)!, /gave up/)
+  // A Host that fails without an upgrade before it is not tried again.
+  assert.deepEqual(await run([1, 0]).then((r) => [r.code, r.runs]), [1, 1])
+  // A later upgrade starts the count again.
+  assert.deepEqual(await run([75, 1, 75, 1, 1, 0]).then((r) => [r.code, r.runs]), [0, 6])
   const clean = await run([0, 75])
   assert.deepEqual([clean.code, clean.runs], [0, 1])
   // A signal to the supervisor is a stop: a Host that exits 75 anyway is not restarted.

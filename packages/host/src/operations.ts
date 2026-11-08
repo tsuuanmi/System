@@ -190,6 +190,7 @@ export function operations(services: Services): Methods {
       handler: (host, p, caller) => host.cancel(p.workId, { reason: p.reason, caller, commandId: p.commandId }),
     },
     'work.show': {
+      read: true,
       agent: true,
       scope: ofWork('work.show'),
       summary: 'The Work record: events and state; while Worker attempts run, also `live`: per attempt its step, Worker, start, last activity, elapsed and quiet seconds, whether it is stalled, and the `progress` its Runtime last reported (turns, last tool, tokens, stage). `live` is an observation of the moment, never part of the record.',
@@ -201,12 +202,14 @@ export function operations(services: Services): Methods {
       },
     },
     'work.list': {
+      read: true,
       agent: true,
       summary: 'Every Work as `{ id, status, specId }`.',
       params: z.object({}).strict(),
       handler: (host, _p, caller) => host.list().filter((r) => caller.type !== 'orchestrator' || inScope(host, caller.goal, r.id)).map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
     },
     'work.replay': {
+      read: true,
       agent: true,
       scope: ofWork('work.replay'),
       summary: 'Fold the recorded events again: `{ state, matches }`. Runs nothing.',
@@ -214,6 +217,7 @@ export function operations(services: Services): Methods {
       handler: (host, p) => (known(host, p.workId), host.replay(p.workId)),
     },
     'work.report': {
+      read: true,
       agent: true,
       scope: ofWork('work.report'),
       summary: 'Duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also the Goal, its budget and its spend.',
@@ -227,6 +231,7 @@ export function operations(services: Services): Methods {
       },
     },
     'work.events': {
+      read: true,
       agent: true,
       scope: ofWork('work.events'),
       summary: 'The events with `seq` above `after` (all when omitted) and the current status: `{ events, status }`. Poll it to follow a Work.',
@@ -237,6 +242,7 @@ export function operations(services: Services): Methods {
       },
     },
     'work.watch': {
+      read: true,
       agent: true,
       scope: (host, p, caller) => watchScope(host, p, caller, 'work.watch'),
       summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. With `goal`, instead one for each new Work of the Goal, with `seq` 0, and the stall notices of its Works. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`.',
@@ -244,6 +250,7 @@ export function operations(services: Services): Methods {
       handler: (host, p, _caller, link) => watch(host, p, link, true),
     },
     'work.unwatch': {
+      read: true,
       agent: true,
       scope: (host, p, caller) => watchScope(host, p, caller, 'work.unwatch'),
       summary: 'Stop the notices of `work.watch` for a Work or a Goal on this connection.',
@@ -269,6 +276,7 @@ export function operations(services: Services): Methods {
       },
     },
     'goal.show': {
+      read: true,
       agent: true,
       summary: 'A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`.',
       params: z.object({ goal: artifactId }).strict(),
@@ -289,6 +297,7 @@ export function operations(services: Services): Methods {
       },
     },
     'decision.list': {
+      read: true,
       agent: true,
       summary: 'The decisions of a Goal and its chain (of every Goal without `goal`), oldest first: `[{ id, at, goal, question, options, choice, reason, restsOn, by, previous? }]`. An orchestrator lists its own Goal\'s.',
       params: z.object({ goal: artifactId.optional() }).strict(),
@@ -296,6 +305,7 @@ export function operations(services: Services): Methods {
       handler: (host, p) => services.decisions(p.goal ? host.goalChain(p.goal) : undefined),
     },
     'goal.brief': {
+      read: true,
       agent: true,
       summary: 'What a new Orchestrator session starts from, as text written from records only (no model call): the Goal and its budget left, its Works with status, current step and live progress, its decisions, and what waits (approvals, held, failed, stalled Works): `{ text }`. The same records give the same text.',
       params: z.object({ goal: artifactId }).strict(),
@@ -318,6 +328,7 @@ export function operations(services: Services): Methods {
       handler: (_host, p, caller) => services.putFile(Buffer.from(p.data, 'base64'), p.mediaType, p.classification, caller),
     },
     'artifact.show': {
+      read: true,
       agent: true,
       scope: ofArtifact('artifact.show'),
       summary: 'An Artifact\'s envelope and occurrences, or why it is not stored.',
@@ -325,6 +336,7 @@ export function operations(services: Services): Methods {
       handler: (_host, p) => services.artifact(p.id),
     },
     'artifact.cat': {
+      read: true,
       agent: true,
       scope: ofArtifact('artifact.cat'),
       summary: 'The bytes of a blob Artifact as `{ data }` in base64; refused when they do not fit a frame.',
@@ -336,6 +348,7 @@ export function operations(services: Services): Methods {
       },
     },
     'conversation.preview': {
+      read: true,
       agent: true,
       summary: 'What would be stored of a conversation, and what looks like a secret in it. Stores nothing.',
       params: z.object({ parts, asserted: assertedSchema.default({}) }).strict(),
@@ -354,6 +367,7 @@ export function operations(services: Services): Methods {
       },
     },
     'workers.list': {
+      read: true,
       agent: true,
       summary: 'The registered Workers, and each configured agent account with why it is or is not available.',
       params: z.object({}).strict(),
@@ -384,6 +398,7 @@ export function operations(services: Services): Methods {
       handler: (_host, p) => services.recheck(p.ref),
     },
     'credentials.status': {
+      read: true,
       agent: false,
       summary: 'Whether each name is configured, and from where: `{ name, configured, source? }` per name. Values never leave the Host.',
       params: z.object({ names: z.array(z.string().min(1)).min(1) }).strict(),

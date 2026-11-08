@@ -29,3 +29,20 @@ test('a home whose socket path is too long for a Unix socket is refused with the
   await assert.rejects(serveHost({ host, home, services: {} as Services, log: () => {} }), /too long for a Unix socket.*shorter DSH_HOME/)
   await host.close()
 })
+
+test('a Host whose process outlives its stop is made to exit with its status, naming what kept it alive', async () => {
+  const { exitWithin } = await import('../src/process.ts')
+  // Something left open after the stop, as a timer of a row or an idle connection may be.
+  const lingering = setInterval(() => {}, 1000)
+  const lines: string[] = []
+  try {
+    const exited = new Promise<number>((resolve) => {
+      const timer = exitWithin(75, { graceMs: 20, log: (line) => lines.push(line), exit: resolve })
+      assert.equal(timer.hasRef(), false, 'the backstop itself never keeps the process alive')
+    })
+    assert.equal(await exited, 75)
+    assert.match(lines.join('\n'), /still running 0\.02 s after it stopped; exiting 75; open: .*Timeout/)
+  } finally {
+    clearInterval(lingering)
+  }
+})

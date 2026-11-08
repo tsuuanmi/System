@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { NotRunning, type Client } from '../../host/lib/index.js'
+import { NotRunning, RpcError, UPGRADING, type Client } from '../../host/lib/index.js'
 import { remoteHost } from '../src/remote.ts'
 
 const client = (call: (method: string, params?: unknown) => Promise<unknown>): Client => ({ call: (method, params) => call(method, params), onNotice: () => {}, close: () => {} })
@@ -44,4 +44,17 @@ test('a Workflow file is sent with every Workflow file it uses, read from beside
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('a read during a Host\'s upgrade wait goes over a read-only connection; a change still says to retry', async () => {
+  const opened: (boolean | undefined)[] = []
+  const open = async (_caller: unknown, options?: { readOnly?: boolean }): Promise<Client> => {
+    opened.push(options?.readOnly)
+    if (!options?.readOnly) throw new RpcError(UPGRADING, 'the Host runs code a and is upgrading to the code on disk, b: retry in a moment')
+    return client(async (method) => (method === 'work.list' ? [{ id: 'work:x', status: 'running', specId: 's' }] : (() => { throw new RpcError(UPGRADING, `${method}: this Host is upgrading to b; retry after`) })()))
+  }
+  const host = remoteHost({ open, err: () => {} })
+  assert.deepEqual(await host.work().list(), [{ id: 'work:x', status: 'running', specId: 's' }])
+  assert.deepEqual(opened, [undefined, true])
+  await assert.rejects(host.work().cancel('work:x', 'r'), /upgrading/)
 })

@@ -1,2 +1,4 @@
 node_modules/
 packages/*/lib/
+# Kept by `corepack pnpm build` while it runs (and left when it fails): the Host does not upgrade to a tree being built.
+.building

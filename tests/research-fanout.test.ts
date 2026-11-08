@@ -115,7 +115,9 @@ test('a question is planned, investigated in two Lanes, checked, synthesised and
 test('with each Lane capability on a different Account, the Lanes are dispatched to those two Accounts', { timeout: 180_000 }, async () => {
   const lane = (n: 'a' | 'b') => `research.lane-${n}`
   const base = claude.capabilities.filter((c) => !c.startsWith('research.lane-'))
+  // The patch merges into the bundle's accounts by ref (#45): the bundle's Claude keeps its slot first, without the Lanes.
   patch([
+    { ...claude, capabilities: base },
     { ...claude, ref: 'claude-code/one', capabilities: [...base, lane('a')] },
     { ...claude, ref: 'claude-code/two', capabilities: [...base, lane('b')] },
   ])

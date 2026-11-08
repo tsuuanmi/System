@@ -46,6 +46,8 @@ function word(text) {
 export function unitText({ node, entry, home, path }) {
   return `[Unit]
 Description=System Host: the one process that owns this home's Work
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 ExecStart=${word(node)} ${word(entry)} host
@@ -53,22 +55,43 @@ Environment=${word(`DSH_HOME=${home}`)}
 Environment=${word(`PATH=${path}`)}
 Restart=on-failure
 RestartForceExitStatus=75
+RestartSec=5
 
 [Install]
 WantedBy=default.target
 `
 }
 
+/** How many times a Host that fails after an upgrade is started again, and the first wait (doubled each time). */
+export const UPGRADE_RETRIES = 3
+const RETRY_MS = 2000
+
 /**
- * `system host --supervise`: run the Host with `run` (it resolves the exit status), and again only after
- * `UPGRADE_EXIT`. Any other status, a crash included, ends the supervisor with it, as does a stop asked of the
- * supervisor itself (`stopped()`).
+ * `system host --supervise`: run the Host with `run` (it resolves the exit status), and again after
+ * `UPGRADE_EXIT`. The code it then starts may still be half built, so a failure that follows an upgrade is
+ * tried again `UPGRADE_RETRIES` times, waiting 2, 4 and 8 s; a later upgrade starts the count again. Any
+ * other status ends the supervisor with it, as does a stop asked of the supervisor itself (`stopped()`).
  */
-export async function supervise({ run, stopped, log }) {
+export async function supervise({ run, stopped, log, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
+  let upgraded = false
+  let tries = 0
   for (;;) {
     const code = await run()
-    if (code !== UPGRADE_EXIT || stopped()) return code
-    log('restarting: the Host stopped to upgrade to the code on disk')
+    if (stopped()) return code
+    if (code === UPGRADE_EXIT) {
+      log('restarting: the Host stopped to upgrade to the code on disk')
+      upgraded = true
+      tries = 0
+      continue
+    }
+    if (code === 0 || !upgraded) return code
+    if (tries === UPGRADE_RETRIES) {
+      log(`the Host exited ${code} after the upgrade ${UPGRADE_RETRIES + 1} times; gave up`)
+      return code
+    }
+    const ms = RETRY_MS * 2 ** tries++
+    log(`the Host exited ${code} after the upgrade; trying again in ${ms / 1000} s (${tries} of ${UPGRADE_RETRIES})`)
+    await wait(ms)
   }
 }
 

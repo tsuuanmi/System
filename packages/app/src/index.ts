@@ -20,7 +20,7 @@ import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.
 import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, connect } from '../../host/lib/index.js'
-import { serveHost, socketPath } from '../../host/lib/process.js'
+import { exitWithin, serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -177,7 +177,9 @@ async function runHost(ctx: Context): Promise<number> {
     throw error
   })
   if (stopAsked) void serving.stop()
-  return serving.exited
+  const status = await serving.exited
+  exitWithin(status, { log: (line) => { process.stderr.write(`system host: ${line}\n`) } })
+  return status
 }
 
 export function apply(ctx: Context): void {

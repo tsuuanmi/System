@@ -40,6 +40,12 @@ every six hours, with a random delay and a catch-up after downtime. They are not
 part of the profile and `system init` does not install them; the
 [runbook](../../docs/operations/runbook.md#the-web-canary) says how.
 
+## Changing a row's config
+
+An entry of the profile's own patch with `config` merges into this bundle's
+config of that row instead of replacing it, accounts by `ref`
+([runbook](../../docs/operations/runbook.md#changing-the-profiles-config)).
+
 ## Disabling a row
 
 Rows are disabled in the profile's own patch, `$DSH_HOME/profiles/system/cordis.patch.yml`,
