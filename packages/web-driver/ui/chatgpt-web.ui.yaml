@@ -266,6 +266,11 @@ elements:
     candidates:
       - { role: menuitem, name: { en: '^Power$' } }
       - { css: '[data-reasoning-slider]' }
+  model.selected:
+    description: The model radio that is checked (view B); read, never clicked (WW8a).
+    scope: model.menu
+    candidates:
+      - { css: '[role="menuitemradio"][aria-checked="true"]' }
   model.power-status:
     description: 'Reads "<level>, <n> of <total>."'
     scope: model.menu
@@ -446,6 +451,14 @@ actions:
     sideEffect: reversible
     heal: deterministic
     timeouts: { resolveMs: 5000, verifyMs: 5000 }
+  model.close:
+    description: Closes the model menu again after a read (WW8a). The menu is verified gone, so nothing is typed under it.
+    do: press
+    key: Escape
+    target: composer.model
+    verify: { hidden: model.menu }
+    sideEffect: reversible
+    timeouts: { resolveMs: 3000, verifyMs: 3000 }
   model.show-models:
     do: click
     target: model.view-toggle

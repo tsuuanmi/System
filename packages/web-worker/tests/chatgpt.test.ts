@@ -250,7 +250,7 @@ test('a prompt with inputs is a header and a body: the body is accepted as a chi
     assert.ok(sent.indexOf('Complete this one step') < sent.indexOf('note 0:'), 'the header comes before the body')
     const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
     const evidence = JSON.parse(line.slice(line.indexOf('{')))
-    assert.deepEqual(evidence.stages.map((stage: { stage: string }) => stage.stage), ['launch', 'open', 'auth', 'mode', 'insert', 'attach', 'send', 'wait', 'read', 'close'])
+    assert.deepEqual(evidence.stages.map((stage: { stage: string }) => stage.stage), ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe'] : []), 'insert', 'attach', 'send', 'wait', 'read', 'close'])
     assert.deepEqual(evidence.attach, { outcome, chips })
   }
 })
@@ -658,8 +658,28 @@ test('the outside limit is a setting: a short remark outside the block is fine, 
   assert.match(tight.result.reason!, /continues outside its output blocks \(14 characters\)/)
 })
 
+// WW8a: the model and Power the attempt ran with are recorded, never set; the legacy driver records none.
+test('the evidence records the model and Power the page showed, and a menu left open is closed before the insert', { skip: skip || !generic, timeout: 120_000 }, async () => {
+  for (const menuOpen of [false, true]) {
+    const { artifacts, result, fake } = await run({ menuOpen }, ['report'])
+    assert.equal(result.status, 'succeeded', result.reason)
+    const evidence = await evidenceOf(artifacts, result)
+    assert.deepEqual([evidence.model, evidence.power], ['Latest', 'Instant'], `menuOpen ${menuOpen}`)
+    const observe = evidence.stages.find((stage: { stage: string }) => stage.stage === 'observe')
+    assert.deepEqual([observe.status, typeof observe.elapsedMs], ['ok', 'number'])
+    assert.deepEqual([fake.sent[0]!.model, fake.sent[0]!.power], ['Latest', 'Instant'], 'nothing was selected')
+  }
+})
+
+test('a page with no model control records null, and the attempt goes on', { skip: skip || !generic, timeout: 120_000 }, async () => {
+  const { artifacts, result } = await run({ modelPicker: false }, ['report'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  const evidence = await evidenceOf(artifacts, result)
+  assert.deepEqual([evidence.model, evidence.power], [null, null])
+})
+
 // The stage chain of one attempt (evidence.ts): written as it happens, kept as partial output, and in the log on success.
-const STAGES = ['launch', 'open', 'auth', 'mode', 'insert', 'send', 'wait', 'read', 'close']
+const STAGES = ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe'] : []), 'insert', 'send', 'wait', 'read', 'close']
 const evidenceOf = async (artifacts: Artifacts, result: WorkerResult) => JSON.parse(await text(artifacts, result.partial!.evidence!))
 
 test('a launch that never returns fails at its own clock, and the evidence names the launch stage', { timeout: 30_000 }, async () => {

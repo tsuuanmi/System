@@ -6,7 +6,7 @@
 //
 //   tools/web-canary                       run it on every chatgpt-web Account, one at a time
 //   tools/web-canary --task                store the canary Task and print its Artifact ID
-//   tools/web-canary --report [--since T]  each run classified, the Worker step rate, the launch and wait times per Account and the WW gate (exit 3: not holding)
+//   tools/web-canary --report [--since T]  each run classified, the Worker step rate, the launch and wait times and the model and Power seen per Account and the WW gate (exit 3: not holding)
 import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -159,16 +159,23 @@ function stageTimes(runs) {
     const read = sys(['artifact', 'cat', run.evidence])
     if (read.status !== 0) continue
     const evidence = JSON.parse(read.stdout)
-    const byStage = times.get(run.account) ?? { launch: [], wait: [] }
+    const byStage = times.get(run.account) ?? { launch: [], wait: [], model: new Map(), power: new Map() }
+    // WW8a: what the page showed, never set; an attempt that read none (older evidence, an unreadable control) counts as "unread".
+    for (const key of ['model', 'power']) byStage[key].set(evidence[key] ?? 'unread', (byStage[key].get(evidence[key] ?? 'unread') ?? 0) + 1)
     for (const stage of evidence.stages ?? []) if (stage.stage in byStage && typeof stage.elapsedMs === 'number') byStage[stage.stage].push(stage.elapsedMs / 1000)
     times.set(run.account, byStage)
   }
   process.stdout.write('stage times (s, median / p95 of runs with evidence)\n')
   for (const name of [...new Set([...times.keys(), ...without.keys()])].sort()) {
-    const byStage = times.get(name) ?? { launch: [], wait: [] }
+    const byStage = times.get(name) ?? { launch: [], wait: [], model: new Map(), power: new Map() }
     const cell = (list) => (list.length ? `${quantile([...list].sort((a, b) => a - b), 0.5).toFixed(1)} / ${quantile([...list].sort((a, b) => a - b), 0.95).toFixed(1)} (n ${list.length})` : '-')
     const missing = without.get(name) ? `  (${without.get(name)} without evidence)` : ''
     process.stdout.write(`  ${name.padEnd(18)} launch ${cell(byStage.launch)}  wait ${cell(byStage.wait)}${missing}\n`)
+  }
+  process.stdout.write('model and Power seen (runs with evidence)\n')
+  for (const name of [...times.keys()].sort()) {
+    const counts = (map) => [...map].sort(([a], [b]) => (a < b ? -1 : 1)).map(([value, n]) => `${value} ${n}`).join(', ')
+    process.stdout.write(`  ${name.padEnd(18)} model ${counts(times.get(name).model)}  power ${counts(times.get(name).power)}\n`)
   }
 }
 

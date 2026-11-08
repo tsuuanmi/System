@@ -186,7 +186,7 @@ process in Chrome's `SingletonLock` lives.
 driver, as above. `generic` runs the same attempt through the generic Procedures
 ([web-driver](../web-driver/README.md#generic-procedures-ww2-ii-new-here)) bound to the ChatGPT map:
 `checkAuth`, `openChat` (a temporary chat when `temporaryChat`), `ensureMode`,
-`insertInstructions`, `attachText` (the body, when the prompt has two parts), `send`,
+`observeModel` (the `observe` stage), `insertInstructions`, `attachText` (the body, when the prompt has two parts), `send`,
 `waitForAnswer`, `readAnswer`, so the two can be compared on the real site. Anything but
 `legacy` or `generic` makes the account `unavailable`. Everything around the page logic is
 the same: launch, profile preparation, the one-tab invariant, the stages and their names
@@ -200,7 +200,12 @@ and then the rendered text, leaked tokens, the `maxOutsideChars` guard, the
 - There is no Markdown: the Procedures never press Copy, so the text is the page's rendered
   text, an output comes from a rendered block that carries its name or from fences in that
   text, `response.md` is that text, and `links.json` holds the links' targets.
-- No model is selected or read back (the `conversation@1` has none), and the wait has no
+- No model is selected (the `conversation@1` has none). The `observe` stage, after `mode`
+  and before `insert`, only reads the model and Power the page shows, and the evidence records
+  them as `model` and `power` (WW8a; a string, or null when unreadable or the map binds no such
+  control; never a failure). It opens the model menu, reads, and closes it with Escape, verified
+  closed (a menu already open is read as it is and closed too); it never clicks a model or moves
+  the slider. `tools/web-canary --report` counts the distinct values per Account. The wait has no
   stall clock, only its deadline (`timeouts.answer`).
 - `outsideChars` counts the page text outside the label and code of the blocks that fill
   outputs.
