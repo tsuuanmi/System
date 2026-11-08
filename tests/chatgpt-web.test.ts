@@ -1,5 +1,5 @@
 /**
- * The chatgpt-web Runtime through the real Host and `bin/system`, against the
+ * The web Runtime (Site chatgpt) through the real Host and `bin/system`, against the
  * local fake ChatGPT site of packages/web-driver/tests/fake-chatgpt.ts: login by
  * cookie file, then a Work whose answer fills the output slot and is stored as
  * a conversation. No network and no account. A headed Chrome that cannot start fails it (test-support/headed.ts).
@@ -38,14 +38,16 @@ before(async () => {
 - id: agents
   config:
     accounts:
-      - ref: chatgpt-web/default
-        runtime: chatgpt-web
+      - ref: web/chatgpt/default
+        runtime: web
+        site: chatgpt
         capabilities: [research]
         url: ${signedIn}/
         executablePath: ${CHROME}
         timeouts: {load: 20, answer: 30, stable: 0.5}
-      - ref: chatgpt-web/anon
-        runtime: chatgpt-web
+      - ref: web/chatgpt/anon
+        runtime: web
+        site: chatgpt
         capabilities: [web-search]
         url: ${signedOut}/
         executablePath: ${CHROME}
@@ -68,19 +70,19 @@ const cookies = (dir: string) => {
 
 test('login imports a cookie file, reports the signed-in state and prints no cookie value', { skip, timeout: 120_000 }, () => {
   const dir = mkdtempSync(join(home, 'cookies-'))
-  const ran = system(['workers', 'login', 'chatgpt-web/default', '--cookies', cookies(dir)])
+  const ran = system(['workers', 'login', 'web/chatgpt/default', '--cookies', cookies(dir)])
   assert.equal(ran.status, 0, ran.stderr + ran.stdout)
   assert.match(ran.stdout, /imported 1 cookie\(s\)/)
-  assert.match(ran.stdout, /chatgpt-web\/default: signed in/)
+  assert.match(ran.stdout, /web\/chatgpt\/default: signed in/)
   assert.doesNotMatch(ran.stdout + ran.stderr, /SECRET-COOKIE-VALUE/)
   assert.ok(existsSync(join(dir, 'cookies.json')), 'the operator\'s file is left alone')
 })
 
 test('login says so when the page still shows a sign-in wall, and refuses a manual sign-in without a display', { skip, timeout: 120_000 }, () => {
-  const walled = system(['workers', 'login', 'chatgpt-web/anon', '--cookies', cookies(mkdtempSync(join(home, 'cookies-')))])
+  const walled = system(['workers', 'login', 'web/chatgpt/anon', '--cookies', cookies(mkdtempSync(join(home, 'cookies-')))])
   assert.equal(walled.status, 1)
   assert.match(walled.stdout, /not signed in: .*sign-in wall/)
-  const manual = cli.run(['workers', 'login', 'chatgpt-web/default'], { env: { DISPLAY: '' } })
+  const manual = cli.run(['workers', 'login', 'web/chatgpt/default'], { env: { DISPLAY: '' } })
   assert.equal(manual.status, 1)
   assert.match(manual.stderr, /no display.*--cookies/)
   assert.equal(system(['workers', 'login', 'codex/default']).status, 1)
@@ -92,27 +94,27 @@ test('a Work runs on the account: the answer fills the slot and the exchange is 
   assert.equal(ran.status, 0, ran.stderr + ran.stdout)
   const record = JSON.parse(system(['work', 'show', ran.stdout.trim()]).stdout) as { state: { status: string; steps: { task: { outputs: { result: string } } } }; events: { type: string; worker?: { ref: string } }[] }
   assert.equal(record.state.status, 'succeeded')
-  assert.equal(record.events.find((e) => e.type === 'observed')?.worker?.ref, 'chatgpt-web/default')
+  assert.equal(record.events.find((e) => e.type === 'observed')?.worker?.ref, 'web/chatgpt/default')
   assert.equal(system(['artifact', 'cat', record.state.steps.task.outputs.result]).stdout, 'content of result\nsecond line')
   const workers = system(['workers'])
-  assert.match(workers.stdout, /chatgpt-web\/default\s+available/)
+  assert.match(workers.stdout, /web\/chatgpt\/default\s+available/)
 })
 
 test('recheck passes on the signed-in account; on the walled one it fails and `system workers` shows the quarantine and what to do', { skip, timeout: 120_000 }, () => {
-  const passed = system(['workers', 'recheck', 'chatgpt-web/default'])
+  const passed = system(['workers', 'recheck', 'web/chatgpt/default'])
   assert.equal(passed.status, 0, passed.stderr + passed.stdout)
-  assert.match(passed.stdout, /chatgpt-web\/default: ready: .*nothing was sent/)
-  const failed = system(['workers', 'recheck', 'chatgpt-web/anon'])
+  assert.match(passed.stdout, /web\/chatgpt\/default: ready: .*nothing was sent/)
+  const failed = system(['workers', 'recheck', 'web/chatgpt/anon'])
   assert.equal(failed.status, 1)
-  assert.match(failed.stdout, /chatgpt-web\/anon: not ready \(needs-sign-in\)/)
-  assert.match(system(['workers']).stdout, /chatgpt-web\/anon\s+unavailable .*- needs sign-in since \d\d:\d\d: run `system workers login chatgpt-web\/anon --remote`, then `system workers recheck chatgpt-web\/anon`/)
-  assert.match(system(['workers']).stdout, /chatgpt-web\/default\s+available/)
+  assert.match(failed.stdout, /web\/chatgpt\/anon: not ready \(needs-sign-in\)/)
+  assert.match(system(['workers']).stdout, /web\/chatgpt\/anon\s+unavailable .*- needs sign-in since \d\d:\d\d: run `system workers login web\/chatgpt\/anon --remote`, then `system workers recheck web\/chatgpt\/anon`/)
+  assert.match(system(['workers']).stdout, /web\/chatgpt\/default\s+available/)
 })
 
 // The remote login needs a VNC server (x11vnc or x0vncserver) as well.
 const skipRemote = skip || (findVnc() ? false : 'neither x11vnc nor x0vncserver is on PATH (docs/operations/runbook.md)')
 test('login --remote prints the tunnel and the address, serves noVNC behind the token, and Save reports the state', { skip: skipRemote, timeout: 120_000 }, async () => {
-  const running = cli.runAsync(['workers', 'login', 'chatgpt-web/default', '--remote'])
+  const running = cli.runAsync(['workers', 'login', 'web/chatgpt/default', '--remote'])
   try {
     let url: string | undefined
     for (const end = Date.now() + 60_000; !url && Date.now() < end;) {
@@ -127,7 +129,7 @@ test('login --remote prints the tunnel and the address, serves noVNC behind the 
     assert.equal((await fetch(`${url}save`, { method: 'POST', headers: { origin: new URL(url).origin } })).status, 200)
     const ended = await running.done
     assert.equal(ended.status, 0, ended.stderr + ended.stdout)
-    assert.match(ended.stdout, /chatgpt-web\/default: signed in/)
+    assert.match(ended.stdout, /web\/chatgpt\/default: signed in/)
   } finally {
     running.child.kill('SIGKILL')
   }

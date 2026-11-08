@@ -1,5 +1,5 @@
 /**
- * The `web-worker` row: the `chatgpt-web` Runtime as its own, optional row (WW2a). It registers the `chatgpt-web`
+ * The `web-worker` row: the `web` Runtime as its own, optional row (WW2a). It registers the `web`
  * accounts the `agents` row hands it as Workers and owns their sign-in (`ctx.webWorker`: cookie import, a window,
  * the remote viewer). With the row off nothing of this package is loaded and those accounts are unavailable.
  */
@@ -10,11 +10,12 @@ import { shippedMap, shippedMapProblem } from '@system/web-driver'
 import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { systemPath, type Capabilities } from '@system/work'
-import { offeredTiers, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
+import { SITES, offeredTiers, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
 import { webLogin } from './chatgpt-login.ts'
 import { discoverChrome } from './chrome.ts'
 import { XVFB_MISSING, findXvfb } from './display.ts'
 import { AccountHealth, HEALTH_DEFAULTS, unavailableReason, type HealthSettings } from './health.ts'
+import { moveAccountState, webStateDir } from './migrate.ts'
 import { recheck } from './recheck.ts'
 import { startRemoteLogin, type RemoteSession } from './remote-login.ts'
 
@@ -23,6 +24,7 @@ export * from './chatgpt-login.ts'
 export * from './remote-login.ts'
 export * from './display.ts'
 export * from './health.ts'
+export * from './migrate.ts'
 export * from './recheck.ts'
 
 export const name = 'system-web-worker'
@@ -45,14 +47,19 @@ export function apply(ctx: Context, config: Config = {}): void {
   const register = async (account: WebRegistration) => {
     // A map that did not load is the same for every account: they are unavailable with that one reason (WW6f).
     const mapProblem = shippedMapProblem()
-    if (mapProblem) throw new Error(`the ChatGPT UI map did not load: ${mapProblem}`)
+    if (mapProblem) throw new Error(`the UI map did not load: ${mapProblem}`)
     if ('procedures' in account) throw new Error('procedures was removed: the generic Procedures are the only path; delete the line')
     if ('headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
+    if (!(account.site in SITES)) throw new Error(`unknown site ${account.site}; the shipped sites are: ${Object.keys(SITES).join(', ')}`)
+    // Per-Account state moves once from where the Runtime was `chatgpt-web`; only the default place does (a configured profileDir is the operator's).
+    const name = account.ref.split('/')[2] ?? 'default'
+    const system = systemPath(ctx)
+    if (!account.profileDir) moveAccountState(system, account.site, name, log)
     if (!findXvfb()) throw new Error(XVFB_MISSING)
     const browsers = systemPath(ctx, 'browsers')
     const command = discoverChrome(account.executablePath, { managedDir: browsers }).path
-    const profile = account.profileDir ?? `chatgpt-web/${account.ref.split('/')[1] ?? 'default'}`
-    const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile))
+    const profile = account.profileDir ?? webStateDir(system, account.site, name)
+    const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile), account.site)
     const web: WebConfig = {
       ...defaults, ...(account.executablePath ? { executablePath: account.executablePath } : {}), managedDir: browsers, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,
       url: account.url ?? defaults.url, timeouts: { ...defaults.timeouts, ...account.timeouts }, maxOutsideChars: account.maxOutsideChars ?? defaults.maxOutsideChars,
@@ -111,7 +118,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const found = webs.get(ref)
     if (!found && failed.has(ref)) throw new Error(`${ref}: ${failed.get(ref)}`)
-    if (!found) throw new Error(`${ref} is not a configured chatgpt-web account (system workers)`)
+    if (!found) throw new Error(`${ref} is not a configured web account (system workers)`)
     return found
   }
   const login = async (ref: string, cookies: string | undefined) => webLogin((await account(ref)).web, { cookies, display: process.env.DISPLAY })

@@ -124,7 +124,7 @@ test('the code version also covers the shipped UI maps: changing a map is an upg
   writeFileSync(join(ui, 'site.ui.yaml'), 'schema: ui-map@1.8\n')
   assert.notEqual(codeVersion(dirs, [], ui), before)
   const shipped = new URL('../../web-driver/ui', import.meta.url).pathname
-  assert.match(readFileSync(join(shipped, 'chatgpt-web.ui.yaml'), 'utf8'), /^schema: ui-map@/m, 'the default directory holds the shipped map')
+  assert.match(readFileSync(join(shipped, 'chatgpt.ui.yaml'), 'utf8'), /^schema: ui-map@/m, 'the default directory holds the shipped map')
 })
 
 test('a Host started, then a built file changed, refuses a client built from the new code and names the fix', async () => {

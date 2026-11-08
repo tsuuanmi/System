@@ -10,7 +10,7 @@ back, and what was checked.
 
 **Runtime**:
 An agent program that System runs to do a step, such as Claude Code or
-Codex.
+Codex, or the `web` Runtime, which drives a signed-in Site in a browser.
 _Avoid_: agent, engine, tool
 
 **Account**:

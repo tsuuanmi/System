@@ -1,12 +1,12 @@
 /**
- * The seam to the web Runtime (WW2a). `chatgpt-web` accounts are configured in the `agents` row but served by the
+ * The seam to the web Runtime (WW2a). `web` accounts are configured in the `agents` row but served by the
  * optional `web-worker` row (`@system/web-worker`), which provides this service; with the row off the accounts are
  * reported unavailable. Only types and one message live here: nothing of the browser is loaded.
  */
 
-/** The `chatgpt-web` settings of an account entry; the web-worker row validates them and fills the defaults. */
+/** The `web` settings of an account entry; the web-worker row validates them and fills the defaults. */
 export interface WebAccountSettings {
-  /** The Chrome profile (the signed-in session), relative to $DSH_HOME/system unless absolute; default `chatgpt-web/<name>`. */
+  /** The Chrome profile (the signed-in session), relative to $DSH_HOME/system unless absolute; default `web/<site>/<name>`. */
   profileDir?: string
   /** Open each attempt in a temporary chat (default true). */
   temporaryChat?: boolean
@@ -27,6 +27,8 @@ export interface WebAccountSettings {
 /** An account entry as the `agents` row hands it over: its offered capabilities (tiers included) and its limits resolved. */
 export interface WebRegistration extends WebAccountSettings {
   ref: string
+  /** The Site, as the entry names it; the web-worker row refuses one that does not ship. */
+  site: string
   capabilities: string[]
   attemptTimeoutMinutes?: number
   maxConcurrentAttempts?: number
@@ -56,7 +58,7 @@ export interface RemoteView {
 
 /** `ctx.webWorker`, provided by the `web-worker` row. */
 export interface WebWorkerService {
-  /** Check a `chatgpt-web` account and register it as a Worker; rejects with the reason it is unavailable. `capabilities` are those it offers (the entry's, and the tiers its Site map binds); the registration ends with `dispose`. */
+  /** Check a `web` account and register it as a Worker; rejects with the reason it is unavailable. `capabilities` are those it offers (the entry's, and the tiers its Site map binds); the registration ends with `dispose`. */
   register(account: WebRegistration): Promise<{ command: string; version: () => Promise<string>; capabilities?: string[]; dispose: () => void; unavailable: () => string | undefined }>
   /** Announce that the account's registration is in progress and ends with `done`: an operation on it waits, bounded, for it, and a rejection is its refusal reason. */
   expect(ref: string, done: Promise<unknown>): void
@@ -70,5 +72,5 @@ export interface WebWorkerService {
   recheck(ref: string): Promise<RecheckReport>
 }
 
-/** The reason of a `chatgpt-web` account, and of a login, when the row is off. */
+/** The reason of a `web` account, and of a login, when the row is off. */
 export const WEB_WORKER_DISABLED = 'the web-worker row is disabled'

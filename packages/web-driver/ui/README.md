@@ -1,6 +1,6 @@
 # The ChatGPT UI map
 
-[chatgpt-web.ui.yaml](chatgpt-web.ui.yaml) is System 1's map of chatgpt.com
+[chatgpt.ui.yaml](chatgpt.ui.yaml) is System 1's map of chatgpt.com
 (`ui-map@1.7`, last checked against the live site by System 1 on 2026-10-11):
 elements with ordered candidates, actions with postconditions, states,
 passive network signals and error rules. A site change is a change here. `answer.site-error` is the site's own error inside the newest answer (WW6a), polled during the wait.

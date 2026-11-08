@@ -1,5 +1,5 @@
 /**
- * The per-Account circuit breaker of the `chatgpt-web` Runtime (WW6d, PROP-0005): a durable state in the Account's directory
+ * The per-Account circuit breaker of the `web` Runtime (WW6d, PROP-0005): a durable state in the Account's directory
  * (`state.json`), moved by the outcome of each attempt. A sign-in wall or a challenge quarantines the Account at once and only
  * a recheck (recheck.ts) leads out; a site error or a suspected rate limit cools it down for a while and a success clears
  * that. A failure the Host explains (Chrome did not start, a page timeout under load, anything before the browser reached the

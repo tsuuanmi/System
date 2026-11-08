@@ -118,7 +118,7 @@ describe('ui-map@1.7 kinds for the Procedures', () => {
   })
 
   it('the shipped maps and the hostile Site bind every Procedure', () => {
-    for (const file of ['chatgpt-web.ui.yaml', 'fake-other.ui.yaml']) assert.deepEqual(bindingProblems(loadUiMap(read(file))), [], file)
+    for (const file of ['chatgpt.ui.yaml', 'fake-other.ui.yaml']) assert.deepEqual(bindingProblems(loadUiMap(read(file))), [], file)
   })
 })
 
@@ -126,7 +126,7 @@ describe('ui-map@1.7 kinds for the Procedures', () => {
 // (work:7fb04a70, work:8d9e3c45); both forms are ChatGPT's map data, not code.
 describe('the shipped ChatGPT map', () => {
   it('lists both forms of the control token ChatGPT leaks', () => {
-    const map = loadUiMap(readFileSync(new URL('../ui/chatgpt-web.ui.yaml', import.meta.url), 'utf8'))
+    const map = loadUiMap(readFileSync(new URL('../ui/chatgpt.ui.yaml', import.meta.url), 'utf8'))
     assert.deepEqual(map.answer.leakedTokens, ['<escape>', '</escape>'])
   })
 })
@@ -134,7 +134,7 @@ describe('the shipped ChatGPT map', () => {
 describe('a shipped map is read once (WW6f)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ui-map-'))
   after(() => rmSync(dir, { recursive: true, force: true }))
-  const copy = (name: string) => { const file = join(dir, name); writeFileSync(file, read('chatgpt-web.ui.yaml')); return pathToFileURL(file) }
+  const copy = (name: string) => { const file = join(dir, name); writeFileSync(file, read('chatgpt.ui.yaml')); return pathToFileURL(file) }
 
   it('a map file changed on disk after it was loaded does not change what a driver gets', () => {
     const url = copy('changed.ui.yaml')
@@ -146,7 +146,7 @@ describe('a shipped map is read once (WW6f)', () => {
 
   it('an invalid map gives one clear reason, the first schema error', () => {
     const url = copy('invalid.ui.yaml')
-    writeFileSync(url, read('chatgpt-web.ui.yaml').replace('ui-map@1.7', 'ui-map@1.7\nstray: 1\nstray2: 2'))
+    writeFileSync(url, read('chatgpt.ui.yaml').replace('ui-map@1.7', 'ui-map@1.7\nstray: 1\nstray2: 2'))
     const problem = shippedMapProblem(url)!
     assert.match(problem, /^ui-map@1\.0: data must NOT have additional properties/)
     assert.doesNotMatch(problem, /\n/)

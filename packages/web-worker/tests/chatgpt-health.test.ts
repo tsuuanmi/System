@@ -36,8 +36,8 @@ function account(fake: FakeChatGpt, extra: Partial<WebConfig> = {}) {
   const dir = join(root, `account-${count++}`)
   const web: WebConfig = { ...webDefaults(dir), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, ...extra }
   const notices: string[] = []
-  const health = new AccountHealth(dir, 'chatgpt-web/second', { log: (line) => notices.push(line) })
-  const acc: WebAccount = { ref: 'chatgpt-web/second', capabilities: ['research'], command: CHROME, version: async () => 'fake', web, health }
+  const health = new AccountHealth(dir, 'web/chatgpt/second', { log: (line) => notices.push(line) })
+  const acc: WebAccount = { ref: 'web/chatgpt/second', capabilities: ['research'], command: CHROME, version: async () => 'fake', web, health }
   return { web, health, notices, acc, dir }
 }
 const attempt = async (acc: WebAccount, launcher?: Parameters<typeof webWorker>[3]) => {

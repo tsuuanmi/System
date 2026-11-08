@@ -1,5 +1,5 @@
 /**
- * The evidence record of one `chatgpt-web` attempt (WW1): a small JSON file made before Chrome
+ * The evidence record of one `web` attempt (WW1): a small JSON file made before Chrome
  * launches and rewritten, atomically, at every stage start and end, so a failed or killed attempt
  * still shows which stage it reached. The Runtime stores it as the attempt's partial output (and
  * in its log), where System's records keep it. It holds counts, times and versions: no cookie,

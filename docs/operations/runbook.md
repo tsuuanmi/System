@@ -156,8 +156,9 @@ merge patch does. So one account is changed, added or removed alone:
     accounts:
       - ref: codex/default                # change: only what is named
         capabilities: [code-write, brainstorm.idea-b, research]
-      - ref: chatgpt-web/second           # add
-        runtime: chatgpt-web
+      - ref: web/chatgpt/second           # add
+        runtime: web
+        site: chatgpt
         capabilities: [research]
       - ref: claude-code/default          # remove
         $patch: delete
@@ -184,7 +185,7 @@ restart the Host:
         maxConcurrentAttempts: 2  # this account only
 ```
 
-A chatgpt-web account is one Chrome profile and always runs one attempt at a
+A web account is one Chrome profile and always runs one attempt at a
 time: the row-wide value does not apply to it, and an own value other than 1
 makes it unavailable.
 
@@ -199,7 +200,7 @@ has nothing of its own running, so a held slot clears after `system work run`
 once the process is gone. If it never does, a process is still alive: find it
 with `pgrep -fa claude` or `pgrep -fa codex`.
 
-## The chatgpt-web account
+## The web account
 
 A Worker that runs a step in the operator's signed-in ChatGPT web session
 ([PROP-0005](../proposals/PROP-0005-chatgpt-website-worker.md); options in the
@@ -215,10 +216,23 @@ the bundle's accounts, see above):
 - id: agents
   config:
     accounts:
-      - ref: chatgpt-web/default
-        runtime: chatgpt-web
+      - ref: web/chatgpt/default
+        runtime: web
+        site: chatgpt
         capabilities: [research, web-search]
 ```
+
+The ref is `web/<site>/<name>` with `<site>` equal to the entry's `site`, which picks the shipped UI map and the Site's
+defaults (an unknown site is refused with the list of shipped sites: today `chatgpt`). An entry that still says
+`runtime: chatgpt-web` is `unavailable` with "the chatgpt-web runtime was renamed: use runtime: web, site: chatgpt, ref
+web/chatgpt/<name>"; there is no alias.
+
+**Moving from `chatgpt-web/<name>`.** The Account's state (Chrome profile, `state.json`, attempts) lives in
+`$DSH_HOME/system/web/<site>/<name>`, where it was `$DSH_HOME/system/chatgpt-web/<name>`. At registration, when the old
+directory exists and the new one does not, the Host renames it (the profile moves whole: no new sign-in) and logs one
+line. When both exist the Account is `unavailable` with a reason naming both paths: System never merges or deletes, so
+keep one and remove or rename the other, then restart the Host. While a Chrome still holds the old profile it is not
+moved: stop that Chrome first. Old Work records keep their `chatgpt-web/<name>` refs.
 
 With the row off, `system workers` shows the account `unavailable` with the reason
 "the web-worker row is disabled", and `system workers login` says the same.
@@ -249,13 +263,13 @@ limit). A real headed browser is closer to yours and is challenged less. There
 is no `headless` option; an account that sets it is `unavailable`.
 
 **Sign in, once.** Three ways:
-- `system workers login chatgpt-web/default --cookies <file>`: a JSON export from
+- `system workers login web/chatgpt/default --cookies <file>`: a JSON export from
   a browser extension, or a Netscape `cookies.txt`, of chatgpt.com taken from
   your own signed-in browser. The CLI reads it once and sends it to the Host;
   only chatgpt.com and openai.com cookies are kept, a session cookie gets a
   30-day lifetime, and your file is left as it is: delete it yourself when done,
   because it is as good as a password.
-- `system workers login chatgpt-web/default --remote`: for a server with no
+- `system workers login web/chatgpt/default --remote`: for a server with no
   display, and for a Cloudflare challenge. See below.
 - With neither, on a machine with a display: a window opens on the **Host's**
   `DISPLAY` (a user service has none unless you run
@@ -270,7 +284,7 @@ account runs: Chrome holds the profile.
 Host:
 
 ```
-system workers login chatgpt-web/default --remote
+system workers login web/chatgpt/default --remote
 ```
 
 It prints three steps, for example:
@@ -313,12 +327,12 @@ installed from the Ubuntu 20.04 packages, unpacked into the home directory:
 another directory does not find that script's target: put `~/.local/bin` on its
 `PATH` with the real home.
 
-**Account states.** Each `chatgpt-web` Account has a state in `$DSH_HOME/system/chatgpt-web/<name>/state.json`, and `system workers` shows
+**Account states.** Each `web` Account has a state in `$DSH_HOME/system/web/<site>/<name>/state.json`, and `system workers` shows
 any state but `ready` as `unavailable` with what to do; Works needing the Account go to another one, or fail with "no enabled Worker
 provides" when there is none. Each change is one line in the Host log.
 
-- `needs-sign-in`: a sign-in wall, the login page or "Session ended, invalid_state" showed. Run `system workers login chatgpt-web/<name> --remote`
-  (or `--cookies`), then `system workers recheck chatgpt-web/<name>`; a successful `--remote` does the recheck itself.
+- `needs-sign-in`: a sign-in wall, the login page or "Session ended, invalid_state" showed. Run `system workers login web/chatgpt/<name> --remote`
+  (or `--cookies`), then `system workers recheck web/chatgpt/<name>`; a successful `--remote` does the recheck itself.
 - `challenged`: a Cloudflare or CAPTCHA challenge showed. Clear it by hand as below, then `recheck`. Nothing else leaves it.
 - `cooling`: a site error or a suspected rate limit; it is eligible again at the time shown (2 minutes, then 5 after consecutive ones;
   `cooldownSeconds`), a success clears it, and `recheck` ends it early. If it keeps coming back, stop using the Account for a while.
@@ -339,14 +353,14 @@ loops with a current Chrome, report it (PROP-0005).
 **A CAPTCHA or Cloudflare challenge.** The attempt fails with `a CAPTCHA or
 Cloudflare challenge is showing`; System never types into or solves one, and
 retrying at once will meet it again. Clear it by hand, in the profile the
-attempts use: run `system workers login chatgpt-web/default --remote` (as above),
+attempts use: run `system workers login web/chatgpt/default --remote` (as above),
 pass the check in the viewer, press **Save**, and retry the Work. The check
 stays cleared as long as `cf_clearance` lives, which Cloudflare decides. If it
 reappears, repeat the same steps. If it keeps coming back, slow down or stop
 using the account for a while; an automated session is against OpenAI's Terms of
 Use, a risk the operator accepted for their own account.
 
-**The profile** is `$DSH_HOME/system/chatgpt-web/<name>` (or `profileDir`), a
+**The profile** is `$DSH_HOME/system/web/<site>/<name>` (or `profileDir`), a
 Chrome user-data directory created mode 0700. It holds the live session: treat
 it as a password. Keep it out of backups, sync and version control, never copy
 it to another machine or hand it to another Worker, and delete the directory to
@@ -355,13 +369,13 @@ state fails after the `load` timeout with that reason and a screenshot.
 
 ## The web canary
 
-`tools/web-canary` is the reliability gate of the `chatgpt-web` Workers read from
+`tools/web-canary` is the reliability gate of the `web` Workers read from
 System's own records: it stores the fixed Research question ("What is the capital
 of France? Cite the English Wikipedia article that says so
 (https://en.wikipedia.org/...).", a page the citation verifier can read, so the
 canary measures the Website Worker and not a third-party site) as a `task@1` (the
 same Artifact ID every time) and runs `workflows/research.yaml` on it, citation check included, once on
-each registered `chatgpt-web` Account, one after the other, with
+each registered `web` Account, one after the other, with
 `system work submit --worker <ref>`. It prints one line per Work: Account, Work
 ID, status, seconds. Nothing is stored outside System's records.
 

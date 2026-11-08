@@ -22,43 +22,43 @@ const SETTINGS: HealthSettings = { cooldownSeconds: [120, 300] }
 function health(dir = join(root, `account-${count++}`)) {
   const clock = { now: START }
   const notices: string[] = []
-  const make = () => new AccountHealth(dir, 'chatgpt-web/second', { now: () => clock.now, log: (line) => notices.push(line), settings: SETTINGS })
+  const make = () => new AccountHealth(dir, 'web/chatgpt/second', { now: () => clock.now, log: (line) => notices.push(line), settings: SETTINGS })
   return { health: make(), make, clock, notices, dir }
 }
 const failed = (reason: string, failedStage = 'wait') => ({ failedStage, reason, reachedSite: true })
 
 test('classify: a sign-in wall, a login page and "Session ended, invalid_state" need a sign-in', () => {
-  assert.equal(classify(failed('chatgpt-web/second: chatgpt-web: signed out; sign in again (system workers login)', 'auth')), 'needs-sign-in')
-  assert.equal(classify(failed('chatgpt-web/second: chatgpt-web: signed out while the Chat/Work switch was awaited', 'mode')), 'needs-sign-in')
-  assert.equal(classify(failed('chatgpt-web/second: chatgpt-web: unknown sign-in page (/auth/login); use the remote login', 'auth')), 'needs-sign-in')
+  assert.equal(classify(failed('web/chatgpt/second: chatgpt-web: signed out; sign in again (system workers login)', 'auth')), 'needs-sign-in')
+  assert.equal(classify(failed('web/chatgpt/second: chatgpt-web: signed out while the Chat/Work switch was awaited', 'mode')), 'needs-sign-in')
+  assert.equal(classify(failed('web/chatgpt/second: chatgpt-web: unknown sign-in page (/auth/login); use the remote login', 'auth')), 'needs-sign-in')
   assert.equal(classify(failed('Session ended, invalid_state', 'auth')), 'needs-sign-in')
 })
 
 test('classify: a Cloudflare or CAPTCHA challenge is challenged, before the login words its message also holds', () => {
-  assert.equal(classify(failed('chatgpt-web/second: chatgpt-web: the site shows a challenge (Verify you are human); pass it in the login profile (system workers login) and Save', 'auth')), 'challenged')
+  assert.equal(classify(failed('web/chatgpt/second: chatgpt-web: the site shows a challenge (Verify you are human); pass it in the login profile (system workers login) and Save', 'auth')), 'challenged')
   assert.equal(classify(failed('blocked by Cloudflare', 'open')), 'challenged')
   assert.equal(classify(failed('a CAPTCHA is shown', 'auth')), 'challenged')
 })
 
 test('classify: a site error or a suspected rate limit is a cooldown', () => {
-  assert.equal(classify(failed('chatgpt-web/second: site error: the answer did not load (retryable)')), 'cooling')
-  assert.equal(classify(failed("chatgpt-web/second: chatgpt-web: the site shows its own error page instead of the app; nothing was sent", 'auth')), 'cooling')
+  assert.equal(classify(failed('web/chatgpt/second: site error: the answer did not load (retryable)')), 'cooling')
+  assert.equal(classify(failed("web/chatgpt/second: chatgpt-web: the site shows its own error page instead of the app; nothing was sent", 'auth')), 'cooling')
   assert.equal(classify(failed('You are sending too many requests; rate limit', 'send')), 'cooling')
 })
 
 test('classify: other failures, and a bare timeout, say nothing about the Account', () => {
-  assert.equal(classify(failed('chatgpt-web/second: the wait stage timed out after 900 s: x')), undefined)
-  assert.equal(classify(failed('chatgpt-web/second wrote no output block for report')), undefined)
+  assert.equal(classify(failed('web/chatgpt/second: the wait stage timed out after 900 s: x')), undefined)
+  assert.equal(classify(failed('web/chatgpt/second wrote no output block for report')), undefined)
   assert.equal(classify(failed('attempt exceeded its time limit of 60 minutes', 'wait')), undefined)
 })
 
 test('classify: a failure attributed to the Host never counts', () => {
   // Any error before the browser reached the Site, even one that would otherwise read as a sign-in wall.
-  assert.equal(classify({ failedStage: 'launch', reason: 'chatgpt-web/second: launch: signed out', reachedSite: false }), undefined)
+  assert.equal(classify({ failedStage: 'launch', reason: 'web/chatgpt/second: launch: signed out', reachedSite: false }), undefined)
   assert.equal(classify({ failedStage: undefined, reason: 'the prompt is 300000 bytes', reachedSite: false }), undefined)
   // A goto timeout while the Host is busy; with a quiet Host the same timeout is only unclassified (not a rate limit).
-  assert.equal(classify({ failedStage: 'open', reason: 'chatgpt-web/second: open: page.goto: Timeout 10000ms exceeded', reachedSite: true, hostBusy: true }), undefined)
-  assert.equal(classify({ failedStage: 'open', reason: 'chatgpt-web/second: open: page.goto: Timeout 10000ms exceeded', reachedSite: true }), undefined)
+  assert.equal(classify({ failedStage: 'open', reason: 'web/chatgpt/second: open: page.goto: Timeout 10000ms exceeded', reachedSite: true, hostBusy: true }), undefined)
+  assert.equal(classify({ failedStage: 'open', reason: 'web/chatgpt/second: open: page.goto: Timeout 10000ms exceeded', reachedSite: true }), undefined)
   // A real sign-in wall is the Account's even while the Host is busy.
   assert.equal(classify({ ...failed('chatgpt-web: signed out', 'auth'), hostBusy: true }), 'needs-sign-in')
 })
@@ -74,7 +74,7 @@ test('a sign-in wall quarantines at once: unavailable with the action, and nothi
   const { health: h, clock, notices } = health()
   h.failure(failed('chatgpt-web: signed out', 'auth'))
   assert.equal(h.record.state, 'needs-sign-in')
-  assert.equal(h.unavailable(), `needs sign-in since ${hhmm(START)}: run \`system workers login chatgpt-web/second --remote\`, then \`system workers recheck chatgpt-web/second\``)
+  assert.equal(h.unavailable(), `needs sign-in since ${hhmm(START)}: run \`system workers login web/chatgpt/second --remote\`, then \`system workers recheck web/chatgpt/second\``)
   clock.now += 24 * 3600_000
   assert.match(h.unavailable()!, new RegExp(`^needs sign-in since ${hhmm(START)}`))
   h.success()
@@ -89,7 +89,7 @@ test('a challenge quarantines at once, with its own action', () => {
   const { health: h } = health()
   h.failure(failed('the site shows a challenge (Verify you are human)', 'auth'))
   assert.equal(h.record.state, 'challenged')
-  assert.match(h.unavailable()!, new RegExp(`^challenged since ${hhmm(START)}: .*system workers login chatgpt-web/second --remote.*system workers recheck chatgpt-web/second`))
+  assert.match(h.unavailable()!, new RegExp(`^challenged since ${hhmm(START)}: .*system workers login web/chatgpt/second --remote.*system workers recheck web/chatgpt/second`))
 })
 
 test('a site error cools down 2 minutes, then 5 after a consecutive one, and a success clears it; the cooldown ends by itself', () => {
@@ -117,7 +117,7 @@ test('a site error cools down 2 minutes, then 5 after a consecutive one, and a s
 
 test('a failure that says nothing, a Host timeout and a cancel leave the state alone', () => {
   const { health: h, notices } = health()
-  h.failure(failed('chatgpt-web/second: the wait stage timed out after 900 s'))
+  h.failure(failed('web/chatgpt/second: the wait stage timed out after 900 s'))
   h.failure({ failedStage: 'launch', reason: 'launch timed out', reachedSite: false })
   h.failure({ failedStage: 'open', reason: 'open: page.goto: Timeout 60000ms exceeded', reachedSite: true, hostBusy: true })
   assert.equal(h.record.state, 'ready')
@@ -136,10 +136,10 @@ test('one notice per state change: a log line and lastNotice; the same state see
   h.failure(failed('Session ended, invalid_state', 'auth'))
   h.failure(failed('chatgpt-web: signed out', 'auth'))
   assert.equal(notices.length, 1)
-  assert.match(notices[0]!, new RegExp(`^chatgpt-web/second: needs sign-in since ${hhmm(START)}: run .system workers login`))
+  assert.match(notices[0]!, new RegExp(`^web/chatgpt/second: needs sign-in since ${hhmm(START)}: run .system workers login`))
   assert.equal(h.record.lastNotice?.state, 'needs-sign-in')
   assert.equal(h.record.lastNotice?.at, new Date(clock.now).toISOString())
-  assert.equal(h.record.lastNotice?.text, notices[0]!.replace(/^chatgpt-web\/second: /, ''))
+  assert.equal(h.record.lastNotice?.text, notices[0]!.replace(/^web\/chatgpt\/second: /, ''))
   // A different state is a change, and so is the return to ready.
   h.failure(failed('the site shows a challenge', 'auth'))
   assert.equal(notices.length, 2)
@@ -177,7 +177,7 @@ test('the state is a durable, owner-only file in the Account directory and survi
   assert.equal(again.record.lastNotice?.state, 'needs-sign-in')
   // The same state seen after the restart gives no new notice.
   const lines: string[] = []
-  const third = new AccountHealth(dir, 'chatgpt-web/second', { now: () => clock.now, log: (l) => lines.push(l), settings: SETTINGS })
+  const third = new AccountHealth(dir, 'web/chatgpt/second', { now: () => clock.now, log: (l) => lines.push(l), settings: SETTINGS })
   third.failure(failed('chatgpt-web: signed out', 'auth'))
   assert.deepEqual(lines, [])
 })
@@ -199,19 +199,19 @@ test('routing skips an Account in quarantine and uses the other; it is back when
   const b = health()
   const port = (ref: string, h: AccountHealth): WorkerPort => healthWorker({ ref, capabilities: ['research'], run: async () => { throw new Error('not run') } }, h)
   const capabilities = new Capabilities()
-  capabilities.registerWorker(port('chatgpt-web/default', a.health))
-  capabilities.registerWorker(port('chatgpt-web/second', b.health))
-  assert.equal(capabilities.routeWorker(['research']).selected?.ref, 'chatgpt-web/default')
+  capabilities.registerWorker(port('web/chatgpt/default', a.health))
+  capabilities.registerWorker(port('web/chatgpt/second', b.health))
+  assert.equal(capabilities.routeWorker(['research']).selected?.ref, 'web/chatgpt/default')
   a.health.failure(failed('chatgpt-web: signed out', 'auth'))
-  assert.equal(capabilities.routeWorker(['research']).selected?.ref, 'chatgpt-web/second')
+  assert.equal(capabilities.routeWorker(['research']).selected?.ref, 'web/chatgpt/second')
   assert.ok(capabilities.available().workers.has('research'))
   b.health.failure(failed('the site shows a challenge', 'auth'))
   assert.equal(capabilities.routeWorker(['research']).selected, undefined)
   assert.equal(capabilities.available().workers.has('research'), false)
   // Still registered (a pinned Work names it), and the other's slots and run are untouched.
-  assert.deepEqual(capabilities.workerRefs(), ['chatgpt-web/default', 'chatgpt-web/second'])
+  assert.deepEqual(capabilities.workerRefs(), ['web/chatgpt/default', 'web/chatgpt/second'])
   a.health.recheckPassed()
-  assert.equal(capabilities.routeWorker(['research']).selected?.ref, 'chatgpt-web/default')
+  assert.equal(capabilities.routeWorker(['research']).selected?.ref, 'web/chatgpt/default')
 })
 
 test('unavailableReason is the line `system workers` shows', () => {

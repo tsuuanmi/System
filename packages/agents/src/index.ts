@@ -1,7 +1,7 @@
 /**
  * The `agents` row: registers each configured agent account whose CLI and
  * credential are present as a Worker; reports every account's state through
- * `ctx.agents` (`system workers`). Spawns through the DSH subprocess service. A `chatgpt-web` account is served by
+ * `ctx.agents` (`system workers`). Spawns through the DSH subprocess service. A `web` account is served by
  * the optional `web-worker` row (see web.ts), or reported unavailable when it is off.
  */
 import { existsSync } from 'node:fs'
@@ -23,12 +23,26 @@ export * from './workspace.ts'
 export const name = 'system-agents'
 export const inject = ['capabilities', 'artifacts', 'subprocess', 'credentials']
 
-/** `chatgpt-web` is the web Runtime, served by the `web-worker` row. */
-export type AccountRuntime = Runtime | 'chatgpt-web'
+/** `web` is the web Runtime, served by the `web-worker` row; its Site is the account's `site`. */
+export type AccountRuntime = Runtime | 'web'
+
+/** The reason of an account that still names the Runtime as it was called before the Site was a setting of it. */
+export const CHATGPT_WEB_RENAMED = 'the chatgpt-web runtime was renamed: use runtime: web, site: chatgpt, ref web/chatgpt/<name>'
+
+/** What is wrong with a web account's Site and ref, if anything: its ref is `web/<site>/<name>`; the web-worker row knows which Sites ship. */
+export function webRefProblem(account: { ref: string; site?: string }): string | undefined {
+  if (!account.site) return 'a web account names its site (site: chatgpt)'
+  const [runtime, site, name, ...rest] = account.ref.split('/')
+  if (runtime !== 'web' || site !== account.site || !name || rest.length) return `the ref ${account.ref} does not match site ${account.site}: a web account is web/<site>/<name>, here web/${account.site}/<name>`
+  return undefined
+}
 
 export interface AccountConfig extends WebAccountSettings {
   ref: string
-  runtime: AccountRuntime
+  /** The Runtime; `chatgpt-web` is only read to be refused (CHATGPT_WEB_RENAMED). */
+  runtime: AccountRuntime | 'chatgpt-web'
+  /** web: the Site (`chatgpt`), which picks the shipped UI map and the defaults; the ref is `web/<site>/<name>`. */
+  site?: string
   capabilities: string[]
   /** The CLI to run; resolved on PATH unless absolute. */
   command?: string
@@ -40,7 +54,7 @@ export interface AccountConfig extends WebAccountSettings {
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes; overrides the row's. */
   attemptTimeoutMinutes?: number
-  /** How many attempts of this account run at once; overrides the row's. A chatgpt-web account must leave it unset or 1. */
+  /** How many attempts of this account run at once; overrides the row's. A web account must leave it unset or 1. */
   maxConcurrentAttempts?: number
   /** What one attempt may spend (input tokens, minutes) before it is stopped as over budget; overrides the row's. */
   attemptBudget?: AttemptBudget
@@ -61,7 +75,7 @@ export const REGISTERING = 'registering'
 
 export interface AccountStatus {
   ref: string
-  runtime: AccountRuntime
+  runtime: AccountConfig['runtime']
   capabilities: string[]
   available: boolean
   reason: string
@@ -145,29 +159,34 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
   const outcomes = new Map<string, { done(): void; refuse(error: Error): void }>()
   for (const { account } of entries) {
-    if (account.runtime !== 'chatgpt-web' || !webWorker) continue
+    if (account.runtime !== 'web' || webRefProblem(account) || !webWorker) continue
     const done = new Promise<void>((resolve, refuse) => outcomes.set(account.ref, { done: resolve, refuse }))
     done.catch(() => {})
     webWorker.expect(account.ref, done)
   }
   for (const { account, status } of entries) {
     try {
-      if (account.runtime === 'chatgpt-web' && !webWorker) throw new Error(WEB_WORKER_DISABLED)
+      if (account.runtime === 'chatgpt-web') throw new Error(CHATGPT_WEB_RENAMED)
+      if (account.runtime === 'web') {
+        const problem = webRefProblem(account)
+        if (problem) throw new Error(problem)
+        if (!webWorker) throw new Error(WEB_WORKER_DISABLED)
+      }
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
       const tiers = TIERS.filter((tier) => account.models?.[tier])
       // A web account is one Chrome profile: one attempt at a time, whatever the row says.
-      const web = account.runtime === 'chatgpt-web'
-      if (web && account.maxConcurrentAttempts !== undefined && account.maxConcurrentAttempts !== 1) throw new Error('a chatgpt-web account runs one attempt at a time (one Chrome profile); maxConcurrentAttempts must be 1')
+      const web = account.runtime === 'web'
+      if (web && account.maxConcurrentAttempts !== undefined && account.maxConcurrentAttempts !== 1) throw new Error('a web account runs one attempt at a time (one Chrome profile); maxConcurrentAttempts must be 1')
       const slots = web ? 1 : account.maxConcurrentAttempts ?? config.maxConcurrentAttempts
       if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error(`maxConcurrentAttempts is ${slots}; it must be a whole number of at least 1`)
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
       const attemptTimeoutMinutes = account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes
       let askVersion: () => Promise<string>
-      if (account.runtime === 'chatgpt-web') {
+      if (account.runtime === 'web') {
         // The web-worker row checks the account, registers its Worker and owns its sign-in.
-        const registered = await webWorker!.register({ ...account, capabilities: offered, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
+        const registered = await webWorker!.register({ ...account, site: account.site!, capabilities: offered, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
         status.command = registered.command
         status.capabilities = registered.capabilities ?? offered
         askVersion = registered.version

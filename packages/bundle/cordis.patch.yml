@@ -59,7 +59,7 @@
         apiUrl: https://api.github.com
         tokenRef: GITHUB_TOKEN
 
-    # The web Runtime (WW2a): `chatgpt-web` accounts of the agents row, served through a
+    # The web Runtime (WW2a): `web` accounts of the agents row, served through a
     # genuine headed Chrome. Optional and off: with it off those accounts are reported
     # unavailable ("the web-worker row is disabled") and nothing of the browser is loaded.
     # A profile patch turns it on with `disabled: false` (docs/operations/runbook.md).

@@ -3,7 +3,7 @@
  * The ChatGPT Web provider driver (docs/design/provider-turns.md), what is left of it after the
  * turn went to the generic Procedures (WW2-iv): the sign-in check, the opening of a chat in Chat
  * mode, the page diagnostics and the shipped map, for the login and the recheck. Every
- * element, action, and state comes from `ui/chatgpt-web.ui.yaml` through the UI engine
+ * element, action, and state comes from `ui/chatgpt.ui.yaml` through the UI engine
  * (ADR-0021), so a UI change is a map change. Rules that are not UI:
  * - a new conversation starts in **Chat** mode, never Work (Work spends the Codex quota);
  * - one-shot turns run in Temporary chat; persistent turns bind `/c/<id>`.
@@ -49,7 +49,7 @@ const DIAGNOSTIC_DOM_CHARS = 20_000
 export interface DriverOptions {
   /** Site origin; tests point it at a local fake (default https://chatgpt.com). */
   origin?: string
-  /** Local overlay text (`<DSH_HOME>/system/ui/chatgpt-web.overlay.yaml`). */
+  /** Local overlay text (`<DSH_HOME>/system/ui/chatgpt.overlay.yaml`). */
   overlay?: string
   timeouts?: DriverTimeouts
   /** The account's page opens are spaced at least this far apart (default 10 s, ADR-0030). */
@@ -59,7 +59,7 @@ export interface DriverOptions {
 /** Sign-in steps run on signed-out pages, where the map's sign-out guard would always fire. */
 const NO_GUARDS = { guards: false } as const
 
-const MAP_URL = new URL('../ui/chatgpt-web.ui.yaml', import.meta.url)
+const MAP_URL = new URL('../ui/chatgpt.ui.yaml', import.meta.url)
 const CONVERSATION = /^\/c\/([0-9a-f-]{36})(?:[/?#]|$)/
 /** Every request that could delete or change a conversation: during a deletion only the bound one's deletion passes. */
 const DELETE_REQUEST = /\/backend-api\/conversations?(?:\/[^?#]*)?(?:[?#]|$)/

@@ -375,7 +375,7 @@ export function operations(services: Services): Methods {
     },
     'workers.login': {
       agent: false,
-      summary: 'Sign a browser Account (`chatgpt-web/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
+      summary: 'Sign a browser Account (`web/<site>/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
       params: z.object({ ref: z.string().min(1), cookies: z.string().max(MAX_FRAME).optional() }).strict(),
       handler: (_host, p) => services.login(p.ref, p.cookies),
     },

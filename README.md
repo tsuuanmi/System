@@ -79,7 +79,7 @@ mkdir -p ~/.dsh/system/codex/default
 CODEX_HOME=~/.dsh/system/codex/default codex login --device-auth
 bin/system credentials set GITHUB_TOKEN              # System's own; Workers never get it
 bin/system workers                                   # which accounts are usable, and why not
-bin/system workers login chatgpt-web/default --cookies cookies.json   # an account that is not in the bundle; see the runbook
+bin/system workers login web/chatgpt/default --cookies cookies.json   # an account that is not in the bundle; see the runbook
 ```
 
 A Software Engineering change needs a repository whose base commit has

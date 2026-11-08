@@ -1,7 +1,7 @@
 /**
  * WW2a: System without the web Runtime. The `web-worker` row is off (the bundle's
  * default) and the profile still runs its main path on the fake Runtimes: a
- * Software Engineering Work and a Brainstorm. A `chatgpt-web` account is
+ * Software Engineering Work and a Brainstorm. A `web` account is
  * reported unavailable with the row named; nothing of the web package is loaded.
  */
 import assert from 'node:assert/strict'
@@ -27,8 +27,8 @@ writeFileSync(join(home, 'code-checks.yaml'), readFileSync(join(repo, 'workflows
 
 before(async () => {
   assert.equal(system(['init']).status, 0)
-  // The bundle's accounts on the fake CLI, and a chatgpt-web account the off row cannot serve. No patch touches the web-worker row.
-  const accounts = [...row('agents').config!.accounts!.map((a) => ({ ...a, command: fakeAgent })), { ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'] }]
+  // The bundle's accounts on the fake CLI, and a web account the off row cannot serve. No patch touches the web-worker row.
+  const accounts = [...row('agents').config!.accounts!.map((a) => ({ ...a, command: fakeAgent })), { ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'] }]
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config: ${JSON.stringify({ accounts })}\n`)
   mkdirSync(join(home, 'system', 'codex', 'default'), { recursive: true })
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
@@ -46,18 +46,18 @@ test('the web-worker row is off in the bundle', () => {
   assert.equal(row('web-worker').disabled, true)
 })
 
-test('system workers reports a chatgpt-web account unavailable because the row is disabled; the CLI accounts are available', () => {
+test('system workers reports a web account unavailable because the row is disabled; the CLI accounts are available', () => {
   const out = system(['workers'])
   assert.equal(out.status, 0, out.stderr)
   assert.match(out.stdout, /registered: claude-code\/default, codex\/default\n/)
-  assert.match(out.stdout, /chatgpt-web\/default\s+unavailable\s+- the web-worker row is disabled/)
+  assert.match(out.stdout, /web\/chatgpt\/default\s+unavailable\s+- the web-worker row is disabled/)
   assert.match(out.stdout, /claude-code\/default\s+available.*\(claude-code\)\n/)
-  assert.match(out.stdout, /chatgpt-web\/default\s+unavailable.*\(chatgpt-web\)\n/, 'the runtime ends each account line: tools/web-canary reads it')
+  assert.match(out.stdout, /web\/chatgpt\/default\s+unavailable.*\(web\)\n/, 'the runtime ends each account line: tools/web-canary reads it')
 })
 
 test('login, the remote viewer and recheck say the row is disabled', () => {
   writeFileSync(join(home, 'cookies.json'), '[]')
-  for (const args of [['workers', 'login', 'chatgpt-web/default', '--cookies', join(home, 'cookies.json')], ['workers', 'login', 'chatgpt-web/default', '--remote'], ['workers', 'recheck', 'chatgpt-web/default']]) {
+  for (const args of [['workers', 'login', 'web/chatgpt/default', '--cookies', join(home, 'cookies.json')], ['workers', 'login', 'web/chatgpt/default', '--remote'], ['workers', 'recheck', 'web/chatgpt/default']]) {
     const ran = system(args)
     assert.equal(ran.status, 1)
     assert.match(ran.stderr, /the web-worker row is disabled/)

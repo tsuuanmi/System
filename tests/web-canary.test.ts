@@ -51,9 +51,9 @@ test('the canary Task has the same Artifact ID every time, and is what the Work 
 
 test('work submit --worker is refused for a Worker that is not registered', { timeout: 120_000 }, () => {
   const task = run(['--task']).stdout.trim()
-  const refused = cli.run(['work', 'submit', '--capability', 'research', '--input', task, '--worker', 'chatgpt-web/nobody', '--no-run'])
+  const refused = cli.run(['work', 'submit', '--capability', 'research', '--input', task, '--worker', 'web/chatgpt/nobody', '--no-run'])
   assert.equal(refused.status, 1)
-  assert.match(refused.stderr, /no enabled Worker chatgpt-web\/nobody/)
+  assert.match(refused.stderr, /no enabled Worker web\/chatgpt\/nobody/)
   assert.equal(cli.run(['work', 'list']).stdout.trim(), '', 'nothing was admitted')
 })
 
@@ -84,10 +84,10 @@ else if (a === 'work' && b === 'submit') {
 
 const TASK = `sha256:${createHash('sha256').update('canary').digest('hex')}`
 const OLD_TASK = `sha256:${createHash('sha256').update('old canary').digest('hex')}`
-const WEB = ['registered: chatgpt-web/a, chatgpt-web/b, claude-code/default',
-  'chatgpt-web/a   available   (chatgpt-web)',
-  'chatgpt-web/b   available   (chatgpt-web)',
-  'chatgpt-web/c   unavailable - no sign-in (chatgpt-web)',
+const WEB = ['registered: web/chatgpt/a, web/chatgpt/b, claude-code/default',
+  'web/chatgpt/a   available   (web)',
+  'web/chatgpt/b   available   (web)',
+  'web/chatgpt/c   unavailable - no sign-in (web)',
   'claude-code/default available 2.1.0 (claude-code)', ''].join('\n')
 
 /**
@@ -129,16 +129,16 @@ function setup(works: Record<string, unknown>, script: Record<string, { id: stri
 test('a run submits the canary once to each chatgpt-web Account, one after the other, and prints a line per Work', { timeout: 60_000 }, () => {
   const t = '2026-11-08T00:00:00.000Z'
   const s = setup({}, {
-    'chatgpt-web/a': [{ id: 'work:1', record: record('chatgpt-web/a', t, 42.5, 'succeeded') }],
-    'chatgpt-web/b': [{ id: 'work:2', record: record('chatgpt-web/b', t, 7, 'failed', 'investigate', 'the answer never stabilised') }],
+    'web/chatgpt/a': [{ id: 'work:1', record: record('web/chatgpt/a', t, 42.5, 'succeeded') }],
+    'web/chatgpt/b': [{ id: 'work:2', record: record('web/chatgpt/b', t, 7, 'failed', 'investigate', 'the answer never stabilised') }],
   })
   try {
     const ran = run([], s.env)
     assert.equal(ran.status, 0, ran.stderr)
-    assert.deepEqual(ran.stdout.trim().split('\n').map((l) => l.split(/\s+/)), [['chatgpt-web/a', 'work:1', 'succeeded', '42.5'], ['chatgpt-web/b', 'work:2', 'failed', '7.0']])
+    assert.deepEqual(ran.stdout.trim().split('\n').map((l) => l.split(/\s+/)), [['web/chatgpt/a', 'work:1', 'succeeded', '42.5'], ['web/chatgpt/b', 'work:2', 'failed', '7.0']])
     const submits = s.calls().filter((c) => c[0] === 'work' && c[1] === 'submit')
     assert.equal(submits.length, 2)
-    for (const [i, ref] of ['chatgpt-web/a', 'chatgpt-web/b'].entries()) {
+    for (const [i, ref] of ['web/chatgpt/a', 'web/chatgpt/b'].entries()) {
       const args = submits[i]!
       assert.equal(args[args.indexOf('--worker') + 1], ref)
       assert.equal(args[args.indexOf('--input') + 1], TASK)
@@ -154,7 +154,7 @@ test('the report classifies each run, counts the Worker step apart, and holds th
   const at = (n: number) => new Date(Date.parse('2026-11-01T00:00:00Z') + n * 3600_000).toISOString()
   let n = 0
   // a: 25 runs, 24 pass, one held by the verifier; b: 25 runs, 24 pass, one Worker step failure.
-  for (const account of ['chatgpt-web/a', 'chatgpt-web/b']) {
+  for (const account of ['web/chatgpt/a', 'web/chatgpt/b']) {
     for (let i = 0; i < 25; i++) {
       works[`work:${n}`] = i !== 12 ? record(account, at(n), 5, 'succeeded')
         : account.endsWith('a') ? record(account, at(n), 5, 'held', 'citations', '0 of 1 confirmed: s1 (HTTP 403, quote unreadable)')
@@ -162,17 +162,17 @@ test('the report classifies each run, counts the Worker step apart, and holds th
       n++
     }
   }
-  works['work:old'] = record('chatgpt-web/a', at(1), 5, 'failed', 'investigate', 'x', 'sha256:' + 'f'.repeat(64))
-  works['work:inflight'] = record('chatgpt-web/a', at(60), 0, 'running')
+  works['work:old'] = record('web/chatgpt/a', at(1), 5, 'failed', 'investigate', 'x', 'sha256:' + 'f'.repeat(64))
+  works['work:inflight'] = record('web/chatgpt/a', at(60), 0, 'running')
   const s = setup(works)
   try {
     const all = run(['--report'], s.env)
     assert.equal(all.status, 0, all.stdout + all.stderr)
-    assert.match(all.stdout, /chatgpt-web\/a\s+runs 25\s+passed 24 \(96\.0%\)\s+worker step ok 25 \(100\.0%\)\s+worker-failed 0\s+verifier 1\s+other 0/)
-    assert.match(all.stdout, /chatgpt-web\/b\s+runs 25\s+passed 24 \(96\.0%\)\s+worker step ok 24 \(96\.0%\)\s+worker-failed 1\s+verifier 0\s+other 0/)
+    assert.match(all.stdout, /web\/chatgpt\/a\s+runs 25\s+passed 24 \(96\.0%\)\s+worker step ok 25 \(100\.0%\)\s+worker-failed 0\s+verifier 1\s+other 0/)
+    assert.match(all.stdout, /web\/chatgpt\/b\s+runs 25\s+passed 24 \(96\.0%\)\s+worker step ok 24 \(96\.0%\)\s+worker-failed 1\s+verifier 0\s+other 0/)
     assert.match(all.stdout, /total\s+runs 50\s+passed 48 \(96\.0%\)\s+worker step ok 49 \(98\.0%\)\s+worker-failed 1\s+verifier 1\s+other 0/)
-    assert.match(all.stdout, /work:12 {2}chatgpt-web\/a {2}verifier: 0 of 1 confirmed: s1 \(HTTP 403, quote unreadable\)/)
-    assert.match(all.stdout, /work:37 {2}chatgpt-web\/b {2}worker-failed: investigate: timed out/)
+    assert.match(all.stdout, /work:12 {2}web\/chatgpt\/a {2}verifier: 0 of 1 confirmed: s1 \(HTTP 403, quote unreadable\)/)
+    assert.match(all.stdout, /work:37 {2}web\/chatgpt\/b {2}worker-failed: investigate: timed out/)
     assert.match(all.stdout, /gate: holds/)
     // --since drops the older runs: too few remain.
     const since = run(['--report', '--since', at(30)], s.env)
@@ -187,16 +187,16 @@ test('the report classifies each run, counts the Worker step apart, and holds th
 test('the report counts site errors apart from other Worker step failures', { timeout: 60_000 }, () => {
   const t = '2026-11-02T00:00:00Z'
   const s = setup({
-    'work:1': record('chatgpt-web/a', t, 1, 'failed', 'investigate', 'site error: This response couldn’t load'),
-    'work:2': record('chatgpt-web/a', t, 1, 'failed', 'investigate', 'no answer within the time limit'),
-    'work:3': record('chatgpt-web/a', t, 1, 'failed', 'accept', 'denied'),
-    'work:4': record('chatgpt-web/a', t, 1, 'succeeded'),
+    'work:1': record('web/chatgpt/a', t, 1, 'failed', 'investigate', 'site error: This response couldn’t load'),
+    'work:2': record('web/chatgpt/a', t, 1, 'failed', 'investigate', 'no answer within the time limit'),
+    'work:3': record('web/chatgpt/a', t, 1, 'failed', 'accept', 'denied'),
+    'work:4': record('web/chatgpt/a', t, 1, 'succeeded'),
   })
   try {
     const ran = run(['--report'], s.env)
     assert.match(ran.stdout, /total\s+runs 4\s+passed 1 \(25\.0%\)\s+worker step ok 2 \(50\.0%\)\s+worker-failed 2 \(site error 1\)\s+verifier 0\s+other 1/)
-    assert.match(ran.stdout, /work:1 {2}chatgpt-web\/a {2}worker-failed: investigate: site error: This response couldn’t load/)
-    assert.match(ran.stdout, /work:3 {2}chatgpt-web\/a {2}other: accept: denied/)
+    assert.match(ran.stdout, /work:1 {2}web\/chatgpt\/a {2}worker-failed: investigate: site error: This response couldn’t load/)
+    assert.match(ran.stdout, /work:3 {2}web\/chatgpt\/a {2}other: accept: denied/)
     assert.match(ran.stdout, /gate: does not hold \(4 of 50 runs; 25\.0% passed, needs 95%; only 1 Account\)/)
     assert.match(ran.stdout, /worker step: 50\.0% ok/)
   } finally {
@@ -207,7 +207,7 @@ test('the report counts site errors apart from other Worker step failures', { ti
 test('the report prints a long reason only up to 200 characters', { timeout: 60_000 }, () => {
   const t = '2026-11-02T00:00:00Z'
   const long = `the Worker threw: ui-map@1.0: ${'data must NOT have additional properties, '.repeat(40)}`
-  const s = setup({ 'work:1': record('chatgpt-web/a', t, 1, 'failed', 'investigate', long) })
+  const s = setup({ 'work:1': record('web/chatgpt/a', t, 1, 'failed', 'investigate', long) })
   try {
     const line = run(['--report'], s.env).stdout.split('\n').find((l) => l.includes('work:1'))!
     const detail = line.slice(line.indexOf('worker-failed: ') + 'worker-failed: '.length)
@@ -223,17 +223,17 @@ test('the report prints the median and p95 of the launch and wait stages per Acc
   const artifacts: Record<string, string> = {}
   // Launch 1..5 s and wait 10..50 s on one Account; a run with no evidence on the other.
   for (let i = 1; i <= 5; i++) {
-    const r = record('chatgpt-web/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+    const r = record('web/chatgpt/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
     r.state.steps.investigate!.partial = { evidence: `sha256:e${i}` }
     works[`work:${i}`] = r
     artifacts[`sha256:e${i}`] = JSON.stringify({ stages: [{ stage: 'launch', status: 'ok', elapsedMs: i * 1000 }, { stage: 'wait', status: 'ok', elapsedMs: i * 10_000 }, { stage: 'close', status: 'ok', elapsedMs: 5 }] })
   }
-  works['work:6'] = record('chatgpt-web/b', t, 1, 'succeeded')
+  works['work:6'] = record('web/chatgpt/b', t, 1, 'succeeded')
   const s = setup(works, {}, artifacts)
   try {
     const ran = run(['--report'], s.env)
-    assert.match(ran.stdout, /chatgpt-web\/a\s+launch 3\.0 \/ 5\.0 \(n 5\)\s+wait 30\.0 \/ 50\.0 \(n 5\)/)
-    assert.match(ran.stdout, /chatgpt-web\/b\s+launch -\s+wait -\s+\(1 without evidence\)/)
+    assert.match(ran.stdout, /web\/chatgpt\/a\s+launch 3\.0 \/ 5\.0 \(n 5\)\s+wait 30\.0 \/ 50\.0 \(n 5\)/)
+    assert.match(ran.stdout, /web\/chatgpt\/b\s+launch -\s+wait -\s+\(1 without evidence\)/)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }
@@ -245,7 +245,7 @@ test('the report counts the distinct model and Power per Account (WW8a), unread 
   const artifacts: Record<string, string> = {}
   const seen = [['Latest', 'Instant'], ['Latest', 'Instant'], ['Latest', 'High'], [null, null], undefined]
   seen.forEach((evidence, i) => {
-    const r = record('chatgpt-web/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+    const r = record('web/chatgpt/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
     r.state.steps.investigate!.partial = { evidence: `sha256:e${i}` }
     works[`work:${i}`] = r
     artifacts[`sha256:e${i}`] = JSON.stringify({ stages: [], ...(evidence ? { model: evidence[0], power: evidence[1] } : {}) })
@@ -253,7 +253,7 @@ test('the report counts the distinct model and Power per Account (WW8a), unread 
   const s = setup(works, {}, artifacts)
   try {
     const ran = run(['--report'], s.env)
-    assert.match(ran.stdout, /chatgpt-web\/a\s+model Latest 3, unread 2\s+power before unread 5\s+power High 1, Instant 2, unread 2\s+target unread 5/)
+    assert.match(ran.stdout, /web\/chatgpt\/a\s+model Latest 3, unread 2\s+power before unread 5\s+power High 1, Instant 2, unread 2\s+target unread 5/)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }
@@ -265,7 +265,7 @@ test('the report shows the Power before and after selection and the target per A
   const artifacts: Record<string, string> = {}
   const seen = [['Instant', 'Medium'], ['Instant', 'Medium'], ['High', 'Medium']]
   seen.forEach(([before, after], i) => {
-    const r = record('chatgpt-web/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+    const r = record('web/chatgpt/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
     r.state.steps.investigate!.partial = { evidence: `sha256:e${i}` }
     works[`work:${i}`] = r
     artifacts[`sha256:e${i}`] = JSON.stringify({ stages: [], model: 'Latest', powerBefore: before, power: after, powerTarget: 'standard', powerLevels: 5 })
@@ -273,7 +273,7 @@ test('the report shows the Power before and after selection and the target per A
   const s = setup(works, {}, artifacts)
   try {
     const ran = run(['--report'], s.env)
-    assert.match(ran.stdout, /chatgpt-web\/a\s+model Latest 3\s+power before High 1, Instant 2\s+power Medium 3\s+target standard 3/)
+    assert.match(ran.stdout, /web\/chatgpt\/a\s+model Latest 3\s+power before High 1, Instant 2\s+power Medium 3\s+target standard 3/)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }
@@ -282,12 +282,12 @@ test('the report shows the Power before and after selection and the target per A
 // Changing the canary to tier.standard starts a new series: the Task text is the same, so the runs are told apart by their target.
 test('runs of the canary Task before it asked tier.standard, or at another target, are an older series outside the gate', { timeout: 60_000 }, () => {
   const t = '2026-11-02T00:00:00Z'
-  const untiered = record('chatgpt-web/a', t, 1, 'succeeded') as { events: Record<string, unknown>[] }
+  const untiered = record('web/chatgpt/a', t, 1, 'succeeded') as { events: Record<string, unknown>[] }
   untiered.events = untiered.events.filter((e) => e.type !== 'dispatched')
-  const economy = record('chatgpt-web/b', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+  const economy = record('web/chatgpt/b', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
   economy.state.steps.investigate!.partial = { evidence: 'sha256:eco' }
   const s = setup({
-    'work:1': record('chatgpt-web/a', t, 1, 'succeeded'),
+    'work:1': record('web/chatgpt/a', t, 1, 'succeeded'),
     'work:2': untiered,
     'work:3': economy,
   }, {}, { 'sha256:eco': JSON.stringify({ stages: [], powerTarget: 'economy' }) })
@@ -305,9 +305,9 @@ test('runs of the canary Task before it asked tier.standard, or at another targe
 test('the report shows the older canary version apart and the gate counts only the current one', { timeout: 60_000 }, () => {
   const t = '2026-11-02T00:00:00Z'
   const s = setup({
-    'work:1': record('chatgpt-web/a', t, 1, 'succeeded'),
-    'work:2': record('chatgpt-web/a', t, 1, 'held', 'citations', '0 of 1 confirmed: s1 (HTTP 403, quote unreadable)', OLD_TASK),
-    'work:3': record('chatgpt-web/b', t, 1, 'succeeded', undefined, undefined, OLD_TASK),
+    'work:1': record('web/chatgpt/a', t, 1, 'succeeded'),
+    'work:2': record('web/chatgpt/a', t, 1, 'held', 'citations', '0 of 1 confirmed: s1 (HTTP 403, quote unreadable)', OLD_TASK),
+    'work:3': record('web/chatgpt/b', t, 1, 'succeeded', undefined, undefined, OLD_TASK),
   })
   try {
     const ran = run(['--report'], s.env)
@@ -315,7 +315,7 @@ test('the report shows the older canary version apart and the gate counts only t
     assert.match(current!, /total\s+runs 1\s+passed 1 /)
     assert.doesNotMatch(current!, /HTTP 403/)
     assert.match(older!, /total\s+runs 2\s+passed 1 /)
-    assert.match(older!, /work:2 {2}chatgpt-web\/a {2}verifier: 0 of 1 confirmed/)
+    assert.match(older!, /work:2 {2}web\/chatgpt\/a {2}verifier: 0 of 1 confirmed/)
     assert.match(ran.stdout, /gate: does not hold \(1 of 50 runs; only 1 Account\)/)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
@@ -334,4 +334,24 @@ test('the systemd units run the tool every six hours, randomised and persistent'
   assert.match(timer, /^OnCalendar=\*-\*-\* 00\/6:00:00$/m)
   assert.match(timer, /^RandomizedDelaySec=\d+/m)
   assert.match(timer, /^Persistent=true$/m)
+})
+
+// WW-rename: old Work records keep their refs; the report counts `chatgpt-web/<name>` and `web/chatgpt/<name>` as one Account.
+test('the report counts an Account\'s old chatgpt-web ref and its web/chatgpt ref as one Account, named by the new ref', { timeout: 60_000 }, () => {
+  const t = '2026-11-08T00:00:00.000Z'
+  const s = setup({
+    'work:1': record('chatgpt-web/a', t, 1, 'succeeded'),
+    'work:2': record('web/chatgpt/a', t, 1, 'succeeded'),
+    'work:3': record('chatgpt-web/b', t, 1, 'failed', 'investigate', 'timed out'),
+  })
+  try {
+    const ran = run(['--report'], s.env)
+    assert.match(ran.stdout, /^web\/chatgpt\/a\s+runs 2\s+passed 2 /m)
+    assert.match(ran.stdout, /^web\/chatgpt\/b\s+runs 1\s+passed 0 /m)
+    assert.doesNotMatch(ran.stdout, /^chatgpt-web\//m)
+    assert.match(ran.stdout, /work:3 {2}web\/chatgpt\/b {2}worker-failed/, 'the failed run is listed under the new ref')
+    assert.match(ran.stdout, /gate: does not hold \(3 of 50 runs; 66\.7% passed, needs 95%\)/, 'two Accounts, so no Account problem')
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true })
+  }
 })

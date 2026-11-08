@@ -1,5 +1,5 @@
 /**
- * The remote sign-in of the `chatgpt-web` Runtime (PROP-0005): the account's
+ * The remote sign-in of the `web` Runtime (PROP-0005): the account's
  * profile is opened headed on a private Xvfb, and the operator sees and drives
  * the whole screen of that Xvfb as a VNC desktop through noVNC, scaled to
  * their browser window, with real X input (a Cloudflare challenge is cleared

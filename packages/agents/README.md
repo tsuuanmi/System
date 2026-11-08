@@ -1,6 +1,6 @@
 # @system/agents
 
-The `agents` row: each configured agent CLI account (and a `chatgpt-web` account, through
+The `agents` row: each configured agent CLI account (and a `web` account, through
 the optional web-worker row) becomes a System Worker
 ([ADR-0004](../../docs/decisions/ADR-0004-mvp-0-operating-decisions.md) decisions 4-6,
 [ADR-0005](../../docs/decisions/ADR-0005-subscription-tokens-for-workers.md)).
@@ -24,7 +24,7 @@ the optional web-worker row) becomes a System Worker
         capabilities: [code-write, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
-        maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a chatgpt-web account: always 1)
+        maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
       - ref: codex/default
         runtime: codex
         capabilities: [code-write]
@@ -52,7 +52,7 @@ Tiers are those of System 1: `economy`, `standard`, `frontier`. An account's
 `models` maps each tier it offers to a model; each listed tier adds the
 capability `tier.<name>`, so a Workflow step asks for one like any other
 capability (`capabilities: [code-write, tier.frontier]`) and preflight refuses
-a tier no enabled account offers. A `chatgpt-web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../web-worker/README.md)). A step with no tier gets the `standard`
+a tier no enabled account offers. A `web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../web-worker/README.md)). A step with no tier gets the `standard`
 model, or the CLI's default when the account lists none. Each attempt records
 the tier, the configured model, and the models the CLI reports it served.
 
@@ -133,7 +133,7 @@ shell snapshots and logs into `CODEX_HOME`, so a shared directory would carry
 state between attempts. Each attempt therefore gets a fresh `CODEX_HOME` with
 only `auth.json`; a refreshed `auth.json` is copied back to the account
 directory unless that file changed meanwhile. The Host's slots decide how many
-attempts of an account run at once (`maxConcurrentAttempts`, default 1; always 1 for a chatgpt-web account, one Chrome profile); the
+attempts of an account run at once (`maxConcurrentAttempts`, default 1; always 1 for a web account, one Chrome profile); the
 worker queues nothing itself. Raise the limit for a Codex account only if its
 `auth.json` refresh can tolerate it: the copy-back keeps the first refresh and
 drops a later one when the file changed meanwhile.
@@ -151,9 +151,9 @@ Linux 5.4 (no Landlock), Claude Code 2.1.311 with a `setup-token` token,
 Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 `HOME`; Codex's `workspace-write` sandbox works; both report token usage.
 
-## The `chatgpt-web` Runtime
+## The `web` Runtime
 
-An account with `runtime: chatgpt-web` is not run here: the optional [`web-worker` row](../web-worker/README.md)
+An account with `runtime: web` is not run here: the optional [`web-worker` row](../web-worker/README.md)
 serves it, and `agents` only hands it over through the `webWorker` service ([web.ts](src/web.ts):
 the contract, and `WEB_WORKER_DISABLED`). With that row off the account is reported
 `unavailable` with the reason "the web-worker row is disabled". It keeps the `agents` row's settings

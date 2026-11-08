@@ -1,5 +1,5 @@
 /**
- * The sign-in of the `chatgpt-web` Runtime (PROP-0005): the profile is signed
+ * The sign-in of the `web` Runtime (PROP-0005): the profile is signed
  * in by importing a cookie file the operator exported from their own browser,
  * by hand in a window on a real display, or in the remote viewer
  * (remote-login.ts). The browser is always headed, on a display this owns. A

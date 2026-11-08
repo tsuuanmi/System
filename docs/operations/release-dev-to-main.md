@@ -24,8 +24,8 @@ From the first report (PRs #5–#28):
   time limit (`attemptTimeoutMinutes`, default 60).
 - **Goals and `system mcp`:** an Orchestrator agent scoped to one Goal, which
   may never approve or merge ([ADR-0009](../decisions/ADR-0009-goals-and-orchestrators.md)).
-- **The ChatGPT Website Worker** (`chatgpt-web`), off by default
-  ([Runbook](runbook.md#the-chatgpt-web-account)), and conversation
+- **The ChatGPT Website Worker** (`web`, Site `chatgpt`), off by default
+  ([Runbook](runbook.md#the-web-account)), and conversation
   ingestion ([PROP-0003](../proposals/PROP-0003-conversation-ingestion.md)).
 - **System merges into `dev`**; only you merge `dev` into `main`
   ([ADR-0008](../decisions/ADR-0008-dev-integration-branch.md)).

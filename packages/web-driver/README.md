@@ -3,7 +3,7 @@
 System 1's ChatGPT web driver, its UI map and its UI engine, ported whole
 (operator's decision, 2026-11-07: System 1 already works against chatgpt.com,
 so its logic is ported, not written again; [PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md) item 7).
-It is a library: the `chatgpt-web` Runtime in [@system/web-worker](../web-worker/README.md)
+It is a library: the `web` Runtime in [@system/web-worker](../web-worker/README.md)
 runs an attempt through the generic [Procedures](#generic-procedures-ww2-ii-new-here) bound to this
 package's UI map, and builds a `ChatGptWebDriver` for what login, remote login and recheck still
 ask of it: `checkAuth`, `open`, `diagnostics` and the map. System 1's `ask` (its whole turn)
@@ -21,7 +21,7 @@ fix in it is in the copied code and map, none was dropped.
 | Here | System 1 |
 |---|---|
 | `src/driver.ts` | `packages/plugins/provider-chatgpt-web/src/driver.ts` |
-| `ui/chatgpt-web.ui.yaml` | `packages/plugins/provider-chatgpt-web/ui/chatgpt-web.ui.yaml` |
+| `ui/chatgpt.ui.yaml` | `packages/plugins/provider-chatgpt-web/ui/chatgpt-web.ui.yaml` |
 | `src/ui-ops/*.ts` (map, locate, engine, outline, network, answers, site, heal) | `packages/ui-ops/src/*.ts` |
 | `ui/ui-map.v1.json` | `schemas/ui-map.v1.json` |
 | `src/core/` (`answer-text`, `errors`, `web-turns`, driver types, `canonical`, `files`, `util`) | the parts of `packages/provider-core/src` and `packages/libs/src` that the above import |

@@ -1,5 +1,5 @@
 /**
- * Which Chrome the `chatgpt-web` Runtime launches (PROP-0005): the configured
+ * Which Chrome the `web` Runtime launches (PROP-0005): the configured
  * path, then `CHROME_PATH`, then a system Chrome no older than the engine's
  * Chromium, then the **managed** Chrome for Testing build pinned in
  * `chrome.lock.json`, installed with `@puppeteer/browsers` under

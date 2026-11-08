@@ -1,6 +1,6 @@
 # @system/web-worker
 
-The `web-worker` row: the `chatgpt-web` Runtime, where an account is the
+The `web-worker` row: the `web` Runtime, where an account is the
 operator's own signed-in ChatGPT website session driven through a genuine
 headed Chrome ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
 It is its own package and an **optional, off** row (WW2a, config-first
@@ -12,14 +12,14 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 - **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH).
   **Provides:** `ctx.webWorker`, the `WebWorkerService` contract that
   [`@system/agents`](../agents/src/web.ts) declares: `register` (an account), `login`, `loginRemote`, `loginWait`, `recheck`.
-- **Accounts** stay in the `agents` row's `accounts` (`runtime: chatgpt-web`).
+- **Accounts** stay in the `agents` row's `accounts` (`runtime: web`).
   The `agents` row hands each to `register`, which checks it (Xvfb, no `headless`, the Chrome, the settings), registers its Worker
   and keeps its sign-in state; `system workers` shows the result.
 - **Registering (WW6e):** the Host serves while the `agents` row is still handing accounts over, so the row announces each
-  `chatgpt-web` account (`expect`) before the first registration. `system workers` lists one not yet registered as
+  `web` account (`expect`) before the first registration. `system workers` lists one not yet registered as
   `registering`; `login` and `login --remote` wait for it, at most `registerWaitSeconds` (row
   config, default 60) and then fail "still registering after N s". An account whose registration failed, before or after the operation came, is refused with that
-  reason (`chatgpt-web/<name>: <reason>`), one not configured with "is not a configured chatgpt-web account". An attempt needs no
+  reason (`web/chatgpt/<name>: <reason>`), one not configured with "is not a configured web account". An attempt needs no
   wait: the Worker exists only once registered. [tests/accounts.test.ts](tests/accounts.test.ts) holds a registration open by hand.
 - **Row off:** such an account is reported `unavailable` with the reason
   "the web-worker row is disabled", `system workers login` says the same, and none of
@@ -41,11 +41,12 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
   config:
     accounts:
       # the bundle's accounts, plus:
-      - ref: chatgpt-web/default
-        runtime: chatgpt-web
+      - ref: web/chatgpt/default             # web/<site>/<name>, <site> equal to `site`
+        runtime: web
+        site: chatgpt                          # picks the shipped UI map and the Site's defaults; an unknown one is refused with the shipped sites
         capabilities: [research, web-search]   # brainstorm.idea-<role> too, by role
         # all optional, with these defaults:
-        profileDir: chatgpt-web/default        # under $DSH_HOME/system unless absolute; mode 0700
+        profileDir: web/chatgpt/default        # the default; under $DSH_HOME/system unless absolute; mode 0700
         temporaryChat: true                    # each attempt in a temporary chat
         url: https://chatgpt.com/
         executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
@@ -56,12 +57,17 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 
 ## Accounts and attempts
 
-An Account `chatgpt-web/<name>` runs one step as one prompt in the operator's
+The Account's state is in `$DSH_HOME/system/web/<site>/<name>` ([migrate.ts](src/migrate.ts)); the Runtime was `chatgpt-web`,
+with `chatgpt-web/<name>`. At registration an old directory moves there once and one line is logged; with both present, or
+a Chrome holding the old profile, the Account is unavailable (never merged or deleted; see the
+[runbook](../../docs/operations/runbook.md#the-web-account)). A `profileDir` that is set is never moved.
+
+An Account `web/chatgpt/<name>` runs one step as one prompt in the operator's
 own signed-in ChatGPT web session ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
 It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives a genuine headed Chrome with
 `patchright-core` 1.63.0 (System 1's pin; [chrome.ts](src/chrome.ts) chooses the Chrome and installs the pinned Chrome for Testing on first use), and runs inside the Host,
 not as a spawned process. The account is configured in the `agents` row like any other;
-this row serves it (see above) and is off by default: [enable it](../../docs/operations/runbook.md#the-chatgpt-web-account).
+this row serves it (see above) and is off by default: [enable it](../../docs/operations/runbook.md#the-web-account).
 
 One attempt:
 
@@ -177,7 +183,7 @@ Cancel and `attemptTimeoutMinutes` close the browser (`context.close()`, a clean
 exit), as they stop a CLI; the record names that `close` stage, which is `ok` only
 once the browser process (the one in Chrome's `SingletonLock`) has exited. One
 that outlives `close()` for 3 s is killed and the stage fails, saying so. A UI
-change is a change to the map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
+change is a change to the map (`packages/web-driver/ui/chatgpt.ui.yaml`),
 not to this Runtime. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.
 
@@ -186,7 +192,7 @@ driver turn and the account option `procedures` that chose between the two are g
 attempt failed at a UI stage in 82+ canary runs on `procedures: generic`, operator decision of
 2026-11-08). An account that still sets `procedures`, either value, is `unavailable` with the
 reason "procedures was removed: the generic Procedures are the only path; delete the line".
-The evidence is still `chatgpt-web-evidence@1` (nothing validates it against a schema, and
+The evidence schema stays `chatgpt-web-evidence@1` through WW-rename (and `state.json` stays `chatgpt-web-account@1`: the move below carries it whole), so no record needs a second reader (nothing validates it against a schema, and
 `tools/web-canary` reads older records as they are) but no longer holds `procedures`. What the
 Procedures do:
 - A `send` the page never shows is `unknown`: the attempt fails as "send outcome unknown:
@@ -214,7 +220,7 @@ Procedures do:
   to it. `tools/web-canary --report` counts the distinct values per Account.
 `chatgpt.test.ts` runs the attempt tests once, on the Procedures.
 
-**Login** (`system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
+**Login** (`system workers login web/chatgpt/<name> [--cookies <file> | --remote]`,
 operator-only operations `workers.login`, `workers.loginRemote` and
 `workers.loginWait`): `--cookies` imports a JSON (browser-extension export) or
 Netscape cookie file, keeping only chatgpt.com and openai.com cookies and giving
@@ -264,8 +270,8 @@ reason:
 
 While not `ready` the Account's Worker offers no capability, so routing skips it as any unavailable Worker, and the Work controller and
 the slots are untouched; it stays registered for a Work that names it. `system workers` shows it `unavailable` with the state and the
-action, for example "needs sign-in since 05:10: run `system workers login chatgpt-web/second --remote`, then `system workers recheck
-chatgpt-web/second`" (the time is the Host's local time). A state change is noticed once: a line in the Host log and `lastNotice` in the
+action, for example "needs sign-in since 05:10: run `system workers login web/chatgpt/second --remote`, then `system workers recheck
+web/chatgpt/second`" (the time is the Host's local time). A state change is noticed once: a line in the Host log and `lastNotice` in the
 state; the same state seen again, or a longer cooldown in `cooling`, gives none. There is no automatic retry: a prompt is never resent.
 
 **Recheck** (`system workers recheck <ref>`, operator-only `workers.recheck`, [recheck.ts](src/recheck.ts)) opens the profile headed on its
@@ -276,4 +282,4 @@ successful `login --remote` does the recheck itself, and reports "signed in, but
 
 ## Limits
 
-The `chatgpt-web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that for their own account (PROP-0005). It needs a Chrome new enough for chatgpt.com: the pinned build is installed under `$DSH_HOME/system/browsers` when no recent one exists.
+The `web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that for their own account (PROP-0005). It needs a Chrome new enough for chatgpt.com: the pinned build is installed under `$DSH_HOME/system/browsers` when no recent one exists.

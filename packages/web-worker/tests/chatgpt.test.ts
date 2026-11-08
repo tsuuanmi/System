@@ -1,5 +1,5 @@
 /**
- * The chatgpt-web Runtime against System 1's local stand-in for chatgpt.com
+ * The web Runtime (Site chatgpt) against System 1's local stand-in for chatgpt.com
  * (packages/web-driver/tests/fake-chatgpt.ts): scenarios are options of the fake. Drives
  * the Chrome the Runtime chooses, headed on a private Xvfb; no network and no account. A
  * Chrome that cannot start fails it (test-support/headed.ts). The driver's own page logic
@@ -48,7 +48,7 @@ function web(fake: FakeChatGpt, extra: Partial<WebConfig> = {}): WebConfig {
   return { ...webDefaults(join(root, `profile-${count++}`)), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, ...extra }
 }
 const account = (config: WebConfig, extra: Partial<WebAccount> = {}): WebAccount => ({
-  ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
+  ref: 'web/chatgpt/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
 })
 function request(inputs: Record<string, string>, outputs: string[], signal = new AbortController().signal, tier?: string): WorkerRequest {
   return { workId: 'work:test', attemptId: `attempt:${count++}`, stepId: 'research', capabilities: tier ? ['research', `tier.${tier}`] : ['research'], inputs, outputs, signal }
@@ -202,7 +202,7 @@ test('one prompt is sent in a temporary chat in Chat mode, the answer is awaited
   assert.equal(fake.sent[0]!.mode, 'chat', 'the page started on Work: the driver switched it before anything was typed')
   assert.match(fake.sent[0]!.prompt, /"~~~~report"/)
   assert.equal(result.usage, undefined, 'the web UI shows no token counts')
-  assert.deepEqual(result.executor, { ref: 'chatgpt-web/default', account: 'default', command: CHROME, version: 'fake' })
+  assert.deepEqual(result.executor, { ref: 'web/chatgpt/default', account: 'default', command: CHROME, version: 'fake' })
   assert.ok(result.log)
 })
 
@@ -210,7 +210,7 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   const { artifacts, result } = await run({}, ['report'], { instructions: 'Explain the fake topic.' })
   assert.equal(result.status, 'succeeded', result.reason)
   const { occurrences, content } = conversationOf(artifacts, result)
-  assert.deepEqual(occurrences.map((o) => o.producer), [{ type: 'worker', ref: 'chatgpt-web/default' }])
+  assert.deepEqual(occurrences.map((o) => o.producer), [{ type: 'worker', ref: 'web/chatgpt/default' }])
   assert.equal(content.asserted.provider, 'ChatGPT')
   assert.match(content.asserted.url!, /^http:\/\/127\.0\.0\.1:\d+\/c\/[0-9a-f-]{36}\?temporary-chat=true$/, 'the site\'s own address of a temporary chat')
   // The Procedures read no model into the conversation: its record has none, never a guess.
@@ -558,7 +558,7 @@ test('an output is filled verbatim from the rendered block that carries its name
   assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { review: 'block' })
 })
 
-// WW5d (live 2026-11-08, chatgpt-web/default): the site shows "~~~~report" as paragraph text and its Copy escapes the Markdown.
+// WW5d (live 2026-11-08, web/chatgpt/default): the site shows "~~~~report" as paragraph text and its Copy escapes the Markdown.
 const escapedCopy = (markdown: string) => markdown.replace(/[~:]/g, (c) => `\\${c}`).replace(/\n/g, '\\\n')
 const PARAGRAPHS = '~~~~report\nThe capital of France is Paris. [s1]\n~~~~\n\n~~~~sources\n[{"id":"s1","url":"https://en.wikipedia.org/wiki/Paris"}]\n~~~~'
 

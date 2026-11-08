@@ -34,8 +34,8 @@ test('an overlay account with a ref the bundle has changes only the fields it na
 })
 
 test('an overlay account with a new ref is added after the bundle\'s; a scalar replaces; null removes a field', () => {
-  const config = agents('- id: agents\n  config:\n    attemptTimeoutMinutes: 30\n    accounts:\n      - ref: chatgpt-web/second\n        runtime: chatgpt-web\n        capabilities: [research]\n      - ref: claude-code/default\n        models: null\n')
-  assert.deepEqual(refs(config), ['claude-code/default', 'codex/default', 'chatgpt-web/second'])
+  const config = agents('- id: agents\n  config:\n    attemptTimeoutMinutes: 30\n    accounts:\n      - ref: web/chatgpt/second\n        runtime: web\n        site: chatgpt\n        capabilities: [research]\n      - ref: claude-code/default\n        models: null\n')
+  assert.deepEqual(refs(config), ['claude-code/default', 'codex/default', 'web/chatgpt/second'])
   assert.equal(config.attemptTimeoutMinutes, 30)
   assert.equal('models' in config.accounts[0]!, false)
 })

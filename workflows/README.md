@@ -42,7 +42,7 @@ bin/system work submit --workflow workflows/research.yaml --input <artifactId>
 ```
 
 [`tools/web-canary`](../tools/web-canary) runs it on a fixed question for the
-`chatgpt-web` Accounts ([runbook](../docs/operations/runbook.md#the-web-canary)).
+`web` Accounts ([runbook](../docs/operations/runbook.md#the-web-canary)).
 
 The vocabulary and preflight rules are in
 [workflow composition](../docs/architecture/workflow-composition.md).

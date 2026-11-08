@@ -35,15 +35,15 @@ nothing else.
   through the operator's Host when one answers, or one the test starts.
 - [web-worker-off.test.ts](web-worker-off.test.ts) — WW2a: the profile with the
   `web-worker` row off (the bundle's default) runs a Software Engineering Work and a
-  Brainstorm on the fake Runtimes, `system workers` reports a `chatgpt-web` account
+  Brainstorm on the fake Runtimes, `system workers` reports a `web` account
   unavailable with "the web-worker row is disabled", and `workers login` says the same.
-- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `chatgpt-web` account (the
+- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `web` account (the
   `web-worker` row turned on by a profile patch) on
   the booted profile against the local fake site ([web-driver](../packages/web-driver/tests/fake-chatgpt.ts)): `workers login --cookies`
   (no value printed), a sign-in wall reported, a Work filling its slot and
   producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).
 - [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
-  one Research Work on the operator's signed-in `chatgpt-web/default` profile.
+  one Research Work on the operator's signed-in `web/chatgpt/default` profile.
 - [web-canary.test.ts](web-canary.test.ts) — WW4: the canary Task has the same
   Artifact ID every time, `work submit --worker` refuses an unregistered Worker, and
   `tools/web-canary` runs and reports (each run classified as passed, worker-failed, verifier or other, the Worker step rate, older version apart, the WW gate)

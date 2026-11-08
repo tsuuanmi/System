@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // The Website Worker canary (PLAN milestone WW, step 4): the same fixed Research
-// question on each registered chatgpt-web Account, and a report read from System's
+// question on each registered web Account, and a report read from System's
 // own Work records. It uses only `bin/system` (SYSTEM_BIN overrides it, for tests)
 // and stores nothing of its own.
 //
-//   tools/web-canary                       run it on every chatgpt-web Account, one at a time
+//   tools/web-canary                       run it on every web Account, one at a time
 //   tools/web-canary --task                store the canary Task and print its Artifact ID
 //   tools/web-canary --report [--since T]  each run classified, the Worker step rate, the launch and wait times and the model, Power before and after selection, and target per Account and the WW gate (exit 3: not holding)
 import { spawnSync } from 'node:child_process'
@@ -55,22 +55,26 @@ function ok(args) {
 const taskFor = (text) => ok(['task', 'new', '--text', text]).trim().split('\n').at(-1)
 const canaryTask = () => taskFor(QUESTION)
 
-/** The Accounts of the chatgpt-web runtime that are registered Workers, from `system workers`. */
+/** The Accounts of the web runtime that are registered Workers, from `system workers`. */
 function accounts() {
   const lines = ok(['workers']).split('\n')
   const registered = (lines.find((l) => l.startsWith('registered:')) ?? '').slice('registered:'.length).split(',').map((r) => r.trim()).filter(Boolean)
   return lines.flatMap((line) => {
     const [ref] = line.trim().split(/\s+/)
-    return /\(chatgpt-web\)\s*$/.test(line) && registered.includes(ref) ? [ref] : []
+    return /\(web\)\s*$/.test(line) && registered.includes(ref) ? [ref] : []
   })
 }
+
+/** The Runtime was `chatgpt-web` with refs `chatgpt-web/<name>` until WW-rename; old Work records keep them, and the report counts them as the Account `web/chatgpt/<name>`. */
+const OLD_REF = /^chatgpt-web\/([^/]+)$/
+const accountOf = (ref) => ref.replace(OLD_REF, 'web/chatgpt/$1')
 
 const show = (workId) => JSON.parse(ok(['work', 'show', workId]))
 const seconds = (record) => (Date.parse(record.events.at(-1).at) - Date.parse(record.events[0].at)) / 1000
 
 function runAll() {
   const refs = accounts()
-  if (!refs.length) fail('no registered chatgpt-web Account (see system workers)')
+  if (!refs.length) fail('no registered web Account (see system workers)')
   const input = canaryTask()
   for (const ref of refs) {
     const submitted = sys(['work', 'submit', '--workflow', workflow, '--input', input, '--worker', ref], SUBMIT_TIMEOUT_MS)
@@ -147,7 +151,7 @@ function runsOf(input, since) {
     const read = evidenceId ? sys(['artifact', 'cat', evidenceId]) : undefined
     const evidence = read?.status === 0 ? JSON.parse(read.stdout) : undefined
     const asked = record.events.findLast((e) => e.type === 'dispatched' && e.stepId === WORKER_STEP)?.capability?.split(',').find((c) => c.startsWith('tier.'))
-    runs.push({ workId, at: admitted.at, account: admitted.worker ?? 'unknown', evidence, target: evidence?.powerTarget ?? asked?.slice('tier.'.length), ...classify(record) })
+    runs.push({ workId, at: admitted.at, account: accountOf(admitted.worker ?? 'unknown'), evidence, target: evidence?.powerTarget ?? asked?.slice('tier.'.length), ...classify(record) })
   }
   return runs.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
 }

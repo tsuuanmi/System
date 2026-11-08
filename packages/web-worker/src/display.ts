@@ -1,5 +1,5 @@
 /**
- * The private display of the `chatgpt-web` Runtime (PROP-0005): System never
+ * The private display of the `web` Runtime (PROP-0005): System never
  * runs the browser headless. It runs a real, headed Chrome on an invisible
  * display, a private Xvfb that this process owns and stops. Other local users
  * cannot draw on it or read it: it takes only an X authority cookie that sits

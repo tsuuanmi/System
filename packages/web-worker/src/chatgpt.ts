@@ -1,5 +1,5 @@
 /**
- * The `chatgpt-web` Runtime (PROP-0005): one attempt is one prompt sent in the
+ * The `web` Runtime (PROP-0005): one attempt is one prompt sent in the
  * operator's own signed-in ChatGPT web session, driven by patchright-core
  * through a recent Chrome (chrome.ts), always headed, on a display the attempt
  * owns, without the flags that advertise automation. The page logic is System
@@ -57,7 +57,7 @@ export function offeredTiers(map: UiMap): string[] {
   return bindsPower(map) ? TIERS.map(tierCapability) : []
 }
 
-/** One `chatgpt-web` account as the web Runtime runs it: `command` is the path of Chrome. */
+/** One `web` account as the web Runtime runs it: `command` is the path of Chrome. */
 export interface WebAccount {
   ref: string
   capabilities: string[]
@@ -80,8 +80,11 @@ export const LAUNCH_SECONDS = 30
 
 export const launchTimeoutMs = (web: WebConfig): number => (web.timeouts.launch ?? LAUNCH_SECONDS) * 1000
 
-export function webDefaults(profileDir: string): WebConfig {
-  return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', timeouts: { load: 60, answer: 900, stable: 3 }, maxOutsideChars: 200 }
+/** The shipped Sites and their defaults: the Site also picks the UI map (`@system/web-driver`'s `ui/<site>.ui.yaml`). */
+export const SITES: Record<string, { url: string }> = { chatgpt: { url: 'https://chatgpt.com/' } }
+
+export function webDefaults(profileDir: string, site = 'chatgpt'): WebConfig {
+  return { profileDir, temporaryChat: true, url: SITES[site]!.url, timeouts: { load: 60, answer: 900, stable: 3 }, maxOutsideChars: 200 }
 }
 
 /**

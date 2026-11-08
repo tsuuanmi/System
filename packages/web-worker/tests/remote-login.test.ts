@@ -273,7 +273,7 @@ test('an attempt runs a headed browser on its own Xvfb, and stops it afterwards'
   const before = xvfbChildren()
   try {
     const config = { ...web(''), url: `${fake.origin}/` }
-    const account: WebAccount = { ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config }
+    const account: WebAccount = { ref: 'web/chatgpt/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config }
     const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...CONVERSATION_KIND, content: conversationSchema })
     const task = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'x' }, classification: 'local-private', producer: { type: 'operator', ref: 'tester' } })).id
     const stop = new AbortController()
@@ -329,7 +329,7 @@ async function accountsOf(account: Record<string, unknown>, path?: string) {
   let reason = 'registered'
   try {
     apply(ctx as never)
-    await provided.webWorker.register({ ref: 'chatgpt-web/default', capabilities: ['research'], executablePath: CHROME, ...account })
+    await provided.webWorker.register({ ref: 'web/chatgpt/default', capabilities: ['research'], executablePath: CHROME, ...account })
   } catch (error) {
     reason = (error as Error).message
   } finally {
