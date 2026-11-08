@@ -125,22 +125,6 @@ export function readbackDiff(inserted: string, read: string): ReadbackDiff {
 }
 
 /**
- * A turn whose answer stalled or ran out of time: the page outlined (structure only, redacted as a
- * drift outline is), with what it said of itself. So a stall can be read without the operator's
- * browser.
- */
-export interface StallEvent {
-  provider: string
-  /** Where it stalled: `answer`, `research`. */
-  phase: string
-  /** `document.visibilityState` and `document.hasFocus()` of the page, when readable. */
-  visibility?: string
-  focused?: boolean
-  url?: string
-  outline?: UiOutline
-}
-
-/**
  * A Copy whose Markdown was not kept, so the answer was read as rendered text: nothing copied
  * (`empty`), its words not the rendered answer's (`words`, with the counts of the comparison), or
  * the copy failing (`failed`). Counts only, never text (`provider.copy-refused`).
@@ -516,18 +500,6 @@ export class UiEngine {
     } catch {
       return undefined
     }
-  }
-
-  /**
-   * The page as it stands, for a stall: outlined (structure only, redacted, its side navigation
-   * folded), with its visibility, focus, and path.
-   */
-  async stall(phase: string): Promise<StallEvent> {
-    const redact = await this.options.redact?.().catch(() => []) ?? []
-    const outline = await outlineOf(this.page, `turn page (${phase} stalled)`, undefined, redact, { foldNavigation: true }).catch(() => undefined)
-    const seen = await this.page.evaluate(() => ({ visibility: document.visibilityState as string, focused: document.hasFocus() })).catch(() => undefined)
-    const url = this.path()
-    return { provider: this.map.provider, phase, ...seen, ...(url ? { url } : {}), ...(outline ? { outline } : {}) }
   }
 
   /** The map's `errors` conditions guard every action: a login surface or challenge is never healed around. */

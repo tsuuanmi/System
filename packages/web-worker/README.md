@@ -50,7 +50,6 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
         url: https://chatgpt.com/
         executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
         timeouts: {load: 60, answer: 900, stable: 3}   # seconds; also launch (30) and mode (the UI map's own, 15)
-        procedures: legacy                     # or generic: the page logic of an attempt (see below); only generic offers tiers, which research steps ask
         cooldownSeconds: [120, 300]            # cooldown after the 1st, 2nd... consecutive site error (see Account health)
         hostLoad: 8                            # 1-minute load average above which a page timeout is the Host's; default 2 x CPUs
 ```
@@ -100,44 +99,41 @@ One attempt:
    first navigation and after the answer): the one-tab invariant is not
    claimed when it does not hold. A close is `ok` only when the browser
    process was identified and has exited.
-2. **Open and send** with System 1's ChatGPT web driver, ported whole into
-   [`@system/web-driver`](../web-driver/README.md): `open` loads the site's home
-   and reads the page's state (`checkAuth`: up to `load` seconds; a visible
-   composer is signed in; a challenge, the login page, the logged-out home held
-   3 s and the site's own error page are each their own failure), selects
-   **Chat** (a composer that names Work is refused: Work spends the Codex
-   quota) and, when `temporaryChat`, **Temporary chat** by the page's own
-   control. System never types into or solves a challenge. The driver then
-   clears the composer, reads the model back and sends one prompt built like the
-   CLI prompt, with the inputs (and context) inlined as text, and each output
-   slot asked for as a four-tilde fenced block labelled with its name (WW5c). At most 200 KiB.
-   Nothing in the Runtime knows a selector: the UI map is the driver's.
-3. **Wait** as the driver does: the answer's finished marker and text unchanged
-   for `stable` seconds, within `answer` seconds (a stall clock of 3 minutes, or
-   half of `answer` when that is shorter).
-4. **Read** the answer as Markdown from the page's own Copy control (kept only
-   when its words are the rendered answer's; the rendered text otherwise),
-   followed by the cited links the text lacks. Its links are the URLs in it.
-5. **Drift and heal:** what the driver reports (a drifted element, a refused
-   Copy, a stall) goes to the attempt's log as counts and structure only.
-   Self-heal is off: no decision store exists.
-6. **Fill** each slot from its labelled block (backtick or tilde fences by
-   CommonMark: a longer fence, or the other character, holds shorter ones; the
-   first block of a name wins). A missing block fails the attempt; so does an
+2. **Open and send** through the generic Procedures
+   ([web-driver](../web-driver/README.md#generic-procedures-ww2-ii-new-here)) bound to the
+   ChatGPT map: `open` loads the site's home and `checkAuth` reads the page's state (up to
+   `load` seconds; a visible composer is signed in; a challenge, the login page, the logged-out
+   home held 3 s and the site's own error page are each their own failure), `openChat` and
+   `ensureMode` select **Chat** (a composer that names Work is refused: Work spends the Codex
+   quota) and, when `temporaryChat`, **Temporary chat** by the page's own control. System never
+   types into or solves a challenge. `observeModel` and `selectPower` read and set the Power
+   level (below), `insertInstructions` clears the composer and puts in the prompt built like the
+   CLI prompt, with the inputs (and context) inlined as text, and each output slot asked for as a
+   four-tilde fenced block labelled with its name (WW5c): at most 200 KiB. `attachText` adds the
+   body of a two-part prompt, and `send` sends it. Nothing in the Runtime knows a selector: the UI
+   map is the Procedures'.
+3. **Wait** (`waitForAnswer`): the answer's finished marker and text unchanged for `stable`
+   seconds, within `answer` seconds (no stall clock, only that deadline).
+4. **Read** (`readAnswer`): the answer's rendered text, its code blocks with their labels and
+   the links in it. There is no Markdown: the Procedures never press Copy.
+5. **Drift:** what the Procedures report (a drifted element) goes to the attempt's log as counts
+   and structure only. Self-heal is off: no decision store exists.
+6. **Fill** each slot from the rendered block that carries its name (two of one name are
+   ambiguous and fail the attempt), else from a labelled fenced block in the rendered text
+   (backtick or tilde fences by CommonMark: a longer fence, or the other character, holds
+   shorter ones; the first block of a name wins). A missing block fails the attempt; so does an
    answer with more than `maxOutsideChars` (account setting, default 200)
    characters outside its output blocks, whitespace ignored (WW5c: "the answer
    continues outside its output blocks (N characters): an output may be cut
    short", for a fence closed early by its own content). What was found stays
-   as unaccepted partial output. When no rendered block and no Markdown fence
-   gives any output (the site showed the fences as paragraph text and its Copy
-   escaped the Markdown, WW5d), the answer's rendered text is read by the same
-   rules, and `outsideChars` counts that text. Escaped Markdown (a line of
-   escaped tildes or backticks, or `\:`) never fills an output: the rendered
-   text gives it exactly, or the attempt fails.
+   as unaccepted partial output. When no rendered block gives any output (the site showed
+   the fences as paragraph text, WW5d), the fences in the rendered text are read by the same
+   rules, and `outsideChars` counts that text; text that is escaped Markdown (a line of
+   escaped tildes or backticks, or `\:`) never fills an output. Otherwise `outsideChars`
+   counts the page text outside the label and code of the blocks that fill outputs.
 7. **Record** a `conversation@1`: `prompt.md` and `response.md` as parts,
    `links.json` (the cited hrefs) as an attachment, asserted `provider:
-   ChatGPT`, the page `url`, the `model` the driver read back from the model
-   menu and `context: [ui-map:<uiRevision>, temporary-chat]` (the latter when
+   ChatGPT`, the page `url` (no `model`: the Procedures select none) and `context: [ui-map:<uiRevision>, temporary-chat]` (the latter when
    used). Its
    producer is the Worker (the attempt observed the exchange). It is returned as
    the extra output `conversation` (the controller records only a step's
@@ -150,7 +146,7 @@ the DOM's structure, bounded to 20,000 characters: tags, attribute names, `role`
 `aria-label` and `data-testid` values, and every text node and other attribute
 value replaced by its length (`[text:42]`); no cookie or storage is read. **Evidence (WW1):** each attempt makes a small JSON record before Chrome
 launches ([evidence.ts](src/evidence.ts)) and rewrites it, atomically, as each stage
-starts and ends: `launch`, `open`, `auth`, `mode`, `insert` (the prompt into the composer: one
+starts and ends: `launch`, `open`, `auth`, `mode`, `observe`, `power`, `insert` (the prompt into the composer: one
 paste, so a 60 KB prompt takes about a second), `attach` (only for a two-part prompt, below), `send`, `wait`, `read`,
 `close`, in the order they run, with elapsed times, `promptSendAttempted` (true from
 the moment the send is tried, so a retry never assumes the prompt was not sent),
@@ -159,8 +155,8 @@ timeout, the page counts (initial, before the first navigation, and confirmed
 closed inherited and late, and late ones that would not close), the viewport, Chrome's version, the UI map's revision and hash,
 the failed stage and the last completed one, and for a two-part prompt `attach`: which outcome (`text` or
 `attachment`) and the chip count, and `filled`: how each output was filled (`block`: the rendered
-code block labelled with its name, verbatim, two of one name being ambiguous and a failure; `text`: the
-Markdown's fenced block; `rendered`: the answer's rendered text, when Copy was escaped, WW5d; WW5b) and `outsideChars`, the characters outside the output blocks (WW5c). `stripped`: per output, each leaked control token removed from its edges (the UI map's `answer.leakedTokens`, WW6b), when any was. `waitEnded`: how the wait for the answer ended (`done`, `site error`, `timeout`), and `siteError`: true when the newest answer held the site's own error, "This response couldn’t load" (WW6a). That attempt fails at once with the reason "site error: the answer did not load (retryable)", the screenshot and the structure-only snapshot kept; it is never resent. It is partial output `evidence` of
+code block labelled with its name, verbatim, two of one name being ambiguous and a failure; `rendered`: the
+answer's rendered text, when the site showed the fences as text, WW5d; WW5b; older records have `text`, the Markdown of the removed driver's Copy) and `outsideChars`, the characters outside the output blocks (WW5c). `stripped`: per output, each leaked control token removed from its edges (the UI map's `answer.leakedTokens`, WW6b), when any was. `waitEnded`: how the wait for the answer ended (`done`, `site error`, `timeout`), and `siteError`: true when the newest answer held the site's own error, "This response couldn’t load" (WW6a). That attempt fails at once with the reason "site error: the answer did not load (retryable)", the screenshot and the structure-only snapshot kept; it is never resent. It is partial output `evidence` of
 every attempt, succeeded or not (WW6c: the observation records it, so `system work show` lists it and replay keeps it; no Workflow step declares it), and the last line of the log of every attempt.
 **A prompt in two parts (WW1g).** `webPrompt` returns the header (role line, step,
 instructions, the output-format request, and a line naming the attached inputs), which
@@ -168,7 +164,7 @@ the `insert` stage puts in the composer and reads back exactly, and the body (th
 and context, fenced and named), which the `attach` stage pastes after it as its own
 paste. The site decides what a long paste is: a Team workspace turned 61,581 characters
 into an attachment chip (the composer read 2 characters), another account kept 69,410 as
-text. The driver accepts either (the composer holds header and body, or header and
+text. The Procedures accept either (the composer holds header and body, or header and
 exactly one new chip named by the body's start, with nothing still being added) and
 anything else fails before the send in the stage `attach`, with the screenshot and
 structure-only DOM above. Inputs under the map's `attachMinChars` stay in the one
@@ -181,28 +177,21 @@ Cancel and `attemptTimeoutMinutes` close the browser (`context.close()`, a clean
 exit), as they stop a CLI; the record names that `close` stage, which is `ok` only
 once the browser process (the one in Chrome's `SingletonLock`) has exited. One
 that outlives `close()` for 3 s is killed and the stage fails, saying so. A UI
-change is a change to the driver's map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
+change is a change to the map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
 not to this Runtime. After a lost attempt the Account's slot is held while the
 process in Chrome's `SingletonLock` lives.
 
-**Which page logic (`procedures`, WW2-iii).** `legacy` (the default) is System 1's ChatGPT
-driver, as above. `generic` runs the same attempt through the generic Procedures
-([web-driver](../web-driver/README.md#generic-procedures-ww2-ii-new-here)) bound to the ChatGPT map:
-`checkAuth`, `openChat` (a temporary chat when `temporaryChat`), `ensureMode`,
-`observeModel` (the `observe` stage), `selectPower` (the `power` stage), `insertInstructions`, `attachText` (the body, when the prompt has two parts), `send`,
-`waitForAnswer`, `readAnswer`, so the two can be compared on the real site. Anything but
-`legacy` or `generic` makes the account `unavailable`. Everything around the page logic is
-the same: launch, profile preparation, the one-tab invariant, the stages and their names
-(the evidence adds `procedures: generic`), the outputs filled from labelled rendered blocks
-and then the rendered text, leaked tokens, the `maxOutsideChars` guard, the
-`conversation@1` record, cancel and the time limit. What `generic` does differently:
+**One page logic (WW2-iv).** The generic Procedures are the only path; System 1's ChatGPT
+driver turn and the account option `procedures` that chose between the two are gone (no
+attempt failed at a UI stage in 82+ canary runs on `procedures: generic`, operator decision of
+2026-11-08). An account that still sets `procedures`, either value, is `unavailable` with the
+reason "procedures was removed: the generic Procedures are the only path; delete the line".
+The evidence is still `chatgpt-web-evidence@1` (nothing validates it against a schema, and
+`tools/web-canary` reads older records as they are) but no longer holds `procedures`. What the
+Procedures do:
 - A `send` the page never shows is `unknown`: the attempt fails as "send outcome unknown:
-  not resent" and nothing is sent again (the legacy driver counts a click that threw as
-  submitted and goes on to wait). A site error keeps "site error: the answer did not load
-  (retryable)".
-- There is no Markdown: the Procedures never press Copy, so the text is the page's rendered
-  text, an output comes from a rendered block that carries its name or from fences in that
-  text, `response.md` is that text, and `links.json` holds the links' targets.
+  not resent" and nothing is sent again. A site error keeps "site error: the answer did not
+  load (retryable)".
 - No model is selected (the `conversation@1` has none). The `observe` stage, after `mode`
   and before `insert`, only reads the model and Power the page shows, and the evidence records
   them as `model` and `powerBefore` (WW8a; a string, or null when unreadable or the map binds no such
@@ -219,17 +208,11 @@ and then the rendered text, leaked tokens, the `maxOutsideChars` guard, the
   before anything is typed, so `promptSendAttempted` is false. The evidence records
   `powerTarget` (`economy`, `standard` or `frontier`), `powerLevels` (the total) and `power`
   (the level the status shows after the selection). A map that binds no Power control has no
-  such stage. An Account offers `tier.economy`, `tier.standard` and `tier.frontier` when it runs
-  `procedures: generic` and the map binds the control (the `model.open`, `model.close`, `model.power`
-  and `model.power-status` entries); on `legacy`, which selects nothing, it offers none, and a step
-  that asks a tier (`workflows/research.yaml` asks `tier.standard`) does not route to it.
-  `tools/web-canary --report` counts the distinct values per Account. The wait has no
-  stall clock, only its deadline (`timeouts.answer`).
-- `outsideChars` counts the page text outside the label and code of the blocks that fill
-  outputs.
-`chatgpt.test.ts` runs for both values (`chatgpt-generic.test.ts` sets `generic` and loads
-it again); the few tests that need Copy's Markdown or the model picker are skipped for
-`generic`, each saying why. The legacy path stays until the two have been compared live.
+  such stage. An Account offers `tier.economy`, `tier.standard` and `tier.frontier` when the
+  map binds the control (the `model.open`, `model.close`, `model.power` and `model.power-status`
+  entries), and a step that asks a tier (`workflows/research.yaml` asks `tier.standard`) routes
+  to it. `tools/web-canary --report` counts the distinct values per Account.
+`chatgpt.test.ts` runs the attempt tests once, on the Procedures.
 
 **Login** (`system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
 operator-only operations `workers.login`, `workers.loginRemote` and

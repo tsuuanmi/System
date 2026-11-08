@@ -1,46 +1,34 @@
 // Ported from System 1 (tsuuanmi/system @ f199a277): packages/plugins/provider-chatgpt-web/src/driver.ts. Changes: packages/web-driver/README.md.
 /**
- * The ChatGPT Web provider driver (docs/design/provider-turns.md). Procedures only: every
+ * The ChatGPT Web provider driver (docs/design/provider-turns.md), what is left of it after the
+ * turn went to the generic Procedures (WW2-iv): the sign-in check, the opening of a chat in Chat
+ * mode, the page diagnostics and the shipped map, for the login and the recheck. Every
  * element, action, and state comes from `ui/chatgpt-web.ui.yaml` through the UI engine
  * (ADR-0021), so a UI change is a map change. Rules that are not UI:
  * - a new conversation starts in **Chat** mode, never Work (Work spends the Codex quota);
- * - one-shot turns run in Temporary chat; persistent turns bind `/c/<id>`;
- * - running is Stop in the action slot; completion also needs the answer's finished
- *   marker and stable text (the event stream stays open, so it is never consulted).
+ * - one-shot turns run in Temporary chat; persistent turns bind `/c/<id>`.
  */
-import { type AskOptions, type AskResult, type AuthState, bindingReporter, completionOptions, type DeleteOptions, modePresets, ProviderError, type ProviderDriver, type ProviderFeature, type ProviderMode, type ResearchState, type TurnSnapshot, sleep, splitAfterLastFence, waitForReport, waitForStableCompletion, withMissingSources } from './core/index.ts'
-import { type AttachOutcome, copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, shippedMapProblemOf, type StallEvent, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
+import { type OpenOptions, type AuthState, type DeleteOptions, ProviderError, type ProviderFeature, type ResearchState, type TurnSnapshot, sleep, splitAfterLastFence, withMissingSources } from './core/index.ts'
+import { copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, shippedMapProblemOf, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
 import type { Frame, Locator, Page, Route } from 'patchright-core'
 
 /** How long the logged-out home must hold, with no composer, before it counts as signed out. */
 const LOGGED_OUT_HOLD_MS = 3000
 
 export interface DriverTimeouts {
-  /** Hard deadline for one turn (default 15 min). */
-  turnMs?: number
-  /** No-progress deadline (default 3 min). */
-  stallMs?: number
-  /** Unchanged-text window before an answer counts as complete (default 1.5 s). */
-  stableMs?: number
   pollMs?: number
   /** Page readiness after navigation (default 30 s). */
   readyMs?: number
-  /** After Deep research's acknowledgement, how long to wait for its frame before treating the reply as a clarifying question (default 60 s). */
-  researchStartMs?: number
   /** How long a reopened conversation may take to render before it counts as not observed (default 20 s). */
   snapshotMs?: number
-  /** How long a completed Deep research report may stay unreadable before it is UI drift (default 30 s). */
-  reportReadMs?: number
   /** How long the Chat/Work switch may take to render (default: the map's `settings.modeReadyMs`). */
   modeReadyMs?: number
   /** How long the mode the switch shows must hold (default: the map's `settings.modeSettleMs`). */
   modeSettleMs?: number
-  /** How long a pasted body may take to settle as text or one finished attachment (default: the map's `settings.attachWaitMs`). */
-  attachWaitMs?: number
 }
 
-/** The stages of a turn, in order, as `onStage` reports them. */
-export type TurnStage = 'open' | 'auth' | 'mode' | 'insert' | 'attach' | 'send' | 'wait' | 'read'
+/** The stages `open` runs, as `onStage` reports them. */
+export type TurnStage = 'open' | 'auth'
 export interface StageEvent {
   stage: TurnStage
   status: 'start' | 'ok' | 'failed'
@@ -64,15 +52,9 @@ export interface DriverOptions {
   /** Local overlay text (`<DSH_HOME>/system/ui/chatgpt-web.overlay.yaml`). */
   overlay?: string
   timeouts?: DriverTimeouts
-  /** Named mode presets (model and Power level as the site names them). */
-  modes?: Record<string, ProviderMode>
-  /** Preset used when a turn names none; with no default the site's current selection is kept and read back. */
-  defaultMode?: string
   /** The account's page opens are spaced at least this far apart (default 10 s, ADR-0030). */
   pageGapMs?: number
 }
-
-const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** Sign-in steps run on signed-out pages, where the map's sign-out guard would always fire. */
 const NO_GUARDS = { guards: false } as const
@@ -97,9 +79,6 @@ const FEATURE_ENTRIES = [['deep-research', 'tools.deep-research'], ['web-search'
 /** Where a Deep research report was read: its frame, or inline as the last answer. */
 type ReportPath = 'frame' | 'inline'
 
-/** The reason of an answer the site itself could not load: a retry is System's, never the driver's. */
-const SITE_ERROR_ANSWER = 'site error: the answer did not load (retryable)'
-
 /** The failures that are the site's own error page, which `open` loads once more. */
 const SITE_ERROR_PAGES = new WeakSet<object>()
 function siteErrorPage(): ProviderError {
@@ -108,7 +87,7 @@ function siteErrorPage(): ProviderError {
   return error
 }
 
-export class ChatGptWebDriver implements ProviderDriver<Page> {
+export class ChatGptWebDriver {
   readonly provider = 'chatgpt-web'
   /** The site's name for people: its Workers' display name starts with it (the roster). */
   readonly title = 'ChatGPT'
@@ -130,13 +109,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   onDrift: ((event: DriftEvent) => void) | undefined
   /** An answer's Copy that was not kept, so it was read as rendered text: counts only; the plugin records it (`provider.copy-refused`). */
   onCopyRefused: ((event: CopyRefusedEvent) => void) | undefined
-  /** A turn whose answer stalled or ran out of time, outlined; the plugin records it (`provider.stall`). */
-  onStall: ((event: StallEvent) => void) | undefined
-  /**
-   * A Deep research report as read: from its frame or inline, its length, and the source links it
-   * carries; counts only, never text (`provider.report-read`), so an unread citation is decidable.
-   */
-  onReport: ((event: { provider: string; path: ReportPath; chars: number; links: number }) => void) | undefined
   onHeal: ((event: HealEvent) => void) | undefined
   /** Records a chosen heal before it acts (INV-13); a throw aborts the action. */
   beforeHealedAction: ((event: HealEvent) => void | Promise<void>) | undefined
@@ -144,25 +116,17 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   healEnabled: () => boolean = () => true
   /** Each stage of a turn as it starts and ends; the Runtime writes it into its evidence record. */
   onStage: ((event: StageEvent) => void) | undefined
-  /** Called once the page shows a user turn for the sent prompt: the site has it (`send` alone is an attempt). */
-  onSubmitted: (() => void) | undefined
-  /** What the site made of the attached body: text in the composer, or attachment chips (WW1g); the Runtime records it. */
-  onAttached: ((outcome: AttachOutcome) => void) | undefined
   private readonly origin: string
-  private readonly timeouts: Required<Omit<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs' | 'attachWaitMs'>> & Pick<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs' | 'attachWaitMs'>
+  private readonly timeouts: Required<Omit<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>> & Pick<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>
   private readonly engines = new WeakMap<Page, UiEngine>()
-  readonly modes: readonly string[]
-  private readonly preset: (name: string | undefined) => ProviderMode | undefined
 
   constructor(options: DriverOptions = {}) {
     this.map = shippedMap(options.overlay)
     this.origin = (options.origin ?? 'https://chatgpt.com').replace(/\/$/, '')
-    this.preset = modePresets(this.provider, options.modes, options.defaultMode)
-    this.modes = Object.keys(options.modes ?? {})
     this.loginUrl = `${this.origin}/auth/login`
     this.stateOrigins = [this.origin]
     this.pageGapMs = options.pageGapMs ?? 10_000
-    this.timeouts = { turnMs: 15 * 60_000, stallMs: 3 * 60_000, stableMs: 1500, pollMs: 250, readyMs: 30_000, researchStartMs: 60_000, snapshotMs: 20_000, reportReadMs: 30_000, ...options.timeouts }
+    this.timeouts = { pollMs: 250, readyMs: 30_000, snapshotMs: 20_000, ...options.timeouts }
   }
 
   /**
@@ -209,136 +173,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     return `${this.provider}:${body.id}`
   }
 
-  /** One turn: open the conversation, select Chat, submit, and wait for the answer. */
-  async ask(page: Page, prompt: string, options: AskOptions): Promise<AskResult> {
-    const feature = options.feature ?? 'chat'
-    if (feature === 'deep-research' && options.conversation !== 'persistent') {
-      throw new ProviderError('invalid_input', 'chatgpt-web: Deep research needs a persistent conversation (it is not offered in Temporary chat)')
-    }
-    const preset = this.preset(options.mode)
-    await this.reach(page, options)
-    const engine = this.engine(page)
-    let before = 0
-    let previousResponse: string | null = null
-    let mode: ProviderMode = {}
-    await this.staged('mode', async () => {
-      await this.enterMode(page, engine, options)
-      before = await engine.count('turn.assistant')
-      previousResponse = before > 0 ? await this.answerText(engine) : null
-      // An unsent draft the site kept (as Gemini does in a login profile) never goes with the prompt.
-      await engine.act('composer.clear')
-      mode = await this.selectMode(page, preset)
-      if (feature === 'deep-research' || feature === 'web-search') {
-        await engine.act('tools.open')
-        await engine.act(feature === 'deep-research' ? 'tools.deep-research' : 'tools.web-search')
-      }
-    })
-    // Never sent on a failure after the text is in: it is not left behind as a draft for the next turn or the operator.
-    const beforeSend = async (run: () => Promise<void>): Promise<void> => {
-      try {
-        await run()
-        // The mode is read again right before the send: the insert can take long enough for the page to change it.
-        await this.requireChat(engine, 'before sending')
-        await this.refuseWorkComposer(engine)
-        options.signal?.throwIfAborted()
-        await options.beforeSend?.({ previousResponse, mode })
-      } catch (error) {
-        await engine.act('composer.clear').catch(() => undefined)
-        throw error
-      }
-    }
-    // The insert is its own stage: a long prompt takes most of the time of what was one stage with the mode.
-    // With a body, the checks right before the send close the attach stage instead.
-    const body = options.attachment
-    await this.staged('insert', () => body ? engine.act('composer.insert', { text: prompt }) : beforeSend(() => engine.act('composer.insert', { text: prompt })))
-    // The body is its own paste after the header, and its own stage: the site may turn it into an attachment.
-    if (body) {
-      await this.staged('attach', () => beforeSend(async () => {
-        // Awaited before the call: an optional call whose callback is unset would never evaluate its argument.
-        const outcome = await engine.attachText('composer.attach', body, prompt, this.timeouts.attachWaitMs)
-        this.onAttached?.(outcome)
-      }))
-    }
-    // The stage starts before the click: a click that throws may still have sent, so it counts as submitted.
-    await this.staged('send', async () => {
-      const turns = await engine.count('turn.user')
-      await engine.act('composer.send')
-      // Confirmed only when the page shows the new user turn (it keeps no claim when the turn is slow to render).
-      for (const end = Date.now() + 10_000; Date.now() < end; await sleep(this.timeouts.pollMs)) {
-        options.signal?.throwIfAborted()
-        if ((await engine.count('turn.user').catch(() => 0)) > turns) return this.onSubmitted?.()
-      }
-    })
-    const reply = await this.staged('wait', () => this.waitForAnswer(page, before, options.signal, options.deadlines, options.conversation === 'persistent' && !options.binding ? options.onBinding : undefined))
-    // The binding is part of the read stage's one record: a failure there is where the attempt failed.
-    const { text, blocks, rendered, binding } = await this.staged('read', async () => {
-      // Deep research answers with an acknowledgement; the report arrives later in its frame.
-      const read = feature === 'deep-research' ? await this.waitForResearch(page, reply, options.signal, options.deadlines).then((report) => ({ text: report, blocks: [], rendered: report })) : { ...(await this.markdownOf(page, reply)), rendered: reply }
-      // The site answered with its own usage limit (a map rule `on: answer`, ADR-0034): sent, never
-      // resent. Only this answer is looked at, never an earlier one of the conversation.
-      if ((await engine.count('turn.assistant')) > 0) await engine.answerErrors((await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
-      if (options.conversation === 'temporary') return { ...read, binding: undefined }
-      const found = await this.binding(page)
-      if (options.binding !== undefined && found !== options.binding) {
-        throw new ProviderError('session_broken', `chatgpt-web: conversation moved from ${options.binding} to ${found}`)
-      }
-      return { ...read, binding: found }
-    })
-    return { text, blocks, rendered, binding, mode }
-  }
-
-  /**
-   * Select a model and Power level in the model menu, then read both back. Nothing is
-   * assumed: an unknown or locked model, or an unreachable level, fails before sending.
-   */
-  async selectMode(page: Page, wanted: ProviderMode | undefined): Promise<ProviderMode> {
-    const engine = this.engine(page)
-    try {
-      // View A: the Power level.
-      await this.openModelMenu(engine)
-      if (wanted?.effort) await this.selectEffort(engine, wanted.effort)
-      const effort = (await this.effortStatus(engine))?.level
-      // View B: the model list.
-      await engine.act('model.show-models')
-      let options = (await engine.resolve('model.option', 3000)).locator
-      if (wanted?.model) {
-        const names = await this.optionNames(options)
-        const match = options.filter({ hasText: new RegExp(`^\\s*${escapeRegex(wanted.model)}(?![\\w.])`) })
-        if ((await match.count()) !== 1) {
-          throw new ProviderError('config_error', `chatgpt-web: model ${wanted.model} is not offered (available: ${names.join(', ')})`)
-        }
-        if ((await match.getAttribute('aria-disabled')) === 'true') {
-          throw new ProviderError('config_error', `chatgpt-web: model ${wanted.model} is locked for this account`)
-        }
-        if ((await match.getAttribute('aria-checked')) !== 'true') {
-          await match.click()
-          // Choosing a model may close the menu or return to view A: reopen the list to read it back.
-          await this.openModelMenu(engine)
-          if ((await engine.count('model.option')) === 0) await engine.act('model.show-models')
-          options = (await engine.resolve('model.option', 3000)).locator
-        }
-      }
-      const states = await options.evaluateAll((els) => els.map((el) => [el.getAttribute('aria-checked'), (el as HTMLElement).innerText] as const))
-      const checked = states.filter(([state]) => state === 'true')
-      const model = checked.length === 1 ? this.optionName(checked[0]![1]) : undefined
-      if (wanted?.model && model !== wanted.model) throw new ProviderError('config_error', `chatgpt-web: model reads back as ${model ?? 'none'}, not ${wanted.model}`)
-      if (wanted?.effort && effort !== wanted.effort) throw new ProviderError('config_error', `chatgpt-web: Power reads back as ${effort ?? 'none'}, not ${wanted.effort}`)
-      return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) }
-    } finally {
-      await page.keyboard.press('Escape')
-      await engine.waitFor({ hidden: 'model.menu' }, 3000).catch(() => page.keyboard.press('Escape'))
-    }
-  }
-
-  /** Open the model menu unless it is already open. */
-  private async openModelMenu(engine: UiEngine): Promise<void> {
-    if ((await engine.count('model.menu')) === 0) await engine.act('model.open')
-  }
-
-  /**
-   * Which features this account offers (REQ-PRV-7): a new chat's "+" tools popover is opened and
-   * read, then closed. Nothing is typed or sent.
-   */
   async probeFeatures(page: Page): Promise<string[]> {
     await this.open(page, { conversation: 'persistent' })
     const engine = this.engine(page)
@@ -350,13 +184,13 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   }
 
   /** Navigate to a new or bound conversation in the requested mode. */
-  async open(page: Page, options: AskOptions): Promise<void> {
+  async open(page: Page, options: OpenOptions): Promise<void> {
     await this.reach(page, options)
     await this.enterMode(page, this.engine(page), options)
   }
 
   /** Load the conversation's page and require a signed-in app on it. */
-  private async reach(page: Page, options: AskOptions): Promise<void> {
+  private async reach(page: Page, options: OpenOptions): Promise<void> {
     if (options.conversation === 'temporary' && options.binding !== undefined) {
       throw new ProviderError('invalid_input', 'chatgpt-web: a temporary turn has no conversation to continue')
     }
@@ -380,7 +214,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   }
 
   /** Chat on the home page (a temporary chat when asked), or kept in a bound conversation. */
-  private async enterMode(page: Page, engine: UiEngine, options: AskOptions): Promise<void> {
+  private async enterMode(page: Page, engine: UiEngine, options: OpenOptions): Promise<void> {
     if (!options.binding) {
       // A new conversation: Chat must be selected on the home page first, once the switch is there.
       await this.awaitModeSwitch(engine)
@@ -766,52 +600,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     }
   }
 
-  /** The canonical conversation id from the URL, waiting briefly for it to appear. */
-  async binding(page: Page): Promise<string> {
-    const deadline = Date.now() + this.timeouts.readyMs
-    for (;;) {
-      const id = this.bindingOf(page)
-      if (id) return id
-      if (Date.now() >= deadline) throw new ProviderError('session_broken', 'chatgpt-web: no conversation id after the answer')
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-  }
-
-  private optionName(text: string): string {
-    // A radio's text may carry a note after the name, e.g. "GPT-5.5\nLeaving on October 14".
-    return text.split('\n')[0]!.trim()
-  }
-
-  private async optionNames(options: import('patchright-core').Locator): Promise<string[]> {
-    return (await options.allInnerTexts()).map((t) => this.optionName(t))
-  }
-
-  private async effortStatus(engine: UiEngine): Promise<{ level: string; index: number; total: number } | undefined> {
-    const status = await engine.resolve('model.power-status', 2000).catch(() => undefined)
-    const text = status ? await status.locator.innerText() : ''
-    const m = /^\s*([^,]+),\s*(\d+)\s+of\s+(\d+)/.exec(text)
-    return m ? { level: m[1]!.trim(), index: Number(m[2]), total: Number(m[3]) } : undefined
-  }
-
-  /** Step the Power slider with arrow keys until the status names the wanted level. */
-  private async selectEffort(engine: UiEngine, level: string): Promise<void> {
-    const control = (await engine.resolve('model.power', 3000)).locator
-    await control.focus()
-    const seen: string[] = []
-    for (const key of ['ArrowLeft', 'ArrowRight'] as const) {
-      for (let step = 0; step < 8; step++) {
-        const status = await this.effortStatus(engine)
-        if (!status) throw new ProviderError('ui_drift', 'chatgpt-web: the Power level cannot be read')
-        if (!seen.includes(status.level)) seen.push(status.level)
-        if (status.level === level) return
-        if (key === 'ArrowLeft' ? status.index <= 1 : status.index >= status.total) break
-        await control.press(key)
-        await engine.waitFor({ anyOf: [{ visible: 'model.power-status' }] }, 1000)
-      }
-    }
-    throw new ProviderError('config_error', `chatgpt-web: Power level ${level} is not offered (available: ${seen.join(', ')})`)
-  }
-
   engine(page: Page): UiEngine {
     let engine = this.engines.get(page)
     if (!engine) {
@@ -840,60 +628,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     }
   }
 
-  /**
-   * The textbox names the tab it sends to ("Work with ChatGPT" on Work, live 2026-10-18): one that
-   * names Work never sends, whatever the switch shows (the switch is hidden in some views).
-   */
-  private async refuseWorkComposer(engine: UiEngine): Promise<void> {
-    const input = await engine.resolve('composer.input', 1000).catch(() => undefined)
-    const label = input ? await input.locator.getAttribute('aria-label') : null
-    if (label && /\bWork\b/.test(label)) {
-      throw new ProviderError('ui_drift', `chatgpt-web: the composer reads "${label.slice(0, 60)}" before sending; refusing to use Work (Codex quota)`)
-    }
-  }
-
-  /**
-   * Wait for Deep research's report. If no research frame appears within `researchStartMs`,
-   * the reply was a clarifying question, which is returned so the caller can answer it in the
-   * same session.
-   */
-  private async waitForResearch(page: Page, reply: string, signal: AbortSignal | undefined, deadlines: AskOptions['deadlines']): Promise<string> {
-    const engine = this.engine(page)
-    const startBy = Date.now() + this.timeouts.researchStartMs
-    for (;;) {
-      const state = await this.researchState(page, engine, reply)
-      if (state.running || state.done) break
-      if (Date.now() > startBy) {
-        // A clarifying question, or a run this map cannot see: the page is outlined, so a missed run can be mapped.
-        if (this.onStall) await engine.stall('research-start').then((event) => this.onStall?.(event), () => undefined)
-        return reply
-      }
-      signal?.throwIfAborted()
-      await page.waitForTimeout(500)
-    }
-    // How this run's report was read: per run, since one driver serves concurrent turns.
-    let path: ReportPath = 'inline'
-    const state = async (): Promise<ResearchState> => {
-      const read = await this.researchState(page, engine, reply)
-      if (read.path) path = read.path
-      return read
-    }
-    const report = waitForReport(state, this.timeouts, { provider: this.provider, element: 'research.report-title', deadlines, signal })
-    void report.then((text) => this.onReport?.({ provider: this.provider, path, chars: text.length, links: (text.match(/https?:\/\/[^\s)>"\]]+/g) ?? []).length }), () => undefined)
-    return report.catch(async (error: unknown) => {
-      await this.stalled(engine, 'research', error)
-      // A completed report that cannot be read is outlined as drift evidence of the report's entry.
-      if (error instanceof ProviderError && error.kind === 'ui_drift') await engine.drift('research.report-title').catch(() => undefined)
-      throw error
-    })
-  }
-
-  /**
-   * The report in its frame: the container of the report's title (live layout of 2026-10-12),
-   * then its citation links as a `Sources:` list, since rendered text keeps only the labels: the
-   * frame's own, then the source pills the conversation shows after the prompt, outside the frame
-   * (live 2026-10-18: a framed report whose links were all pills in the thread).
-   */
   private async reportText(engine: UiEngine, frame: Frame): Promise<string> {
     const title = await engine.findIn('research.report-title', frame)
     if (!title) return ''
@@ -983,34 +717,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     })).catch(() => [])
   }
 
-  private async waitForAnswer(page: Page, before: number, signal: AbortSignal | undefined, deadlines: AskOptions['deadlines'], onBinding?: (binding: string) => void): Promise<string> {
-    const engine = this.engine(page)
-    const reportBinding = bindingReporter(() => this.bindingOf(page), onBinding)
-    const read = async () => {
-      reportBinding()
-      const count = await engine.count('turn.assistant')
-      if (count <= before) return { responsePresent: false, text: '', html: '', running: true }
-      // The site's own error in the newest answer ends the wait at once, whatever was streamed before it: sent, never resent from here.
-      if (await engine.stateIn('answer.site-error', (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))) {
-        throw new ProviderError('overloaded', SITE_ERROR_ANSWER, { siteError: true })
-      }
-      const text = await this.answerText(engine)
-      const finished = (await engine.count('turn.assistant.done')) >= count
-      const running = (await engine.state('turn.running')) || !finished
-      return { responsePresent: true, text, html: '', running }
-    }
-    const completed = await waitForStableCompletion(read, completionOptions(this.timeouts, deadlines, signal)).catch(async (error: unknown) => {
-      await this.stalled(engine, 'answer', error)
-      throw error
-    })
-    return completed.text
-  }
-
-  /** A stall or a deadline, with the page as it stands: outlined, never retried from here. */
-  private async stalled(engine: UiEngine, phase: string, error: unknown): Promise<void> {
-    if (!this.onStall || !(error instanceof ProviderError) || (error.kind !== 'provider_stalled' && error.kind !== 'timeout')) return
-    this.onStall(await engine.stall(phase))
-  }
 }
 
 /**

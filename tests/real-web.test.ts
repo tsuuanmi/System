@@ -34,7 +34,6 @@ before(async () => {
         runtime: chatgpt-web
         capabilities: [research, web-search]
         profileDir: ${profile}
-        procedures: generic
 `)
   await cli.start()
 })

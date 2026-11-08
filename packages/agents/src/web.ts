@@ -18,8 +18,6 @@ export interface WebAccountSettings {
   timeouts?: Partial<Record<'load' | 'answer' | 'stable' | 'launch' | 'mode' | 'attach', number>>
   /** Characters (whitespace ignored) the answer may hold outside its output blocks (default 200); more fails the attempt, as an output may be cut short. */
   maxOutsideChars?: number
-  /** The page logic of an attempt: `legacy` (System 1's ChatGPT driver, default) or `generic` (the generic Procedures bound to the ChatGPT map); anything else is refused. */
-  procedures?: 'legacy' | 'generic'
   /** Seconds an Account cools down after the 1st, 2nd... consecutive site error (default [120, 300]; the last repeats). */
   cooldownSeconds?: number[]
   /** The 1-minute load average above which the Host is busy, so a page timeout is not held against the Account (default twice the CPUs). */

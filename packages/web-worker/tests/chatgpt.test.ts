@@ -16,22 +16,19 @@ import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatg
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, checkProcedures, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
 const skip = skipHeaded
-/** Which page logic runs the attempts of this file: chatgpt-generic.test.ts sets it and loads this file again, so every test here runs on both. */
-const PROCEDURES = process.env.WEB_PROCEDURES === 'generic' ? 'generic' : 'legacy'
-const generic = PROCEDURES === 'generic'
 const root = mkdtempSync(join(tmpdir(), 'system-chatgpt-'))
 const fakes: FakeChatGpt[] = []
 /**
- * The fake site with these options, stopped after the file's tests. The clipboard holds the answer's Markdown exactly unless a test says
- * otherwise. The generic Procedures never press Copy: their page shows the code widget with its labelled header, as the live site does.
+ * The fake site with these options, stopped after the file's tests. The Procedures never press Copy: the page shows the code widget
+ * with its labelled header, as the live site does.
  */
 async function site(options: FakeOptions = {}): Promise<FakeChatGpt> {
-  const fake = new FakeChatGpt({ thinkMs: 100, copied: (markdown) => markdown, ...(generic ? { codeWidget: true } : {}), ...options })
+  const fake = new FakeChatGpt({ thinkMs: 100, codeWidget: true, ...options })
   await fake.start()
   fakes.push(fake)
   return fake
@@ -48,7 +45,7 @@ let count = 0
 const memory = () => memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...CONVERSATION_KIND, content: conversationSchema })
 
 function web(fake: FakeChatGpt, extra: Partial<WebConfig> = {}): WebConfig {
-  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, procedures: PROCEDURES, ...extra }
+  return { ...webDefaults(join(root, `profile-${count++}`)), url: `${fake.origin}/`, executablePath: CHROME, timeouts: { load: 10, answer: 20, stable: 0.5 }, ...extra }
 }
 const account = (config: WebConfig, extra: Partial<WebAccount> = {}): WebAccount => ({
   ref: 'chatgpt-web/default', capabilities: ['research'], command: CHROME, version: async () => 'fake', web: config, ...extra,
@@ -76,13 +73,6 @@ const conversationOf = (artifacts: Artifacts, result: WorkerResult, slot: 'outpu
   if (read.state !== 'stored') throw new Error('not stored')
   return { occurrences: read.occurrences, content: read.envelope.content as Conversation }
 }
-
-test('the procedures option is legacy or generic, legacy unless set', () => {
-  assert.equal(webDefaults('/p').procedures, 'legacy')
-  assert.equal(checkProcedures(undefined), 'legacy')
-  assert.equal(checkProcedures('generic'), 'generic')
-  for (const bad of ['Generic', '', 'both', true, 1, null]) assert.throws(() => checkProcedures(bad), /procedures is .*; it must be "legacy" or "generic"/)
-})
 
 test('parseBlocks reads labelled fenced blocks, with longer fences around shorter ones', () => {
   const markdown = ['intro', '', '```report', 'a', '```', '', '````sources', '```js', 'x', '```', '````', '', '```other', 'z', '```'].join('\n')
@@ -223,8 +213,8 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.deepEqual(occurrences.map((o) => o.producer), [{ type: 'worker', ref: 'chatgpt-web/default' }])
   assert.equal(content.asserted.provider, 'ChatGPT')
   assert.match(content.asserted.url!, /^http:\/\/127\.0\.0\.1:\d+\/c\/[0-9a-f-]{36}\?temporary-chat=true$/, 'the site\'s own address of a temporary chat')
-  // The generic Procedures read no model: its record has none, never a guess.
-  assert.equal(content.asserted.model, generic ? undefined : 'Latest', 'the model the page read back as selected')
+  // The Procedures read no model into the conversation: its record has none, never a guess.
+  assert.equal(content.asserted.model, undefined, 'the model the page read back as selected')
   assert.deepEqual(content.asserted.context, ['ui-map:2026-10-11', 'temporary-chat'])
   const [prompt, response] = content.parts
   assert.deepEqual([prompt!.role, response!.role], ['prompt', 'response'])
@@ -232,9 +222,8 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   assert.match(sent, /Explain the fake topic\./)
   assert.match(sent, /"~~~~report"/)
   const answer = await text(artifacts, response!.artifact)
-  // The response is Copy's Markdown (legacy), or the page's rendered text: its words, with the block as the page shows it.
-  assert.match(answer, generic ? /^Here is the answer\.\n[\s\S]*report\ncontent of report\nsecond line$/ : /Here is the \*\*answer\*\*\./)
-  if (!generic) assert.match(answer, /```report\ncontent of report\nsecond line\n```/)
+  // The response is the page's rendered text: its words, with the block as the page shows it.
+  assert.match(answer, /^Here is the answer\.\n[\s\S]*report\ncontent of report\nsecond line$/)
 })
 
 // WW1g: a prompt with inputs is a header typed in the composer and a body pasted after it, which the site may turn into an attachment.
@@ -250,7 +239,7 @@ test('a prompt with inputs is a header and a body: the body is accepted as a chi
     assert.ok(sent.indexOf('Complete this one step') < sent.indexOf('note 0:'), 'the header comes before the body')
     const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
     const evidence = JSON.parse(line.slice(line.indexOf('{')))
-    assert.deepEqual(evidence.stages.map((stage: { stage: string }) => stage.stage), ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe', 'power'] : []), 'insert', 'attach', 'send', 'wait', 'read', 'close'])
+    assert.deepEqual(evidence.stages.map((stage: { stage: string }) => stage.stage), ['launch', 'open', 'auth', 'mode', 'observe', 'power', 'insert', 'attach', 'send', 'wait', 'read', 'close'])
     assert.deepEqual(evidence.attach, { outcome, chips })
   }
 })
@@ -300,14 +289,6 @@ test('webPrompt splits a prompt into its header and its fenced body, and keeps a
   assert.equal(webPrompt({ ...ws, context: [] }, req, 0).body, undefined)
 })
 
-// The model picker is not bound by the generic Procedures (RES-0009 section 6): no model is selected or read back.
-test('a page with no model picker is refused before anything is sent', { skip: skip || generic, timeout: 60_000 }, async () => {
-  const { result, fake } = await run({ modelPicker: false })
-  assert.equal(result.status, 'failed')
-  assert.equal(fake.sent.length, 0)
-  assert.ok(result.partial?.screenshot)
-})
-
 test('with temporaryChat off the chat is a conversation of the account, bound by its id', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result, fake } = await run({}, ['report'], { config: { temporaryChat: false } })
   assert.equal(result.status, 'succeeded', result.reason)
@@ -325,8 +306,6 @@ test('links inside the answer are kept as an attachment of the conversation', { 
   const links = content.parts.find((p) => p.role === 'attachment')!
   assert.equal(links.name, 'links.json')
   assert.deepEqual(JSON.parse(await text(artifacts, links.artifact)), ['https://example.org/a', 'https://example.org/b?x=1'])
-  // The Markdown form of a link is the Copy text's; the generic turn keeps its targets in links.json only.
-  if (!generic) assert.match(await text(artifacts, content.parts.find((p) => p.role === 'response')!.artifact), /\[source A\]\(https:\/\/example\.org\/a\)/)
 })
 
 test('a sign-in wall fails the attempt with a screenshot as partial output', { skip, timeout: 60_000 }, async () => {
@@ -367,8 +346,8 @@ test('the site\'s own error page is loaded once more before anything is typed', 
 
 test('Work is never used: a switch that stays on Work, or a composer that names Work, ends the attempt before anything is sent', { skip, timeout: 60_000 }, async () => {
   for (const [options, reason] of [
-    [{ chatToggleBroken: true }, generic ? /a forbidden mode holds \(mode\.work-selected\)/ : /mode\.select-chat did not reach its postcondition/],
-    [{ startOnWork: false, workComposer: true }, generic ? /a forbidden mode holds \(mode\.work-composer\)/ : /refusing to use Work/],
+    [{ chatToggleBroken: true }, /a forbidden mode holds \(mode\.work-selected\)/],
+    [{ startOnWork: false, workComposer: true }, /a forbidden mode holds \(mode\.work-composer\)/],
   ] as const) {
     const { artifacts, result, fake } = await run(options)
     assert.equal(result.status, 'failed', JSON.stringify(options))
@@ -579,16 +558,6 @@ test('an output is filled verbatim from the rendered block that carries its name
   assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { review: 'block' })
 })
 
-// Copy's Markdown is the legacy driver's; the generic Procedures read the rendered page only.
-test('an output with no block of its name is filled from the Markdown text, and the evidence says so', { skip: skip || generic, timeout: 120_000 }, async () => {
-  // The page's block has no name (`Code`); Copy gives the fence with the name.
-  const { artifacts, result } = await run({ answer: '```\nsame words\n```', copied: () => '```report\nsame words\n```' }, ['report'])
-  assert.equal(result.status, 'succeeded', result.reason)
-  assert.equal(await text(artifacts, result.outputs.report!), 'same words')
-  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
-  assert.deepEqual(JSON.parse(line.slice(line.indexOf('{'))).filled, { report: 'text' })
-})
-
 // WW5d (live 2026-11-08, chatgpt-web/default): the site shows "~~~~report" as paragraph text and its Copy escapes the Markdown.
 const escapedCopy = (markdown: string) => markdown.replace(/[~:]/g, (c) => `\\${c}`).replace(/\n/g, '\\\n')
 const PARAGRAPHS = '~~~~report\nThe capital of France is Paris. [s1]\n~~~~\n\n~~~~sources\n[{"id":"s1","url":"https://en.wikipedia.org/wiki/Paris"}]\n~~~~'
@@ -621,33 +590,23 @@ test('two rendered blocks with the label of an output are ambiguous: the attempt
 })
 
 // WW5c (live 2026-11-07): a tilde fence is closed only by tildes, so a review holding ```ts and ```json is one block, whole.
-for (const [name, options] of [
-  ['the rendered block', { copied: () => '', codeWidget: true }],
-  ['the Markdown text', { copied: (markdown: string) => markdown }],
-] as const) {
-  test(`a tilde-fenced review holding code fences fills its output verbatim through ${name}`, { skip: skip || (generic && name === 'the Markdown text'), timeout: 120_000 }, async () => {
-    const { artifacts, result } = await run({ answer: '~~~~review\n' + REVIEW + '\n~~~~', ...options }, ['review'])
-    assert.equal(result.status, 'succeeded', result.reason)
-    assert.equal(await text(artifacts, result.outputs.review!), REVIEW)
-  })
-}
+test('a tilde-fenced review holding code fences fills its output verbatim from the rendered block', { skip, timeout: 120_000 }, async () => {
+  const { artifacts, result } = await run({ answer: '~~~~review\n' + REVIEW + '\n~~~~' }, ['review'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(await text(artifacts, result.outputs.review!), REVIEW)
+})
 
 // The real shape: a three-backtick `review` block that its own inner fence closes, the rest of the review after it.
 const CUT = '```review\n## 1. Verdict\n\nneeds changes\n\n```ts\nconst before = 1\n```\n\n## 2. Defects\n\n' + 'A long finding about the code that went on after the block closed. '.repeat(8) + '\n\n```json\n{"a":1}\n```'
-for (const [name, options] of [
-  ['the rendered block', { copied: () => '', codeWidget: true }],
-  ['the Markdown text', { copied: (markdown: string) => markdown }],
-] as const) {
-  test(`an answer that continues outside its output block fails and is kept as partial output (${name})`, { skip: skip || (generic && name === 'the Markdown text'), timeout: 120_000 }, async () => {
-    const { artifacts, result } = await run({ answer: CUT, ...options }, ['review'])
-    assert.equal(result.status, 'failed')
-    assert.match(result.reason!, /the answer continues outside its output blocks \(\d+ characters\): an output may be cut short/)
-    assert.ok(result.partial!.review, 'what was found is kept')
-    assert.equal(await text(artifacts, result.partial!.review!), '## 1. Verdict\n\nneeds changes\n\n```ts\nconst before = 1')
-    assert.ok(result.partial!.conversation)
-    assert.match(String((await evidenceOf(artifacts, result)).outsideChars), /^\d+$/)
-  })
-}
+test('an answer that continues outside its output block fails and is kept as partial output', { skip, timeout: 120_000 }, async () => {
+  const { artifacts, result } = await run({ answer: CUT }, ['review'])
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /the answer continues outside its output blocks \(\d+ characters\): an output may be cut short/)
+  assert.ok(result.partial!.review, 'what was found is kept')
+  assert.equal(await text(artifacts, result.partial!.review!), '## 1. Verdict\n\nneeds changes\n\n```ts\nconst before = 1')
+  assert.ok(result.partial!.conversation)
+  assert.match(String((await evidenceOf(artifacts, result)).outsideChars), /^\d+$/)
+})
 
 test('the outside limit is a setting: a short remark outside the block is fine, and a tighter limit refuses it', { skip, timeout: 120_000 }, async () => {
   const answer = 'Done, here it is.\n\n~~~~review\nthe review\n~~~~'
@@ -659,7 +618,7 @@ test('the outside limit is a setting: a short remark outside the block is fine, 
 })
 
 // WW8a: the model and Power the page showed are recorded; WW8b: the Power is then selected from the step's tier.
-test('the evidence records the model and Power the page showed before, and a menu left open is closed before the insert', { skip: skip || !generic, timeout: 120_000 }, async () => {
+test('the evidence records the model and Power the page showed before, and a menu left open is closed before the insert', { skip, timeout: 120_000 }, async () => {
   for (const menuOpen of [false, true]) {
     const { artifacts, result, fake } = await run({ menuOpen }, ['report'])
     assert.equal(result.status, 'succeeded', result.reason)
@@ -673,7 +632,7 @@ test('the evidence records the model and Power the page showed before, and a men
 })
 
 // The levels come from the live menu (five on this page): economy is the first, standard the middle, frontier the last, no tier the middle.
-test('a step selects the Power level of its tier before the send, and the evidence says what was chosen', { skip: skip || !generic, timeout: 180_000 }, async () => {
+test('a step selects the Power level of its tier before the send, and the evidence says what was chosen', { skip, timeout: 180_000 }, async () => {
   for (const [tier, power, target] of [['economy', 'Instant', 'economy'], ['standard', 'Medium', 'standard'], ['frontier', 'Max', 'frontier'], [undefined, 'Medium', 'standard']] as const) {
     const { artifacts, result, fake } = await run({}, ['report'], { tier })
     assert.equal(result.status, 'succeeded', `${tier}: ${result.reason}`)
@@ -685,7 +644,7 @@ test('a step selects the Power level of its tier before the send, and the eviden
   }
 })
 
-test('a Power slider that stays at one level fails before the send, and the evidence says why', { skip: skip || !generic, timeout: 120_000 }, async () => {
+test('a Power slider that stays at one level fails before the send, and the evidence says why', { skip, timeout: 120_000 }, async () => {
   const { artifacts, result, fake } = await run({ powerStuck: true }, ['report'], { tier: 'frontier' })
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /Power level 5 of 5 could not be set \(reads 1 of 5\)/)
@@ -696,7 +655,7 @@ test('a Power slider that stays at one level fails before the send, and the evid
 })
 
 // The map binds a Power control: a page that has lost it is drift, and the attempt stops before anything is typed.
-test('a page whose model control is gone records null and stops before the send', { skip: skip || !generic, timeout: 120_000 }, async () => {
+test('a page whose model control is gone records null and stops before the send', { skip, timeout: 120_000 }, async () => {
   const { artifacts, result, fake } = await run({ modelPicker: false }, ['report'])
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /no candidate of composer\.model matched/)
@@ -706,7 +665,7 @@ test('a page whose model control is gone records null and stops before the send'
 })
 
 // The stage chain of one attempt (evidence.ts): written as it happens, kept as partial output, and in the log on success.
-const STAGES = ['launch', 'open', 'auth', 'mode', ...(generic ? ['observe', 'power'] : []), 'insert', 'send', 'wait', 'read', 'close']
+const STAGES = ['launch', 'open', 'auth', 'mode', 'observe', 'power', 'insert', 'send', 'wait', 'read', 'close']
 const evidenceOf = async (artifacts: Artifacts, result: WorkerResult) => JSON.parse(await text(artifacts, result.partial!.evidence!))
 
 test('a launch that never returns fails at its own clock, and the evidence names the launch stage', { timeout: 30_000 }, async () => {
@@ -752,15 +711,18 @@ test('a succeeded attempt reports its evidence and conversation beside its outpu
   assert.equal(conversationOf(artifacts, result, 'partial').content.parts.length, 2)
 })
 
-test('the evidence says which page logic ran the attempt', { skip, timeout: 60_000 }, async () => {
+// WW2-iv: the record is still chatgpt-web-evidence@1 (the canary reads it), and names no page logic: there is one.
+test('the evidence names no page logic', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result } = await run({}, ['report'])
   assert.equal(result.status, 'succeeded', result.reason)
   const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
-  assert.equal(JSON.parse(line.slice(line.indexOf('{'))).procedures, PROCEDURES)
+  const evidence = JSON.parse(line.slice(line.indexOf('{')))
+  assert.equal(evidence.schema, 'chatgpt-web-evidence@1')
+  assert.equal('procedures' in evidence, false)
 })
 
-// Generic only: the legacy driver confirms nothing after the click. The Procedures never send a prompt that may have been sent again.
-test('a send the page never shows is unknown: the attempt fails and nothing is resent', { skip: skip || !generic, timeout: 60_000 }, async () => {
+// The Procedures never send a prompt that may have been sent again.
+test('a send the page never shows is unknown: the attempt fails and nothing is resent', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result, fake } = await run({ dropSend: true }, ['report'])
   assert.equal(result.status, 'failed')
   assert.equal(result.reason, 'send outcome unknown: not resent')

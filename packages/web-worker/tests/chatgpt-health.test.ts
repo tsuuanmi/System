@@ -26,7 +26,7 @@ after(async () => {
 
 let count = 0
 async function site(options: FakeOptions = {}): Promise<FakeChatGpt> {
-  const fake = new FakeChatGpt({ thinkMs: 100, copied: (markdown) => markdown, answer: '```report\nthe report\n```', ...options })
+  const fake = new FakeChatGpt({ thinkMs: 100, codeWidget: true, answer: '```report\nthe report\n```', ...options })
   await fake.start()
   fakes.push(fake)
   return fake

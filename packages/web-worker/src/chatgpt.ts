@@ -3,11 +3,11 @@
  * operator's own signed-in ChatGPT web session, driven by patchright-core
  * through a recent Chrome (chrome.ts), always headed, on a display the attempt
  * owns, without the flags that advertise automation. The page logic is System
- * 1's ChatGPT web driver, its UI map and its UI engine, ported whole into
- * `@system/web-driver`: checkAuth, a temporary chat in Chat mode, the send, the
- * wait for a finished answer and the read of its Markdown are all the driver's.
- * This file only launches the browser, builds the prompt and records the
- * exchange. The profile on disk is the Account's credential and is reused by
+ * 1's ChatGPT UI map and UI engine, ported into `@system/web-driver`, under the
+ * generic Procedures bound to that map: checkAuth, a temporary chat in Chat mode,
+ * the Power level, the send, the wait for a finished answer and the read of its
+ * rendered text are the Procedures'. This file launches the browser, builds the
+ * prompt, runs the turn and records the exchange. The profile on disk is the Account's credential and is reused by
  * every attempt. Each output slot is a labelled, tilde-fenced block of the answer. The
  * exchange is stored as a `conversation@1` whose producer is the attempt.
  * Nothing here gets round a check: a sign-in wall, a CAPTCHA or an unknown
@@ -18,7 +18,7 @@ import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright-core'
 import type { Artifacts } from '@system/artifacts'
-import { bindsPower, ChatGptWebDriver, Procedures, ProviderError, type AskResult, type PageDiagnostics, type PowerTier, type ProviderErrorKind, type Result, type UiMap } from '@system/web-driver'
+import { bindsPower, ChatGptWebDriver, Procedures, ProviderError, type PageDiagnostics, type PowerTier, type ProviderErrorKind, type Result, type UiMap } from '@system/web-driver'
 import { cleanup, exited, mediaTypeOf, prepare, type Workspace } from '@system/agents'
 import { addConversation, requestedTier, TIERS, tierCapability, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { ensureChrome } from './chrome.ts'
@@ -50,20 +50,11 @@ export interface WebConfig {
    * means an output may have been cut short (WW5c).
    */
   maxOutsideChars: number
-  /** The page logic of an attempt: System 1's ChatGPT driver (`legacy`), or the generic Procedures bound to the ChatGPT map (`generic`, WW2-iii). */
-  procedures: 'legacy' | 'generic'
 }
 
-/** The account's `procedures` option: `legacy` unless set; anything but the two names is refused, before a browser opens. */
-export function checkProcedures(value: unknown): WebConfig['procedures'] {
-  if (value === undefined) return 'legacy'
-  if (value === 'legacy' || value === 'generic') return value
-  throw new Error(`procedures is ${typeof value === 'string' ? `"${value}"` : String(value)}; it must be "legacy" or "generic"`)
-}
-
-/** The tier capabilities an account offers beyond its entry's (WW8b): all three when its map binds a Power control and the generic Procedures run it, none otherwise. */
-export function offeredTiers(web: Pick<WebConfig, 'procedures'>, map: UiMap): string[] {
-  return web.procedures === 'generic' && bindsPower(map) ? TIERS.map(tierCapability) : []
+/** The tier capabilities an account offers beyond its entry's (WW8b): all three when its map binds a Power control, none otherwise. */
+export function offeredTiers(map: UiMap): string[] {
+  return bindsPower(map) ? TIERS.map(tierCapability) : []
 }
 
 /** One `chatgpt-web` account as the web Runtime runs it: `command` is the path of Chrome. */
@@ -90,27 +81,20 @@ export const LAUNCH_SECONDS = 30
 export const launchTimeoutMs = (web: WebConfig): number => (web.timeouts.launch ?? LAUNCH_SECONDS) * 1000
 
 export function webDefaults(profileDir: string): WebConfig {
-  return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', timeouts: { load: 60, answer: 900, stable: 3 }, maxOutsideChars: 200, procedures: 'legacy' }
+  return { profileDir, temporaryChat: true, url: 'https://chatgpt.com/', timeouts: { load: 60, answer: 900, stable: 3 }, maxOutsideChars: 200 }
 }
 
 /**
- * System 1's driver on the clocks of this account. Its stall clock (no progress) is System 1's 3
- * minutes, or half the answer's limit when that is shorter: the completion wait refuses one that
- * is not shorter. Nothing is healed (no decision store exists, so `healEnabled` is false), and what
- * the driver reports (drift, a Copy it refused, a stall, a read report) goes to `note`, counts and
- * structure only.
+ * The driver on the clocks of this account: its `checkAuth` and `open` (the login and the recheck), its map and its page
+ * diagnostics. A turn is the Procedures' (`genericTurn`), whose clocks are `procedureMap`'s. Nothing is healed (no
+ * decision store exists, so `healEnabled` is false).
  */
-export function chatGptDriver(web: WebConfig, note: (line: string) => void = () => {}): ChatGptWebDriver {
-  const answerMs = web.timeouts.answer * 1000
+export function chatGptDriver(web: WebConfig): ChatGptWebDriver {
   const driver = new ChatGptWebDriver({
     origin: new URL(web.url).origin,
-    timeouts: { readyMs: web.timeouts.load * 1000, turnMs: answerMs, stallMs: Math.min(3 * 60_000, Math.floor(answerMs / 2)), stableMs: web.timeouts.stable * 1000, ...(web.timeouts.mode ? { modeReadyMs: web.timeouts.mode * 1000 } : {}), ...(web.timeouts.attach ? { attachWaitMs: web.timeouts.attach * 1000 } : {}) },
+    timeouts: { readyMs: web.timeouts.load * 1000, ...(web.timeouts.mode ? { modeReadyMs: web.timeouts.mode * 1000 } : {}) },
   })
   driver.healEnabled = () => false
-  driver.onDrift = (event) => note(`ui drift: ${event.kind} of ${event.element}`)
-  driver.onCopyRefused = (event) => note(`copy refused: ${event.reason}`)
-  driver.onStall = (event) => note(`stall in ${event.phase}`)
-  driver.onReport = (event) => note(`report read from the ${event.path}: ${event.chars} characters, ${event.links} link(s)`)
   return driver
 }
 
@@ -395,11 +379,11 @@ export function webPrompt(ws: Workspace, request: WorkerRequest, minBody: number
   return { header, ...(body === undefined ? {} : { body }), text }
 }
 
-/** The reason of a site's own error in place of an answer, retryable by the caller and never by this Runtime (WW6a); the driver's wording. */
+/** The reason of a site's own error in place of an answer, retryable by the caller and never by this Runtime (WW6a). */
 const SITE_ERROR_ANSWER = 'site error: the answer did not load (retryable)'
 
 /**
- * The ChatGPT map on the clocks of this account, for the Procedures: the same ones `chatGptDriver` gives the driver, as the
+ * The ChatGPT map on the clocks of this account, for the Procedures, as the
  * map's `settings` (the mode switch, the attachment, the answer's text holding still and its deadline).
  */
 export function procedureMap(web: WebConfig, map: UiMap): UiMap {
@@ -431,13 +415,13 @@ interface TurnPort {
 }
 
 /**
- * One turn through the generic Procedures (`procedures: generic`), in the stages the driver's turn has: open, auth, mode
+ * One turn through the generic Procedures, in the stages: open, auth, mode
  * (a temporary chat when the account asks, Chat verified), observe (the model and Power shown), power (the step's tier selected and verified, the menu closed), insert, attach (the body, when the prompt has two parts), send,
  * wait, read. A Procedure that does not return `ok` becomes the failure its stage names; a send of `unknown` is never
  * sent again. The answer has no Markdown (the Procedures never press Copy): its rendered text is the text, its code
  * blocks carry their labels and its links their targets. The model and Power shown are recorded before the Power is selected (WW8b); a wait has no stall clock but its deadline.
  */
-async function genericTurn(port: TurnPort): Promise<AskResult & { links: string[] }> {
+async function genericTurn(port: TurnPort): Promise<{ text: string; blocks: Array<{ label: string; code: string }>; rendered: string; links: string[] }> {
   const { page, web, prompt, tier, evidence, staged } = port
   const origin = new URL(web.url).origin
   /** The value of a Procedure that went well; else the failure of its stage, in the kind its result names (`kind`, else the stage's own). */
@@ -531,7 +515,7 @@ async function genericTurn(port: TurnPort): Promise<AskResult & { links: string[
     })
     await staged('wait', async () => answered(await procedures.waitForAnswer(baseline, { signal: port.signal }), 'ui_drift'))
     const read = await staged('read', async () => answered(await procedures.readAnswer(baseline), 'ui_drift'))
-    return { text: read.text, blocks: read.blocks.map(({ label, code }) => ({ label, code })), rendered: read.text, links: [...new Set(read.links.map((link) => link.href))], binding: undefined, mode: {} }
+    return { text: read.text, blocks: read.blocks.map(({ label, code }) => ({ label, code })), rendered: read.text, links: [...new Set(read.links.map((link) => link.href))] }
   } finally {
     procedures.dispose()
   }
@@ -650,7 +634,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     killChrome(chromePid)
     return `close() returned but the browser process ${chromePid} did not exit; it was killed`
   }
-  const driver = chatGptDriver(web, note)
+  const driver = chatGptDriver(web)
   // The Host's load while the attempt ran, at its start and at its end: a page timeout under load is the Host's, not the Account's.
   const healthSettings = account.healthSettings ?? HEALTH_DEFAULTS
   const busyAtStart = hostBusy(healthSettings)
@@ -661,20 +645,9 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
   // The evidence record exists before Chrome starts and follows each stage as it happens.
   const evidence = createEvidence(join(ws.root, 'evidence.json'), {
     attempt: request.attemptId, account: account.ref, chrome: executor.version,
-    uiMap: { revision: driver.map.uiRevision, hash: driver.map.hash }, procedures: web.procedures, launchTimeoutSeconds: launchTimeoutMs(web) / 1000,
+    uiMap: { revision: driver.map.uiRevision, hash: driver.map.hash }, launchTimeoutSeconds: launchTimeoutMs(web) / 1000,
   })
-  driver.onSubmitted = () => evidence.set({ promptSubmitted: true })
-  driver.onAttached = (attach) => evidence.set({ attach })
   let driverFailed: string | undefined
-  driver.onStage = ({ stage, status, error }) => {
-    if (status === 'failed') driverFailed = stage
-    if (status === 'start') {
-      evidence.begin(stage)
-      if (stage === 'send') evidence.set({ promptSendAttempted: true })
-    } else {
-      evidence.end(stage, status === 'failed' ? error ?? 'failed' : undefined)
-    }
-  }
   // What the attempt says about the Account (WW6d). A cancel or the time limit says nothing; a failure of the Host's does not count.
   const recordHealth = (result: Omit<WorkerResult, 'executor' | 'log'>) => {
     if (!account.health) return
@@ -701,7 +674,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
   }
   /** The limit each stage runs under, in seconds; none known for the stages that have no clock of their own. */
   const limitOf = (name: string): number | undefined => ({ launch: launchTimeoutMs(web) / 1000, open: web.timeouts.load, auth: web.timeouts.load, mode: web.timeouts.mode, wait: web.timeouts.answer, read: web.timeouts.answer })[name]
-  /** A stage that ran out of time is a failure of that stage, named with its own limit (the driver's inner stage when it ran one); the driver's other failures are told as it words them. */
+  /** A stage that ran out of time is a failure of that stage, named with its own limit; the other failures are told as the Procedures word them. */
   const stage = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
     note(`${name} stage`)
     try {
@@ -723,7 +696,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       throw error
     }
   }
-  /** A stage of the attempt's own, recorded in the evidence (the driver's stages are recorded through `onStage`). */
+  /** A stage of the attempt's own, recorded in the evidence. */
   const recorded = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
     evidence.begin(name)
     try {
@@ -735,7 +708,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       throw error
     }
   }
-  /** A stage the generic turn runs: recorded as the driver's are, and the stage the attempt names when it fails. */
+  /** A stage the turn runs: recorded in the evidence, and the stage the attempt names when it fails. */
   const staged = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
     evidence.begin(name)
     try {
@@ -763,36 +736,29 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     const size = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })).catch(() => undefined)
     evidence.set({ ...(size ? { viewport: size } : {}), pages: { initial: tabs.initial, beforeNavigation: context.pages().length, closedInherited: tabs.closed, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
     tabs.check()
-    const conversationKind = web.temporaryChat ? 'temporary' : 'persistent'
-    // The driver opens the chat (a temporary one when asked, in Chat mode), checks the sign-in, sends the prompt and waits for the
-    // finished answer, on the clocks it was built with (`chatGptDriver`).
-    const generic = web.procedures === 'generic'
-    const answer = await stage('answer', () => generic
-      ? genericTurn({ page: page!, map: driver.map, web, prompt, tier: requestedTier(request.capabilities), signal: stop.signal, note, evidence, staged })
-      : driver.ask(page!, prompt.header, { conversation: conversationKind, ...(prompt.body === undefined ? {} : { attachment: prompt.body }), signal: stop.signal }))
+    // The Procedures open the chat (a temporary one when asked, in Chat mode), check the sign-in, send the prompt and wait for the
+    // finished answer, on the clocks of `procedureMap`.
+    const answer = await stage('answer', () => genericTurn({ page: page!, map: driver.map, web, prompt, tier: requestedTier(request.capabilities), signal: stop.signal, note, evidence, staged }))
     tabs.check()
     evidence.set({ waitEnded: 'done' })
     const markdown = answer.text
-    const links = 'links' in answer ? (answer.links as string[]) : [...new Set(markdown.match(/https?:\/\/[^\s)>"\]]+/g) ?? [])]
+    const { links } = answer
     note(`answer of ${markdown.length} characters, ${links.length} link(s)`)
     const url = page.url()
-    const model = answer.mode.model
     const conversation = await addConversation(artifacts, {
       prompt: { name: 'prompt.md', data: Buffer.from(prompt.text), mediaType: 'text/markdown' },
       response: { name: 'response.md', data: Buffer.from(markdown), mediaType: 'text/markdown' },
       attachments: links.length ? [{ name: 'links.json', data: Buffer.from(JSON.stringify(links, null, 2)), mediaType: 'application/json' }] : [],
-    }, { provider: 'ChatGPT', url, ...(model ? { model } : {}), context: [`ui-map:${driver.map.uiRevision}`, ...(web.temporaryChat ? ['temporary-chat'] : [])] }, { producer })
+    }, { provider: 'ChatGPT', url, context: [`ui-map:${driver.map.uiRevision}`, ...(web.temporaryChat ? ['temporary-chat'] : [])] }, { producer })
     // Each output: the rendered block that carries its name (its code, verbatim), else the Markdown text's fenced block.
-    // The generic turn has no Markdown of the site's own, only the rendered text: a fence there is read last, as `rendered`.
-    const parsed = generic || escapedMarkdown(markdown) ? { blocks: {} as Record<string, string> } : parseBlocks(markdown, request.outputs)
-    const filled: Record<string, 'block' | 'text' | 'rendered'> = {}
+    // The turn has no Markdown of the site's own, only the rendered text: a fence there is read last, as `rendered`.
+    const filled: Record<string, 'block' | 'rendered'> = {}
     let contents: Record<string, string> = {}
     let missing: string[] = []
     for (const slot of request.outputs) {
       const named = answer.blocks.filter((block) => block.label === slot)
       if (named.length > 1) return finish({ status: 'failed', outputs: {}, partial: { conversation: conversation.id }, reason: `${account.ref}: ${named.length} rendered blocks are labelled ${slot} (ambiguous)` })
       if (named.length) [contents[slot], filled[slot]] = [named[0]!.code, 'block']
-      else if (slot in parsed.blocks) [contents[slot], filled[slot]] = [parsed.blocks[slot]!, 'text']
       else missing.push(slot)
     }
     // Nothing found in a block or the Markdown (the site showed the fences as text, and its Copy escaped them): the rendered text, exactly as shown.
@@ -807,7 +773,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       }
     }
     // Filled from rendered blocks, the text is the page's own (no fences): what is outside is what is not a block's label or code.
-    const outside = generic && Object.values(filled).includes('block') ? unblocked(source, answer.blocks.filter((block) => filled[block.label] === 'block')) : outsideChars(source, request.outputs)
+    const outside = Object.values(filled).includes('block') ? unblocked(source, answer.blocks.filter((block) => filled[block.label] === 'block')) : outsideChars(source, request.outputs)
     evidence.set({ filled, outsideChars: outside })
     // The site's leaked control tokens are removed at each output's edges, and recorded.
     const stripped: Record<string, string[]> = {}

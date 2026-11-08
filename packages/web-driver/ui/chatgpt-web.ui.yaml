@@ -18,7 +18,7 @@ settings:
   attachWaitMs: 30000
   attachLabelChars: 24
 
-# WW2-ii: what the generic Procedures (src/procedures.ts) bind to. The ChatGPT driver does not read it yet.
+# WW2-ii: what the generic Procedures (src/procedures.ts) bind to.
 site:
   origin: 'https://chatgpt.com'
   conversationUrl: '^/c/([0-9a-f-]+)$'

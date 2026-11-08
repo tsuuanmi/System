@@ -10,7 +10,7 @@ import { shippedMap, shippedMapProblem } from '@system/web-driver'
 import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { systemPath, type Capabilities } from '@system/work'
-import { checkProcedures, offeredTiers, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
+import { offeredTiers, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
 import { webLogin } from './chatgpt-login.ts'
 import { discoverChrome } from './chrome.ts'
 import { XVFB_MISSING, findXvfb } from './display.ts'
@@ -46,6 +46,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     // A map that did not load is the same for every account: they are unavailable with that one reason (WW6f).
     const mapProblem = shippedMapProblem()
     if (mapProblem) throw new Error(`the ChatGPT UI map did not load: ${mapProblem}`)
+    if ('procedures' in account) throw new Error('procedures was removed: the generic Procedures are the only path; delete the line')
     if ('headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
     if (!findXvfb()) throw new Error(XVFB_MISSING)
     const browsers = systemPath(ctx, 'browsers')
@@ -55,7 +56,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     const web: WebConfig = {
       ...defaults, ...(account.executablePath ? { executablePath: account.executablePath } : {}), managedDir: browsers, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,
       url: account.url ?? defaults.url, timeouts: { ...defaults.timeouts, ...account.timeouts }, maxOutsideChars: account.maxOutsideChars ?? defaults.maxOutsideChars,
-      procedures: checkProcedures(account.procedures),
     }
     new URL(web.url)
     for (const [stage, seconds] of Object.entries(web.timeouts)) {
@@ -69,7 +69,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     // The Account's state lives in its directory, beside the profile, and survives a restart.
     const health = new AccountHealth(web.profileDir, account.ref, { log, settings: healthSettings })
     const version = lazyVersion(subprocess, command)
-    const offered = [...new Set([...account.capabilities, ...offeredTiers(web, shippedMap())])]
+    const offered = [...new Set([...account.capabilities, ...offeredTiers(shippedMap())])]
     const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: offered, command, version, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts))
     const entry = { web, health }
     webs.set(account.ref, entry)

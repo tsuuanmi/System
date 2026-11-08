@@ -24,8 +24,6 @@ export interface EvidenceData {
   /** Chrome's version as the Account reports it. */
   chrome: string | undefined
   uiMap: { revision: string; hash: string }
-  /** The page logic that ran the attempt: System 1's ChatGPT driver, or the generic Procedures (WW2-iii). */
-  procedures: 'legacy' | 'generic'
   launchTimeoutSeconds: number
   viewport?: { width: number; height: number }
   /** The pages Chrome came up with, how many were open before the first navigation, and how many were confirmed closed since (inherited, then late), and how many late ones would not close. */
@@ -36,11 +34,11 @@ export interface EvidenceData {
   promptSubmitted: boolean
   /** What the site made of the prompt's body: text in the composer, or attachment chips and how many; none for a one-part prompt. */
   attach?: { outcome: 'text' | 'attachment'; chips: number }
-  /** How each required output was filled: from the rendered block that carries its name, the Markdown text, or (the site showed the fences as text, its Copy escaped them) the answer's rendered text (WW5d). */
+  /** How each required output was filled: from the rendered block that carries its name, or (the site showed the fences as text) the answer's rendered text (WW5d). `text`, the Markdown of the removed driver's Copy, is in older records only. */
   filled?: Record<string, 'block' | 'text' | 'rendered'>
   /** Per output, each leaked token removed from its edges, once per removal (WW6b: the UI map's `answer.leakedTokens`); only outputs that had one. */
   stripped?: Record<string, string[]>
-  /** The model and Power level the page showed before anything was selected, read and never set (WW8a; generic Procedures only); null when unreadable or the Site has no such control. */
+  /** The model and Power level the page showed before anything was selected, read and never set (WW8a); null when unreadable or the Site has no such control. */
   model?: string | null
   powerBefore?: string | null
   /** The tier the step asked (the middle one when it asked none), the number of Power levels the menu showed, and the level shown once it was selected (WW8b); each set when known, `power` only after the read-back. */
