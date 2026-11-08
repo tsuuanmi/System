@@ -5,7 +5,7 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { supervise } from '../../../bin/service.mjs'
 import { fixture, type Fixture } from '../../../test-support/fixture.ts'
-import { UPGRADING, connect, connectHello, type Client } from '../src/index.ts'
+import { REFUSED, UPGRADING, connect, connectHello, type Client } from '../src/index.ts'
 import type { Services } from '../src/operations.ts'
 import { UPGRADE_EXIT, serveHost, socketPath, type ServingHost } from '../src/process.ts'
 
@@ -180,5 +180,36 @@ test('while a build runs, the Host does not upgrade: not from its own looks, nor
   // The build ends: the same code, seen stable, is upgraded to.
   building = false
   await until(() => /upgrading/.test(logs.join('\n')), 'the upgrade once the build ended')
+  assert.equal(await serving.exited, UPGRADE_EXIT)
+})
+
+test('while a Host waits on a long attempt to upgrade, a client of any version reads, and is told to retry anything else', { timeout: 30_000 }, async () => {
+  const f = fixture()
+  const home = fresh()
+  const logs: string[] = []
+  let disk = 'code-1'
+  const serving = await incarnate(f, home, 'code-1', () => disk, (line) => logs.push(line))
+  const old = await connectHello(socketPath(home), { version: 'code-1', caller: human })
+  f.hold('idea-a')
+  const work = await submitAndRun(old, f, 'long')
+  await f.arrived('idea-a')
+  // Not upgrading: a read-only hello does not get round the version check.
+  await assert.rejects(connectHello(socketPath(home), { version: 'code-9', caller: human, readOnly: true }), (error: { code: number }) => error.code === REFUSED)
+  disk = 'code-2'
+  await until(() => logs.some((line) => /upgrading/.test(line)), 'the Host notices the new code')
+
+  // A full hello of the new code is still refused while the Host drains.
+  await assert.rejects(connectHello(socketPath(home), { version: 'code-2', caller: human }), (error: { code: number }) => error.code === UPGRADING)
+  const reader = await connectHello(socketPath(home), { version: 'code-2', caller: human, readOnly: true })
+  assert.equal((await reader.call('work.show', { workId: work }) as { id: string }).id, work)
+  assert.ok(Array.isArray(await reader.call('work.list')))
+  await assert.rejects(reader.call('work.cancel', { workId: work }), (error: { code: number; message: string }) => error.code === UPGRADING && /upgrading to code-2; retry after/.test(error.message))
+  // Any version reads while the Host waits.
+  const other = await connectHello(socketPath(home), { version: 'code-9', caller: human, readOnly: true })
+  assert.ok(Array.isArray(await other.call('work.list')))
+  other.close()
+  reader.close()
+  old.close()
+  f.release('idea-a')
   assert.equal(await serving.exited, UPGRADE_EXIT)
 })

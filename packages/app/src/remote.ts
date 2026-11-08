@@ -10,7 +10,7 @@ import { dirname, join, resolve } from 'node:path'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
 import { TERMINAL, parseWorkflow, type Asserted, type Caller, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { MAX_FRAME, NotAnswering, NotRunning, fitsFrame, type Client } from '../../host/lib/index.js'
+import { MAX_FRAME, NotAnswering, NotRunning, RpcError, UPGRADING, fitsFrame, type Client } from '../../host/lib/index.js'
 import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
 import { caller } from './io.ts'
 
@@ -24,8 +24,8 @@ const REMOTE_LOGIN_TIMEOUT = 17 * 60_000
 
 
 export interface Remote {
-  /** A connection that has said `host.hello` as `caller`. */
-  open(caller: Caller): Promise<Client>
+  /** A connection that has said `host.hello` as `caller`; with `readOnly`, one a Host upgrading to other code still serves its reads on. */
+  open(caller: Caller, options?: { readOnly?: boolean }): Promise<Client>
   /** Notes for the operator, such as that a Work was left running. */
   err(text: string): void
 }
@@ -62,7 +62,19 @@ export function usedFiles(text: string, dir: string, found: Record<string, strin
 export function remoteHost(remote: Remote): ClientHost {
   let session: Promise<Client> | undefined
   const link = (): Promise<Client> => (session ??= remote.open(caller()))
-  const read = async (method: string, params?: object): Promise<any> => (await link()).call(method, params)
+  let reading: Promise<Client> | undefined
+  /** A read goes over the session; while the Host waits on attempts to upgrade to other code, over a read-only one. */
+  const read = async (method: string, params?: object): Promise<any> => {
+    let client: Client
+    try {
+      client = await link()
+    } catch (error) {
+      if (!(error instanceof RpcError && error.code === UPGRADING)) throw error
+      session = undefined
+      client = await (reading ??= remote.open(caller(), { readOnly: true }))
+    }
+    return client.call(method, params)
+  }
   /** A read that outlives a Host's swap for new code: a connection it closed is opened again (`open` waits for the next Host), once. */
   const reread = async (method: string, params?: object): Promise<any> => {
     try {

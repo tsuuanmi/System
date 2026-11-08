@@ -105,6 +105,8 @@ export interface Method {
   scope?: (host: Host, params: any, caller: Caller & { type: 'orchestrator' }) => unknown
   /** Whether a caller of type `agent` may call it. */
   agent: boolean
+  /** It only reads: while the Host upgrades, a read-only connection of any code version may call it. */
+  read?: boolean
 }
 export type Methods = Record<string, Method>
 
@@ -114,8 +116,8 @@ export interface ServeOptions {
   methods?: Methods
   /** The code version a hello must carry; default: this build's `VERSION`. */
   version?: string
-  /** Called with the version of a hello that differs from this Host's: whether the Host is (now) upgrading, so the refusal says to retry. */
-  upgrading?: (clientVersion: string) => boolean
+  /** Called with the version of a hello that differs from this Host's: the code the Host is (now) upgrading to, if it is, so the refusal says to retry and a read-only hello is served. */
+  upgrading?: (clientVersion: string) => string | undefined
   /** Milliseconds `close` lets admitted calls finish before it drops the connections; default `STOP_GRACE`. */
   grace?: number
 }
@@ -132,6 +134,7 @@ export interface Served {
 const builtin = (version: string): Methods => ({
   'host.status': {
     agent: true,
+    read: true,
     summary: 'Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`.',
     handler(host) {
       const records = host.list()
@@ -161,6 +164,8 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
     socket.on('close', () => sockets.delete(socket))
     socket.on('error', () => socket.destroy())
     let caller: Caller | undefined
+    /** Set for a read-only connection of other code, served while this Host upgrades: the code it upgrades to. */
+    let upgradingTo: string | undefined
     const send = (message: object) => { if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`) }
     // A notice has no id and is no answer: it only wakes the client, which reads `work.events` from its cursor.
     const notify = ({ workId, status, seq, type }: WorkChange) => {
@@ -185,7 +190,14 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
           const next = callerOf(request.params?.caller)
           if (!next) throw new RpcError(INVALID_PARAMS, 'host.hello needs caller: { type: "human" | "agent", operatorId } or { type: "orchestrator", operatorId, goal }')
           if (request.params.version !== version) {
-            if (options.upgrading?.(String(request.params.version))) throw new RpcError(UPGRADING, `the Host runs code ${version} and is upgrading to the code on disk, ${String(request.params.version)}: it restarts when its running attempts finish; retry in a moment`)
+            const to = options.upgrading?.(String(request.params.version))
+            // While it waits on attempts to upgrade, a client of any code may still read (`readOnly`), so it can tell a Host draining from one hung.
+            if (to && request.params.readOnly === true) {
+              caller = next
+              upgradingTo = to
+              return send({ jsonrpc: '2.0', id, result: { version, packageVersion: PACKAGE_VERSION, readOnly: true } })
+            }
+            if (to) throw new RpcError(UPGRADING, `the Host runs code ${version} and is upgrading to the code on disk, ${to}: it restarts when its running attempts finish; retry in a moment`)
             throw new RpcError(REFUSED, `the Host runs code ${version} and the client ${String(request.params.version)}; restart the Host: systemctl --user restart system (or restart \`system host\`)`)
           }
           caller = next
@@ -194,6 +206,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         const method = Object.hasOwn(methods, request.method) ? methods[request.method] : undefined
         if (!method) throw new RpcError(METHOD_NOT_FOUND, `unknown method ${request.method}`)
         if (!caller) throw new RpcError(REFUSED, `say host.hello first: ${request.method} needs a version and a caller`)
+        if (upgradingTo && !method.read) throw new RpcError(UPGRADING, `${request.method}: this Host is upgrading to ${upgradingTo}; retry after it has restarted (a read-only connection only reads)`)
         if (caller.type !== 'human' && !method.agent) throw new RpcError(NOT_ALLOWED, `${request.method}: not allowed for ${caller.type === 'agent' ? 'agents' : 'orchestrators'}`)
         let params = request.params
         if (method.params) {
@@ -277,6 +290,8 @@ export async function connect(path: string, options: ConnectOptions = {}): Promi
 export interface HelloOptions extends ConnectOptions {
   version: string
   caller: Caller
+  /** Ask only to read: a Host upgrading to other code then serves its read rows to any version. */
+  readOnly?: boolean
 }
 
 /**
@@ -289,7 +304,7 @@ export async function connectHello(path: string, options: HelloOptions): Promise
     try {
       const client = await connectOnce(path, options)
       try {
-        await client.call('host.hello', { version: options.version, caller: options.caller })
+        await client.call('host.hello', { version: options.version, caller: options.caller, ...(options.readOnly ? { readOnly: true } : {}) })
         return client
       } catch (error) {
         client.close()
