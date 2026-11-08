@@ -39,6 +39,10 @@ export interface AccountConfig {
   tokenRef?: string
   /** codex: CODEX_HOME, relative to $DSH_HOME/system unless absolute. */
   codexHome?: string
+  /** acp: path to an ACP-capable agent executable (e.g. installed codex-acp). */
+  agentCommand?: string
+  /** acp: executable arguments as separate argv entries, never shell text. */
+  agentArgs?: string[]
   /** chatgpt-web: the Chrome profile (the signed-in session), relative to $DSH_HOME/system unless absolute; default `chatgpt-web/<name>`. */
   profileDir?: string
   /** chatgpt-web: open each attempt in a temporary chat (default true). */
@@ -146,21 +150,39 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     statuses.push(status)
     try {
       const web = account.runtime === 'chatgpt-web'
+      const acp = account.runtime === 'acp'
       if (web && 'headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
       if (web && !findXvfb()) throw new Error(XVFB_MISSING)
       const browsers = systemPath(ctx, 'browsers')
-      const command = web ? discoverChrome(account.executablePath, { managedDir: browsers }).path : await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
+      const command = web ? discoverChrome(account.executablePath, { managedDir: browsers }).path : await subprocess.resolveExecutable(account.command ?? (acp ? 'system-acp-bridge' : account.runtime === 'claude-code' ? 'claude' : 'codex'))
+      const acpAgent = acp ? await subprocess.resolveExecutable(account.agentCommand || (() => { throw new Error('acp account requires agentCommand') })()) : undefined
       status.command = command
       const askVersion = lazyVersion(subprocess, command)
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
+      if (acp && account.models && Object.keys(account.models).length) throw new Error('acp adapter cannot guarantee model-tier selection; do not configure models')
+      if (acp && (account.attemptBudget ?? config.attemptBudget)?.inputTokens !== undefined) throw new Error('acp bridge does not provide live token metering; inputTokens budget cannot be enforced')
+      if (acp && account.tokenRef && account.codexHome) throw new Error('acp account must choose tokenRef or codexHome, not both')
       const tiers = TIERS.filter((tier) => account.models?.[tier])
       const slots = account.maxConcurrentAttempts ?? config.maxConcurrentAttempts
       if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error(`maxConcurrentAttempts is ${slots}; it must be a whole number of at least 1`)
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
       const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes: account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots }
-      if (web) {
+      if (acp) {
+        if (!acpAgent) throw new Error('acp agent is unavailable')
+        resolved.acp = { agentCommand: acpAgent, agentArgs: account.agentArgs ?? [] }
+        if (account.tokenRef) {
+          const ref = credentialRef(account.tokenRef)
+          if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)
+          resolved.token = async () => (await credentials.resolve(ref))?.value
+        }
+        if (account.codexHome) {
+          const home = account.codexHome
+          resolved.codexHome = isAbsolute(home) ? home : systemPath(ctx, home)
+          if (!existsSync(join(resolved.codexHome, 'auth.json'))) throw new Error(`no auth.json in ${resolved.codexHome}`)
+        }
+      } else if (web) {
         const profile = account.profileDir ?? `chatgpt-web/${account.ref.split('/')[1] ?? 'default'}`
         const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile))
         const config: WebConfig = {
