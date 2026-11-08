@@ -15,7 +15,7 @@ source and tests are the authority for implementation behavior.
 | Where does Workflow step order live? | [Workflow composition](architecture/workflow-composition.md) | External config, accepted target |
 | How do Workers exchange and verify results? | [Artifact-ID and verifier contracts](architecture/artifact-verification.md) | Accepted target, not implemented |
 | Why was the control-plane/DSH choice made? | [ADR index](decisions/README.md) | Accepted rationale |
-| Why is the first Rust component an optional ACP Worker Adapter? | [ADR-0011](decisions/ADR-0011-rust-acp-worker-adapter.md) | Accepted direction, unimplemented |
+| Why does the optional ACP Worker reuse DSH and the official TypeScript SDK? | [ADR-0011](decisions/ADR-0011-acp-worker-plugin.md) | Accepted design and release gates |
 | What external evidence or open tests inform the MVP? | [Research](research/README.md) | Exploratory, non-normative |
 | Is the current plugin layout sufficient, and which DSH services can be reused? | [MVP-0 plugin audit](research/RES-0005-plugin-reuse-audit.md) | Source-backed research on draft PR #2 |
 | What are the candidate priorities after MVP-0? | [Post-MVP roadmap](proposals/PROP-0002-post-mvp-roadmap.md) | Brainstorm-first draft, not accepted requirements |
