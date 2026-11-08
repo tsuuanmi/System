@@ -179,8 +179,16 @@ export class Capabilities {
   private readonly effects: EffectPort[] = []
 
   registerWorker(port: WorkerPort): () => void {
+    // A ref identifies one concrete account for routing, retries and audit.
+    // Two plugin rows must never silently claim the same Worker identity.
+    if (this.workers.some((worker) => worker.ref === port.ref)) {
+      throw new Error(`Worker ref already registered: ${port.ref}`)
+    }
     this.workers.push(port)
-    return () => { this.workers.splice(this.workers.indexOf(port), 1) }
+    return () => {
+      const index = this.workers.indexOf(port)
+      if (index >= 0) this.workers.splice(index, 1)
+    }
   }
   
   /** Each optional Worker plugin reports its own configured and unavailable accounts. */
