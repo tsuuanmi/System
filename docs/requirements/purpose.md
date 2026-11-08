@@ -64,12 +64,13 @@ evade policy.
    configuration and can remain installed but inactive.
 7. **Reliability before feature breadth:** prioritize safe recovery, effects,
    authority and accounting over the number of services and plugins.
-8. **Reuse standards and DSH before building:** DSH/Cordis is the chosen host
-   and composition foundation. Reuse its mechanisms and community ecosystem,
-   and established standards (git, JSON Schema, MCP, systemd), before
-   inventing anything. What System records is deterministic, artifact-based
-   and explainable by logic: a new format or mechanism names the standard it
-   considered first.
+8. **Standards-first and reuse-before-build:** System MUST prefer
+   established, fit-for-purpose open protocols, specifications, maintained
+   SDKs/libraries and DSH/Cordis capabilities before custom implementations.
+   Reimplementing a standard or introducing a new protocol needs a recorded,
+   verifiable gap; System-specific Work and Artifact semantics remain
+   intentional boundaries. A language or framework preference is not a
+   reason to duplicate an adequate existing implementation.
 9. **Complexity must earn its place:** every required module needs a measurable
    guarantee or use case. A small *active composition* is the target, not
    deleting code merely to reduce its directory size.
@@ -87,6 +88,44 @@ evade policy.
    and exactly enough to iterate many times. The required checks stay within
    their time budget, every behavior has a test that can fail, and a flaky
    test is a defect fixed before new features.
+
+## Product-wide standards and interoperability requirements
+
+These apply to **new integrations and architecture changes**; they do not
+retroactively change MVP-0's already-implemented acceptance evidence.
+
+- **STD-001 — Standards evaluation first:** Before building a protocol,
+  transport, format, runtime framework or integration mechanism, System MUST
+  evaluate relevant existing standards and maintained implementations,
+  including compatibility, licenses, version support, security, cost and
+  demonstrated fitness for its actual use case.
+- **STD-002 — Prefer reuse:** When a supported standard/SDK or existing DSH
+  capability meets the contract, System MUST reuse or adapt it instead of
+  making a competing implementation. Exceptions MUST document the precise
+  missing requirement, alternatives tested, migration cost and maintenance
+  owner in a proposal or accepted decision.
+- **STD-003 — Clear, provider-neutral boundaries:** System MUST expose
+  provider-agnostic Worker capabilities and results. External protocols
+  (such as ACP for interactive agent sessions and MCP for agent tools) MUST
+  be used only at their relevant boundaries; an incompatible Worker MUST
+  NOT be forced to emulate a protocol it does not support.
+- **STD-004 — Demonstrable compliance:** A claim of compatibility MUST
+  name the pinned protocol and SDK versions, negotiated features and
+  passing conformance/negative tests. Shared JSON encoding or method names
+  alone do not establish protocol conformance. Experimental extensions
+  MUST remain optional and explicitly gated.
+- **STD-005 — No authority leakage:** Reusing a protocol or SDK MUST NOT
+  displace System's Work/Attempt/Artifact authority, operator approvals,
+  sandbox/credential policy, verified outcomes or effect reconciliation.
+  A session/terminal event is observation, not a Work success verdict.
+- **STD-006 — Minimal changeable core:** New libraries and components
+  MUST have explicit runtime ownership, dependency and rollback plans.
+  Prefer optional adapters over mandatory new stacks. Performance claims
+  require measurement; implementation language alone is not evidence.
+
+The first selected Rust integration is the optional ACP Worker Adapter in
+[ADR-0011](../decisions/ADR-0011-rust-acp-worker-adapter.md). This is an
+accepted design direction, not an implemented feature.
 
 ## Success means
 
