@@ -24,7 +24,7 @@ the optional web-worker row) becomes a System Worker
         capabilities: [code-write, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
-        maxConcurrentAttempts: 2        # attempts of this account at once; default 1
+        maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a chatgpt-web account: always 1)
       - ref: codex/default
         runtime: codex
         capabilities: [code-write]
@@ -133,7 +133,7 @@ shell snapshots and logs into `CODEX_HOME`, so a shared directory would carry
 state between attempts. Each attempt therefore gets a fresh `CODEX_HOME` with
 only `auth.json`; a refreshed `auth.json` is copied back to the account
 directory unless that file changed meanwhile. The Host's slots decide how many
-attempts of an account run at once (`maxConcurrentAttempts`, default 1); the
+attempts of an account run at once (`maxConcurrentAttempts`, default 1; always 1 for a chatgpt-web account, one Chrome profile); the
 worker queues nothing itself. Raise the limit for a Codex account only if its
 `auth.json` refresh can tolerate it: the copy-back keeps the first refresh and
 drops a later one when the file changed meanwhile.

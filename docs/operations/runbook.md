@@ -151,6 +151,10 @@ restart the Host:
         maxConcurrentAttempts: 2  # this account only
 ```
 
+A chatgpt-web account is one Chrome profile and always runs one attempt at a
+time: the row-wide value does not apply to it, and an own value other than 1
+makes it unavailable.
+
 Codex accounts share one `auth.json`; with several attempts at once only the
 first refresh is copied back.
 

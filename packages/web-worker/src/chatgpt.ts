@@ -69,7 +69,7 @@ export interface WebAccount {
   version: () => Promise<string>
   /** Wall-clock limit of one attempt, in minutes (fractions allowed). */
   attemptTimeoutMinutes?: number
-  /** How many attempts of this account run at once (the Host's slots); default 1. */
+  /** How many attempts of this account run at once (the Host's slots); always 1: one Chrome profile. */
   maxConcurrentAttempts?: number
   web: WebConfig
   /** The Account's circuit breaker (WW6d): fed by every attempt's outcome, and what keeps the Worker out of routing while the Account is not ready. */

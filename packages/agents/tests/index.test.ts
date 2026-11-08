@@ -8,15 +8,15 @@ import { test } from 'node:test'
 import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '../src/index.ts'
 
 /** Mount the row on a bare context with `webWorker` (if any); the accounts it reports and what it disposed. */
-async function mount(webWorker: unknown, hold = false): Promise<any> {
+async function mount(webWorker: unknown, hold = false, accounts: object[] = [{}], services_: Record<string, unknown> = {}, rowSlots = 2): Promise<any> {
   const provided: Record<string, any> = {}
   const effects: (() => () => void)[] = []
-  const services: Record<string, unknown> = { capabilities: {}, artifacts: {}, subprocess: {}, credentials: {}, webWorker }
+  const services: Record<string, unknown> = { capabilities: {}, artifacts: {}, subprocess: {}, credentials: {}, webWorker, ...services_ }
   const ctx = { get: (key: string) => services[key], effect: (fn: () => () => void) => { effects.push(fn) }, provide: (key: string, value: unknown) => { provided[key] = value } }
-  const started = apply(ctx as never, { maxConcurrentAttempts: 2, accounts: [{ ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], models: { standard: 'x' }, url: 'http://localhost/' }] })
+  const started = apply(ctx as never, { maxConcurrentAttempts: rowSlots, accounts: accounts.map((own) => ({ ref: 'chatgpt-web/default', runtime: 'chatgpt-web', capabilities: ['research'], models: { standard: 'x' }, url: 'http://localhost/', ...own })) })
   if (hold) return { before: await provided.agents.accounts() as { available: boolean; reason: string }[], started }
   await started
-  return { accounts: await provided.agents.accounts() as { available: boolean; reason: string; command?: string; version?: string; capabilities: string[] }[], unload: () => effects.forEach((fn) => fn()()) }
+  return { accounts: await provided.agents.accounts() as { ref: string; available: boolean; reason: string; command?: string; version?: string; capabilities: string[] }[], unload: () => effects.forEach((fn) => fn()()) }
 }
 
 test('with the web-worker row off, a chatgpt-web account is unavailable and the reason names the row', async () => {
@@ -26,13 +26,13 @@ test('with the web-worker row off, a chatgpt-web account is unavailable and the 
   assert.equal(WEB_WORKER_DISABLED, 'the web-worker row is disabled')
 })
 
-test('with the row on, the account goes to its service with its offered capabilities and limits, and is released with the row', async () => {
+test('with the row on, the account goes to its service with its offered capabilities and one slot, and is released with the row', async () => {
   const registered: WebRegistration[] = []
   let disposed = 0
   const { accounts, unload } = await mount({ expect: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => { disposed += 1 }, unavailable: () => undefined } } })
   assert.equal(accounts[0]!.available, true)
   assert.deepEqual([accounts[0]!.command, accounts[0]!.version, accounts[0]!.capabilities], ['/chrome', '155', ['research', 'tier.standard']])
-  assert.deepEqual([registered[0]!.capabilities, registered[0]!.maxConcurrentAttempts, registered[0]!.url], [['research', 'tier.standard'], 2, 'http://localhost/'])
+  assert.deepEqual([registered[0]!.capabilities, registered[0]!.maxConcurrentAttempts, registered[0]!.url], [['research', 'tier.standard'], 1, 'http://localhost/'])
   unload()
   assert.equal(disposed, 1)
 })
@@ -64,4 +64,26 @@ test('an account whose registration is not done is listed as registering, and an
   release()
   await started
   await announced[0]
+})
+
+const ONE_CHROME = 'a chatgpt-web account runs one attempt at a time (one Chrome profile); maxConcurrentAttempts must be 1'
+
+test('a chatgpt-web account has one slot whatever the row says, and an agent CLI account inherits the row', async () => {
+  const registered: WebRegistration[] = []
+  const web = { expect: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined } } }
+  const resolved: unknown[] = []
+  const subprocess = { resolveExecutable: async (name: string) => `/bin/${name}` }
+  const credentials = { describe: async () => ({ configured: true }), resolve: async () => ({ value: 't' }) }
+  const capabilities = { registerWorker: (worker: { maxConcurrentAttempts?: number }) => { resolved.push(worker.maxConcurrentAttempts); return () => {} } }
+  const { accounts } = await mount(web, false, [{}, { ref: 'claude-code/default', runtime: 'claude-code', capabilities: ['research'], models: undefined, url: undefined }], { subprocess, credentials, capabilities }, 4)
+  assert.deepEqual([accounts[0]!.available, registered[0]!.maxConcurrentAttempts], [true, 1])
+  assert.equal(accounts[1]!.available, true, accounts[1]!.reason)
+  assert.deepEqual(resolved, [4])
+})
+
+test('a chatgpt-web account that sets its own maxConcurrentAttempts other than 1 is unavailable', async () => {
+  const web = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
+  const { accounts } = await mount(web, false, [{ maxConcurrentAttempts: 2 }, { ref: 'chatgpt-web/two', maxConcurrentAttempts: 1 }])
+  assert.deepEqual([accounts[0]!.available, accounts[0]!.reason], [false, ONE_CHROME])
+  assert.deepEqual([accounts[1]!.ref, accounts[1]!.available], ['chatgpt-web/two', true])
 })
