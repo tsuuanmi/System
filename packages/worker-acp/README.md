@@ -42,6 +42,14 @@ default headless Claude/Codex and Website Workers stay independent. For
 in-flight work use a controlled drain/restart — hot-disable is not certified
 to safely reclaim every active process.
 
+The [canonical provider-neutral Worker contract](../../docs/architecture/control-plane.md#provider-neutral-worker-boundary)
+belongs to System, not this plugin. The same Work Controller admits a
+capable headless, ACP or Website Worker through `WorkerPort`; this plugin
+only translates ACP sessions into System Attempt results and exact
+Artifact IDs. Provider names, permissions and session details do not
+enter Controller branching. Report unsupported capabilities as unavailable;
+do not promise model-level equivalence across providers.
+
 ## Execution contract
 
 - One fresh ACP v1 session/process per System Attempt: initialize, new session,
