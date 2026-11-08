@@ -18,7 +18,7 @@ for await (const line of lines) {
         method: 'session/request_permission',
         params: {
           sessionId: 'mock-acp-session',
-          toolCall: { toolCallId: 'tool-1', title: 'Run command', kind: 'execute' },
+          toolCall: { toolCallId: 'tool-1', title: 'Run command', kind: 'execute', status: 'pending' },
           options: [
             { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
             { optionId: 'reject', name: 'Reject once', kind: 'reject_once' },
