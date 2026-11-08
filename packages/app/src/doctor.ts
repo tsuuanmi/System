@@ -24,6 +24,7 @@ export const ROWS: readonly RowProbe[] = [
   { id: 'verifiers', service: 'verifiers', required: false, purpose: 'code checks and citation checks' },
   { id: 'effects', service: 'effects', required: false, purpose: 'push and draft pull requests' },
   { id: 'agents', service: 'agents', required: false, purpose: 'agent CLI accounts as Workers' },
+  { id: 'worker-acp', service: 'acpWorkers', required: false, purpose: 'optional ACP Worker plugin (Rust bridge)' },
   { id: 'credentials', service: 'credentials', required: false, purpose: 'model and GitHub key references' },
 ]
 
