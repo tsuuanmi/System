@@ -180,5 +180,6 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     if (cancel) await session.cancel()
     return session.done
   }
+  dispose.push(capabilities.registerWorkerStatusProvider(accounts))
   ctx.provide('agents', { accounts, login, loginRemote, loginWait } satisfies AgentsService)
 }
