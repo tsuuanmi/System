@@ -91,6 +91,14 @@
               standard: gpt-6.1-sol
               frontier: gpt-6-astra
 
+    # Optional ACP WorkerPort adapter. Installed but OFF; no Rust binary is
+    # required for the default headless or Website Worker path (ADR-0011).
+    - id: worker-acp
+      name: '@system/worker-acp'
+      disabled: true
+      config:
+        accounts: []
+
     # Optional: Worker tokens (`system credentials`, ADR-0005). Only real
     # Workers read it, so it may be disabled by a profile patch.
     - id: credentials
