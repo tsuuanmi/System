@@ -2,7 +2,7 @@
 name = "system-acp-bridge"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 publish = false
 description = "Optional System WorkerPort bridge to stable ACP v1 agents"
 
