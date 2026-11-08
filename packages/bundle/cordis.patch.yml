@@ -91,8 +91,8 @@
               standard: gpt-6.1-sol
               frontier: gpt-6-astra
 
-    # Optional ACP WorkerPort adapter. Installed but OFF; no Rust binary is
-    # required for the default headless or Website Worker path (ADR-0011).
+    # Optional ACP WorkerPort adapter. Installed but OFF; uses the official
+    # TypeScript ACP SDK and existing DSH subprocess, no Rust bridge (ADR-0011).
     - id: worker-acp
       name: '@system/worker-acp'
       disabled: true
