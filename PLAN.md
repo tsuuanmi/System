@@ -122,6 +122,17 @@ Works, so trimming the core and proving the dogfood are one job.
   - keep Goals, decisions and the Orchestrator caller, live progress and
     stalls, and Sub-workflows: DF uses them. At the end of DF, a feature that
     no Work used is proposed for removal.
+- [ ] DF2b. One automatic fresh attempt per Work after a conclusive failure
+  (operator, 2026-11-08; decided on `web-workers`, PLAN "Decisions of
+  2026-11-08, second round"), a System Work of this Goal after DF0b. Allowed
+  after a failure before the send, a site error, or a complete but malformed
+  answer; never after an unknown send, a challenge, a sign-in wall or
+  `invalid_state`. The Worker says whether a failure may be tried afresh,
+  through the port and in generic terms; the counter is durable across
+  restarts and Accounts; the fresh attempt starts clean (a new chat), and its
+  evidence and event say it was automatic. Basis: 1 of 20 canary runs failed
+  on a missing output block; one fresh attempt would bring acceptance to about
+  95%. Until it ships, `work retry` by hand.
 - [ ] DF3. Replace the Orchestrator mid-milestone: stop its session in the
   middle of a Work, start a new session with only `system goal brief`, and it
   carries on without reading PLAN, an old chat or a memory. Whatever it has to
