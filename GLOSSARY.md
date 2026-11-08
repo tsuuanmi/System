@@ -115,6 +115,20 @@ The operator merging `dev` into `main` after reading a release report. System
 never makes a Release.
 _Avoid_: deploy, ship; checkpoint (a milestone's internal gate)
 
+### Checking work
+
+**Verifier**:
+A check System runs on one exact Artifact against pinned criteria. It is
+not a Worker and never changes what it checks.
+_Avoid_: reviewer, judge, validator
+
+**Verdict**:
+What a Verifier concludes about one Artifact: pass; fail, when the Artifact
+itself is wrong (such as malformed); or inconclusive, when the check could
+not confirm it against the world (a page that changed or refused the fetch).
+Only a check of the Artifact's own form may fail it.
+_Avoid_: score, review, result
+
 ### Outside material
 
 **Conversation**:

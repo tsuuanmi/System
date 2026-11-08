@@ -921,6 +921,28 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
   (done, WW2b `work:db784215`; first real run `work:3a6ac1f1`: 2 Rounds on the
   two ChatGPT Accounts and a Claude synthesis in about 3.5 min). 7. research fan-out (`research.yaml`
   used k times) and `digest` after step 6.
+- **Decisions of 2026-11-08 (operator).**
+  - The Verifier stays; only a check of the Artifact's own form may fail it
+    ([GLOSSARY](GLOSSARY.md) Verifier, Verdict). Citations are matched
+    loosely: words in order, a threshold in the criteria (0.8), the nearest
+    passage in the evidence; a report is checked for completeness by code
+    (every `[sX]` resolves, every source is used, every sub-question is
+    answered); a descriptive User-Agent; a 403 is unreadable, not wrong.
+    Criteria `citations-v2`; earlier verdicts keep v1 (6k).
+  - Reasoning level: the model and Power shown before the send are recorded
+    in the evidence first; later the tiers (`tier.economy|standard|frontier`)
+    map to Power as the CLI Accounts map them to models (8a, then 8b).
+  - The default `test` and `smoke` cannot launch a browser:
+    `SYSTEM_NO_BROWSER=1` makes a Chrome or Xvfb launch throw. The flaky
+    `chatgpt-web.test.ts` under load is fixed at its cause (6l).
+  - `legacy` is removed after at least 20 canary runs per Account on the
+    loose verifier with the Worker step at least 95% on each and no
+    wrong-mode or malformed acceptance (2-iv).
+  - Then the rename: Runtime `web`, `site: chatgpt`, Accounts
+    `web/chatgpt/<name>`; `runtime: chatgpt-web` is refused with the new
+    name (no alias); state moves once from `system/chatgpt-web/<name>` to
+    `system/web/chatgpt/<name>`; old records keep their refs and the canary
+    report reads both.
 - **Gate to merge into `dev`.** Canary ≥95% over ≥50 attempts across both
   Accounts; zero wrong-Account, wrong-mode or malformed-output acceptances;
   operator touches other than re-login under 5%; no flaky test; required
