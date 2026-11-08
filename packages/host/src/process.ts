@@ -4,8 +4,9 @@
  * has taken the lock before this runs, so no other Host serves the home and a
  * socket file found here is stale.
  */
-import { lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { WorkError, type Host } from '@system/work'
 import { VERSION, codeVersion as diskVersion, serve } from './index.ts'
 import { operations, type Services } from './operations.ts'
@@ -34,7 +35,12 @@ export interface ServeHostOptions {
   codeVersion?: () => string
   /** Milliseconds between looks at the disk; default `UPGRADE_POLL`. */
   upgradePoll?: number
+  /** Whether a build is rewriting the code on disk now; default: the build's marker, `BUILDING`, exists. */
+  building?: () => boolean
 }
+
+/** The marker `corepack pnpm build` keeps at the repository's root while it runs (and leaves when it fails). */
+export const BUILDING = fileURLToPath(new URL('../../../.building', import.meta.url))
 
 export interface ServingHost {
   /** The exit status once the Host has stopped: `UPGRADE_EXIT` after an upgrade, 0 after `stop`. */
@@ -51,6 +57,8 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
   if (lstatSync(path, { throwIfNoEntry: false })?.isSocket()) rmSync(path)
   const version = options.version ?? VERSION
   const onDisk = options.codeVersion ?? (() => diskVersion())
+  // Code being built is no code to upgrade to: a Host started on a half-built tree fails (2026-11-08).
+  const building = options.building ?? (() => existsSync(BUILDING))
   let stopping: Promise<void> | undefined
   let upgrading = false
   let finish!: (status: number) => void
@@ -85,7 +93,7 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
 
   /** A hello of another version asks the disk at once; the Host upgrades only to the code that client was built from. */
   const asked = (clientVersion: string): boolean => {
-    if (!upgrading && !stopping) {
+    if (!upgrading && !stopping && !building()) {
       const now = onDisk()
       if (now === clientVersion && now !== version) void upgrade(now)
     }
@@ -100,6 +108,8 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
   let candidate: string | undefined
   const timer = setInterval(() => {
     if (upgrading || stopping) return
+    // A build in progress starts the count again: its code counts once it is seen twice after the build.
+    if (building()) { candidate = undefined; return }
     const now = onDisk()
     if (now === version) candidate = undefined
     else if (now === candidate) void upgrade(now).catch((error: unknown) => options.log(`upgrade failed: ${error instanceof Error ? error.message : String(error)}`))
@@ -108,6 +118,26 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
   timer.unref()
   void exited.then(() => clearInterval(timer))
   return { stop, exited }
+}
+
+/** How long a stopped Host's process may stay alive before it is made to exit. */
+export const EXIT_GRACE = 10_000
+
+/**
+ * After the Host has stopped, its process should end once its event loop is
+ * empty. If something left open still holds it (a timer, a server, a pool),
+ * the supervisor or the unit would wait on it forever, with the Host down: so
+ * after `graceMs` this logs what is still open and exits with `status`. The
+ * timer is unref'd, so a process that ends by itself never waits for it.
+ */
+export function exitWithin(status: number, options: { graceMs?: number; log: (line: string) => void; exit?: (status: number) => void }): NodeJS.Timeout {
+  const graceMs = options.graceMs ?? EXIT_GRACE
+  const timer = setTimeout(() => {
+    options.log(`the process is still running ${graceMs / 1000} s after it stopped; exiting ${status}; open: ${process.getActiveResourcesInfo().join(', ')}`)
+    ;(options.exit ?? process.exit)(status)
+  }, graceMs)
+  timer.unref()
+  return timer
 }
 
 /** Run the Works the previous Host held for an upgrade, then forget the file: it names what to continue once. */
