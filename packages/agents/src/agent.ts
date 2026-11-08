@@ -7,13 +7,15 @@
  * An attempt past its time limit is stopped the same way but fails: nobody cancelled it.
  */
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
-import { acpInvocation, claudeInvocation, codexInvocation, parseAcp, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
+import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
 import { profileLockPid, webAttempt, type WebConfig } from './chatgpt.ts'
-import { capture, cleanup, prepare, prompt } from './workspace.ts'
+import { capture, cleanup, prepare, prompt, pidFile, exited, recordingPid, type Spawner } from '@system/worker-execution'
+export { recordingPid } from '@system/worker-execution'
+export type { SpawnSpec, Spawned, Spawner } from '@system/worker-execution'
 
 const GRACE_MS = 30_000
 /** The wall-clock limit of an attempt when neither the account nor the row sets one. */
@@ -22,39 +24,12 @@ const MAX_LOG_BYTES = 256 * 1024
 /** How often a running agent's stdout is read for its progress. */
 const PROGRESS_MS = 500
 
-export interface SpawnSpec {
-  argv: string[]
-  cwd: string
-  env: Record<string, string | undefined>
-  signal: AbortSignal
-  graceMs: number
-  /** Where the process writes its own ID before it starts the CLI (see `recordingPid`), for a later Host to find. */
-  pidFile?: string
-}
-
-/** The command a spawner runs for `spec`: the CLI itself, started by a shell that first writes its process ID (`exec` keeps it, and the shell's own `PWD` is not passed on) to `spec.pidFile`. */
-export function recordingPid(spec: SpawnSpec): string[] {
-  return spec.pidFile ? ['/bin/sh', '-c', 'echo $$ > "$1" && shift && unset PWD && exec "$@"', 'sh', spec.pidFile, ...spec.argv] : spec.argv
-}
-
-export interface Spawned {
-  done: Promise<{ exitCode: number | null; signal: string | null }>
-  stdout(): string
-  stderr(): string
-}
-
-export interface Spawner {
-  spawn(spec: SpawnSpec): Spawned
-}
-
 export interface Account {
   ref: string
   runtime: Runtime
   capabilities: string[]
   /** chatgpt-web: the profile, page and timeouts; `command` is then the path of Chrome. */
   web?: WebConfig
-  /** acp: external executable implementing ACP v1, not the agent vendor CLI. */
-  acp?: { agentCommand: string; agentArgs: string[] }
   /** Absolute path of the CLI. */
   command: string
   /** Its `--version` output, asked when first needed. */
@@ -82,18 +57,6 @@ export interface AttemptBudget {
 const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
 
 /** Where the CLI's process ID is kept while an attempt runs, so a later Host can tell whether it is gone. */
-const pidFile = (attemptsDir: string, attemptId: string) => join(attemptsDir, `${attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
-
-/** Whether a process is gone: no such process (a reused ID only ever reads as alive). */
-function exited(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return false
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ESRCH'
-  }
-}
-
 /** The Host's slots limit how many attempts of an account run at once, so none queues here. */
 export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, graceMs = GRACE_MS): WorkerPort {
   return {
@@ -134,7 +97,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const token = await account.token?.()
       if (!token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
       invocation = claudeInvocation(account.command, ws, text, token, model, request.capabilities.includes('code-write'))
-    } else if (account.runtime === 'codex' || account.runtime === 'acp' && account.codexHome) {
+    } else {
       const home = join(ws.root, 'codex-home')
       mkdirSync(home, { mode: 0o700 })
       const source = join(account.codexHome!, 'auth.json')
@@ -142,20 +105,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       // A fresh CODEX_HOME per attempt holding only auth.json: no memories or history carry over (ADR-0005).
       copyFileSync(source, join(home, 'auth.json'))
       codexAuth = { attempt: join(home, 'auth.json'), account: source, before: digest(source) }
-      if (account.runtime === 'codex') invocation = codexInvocation(account.command, ws, text, home, model)
-      else {
-        const file = join(ws.root, 'acp-prompt.txt')
-        writeFileSync(file, text, { mode: 0o600 })
-        invocation = acpInvocation(account.command, ws, file, account.acp!.agentCommand, account.acp!.agentArgs, undefined, home)
-      }
-    } else if (account.runtime === 'acp') {
-      const token = await account.token?.()
-      if (account.token && !token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured`, executor }
-      const file = join(ws.root, 'acp-prompt.txt')
-      writeFileSync(file, text, { mode: 0o600 })
-      invocation = acpInvocation(account.command, ws, file, account.acp!.agentCommand, account.acp!.agentArgs, token)
-    } else {
-      throw new Error(`unexpected runtime ${account.runtime}`)
+      invocation = codexInvocation(account.command, ws, text, home, model)
     }
     // Remove every host variable the agent was not given (SSH agent, tokens, ...).
     const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
@@ -194,7 +144,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
     })
     const stdout = spawned.stdout()
-    const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : account.runtime === 'codex' ? parseCodex(stdout) : parseAcp(stdout)
+    const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
     if (codexAuth) keepRefreshedAuth(codexAuth)
     if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
     const log = (await artifacts.putBytes({
