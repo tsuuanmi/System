@@ -56,7 +56,7 @@ export function dshAcpRunner(subprocess: SubprocessRuntime): AcpRunner {
       if (input.signal.aborted) throw new Error('ACP attempt was cancelled before spawn')
       const log: string[] = []
       const stage = (name: string) => {
-        input.onStage?.(name)
+        try { input.onStage?.(name) } catch { /* reporting must not stop the protocol */ }
         if (log.length < MAX_EVENTS) log.push(JSON.stringify({ type: 'acp.stage', stage: name }))
       }
       let denied = false
@@ -78,13 +78,15 @@ export function dshAcpRunner(subprocess: SubprocessRuntime): AcpRunner {
       if (input.signal.aborted) onAbort()
       let stopReason: string | undefined
       let completed = false
-      // Prevent a child that exits or closes stdio during handshake from hanging
-      // an outstanding SDK RPC forever.
-      const unexpectedExit: Promise<never> = child.done.then(
-        () => { throw new Error('ACP child exited before completing the request') },
+      let remoteAbortWait: (() => void) | undefined
+      // DSH's ACP client uses only *rejected* process outcomes for the RPC
+      // race: a clean child exit must not beat an already delivered ACP reply.
+      // EOF on the SDK pipe and the Attempt deadline settle the other cases.
+      const processFailed: Promise<never> = child.done.then(
+        () => new Promise<never>(() => {}),
         () => { throw new Error('ACP child process failed') },
       )
-      void unexpectedExit.catch(() => {})
+      void processFailed.catch(() => {})
       try {
         if (!child.stdin || !child.stdout) throw new Error('ACP process needs bidirectional pipes')
         const app = client({ name: 'system-worker-acp' })
@@ -104,12 +106,17 @@ export function dshAcpRunner(subprocess: SubprocessRuntime): AcpRunner {
           NodeReadable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
         ))
         const agent = connection.agent
+        let abortWait: (() => void) | undefined
         const aborted = new Promise<never>((_, reject) => {
-          if (input.signal.aborted) reject(new Error('ACP request cancelled'))
-          else input.signal.addEventListener('abort', () => reject(new Error('ACP request cancelled')), { once: true })
+          abortWait = () => reject(new Error('ACP request cancelled'))
+          if (input.signal.aborted) abortWait()
+          else input.signal.addEventListener('abort', abortWait, { once: true })
         })
+        // The listener is cleared in the enclosing finally; the signal dies
+        // with the Attempt, not with the ACP subprocess.
+        remoteAbortWait = abortWait
         const request = <T>(promise: Promise<T>): Promise<T> =>
-          Promise.race([promise, unexpectedExit, aborted])
+          Promise.race([promise, processFailed, aborted])
         await request(agent.request(methods.agent.initialize, {
           protocolVersion: PROTOCOL_VERSION,
           clientCapabilities: {},
@@ -135,6 +142,7 @@ export function dshAcpRunner(subprocess: SubprocessRuntime): AcpRunner {
         stage('turn_finished')
       } finally {
         input.signal.removeEventListener('abort', onAbort)
+        if (remoteAbortWait) input.signal.removeEventListener('abort', remoteAbortWait)
         // Only a reaped process permits its PID marker to be cleared by owner.
         // A teardown failure leaves the marker for System recovery.
         try {
