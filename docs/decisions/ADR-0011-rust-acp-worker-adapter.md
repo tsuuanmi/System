@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-08
 summary: Select an optional Rust ACP Worker Adapter as System's first Rust component, reuse the official ACP Rust SDK, and preserve the existing provider-neutral WorkerPort and TypeScript/DSH control plane.
-related: [ADR-0001, ADR-0002, ADR-0003, RES-0009]
+related: [ADR-0001, ADR-0002, ADR-0003, RES-0009, RES-0010]
 ---
 
 # Rust ACP Worker Adapter as the first Rust component
@@ -92,11 +92,19 @@ benchmark result or an assertion that the Rust code already exists.
 | Alternative | Outcome | Reason |
 | --- | --- | --- |
 | Official TypeScript ACP SDK, no Rust bridge | Valid, simpler alternative; not chosen for this first Rust component | Maintained and standards-compliant; fewer build/IPC dependencies. Reconsider if optional Rust packaging or integration overhead outweighs the explicit Rust adoption goal. |
+| Pinned DSH `@deepseek-ai/dsh-acp` server | Not selected as Worker adapter | Exposes **DSH Agents** to ACP clients; opposite direction from System initiating an external Worker. |
+| Pinned DSH `@deepseek-ai/dsh-subagent-acp` client | **Defer, re-evaluate stable low-dependency API** | Implements ACP client but registers on DSH subagent runtime and requires live parent DSH Agent; integrating its full agent loop violates System's small Host boundary. |
 | Reimplement ACP in bespoke TS or Rust | Rejected for initial adapter | Duplicates standard protocol/SDK; adds drift risk. |
 | Migrate the TypeScript control plane to Rust | Rejected | Violates a stable authority boundary without evidence. |
 | Require all Workers to expose ACP | Rejected | ACP does not describe browser or generic batch Worker semantics. |
 | Use Zed or Herdr as the Worker/Work authority | Rejected | Their editor/terminal session lifecycle does not replace System Work outcomes. |
 | Keep headless CLI only | Retained as default; insufficient alone | Interactive ACP interoperability is an explicit product goal. |
+
+The exact DSH v0.2.2-rc.1 reuse comparison is recorded in
+[RES-0010](../research/RES-0010-dsh-acp-reuse-and-worker-plugin.md).
+ACP-specific TypeScript wiring belongs to the independently toggleable
+`@system/worker-acp` Cordis plugin, not `@system/agents`.
+Process management must continue to use DSH's existing subprocess service.
 
 ## Acceptance evidence before implementation is enabled
 
