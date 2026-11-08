@@ -116,8 +116,7 @@ function credentialCommands(ctx: Context): CredentialCommands {
 
 async function workersView(ctx: Context): Promise<WorkersView> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
-  const agents = ctx.get('agents') as AgentsService | undefined
-  return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
+  return { registered: capabilities?.workerRefs() ?? [], accounts: (await capabilities?.accountStatuses()) ?? [] }
 }
 
 async function agentsService(ctx: Context): Promise<AgentsService> {
