@@ -105,10 +105,15 @@ retroactively change MVP-0's already-implemented acceptance evidence.
   missing requirement, alternatives tested, migration cost and maintenance
   owner in a proposal or accepted decision.
 - **STD-003 — Clear, provider-neutral boundaries:** System MUST expose
-  provider-agnostic Worker capabilities and results. External protocols
-  (such as ACP for interactive agent sessions and MCP for agent tools) MUST
-  be used only at their relevant boundaries; an incompatible Worker MUST
-  NOT be forced to emulate a protocol it does not support.
+  provider-agnostic Worker capabilities and results. Its Work Controller
+  MUST dispatch by declared capabilities and the System-owned Worker contract,
+  not by hard-coded model, vendor, agent executable, browser website or
+  transport protocol. It may retain an opaque Worker reference for explicit
+  routing, audit and provenance, but MUST NOT interpret the provider behind
+  that reference to decide Work state, authorization or acceptance. External
+  protocols (such as ACP for interactive agent sessions and MCP for agent
+  tools) MUST be used only at their relevant boundaries; an incompatible
+  Worker MUST NOT be forced to emulate a protocol it does not support.
 - **STD-004 — Demonstrable compliance:** A claim of compatibility MUST
   name the pinned protocol and SDK versions, negotiated features and
   passing conformance/negative tests. Shared JSON encoding or method names
