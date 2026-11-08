@@ -96,10 +96,18 @@ async function attempt(
     const timer = setTimeout(() => { timedOut = true; onAbort() }, limit * 60_000)
     const budgetTimer = account.attemptBudget?.minutes === undefined ? undefined :
       setTimeout(() => { overBudget = true; onAbort() }, account.attemptBudget.minutes * 60_000)
-    const spawned = spawner.spawn({
-      argv: invocation.argv, cwd: ws.work, env, signal: stop.signal,
-      graceMs: GRACE_MS, pidFile: pidFile(attemptsDir, request.attemptId),
-    })
+    let spawned: ReturnType<Spawner['spawn']>
+    try {
+      spawned = spawner.spawn({
+        argv: invocation.argv, cwd: ws.work, env, signal: stop.signal,
+        graceMs: GRACE_MS, pidFile: pidFile(attemptsDir, request.attemptId),
+      })
+    } catch (error) {
+      clearTimeout(timer)
+      clearTimeout(budgetTimer)
+      request.signal.removeEventListener('abort', onAbort)
+      throw error
+    }
     const read = acpProgress()
     let observed = 0
     const watcher = setInterval(() => {
