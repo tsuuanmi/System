@@ -208,6 +208,20 @@ test('normalize finds a quote that ends a link before a full stop (Paris, Wikipe
   assert.ok(normalize("see (<a href=\"/x\">this</a> ) one").includes(normalize('see (this) one')))
 })
 
+test('normalize treats inline elements as no word boundary (RFC 9113, RFC 9001)', () => {
+  const tcp = '<p>HTTP/2 runs over a TCP connection\n (<span>[<a href="#RFC0793" class="xref">TCP</a>]</span>).</p>'
+  assert.ok(normalize(tcp).includes(normalize('runs over a TCP connection ([TCP]).')))
+  const alpn = '<p>negotiated <span>in TLS</a></span> [<a href="#TLS-ALPN" class="xref">TLS-ALPN</a>].</p>'
+  assert.ok(normalize(alpn).includes(normalize('in TLS [TLS-ALPN].')))
+  const quic = '<p>TLS 1.3 <span>[<a href="#TLS13" class="xref">TLS13</a>]</span> is used with QUIC.</p>'
+  assert.ok(normalize(quic).includes(normalize('TLS 1.3 [TLS13] is used with QUIC.')))
+})
+
+test('normalize keeps block elements as word boundaries', () => {
+  assert.ok(!normalize('<p>alpha</p><p>beta</p>').includes(normalize('alphabeta')))
+  assert.ok(normalize('<p>alpha</p><p>beta</p>').includes(normalize('alpha beta')))
+})
+
 test('normalize reads a Markdown table cell separator as whitespace (France infobox)', () => {
   const page = '<tr><th>Capital and largest city</th><td><a href="/wiki/Paris">Paris</a> (de facto)</td></tr>'
   const quote = 'Capital and largest city | Paris (de facto)'

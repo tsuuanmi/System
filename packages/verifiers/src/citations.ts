@@ -52,17 +52,20 @@ export const citationCheckSchema = z.object({
 }).strict()
 type CheckResult = z.infer<typeof citationCheckSchema>['results'][number]
 
-/** Text for matching: tags, scripts and styles removed, Markdown links reduced to their text and code/emphasis marks dropped, common entities decoded, `|` read as whitespace, case and whitespace folded, and no space before `,.;:!?)` or after `(` (a tag leaves one). */
+const INLINE_TAG = /<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|dfn|em|i|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var)(?:\s[^>]*)?>/gi
+
+/** Text for matching: scripts and styles removed, inline tags (`a`, `span`, `em`...) removed with nothing because they are not word boundaries, every other tag read as a space, Markdown links reduced to their text and code/emphasis marks dropped, common entities decoded, `|` read as whitespace, case and whitespace folded, and no space before `,.;:!?)`. */
 export function normalize(text: string): string {
   return text
     .replace(/\[([^\]]*)\]\([^)\s]*\)/g, '$1')
     .replace(/[`*_]/g, '')
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(INLINE_TAG, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;|&#34;/g, '"').replace(/&#39;|&apos;/g, "'")
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
-    .replace(/[\s|]+/g, ' ').replace(/ ([,.;:!?)])/g, '$1').replace(/\( /g, '(').trim().toLowerCase()
+    .replace(/[\s|]+/g, ' ').replace(/ ([,.;:!?)])/g, '$1').trim().toLowerCase()
 }
 
 async function fetchText(url: string, criteria: CitationCriteria): Promise<{ status: number; text: string; contentHash: string }> {
