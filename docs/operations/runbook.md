@@ -1,8 +1,8 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-07
-covers: [bin/system, bin/service.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
+reviewed: 2026-11-08
+covers: [bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
 ---
 
 # Runbook
@@ -10,88 +10,65 @@ covers: [bin/system, bin/service.mjs, packages/app/src/index.ts, packages/app/sr
 How to run the Host of the default home (`~/.dsh`) as a user service, and
 what to do when it does not. The design is in [Host](../architecture/host.md#running-it).
 
-**Status:** release R1. The Host runs as a process and the CLI is its thin
-client: every command but `init`, `host` and `doctor` talks to the Host on
-`$DSH_HOME/system/host.sock`, so a Host must run for them. The old mode, where
-each command ran Work in its own process, is gone.
-
-## Cutover to the Host (R1)
-
-Do these in order, on the default home. For another home, set `DSH_HOME` and
-run `system host` in a terminal instead of step 4.
-
-1. **No old `system` process is running.** The old mode left one DSH process per
-   command, and a Work it was running would be written twice.
-   ```
-   pgrep -af -- '--profile system' ; pgrep -af 'bin/system'
-   ```
-   Both print nothing (a `pgrep` matching only itself does not count). Let a
-   `system work run` or `retry` of the old mode finish or `kill` it, and run
-   `system work list` after the cutover to see what was left interrupted.
-2. **Back up the store.** With nothing running, copy it with its WAL files:
-   ```
-   mkdir ~/system-backup-$(date +%F) && cp -a $DSH_HOME/system/state.sqlite* ~/system-backup-$(date +%F)/
-   ```
-   Keep the copy until a Work has run through the Host.
-3. **`system init`** from a shell that has `claude`, `codex`, `git` and `node`
-   on its `PATH`: it refreshes the profile and writes the unit.
-4. **`systemctl --user enable --now system`** starts the Host now and at every
-   login.
-5. **Delete the old control files.** The Host ignores them and never deletes
-   them:
-   ```
-   rm -f $DSH_HOME/system/control/*.lock $DSH_HOME/system/control/*.takeover \
-         $DSH_HOME/system/control/*.written $DSH_HOME/system/control/*.cancel
-   rmdir $DSH_HOME/system/control
-   ```
-6. **`system doctor`** reports every required row mounted, the storage probe
-   passing and `host: answering`. Then `system work list` shows the old Works.
-   A Work that was `running` when the old mode stopped stays so until
-   `system work run <id>`.
-
-## Rollback
-
-To go back to the previous release, in this order:
-
-1. **Stop the Host first:** `systemctl --user disable --now system`. Stopping
-   it kills the attempts it started; whatever was running is left interrupted.
-2. **Check that no attempt is still running:**
-   ```
-   systemctl --user status system      # inactive (dead)
-   pgrep -af 'system host|claude|codex' # nothing from this home
-   ```
-   Kill a leftover attempt by hand; a second writer must not start with one
-   still running.
-3. **Check out the previous release** in the System checkout, then
-   `corepack pnpm install --frozen-lockfile && corepack pnpm build` and
-   `system init` again.
-
-**The store format is unchanged by R1:** the DSH storage units `system_work` and
-`system_artifacts` stay at version 1 and the record and envelope schemas are
-the same (`git diff <release before R1> -- packages/work/src/record.ts packages/artifacts/src`
-shows what a release changed), so a rollback keeps the Works. One earlier
-addition matters when the previous release is older than the Host (H2): a Work
-changed through a command carries an optional `receipts` field, which the
-strict record schema of a release before H2 refuses at open. Count them:
-```
-node -e "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(process.argv[1],{readOnly:true});console.log(d.prepare(\"select count(*) as n from u_system_work_work where value like '%\\\"receipts\\\"%'\").get().n)" $DSH_HOME/system/state.sqlite
-```
-`0` means the older release opens the store. Otherwise restore the backup of
-cutover step 2, which loses the Works changed since.
+The Host runs as a process and the CLI is its thin client: every command but
+`init`, `update`, `host` and `doctor` talks to the Host on
+`$DSH_HOME/system/host.sock`, so a Host must run for them.
 
 ## Install and start
 
-`system init` writes `~/.config/systemd/user/system.service`, runs
-`systemctl --user daemon-reload` and `loginctl enable-linger $USER`, and prints
-the two commands that turn it on. It never enables or starts the service:
+System runs from an install under `~/.system` (`SYSTEM_INSTALL` for another
+place), apart from any checkout you develop in:
+
+```
+~/.system/
+  repo/                          a clone of the origin
+  releases/<commit>/             one built install per commit of main; never edit one
+  current -> releases/<commit>   the code the Host runs
+  profile.yml                    this machine's Accounts and Effects: the Host's --patch
+```
+
+The store and the secrets stay in `$DSH_HOME/system` (`~/.dsh`, DSH's).
+`system update` installs the newest commit of `main` ([Upgrading](#upgrading)).
+`system init`, run from the install, links the profile to `current`, writes
+`~/.config/systemd/user/system.service` (`ExecStart=<node>
+~/.system/current/bin/system [--patch ~/.system/profile.yml] host`), runs
+`systemctl --user daemon-reload` and `loginctl enable-linger $USER`, and never
+enables or starts it:
 
 ```
 systemctl --user enable --now system
 ```
 
-`system init --no-service` (or `SYSTEM_NO_SERVICE=1`) skips all of this. Run
-`system init` again after moving the checkout, changing Node or changing
-`PATH`: the unit holds the Node binary and the `PATH` of the last init.
+`system init --no-service` (or `SYSTEM_NO_SERVICE=1`) skips the unit. Run
+`system init` again after changing Node or `PATH` (the unit holds those of the
+last init) or adding `profile.yml`. A development checkout runs as itself:
+`bin/system host --supervise` with a `DSH_HOME` of its own, never the default
+home while the installed Host runs.
+
+To use System from a Claude Code session in any repository, register its MCP
+server once for your user ([agents](#using-system-from-an-agent)):
+
+```
+claude mcp add --scope user system -- ~/.local/bin/system mcp
+```
+
+### Moving to the install (DF0b)
+
+From a Host started by hand in a checkout to the installed one, once:
+
+1. While that Host runs, from a checkout of `main`:
+   `<checkout>/bin/system update`. It builds the first release, checks it as a
+   Work on that Host, and makes `current`.
+2. `ln -sfn ~/.system/current/bin/system ~/.local/bin/system`.
+3. Copy the `--patch` file that Host runs with to `~/.system/profile.yml`, and
+   check its Effects (`base`, `mergeInto`).
+4. When `system work list` shows nothing running, stop that Host (SIGTERM in
+   its terminal) and wait for `system work list` to say it is not running.
+5. `system init`, then `systemctl --user enable --now system`.
+6. `system doctor` reports `host: answering`; `system work list` shows the
+   Works.
+7. Delete what the mode before the Host left, which the Host ignores:
+   `rm -rf $DSH_HOME/system/control`.
 
 ## Stop, restart, status
 
@@ -112,8 +89,23 @@ Host that stopped itself for new code waits for its attempts first; see
 
 ## Upgrading
 
-Nothing to do after a merge or a `corepack pnpm build`: the Host looks at its
-code every 10 s and restarts itself on new code.
+`system update [--wait <minutes>]` moves the install to the newest commit of
+`main`, and only to code that passed its own checks on this machine:
+
+- it fetches `main` (the commit already current is nothing to do), adds
+  `releases/<commit>` and runs `corepack pnpm install --frozen-lockfile` and
+  `corepack pnpm build` there;
+- it checks that commit by a Work, `workflows/code-checks.yaml` on a task whose
+  base is the commit, and prints the Work ID: the evidence, bound to the exact
+  commit. A failed build or check leaves `current` where it was;
+- it switches `current` (a new link renamed over it), then asks the Host as a
+  client of the new code, which makes the Host drain and restart on it (below);
+- if the Host does not run the new code within `--wait` (default 75 minutes,
+  more than one attempt's time limit), it switches `current` back, and the
+  unit's next start runs the code before. Releases other than the current one
+  and the one before are removed.
+
+The Host's side of an upgrade:
 
 1. It logs `system host: upgrading: this Host runs <old>, the code on disk is
    <new>; ...`, starts no new attempt, and lets the running ones finish
@@ -136,10 +128,27 @@ is not running. While the Host waits on a long attempt, a CLI of the new code
 can still read (`work show`, `work list`, `workers`); a command that changes
 something says the Host is upgrading, and to retry once it has restarted. If the Host is still draining, `system host`'s log says what it
 waits for; `systemctl --user restart system` (or SIGTERM) stops it at once and
-interrupts the attempts, as any stop does. `corepack pnpm build` keeps a
-`.building` file at the repository's root while it runs, and the Host does not
-upgrade while it is there; a failed build leaves it, so the Host stays on its
-code until a build succeeds.
+interrupts the attempts, as any stop does.
+
+A Host run from a development checkout also restarts itself on a build there:
+it looks at the code every 10 s. `corepack pnpm build` keeps a `.building`
+file at the checkout's root while it runs, and the Host does not upgrade while
+it is there; a failed build leaves it, so the Host stays on its code until a
+build succeeds.
+
+## Rollback
+
+Point `current` at the release before (`ls ~/.system/releases`) and restart:
+
+```
+ln -sfn releases/<commit> ~/.system/current.new && mv -T ~/.system/current.new ~/.system/current
+systemctl --user restart system
+```
+
+The restart interrupts running attempts; do it when `system work list` shows
+none running. A release refuses a store whose records it does not know only if
+a later release changed the record schema (`git diff <commit>..<later> --
+packages/work/src/record.ts packages/artifacts/src` shows it).
 
 ## Changing the profile's config
 

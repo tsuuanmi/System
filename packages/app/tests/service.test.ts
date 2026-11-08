@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MIN_NODE, UPGRADE_EXIT, hostCommand, nodeChoice, serviceMode, supervise, unitPath, unitText } from '../../../bin/service.mjs'
+import { MIN_NODE, UPGRADE_EXIT, hostCommand, installRoot, nodeChoice, serviceMode, supervise, unitPath, unitText } from '../../../bin/service.mjs'
 
 test('a Node that is new enough runs the command itself', () => {
   assert.deepEqual(nodeChoice('24.9.0', ['v24.21.0']), { use: 'current' })
@@ -105,4 +105,16 @@ test('`host` is found after the global options of dsh, and a value of one is not
   assert.equal(hostCommand(['--patch', 'host']), false)
   assert.equal(hostCommand(['--patch', 'x.yml', 'doctor']), false)
   assert.equal(hostCommand([]), false)
+})
+
+test('a release under <install>/releases runs as the install, through its current link; a checkout runs as itself', () => {
+  const exists = (path: string) => path === '/home/tan/.system/current'
+  assert.equal(installRoot('/home/tan/.system/releases/0123abc', exists), '/home/tan/.system/current')
+  assert.equal(installRoot('/home/tan/workspaces/System', exists), '/home/tan/workspaces/System')
+  assert.equal(installRoot('/other/releases/0123abc', exists), '/other/releases/0123abc')
+})
+
+test('with a profile file, the unit runs the Host with it as a patch', () => {
+  const text = unitText({ node: '/n', entry: '/home/tan/.system/current/bin/system', home: '/home/tan/.dsh', path: '/usr/bin', patch: '/home/tan/.system/profile.yml' })
+  assert.match(text, /^ExecStart=\/n \/home\/tan\/\.system\/current\/bin\/system --patch \/home\/tan\/\.system\/profile\.yml host$/m)
 })
