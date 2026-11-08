@@ -99,6 +99,19 @@ Work Controller for individual vendors. It MUST pin and test any external
 standard/SDK used at its boundary; unsupported features must be explicit,
 not silently emulated or inferred from terminal activity.
 
+**Worker interchangeability acceptance (post-MVP-0 integration):**
+for each advertised capability, a test fixture MUST exercise the **same**
+`WorkerRequest` and expected output slots against eligible adapters (such
+as structured CLI, ACP, or Website). The Work Controller and verifier code
+MUST remain unchanged. Assert stable Work identity, distinct Attempt IDs
+on takeover, exact captured Artifact IDs, permission-denial behavior,
+cancellation, timeout/lost-process handling, explicit missing outputs and
+unknown usage (never fabricated zeros). Successful agent/session completion
+without required Artifact or verifier evidence MUST NOT result in accepted
+Work. Provider-specific features MAY differ and MUST be negotiated or
+declared unavailable; these tests do not assert identical model behavior.
+See the [canonical Worker boundary](../architecture/control-plane.md#provider-neutral-worker-boundary).
+
 The [optional ACP Worker plugin decision](../decisions/ADR-0011-acp-worker-plugin.md)
 is post-MVP-0 integration work, not a new prerequisite for existing
 Software Engineering or Research MVP acceptance. Existing headless Workers
