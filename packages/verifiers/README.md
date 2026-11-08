@@ -80,8 +80,9 @@ checks:
 - **Verify:** fetch each URL and search its text for the quote, ignoring
   markup, scripts, entities, Markdown code/emphasis marks (`` ` ``, `*`, `_`),
   Markdown link syntax (`[text](url)` reads as `text`), `|` (a table cell
-  separator), case, whitespace and a space before `,.;:!?)` or after `(` (left
-  by a tag, as in `<a>Paris</a>,`), on both the page and the quote. One `citation-check@1` evidence Artifact
+  separator), case, whitespace and a space before `,.;:!?)`, on both the page
+  and the quote. Inline tags (`a`, `span`, `em`...) are no word boundary
+  (`(<span>[<a>TCP</a>]</span>)` reads as `([TCP])`); other tags are. One `citation-check@1` evidence Artifact
   records each URL's status and page hash, plus the confirmed ratio and the
   threshold used.
   - `fail`: a malformed file, too few sources or too-short quotes.
