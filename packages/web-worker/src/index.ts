@@ -6,6 +6,7 @@
 import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { shippedMapProblem } from '@system/web-driver'
 import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { systemPath, type Capabilities } from '@system/work'
@@ -42,6 +43,9 @@ export function apply(ctx: Context, config: Config = {}): void {
   const log = (line: string) => { process.stderr.write(`system host: web-worker: ${line}\n`) }
   const disposers = new Set<() => void>()
   const register = async (account: WebRegistration) => {
+    // A map that did not load is the same for every account: they are unavailable with that one reason (WW6f).
+    const mapProblem = shippedMapProblem()
+    if (mapProblem) throw new Error(`the ChatGPT UI map did not load: ${mapProblem}`)
     if ('headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
     if (!findXvfb()) throw new Error(XVFB_MISSING)
     const browsers = systemPath(ctx, 'browsers')

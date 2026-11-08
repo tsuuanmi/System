@@ -9,7 +9,7 @@
  *   marker and stable text (the event stream stays open, so it is never consulted).
  */
 import { type AskOptions, type AskResult, type AuthState, bindingReporter, completionOptions, type DeleteOptions, modePresets, ProviderError, type ProviderDriver, type ProviderFeature, type ProviderMode, type ResearchState, type TurnSnapshot, sleep, splitAfterLastFence, waitForReport, waitForStableCompletion, withMissingSources } from './core/index.ts'
-import { type AttachOutcome, copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, type StallEvent, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
+import { type AttachOutcome, copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, shippedMapProblemOf, type StallEvent, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
 import type { Frame, Locator, Page, Route } from 'patchright-core'
 
 /** How long the logged-out home must hold, with no composer, before it counts as signed out. */
@@ -82,10 +82,14 @@ const CONVERSATION = /^\/c\/([0-9a-f-]{36})(?:[/?#]|$)/
 /** Every request that could delete or change a conversation: during a deletion only the bound one's deletion passes. */
 const DELETE_REQUEST = /\/backend-api\/conversations?(?:\/[^?#]*)?(?:[?#]|$)/
 
-/** The shipped map, with an optional local overlay merged after it. */
+/** The shipped map, with an optional local overlay merged after it; read and validated when this package loads, never again (WW6f). */
 export function shippedMap(overlay?: string): UiMap {
   return shippedMapOf(MAP_URL, overlay)
 }
+
+/** Why the shipped map did not load (one line), if it did not: the web-worker row reports its accounts unavailable with it. */
+export const shippedMapProblem = (file: URL = MAP_URL): string | undefined => shippedMapProblemOf(file)
+shippedMapProblem()
 
 /** The tools popover entry that proves each account feature. */
 const FEATURE_ENTRIES = [['deep-research', 'tools.deep-research'], ['web-search', 'tools.web-search'], ['image-generation', 'tools.create-image']] as const

@@ -203,6 +203,19 @@ test('the report counts site errors apart from other Worker step failures', { ti
   }
 })
 
+test('the report prints a long reason only up to 200 characters', { timeout: 60_000 }, () => {
+  const t = '2026-11-02T00:00:00Z'
+  const long = `the Worker threw: ui-map@1.0: ${'data must NOT have additional properties, '.repeat(40)}`
+  const s = setup({ 'work:1': record('chatgpt-web/a', t, 1, 'failed', 'investigate', long) })
+  try {
+    const line = run(['--report'], s.env).stdout.split('\n').find((l) => l.includes('work:1'))!
+    const detail = line.slice(line.indexOf('worker-failed: ') + 'worker-failed: '.length)
+    assert.equal(detail, `investigate: ${long}`.slice(0, 200) + '…')
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true })
+  }
+})
+
 test('the report prints the median and p95 of the launch and wait stages per Account from the evidence', { timeout: 60_000 }, () => {
   const t = '2026-11-02T00:00:00Z'
   const works: Record<string, unknown> = {}

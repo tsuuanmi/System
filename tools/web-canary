@@ -108,6 +108,9 @@ function classify(record) {
   return { ...run, kind: 'other', detail: reason ? `${stage ?? status}: ${reason}` : (stage ?? status) }
 }
 
+/** A reason longer than this is printed up to it. */
+const MAX_DETAIL = 200
+
 /** Print the per-Account and total lines of one canary version, then each run that did not pass. */
 function section(runs) {
   const pct = (n, of) => (of ? `${((n / of) * 100).toFixed(1)}%` : '-')
@@ -123,7 +126,7 @@ function section(runs) {
   const names = [...new Set(runs.map((r) => r.account))].sort()
   for (const name of names) line(name, runs.filter((r) => r.account === name))
   const total = line('total', runs)
-  for (const r of runs.filter((r) => !r.passed)) process.stdout.write(`  ${r.workId}  ${r.account}  ${r.kind}: ${r.detail}\n`)
+  for (const r of runs.filter((r) => !r.passed)) process.stdout.write(`  ${r.workId}  ${r.account}  ${r.kind}: ${r.detail.length > MAX_DETAIL ? `${r.detail.slice(0, MAX_DETAIL)}…` : r.detail}\n`)
   return { names, total }
 }
 

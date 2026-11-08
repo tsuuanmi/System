@@ -70,7 +70,7 @@ One attempt:
    private Xvfb ([display.ts](src/display.ts)) that the attempt starts and stops,
    also on cancel and on the time limit. Without Xvfb on `PATH` the Account is
    `unavailable`, with a reason naming it, and an account that sets `headless` is
-   too. **No restored tabs (WW1):** before every launch `prepareProfile` sets the
+   too, as is every account when the shipped UI map did not load (WW6f; one line, the first schema error). **No restored tabs (WW1):** before every launch `prepareProfile` sets the
    profile's startup preference to a new tab page, marks its last exit clean and
    removes its tab sessions (`Default/Sessions`); Cookies, Login Data, Local
    Storage, Session Storage and IndexedDB are never touched, and a profile a

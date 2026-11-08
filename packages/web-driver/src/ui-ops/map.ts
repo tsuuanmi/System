@@ -201,7 +201,11 @@ function assertMap(value: unknown): void {
     const ajv = new Ajv2020({ strict: true, allErrors: true, validateFormats: false })
     validator = ajv.compile(JSON.parse(readFileSync(new URL('../../ui/ui-map.v1.json', import.meta.url), 'utf8')) as object)
   }
-  if (!validator(value)) throw new Error(`ui-map@1.0: ${new Ajv2020().errorsText(validator.errors)}`)
+  if (!validator(value)) {
+    // The first error only: a wrong version makes hundreds, and the first names the cause.
+    const [first, ...more] = validator.errors!
+    throw new Error(`ui-map@1.0: ${new Ajv2020().errorsText([first!])}${more.length ? ` (and ${more.length} more)` : ''}`)
+  }
 }
 
 function references(map: Omit<UiMap, 'hash'>): string[] {

@@ -34,7 +34,7 @@ await serving.stop()                                // server, then the Host cor
   `{ version, caller }`, where `caller` is `{ type: "human" | "agent", operatorId }`
   or `{ type: "orchestrator", operatorId, goal }` (`system mcp --goal`). `version` is
   the code version (`VERSION`): a short sha256 over the built `lib/**/*.js`
-  of the System packages and the bundle's `cordis.patch.yml`, computed once when the Host starts and by each
+  of the System packages, the bundle's `cordis.patch.yml` and the shipped UI maps (`web-driver/ui/*.yaml`, `*.json`; a map is code, WW6f), computed once when the Host starts and by each
   client for its own files. Another version is refused with an error that says
   `restart the Host: systemctl --user restart system` (or restart `system host`). A hello of the code on disk, while the Host is upgrading to it, gets `-32002` (`UPGRADING`) instead: retry. `connect` and `connectHello` take `retry` (ms) to wait out such a swap.
   The reply carries `packageVersion`, the `package.json` version, for display only. The caller is kept for

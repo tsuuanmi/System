@@ -62,9 +62,18 @@ changed but the header line.
   lockfile through DSH) and `validateFormats: false`: **`uiRevision` is not
   checked to be a date**. The schema's one `$ref` to System 1's `common.v1.json`
   (the `capability` pattern of a rule's `feature`) is inlined. A map that fails
-  throws an `Error` whose message starts `ui-map@1.0:`, not a `SchemaError`.
+  throws an `Error` whose message starts `ui-map@1.0:` and names the first schema error
+  only (`(and N more)` after it), not a `SchemaError`.
   `yaml` 2.9.1 (ISC) is System 1's pin; `ajv` is the one dependency beyond it,
   needed so that the ported tests that refuse an invalid map still pass.
+- **A map is code (WW6f).** A shipped map file is read and validated once, when this
+  package loads in a process, and kept for that process's life: an attempt never reads
+  it again, so a Host never pairs its code with another version's map (a canary run
+  did, after the branch moved to `ui-map@1.7` under a Host that knew 1.6).
+  `shippedMapProblem()` is the one-line reason a map did not load, if it did not: the
+  `web-worker` row reports its accounts `unavailable` with it. The Host's code version
+  hashes `ui/*.yaml` and `ui/*.json`, so changing a map restarts the Host as changing
+  code does.
 - **`erasableSyntaxOnly`.** This repository's TypeScript runs without
   transforms, so the parameter properties of `UiEngine` and `ProviderError`
   are plain fields assigned in the constructor. Same behaviour.

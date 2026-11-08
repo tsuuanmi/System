@@ -3,10 +3,14 @@
  * checked at load, before any browser opens. No Chrome here; the Procedures on a page are in conformance.test.ts.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { describe, it } from 'node:test'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { after, describe, it } from 'node:test'
 import { bindingProblems } from '../src/procedures.ts'
-import { DEFAULT_SETTINGS, loadUiMap } from '../src/ui-ops/index.ts'
+import { shippedMapProblem } from '../src/index.ts'
+import { DEFAULT_SETTINGS, loadUiMap, shippedMapOf } from '../src/ui-ops/index.ts'
 
 const read = (name: string): string => readFileSync(new URL(`../ui/${name}`, import.meta.url), 'utf8')
 const BASE = `
@@ -124,5 +128,33 @@ describe('the shipped ChatGPT map', () => {
   it('lists both forms of the control token ChatGPT leaks', () => {
     const map = loadUiMap(readFileSync(new URL('../ui/chatgpt-web.ui.yaml', import.meta.url), 'utf8'))
     assert.deepEqual(map.answer.leakedTokens, ['<escape>', '</escape>'])
+  })
+})
+
+describe('a shipped map is read once (WW6f)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ui-map-'))
+  after(() => rmSync(dir, { recursive: true, force: true }))
+  const copy = (name: string) => { const file = join(dir, name); writeFileSync(file, read('chatgpt-web.ui.yaml')); return pathToFileURL(file) }
+
+  it('a map file changed on disk after it was loaded does not change what a driver gets', () => {
+    const url = copy('changed.ui.yaml')
+    const loaded = shippedMapOf(url)
+    writeFileSync(url, 'not: a map\n')
+    assert.equal(shippedMapOf(url).hash, loaded.hash)
+    assert.equal(shippedMapProblem(url), undefined)
+  })
+
+  it('an invalid map gives one clear reason, the first schema error', () => {
+    const url = copy('invalid.ui.yaml')
+    writeFileSync(url, read('chatgpt-web.ui.yaml').replace('ui-map@1.7', 'ui-map@1.7\nstray: 1\nstray2: 2'))
+    const problem = shippedMapProblem(url)!
+    assert.match(problem, /^ui-map@1\.0: data must NOT have additional properties/)
+    assert.doesNotMatch(problem, /\n/)
+    assert.ok(problem.length < 300, problem)
+    assert.throws(() => shippedMapOf(url), (e: Error) => e.message === problem)
+  })
+
+  it('the package loads its own map when it loads, and reports it valid', () => {
+    assert.equal(shippedMapProblem(), undefined)
   })
 })
