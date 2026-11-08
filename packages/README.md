@@ -16,6 +16,7 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
 - [web-driver](web-driver/README.md) — `@system/web-driver`, System 1's ChatGPT
   web driver, its UI map and its UI engine, ported whole; the page logic of the
   `chatgpt-web` Runtime.
+- [acp-bridge](acp-bridge/README.md) — optional Rust ACP v1 client, selected first Rust component (ADR-0011); no default profile dependency.
 - [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code
   and Codex accounts as Workers.
 - [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
