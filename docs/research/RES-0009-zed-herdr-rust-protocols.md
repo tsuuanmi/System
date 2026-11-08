@@ -19,8 +19,11 @@ System contracts remain in [control plane](../architecture/control-plane.md),
 ## Question and short answer
 
 Should System use Rust or replace parts with Zed/Herdr mechanisms and open
-protocols? **Keep the DSH/Cordis-hosted TypeScript control plane.** Adopt
-interoperability standards and test a read-only Herdr integration first. Treat
+protocols? **Keep the DSH/Cordis-hosted TypeScript control plane and one
+provider-neutral WorkerPort.** Standardize the Worker-facing contract and
+capability negotiation before choosing execution transports; test read-only
+Herdr observation and ACP interoperability without demanding ACP from every
+Worker. Treat
 Rust as an implementation option for a separately bounded, demonstrably
 problematic hot path, not as a goal. Do not introduce another authoritative
 Work state machine, approval gate, scheduler or agent loop.
@@ -76,7 +79,7 @@ terminal/session runtime, not a substitute for verification or approval.
 | --- | --- | --- |
 | JSON-RPC 2.0 over local NDJSON | Current Host <-> CLI/MCP adapter | **Keep** existing API; version, validate and contract-test it. Use domain-specific methods rather than ACP names for Work. |
 | MCP (2026-07-28 specification) | System tools/resources exposed to agents, e.g., existing system mcp entry | **Keep/evaluate conformance** to the chosen spec and SDK, without conflating the internal Host socket with an MCP transport. MCP stdio and Streamable HTTP are defined bindings; raw Unix socket is not automatically one. |
-| ACP v1 | Editor/client <-> interactive coding agent session | **Explore as optional adapter** only if real IDE/interactive integration is required. Zed already supports external agents; System would need explicit session and permission mapping. |
+| ACP v1 (v2 draft) | Client <-> interactive agent session; Zed External Agents are a concrete client | **Prototype an optional ACP-capable Worker adapter** for interactive Claude/Codex, not a universal Worker protocol. Negotiate versions; keep v1 compatibility, gate v2 draft semantics. |
 | Herdr Socket API | Terminal/pane/session observation and optional operator attachment | **Try read-only connector** first; CLI wrappers for simple actions, raw socket for long-lived events. This is an implementation-specific API, not an interchangeable industry standard. |
 | OpenTelemetry GenAI semconv | Traces/metrics for attempts, tools, models and workflows | **Explore additive instrumentation**; retain the authoritative Work event log and preserve model/usage provenance. Treat development-stage fields as versioned. Do not export secrets, prompts or artifacts by default. |
 | LSP and DAP | Editor language intelligence and debugging | **Defer** unless System ships a language-editor client. Existing editors already implement them. |
@@ -92,6 +95,204 @@ MCP spec revision and agent SDK compatibility must be pinned for each spike;
 a shared JSON-RPC encoding does not imply identical transport, method names,
 authentication, permission, or cancellation semantics.
 
+## Deep dive: provider-neutral Workers vs ACP, Terminal Threads and Herdr
+
+**Goal:** System asks for a capability and a verifiable result, not for
+"Claude", "Codex" or "a browser". The current [WorkerPort source](../../packages/work/src/registry.ts)
+already routes by capabilities, accepts exact Artifact IDs, exposes an
+AbortSignal/progress callback and returns typed WorkerResult. The
+[agent adapters](../../packages/agents/README.md) still contain necessary
+provider-specific launch/auth/parsing details. That division is correct;
+the missing question is how to standardize **interactive session behavior**
+and **observations** without adding a second Work Controller.
+
+### Five boundaries, not one universal wire protocol
+
+| Boundary | Canonical owner | Contract / lesson |
+| --- | --- | --- |
+| Intent, authorization and Work lifecycle | System Host/Controller | Work ID, immutable spec, budget, typed results, verification and effect receipts. **Never an ACP/terminal session.** |
+| Worker execution | WorkerPort -> runtime adapter | One System request/result interface for Claude, Codex, Website Worker or future tools; capabilities decide routing. |
+| Interactive agent session | Agent and ACP client if supported | Negotiated ACP session/prompt/update/cancel; ACP is a session wire protocol, not System's Worker contract. |
+| Terminal/session host | Zed Terminal Thread, Herdr or plain PTY | Own terminal process, display and attach/reconnect; may lack typed completion/usage. |
+| Observability/UI | System projection, IDE/terminal viewer | Derive attention/progress with source and confidence; never create an alternative authoritative Work state. |
+
+A **Worker is not necessarily an ACP agent**. A browser worker can implement
+System WorkerPort without ACP. A Claude/Codex account can implement WorkerPort
+through structured headless JSON (today) or an ACP adapter (future). A
+terminal thread is a *presentation/execution mode*, not proof the process
+speaks ACP. The adapter handles provider quirks internally; the Controller
+does not branch on provider strings.
+
+Zed demonstrates this separation concretely in [agent paths](https://zed.dev/docs/ai/agents):
+its native agent, ACP External Agents and Terminal Threads coexist under
+one project/thread UI. [External Agents](https://zed.dev/docs/ai/external-agents)
+own their own model, auth and tool configuration; a
+[Terminal Thread](https://zed.dev/docs/ai/terminal-threads) runs the native
+CLI/TUI and Zed owns only its UI/thread organization. Zed's agent-specific
+permissions and MCP settings do not automatically apply to terminal threads.
+System should copy this **responsibility boundary**, not copy its desktop
+editor/GPUI stack or assume ACP handles every session type.
+
+### Identity, sessions and durable outcomes
+
+| ID or state | Meaning | May be shared as substitute? |
+| --- | --- | --- |
+| \`workId\` / \`attemptId\` | Durable System work and a concrete execution | No: authoritative in System. |
+| \`workerRef\` | Selected account/capability offering | No: runtime identity, not work identity. |
+| ACP \`sessionId\` | Agent-owned interactive conversation/session | No: may expire, resume or outlive an attempt. |
+| Herdr pane/machine ID / terminal thread | Transport and presentation location | No: panes may be detached, recycled or misleading. |
+| \`ArtifactId\` / verifier verdict | Immutable content and exact-subject evidence | Never inferred from a terminal or ACP idle state. |
+
+Proposed **explicit, ephemeral mapping**:
+\`{workId, attemptId, workerRef, transportKind, externalSessionRef,
+externalHost?, protocolVersion?, observedAt}\`. Treat the session reference
+as secret-adjacent metadata, never as an authorization token or Artifact ID;
+make it optional for non-interactive Workers. Missing or stale mapping must
+not be guessed from process names, pane titles or repository paths.
+
+### System Worker contract: strengthen, do not replace
+
+The existing TypeScript \`WorkerPort\` is already the common interface; the
+following is **conceptual delta**, not implemented TypeScript or new API
+schema:
+
+\`\`\`text
+WorkerDescriptor {
+  ref; capabilities[]; maxConcurrentAttempts;
+  supportedModes[];  // batch, interactive; descriptive, not grant of authority
+  observationSupport; // structured | heuristic | none
+  sessionSupport;     // none | optional resume (capability negotiated)
+}
+run(WorkerRequest: pinned Artifact IDs, AbortSignal, progress) -> WorkerResult
+observe?(attemptId) -> advisory live observations
+attach?(attemptId) -> operator-accessible session reference, if available
+gone?(attemptId) -> positive process-exit evidence or unknown
+\`\`\`
+
+Keep \`WorkerRequest\` and \`WorkerResult\` **canonical and transport-neutral**.
+Do not require every Worker to implement \`attach\`, \`resume\`, \`ACP\`, or token
+metering it cannot provide. Missing usage remains unknown with provenance;
+do not synthesize zero. Only an advertised capability may be relied on at
+preflight. A runtime adapter normalizes provider output into typed slots and
+preserves partial results on cancel/failure. Unsupported or unknown
+capabilities must fail preflight rather than silently downgrade.
+
+A separate \`SessionAdapter\` may be warranted for live interaction, but only
+if experiments demonstrate more than one real implementation. Avoid a
+duplicate plugin framework, generic session database or universal method
+set beyond what System actually needs.
+
+### The ACP detail System must get right
+
+ACP [v1 protocol](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v1/overview.mdx)
+uses JSON-RPC; \`session/prompt\` responds at turn completion and streams
+\`session/update\` notifications. ACP
+[v2 draft](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v2/migration.mdx)
+changes prompt response into **acceptance**, while foreground lifecycle and
+stop reason appear in \`state_update\` events. v2 explicitly distinguishes
+\`running\`, \`idle\` and \`requires_action\`; background activity can still
+continue after idle. Its
+[July 2026 draft announcement](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/announcements/acp-v2-draft.mdx)
+asks implementations to keep v1 and feature-flag v2. Treat v2 as a
+**candidate**, not an already deployed universal contract.
+
+Both ACP versions require handshake/capabilities and version-specific session
+handling. An adapter must test the actual agent's advertised functionality,
+including session creation/reload/resume, permission requests, cancel and
+disconnect. Session-level \`requires_action\` is **not** the System \`held\`
+decision: a tool permission or question may require operator interaction,
+but cannot authorize \`git.publish\`, approve Work, or bypass System policy.
+ACP cancellation must be reconciled with System AbortSignal, process scope
+and durable attempt outcome; it is not equivalent to confirmed process exit.
+
+### Three execution paths: select by capability, not provider
+
+| Transport | Example | Strength | Limitation / policy |
+| --- | --- | --- | --- |
+| Headless structured CLI (current default) | Claude \`stream-json\`, Codex \`exec --json\` | Typed results, usage and deterministic capture boundaries | Limited interactive UI; continue to own process, timeout and worktree. |
+| ACP-capable interactive client (experiment) | Claude/Codex via compatible agent/adapter | Structured session updates, permission requests, reconnect possibilities | Version/capability differences; needs result extraction and sandbox/approval parity. |
+| Terminal/Herdr observer or attached PTY | Terminal Threads, Herdr pane | Native TUI, cross-host interaction, attention signals | Screen heuristics do not certify completion, usage or authority. |
+| Browser Website Worker (existing) | ChatGPT web runtime | Can normalize results through WorkerPort with provenance | UI automation has weaker structural guarantees; no ACP requirement, explicit limits. |
+
+One Worker can offer multiple modes. **Never silently switch modes**
+mid-attempt or reuse terminal history as durable input: pin the adapter and
+reported execution mode for the Attempt. Reassignment must create a new
+Attempt ID with exact persisted Artifact inputs and policy, not assume
+portable session transcripts.
+
+### Observability and event semantics: what to copy from Herdr
+
+[Herdr's agent detection](https://herdr.dev/tui/docs/agents/)
+combines foreground-process detection, screen heuristics and integrations;
+its [Socket API](https://herdr.dev/tui/docs/socket-api/) exposes a
+versioned machine-readable schema (\`herdr api schema --json\`) and event
+subscriptions. These are useful **observation patterns**, not a source of
+truth. An unfamiliar prompt may be reported idle rather than blocked.
+Operator actions must not be auto-authorized by a status heuristic.
+
+Conceptual projection (not a proposed Work event schema):
+
+| Incoming signal | Show in attention UI | Authoritative System transition? |
+| --- | --- | --- |
+| ACP v2 \`requires_action\` / v1 permission request | "Input needed" with session and source | **No**; only authorized decision path can hold/approve. |
+| ACP \`running\` or Herdr \`working\` | "Active" (observed, timestamped) | No. |
+| ACP \`idle\`, Herdr \`idle/done\` | "Possibly ready", inspect result | No; await WorkerResult and exact verifiers. |
+| Herdr \`blocked\` inferred from screen | "Likely needs input", lower confidence | No. |
+| WorkerResult + captured output Artifacts | Durable \`observed\` result | **Yes**, under current Work Controller gates. |
+| Verifier verdict on pinned subject | Verified/rejected outcome | **Yes**, under System's policy. |
+
+Every observation should include \`source\`, \`timestamp\`, external sequence
+if available, confidence/typed-vs-heuristic marker, and linked Attempt when
+verified. Detect stale/lost/duplicate/reordered notifications; resnapshot
+on reconnect. Extend \`LiveAttempts\` and \`work.watch\` projections where
+sensible, never persist terminal guesses as canonical replayable events.
+Consider OpenTelemetry as an **export-only derived trace view**, with
+prompts, secrets and Artifact bytes excluded by default; relevant
+[GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md)
+remain in Development.
+
+### Contracts, modules and language: concrete lessons
+
+1. **Single authority, multiple ports:** Zed keeps UI/thread concerns apart
+   from agent-specific runtimes. System should keep Work Controller, WorkerPort,
+   SessionAdapter and observer/view as explicit boundaries. No second Host,
+   scheduler, state machine, plugin engine, or privileged approval path.
+2. **Contract before implementation:** document fields, capabilities,
+   handshake, provenance, cancellation and unknown-state handling. Version
+   schemas and add conformance/fault tests. Use the same WorkerPort tests for
+   Claude/Codex/Website fakes, plus adapter-specific tests.
+3. **Protocol negotiation, not protocol branding:** ACP is client-agent;
+   [MCP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/index.mdx)
+   is tools/resources/prompts; the Herdr Socket API is Herdr-specific; the
+   internal Host is JSON-RPC/NDJSON. Shared encoding never implies
+   interchangeable auth, semantics, or transport.
+4. **Observation separate from outcome:** follow Herdr's useful
+   attention/reconnect patterns, but favor structured events and current
+   System result/verification contracts over heuristics.
+5. **Rust follows measured need:** Zed's Rust modularity and Herdr's Rust
+   session server are architectural examples. A Rust sidecar is justified
+   only by a demonstrated process/stream bottleneck or correctness gap,
+   with stable child-process/IPC contract, not by a language preference.
+
+### Additional interoperability test matrix
+
+| Scenario | Expected invariant |
+| --- | --- |
+| Same fixture Task via Claude/Codex structured adapters | Equal WorkerRequest/WorkerResult shape; differing provider details are provenance. |
+| ACP v1 success and disconnect | Prompt lifecycle mapped correctly; no inferred Work success after lost connection. |
+| ACP v2 draft prompt acceptance then error/idle | Acceptance is **not** success; v2 behind version+feature gates. |
+| ACP asks permission; concurrent System approval held | Permission scoped only to agent tools, System effects still denied without human-authorized System decision. |
+| Herdr reports idle while an approval dialog is visible | No automation types an answer or marks Work complete. |
+| Website Worker missing tokens/session resume | Explicit unknown/unavailable, no fake token counts or assumed resume. |
+| Cancel, timeout, crashed host, duplicate notifications | One Attempt outcome through Host; no double effect; unknown process kept uncertain until settled. |
+| Adapter disabled or absent, SSH drops | Unrelated Workers/Works continue; no new mandatory plugin. |
+| Handoff between different runtime types | New Attempt with pinned Artifact inputs, no implicit session transfer or credential propagation. |
+
+**Acceptance gate:** the same System-owned authorization, Artifact result,
+cancellation and verification invariants must hold with and without ACP,
+Herdr or Rust. If the only benefit is a better human interface, keep the
+integration in the operator/UI plane rather than replacing headless Workers.
+
 ## Replace / adapt / keep matrix
 
 | Existing System component | Candidate | Decision for now | Why / acceptance condition |
@@ -102,7 +303,7 @@ authentication, permission, or cancellation semantics.
 | DSH subprocess/process groups and per-attempt isolation | Rust sidecar/process supervisor | **Conditional spike** | Potential operational benefit for process trees, PTYs or cross-platform behavior, but must preserve cancel, timeout, credential isolation and crash recovery; Rust is not a sandbox. |
 | Existing headless Claude/Codex Worker adapters | Herdr pane driver | **Keep headless default** | PTY/screen scraping weakens structured results and usage provenance. Consider interactive mode separately. |
 | Work events and live attempts | Herdr agent-status/events | **Adapt via observer** | Feed a non-authoritative attention view; map explicit Attempt IDs, snapshot/reconcile after missed notifications. |
-| Agent interoperability and UI handoff | ACP | **Explore optional boundary** | Prove a real Zed client use case; do not wrap the Work Controller as a fake conversation agent. |
+| Interactive Worker interoperability and UI handoff | ACP | **Prioritize protocol spike** | Real use case: unified Worker behavior with Claude/Codex while keeping a generic System contract. Prove ACP mapping, Zed client integration only if needed; do not expose Work Controller as a fake conversation agent. |
 | Artifact bytes, DSH SQLite | Rust store | **Keep** | No measured bottleneck or semantic gap; no dual databases or migrations just for language choice. |
 | Documentation and workflow YAML compiler | Rust | **Keep** | Low-value rewrite; existing source/tests govern v1 semantics. |
 | Zed GPUI/editor mechanisms | Direct reuse | **Do not adopt** | Not relevant to headless service, large dependency and licensing boundary. |
@@ -127,20 +328,31 @@ authentication, permission, or cancellation semantics.
 - Keep dependencies out of the default DSH bundle; define the minimal
   administrative trust required for Herdr and its plugins.
 
-### E1: ACP interoperability feasibility, only with an actual client goal
+### E1: ACP-capable Worker interoperability (P1, now a concrete user goal)
 
-- Determine whether the desired behavior is **view a live coding agent in
-  Zed**, **launch an external agent from Zed**, or **inspect durable System
-  Work**; these are different products. Zed already supports External Agents
-  through ACP and terminal threads without any System rewrite.
-- If needed, prototype a **separate ACP adapter** against a known-compatible
-  interactive agent, pin an ACP version and test initialize, auth, new/load,
-  prompt/update/cancel, capabilities, filesystem operations and user approval.
-- Make it explicit that ACP session ID != System Work/Attempt ID and ACP
-  permission prompts != System operator approval. Verify that the adapter
-  cannot circumvent capability and effect policy.
-- Go/no-go: demonstrates an IDE workflow not provided by existing native
-  integrations; protocol conformance and safe cancellation pass.
+- The user requirement is **one provider-agnostic Worker contract**, with
+  Claude Code/Codex interactive operation through ACP when supported, a
+  terminal-thread fallback, and a Website Worker that obeys System's own
+  Worker contract without pretending to speak ACP. Test this contract before
+  replacing any existing headless Worker.
+- Prototype an **optional ACP client-side adapter** against a pinned,
+  known-compatible agent executable. Support ACP v1 first. Negotiate
+  versions; gate v2 draft behind explicit feature flags. Test initialize,
+  auth, session/new, load or resume according to version/capability,
+  prompt/update, cancel, session loss, tool calls and user permission.
+- Compare the same synthetic task through existing Claude/Codex JSON
+  headless execution and ACP, including typed usage, output Artifacts,
+  cancellation, sandbox/worktree boundaries, timeouts and failure cases.
+- Keep ACP session ID distinct from Work/Attempt/Artifact IDs; ACP
+  permission prompts are **not** System operator approval. Do not mark
+  Work success from an ACP idle/stop event without valid WorkerResult
+  and configured verification.
+- Independently test an interactive-only terminal path with a selected
+  Herdr/PTY pane and its limitations; do not assume its screen state is
+  equivalent to ACP status or headless results.
+- Go/no-go: same System WorkerResult semantics across supported adapters,
+  explicit capability negotiation, no privilege bypass, usable interaction
+  improvements over direct CLI/IDE paths, and no default-worker regression.
 
 ### E2: Rust process/stream sidecar benchmark (only after a measured gap)
 
@@ -208,8 +420,10 @@ option if measured boundary overhead dominates; it adds per-target builds.
 2. **Next optional proposal:** run E0 read-only observer; capture before/after
    operator experience and failure cases. An accepted proposal/ADR is required
    before introducing a new active DSH capability.
-3. **Conditional:** choose E1 only for a concrete IDE integration goal; choose
-   E2 only after profiling. Do not make Rust a prerequisite for ACP/MCP.
+3. **Next parallel protocol experiment:** run E1 against a real interactive
+   Claude/Codex ACP integration under the same System WorkerPort contract;
+   preserve headless as default. Choose E2 only after profiling. Do not make
+   Rust a prerequisite for ACP/MCP.
 4. **Do not:** rewrite core state, duplicate orchestration, add a desktop
    editor to System, or merge runtime implementation under this research PR.
 
