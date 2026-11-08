@@ -810,7 +810,7 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      (10,627 -> 10,767: `web-worker-off.test.ts` 90 and `agents/tests/index.test.ts`
      41). The core (`work` + `artifacts` source) is unchanged at 3,420. The growth buys
      the optional row; it is justified here, not paid for by removal.
-  2. [ ] Generic Procedures and the ChatGPT UI map; Runtime `web`.
+  2. [x] Generic Procedures and the ChatGPT UI map; Runtime `web`.
      Designed by System's own Brainstorm (`work:2287a535`, proposals on both
      ChatGPT Accounts, Claude synthesis): A's binding model (`ui-map@1.7`,
      fixed TypeScript Procedures) checked first against a deliberately hostile
@@ -834,6 +834,11 @@ Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
      (`attach`), the `attr` condition with a pattern (the Work composer), a snippet
      with no label, and ChatGPT's unknown send. `chatgpt.test.ts` runs for both values.
      The legacy path stays until the two are compared live; removing it is the rest of 2.
+  2-iv. [x] The legacy driver path removed (`work:af3442ce`, about 950 lines net):
+     no UI-stage failure in 82 canary runs on `generic`. Then Runtime `web`,
+     `site: chatgpt`, Accounts `web/chatgpt/<name>` (`work:4a295b48` failed
+     its `web` check, finished by `work:6be114a8`); the live Accounts' state
+     moved at registration on 2026-11-08 with no new sign-in.
   3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close. **Deferred
      by measurement** (2026-11-08). System's own Brainstorm
      (`work:deaecc61`, both ChatGPT Accounts and Claude) recommended
