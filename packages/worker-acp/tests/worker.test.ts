@@ -6,40 +6,16 @@ import { after, test } from 'node:test'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { TASK_KIND, taskSchema, type WorkerRequest } from '@system/work'
-import type { Spawner } from '@system/worker-execution'
 import { acpWorker, type AcpAccount } from '../src/worker.ts'
-import { acpInvocation, acpProgress, parseAcp } from '../src/protocol.ts'
+import type { AcpRunner } from '../src/transport.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'system-acp-'))
 after(() => rmSync(root, { recursive: true, force: true }))
-const result = (ok: boolean, stopReason: string) => JSON.stringify({ type: 'acp.result', ok, stopReason })
-
-test('ACP parse requires one complete EndTurn and no denied permission', () => {
-  assert.equal(parseAcp(result(true, 'EndTurn')).ok, true)
-  assert.equal(parseAcp(result(true, 'Cancelled')).ok, false)
-  assert.equal(parseAcp(result(false, 'EndTurn')).ok, false)
-  assert.equal(parseAcp('garbage').ok, false)
-  assert.equal(parseAcp([result(true, 'EndTurn'), result(true, 'EndTurn')].join('\n')).ok, false)
-  const denied = ['{"type":"acp.permission_denied"}', result(true, 'EndTurn')].join('\n')
-  assert.equal(parseAcp(denied).ok, false)
-})
-
-test('ACP invocation preserves argv, prompt secrecy, scoped environment and unknown usage', () => {
-  const ws = { home: '/sandbox/home', inputs: '/sandbox/in', outputs: '/sandbox/out', work: '/sandbox/work' } as Parameters<typeof acpInvocation>[1]
-  const invocation = acpInvocation('system-acp-bridge', ws, '/sandbox/prompt', '/agent with space', ['--a', 'two words'], 'only-worker-token')
-  assert.deepEqual(invocation.argv, [
-    'system-acp-bridge', '--agent', '/agent with space', '--args-json', '["--a","two words"]',
-    '--prompt-file', '/sandbox/prompt',
-  ])
-  assert.equal(invocation.env.CLAUDE_CODE_OAUTH_TOKEN, 'only-worker-token')
-  assert.equal(invocation.env.GITHUB_TOKEN, undefined)
-  assert.deepEqual(acpProgress()('{"type":"acp.initialized"}\n'), { stage: 'acp.initialized' })
-})
 
 const account = (): AcpAccount => ({
   ref: 'acp/mock', capabilities: ['research'],
-  command: '/mock/rust-bridge', version: async () => '0.1.0',
-  agentCommand: '/mock/acp-agent', agentArgs: ['--demo', 'one two'],
+  agentCommand: '/mock/agent', agentArgs: ['--demo', 'two words'],
+  version: async () => 'acp-test',
 })
 const request = (input: string, signal = new AbortController().signal): WorkerRequest => ({
   workId: 'work:acp', attemptId: 'attempt:acp-test', stepId: 'report',
@@ -53,62 +29,70 @@ async function task(artifacts: Artifacts): Promise<string> {
   })).id
 }
 
-test('independent ACP WorkerPort captures exact Artifact with the same output contract', async () => {
+test('ACP plugin WorkerPort uses identical exact Artifact contract without fabricated usage', async () => {
   const { artifacts } = fixture()
-  let observed: string[] = []
-  const spawner: Spawner = {
-    spawn(spec) {
-      observed = spec.argv
-      const prompt = readFileSync(spec.argv.at(-1)!, 'utf8')
-      assert.match(prompt, /Summarize the fixture/)
+  const runner: AcpRunner = {
+    async run(spec) {
+      assert.equal(spec.command, '/mock/agent')
+      assert.deepEqual(spec.args, ['--demo', 'two words'])
+      assert.match(spec.prompt, /Summarize the fixture/)
+      assert.equal(spec.env.GITHUB_TOKEN, undefined)
       writeFileSync(join(dirname(spec.cwd), 'out', 'report'), '# ACP report\n')
-      return {
-        done: Promise.resolve({ exitCode: 0, signal: null }),
-        stdout: () => result(true, 'EndTurn'),
-        stderr: () => '',
-      }
+      spec.onStage?.('initialized')
+      return { stopReason: 'end_turn', permissionDenied: false, events: [], exitCode: 0 }
     },
   }
-  const done = await acpWorker(account(), artifacts, spawner, join(root, 'attempts')).run(request(await task(artifacts)))
+  const done = await acpWorker(account(), artifacts, runner, join(root, 'success')).run(request(await task(artifacts)))
   assert.equal(done.status, 'succeeded', done.reason)
-  assert.equal(done.usage, undefined, 'no fabricated token usage')
+  assert.equal(done.usage, undefined)
   assert.ok(done.outputs.report?.startsWith('sha256:'))
-  assert.deepEqual(observed.slice(0, 2), ['/mock/rust-bridge', '--agent'])
   assert.equal(Buffer.from(await artifacts.readBytes(done.outputs.report!)).toString(), '# ACP report\n')
+  assert.equal(done.executor?.command, '/mock/agent')
 })
 
-test('permission denial returns failure with unaccepted partial output', async () => {
+test('ACP permission denial never turns an EndTurn into accepted Work', async () => {
   const { artifacts } = fixture()
-  const spawner: Spawner = {
-    spawn(spec) {
-      writeFileSync(join(dirname(spec.cwd), 'out', 'report'), 'unapproved content')
-      return {
-        done: Promise.resolve({ exitCode: 1, signal: null }),
-        stdout: () => ['{"type":"acp.permission_denied"}', result(true, 'EndTurn')].join('\n'),
-        stderr: () => '',
-      }
+  const runner: AcpRunner = {
+    async run(spec) {
+      writeFileSync(join(dirname(spec.cwd), 'out', 'report'), 'unapproved output')
+      return { stopReason: 'end_turn', permissionDenied: true, events: [], exitCode: 0 }
     },
   }
-  const done = await acpWorker(account(), artifacts, spawner, join(root, 'denied')).run(request(await task(artifacts)))
+  const done = await acpWorker(account(), artifacts, runner, join(root, 'permission')).run(request(await task(artifacts)))
   assert.equal(done.status, 'failed')
   assert.equal(done.outputs.report, undefined)
   assert.ok(done.partial?.report)
 })
 
-test('operator cancel is distinct from failed ACP turn', async () => {
+test('cancelled Work remains cancelled rather than an ACP success', async () => {
   const { artifacts } = fixture()
   const cancel = new AbortController()
-  const spawner: Spawner = {
-    spawn(spec) {
+  const runner: AcpRunner = {
+    async run(spec) {
       cancel.abort()
       assert.equal(spec.signal.aborted, true)
-      return {
-        done: Promise.resolve({ exitCode: null, signal: 'SIGTERM' }),
-        stdout: () => '',
-        stderr: () => '',
-      }
+      throw new Error('subprocess cancelled')
     },
   }
-  const done = await acpWorker(account(), artifacts, spawner, join(root, 'cancel')).run(request(await task(artifacts), cancel.signal))
+  const done = await acpWorker(account(), artifacts, runner, join(root, 'cancelled'))
+    .run(request(await task(artifacts), cancel.signal))
   assert.equal(done.status, 'cancelled')
+})
+
+test('missing output fails despite a successful ACP turn', async () => {
+  const { artifacts } = fixture()
+  const runner: AcpRunner = {
+    async run() { return { stopReason: 'end_turn', permissionDenied: false, events: [], exitCode: 0 } },
+  }
+  const done = await acpWorker(account(), artifacts, runner, join(root, 'missing')).run(request(await task(artifacts)))
+  assert.equal(done.status, 'failed')
+  assert.match(done.reason ?? '', /missing output/)
+})
+
+test('ACP transport failure never asserts a successful Worker result', async () => {
+  const { artifacts } = fixture()
+  const runner: AcpRunner = { async run() { throw new Error('protocol died') } }
+  const done = await acpWorker(account(), artifacts, runner, join(root, 'failure')).run(request(await task(artifacts)))
+  assert.equal(done.status, 'failed')
+  assert.equal(done.outputs.report, undefined)
 })
