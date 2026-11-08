@@ -173,6 +173,8 @@ export interface FakeOptions {
   report?: string
   /** Whether the account has a model picker (default true); without one the driver refuses to send. */
   modelPicker?: boolean
+  /** The model menu is already open when the page loads (a previous attempt left it so). */
+  menuOpen?: boolean
   /** Features this account's tools popover offers (default all). */
   features?: string[]
   /** Deep research asks a clarifying question instead of starting. */
@@ -365,6 +367,7 @@ $('power').addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') power = Math.max(0, power - 1)
   renderMenu()
 })
+if (options.menuOpen) { $('model-menu').hidden = false; $('picker').setAttribute('aria-expanded', 'true'); renderMenu() }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('model-menu').hidden = true; $('tools').hidden = true; $('picker').setAttribute('aria-expanded', 'false') } })
 document.querySelector('[aria-label="Add files and more"]').onclick = () => {
   const features = options.features ?? ['deep-research', 'web-search', 'image-generation']
@@ -604,7 +607,7 @@ export class FakeChatGpt {
     this.options = {
       startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loadFailure: false, dropSend: false, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
-      researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
+      researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true, menuOpen: false,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',
       copied: (markdown) => markdown.replace(/(```)[^\n]*\n([\s\S]*?)\n```/g, (_, fence: string, code: string) => `${fence}\n${code.split('\n').join('')}\n${fence}`), ...options,
     }

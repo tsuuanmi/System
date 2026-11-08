@@ -238,6 +238,26 @@ test('the report prints the median and p95 of the launch and wait stages per Acc
   }
 })
 
+test('the report counts the distinct model and Power seen per Account (WW8a), unread ones apart', { timeout: 60_000 }, () => {
+  const t = '2026-11-02T00:00:00Z'
+  const works: Record<string, unknown> = {}
+  const artifacts: Record<string, string> = {}
+  const seen = [['Latest', 'Instant'], ['Latest', 'Instant'], ['Latest', 'High'], [null, null], undefined]
+  seen.forEach((evidence, i) => {
+    const r = record('chatgpt-web/a', t, 1, 'succeeded') as { state: { steps: Record<string, Record<string, unknown>> } }
+    r.state.steps.investigate!.partial = { evidence: `sha256:e${i}` }
+    works[`work:${i}`] = r
+    artifacts[`sha256:e${i}`] = JSON.stringify({ stages: [], ...(evidence ? { model: evidence[0], power: evidence[1] } : {}) })
+  })
+  const s = setup(works, {}, artifacts)
+  try {
+    const ran = run(['--report'], s.env)
+    assert.match(ran.stdout, /chatgpt-web\/a\s+model Latest 3, unread 2\s+power High 1, Instant 2, unread 2/)
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true })
+  }
+})
+
 test('the report shows the older canary version apart and the gate counts only the current one', { timeout: 60_000 }, () => {
   const t = '2026-11-02T00:00:00Z'
   const s = setup({

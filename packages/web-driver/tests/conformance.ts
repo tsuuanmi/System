@@ -9,7 +9,7 @@ import { describe, test } from 'node:test'
 import type { Page } from 'patchright-core'
 import { type Baseline, Procedures, type Result, type UiMap } from '../src/index.ts'
 
-export type Case = 'happy' | 'attach' | 'attach as chip' | 'temporary' | 'signed out' | 'challenge' | 'site error' | 'forbidden mode' | 'work composer' | 'mode switch absent' | 'unknown send' | 'previous answer' | 'previous answer, no markers' | 'labelled blocks' | 'plain blocks'
+export type Case = 'happy' | 'attach' | 'attach as chip' | 'temporary' | 'signed out' | 'challenge' | 'site error' | 'forbidden mode' | 'work composer' | 'mode switch absent' | 'unknown send' | 'previous answer' | 'previous answer, no markers' | 'labelled blocks' | 'plain blocks' | 'observe model' | 'observe model, menu left open'
 
 /** What the page is made to do. A fixture maps each to its own page's options. */
 export interface Scenario {
@@ -35,6 +35,8 @@ export interface Scenario {
   labelledBlocks?: boolean
   /** Code blocks have no label at all (plain code, as the site shows an ordinary snippet). */
   plainBlocks?: boolean
+  /** The Site's model menu is open when the page loads. */
+  menuOpen?: boolean
 }
 
 export interface RunningSite {
@@ -48,6 +50,8 @@ export interface Fixture {
   name: string
   map: UiMap
   start(scenario: Scenario): Promise<RunningSite>
+  /** The model and Power the page shows; none when the Site has no such control (the observation is then skipped). */
+  shows?: { model: string; power: string }
   /** Cases the fixture cannot run yet, with why. */
   unsupported?: Partial<Record<Case, string>>
 }
@@ -125,6 +129,17 @@ export function conformance(fixture: Fixture, env: Env): void {
       // Evidence is counts and names, never the prompt or the answer.
       assert.doesNotMatch(JSON.stringify([auth, waited.evidence]), /2\+2/)
     }))
+
+    // Read-only: the menu is closed again before anything is typed, and nothing is selected (what the page then sends proves it).
+    for (const [name, menuOpen] of [['observe model', false], ['observe model, menu left open', true]] as const) {
+      run(name, {}, () => on({ menuOpen }, async (p, site) => {
+        await ready(p)
+        assert.deepEqual(ok(await p.observeModel(), 'observeModel'), fixture.shows ?? { model: null, power: null })
+        if (map.elements['model.menu']) assert.equal(await p.engine.count('model.menu'), 0, 'no menu is left open')
+        ok(await p.insertInstructions('x'), 'insertInstructions')
+        assert.equal(site.sent(), 0)
+      }))
+    }
 
     run('attach', {}, () => on({}, async (p) => {
       await ready(p)

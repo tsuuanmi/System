@@ -425,10 +425,10 @@ interface TurnPort {
 
 /**
  * One turn through the generic Procedures (`procedures: generic`), in the stages the driver's turn has: open, auth, mode
- * (a temporary chat when the account asks, Chat verified), insert, attach (the body, when the prompt has two parts), send,
+ * (a temporary chat when the account asks, Chat verified), observe (the model and Power shown), insert, attach (the body, when the prompt has two parts), send,
  * wait, read. A Procedure that does not return `ok` becomes the failure its stage names; a send of `unknown` is never
  * sent again. The answer has no Markdown (the Procedures never press Copy): its rendered text is the text, its code
- * blocks carry their labels and its links their targets. No model is read back, and a wait has no stall clock but its deadline.
+ * blocks carry their labels and its links their targets. The model and Power shown are recorded, never set; a wait has no stall clock but its deadline.
  */
 async function genericTurn(port: TurnPort): Promise<AskResult & { links: string[] }> {
   const { page, web, prompt, evidence, staged } = port
@@ -486,6 +486,12 @@ async function genericTurn(port: TurnPort): Promise<AskResult & { links: string[
         need(await procedures.openChat({ temporary: 'required' }), 'ui_drift')
         need(await procedures.ensureMode(), 'ui_drift')
       }
+    })
+    // Read-only (WW8a): the model and Power as the page shows them, the menu closed again; an unreadable value is null and never fails the attempt.
+    await staged('observe', async () => {
+      const seen = await procedures.observeModel()
+      evidence.set({ model: seen.value?.model ?? null, power: seen.value?.power ?? null })
+      if (seen.status !== 'ok') port.note(`model menu: ${seen.reason ?? seen.status}`)
     })
     await staged('insert', () => unsent(async () => need(await procedures.insertInstructions(prompt.header), 'ui_drift')))
     if (prompt.body !== undefined) {

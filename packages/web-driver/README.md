@@ -199,7 +199,7 @@ changed but the header line.
 ## Generic Procedures (WW2-ii, new here)
 
 [`src/procedures.ts`](src/procedures.ts): `checkAuth`, `openChat`, `ensureMode`,
-`insertInstructions`, `attachText`, `send`, `waitForAnswer` and `readAnswer` as fixed
+`observeModel` (WW8a: the model and Power shown, read only, bound by the map's `model.open`/`model.close` actions and `model.power-status`/`model.selected` elements; null for a Site without them), `insertInstructions`, `attachText`, `send`, `waitForAnswer` and `readAnswer` as fixed
 TypeScript control flow over the UI engine, with no Site name in it. Each returns
 `{ status: 'ok' | 'failed' | 'unknown', reason?, evidence }` (counts and names, never prompt
 or page text) and throws only for the caller's abort. The ChatGPT driver does not use them;

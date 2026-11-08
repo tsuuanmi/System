@@ -232,6 +232,44 @@ export class Procedures {
     return { required: await this.engine.state(modes.required) }
   }
 
+  /**
+   * The model and Power the Site shows, read and never set (WW8a). Bound by the map's `model.open` and `model.close` actions
+   * and its `model.power-status` (text beginning with the level) and `model.selected` (the checked model) elements; a Site
+   * without them has none to read, and both values are null. A menu already open is read as it is. The menu is closed
+   * again by `model.close` when it shows, which verifies it gone: a menu that stays open is `failed`, with whatever was read kept in the
+   * value. A value that cannot be read is null.
+   */
+  observeModel(): Promise<Result<{ model: string | null; power: string | null }>> {
+    return expected(async () => {
+      const { engine, map } = this
+      const seen: { model: string | null; power: string | null } = { model: null, power: null }
+      if (!map.actions['model.open'] || !map.actions['model.close'] || !map.elements['model.menu']) return done({ observed: false }, seen)
+      const level = async (id: string): Promise<string | null> => {
+        if (!map.elements[id]) return null
+        // The first line, and the first clause of it ("<level>, <n> of <total>."): names, never the page's text around them.
+        const text = await engine.text(id).catch(() => '')
+        return text.split('\n')[0]!.split(',')[0]!.trim() || null
+      }
+      try {
+        if ((await engine.count('model.menu')) === 0) await engine.act('model.open')
+        seen.power = await level('model.power-status')
+        if (map.elements['model.selected'] && map.actions['model.show-models']) {
+          await engine.act('model.show-models')
+          seen.model = await level('model.selected')
+        }
+      } catch (error) {
+        if (!(error instanceof ProviderError) || error.kind === 'aborted') throw error
+      }
+      try {
+        if ((await engine.count('model.menu')) > 0) await engine.act('model.close')
+      } catch (error) {
+        if (!(error instanceof ProviderError) || error.kind === 'aborted') throw error
+        return { ...failed<typeof seen>(`the model menu did not close: ${error.message}`, { observed: true }), value: seen }
+      }
+      return done({ observed: true, model: seen.model !== null, power: seen.power !== null }, seen)
+    })
+  }
+
   /** Empty the composer, then insert the instructions; the engine reads the text back and fails when it differs. */
   insertInstructions(text: string): Promise<Result> {
     return expected(async () => {
