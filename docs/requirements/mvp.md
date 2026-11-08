@@ -31,6 +31,11 @@ capabilities, input artifact references, completion/failure, cancellation and
 usage; demonstrate a replacement Worker/adapter for at least one comparable
 unit of work without changing the controller's code.
 
+This is a **System-owned, provider-neutral** contract, not a requirement that
+each Worker implement ACP or any particular editor/terminal protocol. A
+Worker adapter may translate ACP sessions, structured CLI output or browser
+observations into the same Work/Attempt/Artifact result semantics.
+
 **MVP-03 Effect integrity:** actions with external consequences have stable
 operation identities and persisted outcomes. On an unknown outcome, the
 controller reconciles or holds for authorization rather than blind replay.
@@ -83,6 +88,21 @@ registered verifier capabilities, each bound to the exact Artifact ID and
 criteria version and returning a typed evidence-backed verdict. A code-tree
 checker and a research citation/evidence checker must both work without a
 core change. Model review is optional unless the selected policy requires it.
+
+## Standards-first integration gates (new work, not MVP-0 scope)
+
+System-wide [STD-001 through STD-006](purpose.md#product-wide-standards-and-interoperability-requirements)
+apply when adding or replacing integrations. A new Worker adapter MUST
+demonstrate provider-neutral routing, typed Artifact output, authorized
+permissions and cancellation/lost-attempt behavior **without changing** the
+Work Controller for individual vendors. It MUST pin and test any external
+standard/SDK used at its boundary; unsupported features must be explicit,
+not silently emulated or inferred from terminal activity.
+
+The [optional Rust ACP Worker Adapter decision](../decisions/ADR-0011-rust-acp-worker-adapter.md)
+is post-MVP-0 integration work, not a new prerequisite for existing
+Software Engineering or Research MVP acceptance. Existing headless Workers
+remain valid while interactive compatibility is experimentally validated.
 
 ## Mandatory end-to-end acceptance cases
 
