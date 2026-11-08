@@ -50,6 +50,44 @@ Artifact IDs. Provider names, permissions and session details do not
 enter Controller branching. Report unsupported capabilities as unavailable;
 do not promise model-level equivalence across providers.
 
+## Provider-neutral credentials
+
+The ACP plugin does not assume an agent is Claude or Codex. For a new ACP
+provider, map each **explicit** environment variable to a System credential
+reference. Secrets are checked during account registration and resolved only
+when an Attempt starts; no ambient host credentials are forwarded.
+
+```yaml
+- id: worker-acp
+  disabled: false
+  config:
+    accounts:
+      - ref: acp/external
+        agentCommand: /absolute/path/to/acp-agent
+        agentArgs: []
+        capabilities: [research]
+        envRefs:
+          GEMINI_API_KEY: GEMINI_API_KEY  # variable name -> System credential ref
+```
+
+Configure the credential separately through `system credentials`. The
+variable name must match the safe uppercase environment-variable format.
+Names that control process execution or the DSH/System runtime (for example,
+`PATH`, `HOME`, `NODE_OPTIONS`, `LD_PRELOAD`, `DSH_*`) are rejected.
+The existing `tokenRef` and `codexHome` remain supported for compatibility;
+neither is required for another ACP provider.
+
+**Antigravity note:** `agy acp` can use its own signed-in credentials, a
+Gemini API key, or other agent-specific authentication. Its Gemini-key flow
+also requires `modelProvider: gemini` in an Antigravity settings file;
+**setting `GEMINI_API_KEY` alone is insufficient**. System currently
+creates a fresh per-Attempt `HOME`, so cached local login/configuration is
+not automatically available. Prepare and verify an isolated agent profile
+before treating Antigravity as a supported live Worker; no permission or
+credential sharing is implicit.
+See [Antigravity ACP documentation](https://antigravity.google/docs/ide/extensions/acp/)
+and [authentication requirements](https://antigravity.google/docs/install).
+
 ## Execution contract
 
 - One fresh ACP v1 session/process per System Attempt: initialize, new session,
