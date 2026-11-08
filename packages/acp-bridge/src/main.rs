@@ -51,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let cli = parse_args(env::args().skip(1)).map_err(io::Error::other)?;
     let prompt = fs::read_to_string(&cli.prompt_file)?;
+    let cwd = env::current_dir()?;
     // Preserve argv boundaries rather than re-parsing a shell command.
     let mut command = vec![cli.agent];
     command.extend(cli.args);
@@ -83,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
             println!("{}", json!({"type":"acp.initialized"}));
             let session = connection
-                .send_request(NewSessionRequest::new(env::current_dir()?))
+                .send_request(NewSessionRequest::new(cwd))
                 .block_task()
                 .await?;
             println!("{}", json!({"type":"acp.session_ready"}));
