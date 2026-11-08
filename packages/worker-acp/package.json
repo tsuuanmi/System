@@ -2,7 +2,7 @@
   "name": "@system/worker-acp",
   "version": "0.0.0",
   "private": true,
-  "description": "Optional DSH/Cordis ACP WorkerPort plugin backed by the Rust ACP bridge",
+  "description": "Optional Cordis ACP WorkerPort plugin using the official ACP TypeScript SDK and DSH subprocess",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -16,6 +16,7 @@
     "dsh": "0.2.2-rc.1"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0",
     "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
     "@deepseek-ai/dsh-subprocess": "0.2.2-rc.1",
     "@system/artifacts": "workspace:*",
