@@ -4,8 +4,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { memoryWorkTable, snapshotWorkTable } from '../../../test-support/memory.ts'
-import { LocalControl } from '../../../test-support/process.ts'
+import { memoryWorkTable } from '../../../test-support/memory.ts'
 import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
 import { WorkError } from '../src/errors.ts'
 import { fold, type WorkRecord } from '../src/record.ts'
@@ -52,7 +51,7 @@ interface Harness {
   specs: ReturnType<typeof memorySpecs>
 }
 
-function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: WorkTable; specs?: ReturnType<typeof memorySpecs>; control?: LocalControl } = {}): Harness {
+function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<WorkerPort>; verifier?: Partial<VerifierPort>; table?: WorkTable; specs?: ReturnType<typeof memorySpecs> } = {}): Harness {
   // Tests that read `table.rows` pass no table; the snapshot tests read their own `disk`.
   const table = (options.table ?? memoryWorkTable()) as ReturnType<typeof memoryWorkTable>
   const specs = options.specs ?? memorySpecs()
@@ -97,7 +96,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
     async apply(intent) { return { state: 'applied', reason: 'published', detail: { subject: intent.subject } } },
     async reconcile() { return { state: 'absent', reason: 'nothing published' } },
   })
-  return { controller: new WorkController(table, specs, capabilities, options.control ?? new LocalControl()), capabilities, calls, verdicts, table, specs }
+  return { controller: new WorkController(table, specs, capabilities), capabilities, calls, verdicts, table, specs }
 }
 
 async function input(h: Harness): Promise<string> {
@@ -107,7 +106,7 @@ async function input(h: Harness): Promise<string> {
 }
 
 async function runFixture(h: Harness, name: string) {
-  const spec = resolve(parseWorkflow(fixture(name)), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture(name)), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: name } })
   return h.controller.run(admitted.id)
 }
@@ -130,7 +129,7 @@ test('Software Engineering and Research run through the same controller code', a
   assert.equal(research.state.status, 'succeeded')
   assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write']], ['investigate', ['research', 'web-search']]])
   // The verifier got the exact Artifact the Worker produced, resolved from the slot.
-  assert.equal(h.verdicts[0], `checks:${se.state.steps.implement!.outputs.change}`)
+  assert.equal(h.verdicts[0], `checks.checks:${se.state.steps.implement!.outputs.change}`)
   assert.equal(h.verdicts[1], `citations:${research.state.steps.investigate!.outputs.sources}`)
 })
 
@@ -138,21 +137,21 @@ test('a Worker gets exact Artifact IDs for its inputs, never a slot name', async
   const h = harness()
   const done = await runFixture(h, 'software-engineering.yaml')
   assert.deepEqual(h.calls[0]!.inputs, { task: done.state.input })
-  const dispatched = done.events.find((e) => e.type === 'dispatched' && e.stepId === 'checks')
-  assert.deepEqual(dispatched && 'inputs' in dispatched && dispatched.inputs, { subject: done.state.steps.implement!.outputs.change, criteria: done.state.criteria.checks })
+  const dispatched = done.events.find((e) => e.type === 'dispatched' && e.stepId === 'checks.checks')
+  assert.deepEqual(dispatched && 'inputs' in dispatched && dispatched.inputs, { subject: done.state.steps.implement!.outputs.change, criteria: done.state.criteria['checks.checks'] })
 })
 
 test('an invalid Workflow dispatches zero Workers and creates no Work', async () => {
   const h = harness()
   const broken = fixture('software-engineering.yaml').replace('dependsOn: [implement]', 'dependsOn: [ghost]')
-  assert.throws(() => resolve(parseWorkflow(broken), h.capabilities.available()), WorkflowError)
+  assert.throws(() => resolve(parseWorkflow(broken), h.capabilities.available(), fixture), WorkflowError)
   assert.equal(h.calls.length, 0)
   assert.equal(h.table.rows.size, 0)
 })
 
 test('admission refuses a missing input and an input that is not stored', async () => {
   const h = harness()
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
   await assert.rejects(() => h.controller.admit({ spec, caller, source: { kind: 'workflow-file' } }), WorkError)
   await assert.rejects(() => h.controller.admit({ spec, input: id('never stored'), caller, source: { kind: 'workflow-file' } }), /not a stored Artifact/)
   assert.equal(h.table.rows.size, 0)
@@ -163,7 +162,7 @@ test('a restart mid-attempt re-dispatches that step only, as a new attempt, with
   const specs = memorySpecs()
   // The first host's Worker never returns: its process "dies" mid-attempt.
   const first = harness({ table, specs, worker: { run: () => new Promise(() => {}) } })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), first.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), first.capabilities.available(), fixture)
   const admitted = await first.controller.admit({ spec, input: await input(first), caller, source: { kind: 'workflow-file' } })
   void first.controller.run(admitted.id)
   while (table.rows.get(admitted.id)!.events.length < 2) await new Promise((resolve) => setImmediate(resolve))
@@ -206,16 +205,16 @@ test('a failed, errored or missing verdict fails the Work; inconclusive is held'
 
 test('without an accept step a failed verdict still fails the Work', async () => {
   const h = harness({ verdict: 'fail' })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml').replace(/  - id: publish[\s\S]*$/, '')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml').replace(/  - id: publish[\s\S]*$/, '')), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.status, 'failed')
-  assert.match(done.state.reason!, /checks=fail/)
+  assert.match(done.state.reason!, /checks\.checks=fail/)
 })
 
 test('accept with operator approval holds the Work after verification passes', async () => {
   const h = harness()
-  const spec = resolve(parseWorkflow(`${fixture('software-engineering.yaml')}      approval: operator\n`), h.capabilities.available())
+  const spec = resolve(parseWorkflow(`${fixture('software-engineering.yaml')}      approval: operator\n`), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.status, 'held')
@@ -240,9 +239,9 @@ test('a Worker that throws or reports failure fails the Work with the reason', a
 
 test('a Worker that disappears after admission fails the Work with a missing-capability reason', async () => {
   const h = harness()
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
-  const bare = new WorkController(h.table, h.specs, new Capabilities(), new LocalControl())
+  const bare = new WorkController(h.table, h.specs, new Capabilities())
   const done = await bare.run(admitted.id)
   assert.equal(done.state.status, 'failed')
   assert.match(done.state.reason!, /no enabled Worker provides research, web-search/)
@@ -267,7 +266,7 @@ test('routing records every candidate and why it was or was not chosen', async (
 
 test('cancel with no live host records the outcome directly, with the caller', async () => {
   const h = harness()
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const done = await h.controller.cancel(admitted.id, { reason: 'not needed', caller: { type: 'agent', operatorId: 'tan' } })
   assert.notEqual(done, 'requested')
@@ -303,7 +302,7 @@ test('a cancel during an attempt keeps its partial output, and retry hands it on
       },
     },
   })
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const running = h.controller.run(admitted.id)
   while (h.table.rows.get(admitted.id)!.events.length < 2) await new Promise((resolve) => setImmediate(resolve))
@@ -322,8 +321,8 @@ test('a tier is a capability: a step asking for a tier no Worker offers is refus
   const capabilities = new Capabilities()
   capabilities.registerWorker({ ref: 'claude', capabilities: ['code-write', 'tier.standard', 'tier.frontier'], run: async () => ({ status: 'failed', outputs: {} }) })
   const workflow = (tier: string) => `schema: system.workflow/v1\nid: t\nversion: 1\nsteps:\n  - id: a\n    capabilities: [code-write, ${tier}]\n    outputs: [x]\n`
-  assert.doesNotThrow(() => resolve(parseWorkflow(workflow('tier.frontier')), capabilities.available()))
-  assert.throws(() => resolve(parseWorkflow(workflow('tier.economy')), capabilities.available()), /needs Worker capability tier.economy, which no enabled Worker provides/)
+  assert.doesNotThrow(() => resolve(parseWorkflow(workflow('tier.frontier')), capabilities.available(), fixture))
+  assert.throws(() => resolve(parseWorkflow(workflow('tier.economy')), capabilities.available(), fixture), /needs Worker capability tier.economy, which no enabled Worker provides/)
   assert.equal(capabilities.routeWorker(['code-write', 'tier.frontier']).selected?.ref, 'claude')
 })
 
@@ -356,13 +355,13 @@ test('the controller stores the verdict Artifact bound to the exact subject and 
   const verified = done.events.find((e) => e.type === 'verified')
   assert.ok(verified?.type === 'verified' && verified.verdictId)
   const stored = h.specs.verdicts.get(verified.verdictId!)!
-  assert.deepEqual([stored.subject, stored.criteria, stored.verdict, stored.verifier], [done.state.steps.implement!.outputs.change, done.state.criteria.checks, 'pass', { ref: 'fake-verifier', version: '1' }])
+  assert.deepEqual([stored.subject, stored.criteria, stored.verdict, stored.verifier], [done.state.steps.implement!.outputs.change, done.state.criteria['checks.checks'], 'pass', { ref: 'fake-verifier', version: '1' }])
   assert.equal(stored.evidence.length, 1)
 })
 
 test('criteria a verifier cannot pin refuse admission, and no Work is created', async () => {
   const h = harness({ verifier: { async criteria() { throw new Error('no .system/checks.yaml at the base commit') } } })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), h.capabilities.available(), fixture)
   const task = await input(h)
   await assert.rejects(() => h.controller.admit({ spec, input: task, caller, source: { kind: 'workflow-file' } }), /cannot pin criteria repo-checks-v1: no .system\/checks.yaml/)
   assert.equal(h.table.rows.size, 0)
@@ -384,7 +383,7 @@ test('retry --step after failed checks reruns the Worker and re-verifies the new
   const done = await h.controller.retry(failed.id, { step: 'implement', caller, reason: 'fix the failing checks' })
   assert.equal(done.state.status, 'succeeded')
   const reopened = done.events.find((e) => e.type === 'reopened')
-  assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'checks', 'publish', 'accept'])
+  assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'checks.checks', 'publish', 'accept'])
   const verifiedSubjects = done.events.filter((e) => e.type === 'verified').map((e) => e.type === 'verified' && e.subject)
   assert.deepEqual(verifiedSubjects, [firstChange, done.state.steps.implement!.outputs.change])
   assert.notEqual(verifiedSubjects[1], firstChange)
@@ -422,7 +421,7 @@ test('a Work record written before M4 (no criteria, no new event fields) still p
 test('a host lost during admission, after the spec was pinned and before the Work record, leaves no Work and runs nothing', async () => {
   const h = harness()
   h.table.put = async () => { throw new Error('host lost') }
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
   const task = await input(h)
   await assert.rejects(() => h.controller.admit({ spec, input: task, caller, source: { kind: 'workflow-file' } }), /host lost/)
   assert.equal(h.table.rows.size, 0)
@@ -434,7 +433,7 @@ test('the verifier is pinned at admission with its version: another version at r
   const table = memoryWorkTable()
   const specs = memorySpecs()
   const v1 = harness({ table, specs })
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), v1.capabilities.available())
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), v1.capabilities.available(), fixture)
   const admitted = await v1.controller.admit({ spec, input: await input(v1), caller, source: { kind: 'workflow-file' } })
   const admittedEvent = admitted.events[0]
   assert.deepEqual(admittedEvent?.type === 'admitted' && admittedEvent.verifiers, { citations: { ref: 'fake-verifier', version: '1' } })
@@ -444,43 +443,4 @@ test('the verifier is pinned at admission with its version: another version at r
   assert.equal(verified?.type === 'verified' && verified.verdict, 'error')
   assert.match(verified?.type === 'verified' ? verified.reason : '', /pinned fake-verifier@1 at admission; fake-verifier@2 is enabled now/)
   assert.equal(done.state.status, 'failed')
-})
-
-test('a host whose snapshot is older than the Work refuses to run it: no second dispatch, no event overwritten', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const control = new LocalControl()
-  const first = harness({ table: snapshotWorkTable(disk), control })
-  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  // A second process opens the store now, then the first runs the Work to the end and releases it.
-  const stale = harness({ table: snapshotWorkTable(disk), control, specs: first.specs })
-  await first.controller.run(admitted.id)
-  const finished = structuredClone(disk.get(admitted.id))
-  await assert.rejects(() => stale.controller.run(admitted.id), /changed since this command started/)
-  assert.equal(stale.calls.length, 0)
-  assert.deepEqual(disk.get(admitted.id), finished)
-})
-
-test('a retry from a host whose snapshot is older than the Work is refused: the Work is not reopened twice', async () => {
-  const disk = new Map<string, WorkRecord>()
-  const control = new LocalControl()
-  const specs = memorySpecs()
-  let fail = true
-  const worker: Partial<WorkerPort> = {
-    async run(request): Promise<WorkerResult> {
-      if (fail) return { status: 'failed', outputs: {}, reason: 'scripted' }
-      const out = id(`${request.attemptId}/result`)
-      specs.stored.add(out)
-      return { status: 'succeeded', outputs: { result: out } }
-    },
-  }
-  const first = harness({ table: snapshotWorkTable(disk), control, specs, worker })
-  const admitted = await first.controller.admit({ spec: directTask(['code-write'], false, first.capabilities.available()), caller, source: { kind: 'direct-task' } })
-  assert.equal((await first.controller.run(admitted.id)).state.status, 'failed')
-  // A second process opens the store while the Work is failed; the first retries it to success.
-  const stale = harness({ table: snapshotWorkTable(disk), control, specs, worker })
-  fail = false
-  assert.equal((await first.controller.retry(admitted.id, { caller, reason: 'again' })).state.status, 'succeeded')
-  const finished = structuredClone(disk.get(admitted.id))
-  await assert.rejects(() => stale.controller.retry(admitted.id, { caller, reason: 'again too' }), /changed since this command started/)
-  assert.deepEqual(disk.get(admitted.id), finished)
 })

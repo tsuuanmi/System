@@ -23,7 +23,7 @@ accept. A verdict about a subject that has since been replaced counts as
 
 ## `code.required-checks` (version 1)
 
-- **Accepts:** `git-tree`.
+- **Accepts:** `git-tree`, and a `task` (`code-checks.yaml` on its own), whose base commit is checked as it is.
 - **Criteria:** `.system/checks.yaml` read **from the task's base commit** at
   admission, stored as `checks@1`. A Worker editing that file cannot change
   the pinned checks. No file, or an invalid one, refuses admission.
@@ -33,28 +33,58 @@ checks:
   - name: test               # [a-z][a-z0-9-]*
     run: npm ci && npm test  # run with /bin/sh -c in the checked-out commit
     timeoutSeconds: 600      # default 600, at most 3600
+    paths: [src/**, package.json]  # optional globs: run only when the change touches one
 ```
 
 - **Verify:** check out the exact subject commit into a fresh worktree, run
   each check with a minimal environment (`PATH`, `LANG`, a throwaway `HOME`,
   `CI=1`) through the DSH subprocess service, and store one `check-run@1`
   evidence Artifact per check (exit, signal, timeout, duration, output tails).
+  The checks run in order in that one worktree with one `HOME`, so a later
+  check reuses what an earlier one built (`install` and `build` once, not per
+  check); name one check per part so a failure says which part failed.
   `pass` when every check exits 0; `fail` when any does not or times out;
   `error` when the commit cannot be checked out.
+- **Node** ([src/reasons.ts](src/reasons.ts), PROP-0007 decision 3): when the
+  commit's `package.json` has `engines.node`, a Node that satisfies it goes
+  first on the checks' `PATH`: the Host's own, else the newest under
+  `~/.nvm/versions/node`, as `bin/system` looks; none is an `error` verdict.
+  Whatever Node the Host's `PATH` starts with no longer decides.
+- **Reasons** (decision 4): a check that failed under Node's test runner is
+  one line, `<check>: <file> "<test>": <first error line>`, read from the
+  runner's `failing tests` summary. A check runs under `timeout -s INT`, so on
+  its time limit the runner prints what it was running:
+  `<check>: timed out after <n> s while running <file> "<test>"`. Other
+  commands keep `<check> (exit <n>)`. Several failures are joined by `; `.
+- **Paths** (decision 5): a check with `paths` (globs, as GitHub Actions'
+  `paths` filter, matched by `path.matchesGlob`) runs only when
+  `git diff --name-only <base> <subject>` names a file one of them matches;
+  the base is the commit the checks were pinned from; a commit checked as it
+  is (`code-checks.yaml` on its own) runs every check. A skipped check has no
+  `check-run@1`. The verdict's reason lists what ran, with its time, and what
+  was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
 
-## `research.citation-check` (version 1)
+## `research.citation-check` (version 2)
 
 - **Accepts:** `file` (the Worker's `sources` output).
 - **Criteria:** `citation-criteria@1`: at least 1 source, quotes of at least
-  8 characters, 20 s fetch timeout, 2 MiB per page.
+  8 characters, 20 s fetch timeout, 2 MiB per page, and `minConfirmedRatio`
+  (0 to 1, default 0.5). Criteria pinned before version 2 lack the field and
+  mean 1.0, so they keep their old meaning.
 - **Format:** `{"sources": [{"id", "url", "quote", "claims": [..]}]}`; the
   Research Workflow's step instructions tell the Worker this shape.
 - **Verify:** fetch each URL and search its text for the quote, ignoring
-  markup, scripts, entities, case and whitespace. One `citation-check@1`
-  evidence Artifact records each URL's status and the hash of the bytes seen.
-  `fail` for a malformed file, too few sources or too-short quotes;
-  `inconclusive` when a page cannot be fetched or its quote is not found;
-  `pass` when every quote is found.
+  markup, scripts, entities, Markdown code/emphasis marks (`` ` ``, `*`, `_`),
+  Markdown link syntax (`[text](url)` reads as `text`), case and whitespace,
+  on both the page and the quote. One `citation-check@1` evidence Artifact
+  records each URL's status and page hash, plus the confirmed ratio and the
+  threshold used.
+  - `fail`: a malformed file, too few sources or too-short quotes.
+  - `pass`: at least `minConfirmedRatio` of the sources are confirmed.
+  - `inconclusive`: fewer are.
+  - **A pass can include unconfirmed quotes.** The verdict reason names each
+    one and why ("HTTP 200, quote not found", "fetch failed: ..."), and the
+    evidence lists every result, so nothing is hidden.
 - **Limit:** this checks the web **as it is at verification time**. It never
   proves what the Worker read; that needs the System `fetch` tool (MVP-1).
   Claims are not checked against quotes.

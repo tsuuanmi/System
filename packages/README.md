@@ -9,13 +9,18 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
   immutable content-addressed Artifacts.
 - [work](work/README.md) — `@system/work`, the `work` row: Work records, the
   Workflow compiler and the Work Controller.
+- [host](host/README.md) — `@system/host`, the Host's transport: JSON-RPC
+  over a Unix socket, the version handshake and the caller.
 - [fakes](fakes/README.md) — `@system/fakes`, a scripted Worker and verifier,
   off by default.
+- [web-driver](web-driver/README.md) — `@system/web-driver`, System 1's ChatGPT
+  web driver, its UI map and its UI engine, ported whole; the page logic of the
+  `chatgpt-web` Runtime.
 - [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code
   and Codex accounts as Workers.
 - [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
   `code.required-checks` and `research.citation-check`.
 - [effects](effects/README.md) — `@system/effects`, the `effects` row:
-  `git.publish`, push and one draft pull request, never a merge.
+  `git.publish`, push and one pull request, merged only into the `mergeInto` allowlist.
 - [app](app/README.md) — `@system/app`, the CLI app row (`system doctor`,
   `system artifact`, `system work`).

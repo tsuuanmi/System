@@ -1,22 +1,25 @@
 ---
 type: architecture
 status: active
-reviewed: 2026-11-05
+reviewed: 2026-11-07
 decided-by: [ADR-0003]
 covers: [packages/artifacts/src/envelope.ts, packages/artifacts/src/canonical.ts, packages/work/src/kinds.ts]
 ---
 
 # Artifact-ID handoff and pluggable verification
 
-**Accepted architecture semantics; concrete contracts run in draft PR #2.**
+**Accepted architecture semantics; the contracts are implemented.**
 The fields and examples in this page include future interface concepts.
-The [current artifact package](https://github.com/tsuuanmi/System/tree/973cea6c9e00359519569e3b43a7f809215e518f/packages/artifacts)
-and [verifier registry](https://github.com/tsuuanmi/System/blob/973cea6c9e00359519569e3b43a7f809215e518f/packages/work/src/registry.ts)
+The [artifact package](../../packages/artifacts/README.md)
+and [verifier registry](../../packages/work/src/registry.ts)
 define implemented behavior. Brainstorm may succeed with **no verifier**:
 that means Artifact delivery, not independently validated ideas.
 The current Research citation check validates source references/quotes,
 not whether every report claim is supported; stronger verification
-remains separately configurable future work.
+remains separately configurable future work. It passes when the pinned
+criteria's share of confirmed quotes is reached, so a pass can include
+unconfirmed quotes; their list is in the verdict reason and the evidence
+([verifier rules](../../packages/verifiers/README.md)).
 [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
 establishes immutable Artifact IDs as the durable handoff protocol between
 Workers. Conversation history, transient output paths and model memory are
@@ -53,6 +56,13 @@ hashing and versioning rule, and must not accidentally depend on creation
 time or producer identity. Provenance can vary between distinct production
 events that yield the same content; record occurrences/lineage separately.
 Do not merge confidentiality or authorization solely because hashes match.
+
+Material from outside System keeps this split. A `conversation@1` manifest
+([PROP-0003](../proposals/PROP-0003-conversation-ingestion.md)) records only
+what the operator asserts, plus its parts as `file@1` inputs, so the same
+files give the same ID; who added it and when are occurrences. A `task@1`
+may list `context` Artifacts, which are also its inputs, so their
+classification floors the task's.
 
 **Implemented rule, `artifact-id/v1`** ([`@system/artifacts`](../../packages/artifacts/README.md)):
 the ID is `sha256` over the domain tag `system.artifact/v1`, a newline, and the
@@ -118,20 +128,15 @@ the Work), and the controller stores the `verdict@1` Artifact itself after
 refusing, as `error`, a verdict about another subject or other criteria, a
 `pass` without evidence, unstored evidence, or a subject kind the verifier
 does not accept. A verdict whose subject has since been replaced counts as
-`stale`. The two verifiers are described in
+`stale`. Asking a verify step again (`work retry --step`, PROP-0006) runs it
+on the same subject with the same pinned criteria; the earlier verdict stays
+recorded and no longer counts. The two verifiers are described in
 [`@system/verifiers`](../../packages/verifiers/README.md).
 
 **No single review algorithm is mandatory.** The Work Controller checks
 that the configured required verifier capability is available, its subject
 and criteria types match, and it returned a verdict on the **same exact
 artifact ID and pinned criteria** before accepting the Work.
-
-Examples:
-
-- Software Engineering: tests/check outputs, optional independent code review,
-  patch/tree identity and controlled landing approval.
-- Research: schema/citation parsing, resolving source references, cited-claim
-  consistency, optional independent evidence review and explicit uncertainty.
 
 A verification policy may require multiple capabilities, but must remain
 configured rather than hardcoded into the Work Controller. Some verifiers
@@ -145,16 +150,18 @@ claim is *not* a pass. `inconclusive` is distinct from `fail`.
 
 ## Decisions, effects and auditability
 
-Record a decision or event for each consequential route, authorization,
-acceptance/rejection and recovery action. Tie decisions to exact artifacts,
-policy and verifier versions. Side effects also need operation identities
-and reconciliation: content-addressed records alone cannot prevent duplicate
-external operations after a crash.
-
-Make artifact retention, garbage collection, read permissions and
-content-hash existence leakage part of the audit; deleting underlying
-blob bytes while retaining a historical ID must produce explicit
-`expired` / `unavailable` state, not pretend the content still exists.
+Each consequential route, authorization, acceptance, rejection and recovery
+action records a decision tied to exact artifacts, policy and verifier
+versions ([ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
+decision 9); side effects also need operation identities and reconciliation,
+because content-addressed records cannot prevent duplicate external operations
+after a crash. Retention, garbage collection, read permissions and
+content-hash existence leakage are part of the audit;
+a choice made for a Goal by the operator or an Orchestrator is a `decision@1`
+Artifact naming the Artifacts it rests on (PROP-0006), a record and never an
+authority; deleting blob bytes
+while retaining a historical ID must give an explicit `expired` /
+`unavailable` state, not pretend the content exists.
 
 See [workflow composition](workflow-composition.md),
 [MVP acceptance](../requirements/mvp.md) and

@@ -1,15 +1,25 @@
 #!/usr/bin/env node
 // A fake GitHub API for tests, run as its own process (tests block in
 // spawnSync while a host calls it). Prints its port. GET /_state returns the
-// pull requests. With --kill-host-on-create <controlDir>, the first pull
-// request it creates is followed by SIGKILL to every host whose Work lock is in
-// that directory, before the response: a remote effect applied, never received.
-import { readFileSync, readdirSync } from 'node:fs'
+// pull requests. With --kill-host-on-create <pidFile>, the first pull
+// request it creates is followed by SIGKILL to the Host whose process ID is in
+// that file, before the response: a remote effect applied, never received.
+// --bare <dir>, the remote the branches are pushed to, gives each pull
+// request its head's sha.
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { join } from 'node:path'
 
-const killDir = process.argv.includes('--kill-host-on-create') ? process.argv[process.argv.indexOf('--kill-host-on-create') + 1] : undefined
+const flag = (name) => process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined
+const killFile = flag('--kill-host-on-create')
+const bare = flag('--bare')
 let killed = false
+const killHost = (pidFile) => {
+  try { process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL') } catch { /* gone */ }
+}
+const headSha = (branch) => {
+  try { return execFileSync('git', ['-C', bare, 'rev-parse', `refs/heads/${branch}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
+}
 const pulls = []
 const calls = []
 
@@ -20,19 +30,20 @@ const server = createServer((req, res) => {
     calls.push(`${req.method} ${req.url}`)
     const url = new URL(req.url, 'http://x')
     const send = (status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
-    const view = (p) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, head: { ref: p.head } })
+    const view = (p) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, base: { ref: p.base }, head: { ref: p.head, sha: bare ? headSha(p.head) : '' }, merged_at: p.merged ? '2026-11-06T00:00:00Z' : null, merge_commit_sha: p.mergeCommit ?? null })
     if (url.pathname === '/_state') return send(200, { pulls, calls })
     const match = /^\/repos\/([^/]+\/[^/]+)\/pulls$/.exec(url.pathname)
-    if (req.method === 'GET' && match) return send(200, pulls.filter((p) => p.head === url.searchParams.get('head').split(':')[1]).map(view))
+    if (req.method === 'GET' && match) {
+      const all = url.searchParams.get('state') === 'all'
+      return send(200, pulls.filter((p) => p.head === url.searchParams.get('head').split(':')[1] && (all || !p.merged)).map(view))
+    }
     if (req.method === 'POST' && match) {
       const input = JSON.parse(body)
       const pull = { number: pulls.length + 1, head: input.head, base: input.base, draft: input.draft, title: input.title, node_id: `PR_${pulls.length + 1}` }
       pulls.push(pull)
-      if (killDir && !killed) {
+      if (killFile && !killed) {
         killed = true
-        for (const file of readdirSync(killDir).filter((f) => f.endsWith('.lock'))) {
-          try { process.kill(Number(readFileSync(join(killDir, file), 'utf8')), 'SIGKILL') } catch { /* gone */ }
-        }
+        killHost(killFile)
         return res.destroy()
       }
       return send(201, view(pull))

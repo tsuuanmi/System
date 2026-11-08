@@ -1,34 +1,48 @@
 # Brainstorm. Two Workers on different providers propose independently from
-# the same brief; a third attempt compares the two exact proposals. Routing is
+# the same brief, each with its own stance (idea-a the pragmatist, idea-b the
+# skeptic); a third attempt compares the two exact proposals. Routing is
 # by role capability (brainstorm.idea-a, brainstorm.idea-b,
 # brainstorm.synthesis), which the profile gives to one account each. There is
 # no verifier: a finished Work means the three outputs exist, not that their
 # content is right. Same schema and controller as the other Workflows.
 schema: system.workflow/v1
 id: brainstorm
-version: 1
+version: 2
 steps:
   - id: idea-a
     capabilities: [brainstorm.idea-a]
     inputs:
       brief: $work.input
     outputs: [proposal]
-    instructions: &propose |
+    instructions: |
       Brainstorm the brief on your own: you cannot see any other proposal.
+      Your stance is the pragmatist: favour the simplest approach that could
+      be built and tested soon with what exists, and say what you would leave
+      out on purpose.
       Write the output "proposal" as Markdown with these sections:
       1. Proposal: the approach you recommend, concretely.
       2. Alternatives: at least two other approaches you rejected, and why.
       3. Assumptions: what must be true for the proposal to work.
       4. Trade-offs and failure modes: what it costs and how it could fail.
       5. Open questions: what you do not know and would check first.
-      Prefer a distinct, well-argued position over covering everything.
       Do not change any other file.
   - id: idea-b
     capabilities: [brainstorm.idea-b]
     inputs:
       brief: $work.input
     outputs: [proposal]
-    instructions: *propose
+    instructions: |
+      Brainstorm the brief on your own: you cannot see any other proposal.
+      Your stance is the skeptic: look for the assumptions in the brief most
+      likely to be wrong, and for an approach most people would not try
+      first. Recommend it only if you can argue for it.
+      Write the output "proposal" as Markdown with these sections:
+      1. Proposal: the approach you recommend, concretely.
+      2. Alternatives: at least two other approaches you rejected, and why.
+      3. Assumptions: what must be true for the proposal to work.
+      4. Trade-offs and failure modes: what it costs and how it could fail.
+      5. Open questions: what you do not know and would check first.
+      Do not change any other file.
   - id: synthesis
     dependsOn: [idea-a, idea-b]
     capabilities: [brainstorm.synthesis]

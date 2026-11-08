@@ -34,21 +34,10 @@ touches.
 **Scoring.** The three final outputs of each brief were shuffled and labelled
 X, Y and Z, and the key was kept apart. At the operator's request, a Claude
 Sonnet subagent that saw only the blind packet scored each output from 1 to 5
-on five criteria:
-
-- usefulness for the decision (U);
-- diversity of options (D);
-- critical thinking (C);
-- actionability (A);
-- worth of its run time (W).
-
-The scores, the key, the run list and the briefs are Artifacts in the
-operator's store:
-
-- scores `sha256:5fc55e82…`;
-- key `sha256:170789e8…`;
-- runs `sha256:b92a72e9…`;
-- briefs `sha256:d5aa6945…`.
+on usefulness for the decision (U), diversity of options (D), critical
+thinking (C), actionability (A) and worth of its run time (W). The scores
+(`sha256:5fc55e82…`), key (`sha256:170789e8…`), run list (`sha256:b92a72e9…`)
+and briefs (`sha256:d5aa6945…`) are Artifacts in the operator's store.
 
 ## Results
 
@@ -107,6 +96,9 @@ of five briefs: mean 0.46 against 0.50 for B.
   expensive.** Use one Worker for narrow questions.
 - **Try stances in `brainstorm.yaml` with Claude as the synthesiser.** Change
   the default only after the operator confirms the result on a few real uses.
+  *Adopted:* the operator made the stances the default (PLAN.md milestone P);
+  `brainstorm-shared.yaml` is the one-shared-prompt arm B, and arm R is now
+  `brainstorm.yaml` version 2.
 - **Do not move the synthesis to Codex yet.** First run one clean comparison
   (B with a Codex synthesis) and have it scored by a judge that is not Sonnet,
   or by the operator.

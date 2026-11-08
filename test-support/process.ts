@@ -1,16 +1,16 @@
 /**
  * Process and host stand-ins shared by tests: a `Spawner` with the DSH
  * subprocess contract (a process group, SIGTERM on abort, SIGKILL after the
- * grace) and a `HostControl` for a single process.
+ * grace).
  */
 import { spawn } from 'node:child_process'
-import type { Spawner } from '@system/agents'
-import { WorkError, type CancelRequest, type HostControl } from '@system/work'
+import { recordingPid, type Spawner } from '@system/agents'
 
 export const processSpawner: Spawner = {
   spawn(spec) {
+    const argv = recordingPid(spec)
     const env = Object.fromEntries(Object.entries(spec.env).filter(([, value]) => value !== undefined)) as NodeJS.ProcessEnv
-    const child = spawn(spec.argv[0]!, spec.argv.slice(1), { cwd: spec.cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(argv[0]!, argv.slice(1), { cwd: spec.cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (d) => { stdout += d })
@@ -26,41 +26,4 @@ export const processSpawner: Spawner = {
       stderr: () => stderr,
     }
   },
-}
-
-/** One process, no other host: a concurrent run in this process holds the Work. */
-export class LocalControl implements HostControl {
-  private readonly held = new Set<string>()
-  private readonly cancels = new Map<string, CancelRequest>()
-  private readonly counts = new Map<string, number>()
-
-  acquire(workId: string): () => void {
-    if (this.held.has(workId)) throw new WorkError(`${workId} is already being run`)
-    this.held.add(workId)
-    return () => { this.held.delete(workId) }
-  }
-
-  heldElsewhere(workId: string): boolean {
-    return this.held.has(workId)
-  }
-
-  requestCancel(workId: string, request: CancelRequest): void {
-    this.cancels.set(workId, request)
-  }
-
-  cancelRequest(workId: string): CancelRequest | undefined {
-    return this.cancels.get(workId)
-  }
-
-  clearCancel(workId: string): void {
-    this.cancels.delete(workId)
-  }
-
-  written(workId: string): number {
-    return this.counts.get(workId) ?? 0
-  }
-
-  noteWritten(workId: string, events: number): void {
-    this.counts.set(workId, events)
-  }
 }

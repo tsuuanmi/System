@@ -27,7 +27,7 @@ test('a Work run straight through needs no operator touch; observed usage is sum
   ]))
   assert.deepEqual(summary, {
     id: 'work:1', status: 'succeeded', durationMs: 10_000, attempts: 1, operatorTouches: 0, touches: [],
-    usage: { inputTokens: 100, outputTokens: 7, observedAttempts: 1, unknownAttempts: 0 },
+    usage: { inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 7, observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 0 },
   })
 })
 
@@ -47,5 +47,28 @@ test('human decisions, retries and cancels are touches; unknown usage is counted
   assert.equal(summary.attempts, 2)
   assert.equal(summary.operatorTouches, 3)
   assert.deepEqual(summary.touches, ['cancel', 'retry task', 'approved accept'])
-  assert.deepEqual(summary.usage, { inputTokens: 5, outputTokens: 1, observedAttempts: 1, unknownAttempts: 1 })
+  assert.deepEqual(summary.usage, { inputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 1, observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 1 })
+})
+
+test('cache reads and writes are totalled apart; an attempt without the split is unsplit, never zero cache', () => {
+  const observed = (n: number, usage: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number }): Unnumbered => ({
+    type: 'observed', at: '2026-11-06T00:00:02.000Z', stepId: 'task', attemptId: `attempt:${n}`, status: 'succeeded', outputs: {}, usage: { state: 'observed', source: 's', ...usage },
+  })
+  const summary = summarize(record([
+    { type: 'admitted', at: '2026-11-06T00:00:00.000Z', caller: agent, specId: id('a'), source: { kind: 'direct-task' } },
+    observed(1, { inputTokens: 100, cacheReadTokens: 60, cacheWriteTokens: 10, outputTokens: 7 }),
+    observed(2, { inputTokens: 50, cacheReadTokens: 20, outputTokens: 3 }),
+    observed(3, { inputTokens: 9, outputTokens: 1 }),
+    { type: 'terminal', at: '2026-11-06T00:00:03.000Z', outcome: 'succeeded', reason: 'ok', results: {} },
+  ]))
+  assert.deepEqual(summary.usage, { inputTokens: 159, cacheReadTokens: 80, cacheWriteTokens: 10, freshInputTokens: 60, outputTokens: 11, observedAttempts: 3, unsplitAttempts: 1, unknownAttempts: 0 })
+})
+
+test('the cost estimate is totalled over the attempts that report it, and absent when none does', () => {
+  const observed = (n: number, costUsd?: number): Unnumbered => ({
+    type: 'observed', at: '2026-11-06T00:00:02.000Z', stepId: 'task', attemptId: `attempt:${n}`, status: 'succeeded', outputs: {}, usage: { state: 'observed', inputTokens: 1, outputTokens: 1, source: 's', ...(costUsd === undefined ? {} : { costUsd }) },
+  })
+  const admitted: Unnumbered = { type: 'admitted', at: '2026-11-06T00:00:00.000Z', caller: agent, specId: id('a'), source: { kind: 'direct-task' } }
+  assert.equal(summarize(record([admitted, observed(1, 0.5), observed(2), observed(3, 0.25)])).usage.costUsdEstimate, 0.75)
+  assert.equal('costUsdEstimate' in summarize(record([admitted, observed(1)])).usage, false)
 })

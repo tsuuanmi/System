@@ -1,84 +1,33 @@
 ---
 type: architecture
-status: draft
-reviewed: 2026-11-06
+status: active
+reviewed: 2026-11-07
 ---
 
-# Runtime integrity: single-Work ownership, storage and recovery
+# Runtime integrity: Work ownership, storage and recovery
 
-**Status: technical design review / hypotheses; not a new accepted ADR.**
+**Status: the old mechanisms are gone (R1).** Until release R1 every `system`
+command booted its own DSH host, and the hosts coordinated through files: a
+per-Work lock with a takeover mutex, and a write fence against stale store
+snapshots. Five defects came from that model on 2026-11-06 (an empty lock,
+stale-lock removal moving a live lock, a stale snapshot overwriting events, a
+SQLite store-creation race and a profile config rewritten under a reader).
+One Host per home now owns every Work, so those files, their tests and their
+residual race windows are removed. How the Host does it, and the test that
+holds each guarantee, are in [the Host](host.md#guarantees-and-the-tests-that-hold-them);
+how recovery works is in [Start, stop and recovery](host.md#start-stop-and-recovery).
+
 The accepted Work and effect semantics remain in
 [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md),
 [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
-and [ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md).
-Source and observed tests are pinned in
+and [ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The
+earlier analysis is pinned in
 [RES-0007](../research/RES-0007-brainstorm-and-concurrency-review.md).
 
-## Follow-up after B4 fixes
-
-The findings below were documented for the **earlier `4a71c79` snapshot**.
-The initial incomplete-lock-publication race was fixed in PR #2 at
-[`ccc5dd5`](https://github.com/tsuuanmi/System/commit/ccc5dd56390f3b6d54f7f58291f8fb77cac573e5).
-The implementation now writes a complete PID into a draft file before
-publishing the lock with `linkSync`. The local worker reports test-first
-regression coverage and same-Work restart/concurrent-run checks.
-**B4 is reported complete**, not an unpatched P1. Keep rare stale-lock
-replacement, PID reuse, process interruption and upgrade regression
-cases visible as follow-up tests. This review did not execute them anew.
-
-**Stale host snapshot and retry gap: confirmed and fixed.** DSH
-`storage-domain` loads a table once when a host opens it and then reads
-and updates that in-memory copy, so a host that opened the store before
-another one last wrote a Work, and took the lock after, acted on and
-overwrote an older record. This is the "second host's in-memory cache"
-below. Controller tests with one snapshot per host reproduced it for
-`run` and `retry` (red first). The lock holder now notes the Work's event
-count in `control/<work>.written`, and a host that takes the lock with a
-shorter copy refuses ("changed since this command started"). `retry` and
-`approve` now validate under the lock and keep it through the run, which
-closes the retry gap described below.
-
-## Two different concurrency problems
-
-| Problem | Current mechanism in draft PR #2 | What has/has not been proved |
-|---|---|---|
-| **SQLite store access / creation** | DSH SQLite pnpm patch: `busy_timeout`, WAL switch retry, and idempotent unit-version insertion | A concurrent-command bootstrap regression and stress report passed; this is **not** a test of two processes executing the **same Work**. |
-| **Single-Work ownership / event consistency** | One Work record/key, atomic storage update, a per-Work `FileControl` lock published with its PID, and an event-count fence against stale host snapshots | Replay, cancellation, a SIGKILLed host with four concurrent `work run`, and stale-snapshot `run`/`retry` tests pass. |
-
-**Atomicity is scoped.** A serialized update of *one stored Work key*
-protects that key's transition under the storage API's conditions; it
-does not atomically commit artifact bytes, metadata, a GitHub effect, or
-a second host's in-memory cache. The **operation intent and remote-state
-reconciliation** contract is still required.
-
-## Candidate P1: lock publication race
-
-In PR #2's
-[`FileControl.acquire()`](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/work/src/control.ts),
-a process creates the lock path via `openSync(path, 'wx')` and writes
-its PID via a **subsequent** `writeSync`. Meanwhile, the stale check
-calls `holder()`, which treats an empty/unparseable PID as
-`undefined`, then can call `takeStale()` and move/remove the path.
-A second host could therefore see an **incomplete active lock** as
-stale before the first host has published its PID. Under an unlucky
-interleaving, two hosts could believe they own the same Work.
-
-This is a **source-derived race hypothesis, not a reproduced failure**.
-Write a deterministic interleaving test before selecting a fix.
-A correct solution must **atomically publish an initialized ownership
-record** (or use a tested OS-level lock) and must not steal/remove a
-new owner's lock when cleaning stale state. Test owner identity/token
-and inode/compare-and-delete behavior, PID reuse and process death;
-a mere delay before stale cleanup is insufficient as a correctness proof.
-
-A related hypothesis is the **retry gap**:
-[`WorkController.retry()`](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/work/src/controller.ts)
-appends a `reopened` event under a lock, releases it and then
-calls `run(workId)` to reacquire it. Concurrent `run`/`retry`/
-`cancel` on that boundary should be tested for exactly one
-active attempt and coherent terminal status. This also is **not yet
-a confirmed defect**. Prefer a narrow fix within existing control
-boundaries before proposing a persistent daemon or lease service.
+**Atomicity is scoped.** A serialized update of *one stored Work key* protects
+that key's transition; it does not atomically commit Artifact bytes, metadata
+or a GitHub effect. The **operation intent and remote-state reconciliation**
+contract covers effects.
 
 ## Crash/recovery invariant map
 
@@ -96,43 +45,16 @@ boundaries before proposing a persistent daemon or lease service.
 6. **Verifier:** bind verdict to exact subject/criteria; a replayed verdict
    does not retroactively attest a changed Artifact.
 7. **Cancellation:** preserve observed partial outputs as unaccepted
-   Artifacts; cancellation by another CLI must not accidentally grant a
-   competing host the right to run a step.
+   Artifacts; a cancel from a client never grants another process the right to run a step.
 8. **Operator:** a Work status, actual effect outcome and reason remain
    explainable after recovery.
 
-## Recommended deterministic B4 test matrix
+Old `$DSH_HOME/system/control/*.lock`, `*.takeover` and `*.written` files are
+ignored by the Host; the [runbook](../operations/runbook.md#cutover-to-the-host-r1)
+has the operator delete them. The two SQLite and profile-config defects stay
+covered by `concurrency.test.ts`, which now runs through the Host.
 
-| Injected interleaving / fault | Required observable result |
-|---|---|
-| Hold process A between exclusive lock create and PID write; let B acquire | At most one owner; B refuses/queues instead of stealing A's live lock |
-| Crash A before lock publication; start B | B recovers stale/incomplete ownership without perpetual blockage |
-| Two CLI processes call `work run` on same Work | At most one active Worker attempt and no duplicate dispatch event |
-| A retries while B runs or cancels the same Work | No lost reopened/terminal event; final replay matches persisted state |
-| Simultaneous distinct Works and initial store bootstrap | No SQLite lock/unique error or unrelated Work starvation |
-| Kill writer during event/Artifact persistence | Work state and references remain reconcilable; no false success |
-| Kill after GitHub publish before receipt | Reconcile existing effect; do not open duplicate draft PR |
-| PID reuse / lock path replaced during stale cleanup | Never remove a newer owner's lock |
-| Persistent WAL contention under load | No unbounded retry; measure latency, error classification and queue behavior |
-
-Use a barrier/fault-hook in **fake-process tests** so the lock-publication
-interleaving is reproducible; many random stress iterations alone are not
-a proof that the gap is closed. Keep the existing SQLite patch regression;
-upstream upgrades must rerun these probes before removing the pnpm patch.
-
-## Deferred alternatives, only after a failing fixture
-
-- Use a validated atomic ownership protocol or OS file lock first.
-- Consider a **generation/fencing token** if a stale process can continue
-  writing even after losing ownership.
-- Consider a single long-lived Work state owner only if direct multiple-CLI
-  hosts cannot provide acceptable correctness/latency.
-- Do not add a second Work database, distributed scheduler, independent
-  team controller or broad isolation system on speculation.
-
-Current implementation is a **trusted, single-operator prototype**.
-This page addresses correctness and durability, **not** the deferred
-container/egress-security program.
-
-See [Brainstorm contract](brainstorm-composition.md) and
+Current implementation is a **trusted, single-operator prototype**. This page
+addresses correctness and durability, **not** the deferred container/egress
+security program. See [Brainstorm contract](brainstorm-composition.md) and the
 [Research review](../research/RES-0007-brainstorm-and-concurrency-review.md).

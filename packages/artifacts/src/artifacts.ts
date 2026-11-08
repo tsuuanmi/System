@@ -28,6 +28,7 @@ import type { ZodType } from 'zod'
 /** The subset of a DSH `KvTable` the store uses. */
 export interface RecordTable {
   get(key: string): ArtifactRecord | undefined
+  keys(): IterableIterator<string>
   put(key: string, value: ArtifactRecord): Promise<void>
   update(key: string, fn: (current: ArtifactRecord) => ArtifactRecord): Promise<ArtifactRecord>
 }
@@ -132,6 +133,25 @@ export class Artifacts {
     const record = this.records.get(id)
     // Copies: a caller can never change the stored record through what it reads.
     return record ? { state: 'stored', ...structuredClone(record) } : { state: 'missing' }
+  }
+
+  /** The IDs of the Artifacts whose `lineage.supersedes` names `id`, found by reading every record. */
+  supersededBy(id: string): string[] {
+    const found: string[] = []
+    for (const key of this.records.keys()) {
+      if (this.records.get(key)?.envelope.lineage.supersedes?.includes(id)) found.push(key)
+    }
+    return found
+  }
+
+  /** Every stored Artifact of `kind`, found by reading every record. */
+  ofKind(kind: string): Envelope[] {
+    const found: Envelope[] = []
+    for (const key of this.records.keys()) {
+      const envelope = this.records.get(key)?.envelope
+      if (envelope?.kind === kind) found.push(structuredClone(envelope))
+    }
+    return found
   }
 
   /** The bytes of a blob Artifact; `unavailable` when the record outlived them. */

@@ -16,6 +16,20 @@ export interface WorkerRequest {
   instructions?: string
   /** Aborted when the operator cancels; the Worker stops and reports `cancelled`. */
   signal: AbortSignal
+  /** Report what the attempt has done so far; each call is activity. Kept in memory by the Host, never recorded. */
+  progress?: (progress: Progress) => void
+}
+
+/** What a running attempt reports of itself, as far as its Runtime tells. */
+export interface Progress {
+  turns?: number
+  lastTool?: string
+  /** Tokens so far: fresh input, cache writes and output. */
+  tokens?: number
+  /** Input tokens so far, cache reads included: what a long wait re-reads (PROP-0007 decision 2). */
+  inputTokens?: number
+  /** Where an attempt with stages is, such as a web Runtime's evidence stage. */
+  stage?: string
 }
 
 export interface WorkerResult {
@@ -25,7 +39,7 @@ export interface WorkerResult {
   /** What a cancelled or failed attempt left behind; never accepted. */
   partial?: Record<string, string>
   reason?: string
-  usage?: { inputTokens: number; outputTokens: number; source: string }
+  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; costUsd?: number; source: string }
   /** Bounded agent output as an Artifact, for audit. */
   log?: string
   executor?: { ref: string; account?: string; command?: string; version?: string; tier?: string; model?: string; servedModels?: string[] }
@@ -45,6 +59,10 @@ export interface WorkerPort {
   /** A stable name, recorded in routing decisions. */
   ref: string
   capabilities: readonly string[]
+  /** How many attempts of this Account run at once; default 1. */
+  maxConcurrentAttempts?: number
+  /** Whether the process of an attempt is confirmed gone: what settles a lost attempt, which until then keeps its Account's slot. Absent: never confirmed. */
+  gone?(attemptId: string): Promise<boolean>
   run(request: WorkerRequest): Promise<WorkerResult>
 }
 
@@ -108,6 +126,8 @@ export interface EffectIntent {
   /** The exact Artifact ID the effect publishes. */
   subject: string
   params: Record<string, string | number | boolean>
+  /** The verify steps the effect requires, with their pinned criteria: what a provider runs again on a commit it makes, such as a merge. */
+  required?: { capability: string; criteria: string }[]
 }
 
 export interface EffectOutcome {
@@ -175,6 +195,11 @@ export class Capabilities {
    */
   routeWorker(needs: readonly string[], only?: string): Route<WorkerPort> {
     return route(this.workers, needs, only)
+  }
+
+  /** The Worker (Account) of a ref. */
+  workerFor(ref: string): WorkerPort | undefined {
+    return this.workers.find((w) => w.ref === ref)
   }
 
   workerRefs(): string[] {

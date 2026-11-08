@@ -44,12 +44,18 @@ export function apply(ctx: Context, config: Config = {}): void {
   const dispose = [
     capabilities.registerWorker({
       ref: 'fake-worker',
+      // It runs no process: a lost attempt of it is gone at once.
+      async gone() { return true },
       capabilities: config.workers ?? [],
       async run(request) {
         if (process.env.SYSTEM_FAKE_LOG) appendFileSync(process.env.SYSTEM_FAKE_LOG, `${request.workId} ${request.stepId} ${request.attemptId}\n`)
         if (process.env.SYSTEM_FAKE_CRASH_AT === request.stepId) process.kill(process.pid, 'SIGKILL')
         if (process.env.SYSTEM_FAKE_FAIL === request.stepId) return { status: 'failed', outputs: {}, reason: 'scripted failure' }
-        if (process.env.SYSTEM_FAKE_SLEEP_AT === request.stepId) {
+        const held = process.env.SYSTEM_FAKE_HOLD_AT === request.stepId && process.env.SYSTEM_FAKE_HOLD_FILE
+        if (held) {
+          while (!existsSync(held) && !request.signal.aborted) await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        if (process.env.SYSTEM_FAKE_SLEEP_AT === request.stepId || (held && request.signal.aborted)) {
           await new Promise<void>((resolve) => {
             if (request.signal.aborted) resolve()
             else request.signal.addEventListener('abort', () => resolve(), { once: true })

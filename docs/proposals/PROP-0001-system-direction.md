@@ -38,20 +38,17 @@ records official DSH capabilities, lifecycle hazards and experiments.
 ## Decided for MVP-0
 
 [ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md) fixes the
-operator model, CLI entry point, human-only approval, external agent Workers
-and adapter approach, Work storage in the DSH storage hub, System-owned
-push/PR effects, verification policies for both domains, the DSH pin and
-the MVP-0/MVP-1 split.
+operating choices and the MVP-0/MVP-1 split.
 
 ## Open engineering choices
 
 - Minimal DSH profile/bundle and required plugin closure; verify effective
   configuration, not just intended flags.
-- The exact external Workflow YAML schema/loader, symbolic reference
-  resolution and canonical hashing of the admitted spec.
-- Worker adapter contract details, typed Artifact-ID hashing/provenance
-  schema, versioned verifier API and effect reconciliation state transitions.
-- Safe plugin disable/re-enable with inflight work and version changes.
+- The exact Workflow YAML schema/loader, symbolic reference resolution and
+  canonical hashing of the admitted spec.
+- Worker adapter contract details, Artifact-ID hashing/provenance schema,
+  versioned verifier API and effect reconciliation state transitions.
+- Safe plugin disable/re-enable with in-flight work and version changes.
 - Metrics definitions and benchmark reproducibility.
 
 No additional agent runtime, package hierarchy or storage technology is
@@ -59,18 +56,13 @@ accepted by implication.
 
 ## Proposed build order
 
-1. Inventory a pinned DSH version and produce a minimal effective plugin
-   composition. Audit external capability reuse and administrative trust.
-2. Implement/compose the narrow Work -> Worker -> Artifact path, using DSH
-   mechanisms when the required semantics are satisfied.
-3. Add policy/effect gate, crash injection, exact-result verification and
-   usage provenance as acceptance gates, not later accessories.
-4. Load independent Software Engineering and Research config files with
-   the **same controller code**; change only Worker and verifier capabilities.
-5. Kill/restart, disable/re-enable optional plugins and swap one Worker
-   adapter in test fixtures. Record observed limits and runtime costs.
-6. Promote tested schemas/decisions into architecture/reference/validation
-   documentation; close the proposal after explicit acceptance.
+Inventory a pinned DSH and a minimal effective composition; build the narrow
+Work -> Worker -> Artifact path with policy/effect gates, crash injection,
+exact-result verification and usage provenance as acceptance gates; load the
+two domain config files on the **same controller code**; then kill/restart,
+disable/re-enable optional plugins and swap one Worker adapter in fixtures.
+Promote tested schemas and decisions into architecture/reference/validation
+documentation and close the proposal after explicit acceptance.
 
 ## Non-goals
 

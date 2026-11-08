@@ -1,6 +1,42 @@
 # Required checks System runs on a change to this repository
 # (code.required-checks, pinned from the base commit at admission).
+#
+# The verifier runs every check in order in ONE worktree with ONE throwaway
+# HOME, so the checks share what earlier ones produced: `install` and `build`
+# run once and the later checks reuse node_modules and dist. One check per
+# part, so a failure names the part that failed. No shared package store: the
+# install takes under 10 s from an empty HOME, so leaking host state into the
+# check would buy nothing.
+#
+# `paths` (PROP-0007 decision 5): every check but `docs` runs only when the
+# change touches code, its tests, its tooling or the Charter (the default
+# context of a Goal, read at run time); a change to docs alone runs `docs`.
+# One list for all of them, so `install` and `build` run whenever a later
+# check needs them.
 checks:
   - name: docs
     run: python3 tools/docs.py check && python3 tools/docs.py sync --check
     timeoutSeconds: 120
+  - name: install
+    run: corepack pnpm install --frozen-lockfile
+    timeoutSeconds: 300
+    paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, docs/requirements/purpose.md]
+  - name: build
+    run: corepack pnpm build
+    timeoutSeconds: 300
+    paths: *code
+  - name: typecheck
+    run: corepack pnpm typecheck
+    timeoutSeconds: 300
+    paths: *code
+  - name: unit
+    run: corepack pnpm test
+    timeoutSeconds: 300
+    paths: *code
+  - name: smoke
+    # The booted-profile smoke tests (bin/system against throwaway DSH homes,
+    # test files in parallel); they caught what the unit tests missed when the
+    # lock format changed.
+    run: corepack pnpm smoke
+    timeoutSeconds: 600
+    paths: *code

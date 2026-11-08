@@ -11,7 +11,6 @@ import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { memoryWorkTable, until } from '../../../test-support/memory.ts'
-import { LocalControl } from '../../../test-support/process.ts'
 import { WorkController, type SpecStore } from '../src/controller.ts'
 import type { Verdict } from '../src/kinds.ts'
 import type { Caller, WorkRecord } from '../src/record.ts'
@@ -78,12 +77,12 @@ function controller(w: ReturnType<typeof world>, options: Options = {}) {
       return found ? { state: 'applied', reason: 'found on the remote', detail: found } : { state: 'absent', reason: 'not on the remote' }
     }))(intent, w.remote),
   })
-  return new WorkController(w.table, w.specStore, capabilities, new LocalControl())
+  return new WorkController(w.table, w.specStore, capabilities)
 }
 
 async function admit(c: WorkController, w: ReturnType<typeof world>, yaml = SE) {
   const capabilities = (c as unknown as { capabilities: Capabilities }).capabilities
-  const spec = resolve(parseWorkflow(yaml), capabilities.available())
+  const spec = resolve(parseWorkflow(yaml), capabilities.available(), (name) => readFileSync(join(repo, 'workflows', name), 'utf8'))
   return c.admit({ spec, input: w.store('task', 'task'), caller: human, source: { kind: 'workflow-file' } })
 }
 
@@ -116,7 +115,7 @@ test('nothing is published unless the required verdict passed on that exact subj
   const unsure = world()
   const notPublished = await controller(unsure, { verdict: 'inconclusive' }).run((await admit(controller(unsure, { verdict: 'inconclusive' }), unsure)).id)
   assert.equal(notPublished.state.status, 'failed')
-  assert.match(notPublished.state.reason!, /publish needs a passing verdict on its subject: checks=inconclusive/)
+  assert.match(notPublished.state.reason!, /publish needs a passing verdict on its subject: checks\.checks=inconclusive/)
   assert.equal(notPublished.state.awaiting, undefined)
   assert.equal(unsure.remote.applies + failing.remote.applies, 0)
 })
@@ -192,7 +191,7 @@ test('an apply that throws is reconciled, never retried blindly', async () => {
 
 test('an effect needing approval holds the Work; only a human approves; a denial fails it', async () => {
   const approval = (intent: EffectIntent) => (intent.params.ready ? 'marking the pull request ready for review' : undefined)
-  const yaml = `${SE.replace('      requires: [checks]\n', '      requires: [checks]\n      params:\n        ready: true\n')}`
+  const yaml = `${SE.replace('params: { merge: true }', 'params: { ready: true }')}`
   const w = world()
   const c = controller(w, { approval })
   const held = await c.run((await admit(c, w, yaml)).id)
@@ -224,14 +223,14 @@ test('an inconclusive verdict is accepted only by a human decision', async () =>
   await assert.rejects(() => c.decide(held.id, { decision: 'approved', caller: agent, reason: 'x' }), /only a human operator approves/)
   const done = await c.decide(held.id, { decision: 'approved', caller: human, reason: 'the source is right; the page moved' })
   assert.equal(done.state.status, 'succeeded')
-  assert.match(done.state.reason!, /accepted by tan despite inconclusive checks: the source is right; the page moved/)
+  assert.match(done.state.reason!, /accepted by tan despite inconclusive checks\.checks: the source is right; the page moved/)
   await assert.rejects(() => c.decide(done.id, { decision: 'approved', caller: human, reason: 'again' }), /nothing awaits a decision/)
 })
 
 test('parameters the provider refuses refuse admission; no Work is created', async () => {
   const w = world()
   const c = controller(w, { validate: (_, params) => { if ('base' in params) throw new Error('base is not configurable here') } })
-  await assert.rejects(() => admit(c, w, SE.replace('      requires: [checks]\n', '      requires: [checks]\n      params:\n        base: dev\n')), /publish: publisher refuses its params: base is not configurable here/)
+  await assert.rejects(() => admit(c, w, SE.replace('params: { merge: true }', 'params: { base: dev }')), /publish: publisher refuses its params: base is not configurable here/)
   assert.equal(w.rows.size, 0)
 })
 
@@ -272,4 +271,20 @@ test('retry --step publish redoes only the effect: the Worker and the checks are
   assert.equal(intents[0]?.type === 'effect-intended' && intents[0].operationId, intents[1]?.type === 'effect-intended' && intents[1].operationId, 'the same subject is the same operation')
   assert.equal(w.remote.applies, 1)
   assert.equal(c.replay(failed.id).matches, true)
+})
+
+test('an effect is told the checks it requires, with their pinned criteria, also when rebuilt after a lost host', async () => {
+  const w = world()
+  const told: EffectIntent[] = []
+  const first = controller(w, { apply: (intent) => { told.push(intent); return new Promise(() => {}) } })
+  const admitted = await admit(first, w)
+  void first.run(admitted.id)
+  await until(() => told.length === 1, 'the first apply')
+  const criteria = w.rows.get(admitted.id)!.state.criteria
+  const required = Object.keys(criteria).map((id) => ({ capability: 'code.required-checks', criteria: criteria[id]! }))
+  assert.ok(required.length > 0)
+  assert.deepEqual(told[0]!.required, required)
+  const done = await controller(w, { apply: async (intent, remote) => { told.push(intent); remote.applies++; remote.published.set(intent.operationId, { branch: 'b', commit: intent.subject }); return { state: 'applied', reason: 'done', detail: {} } } }).run(admitted.id)
+  assert.equal(done.state.status, 'succeeded', done.state.reason)
+  assert.deepEqual(told.at(-1)!.required, required, 'rebuilt from the record after the host was lost')
 })

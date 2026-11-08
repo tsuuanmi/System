@@ -80,33 +80,29 @@ System contracts.
 
 ## Experiment backlog before freezing modules
 
-| Experiment | Method | Pass condition |
-|---|---|---|
-| E1 Composition minimum | build a DSH-backed profile with only needed services; inspect effective tree | code + research both run, optional capabilities not mounted |
-| E2 Toggle and dependency | disable/re-enable a noncritical plugin via config, including higher-priority patch override | no code deletion, effective state and dependency failure visible |
-| E3 Plugin lifecycle | kill host/disable adapter during active task | no lost work; controlled drain/hold or safe reconciliation |
-| E4 Trust | install/execute only pinned, reviewed test plugin; try denied egress/privileged effect | unauthorized action is blocked at enforceable boundary |
-| E5 Worker replacement | two adapters execute a comparable task through same work contract | Work Core code unchanged; artifacts and history remain usable |
-| E6 Domain independence | execute Software Engineering and Research acceptance fixtures | same controller state machine and effects/evidence semantics |
-| E7 Metering | compare cumulative session usage with independent oracle | no double count, uncertainty identified |
-| E8 Runtime overhead | benchmark cold start, RAM, service count and time to accepted work | explicit baseline and only measured essential modules |
-| E9 Degraded plugin | simulate missing/incompatible required plugin | dependent work fails closed while unrelated services can remain |
-
-An independent integration experiment is still needed. The availability of
-these DSH features is grounded in upstream documentation, but none of E1–E9
+E1-E9 are the [MVP failure and acceptance tests](../requirements/mvp.md#failure-and-governance-tests)
+and the [RES-0002](RES-0002-mvp-assessment.md#audit-workstreams-and-proof-matrix)
+proof matrix, stated as DSH questions: a profile with only needed services
+and an inspected effective tree (E1); disable and re-enable a noncritical
+plugin including a higher-priority patch override, with no code deletion (E2);
+kill the host or disable an adapter during a task, with a controlled drain,
+hold or reconciliation (E3); only pinned, reviewed plugins, with denied egress
+and privileged effects blocked at an enforceable boundary (E4); Worker
+replacement without Work Core changes (E5); both domain fixtures on one state
+machine (E6); cumulative usage against an independent oracle (E7); cold
+start, RAM, service count and time to accepted work (E8); and a missing or
+incompatible required plugin failing dependent work closed while unrelated
+services remain (E9). An independent integration experiment is still needed:
+the DSH features are grounded in upstream documentation, but none of E1-E9
 has been run for this fresh repository.
 
 ## Why two workflows matter
 
-**Software Engineering** exercises mutable workspace/side effects: code
-changes, tests, review and controlled landing.
-
-**Research** exercises different capabilities and epistemic evidence:
-external sources, citations, a report artifact and bounded evidence review.
-
-If the controller needs a different engine branch for these, the Product
-Charter's workflow generality has failed. Distinct Worker adapter, validation
-policy, and task definitions are fine.
+If the controller needs a different engine branch for Software Engineering
+(mutable workspace, tests, review, landing) and Research (sources, citations,
+a report, bounded evidence review), the Product Charter's workflow generality
+has failed; distinct adapters, validation policy and task definitions are
+fine ([control plane](../architecture/control-plane.md#domain-independence)).
 
 See the accepted [MVP requirements](../requirements/mvp.md) and current
 [architecture](../architecture/control-plane.md). Historical reference

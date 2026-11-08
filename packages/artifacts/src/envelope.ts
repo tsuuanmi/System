@@ -27,7 +27,7 @@ export function isStricter(a: Classification, than: Classification): boolean {
   return RANK[a] > RANK[than]
 }
 
-const contentIdSchema = z.string().regex(CONTENT_ID_RE)
+export const contentIdSchema = z.string().regex(CONTENT_ID_RE)
 
 export const blobRefSchema = z.object({
   attachmentId: contentIdSchema,

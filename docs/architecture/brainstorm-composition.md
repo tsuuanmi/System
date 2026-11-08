@@ -6,12 +6,8 @@ reviewed: 2026-11-06
 
 # Brainstorm as a Workflow composition, not a Team engine
 
-**Architecture semantics selected by [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md)
+**Semantics selected by [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md)
 and [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md).**
-The implementation evidence described here is from **stacked draft
-[PR #2](https://github.com/tsuuanmi/System/pull/2)** at
-[`4a71c79`](https://github.com/tsuuanmi/System/commit/4a71c79f5fc9ed4857bd027625eda8b56f854bb8);
-it is **not merged into this documentation-only PR #1 or main**.
 
 ## Current capability and shape
 
@@ -27,9 +23,8 @@ it is **not merged into this documentation-only PR #1 or main**.
                     summary Artifact ID
 ```
 
-This diagram denotes **data dependencies**, not simultaneous dispatch.
-Current [WorkController](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/work/src/controller.ts)
-advances **one ready step at a time**, in a stable order. Independent
+This diagram denotes **data dependencies**. The Host runs the two ideas at
+once, on different Accounts ([Host](host.md#attempts-and-slots)). Independent
 `idea-a` and `idea-b` receive **only the same brief Artifact ID**,
 not each other's output; `synthesis` depends on both and receives
 both exact proposal IDs and the brief. The current
@@ -72,28 +67,27 @@ The live run, source-backed tests and limits are catalogued in
 
 ## B3 product experiment: quality is not a verifier gate
 
-The next task is to test whether the **three-attempt** configuration helps
-an operator more than **one Worker**. Use at least five distinct briefs
-(architecture, trade-off, feature proposal, failure diagnosis, open-ended
-ideation), compare against a one-Worker baseline, and collect human
-judgments of usefulness, diversity, disagreement quality, actionability,
-time, known usage and interventions.
+The question is whether the **three-attempt** configuration helps an operator
+more than **one Worker**: at least five distinct briefs (architecture,
+trade-off, feature proposal, failure diagnosis, open-ended ideation), a
+one-Worker baseline, and human judgments of usefulness, diversity,
+disagreement quality, actionability, time, known usage and interventions
+(results: [RES-0008](../research/RES-0008-brainstorm-evaluation.md)).
 
-A **config-only** alternative worth testing: distinct cognitive roles.
-For instance, one proposal optimizes simplicity and practical feasibility
-while the other looks for missing assumptions and disconfirming cases.
-Both still receive only the original brief, and the prompts should not
-script fake disagreements. Keep both proposals visible beside the
-synthesis so the operator can disagree with the synthesizer. Test a
-Codex synthesis on a subset as a sensitivity check; do **not** require
-an additional Worker provider or mandatory model verifier.
+The config-only **distinct cognitive roles** variant was tested and adopted
+as the default: `idea-a` optimizes simplicity and practical feasibility,
+`idea-b` looks for missing assumptions and disconfirming cases; the
+one-shared-prompt version is `workflows/experiments/brainstorm-shared.yaml`.
+Both still receive only the original brief, and prompts should not script
+fake disagreements. Keep both proposals visible beside the synthesis so the
+operator can disagree with the synthesizer, and test a Codex synthesis on a
+subset as a sensitivity check; do **not** require another Worker provider or
+a mandatory model verifier.
 
 ## What stays outside this boundary
 
 - No System 1 Team/session persistence, voting, ballots, debate engine,
   consensus-as-truth or third model provider for Brainstorm V0.
-- No mandatory parallel scheduling: parallel fan-out needs a separately
-  tested same-Work ownership and event-ordering design.
 - Website Worker, import of external web conversations and source
   provenance are **later capabilities**, using the same Artifact/Worker
   contracts rather than replacing this Workflow.
@@ -102,5 +96,5 @@ an additional Worker provider or mandatory model verifier.
 
 See [Workflow composition](workflow-composition.md),
 [Artifact contracts](artifact-verification.md),
-[draft runtime integrity boundary](work-ownership-and-recovery.md) and
-[draft roadmap](../proposals/PROP-0002-post-mvp-roadmap.md).
+[runtime integrity boundary](work-ownership-and-recovery.md) and
+[roadmap](../proposals/PROP-0002-post-mvp-roadmap.md).

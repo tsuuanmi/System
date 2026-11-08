@@ -2,20 +2,25 @@
  * The System app row: reads the launcher's inner arguments, runs one command
  * after the host has started, and exits through the launcher's shutdown path.
  */
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
-import { CLASSIFICATIONS, type Artifacts, type Classification } from '@system/artifacts'
+import type { Artifacts, Classification } from '@system/artifacts'
 import type { AgentsService } from '@system/agents'
-import type { Caller, Capabilities, WorkService } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { buildProgram, type AppHost, type ArtifactCommands, type CredentialCommands, type Run, type WorkCommands, type WorkersView } from './cli.ts'
-import { REQUIRED_BACKEND, type StorageStatus } from './doctor.ts'
+import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
+import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
+import { caller, errorLine, explain } from './io.ts'
+// By path, not by package: declaring @system/host here would change the lockfile.
+import { VERSION, connect } from '../../host/lib/index.js'
+import { exitWithin, serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -60,50 +65,43 @@ async function probeStorage(ctx: Context): Promise<StorageStatus> {
   }
 }
 
-/** The operator a CLI call acts for (ADR-0004 decision 1). */
-export function operatorId(): string {
-  return process.env.SYSTEM_OPERATOR_ID || userInfo().username
-}
+/** The Workflow files beside the Host's own code. */
+const BUNDLED_WORKFLOWS = fileURLToPath(new URL('../../../workflows/', import.meta.url))
 
-function artifactCommands(ctx: Context): ArtifactCommands {
-  const artifacts = ctx.get('artifacts') as Artifacts | undefined
-  if (!artifacts) throw new Error('the artifacts row is not mounted (run `system doctor`)')
-  return {
-    putFile: (path, mediaType, classification) => {
-      if (!(CLASSIFICATIONS as readonly string[]).includes(classification)) throw new Error(`unknown classification ${classification}`)
-      return artifacts.putBytes({
-        kind: 'file', schemaVersion: 1, data: readFileSync(path), mediaType,
-        classification: classification as Classification, producer: { type: 'operator', ref: operatorId() },
-      })
-    },
-    get: (id) => artifacts.get(id),
-    readBytes: (id) => artifacts.readBytes(id),
+/**
+ * A Workflow file a Workflow uses (PROP-0007 decision 7): `workflows/<name>` at
+ * the base commit of the input Task, so a Work pins the files of the commit it
+ * changes; else the Host's own. Undefined when neither has it.
+ */
+export function workflowFile(artifacts: Artifacts, name: string, input: string | undefined): string | undefined {
+  const content = <T>(id: string | undefined, kind: string): T | undefined => {
+    const read = id ? artifacts.get(id) : undefined
+    return read?.state === 'stored' && read.envelope.kind === kind ? read.envelope.content as T : undefined
+  }
+  const base = content<GitTreeContent>(content<Task>(input, TASK_KIND.kind)?.base, GIT_TREE_KIND.kind)
+  try {
+    if (base) return execFileSync('git', ['-C', base.repository, 'show', `${base.commit}:workflows/${name}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  } catch { /* not in that commit: the Host's own */ }
+  try {
+    return readFileSync(join(BUNDLED_WORKFLOWS, name), 'utf8')
+  } catch {
+    return undefined
   }
 }
 
-/** Who made this CLI call (ADR-0004 decision 3): a terminal is a human unless SYSTEM_CALLER says otherwise. */
-export function caller(): Caller {
-  const declared = process.env.SYSTEM_CALLER
-  const type = declared === 'human' || declared === 'agent' ? declared : process.stdin.isTTY ? 'human' : 'agent'
-  return { type, operatorId: operatorId() }
-}
-
-function workCommands(ctx: Context): WorkCommands {
-  const work = ctx.get('work') as WorkService | undefined
-  if (!work) throw new Error('the work row is not mounted (run `system doctor`)')
-  return {
-    admitFile: (path, input) => work.admitFile(path, input, caller()),
-    admitTask: (capabilities, input) => work.admitTask(capabilities, input, caller()),
-    run: (workId) => work.controller.run(workId),
-    get: (workId) => work.controller.get(workId),
-    list: () => work.controller.list(),
-    replay: (workId) => work.controller.replay(workId),
-    cancel: (workId, reason) => work.controller.cancel(workId, { reason, caller: caller() }),
-    // Only reached after confirmHuman: the caller is a human at a terminal.
-    decide: (workId, decision, operator, reason) => work.controller.decide(workId, { decision, reason, caller: { type: 'human', operatorId: operator } }),
-    retry: (workId, worker, reason, step) => work.controller.retry(workId, { worker, step, reason, caller: caller() }),
-    runningElsewhere: (workId) => work.controller.runningElsewhere(workId),
-    newTask: (instructions, repository, ref) => work.newTask(instructions, repository, ref, caller()),
+/** Whether a Host answers on the socket of `home`: a hello and a status, in three seconds. */
+async function probeHost(home: string): Promise<HostStatus> {
+  try {
+    const client = await connect(socketPath(home), { timeout: 3000 })
+    try {
+      await client.call('host.hello', { version: VERSION, caller: caller() })
+      const status = await client.call('host.status') as { version: string; pid: number }
+      return { answering: true, detail: `version ${status.version}, pid ${status.pid}` }
+    } finally {
+      client.close()
+    }
+  } catch (error) {
+    return { answering: false, detail: (explain(error, home) as Error).message }
   }
 }
 
@@ -116,79 +114,90 @@ function credentialCommands(ctx: Context): CredentialCommands {
   }
 }
 
-/** Read a secret: hidden on a terminal, or the whole of piped stdin less its final newline. */
-async function readSecret(prompt: string): Promise<string> {
-  const stdin = process.stdin
-  if (!stdin.isTTY) {
-    const chunks: Buffer[] = []
-    for await (const chunk of stdin) chunks.push(chunk as Buffer)
-    return Buffer.concat(chunks).toString('utf8').replace(/\r?\n$/, '')
-  }
-  process.stderr.write(prompt)
-  stdin.setRawMode(true)
-  stdin.resume()
-  let value = ''
-  try {
-    return await new Promise<string>((resolve, reject) => {
-      const onData = (chunk: Buffer) => {
-        for (const char of chunk.toString('utf8')) {
-          if (char === '\r' || char === '\n') { stdin.off('data', onData); resolve(value); return }
-          if (char === '\u0003') { stdin.off('data', onData); reject(new Error('cancelled')); return }
-          if (char === '\u007f') value = value.slice(0, -1)
-          else value += char
-        }
-      }
-      stdin.on('data', onData)
-    })
-  } finally {
-    stdin.setRawMode(false)
-    stdin.pause()
-    process.stderr.write('\n')
-  }
-}
-
 async function workersView(ctx: Context): Promise<WorkersView> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
   const agents = ctx.get('agents') as AgentsService | undefined
   return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
 }
 
-/** One typed line from a human at the terminal; anything else is refused (ADR-0004 decision 3). */
-async function confirmHuman(prompt: string, expected: string): Promise<string> {
-  if (!process.stdin.isTTY) {
-    throw new Error('this decision needs a human at a terminal: stdin is not a terminal, so the caller may be an agent (ADR-0004 decision 3)')
+async function agentsService(ctx: Context): Promise<AgentsService> {
+  const agents = ctx.get('agents') as AgentsService | undefined
+  if (!agents) throw new Error('the agents row is not mounted (run `system doctor`)')
+  return agents
+}
+
+/** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT (status 0) or on new code on disk (`UPGRADE_EXIT`). */
+async function runHost(ctx: Context): Promise<number> {
+  const work = ctx.get('work') as WorkService | undefined
+  const artifacts = ctx.get('artifacts') as Artifacts | undefined
+  const capabilities = ctx.get('capabilities') as Capabilities | undefined
+  if (!work || !artifacts || !capabilities) throw new Error('the work row is not mounted (run `system doctor`)')
+  const home = dshHome(ctx)
+  // The launcher stops its tree on a signal and exits 130 for SIGINT; the Host stops itself and exits 0. Its handler
+  // goes on before the launcher's comes off, so a signal is never lost between the two (libuv drops one sent to a
+  // handle being closed), and before the Host says it listens: a stop asked earlier waits until it serves.
+  let serving: Awaited<ReturnType<typeof serveHost>> | undefined
+  let stopAsked = false
+  const onSignal = () => { if (serving) void serving.stop(); else stopAsked = true }
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    const launcher = process.listeners(signal)
+    // A repeat while stopping (systemd also signals the wrapper's child) is ignored.
+    process.on(signal, onSignal)
+    for (const listener of launcher) process.off(signal, listener)
   }
-  const { createInterface } = await import('node:readline/promises')
-  const lines = createInterface({ input: process.stdin, output: process.stderr })
-  try {
-    const typed = (await lines.question(prompt)).trim()
-    if (typed !== expected) throw new Error('the confirmation did not match; nothing was decided')
-  } finally {
-    lines.close()
-  }
-  return operatorId()
+  const host = await work.startHost(home)
+  const credentials = credentialCommands(ctx)
+  serving = await serveHost({
+    host, home,
+    log: (line) => { process.stderr.write(`system host: ${line}\n`) },
+    services: {
+      capabilities,
+      putFile: (data, mediaType, classification, who) => artifacts.putBytes({
+        kind: 'file', schemaVersion: 1, data, mediaType,
+        classification: classification as Classification, producer: { type: 'operator', ref: who.operatorId },
+      }),
+      artifact: (id) => artifacts.get(id),
+      readBytes: (id) => artifacts.readBytes(id),
+      newTask: (instructions, repository, ref, context, who) => work.newTask(instructions, repository, ref, who, context),
+      newGoal: (goal, supersedes, who) => work.newGoal(goal, supersedes, who),
+      addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
+      workflowFile: (name, input) => workflowFile(artifacts, name, input),
+      addDecision: (decision, who) => work.addDecision(decision, who),
+      decisions: (chain) => work.decisions(chain),
+      credentials,
+      workers: () => workersView(ctx),
+      login: async (ref, cookies) => (await agentsService(ctx)).login(ref, cookies),
+      loginRemote: async (ref) => (await agentsService(ctx)).loginRemote(ref),
+      loginWait: async (ref, cancel) => (await agentsService(ctx)).loginWait(ref, cancel),
+    },
+  }).catch(async (error: unknown) => {
+    await host.close()
+    throw error
+  })
+  if (stopAsked) void serving.stop()
+  const status = await serving.exited
+  exitWithin(status, { log: (line) => { process.stderr.write(`system host: ${line}\n`) } })
+  return status
 }
 
 export function apply(ctx: Context): void {
-  const host: AppHost = {
+  const host: HostProcess = {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,
     probeStorage: () => probeStorage(ctx),
-    artifacts: () => artifactCommands(ctx),
-    work: () => workCommands(ctx),
-    credentials: () => credentialCommands(ctx),
-    workers: () => workersView(ctx),
+    probeHost: () => probeHost(dshHome(ctx)),
+    runHost: () => runHost(ctx),
   }
   let selected: Run | undefined
-  const io = { out: (text: string) => { process.stdout.write(text) }, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
-  const program = buildProgram(host, io, (run) => { selected = run })
+  const io = { out: (text: string) => { process.stdout.write(text) } }
+  const program = buildHostProgram(host, io, (run) => { selected = run })
   parseCmdline(ctx, program)
   const run = selected
   if (run === undefined) return
   const exit = ctx.get('appExit')!
   const start = (): void => {
     run().then(exit, (error: unknown) => {
-      process.stderr.write(`system: ${(error as Error).stack ?? String(error)}\n`)
+      process.stderr.write(errorLine(error))
       exit(1)
     })
   }

@@ -1,0 +1,23 @@
+{
+  "name": "@system/host",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Host's transport: JSON-RPC 2.0 over a Unix socket, NDJSON framing, a version handshake and the caller (PROP-0004 C5, C17)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./operations": "./lib/operations.js",
+    "./process": "./lib/process.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "dependencies": {
+    "@system/work": "workspace:*"
+  }
+}

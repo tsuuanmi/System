@@ -20,22 +20,17 @@ source and tests are the authority for implementation behavior.
 | How can three Worker roles reuse Claude/Codex, and what can System 1 teach us? | [Brainstorm feasibility / System 1 reference](research/RES-0006-brainstorm-workflow-feasibility.md) | Source-backed hypothesis |
 | What should a local coding agent implement next? | [PLAN.md](../PLAN.md) | Execution checklist, not a decision |
 | How does Brainstorm reuse Workers? | [Brainstorm architecture](architecture/brainstorm-composition.md) | Accepted boundary, implementation in PR #2 |
-| What changed in the Work concurrency review? | [Work ownership](architecture/work-ownership-and-recovery.md) / [Research review](research/RES-0007-brainstorm-and-concurrency-review.md) | B4 fixes, B3 evaluation |
+| What changed in the Work concurrency review? | [Work ownership](architecture/work-ownership-and-recovery.md) / [Research review](research/RES-0007-brainstorm-and-concurrency-review.md) | Old file mechanisms (removed in R1), B3 evaluation |
+| How do I start, stop and diagnose the Host? | [Operations runbook](operations/README.md) | Current procedure |
 | What design work remains proposed? | [Proposals](proposals/README.md) | Unaccepted details |
 | How is documentation organized and retired? | [Governance](governance/README.md) | Local documentation policy |
 | How can another repo bootstrap governance? | [Portable bootstrap](governance/bootstrap.md) | Reusable, product-agnostic |
 
 ## Change workflow
 
-Requirements define **what** needs to be proven, architecture owns
-**responsibility boundaries**, decisions preserve **why** choices were made,
-research retains evidence and uncertainty, and proposals contain unaccepted
-work. Executable source and tests, when present, determine actual behavior.
-
-The [documentation profile](governance/documentation.md) declares active
-areas and conformance level. Folder READMEs route rather than duplicate facts.
-Typed relationships belong in front matter; generated indexes belong to the
-documentation tool.
+The [documentation profile](governance/documentation.md) declares the areas,
+what each owns and the conformance level; folder READMEs route rather than
+duplicate facts, and generated indexes belong to the documentation tool.
 
 ## Reading rules
 

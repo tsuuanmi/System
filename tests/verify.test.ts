@@ -16,7 +16,7 @@ const home = cli.home
 let server: ChildProcess
 let site = ''
 
-/** The test process blocks in spawnSync while a host fetches, so the site runs in its own process. */
+/** The test process blocks in spawnSync while the Host fetches, so the site runs in its own process. */
 const SITE = `
 const { createServer } = require('node:http')
 const server = createServer((req, res) => {
@@ -53,6 +53,7 @@ before(async () => {
   assert.equal(system(['init']).status, 0)
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
   config:
+    $patch: replace
     accounts:
       - ref: claude-code/default
         runtime: claude-code
@@ -60,11 +61,15 @@ before(async () => {
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 `)
+  // The Host reads its credentials when it starts: store the token, then start it again.
+  await cli.start()
   const set = cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake\n' })
   assert.equal(set.status, 0, set.stderr)
+  await cli.start()
 })
 
-after(() => {
+after(async () => {
+  await cli.stop()
   server.kill()
   rmSync(home, { recursive: true, force: true })
 })
@@ -73,6 +78,7 @@ const task = (text: string, repository?: string) => system(['task', 'new', '--te
 /** The Software Engineering file without its publish step: these tests are about verification (tests/publish.test.ts covers the whole file). */
 const SE = join(home, 'software-engineering-checks.yaml')
 writeFileSync(SE, readFileSync(join(repo, 'workflows', 'software-engineering.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]'))
+writeFileSync(join(home, 'code-checks.yaml'), readFileSync(join(repo, 'workflows', 'code-checks.yaml')))
 const RESEARCH = join(repo, 'workflows', 'research.yaml')
 
 test('Software Engineering: the exact changed commit passes the base commit\'s pinned checks', () => {
@@ -82,13 +88,13 @@ test('Software Engineering: the exact changed commit passes the base commit\'s p
   const record = show(ran.stdout.trim())
   const verified = record.events.find((e) => e.type === 'verified')!
   assert.equal(verified.subject, record.state.steps.implement!.outputs.change)
-  assert.equal(verified.criteria, record.state.criteria.checks)
+  assert.equal(verified.criteria, record.state.criteria['checks.checks'])
   const verdict = artifact(verified.verdictId!)
   assert.equal(verdict.envelope.kind, 'verdict')
   assert.deepEqual([verdict.envelope.content.subject, verdict.envelope.content.criteria, verdict.envelope.content.verdict], [verified.subject, verified.criteria, 'pass'])
   const run = artifact(verified.evidence![0]!)
   assert.deepEqual([run.envelope.kind, run.envelope.content.name, run.envelope.content.exitCode], ['check-run', 'note-exists', 0])
-  assert.equal(artifact(record.state.criteria.checks!).envelope.kind, 'checks')
+  assert.equal(artifact(record.state.criteria['checks.checks']!).envelope.kind, 'checks')
 })
 
 test('Software Engineering: a change failing a check fails the Work with the check named', () => {
@@ -98,6 +104,35 @@ test('Software Engineering: a change failing a check fails the Work with the che
   const record = show(ran.stdout.trim())
   assert.match(record.events.find((e) => e.type === 'verified')!.verdict!, /^fail$/)
   assert.match(record.state.reason!, /checks=fail/)
+})
+
+test('Software Engineering: a check failed by the environment is verified again with work retry --step checks.checks, on the same change', () => {
+  const marker = join(home, 'environment-fixed')
+  rmSync(marker, { force: true })
+  const repository = gitRepo(`checks:\n  - name: environment\n    run: test -f ${marker}\n`)
+  const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit', repository)])
+  assert.equal(ran.status, 1)
+  const workId = ran.stdout.trim()
+  writeFileSync(marker, '')
+  const again = system(['work', 'retry', workId, '--step', 'checks.checks', '--reason', 'the environment is fixed'])
+  assert.equal(again.status, 0, again.stderr)
+  const record = show(workId)
+  const verified = record.events.filter((e) => e.type === 'verified')
+  assert.deepEqual(verified.map((e) => e.verdict), ['fail', 'pass'], 'the failed verdict is kept')
+  assert.equal(verified[0]!.subject, verified[1]!.subject)
+  assert.equal(record.events.filter((e) => e.type === 'dispatched' && e.stepId === 'implement').length, 1, 'no new implement attempt')
+  assert.equal(record.state.status, 'succeeded')
+})
+
+test('code-checks.yaml on its own checks the base commit of its input task, as it is', () => {
+  const repository = gitRepo('checks:\n  - name: readme-exists\n    run: test -f README.md\n')
+  const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'code-checks.yaml'), '--input', task('check it', repository)])
+  assert.equal(ran.status, 0, ran.stderr)
+  const record = show(ran.stdout.trim())
+  const verified = record.events.find((e) => e.type === 'verified')!
+  assert.equal(verified.verdict, 'pass')
+  const base = execFileSync('git', ['-C', repository, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  assert.equal(artifact(verified.evidence![0]!).envelope.content.commit, base)
 })
 
 test('Software Engineering: a base commit with no .system/checks.yaml is refused at admission', () => {

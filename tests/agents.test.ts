@@ -5,14 +5,14 @@
  * work, all through `bin/system`. No model credentials are used.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
+import { fakeAgent, systemCli } from '../test-support/cli.ts'
 
 const cli = systemCli('system-agents')
-const { home, env } = cli
+const { home } = cli
 
 
 const system = (args: string[], input?: string) => cli.run(args, { input })
@@ -23,10 +23,11 @@ const tree = (id: string) => (JSON.parse(system(['artifact', 'show', id]).stdout
 
 let gitRepo = ''
 
-before(() => {
+before(async () => {
   assert.equal(system(['init']).status, 0)
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
   config:
+    $patch: replace
     accounts:
       - ref: claude-code/default
         runtime: claude-code
@@ -39,9 +40,12 @@ before(() => {
         command: ${fakeAgent}
         codexHome: codex/default
 `)
-  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
   mkdirSync(join(home, 'system', 'codex', 'default'), { recursive: true })
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
+  // The Host reads its credentials when it starts: store the token, then start it again.
+  await cli.start()
+  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
+  await cli.start()
   gitRepo = mkdtempSync(join(home, 'repo-'))
   const git = (...args: string[]) => execFileSync('git', ['-C', gitRepo, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   git('init', '--quiet')
@@ -50,7 +54,10 @@ before(() => {
   git('commit', '--quiet', '-m', 'base')
 })
 
-after(() => rmSync(home, { recursive: true, force: true }))
+after(async () => {
+  await cli.stop()
+  rmSync(home, { recursive: true, force: true })
+})
 
 const newTask = (text: string) => {
   const out = system(['task', 'new', '--text', text, '--repo', gitRepo])
@@ -69,36 +76,33 @@ test('a direct Task runs Claude Code in its own worktree and records the exact r
   assert.equal(ran.status, 0, ran.stderr)
   const record = show(ran.stdout.trim())
   const observed = record.events.find((e) => e.type === 'observed')!
-  assert.deepEqual(observed.worker, { ref: 'claude-code/default', account: 'default', command: fakeAgent, version: '0.0.0-fake (Claude Code)', servedModels: ['served-default'] })
+  assert.deepEqual(observed.worker, { ref: 'claude-code/default', account: 'default', command: fakeAgent, version: '0.0.0-fake (Claude Code)', servedModels: ['served-default', 'served-subagent'] })
   const result = tree(record.state.steps.task.outputs.result!)
   assert.equal(execFileSync('git', ['-C', gitRepo, 'show', `${result.commit}:NOTE.md`], { encoding: 'utf8' }), 'edited by claude\n')
   assert.equal(execFileSync('git', ['-C', gitRepo, 'status', '--porcelain'], { encoding: 'utf8' }), '')
 })
 
-test('cancel from another process stops the attempt, keeps its partial tree, and Codex takes over', async () => {
+test('cancel from another process stops the attempt, keeps its partial tree, and Codex takes over', { timeout: 120_000 }, async () => {
   const input = newTask('FAKE:sleep FAKE:edit')
-  const submit = spawn(process.execPath, [join(repo, 'bin', 'system'), 'work', 'submit', '--capability', 'code-write', '--input', input], { env, stdio: ['ignore', 'pipe', 'pipe'] })
-  let out = ''
-  submit.stdout.on('data', (d) => { out += d })
-  const exited = new Promise<number | null>((resolve) => submit.on('close', resolve))
+  const submit = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', input])
   // Wait for the Work to be admitted and dispatched.
   let workId = ''
   for (let i = 0; i < 200 && !workId; i++) {
     await new Promise((r) => setTimeout(r, 100))
-    if (out.trim()) workId = out.trim().split('\n')[0]!
+    if (submit.stdout().trim()) workId = submit.stdout().trim().split('\n')[0]!
   }
   assert.ok(workId, 'the submit printed its Work ID')
   for (let i = 0; i < 100 && !show(workId).events.some((e) => e.type === 'dispatched'); i++) await new Promise((r) => setTimeout(r, 100))
 
-  // A second `work run` is refused while the first host holds the Work.
+  // A second `work run` is refused while the Host runs the Work.
   const contested = system(['work', 'run', workId])
   assert.equal(contested.status, 1)
-  assert.match(contested.stderr, /is being run by process \d+/)
+  assert.match(contested.stderr, /is already being run/)
 
   const cancel = system(['work', 'cancel', workId, '--reason', 'switch accounts', '--wait'])
   assert.equal(cancel.status, 0, cancel.stderr)
   assert.match(cancel.stdout, /cancellation requested from the running host/)
-  assert.equal(await exited, 5, 'the submitting host exits 5: cancelled')
+  assert.equal((await submit.done).status, 5, 'the following submit exits 5: cancelled')
   const cancelled = show(workId)
   assert.equal(cancelled.state.status, 'cancelled')
   assert.match(cancelled.state.reason!, /cancelled by human tester: switch accounts/)

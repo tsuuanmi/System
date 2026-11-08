@@ -1,0 +1,50 @@
+diff --git a/lib/profile-boot-e2mS45fC.js b/lib/profile-boot-e2mS45fC.js
+index 3e3ac2225caf4bb16d0d2708ee51751f75b710ba..5b94f0c3162f9ada96cc37f864e91e2a04e3b38b 100644
+--- a/lib/profile-boot-e2mS45fC.js
++++ b/lib/profile-boot-e2mS45fC.js
+@@ -1,7 +1,7 @@
+ import { PROFILE_PATCH_FILENAME, PluginPackages, boot, createRuntimeResolution, initProfile, installFailLoud, loadOverlayPatches, loadProfile, readProfilePatches, reportSkippedBundles, resolveProfileDir } from "@deepseek-ai/dsh-app-boot";
+ import { resolveDshHome } from "@deepseek-ai/dsh-home-paths";
+ import { dirname, join, resolve } from "node:path";
+-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
++import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { PROFILE_TEMPLATES } from "@deepseek-ai/dsh-official-bundles";
+ import { installProxyFromEnvironment } from "@deepseek-ai/dsh-http-proxy";
+@@ -199,6 +199,18 @@ function initializeProfileFromDefault(name, fromDefaultProfile, home = resolveDs
+ 		process.stderr.write(`${NAME}: replaced profile ${JSON.stringify(name)} but could not remove ${staging}: ${String(error)}\n`);
+ 	}
+ }
++// System patch: every boot rewrote the root config (truncate, then write), so a
++// host booting alongside could read it empty and fail. Write it only when it
++// differs, and then atomically.
++function writeRootConfig(dir) {
++	const file = join(dir, PROFILE_ROOT_FILENAME);
++	try {
++		if (readFileSync(file, "utf8") === PROFILE_ROOT_CONFIG) return;
++	} catch {}
++	const draft = `${file}.${process.pid}.new`;
++	writeFileSync(draft, PROFILE_ROOT_CONFIG);
++	renameSync(draft, file);
++}
+ /**
+ * Load a resolved profile for `name` and (re)write the empty root config. The
+ * root is always rewritten: the whole composition is patch layers, and the
+@@ -218,7 +230,7 @@ function prepareProfile(name, userLayer = true, fromDefaultProfile) {
+ 	if (fromDefaultProfile !== void 0) initializeProfileFromDefault(name, fromDefaultProfile);
+ 	const profile = loadProfile(NAME, name, INSTALL_ANCHOR, void 0, { userLayer });
+ 	reportSkippedBundles(NAME, profile);
+-	writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG);
++	writeRootConfig(profile.dir);
+ 	return profile;
+ }
+ /**
+@@ -236,7 +248,7 @@ function prepareProfile(name, userLayer = true, fromDefaultProfile) {
+ */
+ async function composeProfile(name, patchFiles, fromDefaultProfile, resolvedProfile) {
+ 	const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile);
+-	if (resolvedProfile !== void 0) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG);
++	if (resolvedProfile !== void 0) writeRootConfig(profile.dir);
+ 	return {
+ 		profile,
+ 		resolution: await createRuntimeResolution({

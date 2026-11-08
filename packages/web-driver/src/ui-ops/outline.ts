@@ -1,0 +1,172 @@
+// Ported from System 1 (tsuuanmi/system @ f199a277): packages/ui-ops/src/outline.ts. Changes: packages/web-driver/README.md.
+/**
+ * Drift evidence (docs/design/ui-operations.md#drift-evidence): a bounded structural outline of
+ * a page region, so a stale map element can be fixed without opening the operator's browser. It
+ * holds structure only: tags, roles, labels and states, test ids, the names of data attributes,
+ * ids, and classes, plus each node's visible text length. Never text, input values, or URLs.
+ */
+import type { Locator, Page } from 'patchright-core'
+
+export interface OutlineNode {
+  /** Depth among the kept nodes (wrappers with nothing to show are skipped). */
+  depth: number
+  tag: string
+  role?: string
+  /** `aria-label` (not on links, whose labels are often content such as chat titles), at most 40 characters. */
+  label?: string
+  /** aria-pressed, -checked, -expanded, -selected, -disabled, -current, as set. */
+  states?: Record<string, string>
+  testid?: string
+  /** Names of the other `data-*` attributes; never their values. */
+  data?: string[]
+  id?: string
+  classes?: string[]
+  editable?: true
+  /** Visible text length of the node (its own and its descendants'); never the text. */
+  text: number
+  /** Further siblings with the same signature, folded into this node. */
+  repeat?: number
+  /**
+   * A link's target, as a kind, never the URL (`@1.1`): `external` (another site, http(s)), `site`
+   * (this site), or `none` (no target, or another scheme).
+   */
+  link?: 'external' | 'site' | 'none'
+}
+
+export interface UiOutline {
+  /** `@1.1` once a node carries `link`. */
+  schema: 'ui-outline@1.0' | 'ui-outline@1.1'
+  /** The region outlined: a map element, or the page body. */
+  root: string
+  nodes: OutlineNode[]
+  /** True when the node bound cut the outline short. */
+  truncated: boolean
+}
+
+const OUTLINE_LIMITS = { nodes: 200, depth: 12 }
+
+const EMAIL = /[^\s@()<>,;:"']+@[^\s@()<>,;:"']+\.[A-Za-z]{2,}/
+const REDACTED = '[redacted]'
+
+/**
+ * Outline `root` (a resolved element, or the page body). Any value that holds an email address,
+ * or one of `redact` (the account's own name and address, as its driver reads them), is masked
+ * whole, so an outline pasted elsewhere carries no identity by construction. With
+ * `foldNavigation` (a page-wide outline), an element marked `role="navigation"` below the root is
+ * kept as one node without its contents: a site's side navigation (its chats, its projects) never
+ * spends the node budget the page's content needs (live 2026-10-18).
+ */
+export async function outlineOf(root: Page | Locator, name: string, limits = OUTLINE_LIMITS, redact: readonly string[] = [], options: { foldNavigation?: boolean } = {}): Promise<UiOutline> {
+  const handle = 'mainFrame' in root ? root.locator('body') : root
+  const walked = await handle.first().evaluate((el, { max, fold }) => {
+    const INTERESTING = new Set(['button', 'a', 'input', 'textarea', 'select', 'form', 'main', 'nav', 'header', 'footer', 'aside', 'dialog', 'menu', 'h1', 'h2', 'h3', 'label', 'pre', 'code', 'img', 'svg'])
+    const STATES = ['aria-pressed', 'aria-checked', 'aria-expanded', 'aria-selected', 'aria-disabled', 'aria-current', 'aria-hidden']
+    const out: Array<Record<string, unknown>> = []
+    // The last kept node at each depth under the current parent: like siblings fold into it.
+    const lastAt: Array<Record<string, unknown> | undefined> = []
+    let truncated = false
+    const visible = (e: Element): boolean => {
+      const box = (e as HTMLElement).getBoundingClientRect?.()
+      const style = getComputedStyle(e)
+      return !!box && box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const describe = (e: Element, depth: number): Record<string, unknown> => {
+      const tag = e.tagName.toLowerCase()
+      const node: Record<string, unknown> = { depth, tag, text: visible(e) ? ((e as HTMLElement).innerText ?? '').trim().length : 0 }
+      const role = e.getAttribute('role')
+      if (role) node.role = role
+      const label = e.getAttribute('aria-label')
+      if (label && tag !== 'a') node.label = label.slice(0, 40)
+      const states = Object.fromEntries(STATES.filter((s) => e.hasAttribute(s)).map((s) => [s.slice(5), (e.getAttribute(s) ?? '').slice(0, 20)]))
+      if (Object.keys(states).length) node.states = states
+      const testid = e.getAttribute('data-testid') ?? e.getAttribute('data-test-id')
+      if (testid) node.testid = testid.slice(0, 80)
+      const data = [...e.attributes].map((a) => a.name).filter((n) => n.startsWith('data-') && n !== 'data-testid' && n !== 'data-test-id').slice(0, 8)
+      if (data.length) node.data = data
+      if (e.id) node.id = e.id.slice(0, 40)
+      const classes = [...e.classList].slice(0, 5).map((c) => c.slice(0, 30))
+      if (classes.length) node.classes = classes
+      if ((e as HTMLElement).isContentEditable && e.getAttribute('contenteditable') !== null) node.editable = true
+      if (tag === 'a') {
+        const href = e.getAttribute('href')
+        let target = 'none'
+        try {
+          const url = href ? new URL(href, location.href) : undefined
+          if (url && (url.protocol === 'http:' || url.protocol === 'https:')) target = url.origin === location.origin ? 'site' : 'external'
+        } catch {
+          target = 'none'
+        }
+        node.link = target
+      }
+      return node
+    }
+    const shown = (e: Element): boolean => {
+      const tag = e.tagName.toLowerCase()
+      return INTERESTING.has(tag) || tag.includes('-') || e.hasAttribute('role') || e.hasAttribute('aria-label') || e.hasAttribute('data-testid')
+        || e.hasAttribute('data-test-id') || e.getAttribute('contenteditable') !== null || STATES.some((s) => e.hasAttribute(s))
+    }
+    const signature = (n: Record<string, unknown>): string => JSON.stringify({ ...n, depth: 0, text: 0, label: undefined, id: undefined, repeat: undefined })
+    const walk = (e: Element, depth: number): void => {
+      if (truncated) return
+      if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(e.tagName)) return
+      const keep = depth === 0 || shown(e)
+      let next = depth
+      if (keep) {
+        const node = describe(e, depth)
+        const last = lastAt[depth]
+        // A run of like siblings (a list of chats, of messages) is one node with a count.
+        if (last && signature(last) === signature(node) && depth > 0) {
+          last.repeat = ((last.repeat as number | undefined) ?? 0) + 1
+          return
+        }
+        if (out.length >= max.nodes) {
+          truncated = true
+          return
+        }
+        out.push(node)
+        lastAt.length = depth
+        lastAt[depth] = node
+        next = depth + 1
+      }
+      if (next > max.depth) return
+      // Side navigation, folded: the node stands, its contents are left out.
+      if (fold && depth > 0 && e.getAttribute('role') === 'navigation') return
+      for (const child of e.children) walk(child, next)
+      if (e.shadowRoot) for (const child of e.shadowRoot.children) walk(child, next)
+    }
+    walk(el, 0)
+    return { nodes: out, truncated }
+  }, { max: limits, fold: options.foldNavigation === true })
+  const terms = redact.map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 3)
+  const mask = (value: string): string => (EMAIL.test(value) || terms.some((t) => value.toLowerCase().includes(t)) ? REDACTED : value)
+  const nodes = (walked.nodes as unknown as OutlineNode[]).map((n) => ({
+    ...n,
+    ...(n.label ? { label: mask(n.label) } : {}),
+    ...(n.testid ? { testid: mask(n.testid) } : {}),
+    ...(n.id ? { id: mask(n.id) } : {}),
+    ...(n.classes ? { classes: n.classes.map(mask) } : {}),
+    ...(n.states ? { states: Object.fromEntries(Object.entries(n.states).map(([k, v]) => [k, mask(v)])) } : {}),
+  }))
+  return { schema: nodes.some((n) => n.link) ? 'ui-outline@1.1' : 'ui-outline@1.0', root: name, nodes, truncated: walked.truncated }
+}
+
+/** What a drift report needs of the artifact store: a local-private `evidence` artifact with an id. */
+export interface EvidenceStore {
+  put(input: { kind: 'evidence'; bodySchema: UiOutline['schema']; body: UiOutline; classification: 'local-private'; producer: { type: 'system'; ref: string } }): { id: string }
+}
+
+/**
+ * The `ui.drift` event's data for a drift report. The outline goes to the store as a
+ * local-private `evidence` artifact (it never leaves the machine, INV-12) and the event names it,
+ * since an event carries no page structure: only the page's path and counts (`url`, `matches`).
+ */
+export function driftData(event: { provider: string; element: string; kind: string; candidate: number; source?: string; mapHash: string; url?: string; matches?: object[]; outline?: UiOutline; readback?: object }, store?: EvidenceStore): Record<string, unknown> {
+  return evidenceData(event, store)
+}
+
+/** Any event's data with its outline stored the same way and named (a drift, a stall). */
+export function evidenceData(event: { provider: string; outline?: UiOutline | undefined }, store?: EvidenceStore): Record<string, unknown> {
+  const { outline, ...data } = event
+  const kept = outline && store ? store.put({ kind: 'evidence', bodySchema: outline.schema, body: outline, classification: 'local-private', producer: { type: 'system', ref: `ui-ops/${event.provider}` } }).id : undefined
+  return { ...data, ...(kept ? { outline: kept } : {}) }
+}

@@ -73,16 +73,15 @@ contract gap; identify the authoritative record before implementing one.
 
 ## Work vs Workflow and deterministic Artifact-ID handoff
 
-**Work/Task is primitive; Workflow is an optional external configuration file**
+**Work is primitive (its input is a Task); Workflow is an optional external configuration file**
 that composes steps and dependencies. The admitted resolved config is pinned
 as a content-addressed artifact; changing files affects future work only.
 
-Workers exchange immutable, typed Artifact IDs, not copied conversations.
-Controller replay uses persisted observations and decisions, not a rerun of
-model generation. Verification is a registered capability selected in the
-workflow config and bound to the exact result ID and criteria. A coding checker
-and a citation checker share the same controller without a universal review
-sequence. See [Workflow composition](workflow-composition.md) and
+Workers exchange immutable, typed Artifact IDs, not copied conversations;
+replay uses persisted observations, not a rerun of model generation; and
+verification is a registered capability bound to the exact result ID and
+criteria, with no universal review sequence. See
+[Workflow composition](workflow-composition.md) and
 [Artifact/verification boundary](artifact-verification.md).
 
 ## Kernel / active-composition rule
@@ -117,19 +116,20 @@ the plugin is inactive.
 
 ## Trust and safety boundary
 
-A community plugin may execute code inside the DSH host process. Therefore:
+A community plugin may execute code inside the DSH host process, so
+installing one is an operator-trusted administrative operation (source and
+version allowlists, dependency review before activation; see
+[ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md)).
 
-- Installing a plugin is an operator-trusted administrative operation.
-  Enforce source/version allowlists and dependency review before activation.
 - Provider/Worker results are **untrusted evidence**, never self-granted
-  authority. System policy gates admission and side effects.
-- Sensitive credentials and data egress are constrained with actual host /
-  tool controls and tests, not trust in the plugin label alone.
-- If a plugin can bypass the policy/effect boundary, it cannot be admitted as
-  an untrusted capability in the MVP. In-process composition alone does not
-  enforce isolation.
-- Disable and update operations are treated as lifecycle events with possible
-  effects on in-flight work and persisted outcomes.
+  authority; System policy gates admission and side effects.
+- Credentials and data egress are constrained with actual host/tool controls
+  and tests, not trust in the plugin label.
+- A plugin that can bypass the policy/effect boundary cannot be admitted as
+  an untrusted capability in the MVP; in-process composition does not enforce
+  isolation.
+- Disable and update are lifecycle events with possible effects on in-flight
+  work and persisted outcomes.
 
 **MVP-0 limitation:** Workers run as the operator in per-attempt worktrees
 with a throwaway `HOME` and no push credentials, but without a sandbox or
@@ -155,21 +155,17 @@ tool choices and validation rules.
 Do not create a second engine just because the research workflow uses
 different tools and result formats. This is a release-blocking MVP proof.
 
-## Proven third-domain composition and remaining integrity work
+## Third domain and remaining open details
 
-The [Brainstorm Workflow](brainstorm-composition.md) uses Claude and
-Codex to generate two separate proposal Artifacts and a third synthesis
-Artifact through the same Work Controller; no domain engine, new Worker
-type, Team plugin or verifier is mandatory. The B4 review and fixes for
-SQLite bootstrap and PID-lock publication are documented in
+The [Brainstorm Workflow](brainstorm-composition.md) uses Claude and Codex for
+two proposal Artifacts and a synthesis through the same Work Controller, with
+no domain engine, new Worker type, Team plugin or mandatory verifier. The
+Host that replaced the PID locks is in
 [Work ownership and recovery](work-ownership-and-recovery.md).
-B3 value evaluation is still in progress and does not change this
-ownership contract.
 
-## Unfixed implementation details
-
-MVP-0 storage, Worker adapter approach and effect executor are chosen in
+MVP-0 storage, Worker adapter and effect executor are chosen in
 [ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The exact DSH
-bundle/profile, restart protocol, schema and Worker adapter API remain open. Boundary hypotheses and crash scenarios are
-tracked in [draft boundary design](boundaries.md); alternative evidence and
-test plan live in [RES-0003](../research/RES-0003-dsh-control-plane-evaluation.md).
+bundle/profile, restart protocol and schema remain open; boundary hypotheses
+and crash scenarios are in [draft boundary design](boundaries.md), and the
+evidence and test plan in
+[RES-0003](../research/RES-0003-dsh-control-plane-evaluation.md).

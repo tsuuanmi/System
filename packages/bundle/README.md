@@ -19,7 +19,7 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `fakes` | `@system/fakes` | — | no, **disabled** | scripted Worker and verifier for offline tests |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
 | `verifiers` | `@system/verifiers` | `verifiers` | no | `code.required-checks`, `research.citation-check` (ADR-0003, ADR-0004) |
-| `effects` | `@system/effects` | `effects` | no | `git.publish` to GitHub (ADR-0004 decision 10); token `GITHUB_TOKEN` |
+| `effects` | `@system/effects` | `effects` | no | `git.publish` to GitHub (ADR-0004 decision 10): push, a pull request, and a merge only into `mergeInto` (`dev`, ADR-0008); token `GITHUB_TOKEN` |
 | `agents` | `@system/agents` | `agents` | no | Claude Code and Codex accounts as Workers (ADR-0004, ADR-0005); accounts without a CLI or credential are skipped; Brainstorm roles are account capabilities |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
 | `system-app` | `@system/app` | — | yes | the CLI |
@@ -28,6 +28,12 @@ Each row is mounted because a System contract needs it; adding a row adds a
 line here, to `ROWS` in [`packages/app/src/doctor.ts`](../app/src/doctor.ts)
 when it provides a service, and to `EXPECTED_ROWS` in the
 [smoke test](../../tests/smoke.test.ts).
+
+## Changing a row's config
+
+An entry of the profile's own patch with `config` merges into this bundle's
+config of that row instead of replacing it, accounts by `ref`
+([runbook](../../docs/operations/runbook.md#changing-the-profiles-config)).
 
 ## Disabling a row
 
@@ -46,8 +52,8 @@ Work is in flight is MVP-1.
 ## Pins
 
 DSH's SQLite backend is patched to wait up to 5 s for another process's write
-lock ([patches](../../patches/README.md)): every `system` command boots its
-own host on the same store.
+lock ([patches](../../patches/README.md)): `system doctor` boots its own host
+beside the Host on the same store.
 
 All DSH packages are `0.2.2-rc.1`, tag commit `66491b05`; `engines.dsh` pins
 the runtime. Install scripts of DSH dependencies are denied in

@@ -15,10 +15,11 @@ import { GIT_TREE_KIND, gitTreeSchema, pin, snapshot, type EffectIntent } from '
 import { githubPublisher, type PublishConfig } from '../src/github.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'system-effects-'))
-interface Pull { number: number; head: string; base: string; draft: boolean; title: string; node_id: string }
+interface Pull { number: number; head: string; base: string; draft: boolean; title: string; node_id: string; merged?: boolean; mergeCommit?: string }
 const calls: string[] = []
 let pulls: Pull[] = []
 let api = ''
+let bareOf = ''
 let server: Server
 
 before(async () => {
@@ -29,15 +30,20 @@ before(async () => {
       calls.push(`${req.method} ${req.url} auth=${req.headers.authorization ?? '-'}`)
       const url = new URL(req.url!, 'http://x')
       const send = (status: number, value: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
+      const headSha = (branch: string) => {
+        try { return execFileSync('git', ['-C', bareOf, 'rev-parse', `refs/heads/${branch}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
+      }
+      const view = (p: Pull) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, base: { ref: p.base }, head: { ref: p.head, sha: headSha(p.head) }, merged_at: p.merged ? '2026-11-06T00:00:00Z' : null, merge_commit_sha: p.mergeCommit ?? null })
       if (req.method === 'GET' && url.pathname === '/repos/tester/scratch/pulls') {
         const head = url.searchParams.get('head')!.split(':')[1]
-        return send(200, pulls.filter((p) => p.head === head).map((p) => ({ ...p, html_url: `https://github.example/pull/${p.number}`, head: { ref: p.head } })))
+        const state = url.searchParams.get('state') ?? 'open'
+        return send(200, pulls.filter((p) => p.head === head && (state === 'all' || !p.merged)).map(view))
       }
       if (req.method === 'POST' && url.pathname === '/repos/tester/scratch/pulls') {
         const input = JSON.parse(body) as { head: string; base: string; draft: boolean; title: string }
         const pull = { number: pulls.length + 1, ...input, node_id: `PR_${pulls.length + 1}` }
         pulls.push(pull)
-        return send(201, { ...pull, html_url: `https://github.example/pull/${pull.number}`, head: { ref: pull.head } })
+        return send(201, view(pull))
       }
       if (req.method === 'POST' && url.pathname === '/graphql') {
         const { variables } = JSON.parse(body) as { variables: { id: string } }
@@ -75,6 +81,7 @@ function setup(text = 'change\n') {
   writeFileSync(join(work, 'CHANGE.md'), text)
   run('add', '.')
   run('commit', '--quiet', '-m', 'change')
+  bareOf = bare
   return { bare, work, run, remoteRef: (branch: string) => execFileSync('git', ['-C', bare, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { encoding: 'utf8' }).trim() }
 }
 
@@ -85,7 +92,7 @@ async function subjectOf(artifacts: Artifacts, work: string): Promise<string> {
   return (await artifacts.put({ ...GIT_TREE_KIND, content: tree, classification: 'local-private', producer: { type: 'worker', ref: 't' } })).id
 }
 
-const config = (extra: Partial<PublishConfig> = {}): PublishConfig => ({ remote: 'origin', base: 'main', apiUrl: api, repository: 'tester/scratch', ...extra })
+const config = (extra: Partial<PublishConfig> = {}): PublishConfig => ({ remote: 'origin', base: 'main', mergeInto: [], apiUrl: api, repository: 'tester/scratch', ...extra })
 const intent = (subject: string, params: EffectIntent['params'] = {}, workId = 'work:1111-aaaa'): EffectIntent => ({ operationId: `op:${subject.slice(7)}`, workId, stepId: 'publish', capability: 'git.publish', subject, params })
 
 function fresh() {
@@ -216,6 +223,196 @@ test('the token reaches git only through its environment, never its arguments', 
   assert.ok(network.every((s) => s.env.GIT_CONFIG_VALUE_0 === header && s.env.GIT_CONFIG_KEY_0 === 'http.extraHeader'))
 })
 
-test('it never merges', () => {
+test('without merge: true, apply never calls the merge endpoint', async () => {
+  fresh()
+  const artifacts = store()
+  const { work } = setup()
+  const publisher = githubPublisher(artifacts, { token: async () => undefined }, config({ mergeInto: ['main'] }))
+  await publisher.apply(intent(await subjectOf(artifacts, work)))
   assert.ok(calls.every((c) => !/merge/i.test(c)))
+})
+
+const mergeConfig = (extra: Partial<PublishConfig> = {}) => config({ mergeInto: ['main'], ...extra })
+const merging = { merge: true }
+const mergeCalls = () => calls.filter((c) => c.startsWith('PUT '))
+
+test('merge: true is refused unless the base is on the mergeInto allowlist, naming it; and not with ready', () => {
+  const artifacts = store()
+  const open = githubPublisher(artifacts, { token: async () => undefined }, config({ base: 'dev', mergeInto: ['dev'] }))
+  assert.doesNotThrow(() => open.validate('git.publish', { merge: true }))
+  assert.doesNotThrow(() => open.validate('git.publish', { merge: false }))
+  assert.throws(() => open.validate('git.publish', { merge: 'yes' }), /merge must be true or false/)
+  assert.throws(() => open.validate('git.publish', { merge: true, ready: true }), /merge and ready cannot be combined/)
+  for (const mergeInto of [[], ['dev']]) {
+    const closed = githubPublisher(artifacts, { token: async () => undefined }, config({ base: 'main', mergeInto }))
+    assert.throws(() => closed.validate('git.publish', { merge: true }), /base main is not in mergeInto \[.*\]/)
+    assert.doesNotThrow(() => closed.validate('git.publish', { merge: false }))
+  }
+})
+
+test('merge needs no approval; ready still does', async () => {
+  const artifacts = store()
+  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
+  assert.equal(publisher.approval(intent('sha256:' + '0'.repeat(64), merging)), undefined)
+  assert.equal(publisher.approval(intent('sha256:' + '0'.repeat(64), { ready: true })), 'marking the pull request ready for review')
+})
+
+/** A publisher whose merge queue checks a merge commit with `verdicts` in turn (pass when used up); what it checked is in `checked`. */
+function queue(artifacts: Artifacts, verdicts: { verdict: 'pass' | 'fail'; reason: string }[] = [], during?: () => void) {
+  const checked: { commit: string; parent?: string }[] = []
+  const publisher = githubPublisher(artifacts, {
+    token: async () => undefined,
+    async check(subject) {
+      const read = artifacts.get(subject)
+      const tree = read.state === 'stored' ? read.envelope.content as { commit: string; parent?: string } : { commit: '' }
+      checked.push({ commit: tree.commit, parent: tree.parent })
+      during?.()
+      return { ...(verdicts.shift() ?? { verdict: 'pass', reason: 'all checks passed' }), evidence: [] }
+    },
+  }, mergeConfig())
+  return { publisher, checked }
+}
+const parents = (bare: string, commit: string) => execFileSync('git', ['-C', bare, 'rev-list', '--parents', '-n', '1', commit], { encoding: 'utf8' }).trim().split(' ').slice(1)
+
+test('merge: a change that already contains the tip moves main to it, with no merge call and no check again', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, remoteRef } = setup()
+  const { publisher, checked } = queue(artifacts)
+  const outcome = await publisher.apply(intent(await subjectOf(artifacts, work), merging))
+  const commit = (await snapshot(work)).commit
+  assert.equal(outcome.state, 'applied', outcome.reason)
+  assert.equal(remoteRef('main'), commit, 'main is exactly the checked commit')
+  assert.equal(remoteRef('system/1111-aaaa'), commit)
+  assert.deepEqual([outcome.detail.merged, outcome.detail.mergeCommit, outcome.detail.draft], ['true', commit, 'false'])
+  assert.deepEqual([checked, mergeCalls()], [[], []])
+  assert.equal(pulls[0]!.draft, false)
+  // Again: main already holds it; nothing is pushed or checked.
+  calls.length = 0
+  const again = await publisher.apply(intent(await subjectOf(artifacts, work), merging))
+  assert.equal(again.state, 'applied', again.reason)
+  assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0)
+})
+
+test('merge: two changes on the same tip; the second is merged only after its checks pass on a merge with the tip that has the first', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, bare, remoteRef } = setup()
+  const first = await subjectOf(artifacts, work)
+  const firstCommit = run('rev-parse', 'HEAD')
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'OTHER.md'), 'other\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'other')
+  const second = await subjectOf(artifacts, work)
+  const secondCommit = run('rev-parse', 'HEAD')
+  const { publisher, checked } = queue(artifacts)
+  // Both at once: the queue takes them one at a time.
+  const [a, b] = await Promise.all([publisher.apply(intent(first, merging, 'work:1111-aaaa')), publisher.apply(intent(second, merging, 'work:2222-bbbb'))])
+  assert.equal(a.state, 'applied', a.reason)
+  assert.equal(b.state, 'applied', b.reason)
+  // Whichever the queue took first went in as it is; the other was merged with it, checked, then pushed.
+  const [ahead, after] = a.detail.checkedOn ? [b, a] : [b.detail.checkedOn ? a : b, a.detail.checkedOn ? a : b]
+  assert.equal(ahead.detail.checkedOn, undefined)
+  assert.deepEqual(checked, [{ commit: after.detail.mergeCommit, parent: ahead.detail.mergeCommit }], 'the later was checked on its merge with the earlier')
+  assert.deepEqual(parents(bare, after.detail.mergeCommit!).sort(), [firstCommit, secondCommit].sort(), 'the merge commit joins exactly the two changes')
+  assert.equal(parents(bare, after.detail.mergeCommit!)[0], ahead.detail.mergeCommit)
+  assert.equal(remoteRef('main'), after.detail.mergeCommit)
+  assert.equal(after.detail.checkedOn, ahead.detail.mergeCommit)
+})
+
+test('merge: a conflict with the tip fails naming the files; a failed check on the merge fails; main does not move', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, remoteRef } = setup()
+  const first = await subjectOf(artifacts, work)
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'CHANGE.md'), 'a different change\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'conflicting')
+  const conflicting = await subjectOf(artifacts, work)
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'THIRD.md'), 'third\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'third')
+  const third = await subjectOf(artifacts, work)
+  const { publisher } = queue(artifacts, [{ verdict: 'fail', reason: 'failed: unit: a.test.ts "x": 1 !== 2' }])
+  const merged = await publisher.apply(intent(first, merging, 'work:1111-aaaa'))
+  const tip = remoteRef('main')
+  const conflict = await publisher.apply(intent(conflicting, merging, 'work:2222-bbbb'))
+  assert.equal(conflict.state, 'failed')
+  assert.match(conflict.reason, /merge conflict with main at [0-9a-f]{12}: CHANGE\.md/)
+  const failed = await publisher.apply(intent(third, merging, 'work:3333-cccc'))
+  assert.equal(failed.state, 'failed')
+  assert.match(failed.reason, /checks on the merge with main at [0-9a-f]{12}: fail: failed: unit: a\.test\.ts "x": 1 !== 2/)
+  assert.equal(remoteRef('main'), tip)
+  assert.equal(merged.detail.mergeCommit, tip)
+})
+
+test('merge: main moving while the merge is checked is caught by the lease; the change is merged and checked again on the new tip', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, bare, remoteRef } = setup()
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'MINE.md'), 'mine\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'mine')
+  const mine = await subjectOf(artifacts, work)
+  // main is ahead of the change's base, so the change needs a merge; then someone merges by hand once while System checks it.
+  const other = mkdtempSync(join(root, 'other-'))
+  execFileSync('git', ['clone', '--quiet', '-b', 'main', `file://${bare}`, other], { env })
+  const commitOther = (file: string) => {
+    writeFileSync(join(other, file), `${file}\n`)
+    for (const args of [['add', '.'], ['commit', '--quiet', '-m', file], ['push', '--quiet', 'origin', 'HEAD:main']]) execFileSync('git', ['-C', other, ...args], { env })
+  }
+  commitOther('AHEAD.md')
+  let moved = false
+  const byHand = () => { if (!moved) { moved = true; commitOther('HAND.md') } }
+  const { publisher, checked } = queue(artifacts, [], byHand)
+  const outcome = await publisher.apply(intent(mine, merging))
+  assert.equal(outcome.state, 'applied', outcome.reason)
+  assert.equal(checked.length, 2, 'checked again on the tip that moved')
+  assert.equal(checked[1]!.parent, execFileSync('git', ['-C', other, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim())
+  assert.equal(remoteRef('main'), outcome.detail.mergeCommit)
+})
+
+test('reconcile with merge: true is applied once main holds the change, absent before, unknown when unreadable', async () => {
+  fresh()
+  const artifacts = store()
+  const { work } = setup()
+  const i = intent(await subjectOf(artifacts, work), merging)
+  const { publisher } = queue(artifacts)
+  const before = await publisher.reconcile(i)
+  assert.equal(before.state, 'absent')
+  assert.match(before.reason, /main does not hold/)
+  await publisher.apply(i)
+  calls.length = 0
+  const merged = await publisher.reconcile(i)
+  assert.equal(merged.state, 'applied', merged.reason)
+  assert.equal(merged.state === 'applied' && merged.detail.merged, 'true')
+  assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0, 'reconcile only reads')
+  const dead = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig({ remote: 'nowhere' }))
+  assert.equal((await dead.reconcile(i)).state, 'unknown')
+})
+
+/** A pull request for the System branch that someone opened against another base. */
+const foreignPull = (extra: Partial<Pull> = {}): Pull => ({ number: 1, head: 'system/1111-aaaa', base: 'other', draft: false, title: 'by hand', node_id: 'PR_1', ...extra })
+
+test('an open pull request for the branch that targets another base fails, naming both, and is neither merged nor retargeted', async () => {
+  for (const params of [merging, {}]) {
+    fresh()
+    const artifacts = store()
+    const { work } = setup()
+    pulls.push(foreignPull())
+    const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
+    const outcome = await publisher.apply(intent(await subjectOf(artifacts, work), params))
+    assert.equal(outcome.state, 'failed', outcome.reason)
+    assert.match(outcome.reason, /#1/)
+    assert.match(outcome.reason, /other/)
+    assert.match(outcome.reason, /main/)
+    assert.equal(mergeCalls().length, 0)
+    assert.equal(pulls.length, 1)
+    assert.deepEqual([pulls[0]!.base, pulls[0]!.merged], ['other', undefined])
+    assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0)
+  }
 })

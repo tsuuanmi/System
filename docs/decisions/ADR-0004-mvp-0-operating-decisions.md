@@ -121,12 +121,10 @@ System tests so far.
 ## Planned after MVP-1: Website Worker
 
 A Website Worker drives a provider's web chat UI in a browser for
-brainstorming and research. It is **another Worker adapter behind the same
-contract** — Artifact IDs in, a report Artifact out, verified the same way —
-and must not need a controller change. It depends on the deferred sandbox and
-browser automation, and web UIs give weak usage data. A `brainstorm` workflow
-uses the same YAML schema; its verifier may be operator acceptance. Each
-provider's terms for automated web use must be reviewed before activation.
+brainstorming and research: **another Worker adapter behind the same
+contract**, with no controller change, weak usage data, and each provider's
+terms for automated web use reviewed before activation. Its first form is
+[PROP-0005](../proposals/PROP-0005-chatgpt-website-worker.md).
 
 The earlier reference implementation (`tsuuanmi/system`, commit `f199a27`)
 has working `website` Workers for ChatGPT and Gemini (patchright-driven
@@ -152,4 +150,3 @@ candidates to evaluate**, not as System behavior or dependencies.
 - "Only System produces effects" holds by credential absence, not isolation;
   a misbehaving agent is not contained in MVP-0.
 - Research citation checks are reproducible but not proof of what was read.
-- No implementation exists yet; this ADR claims no passing tests.
