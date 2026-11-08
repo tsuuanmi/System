@@ -22,6 +22,7 @@ import { ChatGptWebDriver, Procedures, ProviderError, type AskResult, type PageD
 import { cleanup, exited, mediaTypeOf, prepare, type Workspace } from '@system/agents'
 import { addConversation, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { ensureChrome } from './chrome.ts'
+import { refuseBrowser } from './no-browser.ts'
 import { acquireDisplay, type Display } from './display.ts'
 import { createEvidence, type Evidence } from './evidence.ts'
 import { HEALTH_DEFAULTS, hostBusy, healthWorker, type AccountHealth, type HealthSettings } from './health.ts'
@@ -293,6 +294,7 @@ export function prepareProfile(dir: string): void {
  * `prepareProfile`). There is no headless mode: a real window is closer to the operator's own browser and is challenged less.
  */
 export const launch = async (web: WebConfig, display: Display): Promise<BrowserContext> => {
+  refuseBrowser()
   // Another live Chrome on the profile: nothing is prepared and nothing is launched (it would hand the start to that Chrome).
   const holder = profileLockPid(web.profileDir)
   if (holder !== undefined && alive(holder)) throw new Error(`the profile ${web.profileDir} is held by a running Chrome (pid ${holder}); not launching on it`)

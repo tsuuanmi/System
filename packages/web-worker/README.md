@@ -18,7 +18,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 - **Registering (WW6e):** the Host serves while the `agents` row is still handing accounts over, so the row announces each
   `chatgpt-web` account (`expect`) before the first registration. `system workers` lists one not yet registered as
   `registering`; `login` and `login --remote` wait for it, at most `registerWaitSeconds` (row
-  config, default 60) and then fail "still registering after N s". An account whose registration failed is refused with that
+  config, default 60) and then fail "still registering after N s". An account whose registration failed, before or after the operation came, is refused with that
   reason (`chatgpt-web/<name>: <reason>`), one not configured with "is not a configured chatgpt-web account". An attempt needs no
   wait: the Worker exists only once registered. [tests/accounts.test.ts](tests/accounts.test.ts) holds a registration open by hand.
 - **Row off:** such an account is reported `unavailable` with the reason
@@ -28,6 +28,9 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
   and `smoke`: `corepack pnpm test:web` runs them (the `web` check of `.system/checks.yaml`).
   [tests/web-worker-off.test.ts](../../tests/web-worker-off.test.ts) (a smoke test) boots System with the row
   off and runs the main path on the fake Runtimes.
+- **No browser in the default suites:** with `SYSTEM_NO_BROWSER=1` (set by the `test` and `smoke` scripts, not by `test:web`)
+  every launch of Chrome or Xvfb (`chromeMajor`, `startXvfb`, `launch`, `startRemoteLogin`) throws
+  "a browser launch was refused" before anything is spawned ([no-browser.ts](src/no-browser.ts), [tests/no-browser.test.ts](tests/no-browser.test.ts)).
 
 ```yaml
 # $DSH_HOME/profiles/system/cordis.patch.yml

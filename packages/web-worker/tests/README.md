@@ -1,6 +1,7 @@
 # @system/web-worker tests
 
 Most of these run a real headed Chrome on Xvfb, so `corepack pnpm test` leaves them out; `corepack pnpm test:web` runs them.
+[no-browser.test.ts](no-browser.test.ts) is the exception: it runs in `test` and shows that `SYSTEM_NO_BROWSER=1` refuses every browser launch.
 
 [chatgpt.test.ts](chatgpt.test.ts) runs the `chatgpt-web` Runtime against System 1's
 fake ChatGPT site ([web-driver/tests/fake-chatgpt.ts](../../web-driver/tests/fake-chatgpt.ts); scenarios

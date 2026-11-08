@@ -86,10 +86,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   // WW6e: the Host reports "started" before the `agents` row has handed every account over, so an account the row has
   // announced (`expect`) but not registered yet is waited for, bounded; only one never announced is "not configured".
   const pending = new Map<string, Promise<unknown>>()
+  // A registration that failed is remembered with its reason: an operation that comes after it is refused with that, never as "not configured".
+  const failed = new Map<string, string>()
   const expect = (ref: string, done: Promise<unknown>) => {
+    failed.delete(ref)
     const entry = done.finally(() => { if (pending.get(ref) === entry) pending.delete(ref) })
     pending.set(ref, entry)
-    entry.catch(() => {})
+    entry.catch((error: Error) => { failed.set(ref, error.message) })
   }
   const waitSeconds = config.registerWaitSeconds ?? 60
   const account = async (ref: string): Promise<{ web: WebConfig; health: AccountHealth }> => {
@@ -106,6 +109,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     }
     const found = webs.get(ref)
+    if (!found && failed.has(ref)) throw new Error(`${ref}: ${failed.get(ref)}`)
     if (!found) throw new Error(`${ref} is not a configured chatgpt-web account (system workers)`)
     return found
   }
