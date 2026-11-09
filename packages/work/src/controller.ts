@@ -628,6 +628,7 @@ export class WorkController {
     const spec = this.specOf(record)
     const epoch = this.epoch
     const done = (stepId: string) => record.state.steps[stepId]!.state === 'succeeded'
+    if (!busy) record = await this.retryAutomatically(record, spec)
     const failed = spec.steps.find((s) => ['failed', 'cancelled'].includes(record.state.steps[s.id]!.state))
     // A failed step fails the Work once the attempts in flight have reported.
     if (failed && busy) return { record, settles: [], waiting: true, epoch }
@@ -671,6 +672,43 @@ export class WorkController {
     return { record, settles, waiting: !settles.length && (waiting || busy), epoch }
   }
 
+  /**
+   * In the lane, with nothing in flight: the Workflow's `retry` (PLAN DF2b). A Worker step with
+   * `retry` is reopened by the controller itself, at most `max` times (counted from the recorded
+   * events, so a restart or another Account does not reset it), when a verify step in `onFail`
+   * has a `fail` verdict on its current output, or when it failed itself and its Worker said the
+   * failure may be tried afresh. A failed verdict hands the new attempt the verdict as input
+   * `failure` and the change as `previous`; a fresh attempt gets neither.
+   */
+  private async retryAutomatically(record: WorkRecord, spec: ResolvedSpec): Promise<WorkRecord> {
+    if (TERMINAL.has(record.state.status)) return record
+    for (const s of spec.steps.filter(isWorkerStep)) {
+      if (!s.retry) continue
+      const used = record.events.filter((e) => e.type === 'reopened' && e.automatic && e.stepId === s.id).length
+      if (used >= s.retry.max) continue
+      const own = record.state.steps[s.id]!
+      let reason: string | undefined
+      let failure: string | undefined
+      if (own.state === 'failed' && s.retry.onFail.includes(s.id)) {
+        const observed = record.events.findLast((e) => e.type === 'observed' && e.stepId === s.id)
+        if (observed?.type === 'observed' && observed.retryable) reason = `${s.id} failed and may be tried afresh: ${observed.reason ?? 'no reason'}`
+      } else if (own.state === 'succeeded') {
+        for (const failing of s.retry.onFail.filter((v) => v !== s.id)) {
+          if (this.verdictOf(record, spec, failing) !== 'fail') continue
+          const verified = record.events.findLast((e) => e.type === 'verified' && e.stepId === failing)
+          if (verified?.type !== 'verified') continue
+          reason = `${failing} failed: ${verified.reason}`
+          failure = verified.verdictId
+          break
+        }
+      }
+      if (!reason) continue
+      const previous = failure ? own.outputs[s.outputs[0]!] : undefined
+      return this.append(record, { type: 'reopened', automatic: true, stepId: s.id, reason, ...(failure ? { failure } : {}), ...(previous ? { previous } : {}), reset: [s.id, ...dependentsOf(spec, s.id)] })
+    }
+    return record
+  }
+
   private attemptTurn(record: WorkRecord, settle: (() => Promise<WorkRecord>) | undefined): Turn {
     return { record, settles: settle ? [settle] : [], epoch: this.epoch }
   }
@@ -691,6 +729,7 @@ export class WorkController {
     const reopened = record.events.findLast((e) => e.type === 'reopened' && e.stepId === s.id)
     const takeover = reopened?.type === 'reopened' ? reopened : undefined
     if (takeover?.previous) inputs.previous = takeover.previous
+    if (takeover?.failure) inputs.failure = takeover.failure
     const admitted = record.events[0]
     const only = takeover?.worker ?? (admitted?.type === 'admitted' ? admitted.worker : undefined)
     const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w))
@@ -769,6 +808,7 @@ export class WorkController {
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
       ...(status === 'failed' && RATE_LIMITED.test(reason ?? '') ? { rateLimited: true as const } : {}),
+      ...(status === 'failed' && result.retryable && !aborted ? { retryable: true as const } : {}),
     })
   }
 

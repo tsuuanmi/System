@@ -480,7 +480,8 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   const client = await open()
   const se = f.files('software-engineering.yaml')
   assert.match(se, /uses: code-checks\.yaml/)
-  f.verdicts.push('fail')
+  // The Workflow's one automatic further attempt is checked too, and fails again.
+  f.verdicts.push('fail', 'fail')
   const work = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f), run: false }) as { id: string; state: { steps: Record<string, unknown> } }
   assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
   await client.call('work.run', { workId: work.id })
@@ -498,10 +499,12 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
   const done = await client.call('work.show', { workId: work.id }) as Shown
   const verdicts = done.events.filter((e) => e.type === 'verified')
-  assert.deepEqual(verdicts.map((e) => [e.stepId, e.verdict]), [['checks.checks', 'fail'], ['checks.checks', 'pass']])
-  assert.equal(verdicts[0]!.subject, verdicts[1]!.subject, 'the same subject')
+  assert.deepEqual(verdicts.map((e) => [e.stepId, e.verdict]), [['checks.checks', 'fail'], ['checks.checks', 'fail'], ['checks.checks', 'pass']])
+  assert.equal(verdicts[1]!.subject, verdicts[2]!.subject, 'the same subject')
+  assert.notEqual(verdicts[0]!.subject, verdicts[1]!.subject, 'the automatic attempt made a new change')
+  assert.equal(implemented.length, 2, 'the automatic further attempt, once')
   assert.deepEqual(done.state.steps.implement!.attempts, implemented, 'no new implement attempt')
-  assert.deepEqual(done.events.find((e) => e.type === 'reopened')!.reset, ['checks.checks', 'publish', 'accept'])
+  assert.deepEqual(done.events.findLast((e) => e.type === 'reopened')!.reset, ['checks.checks', 'publish', 'accept'])
   assert.equal(done.state.steps['checks.checks']!.verdict, 'pass')
   assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
 })

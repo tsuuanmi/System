@@ -75,6 +75,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     worker: executorSchema.optional(),
     /** The attempt failed on a rate limit of its Account. */
     rateLimited: z.literal(true).optional(),
+    /** The Worker says this failure may be tried afresh (`retry.onFail` names the step itself). */
+    retryable: z.literal(true).optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,
@@ -89,8 +91,13 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), attemptId: z.string(), reason: z.string(),
   }).strict(),
   z.object({
-    type: z.literal('reopened'), seq: z.number().int(), at, caller: storedCallerSchema,
+    type: z.literal('reopened'), seq: z.number().int(), at,
+    /** Absent when `automatic`: the Workflow's `retry` reopened the step, no caller did. */
+    caller: storedCallerSchema.optional(),
+    automatic: z.literal(true).optional(),
     stepId: z.string(), reason: z.string(),
+    /** An automatic retry after a failing verdict: that verdict Artifact, handed to the new attempt as input `failure`. */
+    failure: contentIdSchema.optional(),
     /** Only this Worker may take the step over. */
     worker: z.string().optional(),
     /** The previous attempt's partial output, handed to the new attempt as input `previous`. */

@@ -83,3 +83,11 @@ test('rate-limited attempts and the time waited for a slot are counted', () => {
   const none = summarize(record([admitted, dispatched(1), observed(1)]))
   assert.deepEqual([none.waitedForSlotMs, none.rateLimitedAttempts], [0, 0])
 })
+
+test('an automatic retry is no operator touch', () => {
+  const summary = summarize(record([
+    { type: 'admitted', at: '2026-11-06T00:00:00.000Z', caller: human, specId: id('a'), source: { kind: 'direct-task' } },
+    { type: 'reopened', at: '2026-11-06T00:00:01.000Z', automatic: true, stepId: 'task', reason: 'checks failed' },
+  ]))
+  assert.deepEqual(summary.touches, [])
+})

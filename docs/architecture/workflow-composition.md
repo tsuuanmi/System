@@ -53,7 +53,7 @@ one form:
 
 | Form | Fields | Meaning |
 |---|---|---|
-| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
+| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
 | verify step | `verify: {capability, subject, criteria, inputs?}` | one verifier call on the exact Artifact the `subject` reference resolves to; `inputs` (as a Worker step's) hands it further exact Artifacts, such as the report beside the sources |
 | effect step | `effect: {capability, subject, requires: [verify steps], params?}` | one external effect of the exact subject, only after every required verdict on that subject is `pass`; recorded as intent, then outcome |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
@@ -115,6 +115,20 @@ subject with the same pinned criteria (PROP-0006 "verify again"), as after a
 check failed for a reason outside the change; only a human asks it, so no
 agent keeps the luckiest of several runs; the earlier verdict stays in
 the record and no longer counts.
+
+**`retry: { onFail: [<step>...], max: n }`** on a Worker step (PLAN DF2b) is
+the one automatic further attempt, declared in the Workflow and the same for
+every domain. `onFail` names the verify steps that judge the step's output (a
+`fail` verdict qualifies; `error` and `inconclusive` do not) and the step
+itself (a failure its Worker marked `retryable` in its result, which only the
+Worker can know: it happened before anything was sent that cannot be sent
+twice). The controller then appends `reopened` with `automatic: true` and no
+caller, at most `max` times per step, counted from the recorded events so a
+restart or another Account does not reset it. After a failing verdict the new
+attempt gets the verdict Artifact as input `failure` (its reason and evidence
+IDs) and the change as `previous`; after a Worker failure it starts fresh with
+neither. Anything else, and every later failure, is the operator's `work retry`.
+It is no operator touch in `work report`.
 
 **Effects** (ADR-0004 decision 10): an effect step's provider validates its
 `params` at admission. Before `apply` the controller records

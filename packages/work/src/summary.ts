@@ -57,7 +57,7 @@ export function summarize(record: WorkRecord): WorkSummary {
       }
     }
     if (event.type === 'terminal' && event.outcome === 'cancelled' && event.caller?.type === 'human') touches.push('cancel')
-    if (event.type === 'reopened' && event.caller.type === 'human') touches.push(`retry ${event.stepId}`)
+    if (event.type === 'reopened' && event.caller?.type === 'human') touches.push(`retry ${event.stepId}`)
     if (event.type === 'decided') touches.push(`${event.decision} ${event.stepId}`)
   }
   const first = Date.parse(record.events[0]!.at)
