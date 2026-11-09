@@ -136,9 +136,9 @@ export function remoteHost(remote: Remote): ClientHost {
   const work: WorkCommands = {
     admitFile(path, input, worker, force) {
       const workflow = readFileSync(path, 'utf8')
-      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, worker, force })
+      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, worker, force, run: false })
     },
-    admitTask: (capabilities, input, worker, force) => change('work.submit', { capabilities, input, worker, force }),
+    admitTask: (capabilities, input, worker, force) => change('work.submit', { capabilities, input, worker, force, run: false }),
     async run(workId, options) {
       await change('work.run', { workId })
       return follow(workId, options)

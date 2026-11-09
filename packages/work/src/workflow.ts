@@ -26,6 +26,13 @@ const slot = z.string().regex(ID)
 const capability = z.string().regex(CAPABILITY)
 const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<slot>')
 
+/**
+ * One automatic further attempt after a failure that can be fixed (PLAN DF2b):
+ * `onFail` names the verify steps whose `fail` verdict reopens this step, and
+ * this step itself for a failure its Worker says may be tried afresh.
+ */
+const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3) }).strict()
+
 const workerStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
@@ -34,6 +41,7 @@ const workerStep = z.object({
   outputs: z.array(slot).min(1),
   /** What this step's Worker is told besides the task, such as an output format. */
   instructions: z.string().min(1).max(8 * 1024).optional(),
+  retry: retry.optional(),
 }).strict()
 
 const verifyStep = z.object({
@@ -202,6 +210,11 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
       if (new Set(s.outputs).size !== s.outputs.length) problems.push(`step ${s.id} names an output twice`)
       for (const [name, value] of Object.entries(s.inputs ?? {})) checkRef(s, value, `input ${name} uses`)
       for (const c of s.capabilities) if (!available.workers.has(c)) problems.push(`step ${s.id} needs Worker capability ${c}, which no enabled Worker provides`)
+      for (const failing of s.retry?.onFail ?? []) {
+        const target = byId.get(failing)
+        if (!target) problems.push(`step ${s.id} retry.onFail names ${failing}, which is not a step`)
+        else if (failing !== s.id && !(isVerifyStep(target) && s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`))) problems.push(`step ${s.id} retry.onFail names ${failing}, which does not judge ${s.id}'s output`)
+      }
     } else if (isVerifyStep(s)) {
       checkRef(s, s.verify.subject, 'verifies')
       for (const [name, value] of Object.entries(s.verify.inputs ?? {})) checkRef(s, value, `input ${name} uses`)
@@ -247,7 +260,7 @@ export type WorkflowFiles = (name: string) => string
 /** Rename what a joined step refers to: step IDs by `id`, `$steps` references by `ref`. */
 function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {
   const ids = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
-  if (isWorkerStep(s)) return { ...s, ...ids, ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
+  if (isWorkerStep(s)) return { ...s, ...ids, ...(s.retry ? { retry: { ...s.retry, onFail: s.retry.onFail.map(id) } } : {}), ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
   if (isVerifyStep(s)) return { ...s, ...ids, verify: { ...s.verify, subject: ref(s.verify.subject), ...(s.verify.inputs ? { inputs: Object.fromEntries(Object.entries(s.verify.inputs).map(([k, v]) => [k, ref(v)])) } : {}) } }
   if (isEffectStep(s)) return { ...s, ...ids, effect: { ...s.effect, subject: ref(s.effect.subject), requires: s.effect.requires.map(id) } }
   return { ...s, ...ids, accept: { ...s.accept, requires: s.accept.requires.map(id) } }

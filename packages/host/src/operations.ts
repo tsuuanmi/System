@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, parseWorkflow, readStatus, resolve, summarize, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, parseWorkflow, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -81,15 +81,15 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true.',
-      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), worker: z.string().min(1).optional(), force: z.boolean().optional(), commandId }).strict()
+      summary: 'Admit a Work and run it (unless `run` is false), from the contents of a Workflow file, or a single Task by capability, and return its record; with `run` false it only admits, and `work.run` starts it later. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true.',
+      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), worker: z.string().min(1).optional(), force: z.boolean().optional(), run: z.boolean().default(true), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
         const available = services.capabilities.available()
         const admission: Admission = p.workflow
           ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses, (name) => services.workflowFile(name, p.input))), input: p.input, worker: p.worker, force: p.force, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
           : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, worker: p.worker, force: p.force, caller, source: { kind: 'direct-task' } }
-        return host.submit(admission, { commandId: p.commandId })
+        return host.submit(admission, { commandId: p.commandId }).then((work) => (p.run ? started(host, work.id, (go) => host.run(work.id, { commandId: p.commandId && `${p.commandId}:run`, started: go })) : work))
       },
     },
     'work.run': {
@@ -124,9 +124,9 @@ export function operations(services: Services): Methods {
     'work.list': {
       read: true,
       agent: true,
-      summary: 'Every Work as `{ id, status, specId }`.',
+      summary: 'Every Work as `{ id, status, specId }`; `status` is `admitted, not running` for a Work admitted and never run.',
       params: z.object({}).strict(),
-      handler: (host) => host.view.list().map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
+      handler: (host) => host.view.list().map((r) => ({ id: r.id, status: workStatus(r), specId: r.state.specId })),
     },
     'work.replay': {
       read: true,

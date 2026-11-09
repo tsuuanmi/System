@@ -11,6 +11,8 @@ steps:
     inputs:
       task: $work.input
     outputs: [change]
+    # One automatic further attempt on the same change when the checks fail (PLAN DF2b).
+    retry: { onFail: [checks.checks], max: 1 }
   - id: checks
     dependsOn: [implement]
     uses: code-checks.yaml

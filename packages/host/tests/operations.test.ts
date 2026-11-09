@@ -102,7 +102,7 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal((await call('artifact.show', { id: put.id }) as { state: string }).state, 'stored')
   assert.deepEqual(await call('artifact.cat', { id: put.id }), { data: b64('hello') })
 
-  const work = await call('work.submit', { workflow, input: input(f), commandId: 'c-1' }) as { id: string; state: { status: string } }
+  const work = await call('work.submit', { workflow, input: input(f), commandId: 'c-1', run: false }) as { id: string; state: { status: string } }
   assert.equal(work.state.status, 'running')
   assert.deepEqual((await call('work.list') as { id: string }[]).map((r) => r.id), [work.id])
   assert.equal(((await call('work.show', { workId: work.id })) as { id: string }).id, work.id)
@@ -117,11 +117,11 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('approval.decide', { workId: work.id, decision: 'approved', reason: 'ok' }), /nothing awaits a decision/)
   assert.deepEqual(await call('work.events', { workId: work.id, after: 1000 }), { events: [], status: 'succeeded' })
 
-  const second = await call('work.submit', { capabilities: ['code-write'], input: input(f) }) as { id: string }
+  const second = await call('work.submit', { capabilities: ['code-write'], input: input(f), run: false }) as { id: string }
   await call('work.run', { workId: second.id })
   assert.equal((await terminal(client, second.id)).status, 'succeeded')
 
-  const pinned = await call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/claude' }) as { id: string; events: { type: string; worker?: string }[] }
+  const pinned = await call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/claude', run: false }) as { id: string; events: { type: string; worker?: string }[] }
   assert.equal(pinned.events[0]!.worker, 'fake/claude')
   await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'nobody/default' }), /no enabled Worker nobody\/default/)
   await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/codex' }), /fake\/codex does not provide code-write/)
@@ -152,7 +152,7 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('status', { repository: project, item: 'Bad' }), /-32602|invalid|item/i)
   await assert.rejects(call('task.new', { instructions: 'x', item: 'Bad' }), /-32602|invalid|item/i)
   // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).
-  await call('work.submit', { capabilities: ['code-write'], input: input(f), force: true })
+  await call('work.submit', { capabilities: ['code-write'], input: input(f), force: true, run: false })
   await call('task.new', { instructions: 'x', item: 'p-2' })
   const status = await call('host.status') as { works: number; recordBytes: number }
   assert.equal(status.works, 4)
@@ -193,7 +193,7 @@ test('a malformed or unknown param is refused with -32602 before the handler', a
 test('the same work.submit with the same commandId gives one Work, and another body is refused', async () => {
   const { f, open } = await started()
   const client = await open()
-  const params = { workflow, input: input(f), commandId: 'lost-reply' }
+  const params = { workflow, input: input(f), commandId: 'lost-reply', run: false }
   const [a, b] = await Promise.all([client.call('work.submit', params), client.call('work.submit', params)]) as { id: string }[]
   const again = await client.call('work.submit', params) as { id: string }
   assert.equal(a!.id, b!.id)
@@ -205,7 +205,7 @@ test('the same work.submit with the same commandId gives one Work, and another b
 test('work.events with a cursor returns only newer events, and the current status', async () => {
   const { f, open } = await started()
   const client = await open()
-  const { id } = await client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const { id } = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   await client.call('work.run', { workId: id })
   const all = await terminal(client, id)
   const from = all.events[2]!.seq
@@ -218,7 +218,7 @@ test('work.events with a cursor returns only newer events, and the current statu
 test('submit, then work.events until terminal, matches work.show', async () => {
   const { f, open } = await started()
   const client = await open()
-  const { id } = await client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const { id } = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   await client.call('work.run', { workId: id })
   const followed = await terminal(client, id)
   const shown = await client.call('work.show', { workId: id }) as { events: unknown[]; state: { status: string } }
@@ -230,7 +230,7 @@ test('work.run returns once the Work is running, not when it ends; closing the c
   const { f, open } = await started()
   f.hold('idea-a')
   const first = await open()
-  const { id } = await first.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const { id } = await first.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   const run = await first.call('work.run', { workId: id }) as { state: { status: string } }
   assert.equal(run.state.status, 'running')
   await f.arrived('idea-a')
@@ -249,7 +249,7 @@ test('a second work.run of a running Work is refused at once, not after it ends'
   const { f, open } = await started()
   f.hold('idea-a')
   const client = await open()
-  const { id } = await client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const { id } = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   await client.call('work.run', { workId: id })
   await f.arrived('idea-a')
   await assert.rejects(client.call('work.run', { workId: id }), /./)
@@ -260,7 +260,7 @@ test('a second work.run of a running Work is refused at once, not after it ends'
 test('the connection\'s caller is recorded on every Work event a call causes', async () => {
   const { f, open } = await started()
   const agentClient = await open(agent)
-  const { id } = await agentClient.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const { id } = await agentClient.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   await agentClient.call('work.cancel', { workId: id, reason: 'stop' })
   const humanClient = await open({ type: 'human', operatorId: 'sam' })
   await humanClient.call('work.retry', { workId: id, reason: 'again' })
@@ -284,7 +284,7 @@ test('the same work.run with the same commandId while it runs answers at once an
   const { f, open } = await started()
   f.hold('idea-a')
   const client = await open()
-  const { id } = await client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const { id } = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   const first = await client.call('work.run', { workId: id, commandId: 'run-1' }) as { state: { status: string } }
   await f.arrived('idea-a')
   const again = await client.call('work.run', { workId: id, commandId: 'run-1' }) as { state: { status: string } }
@@ -323,14 +323,14 @@ const seUses = { 'code-checks.yaml': workflowFile('code-checks.yaml') }
 test('work.watch sends one work.changed when the Work finishes, and one when it is held', { timeout: 60_000 }, async () => {
   const { f, open } = await started()
   const { client, notices } = await listening(open)
-  const done = await client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const done = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   assert.deepEqual(await client.call('work.watch', { workId: done.id }), { status: 'running', seq: 0 })
   await client.call('work.run', { workId: done.id })
   await settled('the notice', () => notices.length > 0)
   const last = (await events(client, done.id)).events.at(-1)!
   assert.deepEqual(notices, [{ workId: done.id, status: 'succeeded', seq: last.seq }])
 
-  const held = await client.call('work.submit', { workflow: heldWorkflow, uses: seUses, input: input(f) }) as { id: string }
+  const held = await client.call('work.submit', { workflow: heldWorkflow, uses: seUses, input: input(f), run: false }) as { id: string }
   await client.call('work.watch', { workId: held.id })
   await client.call('work.run', { workId: held.id })
   await settled('the held notice', () => notices.length > 1)
@@ -347,8 +347,8 @@ test('work.unwatch stops the notices; a watch on another Work is not heard', { t
   const { f, open } = await started()
   const quiet = await listening(open)
   const loud = await listening(open)
-  const work = await quiet.client.call('work.submit', { workflow, input: input(f) }) as { id: string }
-  const other = await quiet.client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const work = await quiet.client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
+  const other = await quiet.client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   await quiet.client.call('work.watch', { workId: work.id })
   await quiet.client.call('work.watch', { workId: other.id })
   await loud.client.call('work.watch', { workId: work.id })
@@ -369,7 +369,7 @@ test('a closed connection drops its watches', { timeout: 60_000 }, async () => {
   const real = host.view.onChange.bind(host.view)
   host.view.onChange = (listener) => { live++; const stop = real(listener); return () => { live--; stop() } }
   const gone = await open()
-  const work = await gone.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const work = await gone.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   await gone.call('work.watch', { workId: work.id })
   assert.equal(live, 1)
   gone.close()
@@ -382,7 +382,7 @@ test('a closed connection drops its watches', { timeout: 60_000 }, async () => {
 test('a client that missed the notice reads on from its cursor and loses nothing', { timeout: 60_000 }, async () => {
   const { f, open } = await started()
   const away = await listening(open)
-  const work = await away.client.call('work.submit', { workflow, input: input(f) }) as { id: string }
+  const work = await away.client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
   await away.client.call('work.watch', { workId: work.id })
   const cursor = (await events(away.client, work.id)).events.at(-1)!.seq
   away.client.close()
@@ -418,7 +418,7 @@ test('a running attempt shows its progress in work.show, and a quiet one sends a
     },
   }) })
   const { client, notices } = await listening(open)
-  const work = await client.call('work.submit', { capabilities: ['quiet-work'] }) as { id: string }
+  const work = await client.call('work.submit', { capabilities: ['quiet-work'], run: false }) as { id: string }
   await client.call('work.watch', { workId: work.id })
   await client.call('work.run', { workId: work.id })
   await reported
@@ -459,7 +459,7 @@ test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and
     dependsOn: [checks]
     accept: { requires: [checks.checks] }
 `
-  const work = await client.call('work.submit', { workflow: outer, uses: { 'checks.yaml': checks }, input: input(f) }) as { id: string; state: { steps: Record<string, unknown> } }
+  const work = await client.call('work.submit', { workflow: outer, uses: { 'checks.yaml': checks }, input: input(f), run: false }) as { id: string; state: { steps: Record<string, unknown> } }
   assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'accept'])
   await client.call('work.run', { workId: work.id })
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
@@ -480,8 +480,9 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   const client = await open()
   const se = f.files('software-engineering.yaml')
   assert.match(se, /uses: code-checks\.yaml/)
-  f.verdicts.push('fail')
-  const work = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f) }) as { id: string; state: { steps: Record<string, unknown> } }
+  // The Workflow's one automatic further attempt is checked too, and fails again.
+  f.verdicts.push('fail', 'fail')
+  const work = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f), run: false }) as { id: string; state: { steps: Record<string, unknown> } }
   assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
   await client.call('work.run', { workId: work.id })
   assert.equal((await terminal(client, work.id)).status, 'failed')
@@ -498,10 +499,12 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
   const done = await client.call('work.show', { workId: work.id }) as Shown
   const verdicts = done.events.filter((e) => e.type === 'verified')
-  assert.deepEqual(verdicts.map((e) => [e.stepId, e.verdict]), [['checks.checks', 'fail'], ['checks.checks', 'pass']])
-  assert.equal(verdicts[0]!.subject, verdicts[1]!.subject, 'the same subject')
+  assert.deepEqual(verdicts.map((e) => [e.stepId, e.verdict]), [['checks.checks', 'fail'], ['checks.checks', 'fail'], ['checks.checks', 'pass']])
+  assert.equal(verdicts[1]!.subject, verdicts[2]!.subject, 'the same subject')
+  assert.notEqual(verdicts[0]!.subject, verdicts[1]!.subject, 'the automatic attempt made a new change')
+  assert.equal(implemented.length, 2, 'the automatic further attempt, once')
   assert.deepEqual(done.state.steps.implement!.attempts, implemented, 'no new implement attempt')
-  assert.deepEqual(done.events.find((e) => e.type === 'reopened')!.reset, ['checks.checks', 'publish', 'accept'])
+  assert.deepEqual(done.events.findLast((e) => e.type === 'reopened')!.reset, ['checks.checks', 'publish', 'accept'])
   assert.equal(done.state.steps['checks.checks']!.verdict, 'pass')
   assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
 })

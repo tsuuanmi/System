@@ -54,7 +54,7 @@ await serving.stop()                                // server, then the Host cor
   gives the same Artifact.
 - **Long calls.** `work.run`, `work.retry` and `approval.decide` answer as soon
   as the Work is held and being driven (a refusal before that, such as another
-  run holding the Work, is the answer), and `work.submit` only admits. None
+  run holding the Work, is the answer), and `work.submit` runs the Work it admits the same way unless `run` is false (the CLI sends false and follows the Work itself). None
   waits for the Work to end: follow it with `work.events` and its cursor. A
   closed connection never cancels a Work; only `work.cancel` does.
 
@@ -66,12 +66,12 @@ await serving.stop()                                // server, then the Host cor
 | --- | --- | --- | --- |
 | `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string }` | The first request of a connection: `{ version, packageVersion }`. |
 | `host.status` | yes | none | Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`. |
-| `work.submit` | yes | `workflow?: string`, `uses?: object`, `capabilities?: string[]`, `input?: string`, `worker?: string`, `force?: boolean`, `commandId?: string` | Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task's base commit, else beside the Host's code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true. |
+| `work.submit` | yes | `workflow?: string`, `uses?: object`, `capabilities?: string[]`, `input?: string`, `worker?: string`, `force?: boolean`, `run?: boolean`, `commandId?: string` | Admit a Work and run it (unless `run` is false), from the contents of a Workflow file, or a single Task by capability, and return its record; with `run` false it only admits, and `work.run` starts it later. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task's base commit, else beside the Host's code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true. |
 | `work.run` | yes | `workId: string`, `commandId?: string` | Start admitted or interrupted Work and return its record once it is running; follow it with `work.events`. |
 | `work.retry` | yes | `workId: string`, `step?: string`, `worker?: string`, `reason?: string`, `commandId?: string` | Run a step of failed, cancelled or held Work again as a new attempt, and return its record once it is running; the steps after it are reset. A verify step is asked again on the same subject with the same pinned criteria, by a human caller only; its earlier verdict stays recorded and no longer counts. |
 | `work.cancel` | yes | `workId: string`, `reason?: string`, `commandId?: string` | Stop Work: its record once cancelled, or `"requested"` while a run is stopping its attempt. |
 | `work.show` | yes | `workId: string` | The Work record: events and state; while Worker attempts run, also `live`: per attempt its step, Worker, start, last activity, elapsed and quiet seconds, whether it is stalled, and the `progress` its Runtime last reported (turns, last tool, tokens, stage). `live` is an observation of the moment, never part of the record. |
-| `work.list` | yes | none | Every Work as `{ id, status, specId }`. |
+| `work.list` | yes | none | Every Work as `{ id, status, specId }`; `status` is `admitted, not running` for a Work admitted and never run. |
 | `work.replay` | yes | `workId: string` | Fold the recorded events again: `{ state, matches }`. Runs nothing. |
 | `work.report` | yes | `workId: string` | Duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events. |
 | `work.events` | yes | `workId: string`, `after?: integer` | The events with `seq` above `after` (all when omitted) and the current status: `{ events, status }`. Poll it to follow a Work. |
