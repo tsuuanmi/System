@@ -99,7 +99,7 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
     return upgrading ? target : undefined
   }
 
-  const served = await serve(options.host, { path, methods: operations(options.services), version, upgrading: asked })
+  const served = await serve(options.host, { path, methods: operations(options.services), version, upgrading: asked, onDisk })
   options.log(`started for ${options.home}, listening on ${path}`)
   continueHeld(options)
 

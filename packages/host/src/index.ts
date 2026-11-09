@@ -121,6 +121,8 @@ export interface ServeOptions {
   version?: string
   /** Called with the version of a hello that differs from this Host's: the code the Host is (now) upgrading to, if it is, so the refusal says to retry and a read-only hello is served. */
   upgrading?: (clientVersion: string) => string | undefined
+  /** The code version on disk (the install's `current`): a refusal then names the older side. Without it the refusal says to restart the Host. */
+  onDisk?: () => string
   /** Milliseconds `close` lets admitted calls finish before it drops the connections; default `STOP_GRACE`. */
   grace?: number
 }
@@ -200,7 +202,11 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
               return send({ jsonrpc: '2.0', id, result: { version, packageVersion: PACKAGE_VERSION, readOnly: true } })
             }
             if (to) throw new RpcError(UPGRADING, `the Host runs code ${version} and is upgrading to the code on disk, ${to}: it restarts when its running attempts finish; retry in a moment`)
-            throw new RpcError(REFUSED, `the Host runs code ${version} and the client ${String(request.params.version)}; restart the Host: systemctl --user restart system (or restart \`system host\`)`)
+            const diskCode = () => { try { return options.onDisk?.() } catch { return undefined } }
+            const seen = `the Host runs code ${version} and the client ${String(request.params.version)}`
+            // The Host runs the code on disk: the client is the older side, and restarting the Host would change nothing.
+            if (diskCode() === version) throw new RpcError(REFUSED, `${seen}; the client is older: restart the client (for \`system mcp\`, the session or its MCP server)`)
+            throw new RpcError(REFUSED, `${seen}; restart the Host: systemctl --user restart system (or restart \`system host\`)`)
           }
           caller = next
           return send({ jsonrpc: '2.0', id, result: { version, packageVersion: PACKAGE_VERSION } })
