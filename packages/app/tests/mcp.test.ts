@@ -82,13 +82,24 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
     assert.equal(tool.inputSchema.type, 'object')
   }
   const submit = tools.find((t) => t.name === 'work.submit')!
-  assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'force', 'input', 'uses', 'worker', 'workflow'])
+  assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'force', 'input', 'run', 'uses', 'worker', 'workflow'])
   for (const closed of ['approval.decide', 'credentials.set', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
+})
+
+test('work.submit runs the Work unless run is false; work.list shows an unrun Work as admitted, not running', { timeout: 60_000 }, async () => {
+  const client = await mcp()
+  const held = (await call(client, 'work.submit', { capabilities: ['code-write'], run: false })).value.id as string
+  const listed = async (id: string) => ((await call(client, 'work.list', {})).value as { id: string; status: string }[]).find((w) => w.id === id)?.status
+  assert.equal(await listed(held), 'admitted, not running')
+  const id = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  await until('the Work to end', async () => (await call(client, 'work.events', { workId: id })).value.status === 'succeeded')
+  assert.equal(await listed(id), 'succeeded')
+  assert.equal(await listed(held), 'admitted, not running')
 })
 
 test('a tool call goes to the Host: submit a direct Task, run it and follow it with work.events', { timeout: 60_000 }, async () => {
   const client = await mcp()
-  const submitted = await call(client, 'work.submit', { capabilities: ['code-write'] })
+  const submitted = await call(client, 'work.submit', { capabilities: ['code-write'], run: false })
   const id = submitted.value.id as string
   assert.deepEqual(submitted.value.events[0].caller, { type: 'agent', operatorId: 'o1' })
   assert.equal((await call(client, 'work.run', { workId: id })).value.id, id)
@@ -110,7 +121,7 @@ test('a subscribed resource is updated when its Work ends; reading it gives work
   const client = await mcp()
   const updated: string[] = []
   client.setNotificationHandler(ResourceUpdatedNotificationSchema, (n) => { updated.push(n.params.uri) })
-  const id = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  const id = (await call(client, 'work.submit', { capabilities: ['code-write'], run: false })).value.id as string
   const uri = `system://work/${id}`
   assert.ok((await client.listResources()).resources.some((r) => r.uri === uri))
   await client.subscribeResource({ uri })
@@ -121,7 +132,7 @@ test('a subscribed resource is updated when its Work ends; reading it gives work
   assert.equal(shown.id, id)
   assert.equal(shown.state.status, 'succeeded')
   // After an unsubscribe a later change says nothing.
-  const quiet = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  const quiet = (await call(client, 'work.submit', { capabilities: ['code-write'], run: false })).value.id as string
   await client.subscribeResource({ uri: `system://work/${quiet}` })
   await client.unsubscribeResource({ uri: `system://work/${quiet}` })
   await call(client, 'work.run', { workId: quiet })
@@ -134,7 +145,7 @@ test('a subscribed resource is updated when its Work ends; reading it gives work
 
 test('a notice only wakes the client: one that was away reads work.events from its cursor and misses nothing', { timeout: 60_000 }, async () => {
   const first = await mcp()
-  const id = (await call(first, 'work.submit', { capabilities: ['code-write'] })).value.id as string
+  const id = (await call(first, 'work.submit', { capabilities: ['code-write'], run: false })).value.id as string
   await first.subscribeResource({ uri: `system://work/${id}` })
   const cursor = (await call(first, 'work.events', { workId: id })).value.events.at(-1).seq as number
   await first.close()

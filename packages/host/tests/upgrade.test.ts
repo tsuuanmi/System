@@ -35,7 +35,7 @@ async function incarnate(f: Fixture, home: string, version: string, codeVersion:
 }
 
 const submitAndRun = async (client: Client, f: Fixture, commandId: string): Promise<string> => {
-  const work = await client.call('work.submit', { workflow, input: f.admission('brainstorm.yaml').input, commandId }) as { id: string }
+  const work = await client.call('work.submit', { workflow, input: f.admission('brainstorm.yaml').input, commandId, run: false }) as { id: string }
   await client.call('work.run', { workId: work.id })
   return work.id
 }

@@ -434,7 +434,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('list Work: id, status, pinned spec')
     .action(() => {
       select(async () => {
-        for (const work of await host.work().list()) io.out(`${work.id}  ${work.status.padEnd(9)}  ${work.specId}\n`)
+        for (const work of await host.work().list()) io.out(`${work.id}  ${work.status.padEnd(21)}  ${work.specId}\n`)
         return 0
       })
     })

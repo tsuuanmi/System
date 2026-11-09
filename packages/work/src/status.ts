@@ -115,6 +115,9 @@ export type ItemRef = NonNullable<Admitted['item']>
 
 const itemOf = (record: WorkRecord): ItemRef | undefined => (record.events[0]!.type === 'admitted' ? (record.events[0] as Admitted).item : undefined)
 const admittedAt = (record: WorkRecord): string => record.events[0]!.at
+/** A Work's status for people: `admitted, not running` when it was admitted and nothing has been done for it yet (its record is only its admission). */
+export const workStatus = (record: WorkRecord): string => (record.state.status === 'running' && record.events.length === 1 ? 'admitted, not running' : record.state.status)
+
 const isActive = (record: WorkRecord) => record.state.status === 'running' || record.state.status === 'held'
 
 /** The Works for an Item of a repository, oldest admitted first. */
@@ -147,8 +150,9 @@ const progressText = (attempt: LiveAttempt | undefined): string => {
 function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | undefined): string {
   const waiting = live?.(record.id).find((a) => a.waiting)
   const { step, account } = waiting ? { step: waiting.stepId, account: waiting.worker } : whoHas(record)
-  const who = step ? `step ${step} on ${account}` : 'no step yet'
-  const tail = record.state.status === 'held' ? `held: ${record.state.reason ?? 'no reason recorded'}` : live ? progressText(live(record.id).find((a) => a.stepId === step && (!!a.waiting || !waiting))) : ''
+  const idle = workStatus(record) === 'admitted, not running'
+  const who = step ? `step ${step} on ${account}` : idle ? 'admitted, not running' : 'no step yet'
+  const tail = record.state.status === 'held' ? `held: ${record.state.reason ?? 'no reason recorded'}` : live && !idle ? progressText(live(record.id).find((a) => a.stepId === step && (!!a.waiting || !waiting))) : ''
   return `${record.id} ${who} since ${admittedAt(record)}${tail ? `; ${tail}` : ''}`
 }
 

@@ -10,7 +10,7 @@ import { WorkController, type SpecStore } from '../src/controller.ts'
 import type { Task } from '../src/kinds.ts'
 import { fold, type WorkEvent, type WorkRecord } from '../src/record.ts'
 import { Capabilities, type WorkerRequest } from '../src/registry.ts'
-import { itemLines, parseStatus, readStatus } from '../src/status.ts'
+import { itemLines, parseStatus, readStatus, workStatus } from '../src/status.ts'
 import { directTask, type ResolvedSpec } from '../src/workflow.ts'
 
 const caller = { type: 'human', operatorId: 'tan' } as const
@@ -174,6 +174,9 @@ test('each state: done from dev, doing from a running Work with its live progres
 
   const release = hold()
   const work = await admit(task(dir, 'df-3'))
+  // Admitted and never run: still doing (it blocks the Item), but said not to be running.
+  assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}`)
+  assert.equal(workStatus(controller.get(work.id)!), 'admitted, not running')
   const running = controller.run(work.id)
   await settle()
   assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} step task on fake/claude since ${work.events[0]!.at}; turns 3, last tool Edit, 1200 tokens`)
