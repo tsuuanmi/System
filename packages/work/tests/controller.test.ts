@@ -39,6 +39,8 @@ function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string,
     },
     getSpec: (specId) => structuredClone(specs.get(specId)),
     exists: (artifactId) => stored.has(artifactId),
+    taskOf: () => undefined,
+    withNote: async () => { throw new Error('no Item in this test') },
   }
 }
 
@@ -481,6 +483,26 @@ test('a Work record written before M4 (no criteria, no new event fields) still p
   }
   const parsed = workRecordSchema.parse(old)
   assert.deepEqual(parsed.state.criteria, {})
+  assert.deepEqual(fold(['task'], parsed.events), parsed.state)
+})
+
+test('a record whose admitted event has a Goal and an orchestrator caller (written before the Goal feature was removed) still opens and replays', async () => {
+  const { workRecordSchema } = await import('../src/record.ts')
+  const spec = 'sha256:' + 'a'.repeat(64)
+  const input = 'sha256:' + 'b'.repeat(64)
+  const goal = 'sha256:' + 'd'.repeat(64)
+  const out = 'sha256:' + 'c'.repeat(64)
+  const old = {
+    id: 'work:goal',
+    events: [
+      { type: 'admitted', seq: 0, at: 't', caller: { type: 'orchestrator', operatorId: 'tan', goal }, specId: spec, input, goal, source: { kind: 'direct-task' } },
+      { type: 'dispatched', seq: 1, at: 't', stepId: 'task', attemptId: 'attempt:1', executor: 'worker', capability: 'code-write', selected: 'claude-code/default', candidates: [], inputs: { input } },
+      { type: 'observed', seq: 2, at: 't', stepId: 'task', attemptId: 'attempt:1', status: 'succeeded', outputs: { result: out }, usage: { state: 'unknown' } },
+      { type: 'terminal', seq: 3, at: 't', outcome: 'succeeded', reason: 'every step succeeded', results: { 'task.result': out } },
+    ],
+    state: { status: 'succeeded', specId: spec, input, steps: { task: { state: 'succeeded', attempts: ['attempt:1'], outputs: { result: out } } }, reason: 'every step succeeded', results: { 'task.result': out } },
+  }
+  const parsed = workRecordSchema.parse(old)
   assert.deepEqual(fold(['task'], parsed.events), parsed.state)
 })
 

@@ -23,6 +23,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   verifiers, route by capability with a reason for every candidate.
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
+- [src/status.ts](src/status.ts) — a project's status: `parseStatus` and `readStatus` (`STATUS.md` on `dev`), `itemLines` (done, doing, todo from the Work records) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/runbook.md#the-status-of-a-project).
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
 - [src/live.ts](src/live.ts) — `LiveAttempts`: each running Worker attempt's
   start, last activity and the `progress` its Worker reported (in memory
@@ -45,30 +46,12 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   `costUsdEstimate` totals the CLI's API-equivalent cost estimate (not what the
   subscription is billed) over the attempts that report it, from records'
   `costUsd`, old ones included.
-- [src/goal.ts](src/goal.ts) — Goals (ADR-0009): `GoalStore` over the Artifacts,
-  `resolveGoal` (a Goal's newest version and its chain), `spendOf` (the fold of
-  attempts and tokens over the Works that name a Goal in the chain) and
-  `overBudget`. `WorkController.goalView` and `Host.goal` report a Goal with
-  its spend. The store also records decisions (`decide`, `decisions`): each
-  `decision@1` names the latest one of its Goal's chain as `previous`, which
-  orders them; they are recorded one at a time.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` (PROP-0003):
   a conversation held elsewhere taken in as `file@1` parts under a manifest
   of what the operator asserts and a fixed notice; the preview and its
   secret warnings, over the parts, their names and the asserted fields.
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
   add a conversation, and `startHost`: the `Host` over the row's own table, specs and capabilities).
-
-## Goals
-
-An `Admission` may name a `goal` (the optional `goal` of the `admitted` event;
-older records stay valid). Admission reads the Goal's newest version through
-the store's `goals`, refuses once `spendOf` its chain reached the budget, and
-replaces the input by a `task@1` with the same instructions and the Goal's
-`context` first. Nothing about the spend is stored. A running Work is never
-stopped by the budget. `WorkService.newGoal` stores a Goal, with the Charter
-([docs/requirements/purpose.md](../../docs/requirements/purpose.md)) as a file
-Artifact when no `context` is given.
 
 ## Cancel and retry
 
@@ -146,11 +129,9 @@ reruns the Work, a denial fails it.
 
 [src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`,
 optional `context`: Artifacts the Worker reads as data, also listed as the
-task's inputs) and
-`git-tree@1` (`repository`, `commit`, `tree`, `parent`) and `goal@1` (`aim`,
-`scope`, `budget: { attempts?, tokens? }`, `context`: Artifact IDs) and
-`decision@1` (`goal`, `question`, `options`, `choice`, `reason`, `restsOn`,
-`by`, optional `previous`), registered by this row. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
+task's inputs, optional `item`: the Item of the repository's `STATUS.md`) and
+`git-tree@1` (`repository`, `commit`, `tree`, `parent`), registered by this row.
+The `admitted` event's optional `goal` and the `orchestrator` caller type are read-only: records stored before the Goal feature was removed (ADR-0009, superseded) still open and replay, and new events never carry either. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 
 ## Crash boundaries
 

@@ -25,11 +25,11 @@ import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import { MemoryControl, type CancelRequest } from './control.ts'
 import { WorkError } from './errors.ts'
-import { overBudget, resolveGoal, spendOf, type GoalStore, type GoalView } from './goal.ts'
 import { noLane, type Lane } from './lane.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
-import type { Verdict } from './kinds.ts'
+import type { Task, Verdict } from './kinds.ts'
 import { Slots, type LostAttempt } from './slots.ts'
+import { activeWork, itemNote, whoHas } from './status.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
@@ -51,8 +51,10 @@ export interface SpecStore {
   kindOf(id: string): string | undefined
   /** Store a `verdict@1` Artifact; returns its ID. */
   putVerdict(verdict: Verdict): Promise<string>
-  /** Goals, when this store has them: a Host without them refuses a Work that names one. */
-  goals?: GoalStore
+  /** A stored Task, and the repository of its base commit; undefined when `id` is not a Task. */
+  taskOf(id: string): { task: Task; repository?: string } | undefined
+  /** Store a copy of Task `id` with `note` added to its context as a text Artifact; returns the copy's ID. */
+  withNote(id: string, note: string, caller: Caller): Promise<string>
 }
 
 /** How often a running attempt checks for a cancel request. */
@@ -70,10 +72,10 @@ export const resolvedSpecSchema = z.object({
 export interface Admission {
   spec: ResolvedSpec
   input?: string
-  /** The Goal to admit under: its budget must have room, and its context goes to the Task. */
-  goal?: string
   /** Only this Worker may take the Work's Worker steps; it must be enabled and offer each step's capabilities. */
   worker?: string
+  /** Allow a Work for an Item that already has a running or held one. */
+  force?: boolean
   caller: Caller
   source: { kind: 'workflow-file' | 'direct-task'; path?: string; fileHash?: string }
 }
@@ -221,14 +223,7 @@ export class WorkController {
     const usesInput = admission.spec.steps.some((s) => refsOf(s).includes('$work.input'))
     if (usesInput && !admission.input) throw new WorkError('the workflow uses $work.input, but no input Artifact was given')
     if (admission.input && !this.specs.exists(admission.input)) throw new WorkError(`input ${admission.input} is not a stored Artifact`)
-    let input = admission.input
-    if (admission.goal) {
-      const { current, spend } = this.goalView(admission.goal)
-      const used = overBudget(current.goal.budget, spend)
-      if (used) throw new WorkError(`the budget of Goal ${current.id} is used up (${used}); a raise is a new Goal that supersedes it`)
-      if (!input) throw new WorkError("a Goal's Work needs an input Task to carry the Goal's context")
-      input = await this.specs.goals!.wrapTask(input, current.goal.context, admission.caller)
-    }
+    const input = admission.input
     if (admission.worker) {
       if (!this.capabilities.workerRefs().includes(admission.worker)) throw new WorkError(`no enabled Worker ${admission.worker}; enabled: ${this.capabilities.workerRefs().join(', ') || 'none'}`)
       for (const s of admission.spec.steps.filter(isWorkerStep)) {
@@ -259,9 +254,17 @@ export class WorkController {
         throw new WorkError(`step ${s.id}: ${provider.ref} refuses its params: ${(error as Error).message}`)
       }
     }
+    const named = input ? this.specs.taskOf(input) : undefined
+    const item = named?.task.item ? { id: named.task.item, ...(named.repository ? { repository: named.repository } : {}) } : undefined
+    if (item && !admission.force) {
+      const busy = activeWork(this.list(), item)
+      if (busy) throw new WorkError(`Item ${item.id} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'}); to run another on purpose, give force (--force)`)
+    }
+    // A Task that names an Item is read with the Item's status and its earlier Works added to its context.
+    const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list()), admission.caller) : input
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = options.workId ?? `work:${randomUUID()}`
-    const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input, ...(admission.goal ? { goal: admission.goal } : {}), ...(admission.worker ? { worker: admission.worker } : {}), criteria, verifiers, source: admission.source }
+    const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: read, ...(item ? { item } : {}), ...(admission.worker ? { worker: admission.worker } : {}), criteria, verifiers, source: admission.source }
     const record: WorkRecord = {
       id, events: [admitted], state: fold(admission.spec.steps.map((s) => s.id), [admitted]),
       ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
@@ -273,19 +276,6 @@ export class WorkController {
 
   get(workId: string): WorkRecord | undefined {
     return this.table.get(workId)
-  }
-
-  /** A Goal, its newest version and the spend of its chain, folded from the Works recorded now. */
-  goalView(goalId: string): GoalView {
-    if (!this.specs.goals) throw new WorkError('this Host has no Goals')
-    const { view, chain } = resolveGoal(this.specs.goals, goalId)
-    return { ...view, spend: spendOf(this.list(), chain) }
-  }
-
-  /** The Goal and every Goal in its supersedes chain, as far back and forward as the chain goes. */
-  goalChain(goalId: string): ReadonlySet<string> {
-    if (!this.specs.goals) throw new WorkError('this Host has no Goals')
-    return resolveGoal(this.specs.goals, goalId).chain
   }
 
   list(): WorkRecord[] {
@@ -496,7 +486,7 @@ export class WorkController {
       : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded'))
     if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker, verify or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
     // Choosing among runs of a check would let an agent keep the lucky one: verifying again is the operator's.
-    if (isVerifyStep(step) && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} records a decision and tells the operator`)
+    if (isVerifyStep(step) && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} should tell the operator`)
     if (!isWorkerStep(step) && options.worker) throw new WorkError(`${step.id} is ${isVerifyStep(step) ? 'a verify' : 'an effect'} step; --worker names Workers only`)
     if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]

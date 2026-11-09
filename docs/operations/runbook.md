@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-08
+reviewed: 2026-11-09
 covers: [bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
 ---
 
@@ -176,6 +176,24 @@ merge patch does. So one account is changed, added or removed alone:
 A list of names (such as `capabilities`) is replaced whole. `$patch: replace`
 in the `config` takes it whole, as the overlay used to. `system workers` shows
 the accounts that result.
+
+The `verifiers` row's `checkEnv` gives every `code.required-checks` check
+variables of the machine, on top of its minimal environment (`PATH`, `LANG`, a
+throwaway `HOME`, `CI=1`). A repository whose toolchain lives under the user's
+home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
+
+```yaml
+- id: verifiers
+  config:
+    checkEnv:
+      RUSTUP_HOME: /home/tan/.rustup
+      CARGO_HOME: /home/tan/.cargo
+      CARGO_TARGET_DIR: /home/tan/.cache/system-cargo-target
+```
+
+Names match `^[A-Z_][A-Z0-9_]*$`; `HOME`, `PATH` and `CI` cannot be set, and
+the profile is refused if it tries. A `check-run@1` records the names it was
+given, never the values.
 
 ## Attempts at once, and held slots
 
@@ -514,75 +532,68 @@ attempt quiet for `stallMinutes` (10 by default; the `work` row's config) is
 stall is a notice, not a verdict: the attempt is not stopped. `live` is never
 recorded; it is gone once the attempt reports.
 
-## Goals and their budget
+## The status of a project
 
-A Goal bounds what an agent session may spend. Write one at a terminal:
+A repository lists its planned work in a `STATUS.md` at its root: a heading,
+`Aim:` and one to three lines, then one line per **Item**,
+`- [ ] <id> <title>` (`- [x]` when done). An id is lower case and ends in a
+number, such as `df-3` or `dna-13`. Keep it near 100 lines and link details.
+A line that does not parse is skipped and reported by `system status` as a
+`note:`.
 
 ```
-system goal new --aim "..." --scope "..." --attempts 10 --tokens 2000000
+system task new --text "..." --repo . --ref dev --item df-3
+system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
-It prints the Goal's ID after you type the code it shows. Submit Works under it
-with `system work submit ... --goal <id> --input <task>` (a Goal's Work needs
-an input Task); each gets the Goal's context (the
-Charter by default) as Task context. `system goal show <id>` and
-`system work report <work>` show the spend: attempts, tokens (fresh input, cache
-writes and output), and how many attempts had unknown usage.
+`status` prints one line per Item, from the `dev` tip of the repository (git,
+not the working tree) and the Work records: `done` is `[x]` in `STATUS.md`,
+with the last Work and Artifact for the Item; `doing` is a Work whose Task
+names the Item and that is running or held (its ID, step, Account, since when,
+and the live progress the Host keeps, or why it is held); `todo` is `nobody`.
+Read a Work by its ID for details. The MCP tool `status` answers the same.
 
-A Work that is admitted and not finished counts as at least one attempt, so
-many Works cannot be admitted before the first runs. Once the spend reaches the budget, `work submit --goal` fails with `the budget
-of Goal ... is used up`; running Works finish. To go on, write a new Goal with
-`--supersedes <old id>` (the newest version only) and the raised budget; the old ID then resolves to it,
-and the spend of the old versions still counts.
+While a Work for an Item runs or is held, `work submit` for the same Item is
+refused, naming that Work and its Account. `--force` (`force: true`) allows
+parallel work on purpose. A Task that names an Item is read with the Item's
+line and the Work and result IDs, or failure reasons, of its earlier Works
+added to its context, so a new session or Worker can carry on from the status
+alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
+pull request.
 
 ## Using System from an agent
 
 `system mcp` lets an agent session such as Claude Code use System's agent
 operations as MCP tools. It runs without DSH and talks to the running Host, so
-start the Host first. Write a Goal (above), then add the server with its ID:
+start the Host first, then add the server:
 
 ```
-claude mcp add system -- system mcp --goal <goal-id>
+claude mcp add system -- system mcp
 ```
+
+The server sends `instructions` in its initialize result, which the client puts
+in the session's context, so a session in any repository knows when to use
+System, what a repository needs and the steps, without reading these docs.
 
 A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base
 commit, else beside its own code.
 
-Without `--goal` the session is a plain agent: it may use every agent
-operation on every Work.
+The session is an agent: it may use every agent operation on every Work, store
+Tasks and files, and list the Workers.
 
-With `--goal` it is an Orchestrator for that Goal. It may:
-
-- submit Works, which always name its Goal, and run, retry and cancel them;
-- read the Works of the Goal and of the Goals it supersedes, their events,
-  reports and Artifacts;
-- store Tasks and files, and list the Workers.
-
-Each Work in scope is also an MCP resource, `system://work/<id>`; reading it
+Each Work is also an MCP resource, `system://work/<id>`; reading it
 gives `work.show`. To be told instead of polling, subscribe to it
 (`resources/subscribe`): the server sends `notifications/resources/updated`
 when the Work becomes terminal, is held, waits for approval, or one of its
-attempts stalls. With `--goal`
-it also sends `notifications/resources/list_changed` when a new Work of the
-Goal appears. A notice only wakes the session: read the Work's events with
+attempts stalls. A notice only wakes the session: read the Work's events with
 `work.events` from your last `seq`. A session that was away misses no event,
 only the wake-up.
 
-**Replacing the Orchestrator session.** Its state lives in System, so a new
-session takes over like a new Worker: it starts from `goal.brief` (`system goal
-brief <goal>`: the Goal and its budget left, its Works with their current step
-and live progress, its decisions, and what waits), and records each choice it
-makes with `decision.add` (`system decision add`: question, options, choice,
-reason, and the Artifacts it rests on, such as a synthesis or a review). A
-decision is a record, never an authority. When a check failed for a reason
-outside the change, it records that and tells the operator: only a human
-runs `system work retry <work> --step checks.checks`.
-
-It cannot approve or deny, store a conversation, set credentials, write a Goal,
-sign an account in, or merge into `main`. It is refused, with the reason, any
-call on another Goal's Works or their Artifacts. The budget of the Goal still
-stops new Works.
+It cannot approve or deny, store a conversation, set credentials, sign an
+account in, or merge into `main`. When a check failed for a reason outside the
+change, it tells the operator: only a human runs
+`system work retry <work> --step checks.checks`.
 
 ## Errors
 

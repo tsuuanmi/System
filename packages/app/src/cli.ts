@@ -2,24 +2,16 @@
  * The `system` command line. Each action returns an exit code; the plugin
  * runs it once the host has started and then asks the launcher to exit.
  */
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type GoalView, type NewDecision, type NewGoal, type StoredDecision, type WorkRecord, type WorkState } from '@system/work'
+import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type WorkRecord, type WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 /** A repeatable option's values, in order. */
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value]
-}
-
-/** A whole number above zero, for an option. */
-const positive = (name: string) => (text: string): number => {
-  const value = Number(text)
-  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} is a whole number above zero, not ${text}`)
-  return value
 }
 
 /** What a human types to confirm: the first eight characters of an ID or digest, without its prefix. */
@@ -68,8 +60,8 @@ type Soon<T> = T | Promise<T>
 
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
-  admitFile(path: string, input: string | undefined, goal?: string, worker?: string): Promise<WorkRecord>
-  admitTask(capabilities: string[], input: string | undefined, goal?: string, worker?: string): Promise<WorkRecord>
+  admitFile(path: string, input: string | undefined, worker?: string, force?: boolean): Promise<WorkRecord>
+  admitTask(capabilities: string[], input: string | undefined, worker?: string, force?: boolean): Promise<WorkRecord>
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
@@ -80,16 +72,11 @@ export interface WorkCommands {
   retry(workId: string, worker: string | undefined, reason: string, step: string | undefined, follow?: FollowOptions): Promise<Followed>
   /** Wait until nothing runs the Work, as after a cancel was requested. */
   wait(workId: string): Promise<Followed>
-  /** A Work's measurements, and for a Work of a Goal the Goal's budget and spend. */
+  /** A Work's measurements. */
   report(workId: string): Promise<unknown>
-  /** Store a Goal on the human's own connection, as the operator who confirmed it; `supersedes` is the Goal it raises or changes. */
-  newGoal(goal: NewGoal, supersedes: string | undefined, operatorId: string): Promise<{ id: string }>
-  goal(goalId: string): Promise<GoalView>
-  /** The Goal's brief: text written from records only. */
-  brief(goalId: string): Promise<string>
-  addDecision(decision: NewDecision): Promise<{ id: string }>
-  decisions(goalId: string | undefined): Promise<StoredDecision[]>
-  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
+  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string): Promise<{ task: string; base?: string }>
+  /** The lines of the status of the project at `repository` (see the Host's `status`). */
+  status(repository: string, state: string | undefined, item: string | undefined): Promise<string[]>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
 
@@ -272,75 +259,26 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--repo <path>', 'a git repository the task starts from')
     .option('--ref <ref>', 'the commit or branch in --repo', 'HEAD')
     .option('--context <id>', 'an Artifact the Worker reads as data, such as a conversation (repeatable)', collect, [])
-    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[] }) => {
+    .option('--item <id>', 'the Item of the repository\'s STATUS.md this task is for (see system status)')
+    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string }) => {
       select(async () => {
         if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
-        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context)
+        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item)
         if (created.base) io.out(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
         return 0
       })
     })
-  const goal = program.command('goal').description('Goals: an aim, its scope and its budget, which Works are admitted under')
-  goal.command('new')
-    .description('store a goal@1 Artifact and print its ID; a human at a terminal only. A raise or a change supersedes the old Goal')
-    .requiredOption('--aim <text>', 'what to achieve')
-    .requiredOption('--scope <text>', 'what is in and out')
-    .option('--attempts <n>', 'the most Worker attempts its Works may spend', positive('--attempts'))
-    .option('--tokens <n>', 'the most tokens (fresh input plus output) its Works may spend', positive('--tokens'))
-    .option('--supersedes <id>', 'the Goal this raises or changes')
-    .option('--context <id>', 'an Artifact every Work of the Goal reads as data (repeatable; default: the Charter)', collect, [])
-    .action((options: { aim: string; scope: string; attempts?: number; tokens?: number; supersedes?: string; context: string[] }) => {
+  program.command('status')
+    .description('the status of a project: one line per Item of its STATUS.md on dev, done, doing (which Work, step, account, since when, progress) or todo (nobody)')
+    .option('--repo <path>', 'a git repository of the project', '.')
+    .option('--state <state>', 'only Items that are todo, doing or done')
+    .option('--item <id>', 'only this Item')
+    .action((options: { repo: string; state?: string; item?: string }) => {
       select(async () => {
-        const budget = { ...(options.attempts ? { attempts: options.attempts } : {}), ...(options.tokens ? { tokens: options.tokens } : {}) }
-        const content = { aim: options.aim, scope: options.scope, budget, ...(options.context.length ? { context: options.context } : {}) }
-        io.out(`${JSON.stringify({ ...content, ...(options.supersedes ? { supersedes: options.supersedes } : {}) }, null, 2)}\n`)
-        const short = shortCode(`sha256:${createHash('sha256').update(JSON.stringify([content, options.supersedes])).digest('hex')}`)
-        // On a line of its own, so a pasted command is not taken for the answer.
-        const operatorId = await io.confirmHuman(`Nothing is stored unless you type exactly ${short} to write this Goal\n> `, short)
-        io.out(`${(await host.work().newGoal(content, options.supersedes, operatorId)).id}\n`)
-        return 0
-      })
-    })
-  goal.command('show <id>')
-    .description('a Goal, its current version (the newest that supersedes it) and the spend of its Works')
-    .action((id: string) => {
-      select(async () => {
-        io.out(`${JSON.stringify(await host.work().goal(id), null, 2)}\n`)
-        return 0
-      })
-    })
-  goal.command('brief <id>')
-    .description('what a new Orchestrator session starts from, written from records only: the Goal and its budget left, its Works, its decisions and what waits')
-    .action((id: string) => {
-      select(async () => {
-        io.out(await host.work().brief(id))
-        return 0
-      })
-    })
-  const decision = program.command('decision').description('choices made for a Goal, recorded as Artifacts: a record, never an authority')
-  decision.command('add')
-    .description('record a decision for a Goal and print its ID')
-    .requiredOption('--goal <id>', 'the Goal it is made for')
-    .requiredOption('--question <text>', 'what was decided')
-    .requiredOption('--option <text>', 'an option considered (repeatable)', collect, [])
-    .requiredOption('--choice <text>', 'the option chosen')
-    .requiredOption('--reason <text>', 'why')
-    .option('--rests-on <id>', 'an Artifact it rests on, such as a synthesis, a review or a check-run (repeatable)', collect, [])
-    .action((options: { goal: string; question: string; option: string[]; choice: string; reason: string; restsOn: string[] }) => {
-      select(async () => {
-        const { goal: goalId, question, option, choice, reason, restsOn } = options
-        io.out(`${(await host.work().addDecision({ goal: goalId, question, options: option, choice, reason, restsOn })).id}\n`)
-        return 0
-      })
-    })
-  decision.command('list')
-    .description('the decisions of a Goal and its chain (of every Goal without --goal), oldest first, as JSON')
-    .option('--goal <id>', 'the Goal')
-    .action((options: { goal?: string }) => {
-      select(async () => {
-        io.out(`${JSON.stringify(await host.work().decisions(options.goal), null, 2)}\n`)
+        if (options.state && !['todo', 'doing', 'done'].includes(options.state)) throw new Error('--state is todo, doing or done')
+        for (const line of await host.work().status(options.repo, options.state, options.item)) io.out(`${line}\n`)
         return 0
       })
     })
@@ -426,17 +364,17 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--workflow <file>', 'a system.workflow/v1 YAML file')
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
-    .option('--goal <id>', 'count the Work toward this Goal: its context goes to the Task and its budget limits admission')
     .option('--worker <ref>', 'only this Worker may take its Worker steps (see system workers)')
+    .option('--force', 'admit although the input Task\'s Item already has a running or held Work')
     .option('--no-run', 'admit only')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
-    .action((options: { workflow?: string; capability?: string[]; input?: string; goal?: string; worker?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
+    .action((options: { workflow?: string; capability?: string[]; input?: string; worker?: string; force?: boolean; run: boolean; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
         const admitted = options.workflow
-          ? await commands.admitFile(options.workflow, options.input, options.goal, options.worker)
-          : await commands.admitTask(options.capability!, options.input, options.goal, options.worker)
+          ? await commands.admitFile(options.workflow, options.input, options.worker, options.force)
+          : await commands.admitTask(options.capability!, options.input, options.worker, options.force)
         io.out(`${admitted.id}\n`)
         if (!options.run) return 0
         return exitOf(await commands.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))
@@ -497,7 +435,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('report <workId>')
-    .description('duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also its spend')
+    .description('duration, attempts, operator touches and usage of a Work, from its events')
     .action((workId: string) => {
       select(async () => {
         io.out(`${JSON.stringify(await host.work().report(workId), null, 2)}\n`)

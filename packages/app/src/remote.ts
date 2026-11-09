@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, parseWorkflow, type Asserted, type Caller, type ConversationParts, type GoalView, type WorkRecord, type WorkState } from '@system/work'
+import { TERMINAL, parseWorkflow, type Asserted, type Caller, type ConversationParts, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { MAX_FRAME, NotAnswering, NotRunning, RpcError, UPGRADING, fitsFrame, type Client } from '../../host/lib/index.js'
 import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
@@ -127,11 +127,11 @@ export function remoteHost(remote: Remote): ClientHost {
   }
 
   const work: WorkCommands = {
-    admitFile(path, input, goal, worker) {
+    admitFile(path, input, worker, force) {
       const workflow = readFileSync(path, 'utf8')
-      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, goal, worker })
+      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, worker, force })
     },
-    admitTask: (capabilities, input, goal, worker) => change('work.submit', { capabilities, input, goal, worker }),
+    admitTask: (capabilities, input, worker, force) => change('work.submit', { capabilities, input, worker, force }),
     async run(workId, options) {
       await change('work.run', { workId })
       return follow(workId, options)
@@ -139,19 +139,6 @@ export function remoteHost(remote: Remote): ClientHost {
     get: (workId) => read('work.show', { workId }) as Promise<WorkRecord>,
     list: () => read('work.list'),
     report: (workId) => read('work.report', { workId }),
-    async newGoal(goal, supersedes, operator) {
-      // Like a decision, a Goal is a human's: its own connection says so.
-      const human = await remote.open({ type: 'human', operatorId: operator })
-      try {
-        return await human.call('goal.new', { ...goal, supersedes }) as { id: string }
-      } finally {
-        human.close()
-      }
-    },
-    goal: (goalId) => read('goal.show', { goal: goalId }) as Promise<GoalView>,
-    brief: async (goalId) => (await read('goal.brief', { goal: goalId }) as { text: string }).text,
-    addDecision: (decision) => read('decision.add', decision),
-    decisions: (goalId) => read('decision.list', goalId ? { goal: goalId } : {}),
     replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,
     cancel: (workId, reason) => change('work.cancel', { workId, reason }),
     async decide(workId, decision, operator, reason) {
@@ -169,9 +156,10 @@ export function remoteHost(remote: Remote): ClientHost {
       return follow(workId, options)
     },
     wait: (workId) => follow(workId),
-    async newTask(instructions, repository, ref, context) {
-      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context })
+    async newTask(instructions, repository, ref, context, item) {
+      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item })
     },
+    status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
     async addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]) {
       const part = (p: { name: string; data: Uint8Array; mediaType: string }) => ({ name: p.name, data: base64(p.data), mediaType: p.mediaType })
       // The CLI has already refused what the preview warned about, unless the operator accepted it.

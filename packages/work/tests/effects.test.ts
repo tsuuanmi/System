@@ -46,6 +46,8 @@ function world(rows = new Map<string, WorkRecord>(), remote: Remote = { publishe
     async putSpec(spec) { const specId = store(JSON.stringify(spec), 'workflow-spec'); specs.set(specId, spec); return specId },
     getSpec: (specId) => structuredClone(specs.get(specId)),
     exists: (artifactId) => stored.has(artifactId),
+    taskOf: () => undefined,
+    withNote: async () => { throw new Error('no Item in this test') },
     kindOf: (artifactId) => kinds.get(artifactId),
     async putVerdict(verdict: Verdict) { return store(JSON.stringify(verdict), 'verdict') },
   }

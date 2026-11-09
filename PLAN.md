@@ -82,7 +82,7 @@ Works, so trimming the core and proving the dogfood are one job.
 
 - [x] DF0. Release: `dev` merged into `main` (PR #71); PR #3 closed, PR #4
   was already merged; the release report deleted (PR #70).
-- [ ] DF0b. An install apart from the development checkouts (operator,
+- [x] DF0b. An install apart from the development checkouts (operator,
   2026-11-08). Today the live Host runs from the development checkout with
   its config in a session's `/tmp` scratchpad, against the Sessions rule.
   Done by the Development session as a blocker fix ("fixed outside System"):
@@ -107,31 +107,65 @@ Works, so trimming the core and proving the dogfood are one job.
     is a command to that Host, which refuses a client of other code.*
   - last, `system mcp` without `--goal` registered at user scope, so a
     session in any repository has System's agent tools (no approval: that
-    stays human, at a terminal). A Goal-scoped Orchestrator stays a folder
-    of its own (`~/workspaces/system-orchestrator`).
-- [ ] DF1. One Goal, "a smaller core, the same behaviour", with an attempt and
-  token budget. The Orchestrator is a **new** Claude Code session connected
-  only to `system mcp --goal`, with no shell, edit or push. It runs Works up
-  to their approval; the operator approves and merges. Claude Code's `/goal`
-  keeps the session going, with a stop condition read from System (every
-  scope item has a Work at approval, or the budget is spent); System's Goal
-  holds the budget, the authority and the state any session takes over from.
-- [ ] DF2. Core debt, each cut one Work and one pull request, with tests
-  showing the rest behaves the same, and the core's line count recorded
-  after each:
-  - without dropping a feature (about 35 lines, about 75 with header comments
-    that restate ADRs): `Host.interrupted`, used only by tests; the `Host`
-    pass-throughs to the controller; the `executor` and `usage` shapes written
-    twice;
-  - drop the conversation intake (`system conversation add`, about 43 core
-    lines); the `conversation@1` kind stays, the ChatGPT Worker stores one per
-    exchange;
-  - keep Goals, decisions and the Orchestrator caller, live progress and
-    stalls, and Sub-workflows: DF uses them. At the end of DF, a feature that
-    no Work used is proposed for removal.
-- [ ] DF2b. One automatic fresh attempt per Work after a conclusive failure
-  (operator, 2026-11-08; decided on `web-workers`, PLAN "Decisions of
-  2026-11-08, second round"), a System Work of this Goal after DF0b. Allowed
+    stays human, at a terminal).
+  - *Done 2026-11-09: WW reached `main` (#84, #85); `system update` from the
+    live checkout installed `3b7dc6e`, checked by `work:c4f42349` (7 of 7
+    checks passed on that commit); the Host runs from `~/.system/current`
+    as `system.service` (code `cf832c5d5856`), with
+    `~/.system/profile.yml`, whose Effects now publish and merge into `dev`
+    only. `system mcp` is registered at user scope.*
+- [ ] DF1. Any session drives DF (operator, 2026-11-09): it gives the items
+  below to System as Works, from the CLI or MCP as an agent (`--item`), and
+  follows them until System merges them into `dev`. No separate Orchestrator
+  session or folder (removed), and no Goal: token use is not a limit today,
+  and is measured per Work (`system work report`) when it is. Claude Code's
+  `/goal` keeps a session going.
+- [ ] DF2. In this order, each one Work and one pull request, with tests
+  showing the rest behaves the same where it removes, and the core's line
+  count recorded after each; (a) and (b) run in parallel:
+  - (a) drop Goals, decisions, the brief, the Orchestrator caller and
+    `system mcp --goal` (about 288 core lines). Stored records still open:
+    the optional `goal` of `admitted` and the `orchestrator` caller stay
+    readable. ADR-0009 is superseded. (`work:5d34511d`)
+  - (b) DF2c's environment of the checks (`checkEnv`). (`work:c9519bac`)
+  - (c) the status of a project, after (a): an **Item** is a planned piece
+    of a repository's work with a stable ID, listed in its `STATUS.md` (an
+    aim of one to three lines, then one line per Item, `[x]` when done, at
+    most about 100 lines, details linked). A Task names its Item (`--item`).
+    `system status [--repo] [--state todo|doing|done] [--item]`, and the
+    MCP tool `status`, answer one line per Item: done, from `STATUS.md` on
+    `dev`; doing, from the live Works (which Work, step, Account, since,
+    progress); todo, nobody. Details are read by ID. While a Work for an
+    Item runs or is held, a second one is refused, naming who works on it
+    (`--force` for deliberate parallel work). A Task naming an Item gets as
+    context the Item's line and the result IDs of its earlier Works. The
+    change that finishes an Item ticks it in `STATUS.md`, in the same pull
+    request. The slow part lives in the repository, the live part in the
+    Host's store: no new database. System's own `STATUS.md` lists DF's Items;
+  - (d) DF2c's MCP `instructions`, after (a) and (c), so they describe the
+    status query;
+  - (e) the small cuts: `Host.interrupted`, used only by tests; the `Host`
+    pass-throughs to the controller; the `executor` and `usage` shapes
+    written twice; header comments that restate ADRs;
+  - (f) drop the conversation intake (`system conversation add`, about 43
+    core lines); the `conversation@1` kind stays;
+  - (h) the `code-write` Worker runs the repository's checks whose `paths`
+    its change touches before it finishes (operator, 2026-11-09; `df-8`):
+    one of the first four DF Works failed its checks on its own test
+    expectations, which the Worker could have run;
+  - (g) DF2b as a general mechanism, then DNA (DF2c). Count meanwhile how
+    many Works fail their checks on their own change; with (h) in place, the
+    count decides how much of DF2b code changes need.
+- [ ] DF2b. One automatic further attempt after a failure that can be
+  fixed, with the failure as its input (operator, 2026-11-09: one general
+  mechanism, declared in the Workflow, for example
+  `retry: { onFail: [checks.checks], max: 1 }`, instead of a Website Worker
+  feature): a code step continues on its change with the failing checks'
+  verdict and evidence IDs; a Website Worker step starts a new chat with the
+  reason (a missing output block); a Research step gets the unconfirmed
+  citations. Which failures qualify stays as first decided:
+  (2026-11-08, PLAN of `web-workers`, "Decisions of 2026-11-08, second
+  round"), allowed
   after a failure before the send, a site error, or a complete but malformed
   answer; never after an unknown send, a challenge, a sign-in wall or
   `invalid_state`. The Worker says whether a failure may be tried afresh,
@@ -140,17 +174,53 @@ Works, so trimming the core and proving the dogfood are one job.
   evidence and event say it was automatic. Basis: 1 of 20 canary runs failed
   on a missing output block; one fresh attempt would bring acceptance to about
   95%. Until it ships, `work retry` by hand.
-- [ ] DF3. Replace the Orchestrator mid-milestone: stop its session in the
-  middle of a Work, start a new session with only `system goal brief`, and it
-  carries on without reading PLAN, an old chat or a memory. Whatever it has to
+- [ ] DF2c. Other repositories (operator, 2026-11-09). Any Claude Code session,
+  in any repository, uses System through its MCP tools; the session is a
+  caller, and the change is made by a Worker in a clean worktree. A
+  repository can use System when it is on GitHub, has a `dev` branch and a
+  committed `.system/checks.yaml`: the Effects' `base: dev` and
+  `mergeInto: [dev]` then hold for it as they are (its own `origin`), so
+  System merges its checked changes into `dev` and the operator merges
+  `dev` into `main`. No per-repository publishing is needed. Two System
+  Works, as exceptions to "no new feature" because other
+  repositories need them:
+  - the MCP server's `instructions` (the MCP standard's field, read by the
+    client at connect): what System is, that the session is a caller, the
+    conditions above, the Workflows and when to use each, the steps
+    (`task_new`, `work_submit`, follow), the bootstrap checklist, and that
+    what only a human may do is printed as the exact command for the
+    operator to run. The bootstrap, done by the session in the repository,
+    with no script: check the GitHub remote; write `AGENTS.md` from the
+    agent contract of
+    [the documentation architecture standard](docs/governance/documentation-architecture.md)
+    if it is missing; create `dev` from `main` after asking the operator;
+    write `.system/checks.yaml` from the repository's CI and commit it on
+    `dev`, the one direct commit, since no checks exist yet to pin;
+  - the environment of the checks: the machine's profile names variables
+    passed to every check (such as `RUSTUP_HOME`, `CARGO_HOME` and a shared
+    `CARGO_TARGET_DIR`), because the verifier runs each check with a fresh
+    `HOME` and toolchains kept under `HOME` (rustup, uv) would otherwise be
+    missing or downloaded every time. In `verifiers`, outside the core.
+
+  Then `DNA` is the first other repository: bootstrapped by a session there,
+  and one change made through System.
+- [ ] DF3. Replace the session mid-milestone: stop it in the middle of a
+  Work, start another anywhere, and it carries on from `system status` and
+  the Works alone, without PLAN, an old chat or a memory. Whatever it has to
   ask or guess is a defect: a record System is missing.
-- [ ] DF4. Check time measured again once WW is on `dev`; over 3 minutes is a
-  defect.
+- [x] DF4. Check time measured again once WW is on `dev`; over 3 minutes is a
+  defect. *2026-11-09, `work:c4f42349` on `3b7dc6e`: docs 0.9 s, install
+  15.2 s, build 29.7 s, typecheck 9.3 s, unit 14.8 s, smoke 95.2 s, so
+  2 min 45 s for a change outside the web Runtime; `web` (388 s) runs only
+  for a change to the web Runtime, its driver, its test or
+  `test-support/headed.ts` (`paths`; narrowed from the checks file, shared
+  test support and the dependencies, which now meet it only in the release
+  check of `system update`).*
 
 **Done =** at least five consecutive changes into `dev` made by System Works,
 each recording the operator's touches, time, usage and failed attempts; DF3
-passed; the attempt budget, live progress and an Orchestrator over
-`system mcp` exercised for real.
+passed; the attempt budget, live progress and the status query exercised
+for real.
 
 **Defects found by DF** are fixed before features. A defect that blocks DF
 may be fixed directly by the Development session, marked "fixed outside
@@ -326,13 +396,7 @@ removed), Power by tier, a circuit breaker per Account, the canary, the
 
 ## 4. Future, not current gates
 
-- [ ] Publishing for other repositories (operator, 2026-11-08; right after
-  DF): each repository names its branches beside its checks (`.system/`,
-  pinned from the base commit); the Host keeps the allowlist of branches it
-  may merge into, since that is authority a repository cannot grant itself.
-  Until then, a Work on another repository ends at its checked change.
-
-- [ ] An Orchestrator that System spawns on a schedule (after O).
+- [ ] A session that System starts on a schedule, to drive Items unattended.
 - [ ] Research quality capabilities (source snapshots, citation consistency,
   claim-to-evidence checking) as separately selected verifiers. *Trigger: a
   Research Work whose accepted report the operator finds wrong because a

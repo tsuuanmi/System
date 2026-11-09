@@ -4,7 +4,8 @@
  * keeps a Work running while the CLI that followed it goes away.
  */
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createConnection, createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -166,4 +167,31 @@ test('a Host that does not answer is named, with the runbook', { timeout: 60_000
     for (const socket of sockets) socket.destroy()
     silent.close()
   }
+})
+
+test('status shows an Item as todo, then doing while its Work runs; a second Work is refused unless forced', { timeout: 120_000 }, async () => {
+  const project = realpathSync(mkdtempSync(join(home, 'project-')))
+  const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
+  git('init', '-q', '-b', 'dev')
+  writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [x] p-1 First\n- [ ] p-2 Second\n')
+  git('add', '.')
+  git('commit', '-qm', 'status')
+  assert.equal(system('status', '--repo', project).stdout, '[x] p-1 First - done\n[ ] p-2 Second - todo: nobody\n')
+  assert.match(system('status', '--repo', project, '--state', 'bogus').stderr, /--state is todo, doing or done/)
+  const task = system('task', 'new', '--text', 'do p-2', '--repo', project, '--ref', 'dev', '--item', 'p-2').stdout.trim().split('\n').at(-1)!
+  rmSync(hold, { force: true })
+  const run = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', task])
+  const workId = await admitted(run)
+  const line = system('status', '--repo', project, '--item', 'p-2').stdout
+  assert.match(line, new RegExp(`^\\[ \\] p-2 Second - doing: ${workId} step task on fake-worker since \\S+Z`))
+  assert.equal(system('status', '--repo', project, '--state', 'doing').stdout, line)
+  const refused = system('work', 'submit', '--capability', 'code-write', '--input', task, '--no-run')
+  assert.equal(refused.status, 1)
+  assert.match(refused.stderr, new RegExp(`^system: Item p-2 already has Work ${workId} \\(running, fake-worker\\)`))
+  const forced = system('work', 'submit', '--capability', 'code-write', '--input', task, '--no-run', '--force')
+  assert.equal(forced.status, 0, forced.stderr)
+  run.child.kill('SIGINT')
+  await run.done
+  writeFileSync(hold, '')
+  await until('the Work to finish', () => status(workId) === 'succeeded')
 })

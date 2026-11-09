@@ -74,7 +74,7 @@ export const INVALID_PARAMS = -32602
 export const INTERNAL_ERROR = -32603
 /** Refused by the Host: no hello yet, or a version mismatch. */
 export const REFUSED = -32000
-/** An operation flagged `agent: false`, called by an agent or an orchestrator; or a call outside an orchestrator's Goal. */
+/** An operation flagged `agent: false`, called by an agent. */
 export const NOT_ALLOWED = -32001
 /** A hello from the code on disk, refused because this Host is upgrading to it: retry in a moment. */
 export const UPGRADING = -32002
@@ -96,15 +96,8 @@ export class NotAnswering extends Error {}
 /** What a connection watches, for the rows that keep it subscribed (`work.watch`). The connection sends the notices; a closed one drops them. */
 export interface Link {
   works: Set<string>
-  goals: Set<string>
-  /** Start hearing the Host's changes, once: call it after adding to `works` or `goals`. */
+  /** Start hearing the Host's changes, once: call it after adding to `works`. */
   listen(): void
-}
-
-/** Whether the Work was admitted for `goal` or a Goal in its supersedes chain (ADR-0009 decision 4). */
-export function inScope(host: Host, goal: string, workId: string): boolean {
-  const admitted = host.get(workId)?.events[0]
-  return admitted?.type === 'admitted' && admitted.goal !== undefined && host.goalChain(goal).has(admitted.goal)
 }
 
 export interface Method {
@@ -113,11 +106,6 @@ export interface Method {
   /** The shape of `params`; a call that does not fit is refused with -32602, and the handler gets the parsed value. */
   params?: z.ZodType
   handler: (host: Host, params: any, caller: Caller, link: Link) => unknown | Promise<unknown>
-  /**
-   * For an `orchestrator` caller only, before the handler: throw `NOT_ALLOWED` naming the scope when the call
-   * reaches outside its Goal, or return the params to run with (ADR-0009 decision 4). A row without one is not scoped.
-   */
-  scope?: (host: Host, params: any, caller: Caller & { type: 'orchestrator' }) => unknown
   /** Whether a caller of type `agent` may call it. */
   agent: boolean
   /** It only reads: while the Host upgrades, a read-only connection of any code version may call it. */
@@ -184,12 +172,11 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
     const send = (message: object) => { if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`) }
     // A notice has no id and is no answer: it only wakes the client, which reads `work.events` from its cursor.
     const notify = ({ workId, status, seq, type }: WorkChange) => {
-      const ofGoal = () => [...link.goals].some((watched) => inScope(host, watched, workId))
-      if (type === 'stalled' && (link.works.has(workId) || ofGoal())) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq, stalled: true } })
-      else if ((type === 'terminal' && link.works.has(workId)) || (type === 'admitted' && ofGoal())) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq } })
+      if (type === 'stalled' && link.works.has(workId)) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq, stalled: true } })
+      else if (type === 'terminal' && link.works.has(workId)) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq } })
     }
     let stopListening: (() => void) | undefined
-    const link: Link = { works: new Set(), goals: new Set(), listen() { stopListening ??= host.onChange(notify) } }
+    const link: Link = { works: new Set(), listen() { stopListening ??= host.onChange(notify) } }
     socket.on('close', () => stopListening?.())
     const fail = (id: unknown, code: number, message: string) => send({ jsonrpc: '2.0', id, error: { code, message } })
 
@@ -203,7 +190,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
       try {
         if (request.method === 'host.hello') {
           const next = callerOf(request.params?.caller)
-          if (!next) throw new RpcError(INVALID_PARAMS, 'host.hello needs caller: { type: "human" | "agent", operatorId } or { type: "orchestrator", operatorId, goal }')
+          if (!next) throw new RpcError(INVALID_PARAMS, 'host.hello needs caller: { type: "human" | "agent", operatorId }')
           if (request.params.version !== version) {
             const to = options.upgrading?.(String(request.params.version))
             // While it waits on attempts to upgrade, a client of any code may still read (`readOnly`), so it can tell a Host draining from one hung.
@@ -222,14 +209,13 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         if (!method) throw new RpcError(METHOD_NOT_FOUND, `unknown method ${request.method}`)
         if (!caller) throw new RpcError(REFUSED, `say host.hello first: ${request.method} needs a version and a caller`)
         if (upgradingTo && !method.read) throw new RpcError(UPGRADING, `${request.method}: this Host is upgrading to ${upgradingTo}; retry after it has restarted (a read-only connection only reads)`)
-        if (caller.type !== 'human' && !method.agent) throw new RpcError(NOT_ALLOWED, `${request.method}: not allowed for ${caller.type === 'agent' ? 'agents' : 'orchestrators'}`)
+        if (caller.type !== 'human' && !method.agent) throw new RpcError(NOT_ALLOWED, `${request.method}: not allowed for agents`)
         let params = request.params
         if (method.params) {
           const parsed = method.params.safeParse(params ?? {})
           if (!parsed.success) throw new RpcError(INVALID_PARAMS, `invalid params for ${request.method}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'params'}: ${i.message}`).join('; ')}`)
           params = parsed.data
         }
-        if (caller.type === 'orchestrator' && method.scope) params = method.scope(host, params, caller)
         send({ jsonrpc: '2.0', id, result: await method.handler(host, params, caller, link) ?? null })
       } catch (error) {
         if (error instanceof RpcError) fail(id, error.code, error.message)

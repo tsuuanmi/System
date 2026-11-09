@@ -24,15 +24,13 @@ await serving.stop()                                // server, then the Host cor
   and may be answered out of order; the client matches them by `id`. There are
   no batches. The Host sends notifications (no `id`) only to a connection that
   called `work.watch`: `work.changed { workId, status, seq }` when a watched
-  Work becomes terminal, is held, or starts awaiting approval (with `goal`:
-  when a new Work of the Goal is admitted, `seq` 0). One hook in the commit
+  Work becomes terminal, is held, or starts awaiting approval. One hook in the commit
   lane sends them, and a closed connection drops its watches. A notice only
   wakes the client, which reads `work.events` from its cursor.
 - **Limit.** A line is at most 1 MiB (`MAX_FRAME`). A larger one gets
   `-32600` with `id: null`, and the Host closes the connection.
 - **Handshake.** The first request must be `host.hello` with
-  `{ version, caller }`, where `caller` is `{ type: "human" | "agent", operatorId }`
-  or `{ type: "orchestrator", operatorId, goal }` (`system mcp --goal`). `version` is
+  `{ version, caller }`, where `caller` is `{ type: "human" | "agent", operatorId }`. `version` is
   the code version (`VERSION`): a short sha256 over the built `lib/**/*.js`
   of the System packages, the bundle's `cordis.patch.yml` and the shipped UI maps (`web-driver/ui/*.yaml`, `*.json`; a map is code, WW6f), computed once when the Host starts and by each
   client for its own files. Another version is refused with an error that says
@@ -42,18 +40,12 @@ await serving.stop()                                // server, then the Host cor
   method is refused.
 - **Methods.** A table `method -> { params, handler, agent }`: `params` is a
   zod schema, and a call that does not fit it gets `-32602` before the handler
-  runs. A caller of type `agent` or `orchestrator` may call only rows with
+  runs. A caller of type `agent` may call only rows with
   `agent: true`, and `approval.decide` also checks, in its handler, that the
   caller is a human.
   `operations(services)` (`src/operations.ts`) builds the rows of the Work
   operations; `Services` is what they need besides the `Host`: Artifacts,
   credentials and the Workers view; `system host` brings the DSH-backed ones.
-  `goal.brief` writes its text with `brief` (`src/brief.ts`), from records
-  and the live attempts only.
-- **Orchestrator scope.** An `orchestrator` caller has an agent's authority and
-  is further confined to its Goal (ADR-0009 decision 4). A row's optional
-  `scope` hook (`src/operations.ts`) runs for it before the handler and throws
-  `-32001` naming the scope; a row without one is an agent's.
 - **Receipts.** `work.submit`, `work.run`, `work.retry`, `work.cancel` and
   `approval.decide` take an optional `commandId`, which the Host core turns
   into a receipt: the same call again answers from the record, and the same
@@ -72,26 +64,22 @@ await serving.stop()                                // server, then the Host cor
 
 | Method | Agent | Params | Result |
 | --- | --- | --- | --- |
-| `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string } \| { type: "orchestrator", operatorId: string, goal: string }` | The first request of a connection: `{ version, packageVersion }`. |
+| `host.hello` | yes | `version: string`, `caller: { type: "human" \| "agent", operatorId: string }` | The first request of a connection: `{ version, packageVersion }`. |
 | `host.status` | yes | none | Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`. |
-| `work.submit` | yes | `workflow?: string`, `uses?: object`, `capabilities?: string[]`, `input?: string`, `goal?: string`, `worker?: string`, `commandId?: string` | Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task's base commit, else beside the Host's code. They are joined into the pinned spec now. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. |
+| `work.submit` | yes | `workflow?: string`, `uses?: object`, `capabilities?: string[]`, `input?: string`, `worker?: string`, `force?: boolean`, `commandId?: string` | Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task's base commit, else beside the Host's code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true. |
 | `work.run` | yes | `workId: string`, `commandId?: string` | Start admitted or interrupted Work and return its record once it is running; follow it with `work.events`. |
 | `work.retry` | yes | `workId: string`, `step?: string`, `worker?: string`, `reason?: string`, `commandId?: string` | Run a step of failed, cancelled or held Work again as a new attempt, and return its record once it is running; the steps after it are reset. A verify step is asked again on the same subject with the same pinned criteria, by a human caller only; its earlier verdict stays recorded and no longer counts. |
 | `work.cancel` | yes | `workId: string`, `reason?: string`, `commandId?: string` | Stop Work: its record once cancelled, or `"requested"` while a run is stopping its attempt. |
 | `work.show` | yes | `workId: string` | The Work record: events and state; while Worker attempts run, also `live`: per attempt its step, Worker, start, last activity, elapsed and quiet seconds, whether it is stalled, and the `progress` its Runtime last reported (turns, last tool, tokens, stage). `live` is an observation of the moment, never part of the record. |
 | `work.list` | yes | none | Every Work as `{ id, status, specId }`. |
 | `work.replay` | yes | `workId: string` | Fold the recorded events again: `{ state, matches }`. Runs nothing. |
-| `work.report` | yes | `workId: string` | Duration, attempts, operator touches and usage of a Work, from its events; for a Work of a Goal also the Goal, its budget and its spend. |
+| `work.report` | yes | `workId: string` | Duration, attempts, operator touches and usage of a Work, from its events. |
 | `work.events` | yes | `workId: string`, `after?: integer` | The events with `seq` above `after` (all when omitted) and the current status: `{ events, status }`. Poll it to follow a Work. |
-| `work.watch` | yes | `workId?: string`, `goal?: string` | Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. With `goal`, instead one for each new Work of the Goal, with `seq` 0, and the stall notices of its Works. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now, or `{ goal }`. |
-| `work.unwatch` | yes | `workId?: string`, `goal?: string` | Stop the notices of `work.watch` for a Work or a Goal on this connection. |
+| `work.watch` | yes | `workId: string` | Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now. |
+| `work.unwatch` | yes | `workId: string` | Stop the notices of `work.watch` for a Work on this connection. |
 | `approval.decide` | no | `workId: string`, `decision: "approved" \| "denied"`, `reason: string`, `commandId?: string` | Record a human's decision on what held Work awaits, and continue it. Only a human caller; the CLI sends it after its terminal confirmation. |
-| `goal.new` | no | `aim: string`, `scope: string`, `budget?: { attempts?: integer, tokens?: integer }`, `context?: string[]`, `supersedes?: string` | Store a `goal@1` the operator wrote: `{ id }`. `supersedes` names the Goal it raises or changes; without `context` the Charter is the context. Only a human caller; the CLI sends it after its terminal confirmation. |
-| `goal.show` | yes | `goal: string` | A Goal, its current version (the newest that supersedes it) and the spend of the chain, folded from the Works admitted for it: `{ id, goal, current, spend }`. |
-| `decision.add` | yes | `goal?: string`, `question: string`, `options: string[]`, `choice: string`, `reason: string`, `restsOn?: string[]` | Record a choice made for a Goal as a `decision@1` Artifact: the question, the options, the choice, the reason and the Artifacts it rests on (`restsOn`), after the latest decision of the Goal's chain: `{ id }`. A record, never an authority. An orchestrator records only for its own Goal. |
-| `decision.list` | yes | `goal?: string` | The decisions of a Goal and its chain (of every Goal without `goal`), oldest first: `[{ id, at, goal, question, options, choice, reason, restsOn, by, previous? }]`. An orchestrator lists its own Goal's. |
-| `goal.brief` | yes | `goal: string` | What a new Orchestrator session starts from, as text written from records only (no model call): the Goal and its budget left, its Works with status, current step and live progress, its decisions, and what waits (approvals, held, failed, stalled Works): `{ text }`. The same records give the same text. |
-| `task.new` | yes | `instructions: string`, `repository?: string`, `ref?: string`, `context?: string[]` | Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. |
+| `task.new` | yes | `instructions: string`, `repository?: string`, `ref?: string`, `context?: string[]`, `item?: string` | Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `item`, the Task names that Item of the repository's STATUS.md (see `status`). |
+| `status` | yes | `repository: string`, `state?: "todo" \| "doing" \| "done"`, `item?: string` | The status of a project: one line per Item of the repository's `STATUS.md` on its `dev` tip, as `[x] <id> <title> - <state>`. `done`: ticked in `STATUS.md` (with the last Work and Artifact IDs when known); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines. Read the Work by ID for details. |
 | `artifact.put` | yes | `data: string`, `mediaType?: string`, `classification?: "public" \| "operator-shared" \| "local-private"` | Store bytes (base64, within the frame limit) as a `file@1` Artifact: its envelope. |
 | `artifact.show` | yes | `id: string` | An Artifact's envelope and occurrences, or why it is not stored. |
 | `artifact.cat` | yes | `id: string` | The bytes of a blob Artifact as `{ data }` in base64; refused when they do not fit a frame. |

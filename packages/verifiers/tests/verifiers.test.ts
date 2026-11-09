@@ -13,7 +13,7 @@ import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
-import { CHECKS_KIND, CHECK_RUN_KIND, checkRunSchema, checksSchema, requiredChecks } from '../src/checks.ts'
+import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, requiredChecks } from '../src/checks.ts'
 import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'system-verifiers-'))
@@ -471,8 +471,9 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   const all = own.checks.map((c) => c.name)
   const main = all.filter((name) => name !== 'web')
   for (const file of ['packages/work/src/controller.ts', 'tests/work.test.ts', 'docs/requirements/purpose.md', 'workflows/code-checks.yaml']) assert.deepEqual(run([file]), main, file)
-  // The Website Worker's headed-browser tests run only when the web Runtime, its driver or the build inputs change (PLAN WW).
-  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'pnpm-lock.yaml']) assert.deepEqual(run([file]), all, file)
+  // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).
+  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'test-support/headed.ts']) assert.deepEqual(run([file]), all, file)
+  for (const file of ['test-support/fixture.ts', '.system/checks.yaml', 'package.json', 'pnpm-lock.yaml']) assert.deepEqual(run([file]), main, file)
 })
 
 test('a commit checked as it is (code-checks.yaml on its own) runs every check, paths or not', async () => {
@@ -484,4 +485,39 @@ test('a commit checked as it is (code-checks.yaml on its own) runs every check, 
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: task, criteria })
   assert.equal(result.verdict, 'pass', result.reason)
   assert.match(result.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
+})
+
+/** Runs a one-check repository with `checkEnv`; returns the verdict and the check-run content. */
+async function withCheckEnv(run: string, checkEnv: Record<string, string>) {
+  const artifacts = store()
+  const repository = repo(`checks:\n  - name: env\n    run: ${run}\n`)
+  const { task, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner, Date.now, checkEnv)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
+  const read = artifacts.get(result.evidence[0]!)
+  return { result, run: (read.state === 'stored' ? read.envelope.content : {}) as { stdoutTail: string; checkEnv?: string[] } }
+}
+
+test('checkEnv: a check sees a configured variable; HOME is still a fresh directory', async () => {
+  const { result, run } = await withCheckEnv('echo "$RUSTUP_HOME $HOME"', { RUSTUP_HOME: '/opt/rustup-test' })
+  assert.equal(result.verdict, 'pass', result.reason)
+  const [rustup, home] = run.stdoutTail.trim().split(' ')
+  assert.equal(rustup, '/opt/rustup-test')
+  assert.match(home!, /system-checks-/)
+  assert.notEqual(home, process.env.HOME)
+})
+
+test('checkEnv: the evidence lists the names and never the values', async () => {
+  const { run } = await withCheckEnv('echo ok', { CARGO_HOME: '/secret/value/one', CARGO_TARGET_DIR: '/secret/value/two' })
+  assert.deepEqual(run.checkEnv, ['CARGO_HOME', 'CARGO_TARGET_DIR'])
+  assert.doesNotMatch(JSON.stringify(run), /secret\/value/)
+})
+
+test('checkEnv: HOME, PATH, CI and malformed names are refused', () => {
+  for (const bad of ['HOME', 'PATH', 'CI', 'lower', '1X', 'A-B']) {
+    assert.equal(checkEnvSchema.safeParse({ [bad]: 'x' }).success, false, bad)
+    assert.throws(() => requiredChecks(store(), processSpawner, Date.now, { [bad]: 'x' }), /checkEnv/, bad)
+  }
+  assert.equal(checkEnvSchema.safeParse({ RUSTUP_HOME: '/x', _A1: 'y' }).success, true)
 })

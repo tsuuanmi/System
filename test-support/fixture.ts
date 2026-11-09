@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
-import { Host, WorkController, Capabilities, goalStore, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
+import { Host, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
 import { memoryWorkTable } from './memory.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -68,22 +68,22 @@ export const CLAUDE = 'fake/claude'
 export const CODEX = 'fake/codex'
 
 /**
- * With `goals`, the Goals, and the Tasks wrapped for them, live in that Artifact store.
  * With a `seed`, every attempt first yields a seeded number (0 to 8) of
  * event-loop turns. `slots` is each Account's `maxConcurrentAttempts`.
  */
-export function fixture(options: { seed?: number; slots?: number; goals?: Artifacts } = {}): Fixture {
+export function fixture(options: { seed?: number; slots?: number } = {}): Fixture {
   const random = options.seed === undefined ? undefined : seeded(options.seed)
   const stored = new Set<string>()
   const specs = new Map<string, ResolvedSpec>()
   const verdicts = new Map<string, Verdict>()
   const specStore: SpecStore = {
     kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
-    goals: options.goals && goalStore(options.goals),
     async putVerdict(verdict) { const v = id(JSON.stringify(verdict)); verdicts.set(v, verdict); stored.add(v); return v },
     async putSpec(spec) { const s = id(JSON.stringify(spec)); specs.set(s, structuredClone(spec)); stored.add(s); return s },
     getSpec: (specId) => structuredClone(specs.get(specId)),
-    exists: (artifactId) => stored.has(artifactId) || options.goals?.get(artifactId).state === 'stored',
+    exists: (artifactId) => stored.has(artifactId),
+    taskOf: () => undefined,
+    withNote: async () => { throw new Error('no Item in this test') },
   }
   const held = new Set<string>()
   const waiting = new Map<string, (() => void)[]>()

@@ -157,9 +157,7 @@ decision 9); side effects also need operation identities and reconciliation,
 because content-addressed records cannot prevent duplicate external operations
 after a crash. Retention, garbage collection, read permissions and
 content-hash existence leakage are part of the audit;
-a choice made for a Goal by the operator or an Orchestrator is a `decision@1`
-Artifact naming the Artifacts it rests on (PROP-0006), a record and never an
-authority; deleting blob bytes
+deleting blob bytes
 while retaining a historical ID must give an explicit `expired` /
 `unavailable` state, not pretend the content exists.
 

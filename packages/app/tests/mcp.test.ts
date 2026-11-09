@@ -1,17 +1,17 @@
 /**
- * `system mcp` (ADR-0009 decisions 3 and 4): the SDK's MCP client spawns
+ * `system mcp`: the SDK's MCP client spawns
  * `bin/system mcp` against a Host served in this process, over a fixture with
- * fake Workers. The scope itself is the Host's, tested in @system/host; here
- * it is seen through the adapter.
+ * fake Workers.
  */
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { ResourceListChangedNotificationSchema, ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
-import { GOAL_KIND, TASK_KIND, goalSchema, taskSchema } from '@system/work'
+import { ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import { TASK_KIND, taskSchema } from '@system/work'
 import { fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { VERSION, connect, serve, tableOf } from '../../host/src/index.ts'
@@ -21,35 +21,24 @@ const entry = new URL('../../../bin/system', import.meta.url).pathname
 // A socket path is limited to about 100 bytes, and tmpdir() may be longer.
 const home = mkdtempSync('/tmp/sm-')
 const human = { type: 'human', operatorId: 'tan' }
-const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema })
+const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema })
 const services = {
   capabilities: undefined as unknown as Services['capabilities'],
   artifact: (id: string) => artifacts.get(id),
-  async newGoal(goal, supersedes, caller) {
-    const producer = { type: 'operator', ref: caller.operatorId } as const
-    const charter = await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: new TextEncoder().encode('charter'), mediaType: 'text/markdown', classification: 'public', producer })
-    const stored = await artifacts.put({ ...GOAL_KIND, content: { context: [charter.id], ...goal }, inputs: [charter.id], supersedes: supersedes ? [supersedes] : [], classification: 'public', producer })
-    return { id: stored.id }
-  },
 } as Services
-/** A Task for a Work of a Goal, which needs one to carry the Goal's context. */
-const taskInput = async () => (await artifacts.put({ ...TASK_KIND, content: { instructions: 'do it' }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
 const table = tableOf(operations(services))
 let stop: () => Promise<void>
-/** Close the Host's socket and open it again: every connection to it is lost. */
-let restart: () => Promise<void>
 let human1: Awaited<ReturnType<typeof connect>>
 const clients: Client[] = []
 
 before(async () => {
-  const f = fixture({ goals: artifacts })
+  const f = fixture()
   mkdirSync(join(home, 'data'))
   const host = await f.startHost(join(home, 'data'))
   services.capabilities = f.capabilities
   mkdirSync(join(home, 'system'))
   const listen = () => serve(host, { path: join(home, 'system', 'host.sock'), methods: operations(services) })
-  let server = await listen()
-  restart = async () => { await server.close(); server = await listen() }
+  const server = await listen()
   stop = async () => { await server.close(); await host.close() }
   human1 = await connect(join(home, 'system', 'host.sock'))
   await human1.call('host.hello', { version: VERSION, caller: human })
@@ -93,13 +82,13 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
     assert.equal(tool.inputSchema.type, 'object')
   }
   const submit = tools.find((t) => t.name === 'work.submit')!
-  assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'goal', 'input', 'uses', 'worker', 'workflow'])
-  for (const closed of ['approval.decide', 'credentials.set', 'conversation.add', 'goal.new']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
+  assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'force', 'input', 'uses', 'worker', 'workflow'])
+  for (const closed of ['approval.decide', 'credentials.set', 'conversation.add', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
 })
 
 test('a tool call goes to the Host: submit a direct Task, run it and follow it with work.events', { timeout: 60_000 }, async () => {
   const client = await mcp()
-  const submitted = await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })
+  const submitted = await call(client, 'work.submit', { capabilities: ['code-write'] })
   const id = submitted.value.id as string
   assert.deepEqual(submitted.value.events[0].caller, { type: 'agent', operatorId: 'o1' })
   assert.equal((await call(client, 'work.run', { workId: id })).value.id, id)
@@ -109,35 +98,19 @@ test('a tool call goes to the Host: submit a direct Task, run it and follow it w
   assert.match((await call(client, 'work.show', {})).error!, /invalid params/)
 })
 
-test('with --goal the Host scopes the tools to the Goal of the orchestrator', { timeout: 60_000 }, async () => {
-  const goal = async (aim: string) => (await human1.call('goal.new', { aim, scope: 's', budget: {} }) as { id: string }).id
-  const [a, b] = [await goal('a'), await goal('b')]
-  const direct = async (goalId?: string) => (await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId, ...(goalId ? { input: await taskInput() } : {}) }) as { id: string }).id
-  const [other, free] = [await direct(b), await direct()]
-  const client = await mcp('--goal', a)
-
-  const own = await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })
-  assert.equal(own.value.events[0].goal, a)
-  assert.deepEqual(own.value.events[0].caller, { type: 'orchestrator', operatorId: 'o1', goal: a })
-  assert.match((await call(client, 'work.submit', { capabilities: ['code-write'], goal: b, input: await taskInput() })).error!, /scope/)
-  assert.deepEqual((await call(client, 'work.list')).value.map((r: { id: string }) => r.id), [own.value.id])
-  for (const id of [other, free]) {
-    for (const tool of ['work.run', 'work.cancel', 'work.show']) assert.match((await call(client, tool, { workId: id })).error!, /scope/, `${tool} ${id}`)
-  }
-  const spec = (await human1.call('work.show', { workId: other }) as { events: { specId: string }[] }).events[0]!.specId
-  assert.match((await call(client, 'artifact.show', { id: spec })).error!, /scope/)
-  assert.match((await call(client, 'artifact.cat', { id: spec })).error!, /scope/)
-  assert.equal((await call(client, 'work.run', { workId: own.value.id })).value.id, own.value.id)
+test('--goal is no longer an option: the adapter refuses it and starts nothing', () => {
+  const run = spawnSync(process.execPath, [entry, 'mcp', '--goal', `sha256:${'a'.repeat(64)}`], { env: { ...process.env, DSH_HOME: home, SYSTEM_OPERATOR_ID: 'o1' }, encoding: 'utf8', timeout: 30_000 })
+  assert.equal(run.status, 2)
+  assert.match(run.stderr, /usage: system mcp\n/)
 })
 
 const textOf = (read: { contents: object[] }) => JSON.parse((read.contents[0] as { text: string }).text)
 
 test('a subscribed resource is updated when its Work ends; reading it gives work.show', { timeout: 60_000 }, async () => {
-  const goalId = (await human1.call('goal.new', { aim: 'watch', scope: 's', budget: {} }) as { id: string }).id
-  const client = await mcp('--goal', goalId)
+  const client = await mcp()
   const updated: string[] = []
   client.setNotificationHandler(ResourceUpdatedNotificationSchema, (n) => { updated.push(n.params.uri) })
-  const id = (await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })).value.id as string
+  const id = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
   const uri = `system://work/${id}`
   assert.ok((await client.listResources()).resources.some((r) => r.uri === uri))
   await client.subscribeResource({ uri })
@@ -148,47 +121,15 @@ test('a subscribed resource is updated when its Work ends; reading it gives work
   assert.equal(shown.id, id)
   assert.equal(shown.state.status, 'succeeded')
   // After an unsubscribe a later change says nothing.
-  const quiet = (await call(client, 'work.submit', { capabilities: ['code-write'], input: await taskInput() })).value.id as string
+  const quiet = (await call(client, 'work.submit', { capabilities: ['code-write'] })).value.id as string
   await client.subscribeResource({ uri: `system://work/${quiet}` })
   await client.unsubscribeResource({ uri: `system://work/${quiet}` })
   await call(client, 'work.run', { workId: quiet })
   await until('the Work to end', async () => (await call(client, 'work.events', { workId: quiet })).value.status === 'succeeded')
   await new Promise((r) => setTimeout(r, 100))
   assert.deepEqual(updated, [uri])
-  await assert.rejects(client.readResource({ uri: 'system://work/work:nope' }), /scope/)
+  await assert.rejects(client.readResource({ uri: 'system://work/work:nope' }), /no Work work:nope/)
   await assert.rejects(client.readResource({ uri: 'file:///etc/passwd' }))
-})
-
-test('with --goal a new Work of the Goal changes the resource list, and a Work outside it does not appear', { timeout: 60_000 }, async () => {
-  const goalId = (await human1.call('goal.new', { aim: 'list', scope: 's', budget: {} }) as { id: string }).id
-  const client = await mcp('--goal', goalId)
-  let changed = 0
-  client.setNotificationHandler(ResourceListChangedNotificationSchema, () => { changed++ })
-  await client.listResources()
-  const outside = await human1.call('work.submit', { capabilities: ['code-write'] }) as { id: string }
-  const own = await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId, input: await taskInput() }) as { id: string }
-  await until('list_changed', async () => changed > 0)
-  assert.equal(changed, 1)
-  const uris = (await client.listResources()).resources.map((r) => r.uri)
-  assert.deepEqual(uris, [`system://work/${own.id}`])
-  assert.ok(!uris.includes(`system://work/${outside.id}`))
-})
-
-test('after the Host connection is lost and opened again, the client is told the resource list changed once', { timeout: 60_000 }, async () => {
-  const goalId = (await human1.call('goal.new', { aim: 'outage', scope: 's', budget: {} }) as { id: string }).id
-  const client = await mcp('--goal', goalId)
-  let changed = 0
-  client.setNotificationHandler(ResourceListChangedNotificationSchema, () => { changed++ })
-  await client.listResources()
-  await restart()
-  human1 = await connect(join(home, 'system', 'host.sock'))
-  await human1.call('host.hello', { version: VERSION, caller: human })
-  const own = await human1.call('work.submit', { capabilities: ['code-write'], goal: goalId, input: await taskInput() }) as { id: string }
-  // The first call after the outage finds the connection lost; the next one reconnects.
-  await until('list_changed', async () => { await client.listResources().catch(() => {}); return changed > 0 })
-  await new Promise((r) => setTimeout(r, 200))
-  assert.equal(changed, 1)
-  assert.ok((await client.listResources()).resources.some((r) => r.uri === `system://work/${own.id}`))
 })
 
 test('a notice only wakes the client: one that was away reads work.events from its cursor and misses nothing', { timeout: 60_000 }, async () => {
@@ -206,4 +147,9 @@ test('a notice only wakes the client: one that was away reads work.events from i
   assert.equal(missed.status, 'succeeded')
   assert.deepEqual(missed.events, all.events.slice(cursor + 1))
   assert.equal(missed.events.at(-1).type, 'terminal')
+})
+
+test('the initialize result carries instructions: the steps, the checks file and the human-only commands', { timeout: 60_000 }, async () => {
+  const text = (await mcp()).getInstructions() ?? ''
+  for (const word of ['status', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
 })
