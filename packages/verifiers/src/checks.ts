@@ -21,9 +21,11 @@ import { firstFailure, interrupted, nodeBin } from './reasons.ts'
 import { z } from 'zod'
 
 export const CHECKS_FILE = '.system/checks.yaml'
-/** Criteria names that change what a verdict means (the name is pinned in the `checks@1` Artifact); any other name is every selected check passing. */
+/** The criteria names, pinned in the `checks@1` Artifact, and what each verdict means; any other name refuses admission. */
+export const REPO_CHECKS = 'repo-checks-v1'
 export const RED = 'red-v1'
 export const TESTS_FROZEN = 'tests-frozen-v1'
+export const CRITERIA_NAMES = [REPO_CHECKS, RED, TESTS_FROZEN] as const
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
@@ -157,6 +159,8 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     // A task on its own (code-checks.yaml alone) has its base commit checked as it is.
     accepts: ['git-tree', 'task'],
     async criteria({ name, input }) {
+      // A typo must not silently mean "every check passes".
+      if (!(CRITERIA_NAMES as readonly string[]).includes(name)) throw new Error(`unknown criteria ${name} for code.required-checks; known: ${CRITERIA_NAMES.join(', ')}`)
       if (!input) throw new Error('the Work has no input task naming a repository')
       // The checks come from a base the Worker did not write, never from the change itself.
       const read = artifacts.get(input)

@@ -82,8 +82,9 @@ checks:
   `check-run@1`. The verdict's reason lists what ran, with its time, and what
   was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
 - **Criteria names** (df-26): the name a verify step gives is pinned in
-  `checks@1` and chooses what the verdict means; any name but these two is
-  the rule above (`repo-checks-v1` in `code-checks.yaml`).
+  `checks@1` and chooses what the verdict means: `repo-checks-v1` (the rule
+  above, `code-checks.yaml`) or one of the two below. Any other name refuses
+  the Work at admission, naming the known ones.
   - **`red-v1`**, the red check of `feature.yaml`, on the tests step's change
     before any code: the selected checks run as above. A `red: fail` check
     that failed counts as red only when it passes on the base (run again

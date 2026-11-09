@@ -97,9 +97,19 @@ test('criteria are pinned from .system/checks.yaml at the base commit, refused w
   const read = artifacts.get(pinned)
   assert.equal(read.state === 'stored' && read.envelope.kind, 'checks')
   assert.deepEqual(read.state === 'stored' && (read.envelope.content as { checks: { name: string }[] }).checks.map((c) => c.name), ['value-is-good', 'prints'])
-  await assert.rejects(() => verifier.criteria({ capability: 'x', name: 'n', input: undefined, operatorId: 't' }), /no input task/)
-  await assert.rejects(async () => verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo())).task, operatorId: 't' }), /no \.system\/checks\.yaml at commit/)
-  await assert.rejects(async () => verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo('checks: []\n'))).task, operatorId: 't' }), /is invalid/)
+  await assert.rejects(() => verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: undefined, operatorId: 't' }), /no input task/)
+  await assert.rejects(async () => verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: (await taskOn(artifacts, repo())).task, operatorId: 't' }), /no \.system\/checks\.yaml at commit/)
+  await assert.rejects(async () => verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: (await taskOn(artifacts, repo('checks: []\n'))).task, operatorId: 't' }), /is invalid/)
+})
+
+test('an unknown criteria name refuses admission, naming the known ones: a typo never means "every check passes"', async () => {
+  const artifacts = store()
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const { task } = await taskOn(artifacts, repo(CHECKS))
+  for (const name of ['v1', 'red-vl', 'repo-checks-v2']) {
+    await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' }), /unknown criteria .*repo-checks-v1, red-v1, tests-frozen-v1/, name)
+  }
+  for (const name of ['repo-checks-v1', 'red-v1', 'tests-frozen-v1']) await verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' })
 })
 
 test('a change given as the input is refused: the checks are read from a base the Worker did not write', async () => {
@@ -114,7 +124,7 @@ test('checks run on the exact subject commit: a good change passes with one evid
   const repository = repo(CHECKS)
   const { task, tree } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
   assert.equal(result.verdict, 'pass', result.reason)
@@ -129,7 +139,7 @@ test('a change that breaks a check fails; a Worker editing checks.yaml cannot we
   const repository = repo(CHECKS)
   const { task, tree } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const subject = await change(artifacts, repository, tree.commit, { 'value.txt': 'bad\n', '.system/checks.yaml': 'checks:\n  - name: nothing\n    run: "true"\n' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
   assert.equal(result.verdict, 'fail')
@@ -141,7 +151,7 @@ async function verifyChange(yaml: string, files: Record<string, string>, subject
   const repository = repo(yaml)
   const { task, tree, treeId } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const subject = subjectIsBase ? treeId : await change(artifacts, repository, tree.commit, files)
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
   const commits = result.evidence.map((id) => {
@@ -192,7 +202,7 @@ test('a check over its timeout fails', async () => {
   const repository = repo('checks:\n  - name: slow\n    run: sleep 30\n    timeoutSeconds: 1\n')
   const { task, treeId } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
   assert.equal(result.verdict, 'fail')
   assert.match(result.reason, /slow \(timed out after 1 s\)/)
@@ -470,7 +480,7 @@ test('red-v1: the tests step\'s change passes when every red: pass check passes 
   const ordinary = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const plain = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: await change(artifacts, repository, tree.commit, { 'tests/new.sh': 'false\n' }), criteria: ordinary })
   assert.equal(plain.verdict, 'fail')
-  await assert.rejects(verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    red: maybe\n'))).task, operatorId: 't' }), /is invalid/)
+  await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    red: maybe\n'))).task, operatorId: 't' }), /is invalid/)
 })
 
 test('red-v1: a red: fail check that fails on the base too is not red: alone, the verdict is inconclusive', async () => {
@@ -515,7 +525,7 @@ test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftove
   const repository = repo('checks:\n  - name: leaky\n    run: ln -s "$(command -v sleep)" Xvfb && (setsid ./Xvfb 120 >/dev/null 2>&1 &) ; sleep 0.3\n  - name: clean\n    run: echo fine\n')
   const { task, treeId } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   // The leftover is known by the pid the verifier names, never by its name: this machine is shared.
   let leftover = 0
   try {
@@ -543,7 +553,7 @@ async function verdictOf(checks: string, files: Record<string, string>, added: R
   if (Object.keys(files).length) execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'files'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   const { task, tree } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n', ...added })
   return verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
 }
@@ -587,7 +597,7 @@ test('a check with paths runs only when the change touches one of them, and the 
   const repository = repo('checks:\n  - name: always\n    run: "true"\n  - name: packages\n    run: "true"\n    paths: ["packages/**"]\n')
   const { task, tree } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const verify = (subject: string) => verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
 
   const docs = await verify(await change(artifacts, repository, tree.commit, { 'docs/note.md': 'a note\n' }))
@@ -597,7 +607,7 @@ test('a check with paths runs only when the change touches one of them, and the 
   const code = await verify(await change(artifacts, repository, tree.commit, { 'packages/a/index.ts': 'export {}\n' }))
   assert.match(code.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
   assert.equal(code.evidence.length, 2)
-  await assert.rejects(verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    paths: []\n'))).task, operatorId: 't' }), /is invalid/)
+  await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    paths: []\n'))).task, operatorId: 't' }), /is invalid/)
 })
 
 test('System\'s own checks: a change to docs alone runs only docs; code, tests or the Charter run the main checks; the web Runtime adds web', async () => {
@@ -620,7 +630,7 @@ test('a commit checked as it is (code-checks.yaml on its own) runs every check, 
   const repository = repo('checks:\n  - name: always\n    run: "true"\n  - name: packages\n    run: "true"\n    paths: ["packages/**"]\n')
   const { task } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: task, criteria })
   assert.equal(result.verdict, 'pass', result.reason)
   assert.match(result.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
@@ -647,7 +657,7 @@ test('a release is checked as a change from the running one: the web check runs 
     const tree = { ...(await snapshot(repository, commitId)), ...(parent ? { parent } : {}) }
     const treeId = (await artifacts.put({ ...GIT_TREE_KIND, content: tree, classification: 'local-private', producer })).id
     const task = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'x', base: treeId }, inputs: [treeId], classification: 'local-private', producer })).id
-    const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+    const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
     const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: task, criteria })
     assert.equal(result.verdict, 'pass', result.reason)
     return result.reason
@@ -664,7 +674,7 @@ async function withCheckEnv(run: string, checkEnv: Record<string, string>) {
   const repository = repo(`checks:\n  - name: env\n    run: ${run}\n`)
   const { task, treeId } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner, Date.now, checkEnv)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
   const read = artifacts.get(result.evidence[0]!)
   return { result, run: (read.state === 'stored' ? read.envelope.content : {}) as { stdoutTail: string; checkEnv?: string[] } }
