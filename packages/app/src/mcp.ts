@@ -60,7 +60,8 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    ~/.system/current/workflows/feature.yaml for a code change (a plan, then
    tests that fail first, then the code, then the docs). Use
    \`software-engineering.yaml\` there instead for a change too small for a
-   plan, or in a repository whose \`.system/checks.yaml\` has no \`red:\`
+   plan, for a change that keeps behaviour (a cleanup, a refactor; hygiene.yaml
+   fits too), or in a repository whose \`.system/checks.yaml\` has no \`red:\`
    declaration (feature.yaml's red check needs at least one \`red: pass\` and
    one failing check). The others there: code-checks, feature-research,
    hygiene, research, research-fanout, brainstorm, debate, second-opinion.

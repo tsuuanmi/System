@@ -18,7 +18,8 @@ changes future admissions only.
 - [software-engineering.yaml](software-engineering.yaml) — `implement`
   (`code-write`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
   (`git.publish`: the checked commit to `system/<work>`, one draft pull
-  request) → `accept`. Still fits a change too small for a plan, and a
+  request) → `accept`. Still fits a change too small for a plan, a change
+  that keeps behaviour (a cleanup, a refactor, a docs-only change), and a
   repository with no `red:` in its `.system/checks.yaml` (feature.yaml's red
   check would refuse it).
 - [software-engineering-docs.yaml](software-engineering-docs.yaml) — the same,
@@ -31,7 +32,9 @@ changes future admissions only.
 - [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
   (`code-write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
   is worth doing) → `implement` → `checks` → `publish` → `accept`: one pull
-  request of cleanup for any repository that has `.system/checks.yaml`.
+  request of cleanup for any repository that has `.system/checks.yaml`. Like
+  software-engineering.yaml it fits a change that keeps behaviour: feature.yaml's
+  red check needs a new failing test, so such a change cannot pass it.
 - [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
   on the input change, criteria pinned from its base). A Sub-workflow of
   `software-engineering.yaml` and `feature.yaml`; on its own, on a task with a base, it checks that commit as it is.

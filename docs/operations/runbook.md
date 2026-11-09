@@ -211,13 +211,9 @@ makes it unavailable.
 Codex accounts share one `auth.json`; with several attempts at once only the
 first refresh is copied back.
 
-A Host that stops with attempts running leaves them lost at the next start, and
-their Account slots **held** while their process may still run. An agent attempt
-is gone when its pid file (`$DSH_HOME/system/attempts/<attempt>.pid`) is absent or
-names no live process. The Host checks at start and again when a waiting Work
-has nothing of its own running, so a held slot clears after `system work run`
-once the process is gone. If it never does, a process is still alive: find it
-with `pgrep -fa claude` or `pgrep -fa codex`.
+A Host that stops with attempts running holds their Account slots until the
+process is gone ([host.md](../architecture/host.md)). If a
+slot never clears, find the process with `pgrep -fa claude` or `pgrep -fa codex`.
 
 ## The web account
 
@@ -254,8 +250,6 @@ says. `system workers` shows the account as `available` once Xvfb is found and
 the Chrome path exists; that says nothing about the sign-in. It is `unavailable`
 with a reason that names what is missing.
 
-The browser is never headless: it runs on your `DISPLAY`, or on its own invisible Xvfb (PROP-0005).
-
 **Sign in, once.** Three ways:
 - `system workers login web/chatgpt/default --cookies <file>`: a JSON export from
   a browser extension, or a Netscape `cookies.txt`, of chatgpt.com taken from
@@ -270,9 +264,8 @@ The browser is never headless: it runs on your `DISPLAY`, or on its own invisibl
   `systemctl --user import-environment DISPLAY` and restart it). Sign in by hand;
   it waits up to ten minutes.
 
-Each then loads the page and prints `signed in`, or `not signed in:` and why
-(exit 1). It never prints a cookie value. Do not log in while an attempt of the
-account runs: Chrome holds the profile.
+Each prints `signed in`, or `not signed in:` and why (exit 1), never a cookie
+value. Do not log in while an attempt of the account runs: Chrome holds the profile.
 
 **Sign in over SSH (`--remote`).** On the server, as the user that runs the
 Host:
@@ -306,34 +299,24 @@ It prints three steps, for example:
 
 `--remote` needs a VNC server on the Host's `PATH`: `x11vnc` (`apt install
 x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`);
-without one the command fails at once, naming both. noVNC and `ws` come with
-System. Without root, unpack the packages into the home directory and put a wrapper
-script for `x11vnc` on the Host's `PATH`.
+without one the command fails at once, naming both. Without root, unpack the
+packages into the home directory and put a wrapper script on the `PATH`.
 
-**Account states.** Each `web` Account has a state in `$DSH_HOME/system/web/<site>/<name>/state.json`, and `system workers` shows
-any state but `ready` as `unavailable` with what to do; Works needing the Account go to another one, or fail with "no enabled Worker
-provides" when there is none. Each change is one line in the Host log.
+**Account states.** `system workers` shows any state but `ready` as `unavailable`
+with what to do; the states and quarantine rules are in the
+[web-worker README](../../packages/web-worker/README.md). Each change is one
+line in the Host log.
 
-- `needs-sign-in`: a sign-in wall, the login page or "Session ended, invalid_state" showed. Run `system workers login web/chatgpt/<name> --remote`
-  (or `--cookies`), then `system workers recheck web/chatgpt/<name>`; a successful `--remote` does the recheck itself.
-- `challenged`: a Cloudflare or CAPTCHA challenge showed. Clear it by hand as below, then `recheck`. Nothing else leaves it.
-- `cooling`: a site error or a suspected rate limit; it is eligible again at the time shown (2 minutes, then 5 after consecutive ones;
-  `cooldownSeconds`), a success clears it, and `recheck` ends it early. If it keeps coming back, stop using the Account for a while.
-- A failure of the Host's (Chrome did not start, a page timeout while the Host's load is high) never changes the state; look at the Host.
-  No prompt is resent automatically: a retry is `work retry`.
+- `needs-sign-in`: log in again (`--remote` or `--cookies`), then
+  `system workers recheck web/chatgpt/<name>`; a successful `--remote` rechecks itself.
+- `challenged`: a CAPTCHA or Cloudflare challenge showed. System never solves
+  one: run `system workers login web/chatgpt/<name> --remote`, clear it in the
+  viewer, press **Save**, `recheck`, and retry the Work.
+- `cooling`: eligible again at the time shown; `recheck` ends it early. If it keeps coming back, stop using the Account for a while.
+- A failure of the Host's (Chrome did not start, a page timeout) never changes the state; look at the Host. No prompt is resent automatically: a retry is `work retry`.
 
-The attempt's `screenshot` partial output shows what the page looked like:
+The attempt's `screenshot` partial output shows the page:
 `system work show <id>`, then `system artifact cat <id> > shot.png`.
-
-**A CAPTCHA or Cloudflare challenge.** The attempt fails with `a CAPTCHA or
-Cloudflare challenge is showing`; System never types into or solves one, and
-retrying at once will meet it again. Clear it by hand, in the profile the
-attempts use: run `system workers login web/chatgpt/default --remote` (as above),
-pass the check in the viewer, press **Save**, and retry the Work. The check
-stays cleared as long as `cf_clearance` lives, which Cloudflare decides. If it
-reappears, repeat the same steps. If it keeps coming back, slow down or stop
-using the account for a while; an automated session is against OpenAI's Terms of
-Use, a risk the operator accepted for their own account.
 
 **The profile** is `$DSH_HOME/system/web/<site>/<name>` (or `profileDir`), a
 Chrome user-data directory created mode 0700. It holds the live session: treat
@@ -360,16 +343,9 @@ tools/web-canary --task                       # the canary Task's Artifact ID
 tools/web-canary --report [--since <ISO>]     # read the records
 ```
 
-`--report` reads the finished Works whose input is the canary Task and classifies
-each as **passed**, **worker-failed** (the line names the stage and reason),
-**verifier** (the citation check held or failed) or **other**. Per Account and in
-total it prints the counts, the median and p95 of the `launch` and `wait` stages,
-the models and the target each attempt had, and `gate: holds` or `gate: does not
-hold (...)`: at least 50 runs over both Accounts and at least 95% passed. The
-canary asks `tier.standard`, so only runs of that target and of the current
-question count; the others are shown apart as an older version. It exits 3 when
-the gate does not hold. Run it after each merge into `web-workers`; the timer
-does so every six hours.
+`--report` classifies the finished Works on the canary Task and prints the gate
+(`gate: holds` or `does not hold`, exit 3). Run it after each merge into
+`web-workers`; the timer does so every six hours.
 
 Install the timer as a user unit (it needs the Host running; it is not installed
 by `system init`):
@@ -384,13 +360,12 @@ systemctl --user daemon-reload
 systemctl --user enable --now system-web-canary.timer
 ```
 
-Read it: `systemctl --user list-timers system-web-canary`, `journalctl --user -u
-system-web-canary` for the lines of the last runs, and `tools/web-canary --report`
-for the numbers. Start a run now with `systemctl --user start system-web-canary`;
-stop the series with `systemctl --user disable --now system-web-canary.timer`.
-A Work that fails stays a record: the report counts it, and `system work show <id>`
-says why. Changing the question's text starts a new series (a new Task ID); the tool keeps the
-earlier texts to report them as older versions.
+Read it with `systemctl --user list-timers system-web-canary`, `journalctl --user
+-u system-web-canary` and `tools/web-canary --report`; start a run with
+`systemctl --user start system-web-canary`, stop the series with
+`systemctl --user disable --now system-web-canary.timer`. A failed Work stays a
+record (`system work show <id>`). Changing the question's text starts a new
+series (a new Task ID).
 
 ## The dev branch
 
@@ -488,12 +463,10 @@ recorded; it is gone once the attempt reports.
 
 ## The status of a project
 
-A repository lists its planned work in a `STATUS.md` at its root: a heading,
-`Aim:` and one to three lines, then one line per **Item**,
-`- [ ] <id> <title>` (`- [x]` when done). An id is lower case and ends in a
-number, such as `df-3` or `dna-13`. Keep it near 100 lines and link details.
-A line that does not parse is skipped and reported by `system status` as a
-`note:`.
+A repository lists its planned work in a `STATUS.md` at its root: one line per
+**Item**, `- [ ] <id> <title>` (`- [x]` when done), with an id such as `df-3`
+(see [GLOSSARY](../../GLOSSARY.md)). A line that does not parse is skipped and
+reported by `system status` as a `note:`.
 
 ```
 system task new --text "..." --repo . --ref dev --item df-3   # prints the Task ID alone
@@ -501,24 +474,19 @@ system claim df-3 [--repo .] [--force]   # before a Work exists: shown as doing
 system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
-`status` prints one line per Item, from the tip of `origin/dev` (else the local `dev`) of the repository (git,
-not the working tree; it never fetches, and the `note:` line names the ref and its age) and the Work records: `done` is derived: a Work whose Task names the Item
-was merged into `dev` (its `git.publish` merge was applied, read from the Host's store), or the line is `[x]` for
-work done outside System; it names the last merged Work and its Artifact; `doing` is a Work whose Task
-names the Item and that is running or held (its ID, step, Account, since when,
-and the live progress the Host keeps, or why it is held), or a session's claim
-(`system claim`, `item_claim`: who and since when, kept in the Host's store until a Work
-for the Item is submitted, which takes it over; another session's claim is refused without `--force`); `todo` is `nobody`.
-Read a Work by its ID for details. The MCP tool `status` answers the same.
+`status` prints one line per Item, read from git (the tip of `origin/dev`, else
+`dev`; the `note:` line names the ref and its age) and the Work records: `done`
+is a Work whose Task names the Item merged into `dev`, or an `[x]` line;
+`doing` is a running or held Work for the Item, or a session's claim (kept in
+the Host's store until a Work for the Item is submitted, which takes it over);
+`todo` is `nobody`. The MCP tool `status` answers the same.
 
 While a Work for an Item runs or is held, `work submit` for the same Item is
-refused, naming that Work and its Account. `--force` (`force: true`) allows
-parallel work on purpose. A Task that names an Item is read with the Item's
-line and, for its last three earlier Works, their end reason, Task ID, change
-Artifact and commit, and each failed verdict's full reason and evidence IDs added
-to its context, so a new session or Worker can carry on from the status alone; the context opens with the Item's line and marks an earlier Work that
-changed nothing (`no change`). Works do not edit `STATUS.md`: done is derived, so parallel Works never conflict on neighbouring lines.
-`task new --item` is refused when the Item has no line in `STATUS.md` on `dev` (or no `--repo` is given), so every Worker has its description.
+refused, naming that Work; `--force` (`force: true`) allows parallel work on
+purpose, and another session's claim is refused without it. A Task that names
+an Item carries the Item's line and its earlier Works' outcomes in its context.
+`task new --item` is refused when the Item has no line in `STATUS.md` on `dev`.
+Works do not edit `STATUS.md`: done is derived.
 
 ## Using System from an agent
 
@@ -534,7 +502,9 @@ The server sends `instructions` in its initialize result, which the client puts
 in the session's context, so a session in any repository knows when to use
 System, what a repository needs and the steps, without reading these docs.
 The Workflow it names for a code change is `feature.yaml`; `software-engineering.yaml`
-for a change too small for a plan or a repository without `red:` checks.
+for a change too small for a plan or a repository without `red:` checks. A change
+that keeps behaviour (a cleanup, a refactor, a docs-only change) uses `hygiene.yaml`
+or `software-engineering.yaml`: `feature.yaml`'s red check needs a new failing test.
 
 A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base
