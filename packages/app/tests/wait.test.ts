@@ -36,10 +36,22 @@ test('work wait says what a held Work awaits when it has no reason', async () =>
   assert.equal(result.code, 3)
 })
 
-test('work wait without --any exits with the code of the Work that decided it, one line per Work', async () => {
+test('work wait without --any exits with the worst outcome among the Works', async () => {
   const result = await wait(['work:a', 'work:b'], { records: [record('work:a', 'failed', { reason: 'x' }), record('work:b', 'succeeded')], decided: 'work:b', timedOut: false })
-  assert.equal(result.code, 0)
+  assert.equal(result.code, 1)
   assert.equal(result.out, 'work:a  failed  x\nwork:b  succeeded\n')
+})
+
+for (const [a, b, code] of [['held', 'succeeded', 3], ['succeeded', 'held', 3], ['failed', 'held', 1], ['held', 'cancelled', 5], ['failed', 'cancelled', 1]] as const) {
+  test(`work wait without --any on ${a} and ${b} exits ${code}`, async () => {
+    const result = await wait(['work:a', 'work:b'], { records: [record('work:a', a), record('work:b', b)], decided: 'work:b', timedOut: false })
+    assert.equal(result.code, code)
+  })
+}
+
+test('work wait --any still exits with the code of the Work that decided it, not the worst', async () => {
+  const result = await wait(['work:a', 'work:b', '--any'], { records: [record('work:a', 'failed'), record('work:b', 'held')], decided: 'work:b', timedOut: false })
+  assert.equal(result.code, 3)
 })
 
 test('work wait --any passes the flag and exits with the code of the first Work to end; the others print as they are', async () => {
