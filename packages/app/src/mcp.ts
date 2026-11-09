@@ -29,6 +29,48 @@ export const tools = Object.entries(table).filter(([, row]) => row.agent).map(([
   inputSchema: z.toJSONSchema(row.params ?? z.object({}).strict(), { io: 'input' }) as { type: 'object'; [key: string]: unknown },
 }))
 
+/**
+ * What a session is told when it connects (the MCP `instructions`), so that
+ * it can use System from any repository without reading System's docs.
+ */
+export const INSTRUCTIONS = `System is the durable work control plane on this machine. This session is a
+caller: a Worker (a separate agent, in a clean worktree of the repository)
+makes the change, and results come back as Artifact IDs.
+
+When to use it
+- A change that must be checked and merged, independent attempts, or work that
+  should survive this session.
+- Quick edits and questions stay in this session.
+
+What a repository needs
+- It is on GitHub, has a \`dev\` branch, and a committed \`.system/checks.yaml\`.
+- System merges a change into \`dev\` when its checks pass. The operator
+  merges \`dev\` into \`main\`.
+
+Steps (the tools may be shown as status, task_new, work_submit, with _ for .)
+1. \`status\` with the repository: what is done, in progress (by whom) and to do.
+2. \`task_new\` with the repository, the ref and the \`item\`.
+3. \`work_submit\` with the Workflow file
+   ~/.system/current/workflows/software-engineering.yaml. The others there:
+   code-checks, research, research-fanout, brainstorm, debate, second-opinion.
+4. Follow it with \`work_watch\` or \`work_events\`; read details by ID
+   (\`work_show\`, \`artifact_show\`).
+
+Bootstrap of a new repository (you do this, there is no script)
+1. Check the GitHub remote.
+2. If AGENTS.md is missing, write it from the agent contract (Appendix B) of
+   ~/.system/current/docs/governance/documentation-architecture.md.
+3. Ask the operator before creating \`dev\` from \`main\`.
+4. Write \`.system/checks.yaml\` from the repository's CI and commit it on
+   \`dev\`. This is the one direct commit, since there are no checks to pin yet.
+5. Create STATUS.md, with Aim and Items.
+
+Only a human approves, denies or verifies again. Never try to act as the
+human: print the exact command for the operator to run in a terminal, such as
+\`system approve <work>\`, \`system deny <work>\` or
+\`system work retry <work> --step checks.checks\`.
+`
+
 const WORK_URI = /^system:\/\/work\/(.+)$/
 
 /** The Work a resource URI names. */
@@ -48,7 +90,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
   }
   const who: Caller = { type: 'agent', operatorId: operatorId() }
 
-  const server = new Server({ name: 'system', version: '0.0.0' }, { capabilities: { tools: {}, resources: { subscribe: true } } })
+  const server = new Server({ name: 'system', version: '0.0.0' }, { capabilities: { tools: {}, resources: { subscribe: true } }, instructions: INSTRUCTIONS })
   /** The Works the client subscribed to; each connection to the Host watches them again when it is opened. */
   const subscribed = new Set<string>()
   const heard = (method: string, params: unknown) => {
