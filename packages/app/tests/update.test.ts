@@ -53,6 +53,7 @@ test('a new commit of main is built, checked by a System Work on that commit, th
     'corepack pnpm build @/i/releases/' + SHA,
     '/cli/bin/system task new --text',
     '/cli/bin/system work submit --workflow',
+    '/cli/bin/system work show work:checked',
   ])
   assert.ok(m.ran.some((line) => line.includes(`--repo /i/repo --ref ${SHA}`)))
   assert.ok(m.ran.some((line) => line.includes(`--workflow /i/releases/${SHA}/workflows/code-checks.yaml --input sha256:task`)))
@@ -109,4 +110,23 @@ test('after a switch, only the current release and the one before stay', async (
   assert.equal(await update(m.deps), 0)
   assert.deepEqual(m.deps.releases().sort(), [OLD, SHA].sort())
   assert.ok(m.ran.some((line) => line.startsWith(`git -C /i/repo worktree remove --force /i/releases/${'c'.repeat(40)}`)))
+})
+
+test('with a current release, the new commit is checked as a change from it, and the log says what it was compared with and what was skipped', async () => {
+  const m = machine({ current: OLD })
+  const run = m.deps.run
+  m.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (args[0] === 'work' && args[1] === 'show') { m.ran.push(args.join(' ')); return { status: 0, stdout: '{"reason": "all 4 check(s) run passed on x; run: docs 1.0 s; skipped: web, smoke"}' } }
+    return run(command, args, cwd)
+  }
+  assert.equal(await update(m.deps), 0)
+  assert.ok(m.ran.some((line) => line.includes(`task new --text`) && line.includes(`--ref ${SHA} --against ${OLD}`)))
+  assert.ok(m.log.some((line) => line.includes('passed') && line.includes(`compared with ${OLD.slice(0, 12)}; skipped: web, smoke`)))
+})
+
+test('the first install checks the whole commit: no --against', async () => {
+  const m = machine()
+  assert.equal(await update(m.deps), 0)
+  assert.ok(m.ran.some((line) => line.includes('task new') && !line.includes('--against')))
+  assert.ok(m.log.some((line) => line.includes('whole commit, none skipped')))
 })

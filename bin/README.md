@@ -14,7 +14,9 @@
   other home is told to run `system host` in the foreground.
 - `system update [--wait <minutes>]` moves the install (`~/.system`, or
   `SYSTEM_INSTALL`) to the newest commit of `main`, only after that commit
-  passed its own required checks as a System Work on this machine
+  passed its own required checks as a System Work on this machine (a change
+  from the running release, so only the checks whose `paths` match the diff
+  run; the first install runs all)
   ([update.mjs](update.mjs); the
   [runbook](../docs/operations/runbook.md#install-and-start)).
 - `system host --supervise` (development, no systemd) stays as a small

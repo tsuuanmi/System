@@ -46,8 +46,8 @@ checks:
     # Worker itself is being developed: its Runtime, its driver, its test or the
     # headed-Chrome helper. A change to shared test support, to this file or to
     # the dependencies does not run them for every Work; the release check of
-    # `system update` runs every check on the released commit, so a break there
-    # is still caught before it runs live.
+    # `system update` is a change from the running release, so it runs `web`
+    # only when one of these paths differs between the two.
     run: corepack pnpm test:web
     timeoutSeconds: 600
     paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/headed.ts]
