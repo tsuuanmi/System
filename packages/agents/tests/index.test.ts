@@ -43,6 +43,11 @@ test('the capabilities the web-worker row reports (the tiers its Site map binds)
   assert.deepEqual(accounts[0]!.capabilities, offered)
 })
 
+test('an account reports the model of each tier it configures, in tier order, from the first moment', async () => {
+  const { before } = await mount(undefined, true, [{ models: { frontier: 'f', economy: 'e' } }, { models: undefined }])
+  assert.deepEqual((before as any[]).map((a) => a.models), [{ economy: 'e', frontier: 'f' }, {}])
+})
+
 test('an account the web-worker row says is not ready is unavailable with its reason, until it is ready again', async () => {
   let reason: string | undefined = 'needs sign-in since 05:10: run `system workers login web/chatgpt/default --remote`, then `system workers recheck web/chatgpt/default`'
   const web = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => reason }) }
