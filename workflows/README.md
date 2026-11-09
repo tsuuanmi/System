@@ -31,7 +31,7 @@ changes future admissions only.
   on the input change, criteria pinned from its base). A Sub-workflow of
   `software-engineering.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
-  A check that fails on the change and on its base is `inconclusive` (df-25): the Work is held for approval before `publish`, not retried.
+  A check that fails on the change and on its base is `inconclusive` (df-25): the Work is held for approval before `publish`, not retried ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`.
