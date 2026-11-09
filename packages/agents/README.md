@@ -95,6 +95,13 @@ model is recorded for it.
    output slot is the working tree, committed on the base with a private index
    as `git-tree@1` and pinned at `refs/system/artifacts/<commit>`; every other
    slot is the file `out/<slot>` as `file@1`. A missing output fails the attempt.
+   A change equal to its base (the tree is the base commit's own) is still
+   captured, and the Worker reports its final message beside the outputs; the
+   controller then fails the step with "no change: the working tree is the same
+   as the base commit <short sha>" and that message, shortened, but only when a
+   later verify or effect step takes that output as its subject. Read-only
+   steps (the scouts of `hygiene.yaml`) name a `checkout` nothing verifies or
+   publishes, so an unchanged one stays a success.
 5. **Record:** usage from the CLI's own output (unknown when absent), summed
    over every turn: a background command's completion notification starts a
    second turn, and Claude Code's `stream-json` prints a `result` for each,

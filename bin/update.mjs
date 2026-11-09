@@ -7,7 +7,10 @@
 //   1. fetch `main`; the commit already current is nothing to do;
 //   2. add its release and build it (`pnpm install --frozen-lockfile`, `pnpm build`);
 //   3. check it by a System Work: `workflows/code-checks.yaml` on a task whose base is that commit, so
-//      the evidence is a Work bound to the exact commit (the Host's `code.required-checks`);
+//      the evidence is a Work bound to the exact commit (the Host's `code.required-checks`). With a
+//      `current`, the commit is a change from it (`task new --against`, the base's `parent`): the
+//      verifier runs the checks `paths` selects for the files that differ between the two releases, from
+//      the new commit's own `.system/checks.yaml`; the first install checks the whole commit;
 //   4. switch `current` (a new link renamed over it, so the switch is atomic);
 //   5. ask the Host, as a client of the new code, until it runs it: a hello of other code makes a Host
 //      whose `current` changed drain and exit 75, and the unit starts the new code (D). If it does not
@@ -42,15 +45,20 @@ export async function update({ install, cli, origin, run, exists, readlink, swit
     await must('pnpm install', run('corepack', ['pnpm', 'install', '--frozen-lockfile'], release))
     await must('pnpm build', run('corepack', ['pnpm', 'build'], release))
 
-    log(`checking ${commit.slice(0, 12)} with its required checks, as a System Work`)
-    const task = lastLine(await must('system task new', run(cli, ['task', 'new', '--text', `Release check of ${commit} for the install`, '--repo', repo, '--ref', commit])))
+    // The commit `current` points to, when it is a release of this install; the new commit is checked as a change from it.
+    const running = before?.startsWith('releases/') ? before.slice('releases/'.length) : undefined
+    log(`checking ${commit.slice(0, 12)} with its required checks, as a System Work${running ? `, as a change from the running release ${running.slice(0, 12)}` : ' (the first install: the whole commit)'}`)
+    const task = lastLine(await must('system task new', run(cli, ['task', 'new', '--text', `Release check of ${commit} for the install`, '--repo', repo, '--ref', commit, ...(running ? ['--against', running] : [])])))
     const checked = await run(cli, ['work', 'submit', '--workflow', join(release, 'workflows', 'code-checks.yaml'), '--input', task])
     const work = checked.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
+    // The verdict names the checks it skipped; the Work record carries it.
+    const skipped = work.startsWith('work:') ? /skipped: ([\w.-]+(?:, [\w.-]+)*)/.exec((await run(cli, ['work', 'show', work])).stdout)?.[1] : undefined
+    const compared = running ? `compared with ${running.slice(0, 12)}; skipped: ${skipped ?? 'none'}` : 'whole commit, none skipped'
     if (checked.status !== 0) {
-      log(`the checks of ${commit.slice(0, 12)} failed (${work}); current stays ${before ?? 'unset'}`)
+      log(`the checks of ${commit.slice(0, 12)} failed (${work}; ${compared}); current stays ${before ?? 'unset'}`)
       return 1
     }
-    log(`the checks of ${commit.slice(0, 12)} passed: ${work}`)
+    log(`the checks of ${commit.slice(0, 12)} passed: ${work} (${compared})`)
 
     switchLink(link, `releases/${commit}`)
     if (!before) {

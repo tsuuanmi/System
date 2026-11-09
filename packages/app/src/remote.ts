@@ -156,8 +156,8 @@ export function remoteHost(remote: Remote): ClientHost {
       return follow(workId, options)
     },
     wait: (workId) => follow(workId),
-    async newTask(instructions, repository, ref, context, item) {
-      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item })
+    async newTask(instructions, repository, ref, context, item, against) {
+      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against })
     },
     status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
   }

@@ -83,11 +83,13 @@ export class WorkService {
    * Store a `task@1` input; with a repository, first snapshot `ref` there as a
    * `git-tree@1` Artifact the task starts from.
    */
-  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string): Promise<{ task: string; base?: string }> {
+  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string, against?: string): Promise<{ task: string; base?: string }> {
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     let base: string | undefined
     if (repository) {
       const tree = await snapshot(repository, ref)
+      // `against`: the commit this one is a change from; the verifier's touched files are the diff between the two.
+      if (against) tree.parent = (await snapshot(repository, against)).commit
       base = (await this.artifacts.put({
         ...GIT_TREE_KIND, content: tree, subject: { type: 'git-commit', ref: tree.commit },
         classification: 'local-private', producer,
@@ -119,6 +121,16 @@ function specStore(artifacts: Artifacts): SpecStore {
     kindOf(id) {
       const read = artifacts.get(id)
       return read.state === 'stored' ? read.envelope.kind : undefined
+    },
+    unchangedBase(id) {
+      const read = artifacts.get(id)
+      if (read.state !== 'stored' || read.envelope.kind !== GIT_TREE_KIND.kind) return undefined
+      const tree = read.envelope.content as GitTreeContent
+      return tree.commit === tree.parent ? tree.commit : undefined
+    },
+    commitOf(id) {
+      const read = artifacts.get(id)
+      return read.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? (read.envelope.content as GitTreeContent).commit : undefined
     },
     taskOf(id) {
       const read = artifacts.get(id)

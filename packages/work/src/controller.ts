@@ -34,6 +34,10 @@ export interface SpecStore {
   exists(id: string): boolean
   /** The kind of a stored Artifact. */
   kindOf(id: string): string | undefined
+  /** The base commit of a stored `git-tree@1` Artifact whose tree is its base's own tree (a change that changes nothing); undefined otherwise. */
+  unchangedBase(id: string): string | undefined
+  /** The commit of a stored `git-tree@1` Artifact (a change); undefined for any other Artifact. */
+  commitOf?(id: string): string | undefined
   /** Store a `verdict@1` Artifact; returns its ID. */
   putVerdict(verdict: Verdict): Promise<string>
   /** A stored Task, and the repository of its base commit; undefined when `id` is not a Task. */
@@ -246,7 +250,7 @@ export class WorkController {
       if (busy) throw new WorkError(`Item ${item.id} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'}); to run another on purpose, give force (--force)`)
     }
     // A Task that names an Item is read with the Item's status and its earlier Works added to its context.
-    const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list()), admission.caller) : input
+    const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list(), this.specs.commitOf?.bind(this.specs)), admission.caller) : input
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = options.workId ?? `work:${randomUUID()}`
     const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: read, ...(item ? { item } : {}), ...(admission.worker ? { worker: admission.worker } : {}), criteria, verifiers, source: admission.source }
@@ -630,7 +634,7 @@ export class WorkController {
         turn = this.attemptTurn(dispatched.record, attempt && (async () => {
           try {
             const execution = await this.executeWorker(attempt)
-            return await this.lane(() => this.observeWorker(attempt, execution))
+            return await this.lane(() => this.observeWorker(attempt, execution, spec))
           } finally {
             this.slots.release(attempt.worker.ref, attempt.attemptId)
           }
@@ -708,7 +712,7 @@ export class WorkController {
   }
 
   /** In the lane: read the committed record again and append the outcome. */
-  private async observeWorker(attempt: WorkerAttempt, { result, aborted }: WorkerExecution): Promise<WorkRecord> {
+  private async observeWorker(attempt: WorkerAttempt, { result, aborted }: WorkerExecution, spec: ResolvedSpec): Promise<WorkRecord> {
     const { workId, attemptId, step: s } = attempt
     let { status, reason } = result
     if (aborted) status = 'cancelled'
@@ -717,6 +721,15 @@ export class WorkController {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot]))
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
+      // A change that is judged or published must be one: a Worker that changed nothing fails here, not three steps later.
+      // Only a first output that a later verify or effect step takes as its subject, so a read-only step's `checkout` stays unchanged.
+      else if (s.outputs[0] && isJudged(spec, s.id, s.outputs[0])) {
+        const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
+        if (base) {
+          const said = result.message?.replace(/\s+/g, ' ').trim()
+          ;[status, reason] = ['failed', `no change: the working tree is the same as the base commit ${base.slice(0, 7)}${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`]
+        }
+      }
     }
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
     // A cancel request is recorded by the drive, once every attempt of the Work has reported.
@@ -933,6 +946,12 @@ function dependentsOf(spec: ResolvedSpec, stepId: string): string[] {
 function lastReason(record: WorkRecord, stepId: string): string {
   const event = record.events.findLast((e) => e.type === 'effect-observed' && e.stepId === stepId)
   return event?.type === 'effect-observed' ? event.reason : 'no observation'
+}
+
+/** Whether a later verify or effect step takes `$steps.<stepId>.<slot>` as its subject. */
+function isJudged(spec: ResolvedSpec, stepId: string, slot: string): boolean {
+  const ref = `$steps.${stepId}.${slot}`
+  return spec.steps.some((t) => (isVerifyStep(t) && t.verify.subject === ref) || (isEffectStep(t) && t.effect.subject === ref))
 }
 
 function refsOf(s: Step): string[] {

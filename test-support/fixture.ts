@@ -77,6 +77,7 @@ export function fixture(options: { seed?: number; slots?: number } = {}): Fixtur
   const specs = new Map<string, ResolvedSpec>()
   const verdicts = new Map<string, Verdict>()
   const specStore: SpecStore = {
+    unchangedBase: () => undefined,
     kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) { const v = id(JSON.stringify(verdict)); verdicts.set(v, verdict); stored.add(v); return v },
     async putSpec(spec) { const s = id(JSON.stringify(spec)); specs.set(s, structuredClone(spec)); stored.add(s); return s },

@@ -487,6 +487,38 @@ test('a commit checked as it is (code-checks.yaml on its own) runs every check, 
   assert.match(result.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
 })
 
+test('a release is checked as a change from the running one: the web check runs only when the diff touches its paths; the first install runs every check', async () => {
+  const checks = 'checks:\n  - name: always\n    run: "true"\n  - name: web\n    run: "true"\n    paths: ["packages/web-worker/**"]\n'
+  const artifacts = store()
+  const repository = repo(checks)
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
+  const git = (...args: string[]) => execFileSync('git', ['-C', repository, ...args], { env, encoding: 'utf8' }).trim()
+  const running = git('rev-parse', 'HEAD')
+  const commit = (path: string) => {
+    mkdirSync(join(repository, path, '..'), { recursive: true })
+    writeFileSync(join(repository, path), `${path}\n`)
+    git('add', '.')
+    git('commit', '--quiet', '-m', path)
+    return git('rev-parse', 'HEAD')
+  }
+  const docs = commit('docs/note.md')
+  const worker = commit('packages/web-worker/a.ts')
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const reason = async (commitId: string, parent?: string) => {
+    const tree = { ...(await snapshot(repository, commitId)), ...(parent ? { parent } : {}) }
+    const treeId = (await artifacts.put({ ...GIT_TREE_KIND, content: tree, classification: 'local-private', producer })).id
+    const task = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'x', base: treeId }, inputs: [treeId], classification: 'local-private', producer })).id
+    const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+    const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: task, criteria })
+    assert.equal(result.verdict, 'pass', result.reason)
+    return result.reason
+  }
+  assert.match(await reason(docs, running), /run: always [\d.]+ s; skipped: web$/)
+  assert.match(await reason(worker, running), /run: always [\d.]+ s, web [\d.]+ s$/)
+  assert.match(await reason(worker, docs), /run: always [\d.]+ s, web [\d.]+ s$/)
+  assert.match(await reason(docs), /run: always [\d.]+ s, web [\d.]+ s$/, 'no parent: the whole commit')
+})
+
 /** Runs a one-check repository with `checkEnv`; returns the verdict and the check-run content. */
 async function withCheckEnv(run: string, checkEnv: Record<string, string>) {
   const artifacts = store()

@@ -153,8 +153,10 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         }
         const path = [bin, process.env.PATH].filter(Boolean).join(':')
         // What the change touches against the base its checks were pinned from (PROP-0007 decision 5); a commit checked as it is runs them all.
-        const asItIs = tree.commit === checks.source.commit
-        const touched = asItIs ? [] : (await git(tree.repository, ['diff', '--name-only', checks.source.commit, tree.commit])).split('\n').filter(Boolean)
+        // A tree that names its parent is a change from that commit (a captured change; a release against the running one); otherwise from the commit the checks were pinned from.
+        const from = tree.parent ?? checks.source.commit
+        const asItIs = tree.commit === from
+        const touched = asItIs ? [] : (await git(tree.repository, ['diff', '--name-only', from, tree.commit])).split('\n').filter(Boolean)
         for (const check of checks.checks) {
           if (!asItIs && !selected(check, touched)) {
             skipped.push(check.name)

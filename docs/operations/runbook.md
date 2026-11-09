@@ -79,7 +79,14 @@ Host that stopped itself for new code waits for its attempts first; see
   `corepack pnpm build` there;
 - it checks that commit by a Work, `workflows/code-checks.yaml` on a task whose
   base is the commit, and prints the Work ID: the evidence, bound to the exact
-  commit. A failed build or check leaves `current` where it was;
+  commit. A failed build or check leaves `current` where it was. With a
+  `current`, the commit is checked as a change from the release that runs now
+  (`system task new --against`: the base's `parent`), so `paths` selects the
+  checks by the files that differ between the two releases (`web` runs only
+  when the Website Worker, its driver or its test changed), from the new
+  commit's own `.system/checks.yaml`; the first install checks the whole
+  commit. The log line names the release it compared with and the checks the
+  verifier skipped;
 - it switches `current` (a new link renamed over it), then asks the Host as a
   client of the new code, which makes the Host drain and restart on it (below);
 - if the Host does not run the new code within `--wait` (default 75 minutes,
@@ -491,9 +498,9 @@ Read a Work by its ID for details. The MCP tool `status` answers the same.
 While a Work for an Item runs or is held, `work submit` for the same Item is
 refused, naming that Work and its Account. `--force` (`force: true`) allows
 parallel work on purpose. A Task that names an Item is read with the Item's
-line and the Work and result IDs, or failure reasons, of its earlier Works
-added to its context, so a new session or Worker can carry on from the status
-alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
+line and, for its last three earlier Works, their end reason, Task ID, change
+Artifact and commit, and each failed verdict's full reason and evidence IDs added
+to its context, so a new session or Worker can carry on from the status alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
 pull request.
 
 ## Using System from an agent
