@@ -37,6 +37,11 @@ export class Slots {
     this.freed = fn
   }
 
+  /** Whether the Worker's Account has a free slot. */
+  hasFree(worker: WorkerPort): boolean {
+    return (this.held.get(worker.ref)?.size ?? 0) < (worker.maxConcurrentAttempts ?? 1)
+  }
+
   /** Take a slot of the Worker's Account, if one is free. */
   reserve(worker: WorkerPort, attemptId: string): boolean {
     return this.take(worker.ref, worker.maxConcurrentAttempts ?? 1, attemptId)

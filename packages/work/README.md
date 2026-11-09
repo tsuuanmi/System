@@ -40,7 +40,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   socket named after the canonical `DSH_HOME` (Linux only).
 - [src/lane.ts](src/lane.ts) — `commitLane`: sections run one at a time, in order.
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
-  operator touches and usage from a Work's events (`system work report`):
+  operator touches, time waited for a slot (`waitedForSlotMs`, from
+  `dispatched.waitedMs`), rate-limited attempts (`rateLimitedAttempts`, from
+  `observed.rateLimited`) and usage from a Work's events (`system work report`):
   total, cache read, cache write and fresh input tokens, with attempts that
   did not split their cache use counted in `unsplitAttempts`, never as zero;
   `costUsdEstimate` totals the CLI's API-equivalent cost estimate (not what the
@@ -93,7 +95,8 @@ attempt again at once, only an explicit `run` or `retry` continues.
 ## Scheduling and slots
 
 A `drive` dispatches every ready step (pending, every `dependsOn` succeeded) whose
-Account has a free slot, in Workflow file order, then waits for an attempt to
+Account has a free slot (routing passes over a capable Account that is full for
+the next capable one), in Workflow file order, then waits for an attempt to
 report or a slot to be freed. An Account is a Worker's `ref`; a `WorkerPort`
 offers `maxConcurrentAttempts` (default 1, set per Account in the `agents` row)
 and an optional `gone(attemptId)`. A slot is reserved in the lane before

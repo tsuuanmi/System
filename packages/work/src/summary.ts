@@ -1,6 +1,6 @@
 /**
  * A Work's measurements, derived from its events (mvp.md failure test 8,
- * MVP-06): duration, attempts, the operator's touches, and usage. Submitting
+ * MVP-06): duration, attempts, time waited for a slot, rate-limited attempts, the operator's touches, and usage. Submitting
  * Work is the request itself, not a touch; a human cancel, retry or decision
  * is. Usage an attempt did not report, or did not split into cache and fresh input, is counted apart, never as zero.
  */
@@ -11,6 +11,10 @@ export interface WorkSummary {
   status: WorkRecord['state']['status']
   durationMs: number
   attempts: number
+  /** Time steps waited for a free Account or check slot, summed. */
+  waitedForSlotMs: number
+  /** Worker attempts that failed on a rate limit. */
+  rateLimitedAttempts: number
   operatorTouches: number
   touches: string[]
   /** `inputTokens` is the total; fresh input counts only attempts that split their cache use. */
@@ -26,8 +30,14 @@ export function summarize(record: WorkRecord): WorkSummary {
   const touches: string[] = []
   const usage: WorkSummary['usage'] = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
   let attempts = 0
+  let waitedForSlotMs = 0
+  let rateLimitedAttempts = 0
   for (const event of record.events) {
-    if (event.type === 'dispatched' && event.executor === 'worker') attempts += 1
+    if (event.type === 'dispatched') {
+      if (event.executor === 'worker') attempts += 1
+      waitedForSlotMs += event.waitedMs ?? 0
+    }
+    if (event.type === 'observed' && event.rateLimited) rateLimitedAttempts += 1
     if (event.type === 'observed') {
       if (event.usage.state === 'observed') {
         usage.inputTokens += event.usage.inputTokens
@@ -52,5 +62,5 @@ export function summarize(record: WorkRecord): WorkSummary {
   }
   const first = Date.parse(record.events[0]!.at)
   const last = Date.parse(record.events.at(-1)!.at)
-  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, operatorTouches: touches.length, touches, usage }
+  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, waitedForSlotMs, rateLimitedAttempts, operatorTouches: touches.length, touches, usage }
 }

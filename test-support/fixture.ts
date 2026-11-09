@@ -70,13 +70,14 @@ export interface Fixture {
 /** The two Accounts of the fake Workers: Brainstorm's proposals use different ones, as the bundle's do. */
 export const CLAUDE = 'fake/claude'
 export const CODEX = 'fake/codex'
+export const SPARE = 'fake/spare'
 
 /**
  * With a `seed`, every attempt first yields a seeded number (0 to 8) of
  * event-loop turns. `slots` is each Account's `maxConcurrentAttempts`; `checks`
  * the fake verifier's `maxConcurrentChecks` (none: no limit).
  */
-export function fixture(options: { seed?: number; slots?: number; checks?: number } = {}): Fixture {
+export function fixture(options: { seed?: number; slots?: number; checks?: number; spare?: boolean } = {}): Fixture {
   const random = options.seed === undefined ? undefined : seeded(options.seed)
   const stored = new Set<string>()
   const specs = new Map<string, ResolvedSpec>()
@@ -137,6 +138,8 @@ export function fixture(options: { seed?: number; slots?: number; checks?: numbe
   })
   worker(CLAUDE, ['code-write', 'research', 'web-search', 'brainstorm.idea-a', 'brainstorm.synthesis'])
   worker(CODEX, ['brainstorm.idea-b'])
+  // A second Account offering what the first does, registered after it: the route for a step whose first capable Account is full.
+  if (options.spare) worker(SPARE, ['brainstorm.idea-a'])
   capabilities.registerVerifier({
     ref: 'fake-verifier', version: '1', capabilities: ['code.required-checks', 'research.citation-check'], accepts: ['output'],
     ...(options.checks === undefined ? {} : { maxConcurrentChecks: options.checks }),

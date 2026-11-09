@@ -73,7 +73,7 @@ await serving.stop()                                // server, then the Host cor
 | `work.show` | yes | `workId: string` | The Work record: events and state; while Worker attempts run, also `live`: per attempt its step, Worker, start, last activity, elapsed and quiet seconds, whether it is stalled, and the `progress` its Runtime last reported (turns, last tool, tokens, stage). `live` is an observation of the moment, never part of the record. |
 | `work.list` | yes | none | Every Work as `{ id, status, specId }`. |
 | `work.replay` | yes | `workId: string` | Fold the recorded events again: `{ state, matches }`. Runs nothing. |
-| `work.report` | yes | `workId: string` | Duration, attempts, operator touches and usage of a Work, from its events. |
+| `work.report` | yes | `workId: string` | Duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events. |
 | `work.events` | yes | `workId: string`, `after?: integer` | The events with `seq` above `after` (all when omitted) and the current status: `{ events, status }`. Poll it to follow a Work. |
 | `work.watch` | yes | `workId: string` | Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now. |
 | `work.unwatch` | yes | `workId: string` | Stop the notices of `work.watch` for a Work on this connection. |

@@ -34,7 +34,7 @@ prints `system: the System Host is not running for <home>: ...` and exits 1.
 | `system work wait <workId...> [--any] [--timeout <minutes>]` | return when every named Work, or with `--any` the first, has ended, is held or awaits approval; prints one line per Work (`<id>  <status>  <reason>`, a held Work without a reason says `awaiting <step>`) and exits with the code of the Work that decided it (with `--any` the first to end; otherwise the last): 0 succeeded, 1 failed, 3 held, 5 cancelled; **4 on timeout** (the Works are printed as they are and stderr says it timed out). Reads only, over the read-only connection when the Host is upgrading, with the polling of `work run`. Meant to be run as a background command by a session, since MCP notices do not wake an idle one |
 | `system work show <workId>` | the record (events and state) as JSON |
 | `system work list` | ID, status and pinned spec of every Work |
-| `system work report <workId>` | duration, attempts, operator touches (human cancels, retries, decisions) and usage (fresh input, cache read, cache write, output), with unreported usage counted apart |
+| `system work report <workId>` | duration, attempts, time waited for a slot, rate-limited attempts, operator touches (human cancels, retries, decisions) and usage (fresh input, cache read, cache write, output), with unreported usage counted apart |
 | `system work replay <workId>` | fold the events again and compare with the stored state; runs nothing; exit 1 on mismatch |
 | `system --help` | help, exit 0 |
 

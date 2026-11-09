@@ -573,3 +573,12 @@ test('the verifier is pinned at admission with its version: another version at r
   assert.match(verified?.type === 'verified' ? verified.reason : '', /pinned fake-verifier@1 at admission; fake-verifier@2 is enabled now/)
   assert.equal(done.state.status, 'failed')
 })
+
+test('an attempt that failed on a rate limit is recorded as rate-limited; another failure is not', async () => {
+  for (const [reason, rateLimited] of [['fake: 429 Too Many Requests', true], ['claude usage limit reached; rate limit resets at 5pm', true], ['tests red', false]] as const) {
+    const done = await runFixture(harness({ worker: { run: async () => ({ status: 'failed', outputs: {}, reason }) } }), 'research.yaml')
+    const observed = done.events.find((e) => e.type === 'observed')
+    assert.ok(observed?.type === 'observed')
+    assert.equal(observed.rateLimited, rateLimited ? true : undefined, reason)
+  }
+})
