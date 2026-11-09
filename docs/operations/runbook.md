@@ -177,6 +177,24 @@ A list of names (such as `capabilities`) is replaced whole. `$patch: replace`
 in the `config` takes it whole, as the overlay used to. `system workers` shows
 the accounts that result.
 
+The `verifiers` row's `checkEnv` gives every `code.required-checks` check
+variables of the machine, on top of its minimal environment (`PATH`, `LANG`, a
+throwaway `HOME`, `CI=1`). A repository whose toolchain lives under the user's
+home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
+
+```yaml
+- id: verifiers
+  config:
+    checkEnv:
+      RUSTUP_HOME: /home/tan/.rustup
+      CARGO_HOME: /home/tan/.cargo
+      CARGO_TARGET_DIR: /home/tan/.cache/system-cargo-target
+```
+
+Names match `^[A-Z_][A-Z0-9_]*$`; `HOME`, `PATH` and `CI` cannot be set, and
+the profile is refused if it tries. A `check-run@1` records the names it was
+given, never the values.
+
 ## Attempts at once, and held slots
 
 Each Account (an `agents` account such as `claude-code/default`) runs one

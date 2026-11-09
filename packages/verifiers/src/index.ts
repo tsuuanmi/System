@@ -17,7 +17,12 @@ export * from './citations.ts'
 export const name = 'system-verifiers'
 export const inject = ['capabilities', 'artifacts', 'subprocess']
 
-export function apply(ctx: Context): void {
+export interface Config {
+  /** Variables (names `[A-Z_][A-Z0-9_]*`, not HOME, PATH or CI) given to every `code.required-checks` check, e.g. RUSTUP_HOME. */
+  checkEnv?: Record<string, string>
+}
+
+export function apply(ctx: Context, config: Config = {}): void {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
   artifacts.registerKind({ ...CHECKS_KIND, content: checksSchema })
@@ -25,7 +30,7 @@ export function apply(ctx: Context): void {
   artifacts.registerKind({ ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema })
   artifacts.registerKind({ ...CITATION_CHECK_KIND, content: citationCheckSchema })
   const dispose = [
-    capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime))),
+    capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime), Date.now, config.checkEnv)),
     capabilities.registerVerifier(citationCheck(artifacts)),
   ]
   ctx.effect(() => () => { for (const d of dispose) d() }, 'verifier registrations')
