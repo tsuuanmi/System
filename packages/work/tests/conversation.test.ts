@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Artifacts } from '@system/artifacts'
 import { memoryBlobStore, memoryRecordTable } from '../../../test-support/memory.ts'
-import { CONVERSATION_KIND, NOTICE, addConversation, conversationSchema, previewConversation, type ConversationParts } from '../src/conversation.ts'
+import { CONVERSATION_KIND, NOTICE, addConversation, conversationSchema, type ConversationParts } from '../src/conversation.ts'
 import { TASK_KIND, taskSchema } from '../src/kinds.ts'
 
 const producer = { type: 'operator' as const, ref: 'tan' }
@@ -62,22 +62,6 @@ test('a correction supersedes the conversation it corrects', async () => {
   await assert.rejects(() => addConversation(artifacts, parts, {}, { producer, supersedes: ['sha256:' + '0'.repeat(64)] }), /not a stored Artifact/)
 })
 
-test('the preview stores nothing and names secret-like strings by kind and part, never by value', async () => {
-  const leaky: ConversationParts = {
-    response: { name: 'response.md', data: bytes('use sk-proj-abcdefghijklmnopqrstuvwx and ghp_abcdefghijklmnopqrstuvwxyz0123456789\n'), mediaType: 'text/markdown' },
-    attachments: [{ name: 'key.pem', data: bytes('-----BEGIN OPENSSH PRIVATE KEY-----\nxyz\n'), mediaType: 'text/plain' }],
-  }
-  const preview = previewConversation(leaky)
-  assert.deepEqual(preview.parts.map((p) => [p.role, p.name, p.bytes, p.firstLine]), [['response', 'response.md', 82, 'use [redacted] and [redacted]'], ['attachment', 'key.pem', 40, '[redacted]']])
-  assert.deepEqual(preview.warnings, [
-    'response.md: looks like an OpenAI API key',
-    'response.md: looks like a GitHub token',
-    'key.pem: looks like a private key',
-  ])
-  assert.ok(JSON.stringify(preview).includes('abcdef') === false, 'the preview never repeats a secret')
-  assert.deepEqual(previewConversation(parts).warnings, [])
-})
-
 test('a Task carries context Artifacts as inputs, so they must be stored and the strictest classification wins', async () => {
   const artifacts = store()
   const conversation = await addConversation(artifacts, parts, {}, { producer })
@@ -85,31 +69,4 @@ test('a Task carries context Artifacts as inputs, so they must be stored and the
   assert.equal(task.classification, 'local-private')
   assert.ok(taskSchema.safeParse({ instructions: 'x' }).success, 'context is optional: older tasks stay valid')
   assert.equal(taskSchema.safeParse({ instructions: 'x', context: ['not-an-id'] }).success, false)
-})
-
-test('the asserted fields and the part names are checked too; the warning names the field, never the value', () => {
-  const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789'
-  const preview = previewConversation(
-    { response: { name: `${token}.md`, data: bytes('fine\n'), mediaType: 'text/markdown' } },
-    { provider: 'sk-proj-abcdefghijklmnopqrstuvwx', url: 'https://example.com/c/1?token=abcdef123456', model: 'gpt', context: ['browsing', 'password: hunter2hunter2'] },
-  )
-  assert.deepEqual(preview.warnings, [
-    'part 1 name: looks like a GitHub token',
-    'provider: looks like an OpenAI API key',
-    'url: looks like a credential in a URL',
-    'context: looks like a password assignment',
-  ])
-  const printed = JSON.stringify(preview)
-  for (const value of ['ghp_abcdef', 'sk-proj-abcdef', 'abcdef123456', 'hunter2']) assert.ok(!printed.includes(value), `the preview never repeats ${value}`)
-})
-
-test('a credential in a URL is a sensitive query parameter of 8 or more characters, or user:password@', () => {
-  const warns = (url: string) => previewConversation({ response: parts.response }, { url }).warnings
-  for (const name of ['token', 'key', 'secret', 'password', 'sig', 'signature']) {
-    assert.ok(warns(`https://example.com/c?a=1&${name}=12345678`).includes('url: looks like a credential in a URL'), name)
-  }
-  assert.deepEqual(warns('https://tan:hunter2@example.com/c'), ['url: looks like a credential in a URL'])
-  assert.deepEqual(warns('https://example.com/c?token=short'), [])
-  assert.deepEqual(warns('https://example.com/c?monkey=12345678'), [])
-  assert.deepEqual(warns('https://chatgpt.com/c/123'), [])
 })

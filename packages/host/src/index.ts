@@ -140,7 +140,7 @@ const builtin = (version: string): Methods => ({
     read: true,
     summary: 'Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`.',
     handler(host) {
-      const records = host.list()
+      const records = host.view.list()
       return { version, pid: process.pid, works: records.length, recordBytes: records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)), 0) }
     },
   },
@@ -176,7 +176,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
       else if (type === 'terminal' && link.works.has(workId)) send({ jsonrpc: '2.0', method: 'work.changed', params: { workId, status, seq } })
     }
     let stopListening: (() => void) | undefined
-    const link: Link = { works: new Set(), listen() { stopListening ??= host.onChange(notify) } }
+    const link: Link = { works: new Set(), listen() { stopListening ??= host.view.onChange(notify) } }
     socket.on('close', () => stopListening?.())
     const fail = (id: unknown, code: number, message: string) => send({ jsonrpc: '2.0', id, error: { code, message } })
 

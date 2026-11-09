@@ -37,16 +37,9 @@ ADR-0008); `system approve` is for a human at a terminal.
   decision and alternatives.
 - [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)
   — upstream sources, risks and experiments.
-- [Current MVP-0 plugin audit](docs/research/RES-0005-plugin-reuse-audit.md)
-  — source-backed reuse/adapt/keep/defer assessment against PR #2 and pinned DSH.
 - [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff and no new Team engine.
 - [Work ownership and recovery](docs/architecture/work-ownership-and-recovery.md) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
-- [PR #2 source review](docs/research/RES-0007-brainstorm-and-concurrency-review.md) — Brainstorm, concurrency hypotheses and the next evaluation.
 - [Brainstorm evaluation](docs/research/RES-0008-brainstorm-evaluation.md) — B3: five briefs, three arms, blind scores by a model judge.
-- [Brainstorm feasibility and System 1 reference](docs/research/RES-0006-brainstorm-workflow-feasibility.md)
-  — three Worker attempts on the existing Claude/Codex runtimes.
-- [Draft post-MVP roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md)
-  — Brainstorm first; Research quality verification and Website Worker later.
 - [Next implementation plan](PLAN.md) — local-agent checklist and test gates.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
@@ -101,23 +94,7 @@ Brainstorm takes a brief the same way (`--workflow workflows/brainstorm.yaml`):
 Claude Code and Codex each write a proposal, then a synthesis compares them;
 `bin/system work show <work>` lists the three output Artifact IDs and
 `bin/system artifact cat <id>` prints one.
-A conversation held elsewhere (such as in a web chat) becomes Artifacts and
-then a task's context:
-
-```sh
-bin/system conversation add --response chat.md [--prompt asked.md] [--attach export.json] \
-  [--provider ChatGPT] [--url <url>] [--selection complete|excerpts|summary] \
-  [--product-context browsing]                         # preview only
-bin/system conversation add ... --yes                # store; prints the conversation ID
-bin/system conversation add ... --yes --accept-warnings   # store although the preview warns
-bin/system conversation show <id>
-bin/system task new --text "<what to do>" --context <id>
-```
-
-The preview warns when the files, their names or the stated fields (a URL
-with a token in it) look like a credential; `--yes` then refuses unless
-`--accept-warnings` is given. System stores the bytes as given and labels them operator-supplied and
-unverified ([PROP-0003](docs/proposals/PROP-0003-conversation-ingestion.md)).
+`bin/system conversation show <id>` prints a `conversation@1` the web Worker stored.
 A step asks for a model tier with the capability `tier.economy`,
 `tier.standard` or `tier.frontier`.
 

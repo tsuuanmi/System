@@ -8,6 +8,14 @@ changes future admissions only.
   (`code-write`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
   (`git.publish`: the checked commit to `system/<work>`, one draft pull
   request) → `accept`.
+- [software-engineering-docs.yaml](software-engineering-docs.yaml) — the same,
+  plus `docs-impact` (`code-write`, `tier.economy`), which reads the change
+  while the checks run and lists the docs it makes stale: advice, never a
+  verdict. It becomes the default only if it often finds stale docs.
+- [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
+  (`code-write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
+  is worth doing) → `implement` → `checks` → `publish` → `accept`: one pull
+  request of cleanup for any repository that has `.system/checks.yaml`.
 - [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
   on the input change, criteria pinned from its base). A Sub-workflow of
   `software-engineering.yaml`; on its own, on a task with a base, it checks that commit as it is.

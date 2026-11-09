@@ -1,10 +1,7 @@
 /**
- * The git operations System needs: snapshot a repository's commit, check a
- * commit out into a detached worktree, capture a worktree as an exact commit,
- * pin it so `git gc` keeps it, and remove the worktree.
- *
- * Capture uses a private index (`GIT_INDEX_FILE`), `add --all`, `write-tree`
- * and `commit-tree`, the technique of System 1's worktree recorder
+ * The git operations System needs: snapshot a commit, check it out into a
+ * detached worktree, capture a worktree as an exact commit, pin it, and
+ * remove it. Capture is the technique of System 1's worktree recorder
  * (tsuuanmi/system f199a27, packages/plugins/agent-workers/src/worktrees.ts);
  * its worktree ownership and landing are not used.
  */

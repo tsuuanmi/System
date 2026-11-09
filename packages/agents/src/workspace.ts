@@ -10,7 +10,7 @@
  * no git workspace, is the file `out/<slot>` (`file@1`). The adapter captures;
  * the agent's claim of what it produced is never used.
  *
- * A Task's `context` Artifacts (PROP-0003) are written read-only under
+ * A Task's `context` Artifacts are written read-only under
  * `in/context/` and listed apart from the inputs, as operator-supplied data:
  * a conversation as its manifest and part files, any other Artifact as its
  * bytes or its JSON content.

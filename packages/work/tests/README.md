@@ -33,7 +33,7 @@
   effect, reconciliation after a lost host or a throw, the unknown-outcome
   hold and its resumption, approval and denial, retrying only the effect.
 - `conversation.test.ts` — `conversation@1`: a manifest over stored parts,
-  stable IDs, corrections, the preview and its secret warnings, and a task's
+  stable IDs, corrections, and a task's
   context.
 - `summary.test.ts` — operator touches and usage from a Work's events.
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import type { WorkRecord } from '../src/record.ts'
-import { assertConsistent, fixture } from '../../../test-support/fixture.ts'
+import { assertConsistent, fixture, unfinished } from '../../../test-support/fixture.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-upgrade-'))
 after(() => rmSync(dir, { recursive: true, force: true }))
@@ -20,7 +20,7 @@ test('a draining Host starts no new attempt, lets the running one finish, and na
   const running = host.run(id)
   await f.arrived('idea-a')
   await until(() => f.attempts.includes('idea-b'))
-  const draining = host.drain()
+  const draining = host.view.drain()
   // The Work admitted while draining is accepted and its run begins, but nothing of it is dispatched.
   const later = await host.submit(f.admission('brainstorm.yaml'))
   void host.run(later.id)
@@ -34,7 +34,7 @@ test('a draining Host starts no new attempt, lets the running one finish, and na
   f.release('idea-a')
   await draining
   assert.deepEqual(f.attempts, ['idea-a', 'idea-b'], 'the synthesis waits for the new code')
-  assert.deepEqual((await host.held()).sort(), [id, later.id].sort())
+  assert.deepEqual((await host.view.held()).sort(), [id, later.id].sort())
   assertConsistent(f, id)
   void running.catch(() => {})
   await host.close()
@@ -54,14 +54,14 @@ test('resume continues what a draining Host held, and nothing that start found i
   f.release('idea-b')
 
   const next = await f.startHost(home)
-  assert.deepEqual(next.interrupted().sort(), [held.id, cut.id].sort())
+  assert.deepEqual(unfinished(next).sort(), [held.id, cut.id].sort())
   // The lost attempt's process is confirmed gone, so its Account's slot is free for the Work that resumes.
-  for (const event of cutEvents(next.get(cut.id)!)) f.gone(event)
+  for (const event of cutEvents(next.view.get(cut.id)!)) f.gone(event)
   const attempts = f.attempts.length
   assert.deepEqual(next.resume([held.id, cut.id]), [held.id], 'the interrupted Work is not resumed; the one never dispatched is')
-  await until(() => next.get(held.id)!.state.status === 'succeeded')
+  await until(() => next.view.get(held.id)!.state.status === 'succeeded')
   assert.equal(f.attempts.length > attempts, true)
-  assert.notEqual(next.get(cut.id)!.state.status, 'succeeded')
+  assert.notEqual(next.view.get(cut.id)!.state.status, 'succeeded')
   await next.close()
 })
 

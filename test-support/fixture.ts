@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
-import { Host, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
+import { Host, TERMINAL, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
 import { memoryWorkTable } from './memory.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -172,3 +172,6 @@ export function assertConsistent(f: Fixture, workId: string): void {
   const seqs = f.controller.get(workId)!.events.map((e) => e.seq)
   assert.deepEqual(seqs, seqs.map((_, index) => index), `${workId}: event seq is missing or repeated`)
 }
+
+/** The Works of `host` with work left to do: after a start, the ones it found interrupted. */
+export const unfinished = (host: Host): string[] => host.view.list().filter((r) => !TERMINAL.has(r.state.status)).map((r) => r.id)

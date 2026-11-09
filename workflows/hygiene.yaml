@@ -1,0 +1,96 @@
+# Repository hygiene (operator, 2026-11-09). Three economy scouts look at one
+# repository in parallel, each from its own angle, and write findings with
+# evidence; a standard plan step picks what is worth doing; one Worker does it;
+# the repository's required checks verify it and System merges it into its base
+# like any change. For any repository that can use System (.system/checks.yaml).
+# The first output of a step that reads the repository is its checkout: the
+# scouts and the plan leave it unchanged and write their report as a file.
+schema: system.workflow/v1
+id: hygiene
+version: 1
+steps:
+  - id: scout-docs
+    capabilities: [code-write, tier.economy]
+    inputs:
+      task: $work.input
+    outputs: [checkout, findings]
+    instructions: |
+      Read-only scout: change no file in the checkout. Look at this
+      repository's documentation against its code. Find docs that state a fact
+      another doc or the code already states (one home per fact), docs that
+      contradict the code, docs about something that no longer exists, and how
+      far the docs are over their budget if the repository sets one. Write
+      "findings" as Markdown: one item per finding, with the files, the exact
+      lines, why, and the lines it would save. Most valuable first; at most 25.
+      Say "none found" rather than invent any.
+  - id: scout-code
+    capabilities: [code-write, tier.economy]
+    inputs:
+      task: $work.input
+    outputs: [checkout, findings]
+    instructions: |
+      Read-only scout: change no file in the checkout. Find code nothing uses:
+      exports with no importer, files no one imports, tests that repeat
+      another test, options and parameters always given the same value, and
+      comments that restate a document. Use grep and the type checker to prove
+      each one. Write "findings" as Markdown: one item per finding, with the
+      files and lines, the proof, and the lines it would save. Most valuable
+      first; at most 25. Say "none found" rather than invent any.
+  - id: scout-tree
+    capabilities: [code-write, tier.economy]
+    inputs:
+      task: $work.input
+    outputs: [checkout, findings]
+    instructions: |
+      Read-only scout: change no file in the checkout. Look at the
+      repository's layout: files or directories outside the structure its
+      README and docs describe, helpers that would be a workspace package by
+      the repository's own conventions, generated or temporary files that are
+      committed, and names that do not follow the repository's pattern. For
+      each, say what the standard home would be and what moving it touches.
+      Write "findings" as Markdown, at most 15 items, most valuable first.
+      Say "none found" rather than invent any.
+  - id: plan
+    dependsOn: [scout-docs, scout-code, scout-tree]
+    capabilities: [code-write]
+    inputs:
+      task: $work.input
+      docs: $steps.scout-docs.findings
+      code: $steps.scout-code.findings
+      tree: $steps.scout-tree.findings
+    outputs: [checkout, plan]
+    instructions: |
+      Read-only: change no file in the checkout. Check each finding against
+      the repository: drop the ones that are wrong, and the ones whose cost is
+      larger than their gain. Follow the Task's instructions on scope. Write
+      "plan" as Markdown: the changes to make, in order, each with its files,
+      what to do, and the lines it saves; then the findings you dropped and
+      why. One pull request's worth of work: if there is more, keep the most
+      valuable and list the rest as later.
+  - id: implement
+    dependsOn: [plan]
+    capabilities: [code-write]
+    inputs:
+      task: $work.input
+      plan: $steps.plan.plan
+    outputs: [change]
+    instructions: |
+      Make the changes in the plan, and nothing else. Behaviour must stay the
+      same: where you remove code, the tests that remain must still pass.
+      Update the docs a change makes stale, in the same change.
+  - id: checks
+    dependsOn: [implement]
+    uses: code-checks.yaml
+    inputs:
+      input: $steps.implement.change
+  - id: publish
+    dependsOn: [checks]
+    effect:
+      capability: git.publish
+      subject: $steps.implement.change
+      requires: [checks.checks]
+      params: { merge: true }
+  - id: accept
+    dependsOn: [publish]
+    accept:
+      requires: [checks.checks]

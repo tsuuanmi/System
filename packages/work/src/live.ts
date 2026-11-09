@@ -1,9 +1,7 @@
 /**
  * Live attempt progress (PROP-0006 decisions 3 and 4): what each running
- * Worker attempt last reported and when, kept in memory only. It is an
- * observation of the moment, never an event, so a Work record stays small
- * and replay stays exact. An attempt quiet for `stallMinutes` is stalled once,
- * until it reports again.
+ * Worker attempt last reported, in memory only, never an event. An attempt
+ * quiet for `stallMinutes` is stalled once, until it reports again.
  */
 import type { Progress } from './registry.ts'
 

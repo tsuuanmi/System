@@ -178,5 +178,4 @@ They may not weaken the requirements above.
 
 See [Workflow composition](../architecture/workflow-composition.md),
 [Artifact-ID verification](../architecture/artifact-verification.md),
-[control-plane architecture](../architecture/control-plane.md) and the
-[pinned source audit](../research/RES-0004-reference-workflow-artifact-audit.md).
+[control-plane architecture](../architecture/control-plane.md).

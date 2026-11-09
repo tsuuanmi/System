@@ -1,10 +1,7 @@
 /**
- * The status of a project (PLAN DF2c): a repository's `STATUS.md` lists its
- * Items, each with a stable ID, and the Works that carry them out are read
- * from the Work records. Done is what `STATUS.md` says on the repository's
- * `dev` tip, read from git; doing is a Work for the Item that is running or
- * held; todo is neither. Nothing here is stored: the same records give the
- * same text.
+ * The status of a project (PLAN DF2c): the Items of a repository's `STATUS.md`
+ * (done as it says on the `dev` tip) and the Works that carry them out.
+ * Nothing here is stored.
  */
 import { git, snapshot } from './git.ts'
 import { ITEM_ID } from './kinds.ts'

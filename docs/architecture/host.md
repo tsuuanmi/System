@@ -37,7 +37,7 @@ at the same time.
         |
  ┌──────────────── Host: one process per DSH_HOME, one DSH host ─────────────────┐
  │ operation table   every operation once, with an `agent` flag (agents never   │
- │                   reach approve, deny, credentials set, conversation storage) │
+ │                   reach approve, deny, credentials set) │
  │ commit lane       the only path that changes a Work: each change is one       │
  │                   event appended, with its command receipt, in one write     │
  │ scheduler         ready steps -> attempts, one slot per Account by default   │
@@ -201,8 +201,7 @@ On start, before taking any command, the Host recovers:
 
 **Implemented (H2):** `Host.start` marks each unfinished Work's unreported
 attempts `attempt-lost` and reconciles effects left `intended` or `unknown`
-by reading the remote, applying nothing. `interrupted()` lists the Works
-nothing is driving, and `slots.uncertain()` the lost Worker attempts that keep
+by reading the remote, applying nothing. `slots.uncertain()` lists the lost Worker attempts that keep
 their Account slot (H5). `close()` refuses new operations and frees the home.
 
 On stop, the Host refuses new runs and exits. Whatever was cut short is the
@@ -256,26 +255,13 @@ PLAN's growth budget.
 
 ### Running it
 
-`system init` installs `system.service`:
-- a plain user unit, with `Restart=on-failure` and `RestartForceExitStatus=75`
-  (the status of a Host that stopped to run new code, so the new code starts at
-  once even if `Restart=` is changed);
-- the PATH captured at init, so the unit finds `claude`, `codex`, `git` and
-  `node`;
-- lingering enabled, so the Host runs after logout.
-
-Credentials still come from the DSH store.
-
-**Implemented (H4a):** `system host` builds the Host core in the DSH
+`system init` installs `system.service`, a plain user unit with
+`Restart=on-failure` and `RestartForceExitStatus=75`, the PATH captured at
+init, and lingering enabled. `system host` builds the Host core in the DSH
 composition (`WorkService.startHost`) and serves the operation table on
-`$DSH_HOME/system/host.sock` (a stale file is removed once the lock is held).
-SIGTERM or SIGINT closes the server, then the core (which releases the lock),
-and exits 0. `system init` never enables or starts the unit, and a `DSH_HOME`
-other than `~/.dsh` gets no unit; the commands, `--no-service`, logs and the
-"not running" and "not answering" cases are in the
-[operations runbook](../operations/runbook.md). Other homes (tests,
-experiments) run `system host` in the foreground, with `--supervise` to have
-it start again on new code.
+`$DSH_HOME/system/host.sock`; SIGTERM or SIGINT closes the server, then the
+core, and exits 0. Starting, stopping, other homes and the "not running" and
+"not answering" cases are in the [operations runbook](../operations/runbook.md).
 
 ## Guarantees and the tests that hold them
 

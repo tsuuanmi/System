@@ -21,8 +21,7 @@ The accepted Work and effect semantics remain in
 [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md),
 [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md)
 and [ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The
-earlier analysis is pinned in
-[RES-0007](../research/RES-0007-brainstorm-and-concurrency-review.md).
+earlier analysis (RES-0007) is retired; see the [ledger](../governance/retired.md).
 
 **Atomicity is scoped.** A serialized update of *one stored Work key* protects
 that key's transition; it does not atomically commit Artifact bytes, metadata
@@ -56,5 +55,4 @@ covered by `concurrency.test.ts`, which now runs through the Host.
 
 Current implementation is a **trusted, single-operator prototype**. This page
 addresses correctness and durability, **not** the deferred container/egress
-security program. See [Brainstorm contract](brainstorm-composition.md) and the
-[Research review](../research/RES-0007-brainstorm-and-concurrency-review.md).
+security program. See [Brainstorm contract](brainstorm-composition.md).

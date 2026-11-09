@@ -52,24 +52,6 @@ server once for your user ([agents](#using-system-from-an-agent)):
 claude mcp add --scope user system -- ~/.local/bin/system mcp
 ```
 
-### Moving to the install (DF0b)
-
-From a Host started by hand in a checkout to the installed one, once:
-
-1. While that Host runs, from a checkout of `main`:
-   `<checkout>/bin/system update`. It builds the first release, checks it as a
-   Work on that Host, and makes `current`.
-2. `ln -sfn ~/.system/current/bin/system ~/.local/bin/system`.
-3. Copy the `--patch` file that Host runs with to `~/.system/profile.yml`, and
-   check its Effects (`base`, `mergeInto`).
-4. When `system work list` shows nothing running, stop that Host (SIGTERM in
-   its terminal) and wait for `system work list` to say it is not running.
-5. `system init`, then `systemctl --user enable --now system`.
-6. `system doctor` reports `host: answering`; `system work list` shows the
-   Works.
-7. Delete what the mode before the Host left, which the Host ignores:
-   `rm -rf $DSH_HOME/system/control`.
-
 ## Stop, restart, status
 
 ```
@@ -250,44 +232,19 @@ the bundle's accounts, see above):
 ```
 
 The ref is `web/<site>/<name>` with `<site>` equal to the entry's `site`, which picks the shipped UI map and the Site's
-defaults (an unknown site is refused with the list of shipped sites: today `chatgpt`). An entry that still says
-`runtime: chatgpt-web` is `unavailable` with "the chatgpt-web runtime was renamed: use runtime: web, site: chatgpt, ref
-web/chatgpt/<name>"; there is no alias.
-
-**Moving from `chatgpt-web/<name>`.** The Account's state (Chrome profile, `state.json`, attempts) lives in
-`$DSH_HOME/system/web/<site>/<name>`, where it was `$DSH_HOME/system/chatgpt-web/<name>`. At registration, when the old
-directory exists and the new one does not, the Host renames it (the profile moves whole: no new sign-in) and logs one
-line. When both exist the Account is `unavailable` with a reason naming both paths: System never merges or deletes, so
-keep one and remove or rename the other, then restart the Host. While a Chrome still holds the old profile it is not
-moved: stop that Chrome first. Old Work records keep their `chatgpt-web/<name>` refs.
+defaults (an unknown site is refused with the list of shipped sites: today `chatgpt`).
 
 With the row off, `system workers` shows the account `unavailable` with the reason
 "the web-worker row is disabled", and `system workers login` says the same.
 
-An account that still sets `procedures` in its `accounts` entry (the option that chose between
-System 1's ChatGPT driver and the generic Procedures, removed in WW2-iv) is `unavailable` with the
-reason "procedures was removed: the generic Procedures are the only path; delete the line". Delete
-the line and restart the Host.
+It needs `Xvfb` (`apt install xvfb`) and a recent Chrome (and for `--remote` a VNC
+server, see below). The Chrome is chosen, and a pinned one downloaded the first
+time it is needed, as the [web-worker README](../../packages/web-worker/README.md)
+says. `system workers` shows the account as `available` once Xvfb is found and
+the Chrome path exists; that says nothing about the sign-in. It is `unavailable`
+with a reason that names what is missing.
 
-It needs `Xvfb` (`apt install xvfb`) and a recent Chrome (and for `--remote`
-a VNC server, see below). System picks the
-Chrome like System 1: `executablePath`, then `CHROME_PATH`, then a system Chrome
-no older than the browser engine's Chromium (an old one, such as Chrome 95, is
-passed over), then the pinned Chrome for Testing
-(`packages/web-worker/chrome.lock.json`), which it downloads under
-`$DSH_HOME/system/browsers` the first time an attempt or a login needs it
-(about 150 MB; it is not done at startup, and a failed download names the
-cause). It launches the browser as a genuine one: no automation flags, no
-sandbox switch, a real keyring, and Chrome's `TMPDIR` shortened when yours is too
-deep for its profile socket. `system workers` shows the account as `available`
-once Xvfb is found and the Chrome path exists; that says nothing about the
-sign-in. It is `unavailable` with a reason that names what is missing.
-
-**The browser is never headless.** System always runs a real, headed Chrome, on
-your `DISPLAY` if the Host has one and otherwise on its own invisible Xvfb that
-it starts for each attempt and stops with it (also on cancel and on the time
-limit). A real headed browser is closer to yours and is challenged less. There
-is no `headless` option; an account that sets it is `unavailable`.
+The browser is never headless: it runs on your `DISPLAY`, or on its own invisible Xvfb (PROP-0005).
 
 **Sign in, once.** Three ways:
 - `system workers login web/chatgpt/default --cookies <file>`: a JSON export from
@@ -337,22 +294,11 @@ It prints three steps, for example:
    command prints the same and exits 0 or 1. **Cancel**, Ctrl-C on the server,
    or 15 minutes end the session without saving.
 
-The page listens on `127.0.0.1` only, the VNC server only on an owner-only unix
-socket, and no debugging port is opened; the browser, its VNC server, its Xvfb
-and the server are stopped when the session ends. One remote sign-in per account
-at a time, and not while an attempt of the account runs.
-
 `--remote` needs a VNC server on the Host's `PATH`: `x11vnc` (`apt install
 x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`);
 without one the command fails at once, naming both. noVNC and `ws` come with
-System. On the machine of this repository there is no root, so x11vnc 0.9.16 was
-installed from the Ubuntu 20.04 packages, unpacked into the home directory:
-`apt-get download x11vnc libvncclient1`, then `dpkg -x` each into
-`~/.local/opt/x11vnc`, and `~/.local/bin/x11vnc`, a shell script that sets
-`LD_LIBRARY_PATH` to `~/.local/opt/x11vnc/usr/lib/x86_64-linux-gnu` and runs
-`~/.local/opt/x11vnc/usr/bin/x11vnc "$@"`. A Host started with `HOME` set to
-another directory does not find that script's target: put `~/.local/bin` on its
-`PATH` with the real home.
+System. Without root, unpack the packages into the home directory and put a wrapper
+script for `x11vnc` on the Host's `PATH`.
 
 **Account states.** Each `web` Account has a state in `$DSH_HOME/system/web/<site>/<name>/state.json`, and `system workers` shows
 any state but `ready` as `unavailable` with what to do; Works needing the Account go to another one, or fail with "no enabled Worker
@@ -366,16 +312,8 @@ provides" when there is none. Each change is one line in the Host log.
 - A failure of the Host's (Chrome did not start, a page timeout while the Host's load is high) never changes the state; look at the Host.
   No prompt is resent automatically: a retry is `work retry`.
 
-**A sign-in wall.** An attempt that fails with `the page shows a sign-in wall`
-means the session ended (a sign-out, a password change, an expired cookie). Run
-the login again. The attempt's `screenshot` partial output shows what the page
-looked like: `system work show <id>`, then `system artifact cat <id> > shot.png`.
-
-**A challenge that does not clear.** If "Verify you are human" appears again
-however often you tick it, the Chrome is the first thing to check (`system
-workers` shows its path; an old or automation-flagged build loops). The viewer
-is VNC, as System 1's, so the clicks are real X input. If a challenge still
-loops with a current Chrome, report it (PROP-0005).
+The attempt's `screenshot` partial output shows what the page looked like:
+`system work show <id>`, then `system artifact cat <id> > shot.png`.
 
 **A CAPTCHA or Cloudflare challenge.** The attempt fails with `a CAPTCHA or
 Cloudflare challenge is showing`; System never types into or solves one, and
@@ -413,18 +351,15 @@ tools/web-canary --report [--since <ISO>]     # read the records
 ```
 
 `--report` reads the finished Works whose input is the canary Task and classifies
-each: **passed** (the Worker step succeeded with its outputs and the Work was
-accepted), **worker-failed** (the Worker step failed: the line names the stage and
-reason, and a reason beginning `site error:` is also counted apart), **verifier**
-(the Worker step succeeded but the citation check held or failed: the line names the
-URL and reason) or **other**. Per Account and in total it prints `runs`, `passed`,
-`worker step ok` (the Worker step's success rate alone), those counts, then each run
-that did not pass, the median and p95 of the `launch` and `wait` stages per Account (read
-from each Worker step's `evidence`; runs without it are counted apart), the distinct `model`, the Power before and after selection, and the target each Account's attempts had, with counts (WW8a, WW8b: `unread` when the page showed none), `worker step: N% ok`, and `gate: holds` or `gate: does not hold
-(...)`: at least 50 runs over both Accounts and at least 95% passed. The canary asks `tier.standard` (WW8b), so the current series is the runs whose target is `standard`; runs of an earlier target, or from before there was one, and Works of an older
-canary question are shown apart under "older canary version" and not counted in the
-gate. It exits 3 when the gate does not hold. Run it after each merge into `web-workers`
-(`tools/web-canary`), and the timer does so every six hours.
+each as **passed**, **worker-failed** (the line names the stage and reason),
+**verifier** (the citation check held or failed) or **other**. Per Account and in
+total it prints the counts, the median and p95 of the `launch` and `wait` stages,
+the models and the target each attempt had, and `gate: holds` or `gate: does not
+hold (...)`: at least 50 runs over both Accounts and at least 95% passed. The
+canary asks `tier.standard`, so only runs of that target and of the current
+question count; the others are shown apart as an older version. It exits 3 when
+the gate does not hold. Run it after each merge into `web-workers`; the timer
+does so every six hours.
 
 Install the timer as a user unit (it needs the Host running; it is not installed
 by `system init`):
@@ -590,7 +525,7 @@ attempts stalls. A notice only wakes the session: read the Work's events with
 `work.events` from your last `seq`. A session that was away misses no event,
 only the wake-up.
 
-It cannot approve or deny, store a conversation, set credentials, sign an
+It cannot approve or deny, set credentials, sign an
 account in, or merge into `main`. When a check failed for a reason outside the
 change, it tells the operator: only a human runs
 `system work retry <work> --step checks.checks`.

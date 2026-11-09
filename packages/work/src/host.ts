@@ -1,30 +1,22 @@
 /**
  * The Host core (PROP-0004 C1, C2, C8, C11): the one process that owns every
- * Work of a home, in-process (the socket is served by `packages/host`). It takes the Host
- * lock, owns the `WorkController`, and runs each Work-changing operation
- * through one commit lane, so two operations never interleave their decisions.
- * Attempts execute outside the lane and come back through it to be observed.
- *
- * A command may carry a `commandId`: its receipt is written into the Work it
- * changed, in the same update as the event it caused, so a repeat is answered
- * from the record, also after a restart. A refusal has no event to travel
- * with; it is remembered for as long as the Host runs.
- *
- * On start, before any operation, every Work with an attempt that never
- * reported has it marked `attempt-lost` and is left interrupted: nothing runs
- * again until an explicit `run` or `retry`.
+ * Work of a home. It takes the Host lock, owns the `WorkController`, and runs
+ * each Work-changing operation through one commit lane. A command's
+ * `commandId` receipt is written with the event it caused, so a repeat is
+ * answered from the record, also after a restart. On start, a Work with an
+ * attempt that never reported has it marked `attempt-lost` and stays
+ * interrupted until an explicit `run` or `retry`.
  */
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type WorkChange, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
-import type { LiveAttempt } from './live.ts'
 import type { Capabilities } from './registry.ts'
 import { Slots } from './slots.ts'
-import { TERMINAL, type WorkRecord, type WorkState } from './record.ts'
+import { TERMINAL, type WorkRecord } from './record.ts'
 
 export interface HostOptions {
   /** `DSH_HOME`: the Host lock is named after its canonical path. */
@@ -55,6 +47,8 @@ interface Seen {
 
 export class Host {
   private readonly controller: WorkController
+  /** Reads, `onChange`, `drain` and `held`: not `run`, `cancel` or `decide`, which only the commit lane and `commandId` may reach. */
+  readonly view: Pick<WorkController, 'get' | 'list' | 'live' | 'replay' | 'onChange' | 'drain' | 'held'>
   private readonly lock: HostLock
   private readonly lane: Lane
   /**
@@ -78,6 +72,7 @@ export class Host {
     })
     this.slots = new Slots(options.capabilities)
     this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes)
+    this.view = this.controller
   }
 
   /** Take the lock for `options.home`, then recover, then accept operations. Refuses when another Host holds the home. */
@@ -113,56 +108,16 @@ export class Host {
   }
 
   /**
-   * Begin an upgrade: no new attempt is dispatched (Works are still admitted, and their runs wait), and this
-   * resolves once none is running. Running attempts are never interrupted for it.
-   */
-  drain(): Promise<void> {
-    return this.controller.drain()
-  }
-
-  /** After `drain` and once nothing more is accepted: the unfinished Works whose runs were held, for the next Host to `resume`. */
-  held(): Promise<string[]> {
-    return this.controller.held()
-  }
-
-  /**
    * Run the Works a draining Host held, and return the ones started. A Work that had an attempt lost at this
    * start, one that is finished or one already driven is left alone: nothing interrupted resumes by itself.
    */
   resume(workIds: string[]): string[] {
     const started = workIds.filter((id) => {
-      const record = this.get(id)
+      const record = this.controller.get(id)
       return record && !TERMINAL.has(record.state.status) && !this.lostAtStart.has(id) && !this.controller.runningElsewhere(id)
     })
     for (const id of started) this.run(id).catch(() => {})
     return started
-  }
-
-  /** Call `listener` after each event is committed to a Work (and its admission): the one hook notices are built on. Returns the way to stop. */
-  onChange(listener: (change: WorkChange) => void): () => void {
-    return this.controller.onChange(listener)
-  }
-
-  get(workId: string): WorkRecord | undefined {
-    return this.controller.get(workId)
-  }
-
-  list(): WorkRecord[] {
-    return this.controller.list()
-  }
-
-  /** The Work's running Worker attempts and their progress, in memory only. */
-  live(workId: string): LiveAttempt[] {
-    return this.controller.live(workId)
-  }
-
-  replay(workId: string): { state: WorkState; matches: boolean } {
-    return this.controller.replay(workId)
-  }
-
-  /** Works with work left to do and no run driving them: after a start, the interrupted ones. */
-  interrupted(): string[] {
-    return this.list().filter((r) => !TERMINAL.has(r.state.status) && !this.controller.runningElsewhere(r.id)).map((r) => r.id)
   }
 
   /** Admit a Work. With a `commandId` its ID derives from it, and the same submit again returns that Work. */

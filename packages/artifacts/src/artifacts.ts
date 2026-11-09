@@ -1,12 +1,8 @@
 /**
  * The Artifact store: immutable, typed, content-addressed records over a
- * key-value table (DSH storage domain) and a blob store (DSH attachments).
- *
- * Write order: blob bytes first, then the record. A crash between them leaves
- * an unreferenced, content-addressed blob that a later put of the same bytes
- * reuses; nothing ever references a record whose bytes were not committed.
- * The record holds the envelope and every occurrence under one key, so a put
- * is one atomic storage write.
+ * key-value table and a blob store. Blob bytes are written first, then the
+ * record, with every occurrence under one key, so a put is one atomic write
+ * and a crash leaves at most an unreferenced blob.
  */
 import { CONTENT_ID_RE, canonicalJson } from './canonical.ts'
 import {

@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { Artifacts, Envelope } from '@system/artifacts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
-import { CONVERSATION_KIND, addConversation, conversationSchema, type Asserted, type ConversationParts } from './conversation.ts'
+import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { snapshot } from './git.ts'
 import { Host } from './host.ts'
 import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema, type GitTreeContent, type Task } from './kinds.ts'
@@ -98,11 +98,6 @@ export class WorkService {
       classification: 'local-private', producer,
     })
     return { task: task.id, base }
-  }
-
-  /** Store a conversation the operator had elsewhere (PROP-0003). */
-  addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<Envelope> {
-    return addConversation(this.artifacts, parts, asserted, { producer: { type: 'operator', ref: caller.operatorId }, supersedes })
   }
 }
 

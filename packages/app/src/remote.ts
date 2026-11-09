@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, parseWorkflow, type Asserted, type Caller, type ConversationParts, type WorkRecord, type WorkState } from '@system/work'
+import { TERMINAL, parseWorkflow, type Caller, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { MAX_FRAME, NotAnswering, NotRunning, RpcError, UPGRADING, fitsFrame, type Client } from '../../host/lib/index.js'
 import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
@@ -160,14 +160,6 @@ export function remoteHost(remote: Remote): ClientHost {
       return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item })
     },
     status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
-    async addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]) {
-      const part = (p: { name: string; data: Uint8Array; mediaType: string }) => ({ name: p.name, data: base64(p.data), mediaType: p.mediaType })
-      // The CLI has already refused what the preview warned about, unless the operator accepted it.
-      return read('conversation.add', {
-        parts: { response: part(parts.response), ...(parts.prompt ? { prompt: part(parts.prompt) } : {}), attachments: (parts.attachments ?? []).map(part) },
-        asserted, supersedes, acceptWarnings: true,
-      })
-    },
   }
 
   return {
