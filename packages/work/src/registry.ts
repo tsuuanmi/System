@@ -115,6 +115,10 @@ export interface VerifierPort {
   /** Pin the named criteria for one Work at admission, as an Artifact; throws to refuse admission. */
   criteria(request: CriteriaRequest): Promise<string>
   verify(request: VerifyRequest): Promise<VerifyResult>
+  /** How many runs of this verifier go at once on the machine (the Host's check slots); absent: no limit. */
+  maxConcurrentChecks?: number
+  /** Whether the process of a run is confirmed gone: what settles a lost run, which until then keeps its check slot. Absent: never confirmed. */
+  gone?(attemptId: string): Promise<boolean>
 }
 
 /**
@@ -205,6 +209,10 @@ export class Capabilities {
   /** The Worker (Account) of a ref. */
   workerFor(ref: string): WorkerPort | undefined {
     return this.workers.find((w) => w.ref === ref)
+  }
+
+  verifierFor(ref: string): VerifierPort | undefined {
+    return this.verifiers.find((v) => v.ref === ref)
   }
 
   workerRefs(): string[] {

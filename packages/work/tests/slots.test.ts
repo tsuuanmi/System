@@ -275,3 +275,60 @@ for (let seed = 1; seed <= 50; seed++) {
     }
   })
 }
+
+test('three Works reach their checks at once: only two run until one finishes, and the third shows as waiting for a check slot', { timeout: 20_000 }, async () => {
+  const f = fixture({ checks: 2 })
+  const host = await f.startHost(newHome())
+  try {
+    const ids = [(await host.submit(f.admission('code-checks.yaml'))).id, (await host.submit(f.admission('code-checks.yaml'))).id, (await host.submit(f.admission('code-checks.yaml'))).id]
+    f.hold('checks')
+    const runs = ids.map((id) => host.run(id))
+    await f.arrived('checks', 2)
+    await turns(50)
+    assert.equal(f.checkAttempts.length, 2, 'the third check does not start')
+    const waiting = ids.filter((id) => host.view.live(id).some((a) => a.waiting === 'a check slot'))
+    assert.equal(waiting.length, 1)
+    assert.equal(host.view.get(waiting[0]!)!.events.some((e) => e.type === 'dispatched'), false, 'a waiting check is not dispatched')
+    f.release('checks')
+    for (const record of await Promise.all(runs)) assert.equal(record.state.status, 'succeeded')
+    assert.equal(f.checkAttempts.length, 3)
+    assert.equal(f.checkPeak(), 2, 'never more than the limit')
+    assert.deepEqual(ids.flatMap((id) => host.view.live(id)), [])
+    for (const id of ids) assertConsistent(f, id)
+  } finally {
+    await host.close()
+  }
+})
+
+test('a lost check keeps its check slot until its process is confirmed gone, then the slot is freed', { timeout: 20_000 }, async () => {
+  const f = fixture({ checks: 1 })
+  const home = newHome()
+  const first = await f.startHost(home)
+  const { id } = await first.submit(f.admission('code-checks.yaml'))
+  f.hold('checks')
+  const running = first.run(id)
+  await f.arrived('checks')
+  await first.close()
+  f.release('checks')
+  await assert.rejects(running, /Host is closed/)
+
+  const second = await f.startHost(home)
+  try {
+    const lost = second.slots.uncertain()
+    assert.equal(lost.length, 1)
+    assert.equal(lost[0]!.stepId, 'checks')
+    const other = await second.submit(f.admission('code-checks.yaml'))
+    const otherRun = second.run(other.id)
+    await turns(50)
+    assert.equal(f.checkAttempts.length, 1, 'the lost check still holds the only slot')
+    assert.equal(second.view.live(other.id)[0]?.waiting, 'a check slot')
+    assert.deepEqual(await second.slots.settle(), [], 'not confirmed gone: the slot stays held')
+    f.gone(lost[0]!.attemptId)
+    assert.deepEqual(await second.slots.settle(), lost)
+    assert.equal((await otherRun).state.status, 'succeeded', 'the waiting Work takes the freed slot')
+    assert.deepEqual(second.slots.uncertain(), [])
+    assert.equal(f.checkAttempts.length, 2)
+  } finally {
+    await second.close()
+  }
+})

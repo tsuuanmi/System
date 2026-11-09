@@ -182,7 +182,7 @@ home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
 
 Names match `^[A-Z_][A-Z0-9_]*$`; `HOME`, `PATH` and `CI` cannot be set, and
 the profile is refused if it tries. A `check-run@1` records the names it was
-given, never the values.
+given, never the values. The same row's `maxConcurrentChecks` (default 2) is how many `code.required-checks` runs go at once on the machine; the others show as waiting for a check slot in `work show` and `system status`, and a lost run keeps its slot until its processes are gone.
 
 ## Attempts at once, and held slots
 

@@ -20,7 +20,11 @@ export const inject = ['capabilities', 'artifacts', 'subprocess']
 export interface Config {
   /** Variables (names `[A-Z_][A-Z0-9_]*`, not HOME, PATH or CI) given to every `code.required-checks` check, e.g. RUSTUP_HOME. */
   checkEnv?: Record<string, string>
+  /** How many `code.required-checks` runs go at once on the machine; the others wait for a check slot. Default 2. */
+  maxConcurrentChecks?: number
 }
+
+export const DEFAULT_MAX_CONCURRENT_CHECKS = 2
 
 export function apply(ctx: Context, config: Config = {}): void {
   const capabilities = ctx.get('capabilities') as Capabilities
@@ -29,8 +33,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   artifacts.registerKind({ ...CHECK_RUN_KIND, content: checkRunSchema })
   artifacts.registerKind({ ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema })
   artifacts.registerKind({ ...CITATION_CHECK_KIND, content: citationCheckSchema })
+  const maxConcurrentChecks = config.maxConcurrentChecks ?? DEFAULT_MAX_CONCURRENT_CHECKS
+  if (!Number.isInteger(maxConcurrentChecks) || maxConcurrentChecks < 1) throw new Error(`maxConcurrentChecks must be a whole number of at least 1, not ${String(config.maxConcurrentChecks)}`)
   const dispose = [
-    capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime), Date.now, config.checkEnv)),
+    capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime), Date.now, config.checkEnv, maxConcurrentChecks)),
     capabilities.registerVerifier(citationCheck(artifacts)),
   ]
   ctx.effect(() => () => { for (const d of dispose) d() }, 'verifier registrations')
