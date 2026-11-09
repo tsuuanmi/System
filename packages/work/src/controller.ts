@@ -673,6 +673,12 @@ export class WorkController {
     // A failed step fails the Work once the attempts in flight have reported.
     if (failed && busy) return { record, settles: [], waiting: true, epoch }
     if (failed) return { record: await this.finish(record, 'failed', `step ${failed.id} ${record.state.steps[failed.id]!.state}`), settles: [], epoch }
+    // A `fail` or `error` verdict no retry reopened is the Work's outcome (inconclusive waits for the operator at the end):
+    // a step after it never starts, so nothing builds on, or publishes, what failed its check.
+    const verdicts = spec.steps.filter(isVerifyStep).map((s) => [s.id, this.verdictOf(record, spec, s.id)] as const)
+    const refused = verdicts.find(([stepId, verdict]) => (verdict === 'fail' || verdict === 'error') && spec.steps.some((s) => s.dependsOn?.includes(stepId)))
+    if (refused && busy) return { record, settles: [], waiting: true, epoch }
+    if (refused) return { record: await this.finish(record, 'failed', `verification did not pass: ${refused[0]}=${refused[1]}`), settles: [], epoch }
     const ready = spec.steps.filter((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
     if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
     if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }

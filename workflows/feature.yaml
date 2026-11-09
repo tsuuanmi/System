@@ -1,9 +1,11 @@
 # Feature (operator, 2026-11-09): a change made in stages, each by the Worker
 # that suits it, handing over only Artifacts. plan writes what to change, where,
 # and which tests prove it; tests writes those tests from the plan alone, before
-# any code, on its own Account (the role code.tests); implement makes them pass
-# without changing them; docs brings the docs in line (the role code.docs); the
-# repository's checks verify the result and System merges it into its base.
+# any code, on its own Account (the role code.tests); the red check proves they
+# fail where they should and nothing else breaks; implement makes them pass
+# without changing them (tests-frozen checks it); docs brings the docs in line
+# (the role code.docs); the repository's checks verify the result and System
+# merges it into its base (df-26).
 # Stages run one after the other, each on the previous change. The code is
 # checked before the docs, so a failure goes back to the step that can fix it,
 # with the failure as input (retry); the second check, after docs, runs what
@@ -11,7 +13,7 @@
 # software-engineering.yaml before it becomes a default (PLAN DF, df-20).
 schema: system.workflow/v1
 id: feature
-version: 1
+version: 2
 steps:
   - id: plan
     capabilities: [code-write]
@@ -37,35 +39,55 @@ steps:
     inputs:
       task: $work.input
       plan: $steps.plan.plan
-    outputs: [change, red]
+    retry: { onFail: [red], max: 1 }
+    outputs: [change]
     instructions: |
       Write the tests listed under "Tests" in the plan, and only those: no
       code under test. Run them and make sure each one fails now, for the
       reason the plan gives, not because of a typo or a missing import. Leave
-      them failing. Write "red" as the evidence that they fail on the base:
-      one line per new test, `<file> <test name>: fail: <the first line of its
-      failure>`, then the exact command you ran and its exit status. A test
-      that passes on the base proves nothing: rewrite it, or say so in "red".
-  - id: implement
+      them failing. The red check then runs the repository's checks on your
+      change: each check marked `red: pass` in .system/checks.yaml (such as
+      build, typecheck or lint) must still pass, so your tests compile and the
+      docs check is clean; at least one other check must fail. On a second
+      attempt, the red check's failure is in your input: fix what it names.
+  # The red check: the tests step's change, before any code, judged by the
+  # repository's own checks rather than by the Worker's report of its run.
+  - id: red
     dependsOn: [tests]
+    verify:
+      capability: code.required-checks
+      subject: $steps.tests.change
+      criteria: red-v1
+  - id: implement
+    dependsOn: [red]
     capabilities: [code-write]
-    retry: { onFail: [checks-code.checks], max: 1 }
+    retry: { onFail: [tests-frozen, checks-code.checks], max: 1 }
     inputs:
       task: $work.input
       plan: $steps.plan.plan
       tests: $steps.tests.change
-      red: $steps.tests.red
     outputs: [change]
     instructions: |
-      The checkout holds the tests from the plan, which fail now ("red" is
-      the recorded run that shows it). Make the
-      changes in the plan so that they pass, without changing those tests;
-      if one is wrong, say so in your final message and leave it. Tests that
-      already existed and assert the behaviour the plan changes are yours to
-      update. Run the repository's checks that your change touches. On a
-      second attempt, the failed checks are in your input: fix what they name.
-  - id: checks-code
+      The checkout holds the tests from the plan, which fail now (the red
+      check ran them). Make the changes in the plan so that they pass. The
+      files the tests step wrote are frozen: a check fails your change if it
+      modifies, renames or deletes any of them, compared with the tests
+      step's commit; if a test is wrong, say so in your final message and
+      leave it. You may add new test files, and update tests that already
+      existed and assert the behaviour the plan changes. Run the repository's
+      checks that your change touches. On a second attempt, the failed check
+      is in your input: fix what it names.
+  # Tests frozen: implement's change against the tests step's commit.
+  - id: tests-frozen
     dependsOn: [implement]
+    verify:
+      capability: code.required-checks
+      subject: $steps.implement.change
+      criteria: tests-frozen-v1
+      inputs:
+        tests: $steps.tests.change
+  - id: checks-code
+    dependsOn: [tests-frozen]
     uses: code-checks.yaml
     inputs:
       input: $steps.implement.change

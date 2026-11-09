@@ -268,6 +268,52 @@ test('without an accept step a failed verdict still fails the Work', async () =>
   assert.match(done.state.reason!, /checks\.checks=fail/)
 })
 
+const GATED = `schema: system.workflow/v1
+id: gated
+version: 1
+steps:
+  - id: tests
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+  - id: red
+    dependsOn: [tests]
+    verify: { capability: code.required-checks, subject: $steps.tests.change, criteria: red-v1 }
+  - id: implement
+    dependsOn: [red]
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+  - id: checks
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: repo-checks-v1 }
+  - id: accept
+    dependsOn: [checks]
+    accept: { requires: [checks] }
+`
+
+async function runGated(verdicts: VerifyResult['verdict'][]) {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: scripted(specs, verdicts) })
+  const spec = resolve(parseWorkflow(GATED), h.capabilities.available())
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'gated.yaml' } })
+  return { h, done: await h.controller.run(admitted.id) }
+}
+
+test('a step never starts after a failed or errored verdict it follows: the Work fails there, naming the verdict', async () => {
+  for (const verdict of ['fail', 'error'] as const) {
+    const { h, done } = await runGated([verdict, 'pass'])
+    assert.equal(done.state.status, 'failed', verdict)
+    assert.match(done.state.reason!, new RegExp(`red=${verdict}`))
+    assert.equal(h.calls.length, 1, `implement never ran after a ${verdict} verdict`)
+    assert.equal(h.controller.replay(done.id).matches, true)
+  }
+  // Inconclusive is the operator's to decide at the end, as before: the steps after it run.
+  const { h, done } = await runGated(['inconclusive', 'pass'])
+  assert.equal(h.calls.length, 2)
+  assert.equal(done.state.status, 'succeeded')
+})
+
 test('accept with operator approval holds the Work after verification passes', async () => {
   const h = harness()
   const spec = resolve(parseWorkflow(`${fixture('software-engineering.yaml')}      approval: operator\n`), h.capabilities.available(), fixture)

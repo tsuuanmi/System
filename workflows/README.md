@@ -14,9 +14,12 @@ changes future admissions only.
   verdict. It becomes the default only if it often finds stale docs.
 - [feature.yaml](feature.yaml) — `plan` (`code-write`, read-only: what to
   change, where, which tests prove it) → `tests` (`code.tests`,
-  `tier.economy`: the plan's tests, failing, before any code; its output
-  `red` records the run that shows they fail on the base, and `implement` is given it) → `implement`
-  (`code-write`: make them pass without changing them; `retry` on `checks-code`) → `checks-code` → `docs` (`code.docs`,
+  `tier.economy`: the plan's tests, failing, before any code; `retry` on `red`) →
+  `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
+  and a `red: fail` one fails on the tests' change) → `implement`
+  (`code-write`: make them pass; `retry` on `tests-frozen` and `checks-code`) →
+  `tests-frozen` (`code.required-checks`, criteria `tests-frozen-v1`: no file the
+  tests step wrote changed) → `checks-code` → `docs` (`code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
   Artifacts it is given; the profile decides which Account takes each role.
   Compared with `software-engineering.yaml` before it becomes a default.
