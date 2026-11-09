@@ -159,6 +159,10 @@ function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | u
 /** Whether a Work's effects merged its change into `dev`: a `git.publish` the merge queue applied (it merges only into a base in `mergeInto`). */
 export const wasMerged = (record: WorkRecord): boolean => Object.values(record.state.effects).some((e) => e.state === 'applied' && e.detail?.merged === 'true')
 
+/** The commit on `dev` a merged Work made, when its merge effect recorded it. */
+export const mergeCommitOf = (record: WorkRecord): string | undefined =>
+  Object.values(record.state.effects).find((e) => e.state === 'applied' && e.detail?.merged === 'true')?.detail?.mergeCommit
+
 /** Whether a Work changed nothing: it did not succeed and a step of it failed on `no change` (a `code-write` tree equal to its base). */
 const changedNothing = (record: WorkRecord): boolean =>
   record.state.status !== 'succeeded' && record.events.some((e) => e.type === 'observed' && e.status === 'failed' && /^no change\b/.test(e.reason ?? ''))
@@ -171,11 +175,12 @@ const artifactsOf = (record: WorkRecord): string[] => Object.values(record.state
  * succeeded Work and its Artifacts, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
  * the Host holds for it, or why it is held; or a session's claim: who, since when) or `todo: nobody`. An Item only
- * the Works name is shown as not in STATUS.md. Without `live`, no progress.
+ * the Works name is shown as not in STATUS.md. Without `live`, no progress. A done Item whose last merged Work's merge commit `released` says is not in the running release reads `done, not yet released`.
  */
 export function itemLines(
   status: Pick<ParsedStatus, 'items'>, repository: string | undefined, records: WorkRecord[],
   live?: (workId: string) => LiveAttempt[], filter: { state?: 'todo' | 'doing' | 'done'; item?: string } = {}, claims: Claim[] = [],
+  released?: (mergeCommit: string) => boolean | undefined,
 ): string[] {
   const listed = new Set(status.items.map((i) => i.id))
   const named = [...records.flatMap((r) => (itemOf(r)?.repository === repository && isActive(r) ? [itemOf(r)!.id] : [])), ...claims.filter((c) => c.repository === repository).map((c) => c.item)]
@@ -192,7 +197,7 @@ export function itemLines(
     if (filter.state && filter.state !== state) continue
     const last = merged.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const text = state === 'done'
-      ? `done${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}`
+      ? `done${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}`
       : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}` : 'todo: nobody'
     lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }

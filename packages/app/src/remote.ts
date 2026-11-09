@@ -17,6 +17,9 @@ import { caller } from './io.ts'
 /** How often `work.events` is asked while following a Work (PROP-0004 C13). */
 export const POLL_MS = 1000
 
+/** The bound on the total time `work wait` waits for a Host to return after a restart (it takes seconds; a Host really gone must not hold a session forever). */
+export const RECONNECT_MS = 5 * 60_000
+
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
 const LOGIN_TIMEOUT = 11 * 60_000
 /** How long `workers.recheck` may take: a Chrome start and the page's own clocks. */
@@ -28,6 +31,8 @@ const REMOTE_LOGIN_TIMEOUT = 17 * 60_000
 export interface Remote {
   /** A connection that has said `host.hello` as `caller`; with `readOnly`, one a Host upgrading to other code still serves its reads on. */
   open(caller: Caller, options?: { readOnly?: boolean }): Promise<Client>
+  /** Replaces `RECONNECT_MS`; for tests. */
+  reconnectMs?: number
   /** Notes for the operator, such as that a Work was left running. */
   err(text: string): void
 }
@@ -84,14 +89,25 @@ export function remoteHost(remote: Remote): ClientHost {
     }
     return client.call(method, params)
   }
-  /** A read that outlives a Host's swap for new code: a connection it closed is opened again (`open` waits for the next Host), once. */
-  const reread = async (method: string, params?: object): Promise<any> => {
-    try {
-      return await read(method, params)
-    } catch (error) {
-      if (!(error instanceof NotRunning)) throw error
-      session = undefined
-      return read(method, params)
+  /**
+   * A read that outlives a Host's swap for new code: a connection it closed is opened again (`open` waits for the next Host), once.
+   * With `patient` (`work wait`, which only watches) it outlives a Host's restart too: while the Host is not running or upgrading,
+   * connections are dropped and opened again every `POLL_MS`, for up to `RECONNECT_MS` of one outage. The followers that act
+   * (`run`, `retry`, `decide`) still fail at once when the Host is killed.
+   */
+  const reread = async (method: string, params?: object, patient = false): Promise<any> => {
+    let since: number | undefined
+    for (let tries = 0; ; tries++) {
+      try {
+        return await read(method, params)
+      } catch (error) {
+        if (!(error instanceof NotRunning || (patient && error instanceof RpcError && error.code === UPGRADING))) throw error
+        since ??= Date.now()
+        if (patient ? Date.now() - since > (remote.reconnectMs ?? RECONNECT_MS) : tries >= 1) throw error
+        session = undefined
+        reading = undefined
+        if (patient) await new Promise((done) => setTimeout(done, POLL_MS))
+      }
     }
   }
   const change = async (method: string, params: object): Promise<any> => mutate(await link(), method, params)
@@ -123,13 +139,13 @@ export function remoteHost(remote: Remote): ClientHost {
     }
     try {
       for (;;) {
-        const polled = await Promise.race([reread('work.events', { workId, after }) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted, stopped])
+        const polled = await Promise.race([reread('work.events', { workId, after }, options.patient) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted, stopped])
         if (polled === 'stopped') return 'stopped'
         if (polled === 'interrupted') return detach()
         after = polled.events.at(-1)?.seq ?? after
         if (TERMINAL.has(polled.status)) {
           await cancelling
-          return reread('work.show', { workId })
+          return reread('work.show', { workId }, options.patient)
         }
         const slept = await Promise.race([new Promise<'slept'>((done) => setTimeout(() => done('slept'), POLL_MS)), interrupted, stopped])
         if (slept === 'stopped') return 'stopped'
@@ -177,7 +193,7 @@ export function remoteHost(remote: Remote): ClientHost {
       const timer = timeoutMs === undefined ? undefined : setTimeout(() => { timedOut = true; stop.abort() }, timeoutMs)
       // Each Work is followed as `work run` follows one; a Work that ended (held and awaiting approval included) decides.
       const ended = workIds.map(async (workId) => {
-        const followed = await follow(workId, { signal: stop.signal })
+        const followed = await follow(workId, { signal: stop.signal, patient: true })
         if (typeof followed === 'object' && !(any && decided)) decided = workId
       })
       try {

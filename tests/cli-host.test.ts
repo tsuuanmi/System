@@ -204,3 +204,37 @@ test('status shows an Item as todo, then doing while its Work runs; a second Wor
   writeFileSync(hold, '')
   await until('the Work to finish', () => status(workId) === 'succeeded')
 })
+
+test('claim from the CLI is accepted by the Host and status shows it', () => {
+  const project = realpathSync(mkdtempSync(join(home, 'claim-project-')))
+  const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
+  git('init', '-q', '-b', 'dev')
+  writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [ ] p-2 Second\n')
+  git('add', '.'); git('commit', '-qm', 'status')
+  const claimed = system('claim', 'p-2', '--repo', project)
+  assert.equal(claimed.status, 0, claimed.stderr)
+  assert.match(claimed.stdout, /^p-2 claimed by tester since \S+\n$/)
+  assert.match(system('status', '--repo', project, '--item', 'p-2').stdout, /doing: claimed by tester since/)
+})
+
+test('work wait survives a Host restart', { timeout: 120_000 }, async () => {
+  const restartHold = join(home, 'restart-hold')
+  const restartEnv = { SYSTEM_FAKE_HOLD_AT: 'task', SYSTEM_FAKE_HOLD_FILE: restartHold }
+  rmSync(restartHold, { force: true })
+  await cli.start({ env: restartEnv })
+  const run = cli.runAsync(['work', 'submit', '--capability', 'code-write'], { env: restartEnv })
+  const workId = await admitted(run)
+  run.child.kill('SIGINT')
+  await run.done
+  const waiting = cli.runAsync(['work', 'wait', workId, '--timeout', '2'])
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await cli.stop()
+  await new Promise((resolve) => setTimeout(resolve, 5_500))
+  await cli.start({ env: restartEnv })
+  assert.equal(waiting.child.exitCode, null, waiting.stderr())
+  const cancelled = system('work', 'cancel', workId)
+  assert.ok(cancelled.status === 0 || cancelled.status === 5, cancelled.stderr)
+  const result = await waiting.done
+  assert.equal(result.status, 5, result.stderr)
+  assert.doesNotMatch(result.stderr, /not running/)
+})

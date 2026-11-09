@@ -192,10 +192,17 @@ test('each state: done from dev, doing from a running Work with its live progres
 
   // Finished and merged: dev's STATUS.md ticks the Item; the last Work and its Artifact are named.
   const merged = await readStatus(repository(TICKED))
+  const mergedRecord = { ...done, state: { ...done.state, effects: { publish: { stepId: 'publish', state: 'applied' as const, detail: { merged: 'true', mergeCommit: 'd'.repeat(40) } } } } }
   assert.equal(
     itemLines(merged, dir, controller.list(), () => [], { item: 'df-3' })[0],
     `[x] df-3 The status of a project - done; last ${work.id}, ${Object.values(done.state.results).join(', ')}`,
   )
+  assert.equal(
+    itemLines(merged, dir, [mergedRecord], () => [], { item: 'df-3' }, [], () => false)[0],
+    `[x] df-3 The status of a project - done, not yet released; last ${work.id}, ${Object.values(done.state.results).join(', ')}`,
+  )
+  assert.equal(itemLines(merged, dir, [mergedRecord], () => [], { item: 'df-3' }, [], () => true)[0], `[x] df-3 The status of a project - done; last ${work.id}, ${Object.values(done.state.results).join(', ')}`)
+  assert.equal(itemLines(merged, dir, [mergedRecord], () => [], { item: 'df-3' }, [], () => undefined)[0], `[x] df-3 The status of a project - done; last ${work.id}, ${Object.values(done.state.results).join(', ')}`)
 })
 
 test('a held Work is doing, with why it is held, and its Account', async () => {
