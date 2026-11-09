@@ -19,7 +19,6 @@ import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
 import { WorkController, type Admission, type WorkChange, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
-import type { GoalView } from './goal.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
 import type { LiveAttempt } from './live.ts'
@@ -159,16 +158,6 @@ export class Host {
 
   replay(workId: string): { state: WorkState; matches: boolean } {
     return this.controller.replay(workId)
-  }
-
-  /** A Goal, its current version and its spend. Refuses an ID that is not a stored Goal. */
-  goal(goalId: string): GoalView {
-    return this.controller.goalView(goalId)
-  }
-
-  /** The IDs of the Goals whose Works count for `goalId`: its chain of raises. Refuses an ID that is not a stored Goal. */
-  goalChain(goalId: string): ReadonlySet<string> {
-    return this.controller.goalChain(goalId)
   }
 
   /** Works with work left to do and no run driving them: after a start, the interrupted ones. */

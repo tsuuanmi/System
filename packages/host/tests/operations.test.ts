@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
-import { DECISION_KIND, GOAL_KIND, TASK_KIND, decisionSchema, goalSchema, goalStore, taskSchema } from '@system/work'
+import { TASK_KIND, taskSchema } from '@system/work'
 import { fixture, workflowFile, type Fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { NOT_ALLOWED, VERSION, connect, serve, tableOf, type Client } from '../src/index.ts'
@@ -18,15 +18,13 @@ after(() => { rmSync(dir, { recursive: true, force: true }); rmSync(sockets, { r
 let count = 0
 const human = { type: 'human', operatorId: 'tan' } as const
 const agent = { type: 'agent', operatorId: 'a1' } as const
-const orchestrator = (goal: string) => ({ type: 'orchestrator', operatorId: 'o1', goal }) as const
 const workflow = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'workflows', 'brainstorm.yaml'), 'utf8')
 const b64 = (text: string) => Buffer.from(text).toString('base64')
 
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
 function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
-  const goals = goalStore(artifacts)
-  const seen: Record<string, unknown[]> = { credentials: [], conversations: [], goals: [], logins: [] }
+  const seen: Record<string, unknown[]> = { credentials: [], conversations: [], logins: [] }
   return {
     seen,
     capabilities: f.capabilities,
@@ -42,16 +40,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       return data
     },
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
-    async newGoal(goal, supersedes, caller) {
-      seen.goals!.push({ goal, supersedes, caller })
-      const producer = { type: 'operator', ref: caller.operatorId } as const
-      const charter = await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: new TextEncoder().encode('charter'), mediaType: 'text/markdown', classification: 'public', producer })
-      const stored = await artifacts.put({ ...GOAL_KIND, content: { context: [charter.id], ...goal }, inputs: [charter.id], supersedes: supersedes ? [supersedes] : [], classification: 'public', producer })
-      return { id: stored.id }
-    },
     workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
-    addDecision: (decision, caller) => goals.decide(decision, caller),
-    decisions: (chain) => goals.decisions(chain),
     async addConversation(parts, asserted, supersedes, caller) { seen.conversations!.push({ parts, asserted, supersedes, caller }); return { id: 'conversation:1' } },
     credentials: {
       async set(name, value) { seen.credentials!.push([name, value]) },
@@ -66,8 +55,8 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
 }
 
 async function started(options: { setup?: (f: Fixture) => void; stallMinutes?: number } = {}) {
-  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GOAL_KIND, content: goalSchema }, { ...DECISION_KIND, content: decisionSchema })
-  const f = fixture({ goals: artifacts })
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema })
+  const f = fixture()
   options.setup?.(f)
   const home = join(dir, `n${count++}`)
   mkdirSync(home)
@@ -128,25 +117,6 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('approval.decide', { workId: work.id, decision: 'approved', reason: 'ok' }), /nothing awaits a decision/)
   assert.deepEqual(await call('work.events', { workId: work.id, after: 1000 }), { events: [], status: 'succeeded' })
 
-  const goal = await call('goal.new', { aim: 'ship', scope: 'the host', budget: { attempts: 1 } }) as { id: string }
-  const goalTask = await artifacts.put({ ...TASK_KIND, content: { instructions: 'do it' }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })
-  const goaled = await call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id }) as { id: string; events: { type: string; goal?: string }[] }
-  assert.equal(goaled.events[0]!.goal, goal.id)
-  await call('work.run', { workId: goaled.id })
-  assert.equal((await terminal(client, goaled.id)).status, 'succeeded')
-  const shownGoal = await call('goal.show', { goal: goal.id }) as { id: string; current: { id: string }; spend: { attempts: number } }
-  assert.deepEqual([shownGoal.id, shownGoal.current.id, shownGoal.spend.attempts], [goal.id, goal.id, 1])
-  const goalReport = await call('work.report', { workId: goaled.id }) as { goal: { id: string; spend: { attempts: number }; budget: unknown } }
-  assert.deepEqual([goalReport.goal.id, goalReport.goal.spend.attempts, goalReport.goal.budget], [goal.id, 1, { attempts: 1 }])
-  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id }), /budget/)
-  const raised = await call('goal.new', { aim: 'ship', scope: 'the host', budget: { attempts: 2 }, supersedes: goal.id }) as { id: string }
-  assert.equal((await call('goal.show', { goal: goal.id }) as { current: { id: string } }).current.id, raised.id)
-  await call('work.submit', { capabilities: ['code-write'], input: goalTask.id, goal: goal.id })
-  await assert.rejects(call('goal.show', { goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
-  const decided = await call('decision.add', { goal: goal.id, question: 'which?', options: ['a', 'b'], choice: 'a', reason: 'cheaper' }) as { id: string }
-  assert.deepEqual((await call('decision.list', { goal: goal.id }) as { id: string }[]).map((d) => d.id), [decided.id])
-  assert.match((await call('goal.brief', { goal: goal.id }) as { text: string }).text, new RegExp(decided.id))
-
   const second = await call('work.submit', { capabilities: ['code-write'], input: input(f) }) as { id: string }
   await call('work.run', { workId: second.id })
   assert.equal((await terminal(client, second.id)).status, 'succeeded')
@@ -173,7 +143,7 @@ test('every method of the table round-trips over the socket', async () => {
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   const status = await call('host.status') as { works: number; recordBytes: number }
-  assert.equal(status.works, 5)
+  assert.equal(status.works, 3)
   assert.ok(status.recordBytes > 0)
 
   assert.deepEqual([...called].sort(), Object.keys(tableOf(table)).sort(), 'a method of the table has no round trip in this test')
@@ -192,16 +162,6 @@ test('an agent connection is refused every method flagged agent: false, and only
       assert.match(outcome!.message, /not allowed for agents/)
     }
   }
-})
-
-test('goal.new is refused to an agent connection, and nothing is stored', async () => {
-  const { open, svc } = await started()
-  const client = await open(agent)
-  await assert.rejects(client.call('goal.new', { aim: 'a', scope: 's', budget: {} }), (error: { code: number }) => error.code === NOT_ALLOWED)
-  assert.deepEqual(svc.seen.goals, [])
-  // The row is open to a human, and its handler checks again.
-  const { host, table } = await started()
-  await assert.rejects(async () => table['goal.new']!.handler(host, { aim: 'a', scope: 's', budget: {} }, agent, undefined as never), /human/)
 })
 
 test('approval.decide needs a human even when its row is opened to agents', async () => {
@@ -333,76 +293,11 @@ test('the same work.run with the same commandId while it runs answers at once an
   assert.equal(f.attempts.filter((s) => s === 'idea-a').length, 1)
 })
 
-test('an orchestrator connection is refused what an agent is refused, and is never listed more', async () => {
-  const { table, open } = await started()
-  const client = await open(orchestrator(`sha256:${'a'.repeat(64)}`))
-  for (const [name, method] of Object.entries(tableOf(table))) {
-    if (method.agent) continue
-    const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
-    assert.equal(outcome?.code, NOT_ALLOWED, `${name} must refuse an orchestrator`)
-  }
-  for (const name of ['approval.decide', 'credentials.set', 'conversation.add', 'goal.new']) assert.equal(table[name]!.agent, false)
-})
-
-test('a hello of type orchestrator needs a goal, and an agent hello has none', async () => {
+test('a hello of type orchestrator is refused: callers are human or agent', async () => {
   const { path } = await started()
   const client = await connect(path)
-  await assert.rejects(client.call('host.hello', { version: VERSION, caller: { type: 'orchestrator', operatorId: 'o1' } }), (error: { code: number }) => error.code === -32602)
-  await assert.rejects(client.call('host.hello', { version: VERSION, caller: { type: 'orchestrator', operatorId: 'o1', goal: 'not an id' } }), (error: { code: number }) => error.code === -32602)
+  await assert.rejects(client.call('host.hello', { version: VERSION, caller: { type: 'orchestrator', operatorId: 'o1', goal: `sha256:${'a'.repeat(64)}` } }), (error: { code: number }) => error.code === -32602)
   client.close()
-})
-
-test('an orchestrator reaches only the Works of its Goal, and the Artifacts of those Works', async () => {
-  const { artifacts, open } = await started()
-  const human = await open()
-  const goal = async (aim: string, supersedes?: string) => (await human.call('goal.new', { aim, scope: 's', budget: {}, supersedes }) as { id: string }).id
-  const [a, b] = [await goal('a'), await goal('b')]
-  const task = async (text: string) => (await artifacts.put({ ...TASK_KIND, content: { instructions: text }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
-  const submit = async (goalId: string | undefined, text: string) => await human.call('work.submit', { capabilities: ['code-write'], input: await task(text), goal: goalId }) as { id: string; events: { input: string }[] }
-  const [workA, workB, workN] = [await submit(a, 'one'), await submit(b, 'two'), await submit(undefined, 'three')]
-  const ours = await open(orchestrator(a))
-  const scoped = (call: Promise<unknown>) => assert.rejects(call, (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /scope/.test(error.message))
-
-  assert.deepEqual((await ours.call('work.list') as { id: string }[]).map((r) => r.id), [workA.id])
-  assert.equal((await ours.call('work.show', { workId: workA.id }) as { id: string }).id, workA.id)
-  for (const other of [workB, workN]) {
-    await scoped(ours.call('work.show', { workId: other.id }))
-    await scoped(ours.call('work.events', { workId: other.id }))
-    await scoped(ours.call('work.report', { workId: other.id }))
-    await scoped(ours.call('work.replay', { workId: other.id }))
-    await scoped(ours.call('work.run', { workId: other.id }))
-    await scoped(ours.call('work.retry', { workId: other.id }))
-    await scoped(ours.call('work.cancel', { workId: other.id }))
-    await scoped(ours.call('artifact.show', { id: other.events[0]!.input }))
-    await scoped(ours.call('artifact.cat', { id: other.events[0]!.input }))
-  }
-  assert.equal((await human.call('work.show', { workId: workB.id }) as { state: { status: string } }).state.status, 'running')
-
-  const shown = await ours.call('artifact.show', { id: workA.events[0]!.input }) as { state: string }
-  assert.equal(shown.state, 'stored')
-  const context = (shown as unknown as { envelope: { content: { context: string[] } } }).envelope.content.context
-  assert.equal((await ours.call('artifact.show', { id: context[0] }) as { state: string }).state, 'stored')
-  await scoped(ours.call('artifact.show', { id: `sha256:${'5'.repeat(64)}` }))
-
-  await ours.call('work.run', { workId: workA.id })
-  assert.equal((await terminal(ours, workA.id)).status, 'succeeded')
-  const outputs = Object.values((await ours.call('work.show', { workId: workA.id }) as { state: { results: Record<string, string> } }).state.results)
-  for (const id of outputs) assert.notEqual(await ours.call('artifact.show', { id }).then(() => 'ok', (error: { code: number }) => error.code), NOT_ALLOWED)
-
-  const filled = await ours.call('work.submit', { capabilities: ['code-write'], input: await task('four') }) as { id: string; events: { goal?: string; caller: unknown }[] }
-  assert.equal(filled.events[0]!.goal, a)
-  assert.deepEqual(filled.events[0]!.caller, orchestrator(a))
-  await ours.call('work.submit', { capabilities: ['code-write'], input: await task('five'), goal: a })
-  await scoped(ours.call('work.submit', { capabilities: ['code-write'], input: await task('six'), goal: b }))
-  assert.equal((await ours.call('work.list') as unknown[]).length, 3)
-
-  // A raise of the Goal keeps the Works of the whole chain in scope, for the old and the new ID.
-  const raised = await goal('a again', a)
-  const later = await human.call('work.submit', { capabilities: ['code-write'], input: await task('seven'), goal: raised }) as { id: string }
-  assert.ok((await ours.call('work.list') as { id: string }[]).some((r) => r.id === later.id))
-  const newer = await open(orchestrator(raised))
-  assert.ok((await newer.call('work.list') as { id: string }[]).some((r) => r.id === workA.id))
-  await scoped(newer.call('work.show', { workId: workB.id }))
 })
 
 type Notice = { workId: string; status: string; seq: number; stalled?: boolean }
@@ -506,65 +401,6 @@ test('a client that missed the notice reads on from its cursor and loses nothing
   assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', seq: all.events.at(-1)!.seq })
 })
 
-test('work.watch by goal tells of each new Work of the Goal, and an orchestrator watches only its own', { timeout: 60_000 }, async () => {
-  const { open, artifacts } = await started()
-  const human1 = await open()
-  const [a, b] = [(await human1.call('goal.new', { aim: 'a', scope: 's' }) as { id: string }).id, (await human1.call('goal.new', { aim: 'b', scope: 's' }) as { id: string }).id]
-  const input = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'do it' }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
-  const orch = await listening(open, orchestrator(a))
-  await orch.client.call('work.watch', { goal: a })
-  await assert.rejects(orch.client.call('work.watch', { goal: b }), (error: { code: number }) => error.code === NOT_ALLOWED)
-  await assert.rejects(orch.client.call('work.watch', {}), /exactly one of workId and goal/)
-  const mine = await human1.call('work.submit', { capabilities: ['code-write'], goal: a, input }) as { id: string }
-  await human1.call('work.submit', { capabilities: ['code-write'], goal: b, input })
-  const free = await human1.call('work.submit', { capabilities: ['code-write'] }) as { id: string }
-  await settled('the admission notice', () => orch.notices.length > 0)
-  await human1.call('work.run', { workId: free.id })
-  await terminal(human1, free.id)
-  assert.deepEqual(orch.notices, [{ workId: mine.id, status: 'running', seq: 0 }])
-  await assert.rejects(orch.client.call('work.watch', { workId: free.id }), (error: { code: number }) => error.code === NOT_ALLOWED)
-  await orch.client.call('work.unwatch', { goal: a })
-  await human1.call('work.submit', { capabilities: ['code-write'], goal: a, input })
-  await human1.call('work.run', { workId: mine.id })
-  await terminal(human1, mine.id)
-  assert.equal(orch.notices.length, 1)
-})
-
-test('a decision names its Goal: an orchestrator records only for its own, and decision.list returns them in order', async () => {
-  const { open, artifacts } = await started()
-  const human = await open()
-  const goal = async (aim: string, supersedes?: string) => (await human.call('goal.new', { aim, scope: 's', budget: {}, supersedes }) as { id: string }).id
-  const [a, b] = [await goal('a'), await goal('b')]
-  const synthesis = (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: new TextEncoder().encode('the synthesis'), mediaType: 'text/plain', classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
-  const ours = await open(orchestrator(a))
-  const scoped = (call: Promise<unknown>) => assert.rejects(call, (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /scope/.test(error.message))
-  const ask = { question: 'which direction?', options: ['x', 'y'], choice: 'x', reason: 'the synthesis favours it' }
-
-  const first = await ours.call('decision.add', { ...ask, restsOn: [synthesis] }) as { id: string }
-  const stored = artifacts.get(first.id)
-  assert.equal(stored.state, 'stored')
-  const content = (stored as { envelope: { kind: string; content: { goal: string; by: unknown; restsOn: string[] } } }).envelope
-  assert.deepEqual([content.kind, content.content.goal, content.content.by, content.content.restsOn], ['decision', a, orchestrator(a), [synthesis]])
-  await scoped(ours.call('decision.add', { ...ask, goal: b }))
-  await assert.rejects(ours.call('decision.add', { ...ask, choice: 'z' }), /choice z is not one of the options/)
-  await assert.rejects(human.call('decision.add', ask), /needs the Goal/)
-  await assert.rejects(human.call('decision.add', { ...ask, goal: `sha256:${'8'.repeat(64)}` }), /no Goal/)
-
-  // The same question asked again is a second decision, after the first.
-  const second = await human.call('decision.add', { ...ask, goal: a }) as { id: string }
-  const other = await human.call('decision.add', { ...ask, goal: b }) as { id: string }
-  const raised = await goal('a again', a)
-  const third = await (await open(orchestrator(raised))).call('decision.add', { ...ask, choice: 'y', reason: 'changed course' }) as { id: string }
-  const ids = (list: unknown) => (list as { id: string }[]).map((d) => d.id)
-  assert.deepEqual(ids(await ours.call('decision.list', {})), [first.id, second.id, third.id])
-  assert.deepEqual(ids(await human.call('decision.list', { goal: a })), [first.id, second.id, third.id])
-  assert.deepEqual(ids(await human.call('decision.list', { goal: b })), [other.id])
-  assert.equal((await human.call('decision.list', {}) as unknown[]).length, 4)
-  await scoped(ours.call('decision.list', { goal: b }))
-  const listed = (await ours.call('decision.list', {}) as { choice: string; previous?: string; at: string }[])
-  assert.deepEqual(listed.map((d) => [d.choice, d.previous]), [['x', undefined], ['x', first.id], ['y', second.id]])
-})
-
 test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 60_000 }, async () => {
   let twoTurns!: () => void
   const reported = new Promise<void>((resolve) => { twoTurns = resolve })
@@ -602,47 +438,6 @@ test('a running attempt shows its progress in work.show, and a quiet one sends a
   assert.equal(record.live, undefined, 'nothing is live once the attempt reported')
   assert.deepEqual(record.events.map((e) => e.type), ['admitted', 'dispatched', 'observed', 'terminal'])
   assert.doesNotMatch(JSON.stringify(record), /turns|lastTool|stalled/, 'progress is an observation of the moment, not an event')
-})
-
-test('goal.brief prints the Goal, its budget left, its running, failed and held Works and its decisions; the same records give the same text', { timeout: 60_000 }, async () => {
-  const { f, open, artifacts } = await started({ setup: (f) => f.capabilities.registerWorker({ ref: 'fake/failing', capabilities: ['fail-work'], async run() { return { status: 'failed', outputs: {}, reason: 'the tests failed' } } }) })
-  const human = await open()
-  const goal = (await human.call('goal.new', { aim: 'ship OC', scope: 'the Host', budget: { attempts: 10 } }) as { id: string }).id
-  const other = (await human.call('goal.new', { aim: 'elsewhere', scope: 's', budget: {} }) as { id: string }).id
-  const task = async (text: string) => (await artifacts.put({ ...TASK_KIND, content: { instructions: text }, classification: 'public', producer: { type: 'operator', ref: 'tan' } })).id
-  const submit = async (params: object) => await human.call('work.submit', params) as { id: string }
-
-  const failed = await submit({ capabilities: ['fail-work'], input: await task('two'), goal })
-  await human.call('work.run', { workId: failed.id })
-  const held = await submit({ workflow: heldWorkflow, uses: seUses, input: await task('three'), goal })
-  await human.call('work.run', { workId: held.id })
-  await submit({ capabilities: ['code-write'], input: await task('not ours'), goal: other })
-  for (const id of [failed.id, held.id]) await terminal(human, id)
-  // Started last: it holds the fake Account's one slot until released.
-  f.hold('task')
-  const running = await submit({ capabilities: ['code-write'], input: await task('one'), goal })
-  await human.call('work.run', { workId: running.id })
-  await f.arrived('task')
-  const first = await human.call('decision.add', { goal, question: 'which direction?', options: ['x', 'y'], choice: 'x', reason: 'the synthesis' }) as { id: string }
-  const second = await human.call('decision.add', { goal, question: 'merge now?', options: ['yes', 'no'], choice: 'no', reason: 'wait for checks' }) as { id: string }
-
-  const orchestrated = await open(orchestrator(goal))
-  const { text } = await orchestrated.call('goal.brief', { goal }) as { text: string }
-  assert.match(text, /ship OC/)
-  assert.match(text, /attempts: \d+ of 10 spent, \d+ left/)
-  assert.match(text, new RegExp(`${running.id} running.*step task running`))
-  assert.match(text, new RegExp(`${failed.id} failed: step task failed \\(the tests failed\\)\n`))
-  assert.match(text, new RegExp(`${held.id} held.*awaits accept`))
-  assert.doesNotMatch(text, /not ours|elsewhere/)
-  assert.match(text, new RegExp(`which direction\\? -> x: the synthesis \\(${first.id}\\)`))
-  assert.match(text, new RegExp(`merge now\\? -> no: wait for checks \\(${second.id}\\)`))
-  assert.ok(text.indexOf(first.id) < text.indexOf(second.id), 'decisions oldest first')
-  assert.match(text, new RegExp(`approval: ${held.id}`))
-  assert.match(text, new RegExp(`failed: ${failed.id}`))
-  assert.equal((await orchestrated.call('goal.brief', { goal }) as { text: string }).text, text, 'the same records give the same text')
-  await assert.rejects(orchestrated.call('goal.brief', { goal: other }), (error: { code: number }) => error.code === NOT_ALLOWED)
-  f.release('task')
-  await terminal(human, running.id)
 })
 
 test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and replay exactly; recursion and depth 4 are refused at admission', { timeout: 60_000 }, async () => {
