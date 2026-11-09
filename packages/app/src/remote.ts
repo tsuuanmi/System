@@ -11,7 +11,7 @@ import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '
 import { TERMINAL, parseWorkflow, type Caller, type WorkRecord, type WorkState } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { MAX_FRAME, NotAnswering, NotRunning, RpcError, UPGRADING, fitsFrame, type Client } from '../../host/lib/index.js'
-import type { ClientHost, Followed, FollowOptions, WorkCommands } from './cli.ts'
+import type { ClientHost, Followed, FollowOptions, WaitOptions, Waited, WorkCommands } from './cli.ts'
 import { caller } from './io.ts'
 
 /** How often `work.events` is asked while following a Work (PROP-0004 C13). */
@@ -95,6 +95,11 @@ export function remoteHost(remote: Remote): ClientHost {
     let cancelling: Promise<unknown> | undefined
     let interrupt!: () => void
     const interrupted = new Promise<'interrupted'>((resolve) => { interrupt = () => resolve('interrupted') })
+    // `signal` ends the following quietly: the caller has what it came for.
+    const stopped = new Promise<'stopped'>((resolve) => {
+      if (options.signal?.aborted) resolve('stopped')
+      else options.signal?.addEventListener('abort', () => resolve('stopped'), { once: true })
+    })
     const onInterrupt = () => {
       if (options.cancelOnInterrupt && !cancelling) {
         cancelling = change('work.cancel', { workId, reason: 'cancelled by the operator: interrupted' })
@@ -111,14 +116,16 @@ export function remoteHost(remote: Remote): ClientHost {
     }
     try {
       for (;;) {
-        const polled = await Promise.race([reread('work.events', { workId, after }) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted])
+        const polled = await Promise.race([reread('work.events', { workId, after }) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted, stopped])
+        if (polled === 'stopped') return 'stopped'
         if (polled === 'interrupted') return detach()
         after = polled.events.at(-1)?.seq ?? after
         if (TERMINAL.has(polled.status)) {
           await cancelling
           return reread('work.show', { workId })
         }
-        const slept = await Promise.race([new Promise<'slept'>((done) => setTimeout(() => done('slept'), POLL_MS)), interrupted])
+        const slept = await Promise.race([new Promise<'slept'>((done) => setTimeout(() => done('slept'), POLL_MS)), interrupted, stopped])
+        if (slept === 'stopped') return 'stopped'
         if (slept === 'interrupted') return detach()
       }
     } finally {
@@ -156,6 +163,27 @@ export function remoteHost(remote: Remote): ClientHost {
       return follow(workId, options)
     },
     wait: (workId) => follow(workId),
+    async waitFor(workIds, { any, timeoutMs }: WaitOptions): Promise<Waited> {
+      const stop = new AbortController()
+      let timedOut = false
+      let decided: string | undefined
+      const timer = timeoutMs === undefined ? undefined : setTimeout(() => { timedOut = true; stop.abort() }, timeoutMs)
+      // Each Work is followed as `work run` follows one; a Work that ended (held and awaiting approval included) decides.
+      const ended = workIds.map(async (workId) => {
+        const followed = await follow(workId, { signal: stop.signal })
+        if (typeof followed === 'object' && !(any && decided)) decided = workId
+      })
+      try {
+        await (any ? Promise.race(ended) : Promise.all(ended))
+      } finally {
+        clearTimeout(timer)
+        stop.abort()
+        for (const one of ended) one.catch(() => {})
+      }
+      // The records as they are now, whichever ended: a read, so it works while the Host upgrades.
+      const records = await Promise.all(workIds.map((workId) => reread('work.show', { workId }) as Promise<WorkRecord>))
+      return { records, decided: timedOut ? undefined : decided, timedOut }
+    },
     async newTask(instructions, repository, ref, context, item, against) {
       return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against })
     },
