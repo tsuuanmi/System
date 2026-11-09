@@ -2,8 +2,16 @@
  * The Account slots of the scheduler (PROP-0004 C3): a Worker's `ref` is an
  * Account with `maxConcurrentAttempts` slots (default 1). A lost attempt may
  * still run, so it keeps its slot until `settle` finds its process gone.
+ *
+ * The same slots limit a verifier's concurrent runs (df-14): a verifier with
+ * `maxConcurrentChecks` is an account named `check:<ref>` with that many slots.
  */
-import type { Capabilities, WorkerPort } from './registry.ts'
+import type { Capabilities, VerifierPort, WorkerPort } from './registry.ts'
+
+const CHECK = 'check:'
+
+/** The account of a verifier's check slots. */
+export const checkAccount = (verifier: Pick<VerifierPort, 'ref'>): string => `${CHECK}${verifier.ref}`
 
 /** An attempt that was dispatched and never observed. */
 export interface LostAttempt {
@@ -31,9 +39,18 @@ export class Slots {
 
   /** Take a slot of the Worker's Account, if one is free. */
   reserve(worker: WorkerPort, attemptId: string): boolean {
-    const held = this.held.get(worker.ref) ?? new Set<string>()
-    if (held.size >= (worker.maxConcurrentAttempts ?? 1)) return false
-    this.held.set(worker.ref, held.add(attemptId))
+    return this.take(worker.ref, worker.maxConcurrentAttempts ?? 1, attemptId)
+  }
+
+  /** Take a check slot of the verifier, if one is free; always, when it sets no `maxConcurrentChecks`. */
+  reserveCheck(verifier: VerifierPort, attemptId: string): boolean {
+    return verifier.maxConcurrentChecks === undefined || this.take(checkAccount(verifier), verifier.maxConcurrentChecks, attemptId)
+  }
+
+  private take(account: string, limit: number, attemptId: string): boolean {
+    const held = this.held.get(account) ?? new Set<string>()
+    if (held.size >= limit) return false
+    this.held.set(account, held.add(attemptId))
     return true
   }
 
@@ -58,7 +75,8 @@ export class Slots {
     for (const [attemptId, { account, attempt }] of [...this.lost]) {
       let gone = false
       try {
-        gone = (await this.capabilities.workerFor(account)?.gone?.(attemptId)) ?? false
+        const owner = account.startsWith(CHECK) ? this.capabilities.verifierFor(account.slice(CHECK.length)) : this.capabilities.workerFor(account)
+        gone = (await owner?.gone?.(attemptId)) ?? false
       } catch {
         gone = false
       }

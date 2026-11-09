@@ -109,6 +109,7 @@ export function whoHas(record: WorkRecord): { step?: string; account?: string } 
 }
 
 const progressText = (attempt: LiveAttempt | undefined): string => {
+  if (attempt?.waiting) return `waiting for ${attempt.waiting}`
   const p = attempt?.progress
   const parts = [
     p?.turns !== undefined ? `turns ${p.turns}` : '', p?.lastTool ? `last tool ${p.lastTool}` : '',
@@ -118,9 +119,10 @@ const progressText = (attempt: LiveAttempt | undefined): string => {
 }
 
 function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | undefined): string {
-  const { step, account } = whoHas(record)
+  const waiting = live?.(record.id).find((a) => a.waiting)
+  const { step, account } = waiting ? { step: waiting.stepId, account: waiting.worker } : whoHas(record)
   const who = step ? `step ${step} on ${account}` : 'no step yet'
-  const tail = record.state.status === 'held' ? `held: ${record.state.reason ?? 'no reason recorded'}` : live ? progressText(live(record.id).find((a) => a.stepId === step)) : ''
+  const tail = record.state.status === 'held' ? `held: ${record.state.reason ?? 'no reason recorded'}` : live ? progressText(live(record.id).find((a) => a.stepId === step && (!!a.waiting || !waiting))) : ''
   return `${record.id} ${who} since ${admittedAt(record)}${tail ? `; ${tail}` : ''}`
 }
 

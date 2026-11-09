@@ -18,6 +18,8 @@ export interface LiveAttempt {
   elapsedSeconds: number
   quietSeconds: number
   stalled: boolean
+  /** Set when the step has not started: what it waits for (`a check slot`); `attemptId` is then empty. */
+  waiting?: 'a check slot'
   /** What the Runtime last reported: absent until it reports. */
   progress?: Progress
 }

@@ -13,7 +13,7 @@ import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
-import { Slots, type LostAttempt } from './slots.ts'
+import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import { activeWork, itemNote, whoHas } from './status.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
@@ -160,6 +160,8 @@ export class WorkController {
   private readonly quiet = new Set<() => void>()
   /** The Works a drive is advancing now. */
   private readonly driving = new Set<string>()
+  /** The Works whose verify step waits for a check slot, in memory only. */
+  private readonly waitingForCheck = new Map<string, { stepId: string; verifier: string; since: number }>()
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
 
@@ -196,7 +198,12 @@ export class WorkController {
 
   /** The Work's running Worker attempts and what they last reported; empty when none runs. */
   live(workId: string): LiveAttempt[] {
-    return this.running.of(workId)
+    const waiting = this.waitingForCheck.get(workId)
+    const since = waiting ? new Date(waiting.since).toISOString() : ''
+    return [
+      ...this.running.of(workId),
+      ...(waiting ? [{ stepId: waiting.stepId, attemptId: '', worker: waiting.verifier, startedAt: since, lastActivityAt: since, elapsedSeconds: Math.round((Date.now() - waiting.since) / 1000), quietSeconds: 0, stalled: false, waiting: 'a check slot' as const }] : []),
+    ]
   }
 
   private now(): string {
@@ -362,6 +369,7 @@ export class WorkController {
       }
       if (failures.length) throw failures[0]
     }
+    this.waitingForCheck.delete(workId)
     // A step may fail the Work while others are in flight: they are observed, after the terminal event.
     await Promise.all(flying)
     if (failures.length) throw failures[0]
@@ -513,11 +521,12 @@ export class WorkController {
     const record = this.require(workId)
     if (TERMINAL.has(record.state.status)) return []
     const lost = this.runningAttempts(record).map(([stepId, attemptId]) => ({ workId, stepId, attemptId }))
-    // A Worker attempt's process may still run: it keeps its Account's slot (over the limit if need be) until settled. A verifier takes no slot.
+    // A Worker attempt's process may still run: it keeps its Account's slot (over the limit if need be) until settled. A verifier run holds a check slot only when its verifier limits them.
     for (const attempt of lost) {
       const dispatched = record.events.findLast((e) => e.type === 'dispatched' && e.attemptId === attempt.attemptId)
-      if (dispatched?.type !== 'dispatched' || dispatched.executor !== 'worker') continue
-      this.slots.hold(dispatched.selected, attempt)
+      if (dispatched?.type !== 'dispatched') continue
+      if (dispatched.executor === 'worker') this.slots.hold(dispatched.selected, attempt)
+      else if (dispatched.executor === 'verifier' && this.capabilities.verifierFor(dispatched.selected)?.maxConcurrentChecks !== undefined) this.slots.hold(checkAccount({ ref: dispatched.selected }), attempt)
     }
     await this.recover(record, { resumeEffects: false })
     return lost
@@ -640,7 +649,9 @@ export class WorkController {
           }
         }))
       } else if (isVerifyStep(next)) {
-        turn = await this.runVerifier(record, next)
+        const verifying = await this.runVerifier(record, next)
+        if (!verifying) { waiting = true; continue }
+        turn = verifying
       } else if (isEffectStep(next)) {
         turn = await this.runEffect(record, spec, next)
       } else {
@@ -750,16 +761,23 @@ export class WorkController {
     return done
   }
 
-  private async runVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<Turn> {
-    const { record: dispatched, attempt } = await this.dispatchVerifier(record, s)
-    return this.attemptTurn(dispatched, attempt && (async () => {
-      const result = await this.executeVerifier(attempt)
-      return this.lane(() => this.observeVerifier(attempt, result))
+  /** `undefined` when the verifier's check slots are all taken: the step waits for one. */
+  private async runVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<Turn | undefined> {
+    const dispatched = await this.dispatchVerifier(record, s)
+    if (dispatched.blocked) return undefined
+    const { attempt } = dispatched
+    return this.attemptTurn(dispatched.record, attempt && (async () => {
+      try {
+        const result = await this.executeVerifier(attempt)
+        return await this.lane(() => this.observeVerifier(attempt, result))
+      } finally {
+        this.slots.release(checkAccount(attempt.verifier), attempt.attemptId)
+      }
     }))
   }
 
-  /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead. */
-  private async dispatchVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<{ record: WorkRecord; attempt?: VerifierAttempt }> {
+  /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead, `blocked` when the verifier has no free check slot. */
+  private async dispatchVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<{ record: WorkRecord; attempt?: VerifierAttempt; blocked?: boolean }> {
     const subject = this.resolveRef(record, s.verify.subject)
     const inputs = Object.fromEntries(Object.entries(s.verify.inputs ?? {}).map(([name, ref]) => [name, this.resolveRef(record, ref)]))
     const criteria = record.state.criteria[s.id]
@@ -768,16 +786,26 @@ export class WorkController {
     if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled verifier provides ${s.verify.capability} for step ${s.id}`) }
     const verifier = route.selected
     const attemptId = `attempt:${randomUUID()}`
+    if (!this.slots.reserveCheck(verifier, attemptId)) {
+      this.waitingForCheck.set(record.id, { stepId: s.id, verifier: verifier.ref, since: Date.now() })
+      return { record, blocked: true }
+    }
+    this.waitingForCheck.delete(record.id)
     const kind = this.specs.kindOf(subject)
     const admitted = record.events[0]
     const pinned = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
     let refusal: string | undefined
     if (pinned && (pinned.ref !== verifier.ref || pinned.version !== verifier.version)) refusal = `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`
     else if (!kind || !verifier.accepts.includes(kind)) refusal = `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`
-    record = await this.append(record, {
-      type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
-      selected: verifier.ref, candidates: route.candidates, inputs: { ...inputs, subject, criteria },
-    })
+    try {
+      record = await this.append(record, {
+        type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
+        selected: verifier.ref, candidates: route.candidates, inputs: { ...inputs, subject, criteria },
+      })
+    } catch (error) {
+      this.slots.release(checkAccount(verifier), attemptId)
+      throw error
+    }
     return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, refusal } }
   }
 
