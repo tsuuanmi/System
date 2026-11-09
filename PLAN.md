@@ -82,7 +82,7 @@ Works, so trimming the core and proving the dogfood are one job.
 
 - [x] DF0. Release: `dev` merged into `main` (PR #71); PR #3 closed, PR #4
   was already merged; the release report deleted (PR #70).
-- [ ] DF0b. An install apart from the development checkouts (operator,
+- [x] DF0b. An install apart from the development checkouts (operator,
   2026-11-08). Today the live Host runs from the development checkout with
   its config in a session's `/tmp` scratchpad, against the Sessions rule.
   Done by the Development session as a blocker fix ("fixed outside System"):
@@ -109,6 +109,13 @@ Works, so trimming the core and proving the dogfood are one job.
     session in any repository has System's agent tools (no approval: that
     stays human, at a terminal). A Goal-scoped Orchestrator stays a folder
     of its own (`~/workspaces/system-orchestrator`).
+  - *Done 2026-11-09: WW reached `main` (#84, #85); `system update` from the
+    live checkout installed `3b7dc6e`, checked by `work:c4f42349` (7 of 7
+    checks passed on that commit); the Host runs from `~/.system/current`
+    as `system.service` (code `cf832c5d5856`), with
+    `~/.system/profile.yml`, whose Effects now publish and merge into `dev`
+    only. `system mcp` is registered at user scope; the Orchestrator's
+    folder runs it with `--goal`.*
 - [ ] DF1. One Goal, "a smaller core, the same behaviour", with an attempt and
   token budget. The Orchestrator is a **new** Claude Code session connected
   only to `system mcp --goal`, with no shell, edit or push. It runs Works up
@@ -144,8 +151,12 @@ Works, so trimming the core and proving the dogfood are one job.
   middle of a Work, start a new session with only `system goal brief`, and it
   carries on without reading PLAN, an old chat or a memory. Whatever it has to
   ask or guess is a defect: a record System is missing.
-- [ ] DF4. Check time measured again once WW is on `dev`; over 3 minutes is a
-  defect.
+- [x] DF4. Check time measured again once WW is on `dev`; over 3 minutes is a
+  defect. *2026-11-09, `work:c4f42349` on `3b7dc6e`: docs 0.9 s, install
+  15.2 s, build 29.7 s, typecheck 9.3 s, unit 14.8 s, smoke 95.2 s, so
+  2 min 45 s for a change outside the web Runtime; `web` (388 s) runs only
+  for a change to the web Runtime, its driver or the checks themselves
+  (`paths`).*
 
 **Done =** at least five consecutive changes into `dev` made by System Works,
 each recording the operator's touches, time, usage and failed attempts; DF3
