@@ -120,13 +120,16 @@ the record and no longer counts.
 
 **`retry: { onFail: [<step>...], max: n }`** on a Worker step (PLAN DF2b) is
 the one automatic further attempt, declared in the Workflow and the same for
-every domain. `onFail` names the verify steps that judge the step's output (a
-`fail` verdict qualifies; `error` and `inconclusive` do not) and the step
+every domain. `onFail` names the verify steps that judge the step's output or come after it
+and depend on it (a `fail` verdict qualifies; `error` and `inconclusive` do not) and the step
 itself (a failure its Worker marked `retryable` in its result, which only the
 Worker can know: it happened before anything was sent that cannot be sent
 twice). The controller then appends `reopened` with `automatic: true` and no
-caller, at most `max` times per step, counted from the recorded events so a
-restart or another Account does not reset it. After a failing verdict the new
+caller, at most `max` times per verify step in `onFail` (and for the step
+itself), counted from the recorded events so a restart or another Account does
+not reset it. When several steps list the failing verify step, the controller
+reopens the one latest in dependency order that has budget left; its
+downstream steps run again. After a failing verdict the new
 attempt gets the verdict Artifact as input `failure` (its reason and evidence
 IDs) and the change as `previous`; after a Worker failure it starts fresh with
 neither. Anything else, and every later failure, is the operator's `work retry`.

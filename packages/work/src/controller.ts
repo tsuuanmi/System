@@ -720,37 +720,37 @@ export class WorkController {
 
   /**
    * In the lane, with nothing in flight: the Workflow's `retry` (PLAN DF2b). A Worker step with
-   * `retry` is reopened by the controller itself, at most `max` times (counted from the recorded
-   * events, so a restart or another Account does not reset it), when a verify step in `onFail`
-   * has a `fail` verdict on its current output, or when it failed itself and its Worker said the
-   * failure may be tried afresh. A failed verdict hands the new attempt the verdict as input
+   * `retry` is reopened by the controller itself when a verify step in `onFail` has a `fail`
+   * verdict on its current output, or when it failed itself and its Worker said the failure may
+   * be tried afresh. At most `max` times per source (each verify step in `onFail`, and the step
+   * itself), counted from the recorded events, so a restart or another Account does not reset it.
+   * When several steps list the failing verify step, the one latest in dependency order that
+   * still has budget is reopened. A failed verdict hands the new attempt the verdict as input
    * `failure` and the change as `previous`; a fresh attempt gets neither.
    */
   private async retryAutomatically(record: WorkRecord, spec: ResolvedSpec): Promise<WorkRecord> {
     if (TERMINAL.has(record.state.status)) return record
-    for (const s of spec.steps.filter(isWorkerStep)) {
-      if (!s.retry) continue
-      const used = record.events.filter((e) => e.type === 'reopened' && e.automatic && e.stepId === s.id).length
-      if (used >= s.retry.max) continue
-      const own = record.state.steps[s.id]!
-      let reason: string | undefined
-      let failure: string | undefined
-      if (own.state === 'failed' && s.retry.onFail.includes(s.id)) {
-        const observed = record.events.findLast((e) => e.type === 'observed' && e.stepId === s.id)
-        if (observed?.type === 'observed' && observed.retryable) reason = `${s.id} failed and may be tried afresh: ${observed.reason ?? 'no reason'}`
-      } else if (own.state === 'succeeded') {
-        for (const failing of s.retry.onFail.filter((v) => v !== s.id)) {
-          if (this.verdictOf(record, spec, failing) !== 'fail') continue
-          const verified = record.events.findLast((e) => e.type === 'verified' && e.stepId === failing)
-          if (verified?.type !== 'verified') continue
-          reason = `${failing} failed: ${verified.reason}`
-          failure = verified.verdictId
-          break
-        }
-      }
-      if (!reason) continue
-      const previous = failure ? own.outputs[s.outputs[0]!] : undefined
+    const workers = spec.steps.filter(isWorkerStep)
+    const reopen = (s: (typeof workers)[number], reason: string, failure?: string): Promise<WorkRecord> => {
+      const previous = failure ? record.state.steps[s.id]!.outputs[s.outputs[0]!] : undefined
       return this.append(record, { type: 'reopened', automatic: true, stepId: s.id, reason, ...(failure ? { failure } : {}), ...(previous ? { previous } : {}), reset: [s.id, ...dependentsOf(spec, s.id)] })
+    }
+    const autoReopens = (stepId: string, source: string): number => record.events.filter((e) => {
+      if (e.type !== 'reopened' || !e.automatic || e.stepId !== stepId) return false
+      if (source === stepId) return !e.failure
+      return record.events.some((v) => v.type === 'verified' && v.stepId === source && v.verdictId === e.failure)
+    }).length
+    for (const v of spec.steps.filter(isVerifyStep)) {
+      if (this.verdictOf(record, spec, v.id) !== 'fail') continue
+      const verified = record.events.findLast((e) => e.type === 'verified' && e.stepId === v.id)
+      if (verified?.type !== 'verified') continue
+      const nearest = workers.findLast((s) => s.retry?.onFail.includes(v.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, v.id) < s.retry.max)
+      if (nearest) return reopen(nearest, `${v.id} failed: ${verified.reason}`, verified.verdictId)
+    }
+    for (const s of workers) {
+      if (!s.retry?.onFail.includes(s.id) || record.state.steps[s.id]!.state !== 'failed' || autoReopens(s.id, s.id) >= s.retry.max) continue
+      const observed = record.events.findLast((e) => e.type === 'observed' && e.stepId === s.id)
+      if (observed?.type === 'observed' && observed.retryable) return reopen(s, `${s.id} failed and may be tried afresh: ${observed.reason ?? 'no reason'}`)
     }
     return record
   }

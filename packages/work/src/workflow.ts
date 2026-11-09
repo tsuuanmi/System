@@ -28,8 +28,8 @@ const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<
 
 /**
  * One automatic further attempt after a failure that can be fixed (PLAN DF2b):
- * `onFail` names the verify steps whose `fail` verdict reopens this step, and
- * this step itself for a failure its Worker says may be tried afresh.
+ * `onFail` names the verify steps that judge, or come after, this step and whose
+ * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh.
  */
 const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3) }).strict()
 
@@ -213,7 +213,7 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
       for (const failing of s.retry?.onFail ?? []) {
         const target = byId.get(failing)
         if (!target) problems.push(`step ${s.id} retry.onFail names ${failing}, which is not a step`)
-        else if (failing !== s.id && !(isVerifyStep(target) && s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`))) problems.push(`step ${s.id} retry.onFail names ${failing}, which does not judge ${s.id}'s output`)
+        else if (failing !== s.id && !(isVerifyStep(target) && (s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`) || before.get(failing)!.has(s.id)))) problems.push(`step ${s.id} retry.onFail names ${failing}, which neither judges nor follows ${s.id}`)
       }
     } else if (isVerifyStep(s)) {
       checkRef(s, s.verify.subject, 'verifies')

@@ -8,7 +8,8 @@
 # merges it into its base (df-26).
 # Stages run one after the other, each on the previous change. The code is
 # checked before the docs, so a failure goes back to the step that can fix it,
-# with the failure as input (retry); the second check, after docs, runs what
+# with the failure as input (retry); a failing code check reopens tests when
+# implement is out of budget; the second check, after docs, runs what
 # the docs change touches. The default Workflow for a code change (df-27);
 # software-engineering.yaml remains for a change too small for a plan.
 schema: system.workflow/v1
@@ -39,7 +40,7 @@ steps:
     inputs:
       task: $work.input
       plan: $steps.plan.plan
-    retry: { onFail: [red], max: 1 }
+    retry: { onFail: [red, checks-code.checks], max: 1 }
     outputs: [change]
     instructions: |
       Write the tests listed under "Tests" in the plan, and only those: no
@@ -50,6 +51,13 @@ steps:
       build, typecheck or lint) must still pass, so your tests compile and the
       docs check is clean; at least one other check must fail. On a second
       attempt, the red check's failure is in your input: fix what it names.
+      Your new tests must fail only by assertion, or by a missing symbol
+      (import, export, function) of the code under change, never by an error
+      of their own (a missing import in a test file, a syntax error, a type
+      error). Run the repository's typecheck or compile of your test files and
+      fix such errors before finishing. A later attempt may also come from a
+      failing check of implement's change: the failure in your input names
+      what to fix in the tests.
   # The red check: the tests step's change, before any code, judged by the
   # repository's own checks rather than by the Worker's report of its run.
   - id: red
@@ -68,12 +76,12 @@ steps:
       tests: $steps.tests.change
     outputs: [change]
     instructions: |
+      The files the tests step wrote are frozen. A change to any of them
+      (edit, rename, delete) is rejected by tests-frozen. Do not edit them
+      even to fix a typo or a broken import; say what is wrong in your final
+      message and leave it.
       The checkout holds the tests from the plan, which fail now (the red
-      check ran them). Make the changes in the plan so that they pass. The
-      files the tests step wrote are frozen: a check fails your change if it
-      modifies, renames or deletes any of them, compared with the tests
-      step's commit; if a test is wrong, say so in your final message and
-      leave it. You may add new test files, and update tests that already
+      check ran them). Make the changes in the plan so that they pass. You may add new test files, and update tests that already
       existed and assert the behaviour the plan changes. Run the repository's
       checks that your change touches. On a second attempt, the failed check
       is in your input: fix what it names.

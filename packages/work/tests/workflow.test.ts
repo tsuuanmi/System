@@ -258,7 +258,7 @@ steps:
   assert.match(refused(`${base}  - id: s\n    uses: ../escape.yaml\n`, {}), /uses/)
 })
 
-test('retry names steps that fail and are tried again: the step itself or verify steps judging it; max is a small count', () => {
+test('retry names steps that fail and are tried again: the step itself or later verify steps; max is a small count', () => {
   const w = (retry: string) => `${base}  - id: a
     capabilities: [code-write]
     outputs: [out]
@@ -272,11 +272,15 @@ test('retry names steps that fail and are tried again: the step itself or verify
   - id: v2
     dependsOn: [other]
     verify: { capability: code.required-checks, subject: $steps.other.out, criteria: c }
+  - id: v3
+    dependsOn: [v]
+    verify: { capability: code.required-checks, subject: $steps.a.out, criteria: c }
 `
   assert.doesNotThrow(() => resolve(parseWorkflow(w('retry: { onFail: [v, a], max: 1 }')), available))
+  assert.doesNotThrow(() => resolve(parseWorkflow(w('retry: { onFail: [v3], max: 1 }')), available))
   assert.match(problems(w('retry: { onFail: [nope], max: 1 }')).join(), /step a retry.onFail names nope, which is not a step/)
-  assert.match(problems(w('retry: { onFail: [v2], max: 1 }')).join(), /step a retry.onFail names v2, which does not judge a/)
-  assert.match(problems(w('retry: { onFail: [other], max: 1 }')).join(), /step a retry.onFail names other, which does not judge a/)
+  assert.match(problems(w('retry: { onFail: [v2], max: 1 }')).join(), /step a retry.onFail names v2, which neither judges nor follows a/)
+  assert.match(problems(w('retry: { onFail: [other], max: 1 }')).join(), /step a retry.onFail names other, which neither judges nor follows a/)
   assert.match(problems(w('retry: { onFail: [v], max: 0 }')).join(), /max/)
   assert.match(problems(w('retry: { onFail: [], max: 1 }')).join(), /onFail/)
 })
@@ -294,7 +298,9 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const step = (id: string) => spec.steps.find((s) => s.id === id) as Record<string, any>
     // The red check judges the tests step's change, not a Worker's report of it.
     assert.deepEqual(step('tests').outputs, ['change'])
-    assert.deepEqual(step('tests').retry, { onFail: ['red'], max: 1 })
+    assert.deepEqual(step('tests').retry, { onFail: ['red', 'checks-code.checks'], max: 1 })
+    assert.match(step('implement').instructions, /frozen/)
+    assert.match(step('tests').instructions, /typecheck/)
     assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1' })
     assert.deepEqual(step('implement').dependsOn, ['red'])
     assert.equal(step('implement').inputs.red, undefined)

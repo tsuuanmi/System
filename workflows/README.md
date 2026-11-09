@@ -6,10 +6,10 @@ changes future admissions only.
 
 - [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, read-only: what to
   change, where, which tests prove it) → `tests` (`code.tests`,
-  `tier.economy`: the plan's tests, failing, before any code; `retry` on `red`) →
+  `tier.economy`: the plan's tests, failing, before any code; `retry` on `red` and `checks-code`) →
   `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
   and a `red: fail` one fails on the tests' change) → `implement`
-  (`code-write`: make them pass; `retry` on `tests-frozen` and `checks-code`) →
+  (`code-write`: make them pass; one `retry` per `tests-frozen` and `checks-code`) →
   `tests-frozen` (`code.required-checks`, criteria `tests-frozen-v1`: no file the
   tests step wrote changed) → `checks-code` → `docs` (`code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
