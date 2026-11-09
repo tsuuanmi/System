@@ -100,7 +100,7 @@ test('Software Engineering: the exact changed commit passes the base commit\'s p
 
 test('Software Engineering: a change failing a check fails the Work with the check named', () => {
   const repository = gitRepo('checks:\n  - name: note-exists\n    run: test -f NOTE.md\n')
-  const ran = system(['work', 'submit', '--workflow', SE, '--input', task('nothing to do', repository)])
+  const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:env', repository)])
   assert.equal(ran.status, 1)
   const record = show(ran.stdout.trim())
   assert.match(record.events.find((e) => e.type === 'verified')!.verdict!, /^fail$/)
