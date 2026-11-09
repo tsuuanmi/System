@@ -37,7 +37,7 @@ the optional web-worker row) becomes a System Worker
 A `code-write` attempt runs every command in the foreground (PROP-0007
 decision 1): Claude Code gets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and
 `Monitor` among its disallowed tools, and every Runtime's prompt says to run
-each command under `timeout` and wait for it. A wait on a background job
+each command under `timeout` and wait for it. When the repository has `.system/checks.yaml` at the base commit, the prompt also tells it to run the checks whose `paths` match its changed files before it finishes. A wait on a background job
 re-reads the whole context at each wake: 183M input tokens in one attempt.
 
 `attemptBudget` (decision 2) stops an attempt through the same abort as a

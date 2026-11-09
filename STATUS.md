@@ -8,4 +8,5 @@ Aim: System is a durable work control plane on DSH.
 - [ ] df-4 The MCP server's `instructions`, describing the status query
 - [ ] df-5 The small cuts: `Host.interrupted`, the Host pass-throughs, the twice-written `executor` and `usage` shapes, header comments that restate ADRs
 - [ ] df-6 Drop the conversation intake (`system conversation add`)
-- [ ] df-7 DF2b (one automatic fresh attempt), then DNA (DF2c)
+- [x] df-8 The code-write Worker runs the repository's checks before it finishes
+- [ ] df-7 One automatic further attempt with the failure as input, declared in the Workflow (replaces DF2b), then DNA (DF2c)

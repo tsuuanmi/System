@@ -110,6 +110,8 @@ function treeSlot(ws: Workspace, outputs: readonly string[]): string | undefined
   return ws.base ? outputs[0] : undefined
 }
 
+const CHECKS_LINE = 'Before you finish, run the checks in `.system/checks.yaml` whose `paths` match the files you changed, the way the verifier would run them, and fix your change until they pass. If a check cannot pass for a reason outside your change, say so in your final message.'
+
 export function prompt(ws: Workspace, request: WorkerRequest): string {
   const tree = treeSlot(ws, request.outputs)
   const files = request.outputs.filter((slot) => slot !== tree)
@@ -140,6 +142,7 @@ export function prompt(ws: Workspace, request: WorkerRequest): string {
     'Do not read or change anything outside these directories unless the instructions require it.',
     ...(request.capabilities.includes('code-write') ? [
       'Run each command in the foreground under `timeout` (for example `timeout 600 corepack pnpm test`) and wait for it; do not start background jobs or monitors.',
+      ...(ws.base && existsSync(join(ws.work, '.system', 'checks.yaml')) ? [CHECKS_LINE] : []),
     ] : []),
   ].join('\n')
 }

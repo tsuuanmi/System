@@ -17,6 +17,7 @@ import { processSpawner } from '../../../test-support/process.ts'
 import { CONVERSATION_KIND, Capabilities, GIT_TREE_KIND, NOTICE, TASK_KIND, addConversation, conversationSchema, directTask, WorkController, resolvedSpecSchema, gitTreeSchema, parseWorkflow, resolve, snapshot, taskSchema, type GitTreeContent, type ResolvedSpec, type SpecStore, type WorkerRequest } from '@system/work'
 import { agentWorker, type Account } from '../src/agent.ts'
 import { lazyVersion } from '../src/index.ts'
+import { cleanup, prepare, prompt } from '../src/workspace.ts'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-agent.mjs')
 const root = mkdtempSync(join(tmpdir(), 'system-agents-'))
@@ -197,6 +198,23 @@ test('a code-write attempt may not start background jobs or monitors, and is tol
   } finally {
     if (existsSync(marker)) process.kill(Number(readFileSync(marker, 'utf8')))
   }
+})
+
+test('a code-write attempt in a repository with .system/checks.yaml is told to run the checks for its paths', async () => {
+  const { artifacts } = memory()
+  const withChecks = repo()
+  mkdirSync(join(withChecks, '.system'))
+  writeFileSync(join(withChecks, '.system', 'checks.yaml'), 'checks: []\n')
+  execFileSync('git', ['-C', withChecks, 'add', '.'])
+  execFileSync('git', ['-C', withChecks, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'checks'])
+  const told = async (repository: string, capabilities: string[], name: string) => {
+    const req = { ...request({ task: await task(artifacts, 'do it', repository) }, ['change']), capabilities }
+    const ws = await prepare(artifacts, req, join(root, name))
+    try { return prompt(ws, req).includes('`.system/checks.yaml`') } finally { await cleanup(ws) }
+  }
+  assert.equal(await told(withChecks, ['code-write'], 'ws-checks'), true)
+  assert.equal(await told(repo(), ['code-write'], 'ws-none'), false)
+  assert.equal(await told(withChecks, ['research'], 'ws-research'), false)
 })
 
 test('an attempt over its budget is stopped and fails "over budget", its partial output kept', { timeout: 30_000 }, async () => {
