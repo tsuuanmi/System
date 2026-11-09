@@ -195,7 +195,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     if (captured.missing.length) {
       return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `${account.ref} wrote no output file for ${captured.missing.join(', ')}`, ...common }
     }
-    return { status: 'succeeded', outputs: captured.outputs, ...common }
+    return { status: 'succeeded', outputs: captured.outputs, ...(parsed.message ? { message: parsed.message } : {}), ...common }
   } finally {
     await cleanup(ws)
   }

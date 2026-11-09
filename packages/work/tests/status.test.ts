@@ -82,6 +82,7 @@ function memory(): SpecStore & { stored: Set<string>; tasks: Map<string, Stored>
   return {
     stored,
     tasks,
+    unchangedBase: () => undefined,
     kindOf: (artifactId) => (tasks.has(artifactId) ? 'task' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) { const v = id(JSON.stringify(verdict)); stored.add(v); return v },
     async putSpec(spec) { const s = id(JSON.stringify(spec)); specs.set(s, structuredClone(spec)); stored.add(s); return s },

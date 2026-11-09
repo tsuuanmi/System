@@ -48,6 +48,7 @@ function world(rows = new Map<string, WorkRecord>(), remote: Remote = { publishe
     exists: (artifactId) => stored.has(artifactId),
     taskOf: () => undefined,
     withNote: async () => { throw new Error('no Item in this test') },
+    unchangedBase: () => undefined,
     kindOf: (artifactId) => kinds.get(artifactId),
     async putVerdict(verdict: Verdict) { return store(JSON.stringify(verdict), 'verdict') },
   }

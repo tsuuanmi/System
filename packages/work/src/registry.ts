@@ -40,6 +40,8 @@ export interface WorkerResult {
   /** What a cancelled or failed attempt left behind; never accepted. */
   partial?: Record<string, string>
   reason?: string
+  /** The Worker's own final message, if it gave one; the controller quotes it when it fails the step itself. */
+  message?: string
   usage?: Omit<UsageObserved, 'state'>
   /** Bounded agent output as an Artifact, for audit. */
   log?: string

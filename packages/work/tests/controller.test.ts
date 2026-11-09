@@ -17,13 +17,16 @@ const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'u
 const caller = { type: 'human', operatorId: 'tan' } as const
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 
-function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict> } {
+function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string> } {
+  const unchanged = new Map<string, string>()
   const specs = new Map<string, ResolvedSpec>()
   const stored = new Set<string>()
   const verdicts = new Map<string, Verdict>()
   return {
     stored,
     verdicts,
+    unchanged,
+    unchangedBase: (artifactId) => unchanged.get(artifactId),
     kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) {
       const verdictId = id(JSON.stringify(verdict))
@@ -62,7 +65,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
   const verdicts: string[] = []
   capabilities.registerWorker({
     ref: 'fake',
-    capabilities: ['code-write', 'research', 'web-search', 'tier.standard'],
+    capabilities: ['code-write', 'research', 'web-search', 'tier.standard', 'tier.economy'],
     async run(request) {
       calls.push(request)
       const outputs = Object.fromEntries(request.outputs.map((slot) => {
@@ -124,6 +127,44 @@ test('a verify step\'s further inputs reach the verifier as exact Artifact IDs (
   const done = await runFixture(h, 'research.yaml')
   assert.equal(done.state.status, 'succeeded')
   assert.deepEqual(seen, [{ report: done.state.steps.investigate!.outputs.report! }])
+})
+
+/** A Worker whose every output is stored; the ones in `same` are a git tree equal to its base commit. */
+function treeWorker(h: () => Harness, same: (slot: string) => boolean, message?: string): Partial<WorkerPort> {
+  return {
+    async run(request) {
+      const outputs = Object.fromEntries(request.outputs.map((slot) => {
+        const out = id(`${request.attemptId}/${slot}`)
+        h().specs.stored.add(out)
+        if (same(slot)) h().specs.unchanged.set(out, 'abcdef0123456789')
+        return [slot, out]
+      }))
+      return { status: 'succeeded', outputs, ...(message ? { message } : {}) }
+    },
+  }
+}
+
+test('a code-write step whose change is its base tree fails with "no change", quoting the Worker\'s message', async () => {
+  const h: Harness = harness({ worker: treeWorker(() => h, () => true, `I looked\nand found  nothing to do ${'x'.repeat(400)}`) })
+  const done = await runFixture(h, 'software-engineering.yaml')
+  assert.equal(done.state.status, 'failed')
+  assert.equal(done.state.steps.implement!.state, 'failed')
+  const reason = done.events.findLast((e) => e.type === 'observed')
+  assert.ok(reason?.type === 'observed' && reason.reason?.startsWith('no change: the working tree is the same as the base commit abcdef0. The Worker said: I looked and found nothing to do x'))
+  assert.ok(reason.reason!.length < 400)
+  assert.equal(h.verdicts.length, 0)
+})
+
+test('a changed tree still passes, and a read-only scout with an unchanged checkout still succeeds', async () => {
+  const changed: Harness = harness({ worker: treeWorker(() => changed, () => false) })
+  assert.equal((await runFixture(changed, 'software-engineering.yaml')).state.status, 'succeeded')
+  const scouts: Harness = harness({ worker: treeWorker(() => scouts, (slot) => slot === 'checkout') })
+  const spec = resolve(parseWorkflow(fixture('hygiene.yaml')), scouts.capabilities.available(), fixture)
+  const scouting = spec.steps.filter((s) => 'outputs' in s && s.outputs[0] === 'checkout')
+  assert.ok(scouting.length >= 4)
+  const admitted = await scouts.controller.admit({ spec, input: await input(scouts), caller, source: { kind: 'workflow-file', path: 'hygiene.yaml' } })
+  const done = await scouts.controller.run(admitted.id)
+  for (const s of scouting) assert.equal(done.state.steps[s.id]!.state, 'succeeded', s.id)
 })
 
 test('a direct Task with no Workflow file runs one attempt to a result', async () => {
