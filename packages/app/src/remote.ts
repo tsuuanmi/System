@@ -45,7 +45,7 @@ async function mutate(client: Client, method: string, params: object): Promise<a
 
 const base64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
-/** The Workflow files `text` uses (Sub-workflows), and the ones they use, read from `dir` once each, by name. A file that does not parse is sent as it is: the Host says why. */
+/** The Workflow files `text` uses (Sub-workflows), and the ones they use, read from `dir` once each, by name; one not beside it is left to the Host (`workflows/` at the input's base commit, else the Host's own). A file that does not parse is sent as it is: the Host says why. */
 export function usedFiles(text: string, dir: string, found: Record<string, string> = {}): Record<string, string> {
   let names: string[]
   try {
@@ -55,8 +55,15 @@ export function usedFiles(text: string, dir: string, found: Record<string, strin
   }
   for (const name of names) {
     if (Object.hasOwn(found, name)) continue
-    found[name] = readFileSync(join(dir, name), 'utf8')
-    usedFiles(found[name], dir, found)
+    let content: string
+    try {
+      content = readFileSync(join(dir, name), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
+    found[name] = content
+    usedFiles(content, dir, found)
   }
   return found
 }
