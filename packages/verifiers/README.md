@@ -51,7 +51,8 @@ checks:
   `pass` when every check exits 0 and leaves nothing; `fail` when any does not or times out;
   `error` when the commit cannot be checked out.
 - **The base fails it too** (df-25): when a check fails on the change, the checks
-  are run again by name on the change's base commit (a second worktree, the same
+  are run again by name on the base commit the checks were pinned from (not the
+  parent of a further attempt, which is the failed change; a second worktree, the same
   `HOME`), in file order up to the last check that failed, so `install` and
   `build` run there too. When **every** check that failed on the change also
   fails on the base, the verdict is `inconclusive`, the reason says `<check>: the

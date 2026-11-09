@@ -221,11 +221,13 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         }
         // A check the change fails is run again on the base (PROP-0007 / df-25): when the base fails it too, the change is not to blame.
         // The base shares the change's HOME (one scratch), so a check that keeps state there could differ from a clean run; accepted.
-        if (failedNames.length && !asItIs) {
+        // The base is the commit the checks were pinned from, not `from`: a further attempt on a failed change has that change as its parent, and it fails the check too.
+        const base = checks.source.commit
+        if (failedNames.length && !asItIs && base !== tree.commit) {
           let baseTree: string | undefined
           try {
             baseTree = join(scratch, 'base')
-            await addWorktree(tree.repository, baseTree, from)
+            await addWorktree(tree.repository, baseTree, base)
           } catch {
             baseTree = undefined
           }
@@ -235,12 +237,12 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
               const last = Math.max(...failedNames.map((name) => chosen.findIndex((c) => c.name === name)))
               const baseFailed = new Set<string>()
               for (const check of chosen.slice(0, last + 1)) {
-                const result = await runCheck(check, baseTree, from)
+                const result = await runCheck(check, baseTree, base)
                 evidence.push(result.id)
                 if (result.failed) baseFailed.add(check.name)
               }
               if (failedNames.every((name) => baseFailed.has(name))) {
-                return verdict('inconclusive', `${failedNames.map((name) => `${name}: the base fails it too (base ${from})`).join('; ')}; failed on the change: ${failed.join('; ')}`, evidence)
+                return verdict('inconclusive', `${failedNames.map((name) => `${name}: the base fails it too (base ${base})`).join('; ')}; failed on the change: ${failed.join('; ')}`, evidence)
               }
             } finally {
               await removeWorktree(tree.repository, baseTree)

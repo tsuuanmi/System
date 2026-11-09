@@ -102,7 +102,7 @@ test('Software Engineering: the exact changed commit passes the base commit\'s p
 })
 
 test('Software Engineering: a change failing a check fails the Work with the check named', () => {
-  const repository = gitRepo('checks:\n  - name: note-exists\n    run: test -f NOTE.md\n')
+  const repository = gitRepo('checks:\n  - name: no-env\n    run: test ! -f ENV.json\n')
   const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:env', repository)])
   assert.equal(ran.status, 1)
   const record = show(ran.stdout.trim())
@@ -113,7 +113,7 @@ test('Software Engineering: a change failing a check fails the Work with the che
 test('Software Engineering: a check failed by the environment is verified again with work retry --step checks.checks, on the same change', () => {
   const marker = join(home, 'environment-fixed')
   rmSync(marker, { force: true })
-  const repository = gitRepo(`checks:\n  - name: environment\n    run: test -f ${marker}\n`)
+  const repository = gitRepo(`checks:\n  - name: environment\n    run: test ! -f NOTE.md || test -f ${marker}\n`)
   const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit FAKE:append', repository)])
   assert.equal(ran.status, 1)
   const workId = ran.stdout.trim()
