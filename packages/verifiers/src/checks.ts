@@ -49,10 +49,16 @@ export const checkRunSchema = z.object({
   timedOut: z.boolean(),
   /** Xvfb and Chrome processes the check started and left running (stopped by the verifier), as `name pid N`. */
   leftovers: z.array(z.string()).optional(),
+  /** The names (never the values) of the machine-level `checkEnv` variables the check was given. */
+  checkEnv: z.array(z.string()).optional(),
   durationMs: z.number().int().nonnegative(),
   stdoutTail: z.string(),
   stderrTail: z.string(),
 }).strict()
+
+/** The verifiers row's `checkEnv`: variables every check is given on top of its minimal environment (DF2c). */
+export const checkEnvSchema = z.record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
+  .refine((env) => !['HOME', 'PATH', 'CI'].some((k) => k in env), { message: 'HOME, PATH and CI cannot be set' })
 
 /** A display server or browser: what a check's own tests leak, and what then holds a Worker's pipes and profile. */
 const LEAKED = /^(Xvfb|chrome|chromium|chrome-headless-shell)$/
@@ -89,7 +95,10 @@ function contentOf<T>(artifacts: Artifacts, id: string, kind: string): T {
   return read.envelope.content as T
 }
 
-export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () => number = Date.now): VerifierPort {
+export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () => number = Date.now, checkEnv: Record<string, string> = {}): VerifierPort {
+  const given = checkEnvSchema.safeParse(checkEnv)
+  if (!given.success) throw new Error(`checkEnv is invalid: ${given.error.issues.map((i) => `${i.path.join('.')}${i.path.length ? ': ' : ''}${i.message}`).join('; ')}`)
+  const extra = Object.keys(given.data)
   const producer = { type: 'verifier' as const, ref: 'code.required-checks' }
   return {
     ref: 'code.required-checks',
@@ -156,7 +165,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
           const spawned = spawner.spawn({
             argv: ['timeout', '-s', 'INT', '-k', '10', String(check.timeoutSeconds), '/bin/sh', '-c', check.run], cwd: worktree, signal: backstop, graceMs: 5000,
-            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), PATH: path, LANG: process.env.LANG, HOME: scratch, CI: '1' },
+            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), ...given.data, LANG: process.env.LANG, PATH: path, HOME: scratch, CI: '1' },
           })
           const outcome = await spawned.done
           const leftovers = stopLeftovers(scratch)
@@ -164,7 +173,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           const run = {
             name: check.name, run: check.run, commit: tree.commit, exitCode: outcome.exitCode, signal: outcome.signal,
             timedOut: backstop.aborted || outcome.exitCode === 124, durationMs: Math.max(0, Math.round(now() - started)),
-            stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}),
+            stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}), ...(extra.length ? { checkEnv: extra } : {}),
           }
           evidence.push((await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id)
           ran.push(`${check.name} ${(run.durationMs / 1000).toFixed(1)} s`)
