@@ -99,6 +99,12 @@ Works, so trimming the core and proving the dogfood are one job.
     this machine never runs live. A script outside the core;
   - System 1 is only a reference now: its launcher and its install
     (`system-live`) go; the source `~/workspaces/system` stays;
+  - *Built (PR #78, on `main`). The move of the live Host waits until
+    `web-workers` is on `main`, which has no Website Worker yet (operator,
+    2026-11-08); until then the Host runs from `web-workers` with
+    `--patch ~/.system/profile.yml`, no longer a session's `/tmp` file. The
+    first `system update` runs from the live Host's own checkout: its check
+    is a command to that Host, which refuses a client of other code.*
   - last, `system mcp` without `--goal` registered at user scope, so a
     session in any repository has System's agent tools (no approval: that
     stays human, at a terminal). A Goal-scoped Orchestrator stays a folder
