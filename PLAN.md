@@ -57,13 +57,13 @@ columns are history, and the reasoning behind each is in [PLAN.md at
 | Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured | not measured | not measured |
 | Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured | not measured | not measured |
 
-| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) | DF9, hygiene pass (`f752e79` → change) |
-|---|---|---|---|
-| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 |
-| All package source, lines | 11,062 | 11,366 | not measured |
-| Tests, lines | 9,540 | 9,712 | not measured |
-| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) |
-| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured |
+| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) | DF9, hygiene pass (`f752e79` → change) | DF, before df-28 (`1029250`) |
+|---|---|---|---|---|
+| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); df-29 pays it back |
+| All package source, lines | 11,062 | 11,366 | not measured | 11,191 |
+| Tests, lines | 9,540 | 9,712 | not measured | 13,136 |
+| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit; df-29 |
+| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) |
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -225,13 +225,18 @@ Works, so trimming the core and proving the dogfood are one job.
 **Done =** at least five consecutive changes into `dev` made by System Works,
 each recording the operator's touches, time, usage and failed attempts; DF3
 passed; the attempt budget, live progress and the status query exercised
-for real.
+for real. *2026-11-09 (operator): DF closes after df-28 and df-29 are merged
+and released, when a new session, told only to carry DF on, closes it from
+`system status` and the Works without asking anything (DF3's last run).*
 
 **Defects found by DF** are fixed before features. A defect that blocks DF
 may be fixed directly by the Development session, marked "fixed outside
 System" and not counted among the five. The Host hang behind PR #59 gets no
 separate investigation: if it recurs, its log names the cause and it becomes
-such a defect. Outside those fixes, the Development session only reviews
+such a defect. When Workers are busy, a change may be made outside System
+(operator, 2026-11-09), marked "done outside System" and not counted; it
+then passes a `code-checks.yaml` Work on its exact commit before it is
+merged, so its verdict binds to the Artifact. Outside those fixes, the Development session only reviews
 System's pull requests when the operator asks, and writes docs pull requests.
 
 

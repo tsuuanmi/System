@@ -44,6 +44,11 @@ status list; Works carry it out, and the change that finishes it marks it
 done.
 _Avoid_: task, ticket, issue, todo
 
+**Claim**:
+A session's notice that it drives an Item before any Work for it exists; a
+Work for the Item takes it over.
+_Avoid_: lock, lease, assignment
+
 **Task**:
 An immutable record of what to do: instructions, optionally the repository
 commit to start from, and Artifacts to read as context. A Task does not run;
@@ -74,11 +79,6 @@ _Avoid_: timeout, hang, failure
 The one long-lived System process on a machine that owns every Work; the
 CLI and agents act on Work only by asking it.
 _Avoid_: daemon, server, backend
-
-**Sub-workflow**:
-A Workflow used as one step of another Workflow; its steps are joined into
-the using Workflow's spec when the Work is admitted.
-_Avoid_: child Work, nested run, subroutine
 
 **Round**:
 One pass of a Debate in which each side answers having read the other
