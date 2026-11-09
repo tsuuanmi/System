@@ -7,7 +7,7 @@
 # scouts and the plan leave it unchanged and write their report as a file.
 schema: system.workflow/v1
 id: hygiene
-version: 1
+version: 2
 steps:
   - id: scout-docs
     capabilities: [code-write, tier.economy]
@@ -74,6 +74,8 @@ steps:
       task: $work.input
       plan: $steps.plan.plan
     outputs: [change]
+    # One further attempt on the same change when the checks fail.
+    retry: { onFail: [checks.checks], max: 1 }
     instructions: |
       Make the changes in the plan, and nothing else. Behaviour must stay the
       same: where you remove code, the tests that remain must still pass.

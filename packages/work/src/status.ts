@@ -235,7 +235,7 @@ export async function itemNote(item: ItemRef, records: WorkRecord[], commitOf?: 
   const earlier = worksFor(records, item).slice(-MAX_EARLIER).reverse().flatMap((r) => earlierText(r, commitOf))
   return [
     itemLines(status ?? { items: [] }, item.repository, records, undefined, { item: item.id })[0]!,
-    `(Item ${item.id}${item.repository ? ` of ${item.repository}` : ''}, from STATUS.md on dev; done once a Work for it is merged into dev.)`,
+    `(Item ${item.id}${item.repository ? ` of ${item.repository}` : ''}, from STATUS.md on dev; done once a Work for it is merged into dev; a Work never ticks or edits its Item line in STATUS.md.)`,
     '',
     ...(earlier.length ? [
       'Earlier Works for this Item, newest first (at most 3). Read a Task or Artifact by its ID for the details. If an earlier Work left a change, you may start from its commit instead of from scratch, and fix what its failed check names:',

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -289,6 +289,21 @@ test('software-engineering.yaml declares the retry on the checks of its Sub-work
   const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
   const implement = spec.steps.find((s) => s.id === 'implement')
   assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks'], max: 1 })
+})
+
+test('every shipped Workflow with a code-write step judged by checks declares the retry on those checks', () => {
+  const caps = { ...available, workers: new Set([...available.workers, 'code.tests', 'code.docs', 'tier.economy']) }
+  let judged = 0
+  for (const file of readdirSync(join(repo, 'workflows')).filter((f) => f.endsWith('.yaml') && fixture(f).includes('uses: code-checks.yaml'))) {
+    const steps = resolve(parseWorkflow(fixture(file)), caps, fixture).steps as Record<string, any>[]
+    for (const step of steps.filter((s) => s.capabilities?.includes('code-write') && s.outputs?.includes('change'))) {
+      const checks = steps.filter((s) => s.id.endsWith('checks.checks') && s.verify?.subject === `$steps.${step.id}.change`).map((s) => s.id)
+      if (!checks.length) continue
+      judged++
+      for (const id of checks) assert.ok(step.retry?.onFail.includes(id), `${file}: ${step.id} must retry on ${id}`)
+    }
+  }
+  assert.ok(judged >= 3, String(judged))
 })
 
 for (const file of ['feature.yaml', 'feature-research.yaml']) {
