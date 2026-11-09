@@ -11,3 +11,8 @@ Aim: System is a durable work control plane on DSH.
 - [x] df-8 The code-write Worker runs the repository's checks before it finishes
 - [x] df-9 First hygiene pass (docs under budget, small cuts, conversation intake)
 - [ ] df-7 One automatic further attempt with the failure as input, declared in the Workflow (replaces DF2b), then DNA (DF2c)
+- [ ] df-12 `system work wait <work...> [--any]`: returns when the Works end, are held or await approval; the MCP instructions tell a session to run it in the background (notices over MCP do not wake an idle session)
+- [ ] df-13 Routing takes the first capable Account with a free slot; `work report` records time waiting for a slot and rate-limited attempts (after df-14)
+- [ ] df-14 At most `maxConcurrentChecks` (default 2) check runs at once on the machine
+- [ ] df-15 System's checks under 2 minutes: `web-canary.test.ts` moves to `test:web` (it sets smoke's 100 s), `publish.test.ts` is split so its tests run in parallel
+- [ ] df-16 `work.submit` over MCP runs the Work unless asked not to, as the CLI does; a Work admitted and never run shows as "admitted, not running" (not `running`) in `work list` and `system status` (a session left one pending 55 minutes)
