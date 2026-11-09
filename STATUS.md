@@ -7,6 +7,7 @@ Aim: System is a durable work control plane on DSH.
 - [x] df-11 A release check checks only what changed since the running release
 - [x] df-3 The status of a project: Items in STATUS.md, `system status`, one Work at a time per Item
 - [x] df-4 The MCP server's `instructions`, describing the status query
+- [ ] df-10 `system status` reads STATUS.md from `origin/dev` when it exists, else the local `dev`, and says which and how old; a local `dev` that is behind gave "no STATUS.md on dev"
 - [x] df-5 The small cuts: `Host.interrupted`, the Host pass-throughs, the twice-written `executor` and `usage` shapes, header comments that restate ADRs (done in df-9)
 - [x] df-6 Drop the conversation intake (`system conversation add`) (done in df-9)
 - [x] df-8 The code-write Worker runs the repository's checks before it finishes
