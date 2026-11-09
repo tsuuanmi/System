@@ -19,6 +19,9 @@ import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled,
 import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
+/** What a failed attempt's reason says when its Account was rate-limited. */
+const RATE_LIMITED = /rate.?limit|too many requests|\b429\b|usage limit/i
+
 /** The Work table: one key per Work, changed only by atomic `update`. */
 export interface WorkTable {
   get(key: string): WorkRecord | undefined
@@ -162,6 +165,8 @@ export class WorkController {
   private readonly driving = new Set<string>()
   /** The Works whose verify step waits for a check slot, in memory only. */
   private readonly waitingForCheck = new Map<string, { stepId: string; verifier: string; since: number }>()
+  /** When each Worker step (`<work>/<step>`) first found every capable Account full, in memory only. */
+  private readonly waitingForSlot = new Map<string, number>()
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
 
@@ -688,20 +693,33 @@ export class WorkController {
     if (takeover?.previous) inputs.previous = takeover.previous
     const admitted = record.events[0]
     const only = takeover?.worker ?? (admitted?.type === 'admitted' ? admitted.worker : undefined)
-    const route = this.capabilities.routeWorker(s.capabilities, only)
+    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w))
+    const waitKey = `${record.id}/${s.id}`
+    if (route.full) {
+      if (!this.waitingForSlot.has(waitKey)) this.waitingForSlot.set(waitKey, Date.now())
+      return { record, blocked: true }
+    }
     if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled Worker ${only ? `${only} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`) }
     const attemptId = `attempt:${randomUUID()}`
     if (!this.slots.reserve(route.selected, attemptId)) return { record, blocked: true }
+    const waitedMs = this.waited(this.waitingForSlot.get(waitKey))
+    this.waitingForSlot.delete(waitKey)
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
-        selected: route.selected.ref, candidates: route.candidates, inputs,
+        selected: route.selected.ref, candidates: route.candidates, inputs, ...waitedMs,
       })
     } catch (error) {
       this.slots.release(route.selected.ref, attemptId)
       throw error
     }
     return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
+  }
+
+  /** `waitedMs` for a dispatch of a step that waited since `since`. */
+  private waited(since: number | undefined): { waitedMs?: number } {
+    const ms = since === undefined ? 0 : Date.now() - since
+    return ms > 0 ? { waitedMs: ms } : {}
   }
 
   /** Outside the lane: run the Worker, touching no Work state. */
@@ -750,6 +768,7 @@ export class WorkController {
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
+      ...(status === 'failed' && RATE_LIMITED.test(reason ?? '') ? { rateLimited: true as const } : {}),
     })
   }
 
@@ -787,9 +806,12 @@ export class WorkController {
     const verifier = route.selected
     const attemptId = `attempt:${randomUUID()}`
     if (!this.slots.reserveCheck(verifier, attemptId)) {
-      this.waitingForCheck.set(record.id, { stepId: s.id, verifier: verifier.ref, since: Date.now() })
+      const was = this.waitingForCheck.get(record.id)
+      this.waitingForCheck.set(record.id, { stepId: s.id, verifier: verifier.ref, since: was?.stepId === s.id ? was.since : Date.now() })
       return { record, blocked: true }
     }
+    const waiting = this.waitingForCheck.get(record.id)
+    const waitedMs = this.waited(waiting?.stepId === s.id ? waiting.since : undefined)
     this.waitingForCheck.delete(record.id)
     const kind = this.specs.kindOf(subject)
     const admitted = record.events[0]
@@ -800,7 +822,7 @@ export class WorkController {
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
-        selected: verifier.ref, candidates: route.candidates, inputs: { ...inputs, subject, criteria },
+        selected: verifier.ref, candidates: route.candidates, inputs: { ...inputs, subject, criteria }, ...waitedMs,
       })
     } catch (error) {
       this.slots.release(checkAccount(verifier), attemptId)

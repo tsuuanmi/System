@@ -138,7 +138,7 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'Duration, attempts, operator touches and usage of a Work, from its events.',
+      summary: 'Duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events.',
       params: z.object({ workId }).strict(),
       handler: (host, p) => summarize(known(host, p.workId)),
     },

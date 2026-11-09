@@ -187,7 +187,10 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 ## Attempts at once, and held slots
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
-attempt at a time; other steps and Works that need it wait in the Host. To allow
+attempt at a time; other steps and Works that need it wait in the Host, unless
+another Account offers the same capabilities and has a free slot, which takes
+the step. `system work report` shows the time a Work waited for a slot
+(`waitedForSlotMs`) and its rate-limited attempts (`rateLimitedAttempts`). To allow
 more, set `maxConcurrentAttempts` (a whole number of at least 1, else the account
 is skipped and `system workers` says why) in the profile's `agents` row, then
 restart the Host:

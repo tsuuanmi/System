@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { CLAUDE, CODEX, assertConsistent, caller, fixture, seeded } from '../../../test-support/fixture.ts'
+import { CLAUDE, CODEX, SPARE, assertConsistent, caller, fixture, seeded } from '../../../test-support/fixture.ts'
 import type { WorkRecord } from '../src/record.ts'
+import { summarize } from '../src/summary.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-slots-'))
 after(() => rmSync(dir, { recursive: true, force: true }))
@@ -330,5 +331,48 @@ test('a lost check keeps its check slot until its process is confirmed gone, the
     assert.equal(f.checkAttempts.length, 2)
   } finally {
     await second.close()
+  }
+})
+
+test('a step whose first capable Account is full goes to the next capable Account with a free slot, and the record says why', { timeout: 20_000 }, async () => {
+  const f = fixture({ spare: true })
+  const host = await f.startHost(newHome())
+  try {
+    const a = await host.submit(f.admission('brainstorm.yaml'))
+    const b = await host.submit(f.admission('brainstorm.yaml'))
+    f.hold('idea-a')
+    const runs = [host.run(a.id), host.run(b.id)]
+    await f.arrived('idea-a', 2)
+    const selected = [a.id, b.id].map((id) => host.view.get(id)!.events.find((e) => e.type === 'dispatched' && e.stepId === 'idea-a'))
+    assert.deepEqual(selected.map((e) => e?.type === 'dispatched' && e.selected), [CLAUDE, SPARE])
+    const second = selected[1]
+    assert.ok(second?.type === 'dispatched' && second.candidates.find((c) => c.ref === CLAUDE)?.reason.includes('no free slot'))
+    f.release('idea-a')
+    for (const record of await Promise.all(runs)) assert.equal(record.state.status, 'succeeded')
+  } finally {
+    await host.close()
+  }
+})
+
+test('a step waits when every capable Account is full; the time it waited is recorded and summed by the report', { timeout: 20_000 }, async () => {
+  const f = fixture()
+  const host = await f.startHost(newHome())
+  try {
+    const a = await host.submit(f.admission('brainstorm.yaml'))
+    const b = await host.submit(f.admission('brainstorm.yaml'))
+    f.hold('idea-a')
+    const runs = [host.run(a.id), host.run(b.id)]
+    await f.arrived('idea-a')
+    await turns()
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    f.release('idea-a')
+    await Promise.all(runs)
+    const waited = (id: string) => host.view.get(id)!.events.flatMap((e) => (e.type === 'dispatched' && e.waitedMs !== undefined ? [e.waitedMs] : []))
+    assert.deepEqual(waited(a.id), [], 'the first Work found a free slot at once')
+    assert.ok(waited(b.id).some((ms) => ms >= 50), `the second Work's waiting is recorded: ${waited(b.id)}`)
+    assert.ok(summarize(host.view.get(b.id)!).waitedForSlotMs >= 50)
+    assert.equal(summarize(host.view.get(a.id)!).waitedForSlotMs, 0)
+  } finally {
+    await host.close()
   }
 })
