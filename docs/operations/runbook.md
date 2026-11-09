@@ -79,7 +79,14 @@ Host that stopped itself for new code waits for its attempts first; see
   `corepack pnpm build` there;
 - it checks that commit by a Work, `workflows/code-checks.yaml` on a task whose
   base is the commit, and prints the Work ID: the evidence, bound to the exact
-  commit. A failed build or check leaves `current` where it was;
+  commit. A failed build or check leaves `current` where it was. With a
+  `current`, the commit is checked as a change from the release that runs now
+  (`system task new --against`: the base's `parent`), so `paths` selects the
+  checks by the files that differ between the two releases (`web` runs only
+  when the Website Worker, its driver or its test changed), from the new
+  commit's own `.system/checks.yaml`; the first install checks the whole
+  commit. The log line names the release it compared with and the checks the
+  verifier skipped;
 - it switches `current` (a new link renamed over it), then asks the Host as a
   client of the new code, which makes the Host drain and restart on it (below);
 - if the Host does not run the new code within `--wait` (default 75 minutes,

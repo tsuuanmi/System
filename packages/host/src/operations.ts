@@ -17,7 +17,7 @@ export interface Services {
   /** An Artifact's envelope and occurrences, or its state when it is not stored. */
   artifact(id: string): unknown
   readBytes(id: string): Promise<Uint8Array>
-  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller, item?: string): Promise<{ task: string; base?: string }>
+  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller, item?: string, against?: string): Promise<{ task: string; base?: string }>
   /** A Workflow file a Workflow uses: `workflows/<name>` at the base commit of the `input` Task, else beside the Host's own code; undefined when neither has it. */
   workflowFile(name: string, input: string | undefined): string | undefined
   credentials: {
@@ -177,9 +177,9 @@ export function operations(services: Services): Methods {
     },
     'task.new': {
       agent: true,
-      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`).',
-      params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional() }).strict(),
-      handler: (_host, p, caller) => services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item),
+      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`).',
+      params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional() }).strict(),
+      handler: (_host, p, caller) => services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item, p.repository ? p.against : undefined),
     },
     status: {
       read: true,

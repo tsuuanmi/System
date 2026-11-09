@@ -70,7 +70,7 @@ export interface WorkCommands {
   wait(workId: string): Promise<Followed>
   /** A Work's measurements. */
   report(workId: string): Promise<unknown>
-  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string): Promise<{ task: string; base?: string }>
+  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string): Promise<{ task: string; base?: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
   status(repository: string, state: string | undefined, item: string | undefined): Promise<string[]>
 }
@@ -255,11 +255,12 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--ref <ref>', 'the commit or branch in --repo', 'HEAD')
     .option('--context <id>', 'an Artifact the Worker reads as data, such as a conversation (repeatable)', collect, [])
     .option('--item <id>', 'the Item of the repository\'s STATUS.md this task is for (see system status)')
-    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string }) => {
+    .option('--against <ref>', 'with --repo: the commit --ref is a change from; checks are then selected by the files that differ between the two')
+    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string; against?: string }) => {
       select(async () => {
         if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
-        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item)
+        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against)
         if (created.base) io.out(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
         return 0
