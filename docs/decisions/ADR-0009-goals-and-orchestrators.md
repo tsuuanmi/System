@@ -1,13 +1,21 @@
 ---
 id: ADR-0009
 type: decision
-status: accepted
+status: superseded
 date: 2026-11-07
 summary: A Goal is an immutable operator-written Artifact (aim, scope, budget, principles as context) whose spend is folded from its Works, and an Orchestrator is an agent caller reaching the Host through `system mcp`, scoped to one Goal, that may never approve, accept or merge; the Host notifies it when its Works change state.
 related: [ADR-0002, ADR-0003, ADR-0004, ADR-0007, ADR-0008]
 ---
 
 # Goals and Orchestrators
+
+> **Superseded (2026-11-09).** The operator removed the Goal feature (PLAN.md
+> milestone DF2): no budget is needed now, and sessions are replaceable from
+> the repository's own state. Goals, Decisions, Briefs and the Orchestrator
+> are gone from System. Stored records stay readable: the `admitted` event's
+> optional `goal` field and the `orchestrator` caller type are still accepted
+> when a record is read, and new events never carry them. The text below is
+> kept as the record of what was decided.
 
 ## Context
 

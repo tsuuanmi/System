@@ -514,75 +514,35 @@ attempt quiet for `stallMinutes` (10 by default; the `work` row's config) is
 stall is a notice, not a verdict: the attempt is not stopped. `live` is never
 recorded; it is gone once the attempt reports.
 
-## Goals and their budget
-
-A Goal bounds what an agent session may spend. Write one at a terminal:
-
-```
-system goal new --aim "..." --scope "..." --attempts 10 --tokens 2000000
-```
-
-It prints the Goal's ID after you type the code it shows. Submit Works under it
-with `system work submit ... --goal <id> --input <task>` (a Goal's Work needs
-an input Task); each gets the Goal's context (the
-Charter by default) as Task context. `system goal show <id>` and
-`system work report <work>` show the spend: attempts, tokens (fresh input, cache
-writes and output), and how many attempts had unknown usage.
-
-A Work that is admitted and not finished counts as at least one attempt, so
-many Works cannot be admitted before the first runs. Once the spend reaches the budget, `work submit --goal` fails with `the budget
-of Goal ... is used up`; running Works finish. To go on, write a new Goal with
-`--supersedes <old id>` (the newest version only) and the raised budget; the old ID then resolves to it,
-and the spend of the old versions still counts.
-
 ## Using System from an agent
 
 `system mcp` lets an agent session such as Claude Code use System's agent
 operations as MCP tools. It runs without DSH and talks to the running Host, so
-start the Host first. Write a Goal (above), then add the server with its ID:
+start the Host first, then add the server:
 
 ```
-claude mcp add system -- system mcp --goal <goal-id>
+claude mcp add system -- system mcp
 ```
 
 A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base
 commit, else beside its own code.
 
-Without `--goal` the session is a plain agent: it may use every agent
-operation on every Work.
+The session is an agent: it may use every agent operation on every Work, store
+Tasks and files, and list the Workers.
 
-With `--goal` it is an Orchestrator for that Goal. It may:
-
-- submit Works, which always name its Goal, and run, retry and cancel them;
-- read the Works of the Goal and of the Goals it supersedes, their events,
-  reports and Artifacts;
-- store Tasks and files, and list the Workers.
-
-Each Work in scope is also an MCP resource, `system://work/<id>`; reading it
+Each Work is also an MCP resource, `system://work/<id>`; reading it
 gives `work.show`. To be told instead of polling, subscribe to it
 (`resources/subscribe`): the server sends `notifications/resources/updated`
 when the Work becomes terminal, is held, waits for approval, or one of its
-attempts stalls. With `--goal`
-it also sends `notifications/resources/list_changed` when a new Work of the
-Goal appears. A notice only wakes the session: read the Work's events with
+attempts stalls. A notice only wakes the session: read the Work's events with
 `work.events` from your last `seq`. A session that was away misses no event,
 only the wake-up.
 
-**Replacing the Orchestrator session.** Its state lives in System, so a new
-session takes over like a new Worker: it starts from `goal.brief` (`system goal
-brief <goal>`: the Goal and its budget left, its Works with their current step
-and live progress, its decisions, and what waits), and records each choice it
-makes with `decision.add` (`system decision add`: question, options, choice,
-reason, and the Artifacts it rests on, such as a synthesis or a review). A
-decision is a record, never an authority. When a check failed for a reason
-outside the change, it records that and tells the operator: only a human
-runs `system work retry <work> --step checks.checks`.
-
-It cannot approve or deny, store a conversation, set credentials, write a Goal,
-sign an account in, or merge into `main`. It is refused, with the reason, any
-call on another Goal's Works or their Artifacts. The budget of the Goal still
-stops new Works.
+It cannot approve or deny, store a conversation, set credentials, sign an
+account in, or merge into `main`. When a check failed for a reason outside the
+change, it tells the operator: only a human runs
+`system work retry <work> --step checks.checks`.
 
 ## Errors
 

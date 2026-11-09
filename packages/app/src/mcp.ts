@@ -1,19 +1,18 @@
 /**
- * `system mcp [--goal <id>]` (ADR-0009 decision 3): a stdio MCP server that
+ * `system mcp`: a stdio MCP server that
  * is a client of the Host. Its tools are the rows of the Host's operation
  * table flagged `agent: true`, with the row's zod params as JSON Schema and
  * its summary as the description; each call is forwarded over the socket. It
  * decides nothing: who may do what is the Host's, from the caller it declares.
- * Each Work in scope is also a resource, `system://work/<id>`, whose reading
+ * Each Work is also a resource, `system://work/<id>`, whose reading
  * is `work.show`; a subscription is a `work.watch` on the connection, and the
  * Host's `work.changed` (see the Host README) becomes
- * `notifications/resources/updated` (ADR-0009 decision 5).
+ * `notifications/resources/updated`.
  */
 import { parseArgs } from 'node:util'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema, SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { CONTENT_ID_RE } from '@system/artifacts'
 import { z, type Caller } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { RpcError, tableOf, type Client } from '../../host/lib/index.js'
@@ -41,35 +40,27 @@ const workOf = (uri: string): string => {
 
 /** Serve MCP on stdio until the client closes it; resolves the exit code. */
 export async function runMcp(args: string[], home: string, open: (who: Caller) => Promise<Client>): Promise<number> {
-  let goal: string | undefined
   try {
-    goal = parseArgs({ args, options: { goal: { type: 'string' } }, allowPositionals: false }).values.goal
-    if (goal !== undefined && !CONTENT_ID_RE.test(goal)) throw new Error(`--goal needs a Goal ID (sha256:...), not ${goal}`)
+    parseArgs({ args, options: {}, allowPositionals: false })
   } catch (error) {
-    process.stderr.write(`system: mcp: ${(error as Error).message}\nusage: system mcp [--goal <goal-id>]\n`)
+    process.stderr.write(`system: mcp: ${(error as Error).message}\nusage: system mcp\n`)
     return 2
   }
-  const who: Caller = goal ? { type: 'orchestrator', operatorId: operatorId(), goal } : { type: 'agent', operatorId: operatorId() }
+  const who: Caller = { type: 'agent', operatorId: operatorId() }
 
-  const server = new Server({ name: 'system', version: '0.0.0' }, { capabilities: { tools: {}, resources: { subscribe: true, listChanged: goal !== undefined } } })
+  const server = new Server({ name: 'system', version: '0.0.0' }, { capabilities: { tools: {}, resources: { subscribe: true } } })
   /** The Works the client subscribed to; each connection to the Host watches them again when it is opened. */
   const subscribed = new Set<string>()
   const heard = (method: string, params: unknown) => {
     if (method !== 'work.changed') return
-    const { workId, seq } = params as { workId: string; seq: number }
-    // A first event is a new Work of the Goal; any other is a change of a subscribed Work.
-    if (seq === 0) void server.sendResourceListChanged().catch(() => {})
-    else if (subscribed.has(workId)) void server.sendResourceUpdated({ uri: `system://work/${workId}` }).catch(() => {})
+    const { workId } = params as { workId: string }
+    if (subscribed.has(workId)) void server.sendResourceUpdated({ uri: `system://work/${workId}` }).catch(() => {})
   }
-  let connected = false
   const connectHost = async (): Promise<Client> => {
     const client = await open(who)
     client.onNotice(heard)
     const watches = [...subscribed].map((workId) => ({ workId }))
-    await Promise.allSettled([...(goal ? [{ goal }] : []), ...watches].map((params) => client.call('work.watch', params)))
-    // Works may have been created while the connection was down: the client lists again once.
-    if (connected && goal) void server.sendResourceListChanged().catch(() => {})
-    connected = true
+    await Promise.allSettled(watches.map((params) => client.call('work.watch', params)))
     return client
   }
   let session: Promise<Client> | undefined
@@ -80,7 +71,6 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
     const failure = explain(error, home)
     return failure instanceof Error ? failure : new Error(String(failure))
   }
-  server.oninitialized = () => { if (goal) link().catch(() => {}) }
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools }))
   /** Run a Host call for a request: a failure is the request's error. */
   const forwarded = async (method: string, params: object): Promise<unknown> => {

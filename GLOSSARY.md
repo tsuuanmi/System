@@ -54,11 +54,6 @@ A Workflow used as one step of another Workflow; its steps are joined into
 the using Workflow's spec when the Work is admitted.
 _Avoid_: child Work, nested run, subroutine
 
-**Decision**:
-A recorded choice by the operator or an Orchestrator, with its options, its
-reason and the Artifacts it rests on; a record, never an authority.
-_Avoid_: note, log entry, approval
-
 **Approval**:
 A human's yes or no on what a held Work awaits; the only one of these that
 lets a Work go on.
@@ -69,26 +64,10 @@ A running attempt that has reported nothing for longer than the Host allows;
 a notice to look, never a verdict, and the attempt goes on.
 _Avoid_: timeout, hang, failure
 
-**Brief**:
-The text a new Orchestrator session starts from, written only from what
-System recorded about a Goal.
-_Avoid_: summary, report, handoff note
-
 **Host**:
 The one long-lived System process on a machine that owns every Work; the
 CLI and agents act on Work only by asking it.
 _Avoid_: daemon, server, backend
-
-**Orchestrator**:
-An agent that directs Work toward a Goal through System's agent interface,
-with an agent's authority: it may submit, run, cancel and retry Work, but
-never approve, accept or merge.
-_Avoid_: leader, lead, manager, planner
-
-**Goal**:
-An aim the operator writes down, with its scope and budget, that an
-Orchestrator works toward; every Work it creates names its Goal.
-_Avoid_: project, charter, epic, campaign
 
 **Sub-workflow**:
 A Workflow used as one step of another Workflow; its steps are joined into

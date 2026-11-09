@@ -59,9 +59,6 @@ nothing else.
 - [debate.test.ts](debate.test.ts) — WW2b: the Debate Workflow on the fake CLI: dispatch
   order a1/b1, a2/b2, synthesis; each Round 2 step's inputs are exactly the
   Round 1 proposals and the brief; the synthesis gets all four; replay.
-- [goal.test.ts](goal.test.ts) — ADR-0009 O1: `system goal new` behind a terminal
-  confirmation (refused to a pipe or an agent), the Goal's context reaching the
-  Worker, the budget refusal, `work report` with the spend, and a raise.
 - [conversation.test.ts](conversation.test.ts) — PROP-0003: a conversation
   previewed (nothing stored, secrets named not printed), `--yes` refused on a
   warning unless `--accept-warnings`, `--product-context`, stored, shown, and

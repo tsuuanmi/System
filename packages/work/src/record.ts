@@ -11,9 +11,14 @@ const at = z.string()
 const TERMINAL_STATUSES = ['succeeded', 'failed', 'held', 'cancelled'] as const
 const status = z.enum(['running', ...TERMINAL_STATUSES])
 const operatorId = z.string().min(1)
-/** An orchestrator names the Goal it works for (ADR-0009 decision 3); it has an agent's authority and no more. */
-export const callerSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.enum(['human', 'agent']), operatorId }).strict(),
+/** Who issues a command: the only callers a new event carries. */
+export const callerSchema = z.object({ type: z.enum(['human', 'agent']), operatorId }).strict()
+/**
+ * A caller as a stored event may name it. `orchestrator` is no longer issued (ADR-0009 is superseded); it stays
+ * accepted so records stored before still open and replay.
+ */
+const storedCallerSchema = z.discriminatedUnion('type', [
+  callerSchema,
   z.object({ type: z.literal('orchestrator'), operatorId, goal: contentIdSchema }).strict(),
 ])
 
@@ -34,9 +39,9 @@ const usage = z.union([
 
 export const eventSchema = z.discriminatedUnion('type', [
   z.object({
-    type: z.literal('admitted'), seq: z.number().int(), at, caller: callerSchema,
+    type: z.literal('admitted'), seq: z.number().int(), at, caller: storedCallerSchema,
     specId: contentIdSchema, input: contentIdSchema.optional(),
-    /** The Goal the Work was admitted for, and whose spend it counts toward (absent without a Goal, and in records written before ADR-0009). */
+    /** Read-only: the Goal a Work was admitted for, in records stored before Goals were removed. New events never carry it. */
     goal: contentIdSchema.optional(),
     /** Only this Worker may take the Work's Worker steps (`system work submit --worker`), unless a retry names another. */
     worker: z.string().optional(),
@@ -75,7 +80,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), attemptId: z.string(), reason: z.string(),
   }).strict(),
   z.object({
-    type: z.literal('reopened'), seq: z.number().int(), at, caller: callerSchema,
+    type: z.literal('reopened'), seq: z.number().int(), at, caller: storedCallerSchema,
     stepId: z.string(), reason: z.string(),
     /** Only this Worker may take the step over. */
     worker: z.string().optional(),
@@ -98,13 +103,13 @@ export const eventSchema = z.discriminatedUnion('type', [
     detail: z.record(z.string(), z.string()).optional(),
   }).strict(),
   z.object({
-    type: z.literal('decided'), seq: z.number().int(), at, caller: callerSchema,
+    type: z.literal('decided'), seq: z.number().int(), at, caller: storedCallerSchema,
     stepId: z.string(), decision: z.enum(['approved', 'denied']), reason: z.string(),
   }).strict(),
   z.object({
     type: z.literal('terminal'), seq: z.number().int(), at,
     outcome: z.enum(TERMINAL_STATUSES), reason: z.string(),
-    results: z.record(z.string(), contentIdSchema), caller: callerSchema.optional(),
+    results: z.record(z.string(), contentIdSchema), caller: storedCallerSchema.optional(),
     /** For `held`: the step whose operator decision `system approve` records. */
     awaiting: z.string().optional(),
   }).strict(),
