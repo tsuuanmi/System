@@ -88,6 +88,11 @@ bin/system work retry <work> [--step implement] [--worker codex/default]
 bin/system work submit ... --worker codex/default   # only that Worker takes its Worker steps
 ```
 
+`workflows/feature.yaml` is the default for a code change. For a change too
+small for a plan, or a repository with no `red:` declarations,
+[`workflows/software-engineering.yaml`](workflows/software-engineering.yaml) is
+the shorter path (implement → checks → publish).
+
 Research takes a question as its input
 (`bin/system task new --text "<question>"`, then `--workflow workflows/research.yaml`).
 Brainstorm takes a brief the same way (`--workflow workflows/brainstorm.yaml`):
