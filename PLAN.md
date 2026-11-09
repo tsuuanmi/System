@@ -149,10 +149,23 @@ Works, so trimming the core and proving the dogfood are one job.
     written twice; header comments that restate ADRs;
   - (f) drop the conversation intake (`system conversation add`, about 43
     core lines); the `conversation@1` kind stays;
-  - (g) DF2b, then DNA (DF2c).
-- [ ] DF2b. One automatic fresh attempt per Work after a conclusive failure
-  (operator, 2026-11-08; decided on `web-workers`, PLAN "Decisions of
-  2026-11-08, second round"), a System Work after DF0b. Allowed
+  - (h) the `code-write` Worker runs the repository's checks whose `paths`
+    its change touches before it finishes (operator, 2026-11-09; `df-8`):
+    one of the first four DF Works failed its checks on its own test
+    expectations, which the Worker could have run;
+  - (g) DF2b as a general mechanism, then DNA (DF2c). Count meanwhile how
+    many Works fail their checks on their own change; with (h) in place, the
+    count decides how much of DF2b code changes need.
+- [ ] DF2b. One automatic further attempt after a failure that can be
+  fixed, with the failure as its input (operator, 2026-11-09: one general
+  mechanism, declared in the Workflow, for example
+  `retry: { onFail: [checks.checks], max: 1 }`, instead of a Website Worker
+  feature): a code step continues on its change with the failing checks'
+  verdict and evidence IDs; a Website Worker step starts a new chat with the
+  reason (a missing output block); a Research step gets the unconfirmed
+  citations. Which failures qualify stays as first decided:
+  (2026-11-08, PLAN of `web-workers`, "Decisions of 2026-11-08, second
+  round"), allowed
   after a failure before the send, a site error, or a complete but malformed
   answer; never after an unknown send, a challenge, a sign-in wall or
   `invalid_state`. The Worker says whether a failure may be tried afresh,
