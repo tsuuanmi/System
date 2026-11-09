@@ -489,8 +489,9 @@ system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
 `status` prints one line per Item, from the tip of `origin/dev` (else the local `dev`) of the repository (git,
-not the working tree; it never fetches, and the `note:` line names the ref and its age) and the Work records: `done` is `[x]` in `STATUS.md`,
-with the last Work and Artifact for the Item; `doing` is a Work whose Task
+not the working tree; it never fetches, and the `note:` line names the ref and its age) and the Work records: `done` is derived: a Work whose Task names the Item
+was merged into `dev` (its `git.publish` merge was applied, read from the Host's store), or the line is `[x]` for
+work done outside System; it names the last merged Work and its Artifact; `doing` is a Work whose Task
 names the Item and that is running or held (its ID, step, Account, since when,
 and the live progress the Host keeps, or why it is held); `todo` is `nobody`.
 Read a Work by its ID for details. The MCP tool `status` answers the same.
@@ -500,8 +501,9 @@ refused, naming that Work and its Account. `--force` (`force: true`) allows
 parallel work on purpose. A Task that names an Item is read with the Item's
 line and, for its last three earlier Works, their end reason, Task ID, change
 Artifact and commit, and each failed verdict's full reason and evidence IDs added
-to its context, so a new session or Worker can carry on from the status alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
-pull request.
+to its context, so a new session or Worker can carry on from the status alone; the context opens with the Item's line and marks an earlier Work that
+changed nothing (`no change`). Works do not edit `STATUS.md`: done is derived, so parallel Works never conflict on neighbouring lines.
+`task new --item` is refused when the Item has no line in `STATUS.md` on `dev` (or no `--repo` is given), so every Worker has its description.
 
 ## Using System from an agent
 

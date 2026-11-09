@@ -152,10 +152,18 @@ function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | u
   return `${record.id} ${who} since ${admittedAt(record)}${tail ? `; ${tail}` : ''}`
 }
 
+/** Whether a Work's effects merged its change into `dev`: a `git.publish` the merge queue applied (it merges only into a base in `mergeInto`). */
+export const wasMerged = (record: WorkRecord): boolean => Object.values(record.state.effects).some((e) => e.state === 'applied' && e.detail?.merged === 'true')
+
+/** Whether a Work changed nothing: it did not succeed and a step of it failed on `no change` (a `code-write` tree equal to its base). */
+const changedNothing = (record: WorkRecord): boolean =>
+  record.state.status !== 'succeeded' && record.events.some((e) => e.type === 'observed' && e.status === 'failed' && /^no change\b/.test(e.reason ?? ''))
+
 const artifactsOf = (record: WorkRecord): string[] => Object.values(record.state.results)
 
 /**
- * One line per Item, as `[x] <id> <title> - <state>`: `done` (with the last
+ * One line per Item, as `[x] <id> <title> - <state>`: `done` (ticked in
+ * STATUS.md, or a Work for it was merged into `dev`; with the last merged or
  * succeeded Work and its Artifacts, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
  * the Host holds for it, or why it is held) or `todo: nobody`. An Item only
@@ -173,13 +181,15 @@ export function itemLines(
     if (filter.item && item.id !== filter.item) continue
     const works = worksFor(records, { id: item.id, repository })
     const active = works.filter(isActive)
-    const state = item.done ? 'done' : active.length ? 'doing' : 'todo'
+    // Done is derived: ticked by hand (done outside System) or a Work for the Item was merged into `dev`.
+    const merged = works.filter(wasMerged)
+    const state = item.done || merged.length ? 'done' : active.length ? 'doing' : 'todo'
     if (filter.state && filter.state !== state) continue
-    const last = works.findLast((r) => r.state.status === 'succeeded')
+    const last = merged.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const text = state === 'done'
       ? `done${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}`
       : state === 'doing' ? `doing: ${active.map((r) => doing(r, live)).join(' | ')}` : 'todo: nobody'
-    lines.push(`${item.listed ? `[${item.done ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
+    lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }
   return lines
 }
@@ -191,6 +201,7 @@ const MAX_EARLIER = 3
 function earlierText(r: WorkRecord, commitOf: ((id: string) => string | undefined) | undefined): string[] {
   const reason = r.state.status === 'running' ? `at step ${whoHas(r).step ?? 'none yet'}` : r.state.status === 'succeeded' ? artifactsOf(r).join(', ') : r.state.reason
   const lines = [`- ${r.id} ${r.state.status}${reason ? `: ${reason}` : ''}`]
+  if (changedNothing(r)) lines.push('  changed nothing: no change to start from; its Task is the only thing to learn from')
   if (r.state.input) lines.push(`  Task (read its instructions by this ID): ${r.state.input}`)
   const changes = new Map<string, string>()
   for (const id of [...Object.values(r.state.results), ...Object.values(r.state.steps).flatMap((s) => Object.values(s.outputs))]) {
@@ -213,8 +224,8 @@ export async function itemNote(item: ItemRef, records: WorkRecord[], commitOf?: 
   const status = item.repository ? await readStatus(item.repository).catch(() => undefined) : undefined
   const earlier = worksFor(records, item).slice(-MAX_EARLIER).reverse().flatMap((r) => earlierText(r, commitOf))
   return [
-    `Item ${item.id}${item.repository ? ` of ${item.repository}` : ''}, from STATUS.md on dev:`,
     itemLines(status ?? { items: [] }, item.repository, records, undefined, { item: item.id })[0]!,
+    `(Item ${item.id}${item.repository ? ` of ${item.repository}` : ''}, from STATUS.md on dev; done once a Work for it is merged into dev.)`,
     '',
     ...(earlier.length ? [
       'Earlier Works for this Item, newest first (at most 3). Read a Task or Artifact by its ID for the details. If an earlier Work left a change, you may start from its commit instead of from scratch, and fix what its failed check names:',

@@ -11,6 +11,8 @@ import type { Artifacts, Envelope } from '@system/artifacts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { snapshot } from './git.ts'
+import { readStatus } from './status.ts'
+import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
 import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema, type GitTreeContent, type Task } from './kinds.ts'
 import type { Caller } from './record.ts'
@@ -86,6 +88,12 @@ export class WorkService {
   async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string, against?: string): Promise<{ task: string; base?: string }> {
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     let base: string | undefined
+    if (item) {
+      // Every Worker is told the Item's line, so an Item without one is refused here.
+      if (!repository) throw new WorkError(`Item ${item} needs a repository: its line is read from STATUS.md on dev`)
+      const status = await readStatus(repository)
+      if (!status.items.some((i) => i.id === item)) throw new WorkError(`Item ${item} has no line in STATUS.md on ${status.ref} of ${status.repository}; add the line first`)
+    }
     if (repository) {
       const tree = await snapshot(repository, ref)
       // `against`: the commit this one is a change from; the verifier's touched files are the diff between the two.

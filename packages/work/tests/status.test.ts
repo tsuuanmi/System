@@ -298,3 +298,47 @@ test('a Task from before Items, and one naming an Item without a readable STATUS
   const admitted = await admit(lone)
   assert.match(specs.tasks.get(admitted.state.input!)!.note!, /not in STATUS\.md/)
 })
+
+const merged = (work: WorkRecord, merge: boolean, state: 'applied' | 'failed' = 'applied'): WorkRecord => {
+  const events: WorkEvent[] = [
+    ...work.events,
+    { type: 'effect-intended', seq: 1, at: '2026-11-09T01:00:00.000Z', stepId: 'publish', operationId: 'op:1', capability: 'git.publish', subject: CHANGE, params: { merge }, provider: { ref: 'github', version: '1' } },
+    { type: 'effect-observed', seq: 2, at: '2026-11-09T01:01:00.000Z', stepId: 'publish', operationId: 'op:1', state, reason: 'r', detail: merge ? { merged: 'true', mergeCommit: COMMIT } : { merged: 'false' } },
+    { type: 'terminal', seq: 3, at: '2026-11-09T01:02:00.000Z', outcome: 'succeeded', reason: 'ok', results: { change: CHANGE } },
+  ]
+  return { ...work, events, state: fold(['task', 'publish'], events) }
+}
+
+test('an Item is done when a Work naming it was merged into dev, though STATUS.md still says [ ]; an unmerged or failed publish does not', async () => {
+  const dir = repository(STATUS)
+  const { controller, table, task, admit } = setup()
+  const status = await readStatus(dir)
+  const line = () => itemLines(status, dir, controller.list(), () => [], { item: 'df-3' })[0]
+  const work = await admit(task(dir, 'df-3'))
+  await table.put(work.id, merged(work, false))
+  assert.match(line()!, /^\[ \] df-3 .* - todo: nobody$/)
+  await table.put(work.id, merged(work, true, 'failed'))
+  assert.match(line()!, /^\[ \] df-3 /)
+  await table.put(work.id, merged(work, true))
+  assert.equal(line(), `[x] df-3 The status of a project - done; last ${work.id}, ${CHANGE}`)
+  assert.deepEqual(itemLines(status, dir, controller.list(), () => [], { state: 'done' }).map((l) => l.slice(0, 8)), ['[x] df-1', '[x] df-3'])
+  // Merged for another Item or repository: not done.
+  assert.match(itemLines(status, dir, controller.list(), () => [], { item: 'df-4' })[0]!, /todo: nobody/)
+})
+
+test('the takeover context opens with the Item\'s line and marks an earlier Work that changed nothing', async () => {
+  const dir = repository(STATUS)
+  const { table, specs, task, admit } = setup()
+  const first = await admit(task(dir, 'df-3', 'make it'))
+  const events: WorkEvent[] = [
+    ...first.events,
+    { type: 'dispatched', seq: 1, at: '2026-11-09T01:00:00.000Z', stepId: 'task', attemptId: 'a:1', executor: 'worker', capability: 'code-write', selected: 'fake/claude', candidates: [], inputs: {} },
+    { type: 'observed', seq: 2, at: '2026-11-09T01:01:00.000Z', stepId: 'task', attemptId: 'a:1', status: 'failed', outputs: {}, reason: 'no change: the working tree is the same as the base commit abcdef0', usage: { state: 'unknown' } },
+    { type: 'terminal', seq: 3, at: '2026-11-09T01:05:00.000Z', outcome: 'failed', reason: 'step task failed', results: {} },
+  ]
+  await table.put(first.id, { ...first, events, state: fold(['task'], events) })
+  const second = await admit(task(dir, 'df-3', 'again'))
+  const note = specs.tasks.get(second.state.input!)!.note!
+  assert.match(note, /^\[ \] df-3 The status of a project - todo: nobody\n/, 'opens with the Item\'s line')
+  assert.match(note, new RegExp(`- ${first.id} failed[^\\n]*\\n(  Task[^\\n]*\\n)?  changed nothing`))
+})

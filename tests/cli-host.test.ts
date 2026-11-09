@@ -180,6 +180,10 @@ test('status shows an Item as todo, then doing while its Work runs; a second Wor
   assert.deepEqual(first.slice(0, 2), ['[x] p-1 First - done', '[ ] p-2 Second - todo: nobody'])
   assert.match(first[2]!, /^note: read dev \(\w{12}\), no origin\/dev here$/)
   assert.match(system('status', '--repo', project, '--state', 'bogus').stderr, /--state is todo, doing or done/)
+  const noLine = system('task', 'new', '--text', 'do p-9', '--repo', project, '--ref', 'dev', '--item', 'p-9')
+  assert.equal(noLine.status, 1)
+  assert.match(noLine.stderr, /Item p-9 has no line in STATUS\.md/)
+  assert.equal(system('task', 'new', '--text', 'no repo', '--item', 'p-2').status, 1)
   const task = system('task', 'new', '--text', 'do p-2', '--repo', project, '--ref', 'dev', '--item', 'p-2').stdout.trim().split('\n').at(-1)!
   rmSync(hold, { force: true })
   const run = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', task])
