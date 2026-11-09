@@ -396,7 +396,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('wait <workId...>')
-    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work. Exit: the code of the Work that decided it (0 succeeded, 1 failed, 3 held, 5 cancelled), 4 on timeout')
+    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work. Exit: with --any the code of the first Work to end; otherwise the worst among the Works (failed, cancelled, held, succeeded; 0 succeeded, 1 failed, 3 held, 5 cancelled), 4 on timeout')
     .option('--any', 'return at the first Work that ended, not when all have')
     .option('--timeout <minutes>', 'give up after this many minutes (exit 4)')
     .action((workIds: string[], options: { any?: boolean; timeout?: string }) => {
@@ -416,8 +416,11 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
           io.err(`system: timed out after ${options.timeout} minutes; the Works above had not ended (exit 4)\n`)
           return 4
         }
-        const decider = waited.records.find((record) => record.id === waited.decided)
-        return decider ? exitCode(decider.state.status) : 0
+        if (options.any) {
+          const decider = waited.records.find((record) => record.id === waited.decided)
+          return decider ? exitCode(decider.state.status) : 0
+        }
+        return exitCode(worst(waited.records.map((record) => record.state.status)))
       })
     })
   work.command('show <workId>')
@@ -460,6 +463,12 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
 
 /** The exit code of a followed Work; leaving it running in the Host is not a failure. */
 const exitOf = (followed: Followed): number => (typeof followed === 'string' ? 0 : exitCode(followed.state.status))
+
+/** The worst of ended statuses: failed, then cancelled (an operator stopped it), then held, then succeeded; others are ignored. */
+const worst = (statuses: string[]): string => {
+  const rank = ['failed', 'cancelled', 'held', 'succeeded']
+  return rank.find((status) => statuses.includes(status)) ?? 'succeeded'
+}
 
 /** succeeded 0, failed 1, held for the operator 3, not terminal 4, cancelled 5. */
 export function exitCode(status: string): number {
