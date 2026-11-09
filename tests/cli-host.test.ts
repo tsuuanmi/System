@@ -183,11 +183,11 @@ test('status shows an Item as todo, then doing while its Work runs; a second Wor
   const run = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', task])
   const workId = await admitted(run)
   const line = system('status', '--repo', project, '--item', 'p-2').stdout
-  assert.match(line, new RegExp(`^\\[ \\] p-2 Second - doing: ${workId} step task on fake/\\S+ since \\S+Z`))
+  assert.match(line, new RegExp(`^\\[ \\] p-2 Second - doing: ${workId} step task on fake-worker since \\S+Z`))
   assert.equal(system('status', '--repo', project, '--state', 'doing').stdout, line)
   const refused = system('work', 'submit', '--capability', 'code-write', '--input', task, '--no-run')
   assert.equal(refused.status, 1)
-  assert.match(refused.stderr, new RegExp(`^system: Item p-2 already has Work ${workId} \\(running, fake/\\S+\\)`))
+  assert.match(refused.stderr, new RegExp(`^system: Item p-2 already has Work ${workId} \\(running, fake-worker\\)`))
   const forced = system('work', 'submit', '--capability', 'code-write', '--input', task, '--no-run', '--force')
   assert.equal(forced.status, 0, forced.stderr)
   run.child.kill('SIGINT')
