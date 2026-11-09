@@ -3,7 +3,7 @@ id: RES-0003
 type: research
 status: active
 summary: Evaluate DSH/Cordis as the selected host for a minimal System control plane, plugin composition, lifecycle safety and cross-domain MVP proofs.
-related: [RES-0002, ADR-0001]
+related: [ADR-0001]
 ---
 
 # DSH-hosted control plane: evidence and experiments
@@ -81,8 +81,7 @@ System contracts.
 ## Experiment backlog before freezing modules
 
 E1-E9 are the [MVP failure and acceptance tests](../requirements/mvp.md#failure-and-governance-tests)
-and the [RES-0002](RES-0002-mvp-assessment.md#audit-workstreams-and-proof-matrix)
-proof matrix, stated as DSH questions: a profile with only needed services
+and the RES-0002 proof matrix (retired), stated as DSH questions: a profile with only needed services
 and an inspected effective tree (E1); disable and re-enable a noncritical
 plugin including a higher-priority patch override, with no code deletion (E2);
 kill the host or disable an adapter during a task, with a controlled drain,
@@ -106,5 +105,4 @@ fine ([control plane](../architecture/control-plane.md#domain-independence)).
 
 See the accepted [MVP requirements](../requirements/mvp.md) and current
 [architecture](../architecture/control-plane.md). Historical reference
-observations remain in [RES-0001](RES-0001-audit-baseline.md) and are not
-measurements from this project.
+observations (RES-0001, retired) are not measurements from this project.

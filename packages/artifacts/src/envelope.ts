@@ -1,10 +1,6 @@
 /**
- * The Artifact envelope (ADR-0003 decision 4) and its identity rule.
- *
- * Identity, `artifact-id/v1`: the Artifact ID is `hashDomain('system.artifact/v1', …)`
- * over exactly `kind`, `schemaVersion`, `content` or `blob` (its `attachmentId`
- * and `mediaType`), the sorted `inputs`, `subject` and `lineage`. Classification,
- * producer, time and byte count are not part of it.
+ * The Artifact envelope (ADR-0003 decision 4) and its identity rule
+ * `artifact-id/v1` (docs/architecture/artifact-verification.md).
  */
 import { z } from 'zod'
 import { CONTENT_ID_RE, hashDomain, type ContentId } from './canonical.ts'

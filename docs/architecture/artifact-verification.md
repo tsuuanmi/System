@@ -58,9 +58,9 @@ events that yield the same content; record occurrences/lineage separately.
 Do not merge confidentiality or authorization solely because hashes match.
 
 Material from outside System keeps this split. A `conversation@1` manifest
-([PROP-0003](../proposals/PROP-0003-conversation-ingestion.md)) records only
-what the operator asserts, plus its parts as `file@1` inputs, so the same
-files give the same ID; who added it and when are occurrences. A `task@1`
+records only what the operator asserts and a fixed notice that System has not
+verified the bytes, plus its parts as `file@1` inputs, so the same files give
+the same ID; who stored it and when are occurrences. A `task@1`
 may list `context` Artifacts, which are also its inputs, so their
 classification floors the task's.
 
@@ -162,5 +162,4 @@ while retaining a historical ID must give an explicit `expired` /
 `unavailable` state, not pretend the content exists.
 
 See [workflow composition](workflow-composition.md),
-[MVP acceptance](../requirements/mvp.md) and
-[research provenance](../research/RES-0004-reference-workflow-artifact-audit.md).
+and [MVP acceptance](../requirements/mvp.md).

@@ -1,24 +1,9 @@
 /**
- * The Work Controller: one generic interpreter for every Workflow (ADR-0002
- * decision 3). It admits Work against the effective capabilities, pins the
- * resolved spec as an Artifact, and advances one step at a time, persisting a
- * `dispatched` event before calling a Worker or verifier and the observation
- * after. Each attempt is three phases: dispatch and observe run in the commit
- * lane and read the latest committed record, execute runs outside it and
- * touches no Work state. There is no domain-specific branch.
- *
- * Scheduling (PROP-0004 C3): a drive dispatches every ready step (pending, all
- * `dependsOn` succeeded) whose Account has a free slot, and goes on as each
- * attempt reports. A Worker attempt holds a slot of its Account (see
- * `slots.ts`) from before `dispatched` until `observed`. Verifier and effect
- * steps take none. Ready steps
- * that find no slot wait in memory; a freed slot wakes the Works in admission
- * order, and each takes its steps in Workflow file order.
- *
- * Recovery: a step whose last attempt was dispatched but never observed lost
- * its process; it is recorded `attempt-lost`, and the next run dispatches it
- * again as a new attempt with the same recorded inputs. Completed steps are
- * never re-run.
+ * The Work Controller: one generic interpreter for every Workflow, with no
+ * domain-specific branch (ADR-0002 decision 3; scheduling and recovery:
+ * docs/architecture/host.md). Each attempt is three phases: dispatch and
+ * observe run in the commit lane and read the latest committed record;
+ * execute runs outside it and touches no Work state.
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'

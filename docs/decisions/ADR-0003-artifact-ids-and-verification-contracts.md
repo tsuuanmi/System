@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-05
 summary: Require immutable Artifact-ID handoff, deterministic orchestration from pinned inputs and persisted decisions, and pluggable exact-subject verification contracts per workflow.
-related: [ADR-0001, ADR-0002, RES-0004]
+related: [ADR-0001, ADR-0002]
 ---
 
 # Artifact IDs are the handoff protocol; verification is pluggable
@@ -79,5 +79,4 @@ pipeline would couple the core to a domain.
   not hardcoded verifier implementation classes.
 - No claims of successful implementation are made by accepting this ADR.
 
-See [artifact and verification boundary](../architecture/artifact-verification.md)
-and [reference audit](../research/RES-0004-reference-workflow-artifact-audit.md).
+See [artifact and verification boundary](../architecture/artifact-verification.md).

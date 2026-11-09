@@ -62,8 +62,7 @@ policy**, not a new class of Worker.
 6. Absence of a required second provider must be an explicit admission
    refusal, not an unnoticed fallback to two Claude attempts.
 
-The live run, source-backed tests and limits are catalogued in
-[RES-0007](../research/RES-0007-brainstorm-and-concurrency-review.md).
+The live run is evaluated in [RES-0008](../research/RES-0008-brainstorm-evaluation.md).
 
 ## B3 product experiment: quality is not a verifier gate
 
@@ -97,4 +96,4 @@ a mandatory model verifier.
 See [Workflow composition](workflow-composition.md),
 [Artifact contracts](artifact-verification.md),
 [runtime integrity boundary](work-ownership-and-recovery.md) and
-[roadmap](../proposals/PROP-0002-post-mvp-roadmap.md).
+[PLAN.md](../../PLAN.md).

@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-05
 summary: Make Work/Task the execution primitive and Workflow an external, versioned configuration composition of steps, dependencies, Worker capabilities and verification policies.
-related: [ADR-0001, RES-0004]
+related: [ADR-0001]
 ---
 
 # Work is the primitive; Workflow is configuration
@@ -16,7 +16,7 @@ System is a work control plane on DSH/Cordis
 changes in Worker, runtime, workflow definition or DSH plugin composition.
 The first two mandatory domains are Software Engineering and Research.
 
-The [reference audit](../research/RES-0004-reference-workflow-artifact-audit.md)
+The reference audit (RES-0004, retired; [ledger](../governance/retired.md))
 shows that configurable templates, preflight and spec hashes are useful, but
 some reference workflow definitions still live in TypeScript plugin code.
 

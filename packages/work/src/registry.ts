@@ -2,6 +2,7 @@
  * Capability registry: Worker and verifier rows register here; admission and
  * routing read it. Routing is by capability, never by domain or vendor.
  */
+import type { ExecutorRecord, UsageObserved } from './record.ts'
 import type { AvailableCapabilities } from './workflow.ts'
 
 /** What a Worker gets for one attempt: exact Artifact IDs only, no transcript. */
@@ -39,10 +40,10 @@ export interface WorkerResult {
   /** What a cancelled or failed attempt left behind; never accepted. */
   partial?: Record<string, string>
   reason?: string
-  usage?: { inputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; outputTokens: number; costUsd?: number; source: string }
+  usage?: Omit<UsageObserved, 'state'>
   /** Bounded agent output as an Artifact, for audit. */
   log?: string
-  executor?: { ref: string; account?: string; command?: string; version?: string; tier?: string; model?: string; servedModels?: string[] }
+  executor?: ExecutorRecord
 }
 
 /** Model tiers, as System 1 names them (ADR-0073 there): a step asks for one as capability `tier.<name>`. */

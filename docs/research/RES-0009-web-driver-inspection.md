@@ -107,71 +107,27 @@ against `fake-chatgpt.ts` (757 lines); they are not Runtime callers.
 
 ## 3. How the driver behaves today
 
-**Completion.** `waitForAnswer` (`driver.ts:974-991`) builds one snapshot per
-poll: no new `turn.assistant` heading beyond `before` means running with no
-text (`:978`); otherwise `running = turn.running || !finished` (`:984`), where
-`turn.running` is the Stop button (`composer.stop`, yaml `:509`) and `finished`
-is a Copy button under every assistant turn (`turn.assistant.done`).
-`waitForStableCompletion` (`core/completion.ts:53-110`) returns only when a
-response is present, its text is non-empty, `running` is false, and the same
-text has held for `stableMs` (`:89-92`). So the three signals are **conjunctive,
-not ordered**: running blocks, the done marker is required, stable text is
-required on top. Stable text alone never completes it. Stall (no progress for
-`stallMs`, `:102`) and the hard deadline (`:109`) fail with `provider_stalled`
-and `timeout`. The map's `stableTextMs` condition (`engine.ts:693`) and the
-state `turn.idle` (yaml `:512`) are not used by the driver. The baseline is the
-count of `turn.assistant` before the send (`ask:219`), so an earlier answer is
-not taken; `previousResponse` is read at `:220`.
+A reading of `driver.ts` at the time; the code and the web-driver README now
+carry the behaviour, and git has this longer reading. What sections 4 and 5
+depend on:
 
-**Chat mode.** Positive for a new conversation: `awaitModeSwitch` waits for the
-switch and holds its mode (`:397-417`), `ensureChat` clicks `mode.select-chat`
-if `mode.chat` is not `aria-pressed="true"` (`:470-473`), and `requireChat`
-throws `ui_drift` otherwise (`:824-829`). It is **not** positive in two cases:
-`requireChat` returns when the switch is absent (`:825`), which the temporary
-view and a bound conversation can be (the comment at `:833-834` says the switch
-is hidden in some views), and `enterMode` checks a bound conversation only
-`if mode.group` is present (`:385`). The last guard is negative only:
-`refuseWorkComposer` (`:835-841`) refuses an input whose label contains `Work`,
-and is the only check there if the switch is hidden. Both run right before the
-send (`:232-233`).
-
-**Which read is authoritative for outputs.** For each output name the Runtime
-takes, in this order (`chatgpt.ts:493-506`): (1) a rendered block with that
-label (`answer.blocks`, from `renderedBlocks`, `driver.ts:954`), its code
-verbatim except that one trailing newline is removed (`:970`); (2) else a
-fenced block of that name in `answer.text` (`parseBlocks`). `answer.text` is
-`markdownOf` (`:911`): the Copy Markdown if its words equal the rendered
-text's, else `answerText` (`:901`, trimmed, heading prefix stripped); then
-`withFencedBlocks` rewrites any block whose label is not a fence in the text
-(`:933`). So `answerText` is the completion oracle and the fallback;
-`renderedBlocks` is authoritative for the output's bytes; `markdownOf` for
-everything else. The answer's links are added by `copiedMarkdown`
-(`answers.ts:59-62`).
-
-**`close`.** The driver has no `close`. The Runtime's `close` is
-`context.close()` of the whole Chrome (`chatgpt.ts:402`), shared by the abort
-and the end of the attempt (`:433-435`), then `survivor` (`:405-410`) kills a
-Chrome that did not exit. Nothing closes a conversation; a temporary chat
-leaves none, a persistent one stays.
-
-**Who owns retries.** In the driver: one reload of the home page on the site's
-own error page, in `reach` (`:361-367`), before anything is typed; a second
-error page fails as `overloaded`. No resend: `stalled` says "never retried from
-here" (`:993`), and an ambiguous send is only recorded (`onSubmitted`, `:266`,
-the evidence's `promptSubmitted`, `evidence.ts:34`). `webAttempt` has no retry
-(no match for `retry` in `agents/src`); it returns `failed` with a reason
-(`chatgpt.ts:521-527`). Whether and how an Attempt is repeated is the
-controller's and the Workflow's, which this report did not read.
-
-**A site error answer ("This response couldn't load").** Not handled. The
-string occurs nowhere in `web-driver` or `agents`. The map's `errors` has three
-rules (yaml `:514-517`), none `on: answer`, so `answerErrors` (`engine.ts:538`,
-called at `driver.ts:268`) checks nothing. By the code, such a message inside
-`turn.assistant` with a Copy button is returned as the answer text; without one,
-`finished` stays false, and the attempt ends as `provider_stalled` or
-`timeout`. Neither was observed live; this is a reading of the code. The text
-would then fail the Runtime's output-block check (`chatgpt.ts:508-513`), which
-is the only barrier.
+- **Completion** is conjunctive, not ordered: no running marker (Stop), a done
+  marker (Copy under every assistant turn), non-empty text unchanged for
+  `stableMs`; stable text alone never completes. Stall and the hard deadline
+  fail as `provider_stalled` and `timeout`. The baseline is the count of
+  assistant turns before the send, so an earlier answer is not taken.
+- **Chat mode** is positive only when the mode switch is present;
+  `refuseWorkComposer` (an input labelled `Work`) is the only guard when the
+  switch is hidden, as in a temporary view.
+- **Outputs**: a rendered block with the output's label is authoritative for
+  its bytes, else a fenced block of that name in the answer text (the Copy
+  Markdown if its words equal the rendered text, else the rendered text).
+- **Retries**: one reload of the home page on the site's error page, before
+  anything is typed; no resend, and an ambiguous send is only recorded. Whether
+  an Attempt is repeated is the controller's and the Workflow's.
+- **A site error answer** ("This response couldn't load") was not handled by
+  the code at the time (a reading, not observed live); the Runtime's
+  output-block check was the only barrier.
 
 ## 4. What `ui-ops` supports for each Procedure, and the gaps
 

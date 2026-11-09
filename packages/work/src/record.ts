@@ -26,16 +26,19 @@ const storedCallerSchema = z.discriminatedUnion('type', [
 const candidate = z.object({ ref: z.string(), selected: z.boolean(), reason: z.string() }).strict()
 
 /** Which account, binary and version ran an attempt (ADR-0005 decision 5). */
-const executor = z.object({
+export const executorSchema = z.object({
   ref: z.string(), account: z.string().optional(), command: z.string().optional(), version: z.string().optional(),
   /** The tier the step asked for, the model configured for it, and the models the CLI reports it served. */
   tier: z.string().optional(), model: z.string().optional(), servedModels: z.array(z.string()).optional(),
 }).strict()
 
-const usage = z.union([
+export const usageSchema = z.union([
   z.object({ state: z.literal('unknown') }).strict(),
   z.object({ state: z.literal('observed'), inputTokens: z.number().int().nonnegative(), cacheReadTokens: z.number().int().nonnegative().optional(), cacheWriteTokens: z.number().int().nonnegative().optional(), outputTokens: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), source: z.string() }).strict(),
 ])
+
+export type ExecutorRecord = z.infer<typeof executorSchema>
+export type UsageObserved = Extract<z.infer<typeof usageSchema>, { state: 'observed' }>
 
 export const eventSchema = z.discriminatedUnion('type', [
   z.object({
@@ -62,12 +65,12 @@ export const eventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('observed'), seq: z.number().int(), at,
     stepId: z.string(), attemptId: z.string(), status: z.enum(['succeeded', 'failed', 'cancelled']),
-    outputs: z.record(z.string(), contentIdSchema), reason: z.string().optional(), usage,
+    outputs: z.record(z.string(), contentIdSchema), reason: z.string().optional(), usage: usageSchema,
     /** What a cancelled attempt left behind: kept, never accepted as the step's output. */
     partial: z.record(z.string(), contentIdSchema).optional(),
     /** The bounded agent output, for audit only; never handed to another Worker. */
     log: contentIdSchema.optional(),
-    worker: executor.optional(),
+    worker: executorSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,

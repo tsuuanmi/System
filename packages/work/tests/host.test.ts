@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { assertConsistent, caller, fixture, seeded, type Fixture } from '../../../test-support/fixture.ts'
+import { assertConsistent, caller, fixture, seeded, unfinished, type Fixture } from '../../../test-support/fixture.ts'
 import { commitLane } from '../src/lane.ts'
 import { fold, workRecordSchema, type WorkRecord } from '../src/record.ts'
 
@@ -31,8 +31,8 @@ test('no copy of the store outlives its Host: a second Host is refused while one
   await first.close()
 
   const next = await f.startHost(home)
-  assert.deepEqual(next.get(id), done)
-  assert.deepEqual(next.interrupted(), [])
+  assert.deepEqual(next.view.get(id), done)
+  assert.deepEqual(unfinished(next), [])
   assert.deepEqual(types(await next.run(id)), types(done))
   assert.deepEqual(f.attempts, attempts, 'a Work the first Host finished is not run again')
   await next.close()
@@ -145,7 +145,7 @@ test('submitting twice with one commandId gives one Work; its ID derives from th
   const first = await host.submit(f.admission('brainstorm.yaml'), { commandId: 'cmd-1' })
   const again = await host.submit(f.admission('brainstorm.yaml'), { commandId: 'cmd-1' })
   assert.equal(again.id, first.id)
-  assert.equal(host.list().length, 1)
+  assert.equal(host.view.list().length, 1)
   assert.equal(first.events.length, 1)
   assert.match(first.id, /^work:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   const elsewhere = fixture()
@@ -291,10 +291,10 @@ async function killedMidAttempt(f: Fixture, home: string) {
 test('a Host killed mid-attempt: the new Host marks the attempt lost, does not run the Work, and an explicit run continues it', async () => {
   const f = fixture()
   const { id, second } = await killedMidAttempt(f, newHome())
-  const record = second.get(id)!
+  const record = second.view.get(id)!
   assert.deepEqual(types(record), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'observed:idea-a', 'attempt-lost:idea-b'])
   assert.equal(record.state.status, 'running')
-  assert.deepEqual(second.interrupted(), [id])
+  assert.deepEqual(unfinished(second), [id])
   assert.deepEqual(second.slots.uncertain(), [{ workId: id, stepId: 'idea-b', attemptId: record.state.steps['idea-b']!.attempts[0]! }])
   for (let n = 0; n < 20; n++) await turn()
   assert.deepEqual(f.attempts, ['idea-a', 'idea-b'], 'nothing is dispatched by itself')
@@ -305,7 +305,7 @@ test('a Host killed mid-attempt: the new Host marks the attempt lost, does not r
   const done = await second.run(id, { commandId: 'run-1' })
   assert.equal(done.state.status, 'succeeded')
   assert.deepEqual(f.attempts, ['idea-a', 'idea-b', 'idea-b', 'synthesis'])
-  assert.deepEqual(second.interrupted(), [])
+  assert.deepEqual(unfinished(second), [])
   assertConsistent(f, id)
   await second.close()
 })
@@ -316,11 +316,11 @@ test('a Work that finished is not marked, and a held Work stays held', async () 
   const first = await f.startHost(home)
   const { id } = await first.submit(f.admission('brainstorm.yaml'))
   await first.run(id)
-  const events = first.get(id)!.events.length
+  const events = first.view.get(id)!.events.length
   await first.close()
   const second = await f.startHost(home)
-  assert.equal(second.get(id)!.events.length, events)
-  assert.deepEqual(second.interrupted(), [])
+  assert.equal(second.view.get(id)!.events.length, events)
+  assert.deepEqual(unfinished(second), [])
   await second.close()
 })
 
@@ -342,7 +342,7 @@ test('an effect left intended is reconciled on start, and an applied one is not 
   await first.close()
   f.remote.state = 'applied'
   const second = await f.startHost(home)
-  const record = second.get(id)!
+  const record = second.view.get(id)!
   assert.equal(Object.values(record.state.effects)[0]!.state, 'applied')
   assert.equal(record.state.status, 'running', 'it is not resumed by itself')
   assert.equal(record.events.at(-1)!.type, 'effect-observed')
@@ -361,8 +361,8 @@ test('an effect found absent on start is published only by an explicit run', asy
   intendedEffect(f, await first.run(id))
   await first.close()
   const second = await f.startHost(home)
-  assert.equal(Object.values(second.get(id)!.state.effects)[0]!.state, 'absent')
-  assert.equal(second.get(id)!.state.status, 'running')
+  assert.equal(Object.values(second.view.get(id)!.state.effects)[0]!.state, 'absent')
+  assert.equal(second.view.get(id)!.state.status, 'running')
   const done = await second.run(id)
   assert.equal(done.state.status, 'succeeded')
   assert.equal(Object.values(done.state.effects)[0]!.state, 'applied')
@@ -381,7 +381,7 @@ test('an effect whose outcome stays unknown holds the Work when it is run', asyn
   await first.close()
   f.remote.state = 'unknown'
   const second = await f.startHost(home)
-  assert.equal(Object.values(second.get(id)!.state.effects)[0]!.state, 'unknown')
+  assert.equal(Object.values(second.view.get(id)!.state.effects)[0]!.state, 'unknown')
   assert.equal((await second.run(id)).state.status, 'held')
   await second.close()
 })

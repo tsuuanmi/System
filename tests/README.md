@@ -59,10 +59,6 @@ nothing else.
 - [debate.test.ts](debate.test.ts) — WW2b: the Debate Workflow on the fake CLI: dispatch
   order a1/b1, a2/b2, synthesis; each Round 2 step's inputs are exactly the
   Round 1 proposals and the brief; the synthesis gets all four; replay.
-- [conversation.test.ts](conversation.test.ts) — PROP-0003: a conversation
-  previewed (nothing stored, secrets named not printed), `--yes` refused on a
-  warning unless `--accept-warnings`, `--product-context`, stored, shown, and
-  given to a Worker as a task's context under the operator-supplied notice.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
   (Artifact writes through the Host, `doctor` boots beside it) on one store all
   succeed (no "database is locked"), also when the boots all find the store

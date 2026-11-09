@@ -105,7 +105,7 @@ evade policy.
 
 For the minimum product acceptance checks, see [MVP](mvp.md).
 External reference targets R1–R5 are recorded in
-[research](../research/RES-0001-audit-baseline.md); they are **not** shipped
+RES-0001 (retired; [ledger](../governance/retired.md)); they are **not** shipped
 System results or automatically adopted release thresholds.
 
 ## Explicit non-goals

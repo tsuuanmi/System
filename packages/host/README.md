@@ -50,7 +50,7 @@ await serving.stop()                                // server, then the Host cor
   `approval.decide` take an optional `commandId`, which the Host core turns
   into a receipt: the same call again answers from the record, and the same
   `commandId` with other params is refused. The other mutating rows
-  (`artifact.put`, `task.new`, `conversation.add`) store by content, so a repeat
+  (`artifact.put`, `task.new`) store by content, so a repeat
   gives the same Artifact.
 - **Long calls.** `work.run`, `work.retry` and `approval.decide` answer as soon
   as the Work is held and being driven (a refusal before that, such as another
@@ -83,8 +83,6 @@ await serving.stop()                                // server, then the Host cor
 | `artifact.put` | yes | `data: string`, `mediaType?: string`, `classification?: "public" \| "operator-shared" \| "local-private"` | Store bytes (base64, within the frame limit) as a `file@1` Artifact: its envelope. |
 | `artifact.show` | yes | `id: string` | An Artifact's envelope and occurrences, or why it is not stored. |
 | `artifact.cat` | yes | `id: string` | The bytes of a blob Artifact as `{ data }` in base64; refused when they do not fit a frame. |
-| `conversation.preview` | yes | `parts: { response: { name: string, data: string, mediaType: string }, prompt?: { name: string, data: string, mediaType: string }, attachments?: { name: string, data: string, mediaType: string }[] }`, `asserted?: { provider?: string, url?: string, model?: string, capturedAt?: string, selection?: "complete" \| "excerpts" \| "summary", context?: string[] }` | What would be stored of a conversation, and what looks like a secret in it. Stores nothing. |
-| `conversation.add` | no | `parts: { response: { name: string, data: string, mediaType: string }, prompt?: { name: string, data: string, mediaType: string }, attachments?: { name: string, data: string, mediaType: string }[] }`, `asserted?: { provider?: string, url?: string, model?: string, capturedAt?: string, selection?: "complete" \| "excerpts" \| "summary", context?: string[] }`, `supersedes?: string[]`, `acceptWarnings?: boolean` | Store a conversation held elsewhere: `{ id }`. Refused when the preview has warnings, unless `acceptWarnings`. |
 | `workers.list` | yes | none | The registered Workers, and each configured agent account with why it is or is not available. |
 | `workers.login` | no | `ref: string`, `cookies?: string` | Sign a browser Account (`web/<site>/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned. |
 | `workers.loginRemote` | no | `ref: string` | Start a remote sign-in of a browser Account: its profile opens headed on a private display and a viewer is served on 127.0.0.1 behind a random token. Returns `{ url, port, ssh, expiresAt }`; the operator tunnels to the port over SSH. Follow with `workers.loginWait`. |

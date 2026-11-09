@@ -3,10 +3,9 @@
  * runs it once the host has started and then asks the launcher to exit.
  */
 import { readFileSync } from 'node:fs'
-import { basename, extname } from 'node:path'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, assertedSchema, conversationSchema, previewConversation, type Asserted, type ConversationParts, type WorkRecord, type WorkState } from '@system/work'
+import { CONVERSATION_KIND, conversationSchema, type WorkRecord, type WorkState } from '@system/work'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 /** A repeatable option's values, in order. */
@@ -16,9 +15,6 @@ function collect(value: string, previous: string[]): string[] {
 
 /** What a human types to confirm: the first eight characters of an ID or digest, without its prefix. */
 const shortCode = (id: string): string => id.replace(/^\w+:/, '').slice(0, 8)
-
-const MEDIA_TYPES: Record<string, string> = { '.md': 'text/markdown', '.txt': 'text/plain', '.json': 'application/json', '.html': 'text/html', '.htm': 'text/html', '.pdf': 'application/pdf' }
-const mediaTypeOf = (path: string) => MEDIA_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'
 
 export interface CliIo {
   out(text: string): void
@@ -77,7 +73,6 @@ export interface WorkCommands {
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string): Promise<{ task: string; base?: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
   status(repository: string, state: string | undefined, item: string | undefined): Promise<string[]>
-  addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
 
 export interface LoginView {
@@ -282,41 +277,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
-  const conversation = program.command('conversation').description('take in a conversation held elsewhere, such as in a web chat, as operator-supplied Artifacts')
-  conversation.command('add')
-    .description('preview a conversation, or with --yes store it and print its ID')
-    .requiredOption('--response <file>', 'the response, or the part of the conversation kept')
-    .option('--prompt <file>', 'what was asked')
-    .option('--attach <file>', 'another file, such as a raw export (repeatable)', collect, [])
-    .option('--provider <name>', 'the product, as you state it')
-    .option('--url <url>', 'where the conversation is, as you state it')
-    .option('--model <name>', 'the model the product showed, as you state it')
-    .option('--captured-at <time>', 'when you copied it')
-    .option('--selection <how>', 'complete, excerpts or summary')
-    .option('--product-context <flag>', 'context the product used that the files do not show, such as browsing or memory (repeatable)', collect, [])
-    .option('--supersedes <id>', 'a conversation this one corrects (repeatable)', collect, [])
-    .option('--yes', 'store it (without it, nothing is stored)')
-    .option('--accept-warnings', 'with --yes, store it although the preview has warnings')
-    .action((options: { response: string; prompt?: string; attach: string[]; provider?: string; url?: string; model?: string; capturedAt?: string; selection?: string; productContext: string[]; supersedes: string[]; yes?: boolean; acceptWarnings?: boolean }) => {
-      select(async () => {
-        const part = (path: string) => ({ name: basename(path), data: readFileSync(path), mediaType: mediaTypeOf(path) })
-        const parts: ConversationParts = { response: part(options.response), ...(options.prompt ? { prompt: part(options.prompt) } : {}), attachments: options.attach.map(part) }
-        const asserted = assertedSchema.parse({
-          provider: options.provider, url: options.url, model: options.model, capturedAt: options.capturedAt,
-          selection: options.selection, context: options.productContext.length ? options.productContext : undefined,
-        })
-        const preview = previewConversation(parts, asserted)
-        for (const warning of preview.warnings) io.err(`warning: ${warning}\n`)
-        if (!options.yes) {
-          for (const p of preview.parts) io.out(`${p.role.padEnd(10)} ${p.name}  ${p.bytes} bytes  ${p.firstLine}\n`)
-          io.out('nothing stored; run again with --yes to store it (it cannot be changed or deleted afterwards)\n')
-          return 0
-        }
-        if (preview.warnings.length && !options.acceptWarnings) throw new Error('the preview has warnings; nothing stored. Remove what it names, or add --accept-warnings to store it anyway')
-        io.out(`${(await host.work().addConversation(parts, asserted, options.supersedes)).id}\n`)
-        return 0
-      })
-    })
+  const conversation = program.command('conversation').description('read a stored conversation')
   conversation.command('show <id>')
     .description('print a conversation\'s notice, what the operator asserted, and its parts')
     .action((id: string) => {

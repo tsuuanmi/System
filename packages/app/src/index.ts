@@ -160,7 +160,6 @@ async function runHost(ctx: Context): Promise<number> {
       artifact: (id) => artifacts.get(id),
       readBytes: (id) => artifacts.readBytes(id),
       newTask: (instructions, repository, ref, context, who, item) => work.newTask(instructions, repository, ref, who, context, item),
-      addConversation: (parts, asserted, supersedes, who) => work.addConversation(parts, asserted, supersedes, who),
       workflowFile: (name, input) => workflowFile(artifacts, name, input),
       credentials,
       workers: () => workersView(ctx),

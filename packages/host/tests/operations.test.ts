@@ -25,7 +25,7 @@ const b64 = (text: string) => Buffer.from(text).toString('base64')
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
 function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
-  const seen: Record<string, unknown[]> = { credentials: [], conversations: [], logins: [] }
+  const seen: Record<string, unknown[]> = { credentials: [], logins: [] }
   return {
     seen,
     capabilities: f.capabilities,
@@ -42,7 +42,6 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
     },
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
     workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
-    async addConversation(parts, asserted, supersedes, caller) { seen.conversations!.push({ parts, asserted, supersedes, caller }); return { id: 'conversation:1' } },
     credentials: {
       async set(name, value) { seen.credentials!.push([name, value]) },
       async describe(name) { return name === 'known' ? { configured: true, source: 'store' } : { configured: false } },
@@ -127,11 +126,6 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'nobody/default' }), /no enabled Worker nobody\/default/)
   await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/codex' }), /fake\/codex does not provide code-write/)
 
-  const parts = { response: { name: 'r.md', data: b64('an answer'), mediaType: 'text/markdown' }, attachments: [] }
-  const preview = await call('conversation.preview', { parts }) as { parts: { role: string }[]; warnings: string[] }
-  assert.deepEqual(preview.parts.map((p) => p.role), ['response'])
-  assert.deepEqual(await call('conversation.add', { parts, asserted: { provider: 'web' }, supersedes: [] }), { id: 'conversation:1' })
-
   assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake/claude', 'fake/codex'])
   assert.deepEqual(await call('workers.login', { ref: 'web/chatgpt/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
   assert.deepEqual(svc.seen.logins, [['web/chatgpt/default', 'the file']])
@@ -168,7 +162,7 @@ test('an agent connection is refused every method flagged agent: false, and only
   const { table, open } = await started()
   const client = await open(agent)
   const closed = Object.entries(tableOf(table)).filter(([, m]) => !m.agent).map(([name]) => name)
-  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('conversation.add') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait') && closed.includes('workers.recheck'))
+  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait') && closed.includes('workers.recheck'))
   for (const [name, method] of Object.entries(tableOf(table))) {
     const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
     if (method.agent) assert.notEqual(outcome?.code, NOT_ALLOWED, `${name} is open to agents`)
@@ -283,16 +277,6 @@ test('a missing Work or Artifact is an error, not a crash', async () => {
   assert.equal((await client.call('host.status') as { works: number }).works, 0)
 })
 
-test('conversation.add refuses a preview with warnings unless acceptWarnings', async () => {
-  const { svc, open } = await started()
-  const client = await open()
-  const parts = { response: { name: 'r.md', data: b64('my password: hunter2hunter2'), mediaType: 'text/markdown' } }
-  await assert.rejects(client.call('conversation.add', { parts, asserted: {}, supersedes: [] }), /the preview has warnings/)
-  assert.equal(svc.seen.conversations!.length, 0)
-  await client.call('conversation.add', { parts, asserted: {}, supersedes: [], acceptWarnings: true })
-  assert.equal(svc.seen.conversations!.length, 1)
-})
-
 test('the same work.run with the same commandId while it runs answers at once and drives it once', async () => {
   const { f, open } = await started()
   f.hold('idea-a')
@@ -379,8 +363,8 @@ test('work.unwatch stops the notices; a watch on another Work is not heard', { t
 test('a closed connection drops its watches', { timeout: 60_000 }, async () => {
   const { f, host, open } = await started()
   let live = 0
-  const real = host.onChange.bind(host)
-  host.onChange = (listener) => { live++; const stop = real(listener); return () => { live--; stop() } }
+  const real = host.view.onChange.bind(host.view)
+  host.view.onChange = (listener) => { live++; const stop = real(listener); return () => { live--; stop() } }
   const gone = await open()
   const work = await gone.call('work.submit', { workflow, input: input(f) }) as { id: string }
   await gone.call('work.watch', { workId: work.id })

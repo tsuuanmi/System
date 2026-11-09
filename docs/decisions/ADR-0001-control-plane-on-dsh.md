@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-05
 summary: Select System as a durable work control plane, DSH/Cordis as host and configurable plugin foundation, and two workflow-agnostic MVP proofs.
-related: [PROP-0001, RES-0003]
+related: [RES-0003]
 ---
 
 # Control plane on DSH/Cordis

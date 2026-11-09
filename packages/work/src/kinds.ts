@@ -18,7 +18,7 @@ export const taskSchema = z.object({
   instructions: z.string().min(1).max(64 * 1024),
   /** A `git-tree@1` Artifact the Worker starts from. */
   base: contentIdSchema.optional(),
-  /** Artifacts the Worker reads as data, such as an ingested conversation (PROP-0003). */
+  /** Artifacts the Worker reads as data, such as a stored conversation. */
   context: z.array(contentIdSchema).min(1).max(16).optional(),
   /** The Item of the repository's STATUS.md this Task is for; absent in Tasks stored before Items. */
   item: z.string().regex(ITEM_ID).optional(),

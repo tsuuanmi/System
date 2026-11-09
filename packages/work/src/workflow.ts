@@ -1,23 +1,9 @@
 /**
- * The Workflow file: parse, preflight and resolve (ADR-0002). A pure library;
- * Workflow definitions are data files, never plugins.
- *
- * Vocabulary (`system.workflow/v1`): `steps`, each with exactly one of a Worker
- * step (`capabilities`, `outputs`, optional `inputs`), `verify`, `effect`,
- * `accept` or `uses` (a Sub-workflow), and optional `dependsOn`. Everything
- * else is refused before any Worker runs.
- *
- * Sub-workflows (ADR-0002 amendment) are joined at compile time, as GitHub
- * Actions' composite actions are: a step `uses: <file>` is replaced by the
- * steps of that Workflow, their IDs, references and requirements under the
- * using step's ID (`checks.checks`). Its `inputs.input` stands for the
- * Sub-workflow's `$work.input`, and its `outputs` name the Sub-workflow's
- * outputs the using Workflow reads as `$steps.<step>.<slot>`. A `dependsOn`
- * on the using step is one on all its steps. No recursion, at most three
- * levels; the resolved spec has no `uses` left, so the controller is unchanged.
- * The cycle check and the "a step uses only what it depends on" rule follow
- * System 1's workflow preflight (tsuuanmi/system f199a27,
- * packages/plugins/workflow/src/spec.ts).
+ * The Workflow file: parse, preflight and resolve (ADR-0002 and its
+ * Sub-workflow amendment). A pure library; Workflow definitions are data
+ * files, never plugins. The cycle check and the "a step uses only what it
+ * depends on" rule follow System 1's workflow preflight (tsuuanmi/system
+ * f199a27, packages/plugins/workflow/src/spec.ts).
  */
 import { parse } from 'yaml'
 import { z } from 'zod'

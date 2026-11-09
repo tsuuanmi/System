@@ -83,7 +83,7 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
   }
   const submit = tools.find((t) => t.name === 'work.submit')!
   assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'force', 'input', 'uses', 'worker', 'workflow'])
-  for (const closed of ['approval.decide', 'credentials.set', 'conversation.add', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
+  for (const closed of ['approval.decide', 'credentials.set', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
 })
 
 test('a tool call goes to the Host: submit a direct Task, run it and follow it with work.events', { timeout: 60_000 }, async () => {

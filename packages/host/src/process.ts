@@ -77,12 +77,12 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
     upgrading = true
     target = now
     options.log(`upgrading: this Host runs ${version}, the code on disk is ${now}; no new attempt starts, running ones finish, then this Host exits ${UPGRADE_EXIT}`)
-    await options.host.drain()
+    await options.host.view.drain()
     if (stopping) return
     stopping = (async () => {
       // Nothing is accepted from here, so no run begins after the held Works are named.
       await served.close()
-      const held = await options.host.held()
+      const held = await options.host.view.held()
       writeFileSync(upgradePath(options.home), JSON.stringify({ works: held }), { mode: 0o600 })
       await options.host.close()
       options.log(`stopped for the upgrade to ${now}, holding ${held.length} Works; exiting ${UPGRADE_EXIT}`)

@@ -23,7 +23,7 @@ test('Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once', { 
     f.hold('idea-b')
     const running = host.run(id)
     await Promise.all([f.arrived('idea-a'), f.arrived('idea-b')])
-    assert.deepEqual(types(host.get(id)!), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b'])
+    assert.deepEqual(types(host.view.get(id)!), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b'])
     f.release('idea-a')
     f.release('idea-b')
     const done = await running
@@ -44,7 +44,7 @@ test('a synthesis step waits for both proposals', { timeout: 20_000 }, async () 
     const running = host.run(id)
     await f.arrived('idea-b')
     await turns()
-    assert.deepEqual(types(host.get(id)!), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'observed:idea-a'])
+    assert.deepEqual(types(host.view.get(id)!), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'observed:idea-a'])
     assert.deepEqual(f.attempts, ['idea-a', 'idea-b'], 'the synthesis is not started with one proposal')
     f.release('idea-b')
     const done = await running
@@ -115,7 +115,7 @@ test('a waiting step goes in Work admission order when its slot frees', { timeou
     await f.arrived('idea-a')
     f.release('idea-a')
     await Promise.all(runs)
-    const first = (workId: string) => host.get(workId)!.events.find((e) => e.type === 'dispatched' && e.stepId === 'idea-a')!.at
+    const first = (workId: string) => host.view.get(workId)!.events.find((e) => e.type === 'dispatched' && e.stepId === 'idea-a')!.at
     assert.ok(first(ids[2]!) <= first(ids[0]!) && first(ids[0]!) <= first(ids[1]!), 'after the first holder, Work 0 then Work 1')
   } finally {
     await host.close()
@@ -158,8 +158,8 @@ test('a Host killed with two attempts in flight: both are lost, their slots are 
 
   const second = await f.startHost(home)
   try {
-    const [a, b] = [second.get(id)!.state.steps['idea-a']!.attempts[0]!, second.get(id)!.state.steps['idea-b']!.attempts[0]!]
-    assert.deepEqual(types(second.get(id)!), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'attempt-lost:idea-a', 'attempt-lost:idea-b'])
+    const [a, b] = [second.view.get(id)!.state.steps['idea-a']!.attempts[0]!, second.view.get(id)!.state.steps['idea-b']!.attempts[0]!]
+    assert.deepEqual(types(second.view.get(id)!), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'attempt-lost:idea-a', 'attempt-lost:idea-b'])
     assert.deepEqual(second.slots.uncertain(), [{ workId: id, stepId: 'idea-a', attemptId: a }, { workId: id, stepId: 'idea-b', attemptId: b }])
     await turns()
     assert.deepEqual(f.attempts, ['idea-a', 'idea-b'], 'nothing is dispatched by itself')
@@ -229,7 +229,7 @@ test('a lost attempt confirmed gone at the next start frees its slot at once; on
   f.release('idea-a')
   f.release('idea-b')
   await assert.rejects(running, /Host is closed/)
-  const [a, b] = [first.get(id)!.state.steps['idea-a']!.attempts[0]!, first.get(id)!.state.steps['idea-b']!.attempts[0]!]
+  const [a, b] = [first.view.get(id)!.state.steps['idea-a']!.attempts[0]!, first.view.get(id)!.state.steps['idea-b']!.attempts[0]!]
 
   f.gone(a)
   const second = await f.startHost(home)

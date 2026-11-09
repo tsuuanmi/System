@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, assertedSchema, directTask, itemLines, parseWorkflow, previewConversation, readStatus, resolve, summarize, z, type Admission, type Asserted, type Capabilities, type Caller, type ConversationParts, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, parseWorkflow, readStatus, resolve, summarize, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -18,7 +18,6 @@ export interface Services {
   artifact(id: string): unknown
   readBytes(id: string): Promise<Uint8Array>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller, item?: string): Promise<{ task: string; base?: string }>
-  addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[], caller: Caller): Promise<{ id: string }>
   /** A Workflow file a Workflow uses: `workflows/<name>` at the base commit of the `input` Task, else beside the Host's own code; undefined when neither has it. */
   workflowFile(name: string, input: string | undefined): string | undefined
   credentials: {
@@ -40,13 +39,6 @@ const commandId = z.string().min(1).optional()
 const workId = z.string().min(1)
 /** Bytes as base64: canonical, so what was sent is what is stored. */
 const base64 = z.string().max(MAX_FRAME).refine((text) => Buffer.from(text, 'base64').toString('base64') === text, 'not canonical base64')
-const part = z.object({ name: z.string().min(1), data: base64, mediaType: z.string().min(1) }).strict()
-const parts = z.object({ response: part, prompt: part.optional(), attachments: z.array(part).default([]) }).strict()
-
-const bytesOf = (p: z.infer<typeof part>) => ({ name: p.name, data: Buffer.from(p.data, 'base64'), mediaType: p.mediaType })
-const conversationOf = (p: z.infer<typeof parts>): ConversationParts => ({
-  response: bytesOf(p.response), ...(p.prompt ? { prompt: bytesOf(p.prompt) } : {}), attachments: p.attachments.map(bytesOf),
-})
 
 /** A used Workflow file: the one the caller sent, else the one the Host finds (PROP-0007 decision 7). */
 const usedFile = (files: Record<string, string>, found: (name: string) => string | undefined) => (name: string): string => {
@@ -56,7 +48,7 @@ const usedFile = (files: Record<string, string>, found: (name: string) => string
 }
 
 const known = (host: Host, id: string): WorkRecord => {
-  const record = host.get(id)
+  const record = host.view.get(id)
   if (!record) throw new WorkError(`no Work ${id}`)
   return record
 }
@@ -125,7 +117,7 @@ export function operations(services: Services): Methods {
       params: z.object({ workId }).strict(),
       handler(host, p) {
         const record = known(host, p.workId)
-        const live = host.live(p.workId)
+        const live = host.view.live(p.workId)
         return live.length ? { ...record, live } : record
       },
     },
@@ -134,14 +126,14 @@ export function operations(services: Services): Methods {
       agent: true,
       summary: 'Every Work as `{ id, status, specId }`.',
       params: z.object({}).strict(),
-      handler: (host) => host.list().map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
+      handler: (host) => host.view.list().map((r) => ({ id: r.id, status: r.state.status, specId: r.state.specId })),
     },
     'work.replay': {
       read: true,
       agent: true,
       summary: 'Fold the recorded events again: `{ state, matches }`. Runs nothing.',
       params: z.object({ workId }).strict(),
-      handler: (host, p) => (known(host, p.workId), host.replay(p.workId)),
+      handler: (host, p) => (known(host, p.workId), host.view.replay(p.workId)),
     },
     'work.report': {
       read: true,
@@ -196,7 +188,7 @@ export function operations(services: Services): Methods {
       params: z.object({ repository: z.string().min(1), state: z.enum(['todo', 'doing', 'done']).optional(), item: z.string().regex(ITEM_ID).optional() }).strict(),
       async handler(host, p) {
         const status = await readStatus(p.repository)
-        return [...itemLines(status, status.repository, host.list(), (workId) => host.live(workId), { state: p.state, item: p.item }), ...status.problems.map((problem) => `note: ${problem}`)]
+        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }), ...status.problems.map((problem) => `note: ${problem}`)]
       },
     },
     'artifact.put': {
@@ -221,25 +213,6 @@ export function operations(services: Services): Methods {
         const data = Buffer.from(await services.readBytes(p.id)).toString('base64')
         if (!fitsFrame(data)) throw new WorkError(`${p.id} is too large for one reply (${data.length} bytes in base64)`)
         return { data }
-      },
-    },
-    'conversation.preview': {
-      read: true,
-      agent: true,
-      summary: 'What would be stored of a conversation, and what looks like a secret in it. Stores nothing.',
-      params: z.object({ parts, asserted: assertedSchema.default({}) }).strict(),
-      handler: (_host, p) => previewConversation(conversationOf(p.parts), p.asserted),
-    },
-    'conversation.add': {
-      agent: false,
-      summary: 'Store a conversation held elsewhere: `{ id }`. Refused when the preview has warnings, unless `acceptWarnings`.',
-      params: z.object({ parts, asserted: assertedSchema.default({}), supersedes: z.array(artifactId).default([]), acceptWarnings: z.boolean().default(false) }).strict(),
-      handler(_host, p, caller) {
-        const conversation = conversationOf(p.parts)
-        if (previewConversation(conversation, p.asserted).warnings.length && !p.acceptWarnings) {
-          throw new WorkError('the preview has warnings; nothing stored. Remove what it names, or add acceptWarnings to store it anyway')
-        }
-        return services.addConversation(conversation, p.asserted, p.supersedes, caller)
       },
     },
     'workers.list': {
