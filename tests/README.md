@@ -44,7 +44,7 @@ nothing else.
   producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).
 - [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
   one Research Work on the operator's signed-in `web/chatgpt/default` profile.
-- [web-canary.test.ts](web-canary.test.ts) — WW4: the canary Task has the same
+- [web-canary.test.ts](web-canary.test.ts) — WW4 (run by `corepack pnpm test:web`, not smoke): the canary Task has the same
   Artifact ID every time, `work submit --worker` refuses an unregistered Worker, and
   `tools/web-canary` runs and reports (each run classified as passed, worker-failed, verifier or other, the Worker step rate, older version apart, the WW gate)
   through a fake `system` (`SYSTEM_BIN`) with scripted records; the timer units' fields.
@@ -63,7 +63,7 @@ nothing else.
   (Artifact writes through the Host, `doctor` boots beside it) on one store all
   succeed (no "database is locked"), also when the boots all find the store
   missing and create it together.
-- [publish.test.ts](publish.test.ts) — M5 gate: the whole Software
+- [publish.test.ts](publish.test.ts), [publish-crash.test.ts](publish-crash.test.ts), [publish-approval.test.ts](publish-approval.test.ts) — M5 gate, three files so they run in parallel, sharing [publish.ts](../test-support/publish.ts): the whole Software
   Engineering file publishes one draft pull request to a bare remote and the
   fake GitHub in [fake-github.mjs](fake-github.mjs); a Host killed after the
   pull request was created or during the push is reconciled at its next start
