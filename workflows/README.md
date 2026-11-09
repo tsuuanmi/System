@@ -12,6 +12,16 @@ changes future admissions only.
   plus `docs-impact` (`code-write`, `tier.economy`), which reads the change
   while the checks run and lists the docs it makes stale: advice, never a
   verdict. It becomes the default only if it often finds stale docs.
+- [feature.yaml](feature.yaml) — `plan` (`code-write`, read-only: what to
+  change, where, which tests prove it) → `tests` (`code.tests`,
+  `tier.economy`: the plan's tests, failing, before any code) → `implement`
+  (`code-write`: make them pass without changing them) → `docs` (`code.docs`,
+  `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
+  Artifacts it is given; the profile decides which Account takes each role.
+  Compared with `software-engineering.yaml` before it becomes a default.
+- [feature-research.yaml](feature-research.yaml) — the same, with `research`
+  (`research`, `web-search`, `tier.standard`) first, whose report and sources
+  the plan reads.
 - [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
   (`code-write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
   is worth doing) → `implement` → `checks` → `publish` → `accept`: one pull
