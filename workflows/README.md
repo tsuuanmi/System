@@ -15,7 +15,7 @@ changes future admissions only.
 - [feature.yaml](feature.yaml) — `plan` (`code-write`, read-only: what to
   change, where, which tests prove it) → `tests` (`code.tests`,
   `tier.economy`: the plan's tests, failing, before any code) → `implement`
-  (`code-write`: make them pass without changing them) → `docs` (`code.docs`,
+  (`code-write`: make them pass without changing them; `retry` on `checks-code`) → `checks-code` → `docs` (`code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
   Artifacts it is given; the profile decides which Account takes each role.
   Compared with `software-engineering.yaml` before it becomes a default.

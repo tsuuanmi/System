@@ -7,7 +7,10 @@
 # any code, on its own Account (the role code.tests); implement makes them pass
 # without changing them; docs brings the docs in line (the role code.docs); the
 # repository's checks verify the result and System merges it into its base.
-# Stages run one after the other, each on the previous change. Compared with
+# Stages run one after the other, each on the previous change. The code is
+# checked before the docs, so a failure goes back to the step that can fix it,
+# with the failure as input (retry); the second check, after docs, runs what
+# the docs change touches. Compared with
 # software-engineering.yaml before it becomes a default (PLAN DF, df-20).
 schema: system.workflow/v1
 id: feature-research
@@ -40,7 +43,9 @@ steps:
       1. Goal: what changes for a user, in two or three sentences.
       2. Changes: each file to change or add, what to do there, and why.
       3. Tests: each test to write first, with its file, what it calls and what
-         it asserts, so that it fails now and passes once the change is made.
+         it asserts, so that it fails now and passes once the change is made;
+         then each existing test that asserts the behaviour you change, which
+         the implement step must update (grep the tests for it).
       4. Docs: each doc or README whose text the change makes stale.
       5. Risks and what is out of scope.
       Name exact files, functions and commands; quote the code you refer to.
@@ -59,6 +64,7 @@ steps:
   - id: implement
     dependsOn: [tests]
     capabilities: [code-write]
+    retry: { onFail: [checks-code.checks], max: 1 }
     inputs:
       task: $work.input
       plan: $steps.plan.plan
@@ -67,11 +73,19 @@ steps:
     instructions: |
       The checkout holds the tests from the plan, which fail now. Make the
       changes in the plan so that they pass, without changing those tests;
-      if one is wrong, say so in your final message and leave it. Run the
-      repository's checks that your change touches.
-  - id: docs
+      if one is wrong, say so in your final message and leave it. Tests that
+      already existed and assert the behaviour the plan changes are yours to
+      update. Run the repository's checks that your change touches. On a
+      second attempt, the failed checks are in your input: fix what they name.
+  - id: checks-code
     dependsOn: [implement]
+    uses: code-checks.yaml
+    inputs:
+      input: $steps.implement.change
+  - id: docs
+    dependsOn: [checks-code]
     capabilities: [code.docs, tier.economy]
+    retry: { onFail: [checks.checks], max: 1 }
     inputs:
       task: $work.input
       plan: $steps.plan.plan
