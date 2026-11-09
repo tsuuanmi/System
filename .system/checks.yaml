@@ -43,8 +43,12 @@ checks:
   - name: web
     # The Website Worker's tests, which drive a real headed Chrome on Xvfb
     # (milestone WW). Kept out of unit and smoke so the main path stays fast and
-    # System is tested without the web Runtime; it runs only when a change
-    # touches the web Runtime, its driver or what they are built from.
+    # System is tested without the web Runtime. They run only when the Website
+    # Worker itself is being developed: its Runtime, its driver, its test or the
+    # headed-Chrome helper. A change to shared test support, to this file or to
+    # the dependencies does not run them for every Work; the release check of
+    # `system update` runs every check on the released commit, so a break there
+    # is still caught before it runs live.
     run: corepack pnpm test:web
     timeoutSeconds: 600
-    paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/**, .system/**, package.json, pnpm-lock.yaml]
+    paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/headed.ts]

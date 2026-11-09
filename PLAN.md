@@ -199,8 +199,10 @@ Works, so trimming the core and proving the dogfood are one job.
   defect. *2026-11-09, `work:c4f42349` on `3b7dc6e`: docs 0.9 s, install
   15.2 s, build 29.7 s, typecheck 9.3 s, unit 14.8 s, smoke 95.2 s, so
   2 min 45 s for a change outside the web Runtime; `web` (388 s) runs only
-  for a change to the web Runtime, its driver or the checks themselves
-  (`paths`).*
+  for a change to the web Runtime, its driver, its test or
+  `test-support/headed.ts` (`paths`; narrowed from the checks file, shared
+  test support and the dependencies, which now meet it only in the release
+  check of `system update`).*
 
 **Done =** at least five consecutive changes into `dev` made by System Works,
 each recording the operator's touches, time, usage and failed attempts; DF3
