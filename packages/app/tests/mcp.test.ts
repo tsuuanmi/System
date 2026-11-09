@@ -4,8 +4,8 @@
  * fake Workers.
  */
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -83,7 +83,22 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
   }
   const submit = tools.find((t) => t.name === 'work.submit')!
   assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'force', 'input', 'run', 'uses', 'worker', 'workflow'])
+  const claim = tools.find((t) => t.name === 'item.claim')!
+  assert.ok(Object.hasOwn(claim.inputSchema.properties ?? {}, 'commandId'))
   for (const closed of ['approval.decide', 'credentials.set', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
+})
+
+test('item_claim accepts commandId through MCP and status reports the claim', { timeout: 60_000 }, async () => {
+  const project = realpathSync(mkdtempSync(join(home, 'mcp-claim-')))
+  const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
+  git('init', '-q', '-b', 'dev')
+  writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [ ] p-2 Second\n')
+  git('add', '.'); git('commit', '-qm', 'status')
+  const client = await mcp()
+  const claimed = await call(client, 'item.claim', { repository: project, item: 'p-2', commandId: 'c-mcp' })
+  assert.equal(claimed.error, undefined, claimed.error)
+  assert.equal(claimed.value.who, 'o1')
+  assert.match(((await call(client, 'status', { repository: project, item: 'p-2' })).value as string[])[0]!, /doing: claimed by o1 since/)
 })
 
 test('work.submit runs the Work unless run is false; work.list shows an unrun Work as admitted, not running', { timeout: 60_000 }, async () => {
