@@ -184,11 +184,11 @@ export function operations(services: Services): Methods {
     status: {
       read: true,
       agent: true,
-      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `dev` tip, as `[x] <id> <title> - <state>`. `done`: ticked in `STATUS.md` (with the last Work and Artifact IDs when known); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines. Read the Work by ID for details.',
+      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: ticked in `STATUS.md` (with the last Work and Artifact IDs when known); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
       params: z.object({ repository: z.string().min(1), state: z.enum(['todo', 'doing', 'done']).optional(), item: z.string().regex(ITEM_ID).optional() }).strict(),
       async handler(host, p) {
         const status = await readStatus(p.repository)
-        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }), ...status.problems.map((problem) => `note: ${problem}`)]
+        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }), ...[status.note, ...status.problems].map((problem) => `note: ${problem}`)]
       },
     },
     'artifact.put': {

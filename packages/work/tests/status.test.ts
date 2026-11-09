@@ -73,6 +73,26 @@ test('STATUS.md is read from the dev tip, not the working tree; a repository wit
   assert.match(absent.problems[0]!, /no STATUS\.md on dev/)
 })
 
+test('STATUS.md is read from origin/dev when it exists, though the local dev lacks it; the note says which and does not fetch', async () => {
+  const dir = repository(STATUS)
+  const git = (...args: string[]) => execFileSync('git', ['-C', dir, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
+  const remote = git('rev-parse', 'HEAD').toString().trim()
+  git('rm', '-q', '--cached', 'STATUS.md')
+  git('commit', '-qm', 'local dev without STATUS.md')
+  git('update-ref', 'refs/remotes/origin/dev', remote)
+  const read = await readStatus(dir)
+  assert.equal(read.ref, 'origin/dev')
+  assert.equal(read.commit, remote)
+  assert.deepEqual(read.items.map((i) => i.id), ['df-1', 'df-3', 'df-4'])
+  assert.match(read.note, /^read origin\/dev \(.*not fetched/)
+
+  git('update-ref', '-d', 'refs/remotes/origin/dev')
+  const local = await readStatus(dir)
+  assert.equal(local.ref, 'dev')
+  assert.match(local.problems[0]!, /no STATUS\.md on dev/)
+  assert.match(local.note, /^read dev \(/)
+})
+
 const CHANGE = id('a change')
 const COMMIT = 'c'.repeat(40)
 interface Stored { task: Task; repository?: string; note?: string }

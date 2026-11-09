@@ -488,8 +488,8 @@ system task new --text "..." --repo . --ref dev --item df-3
 system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
-`status` prints one line per Item, from the `dev` tip of the repository (git,
-not the working tree) and the Work records: `done` is `[x]` in `STATUS.md`,
+`status` prints one line per Item, from the tip of `origin/dev` (else the local `dev`) of the repository (git,
+not the working tree; it never fetches, and the `note:` line names the ref and its age) and the Work records: `done` is `[x]` in `STATUS.md`,
 with the last Work and Artifact for the Item; `doing` is a Work whose Task
 names the Item and that is running or held (its ID, step, Account, since when,
 and the live progress the Host keeps, or why it is held); `todo` is `nobody`.

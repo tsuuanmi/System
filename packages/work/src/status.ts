@@ -1,8 +1,9 @@
 /**
  * The status of a project (PLAN DF2c): the Items of a repository's `STATUS.md`
- * (done as it says on the `dev` tip) and the Works that carry them out.
+ * (done as it says on the `origin/dev` tip, else `dev`) and the Works that carry them out.
  * Nothing here is stored.
  */
+import { realpathSync } from 'node:fs'
 import { git, snapshot } from './git.ts'
 import { ITEM_ID } from './kinds.ts'
 import type { LiveAttempt } from './live.ts'
@@ -69,19 +70,44 @@ export function parseStatus(text: string): ParsedStatus {
 export interface StatusFile extends ParsedStatus {
   /** The repository's top level, as a Work's Task records it. */
   repository: string
-  /** The `dev` tip it was read at. */
+  /** The tip it was read at. */
   commit: string
+  /** The ref it was read from: `origin/dev` when the repository has it, else `dev`. */
+  ref: 'origin/dev' | 'dev'
+  /** One line saying which ref was read and, if git can tell, how old it is (never fetched here). */
+  note: string
 }
 
-/** `STATUS.md` at the `dev` tip of the repository that contains `path`, read from git and never from the working tree. */
+/** When the remote-tracking ref was last updated (its newest reflog entry), if git has that. */
+async function refAge(repository: string, ref: string): Promise<string | undefined> {
+  try {
+    const at = (await git(repository, ['log', '-g', '-1', '--format=%cI', `refs/remotes/${ref}`])).trim()
+    const ms = Date.now() - Date.parse(at)
+    if (!at || Number.isNaN(ms)) return undefined
+    const hours = Math.max(0, Math.floor(ms / 3_600_000))
+    return `updated ${hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} days`} ago, ${at}`
+  } catch { return undefined }
+}
+
+/**
+ * `STATUS.md` at the tip of `origin/dev` when the repository that contains
+ * `path` has that remote-tracking ref, else of the local `dev`; read from git
+ * and never from the working tree. It does not fetch: the note says how old
+ * the ref is, when git can tell.
+ */
 export async function readStatus(path: string): Promise<StatusFile> {
-  const { repository, commit } = await snapshot(path, 'dev')
+  const top = realpathSync((await git(path, ['rev-parse', '--show-toplevel'])).trim())
+  const remote = await git(top, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/dev^{commit}']).then(() => true, () => false)
+  const ref = remote ? 'origin/dev' : 'dev'
+  const { repository, commit } = await snapshot(top, remote ? 'refs/remotes/origin/dev' : 'dev')
+  const age = remote ? await refAge(repository, ref) : undefined
+  const note = `read ${ref} (${commit.slice(0, 12)})${remote ? `, not fetched: ${age ?? 'age unknown'}` : ', no origin/dev here'}`
   let text: string | undefined
   try {
     text = await git(repository, ['show', `${commit}:STATUS.md`])
   } catch { /* none at that commit */ }
-  const parsed = text === undefined ? { aim: [], items: [], problems: [`no STATUS.md on dev (${commit.slice(0, 12)}) in ${repository}`] } : parseStatus(text)
-  return { repository, commit, ...parsed }
+  const parsed = text === undefined ? { aim: [], items: [], problems: [`no STATUS.md on ${ref} (${commit.slice(0, 12)}) in ${repository}`] } : parseStatus(text)
+  return { repository, commit, ref, note, ...parsed }
 }
 
 type Admitted = Extract<WorkEvent, { type: 'admitted' }>
