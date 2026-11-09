@@ -2,6 +2,7 @@
 // A stand-in for `claude -p` and `codex exec` in tests. Behavior comes from
 // markers in the prompt's instructions:
 //   FAKE:edit     write NOTE.md in the working directory
+//   FAKE:append   with FAKE:edit, add to NOTE.md instead of replacing it, so an attempt on an earlier change is a change again
 //   FAKE:outputs  write every listed output file
 //   FAKE:sign     with FAKE:outputs, each file names its runtime, repeats the prompt's Context header and quotes every input file listed
 //   FAKE:hang=STEP:FILE  at step STEP, unless FILE exists: create it and wait (until SIGTERM, then exit 143)
@@ -76,7 +77,7 @@ const background = /FAKE:background=(\S+)/.exec(prompt)?.[1]
 const refused = process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === '1' && args.slice(args.indexOf('--disallowedTools')).includes('Monitor')
 if (!codex && background && !refused) writeFileSync(background, String(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], { detached: true, stdio: 'ignore' }).pid))
 if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
-if (has('edit')) writeFileSync(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
+if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {
   const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)

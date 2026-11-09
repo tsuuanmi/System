@@ -257,3 +257,32 @@ steps:
   assert.match(refused(`${base}  - id: a.b\n    capabilities: [research]\n    outputs: [x]\n`, {}), /a\.b/)
   assert.match(refused(`${base}  - id: s\n    uses: ../escape.yaml\n`, {}), /uses/)
 })
+
+test('retry names steps that fail and are tried again: the step itself or verify steps judging it; max is a small count', () => {
+  const w = (retry: string) => `${base}  - id: a
+    capabilities: [code-write]
+    outputs: [out]
+    ${retry}
+  - id: v
+    dependsOn: [a]
+    verify: { capability: code.required-checks, subject: $steps.a.out, criteria: c }
+  - id: other
+    capabilities: [code-write]
+    outputs: [out]
+  - id: v2
+    dependsOn: [other]
+    verify: { capability: code.required-checks, subject: $steps.other.out, criteria: c }
+`
+  assert.doesNotThrow(() => resolve(parseWorkflow(w('retry: { onFail: [v, a], max: 1 }')), available))
+  assert.match(problems(w('retry: { onFail: [nope], max: 1 }')).join(), /step a retry.onFail names nope, which is not a step/)
+  assert.match(problems(w('retry: { onFail: [v2], max: 1 }')).join(), /step a retry.onFail names v2, which does not judge a/)
+  assert.match(problems(w('retry: { onFail: [other], max: 1 }')).join(), /step a retry.onFail names other, which does not judge a/)
+  assert.match(problems(w('retry: { onFail: [v], max: 0 }')).join(), /max/)
+  assert.match(problems(w('retry: { onFail: [], max: 1 }')).join(), /onFail/)
+})
+
+test('software-engineering.yaml declares the retry on the checks of its Sub-workflow', () => {
+  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
+  const implement = spec.steps.find((s) => s.id === 'implement')
+  assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks'], max: 1 })
+})

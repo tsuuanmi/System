@@ -72,7 +72,9 @@ again as a new attempt: the Work keeps one history. On a verify step (`--step
 checks.checks`) the verifier is asked again on the same subject and pinned
 criteria; `reopened` clears the step's verdict in the state, and the earlier
 `verified` event stays. Only a human caller does this: an agent could keep
-asking until a run passes. `retry` and `decide` hold
+asking until a run passes. A Worker step's `retry` in the Workflow reopens it
+automatically, at most `max` times, after a failing verdict or a failure its
+Worker marked `retryable`; see [the vocabulary](../../docs/architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1). `retry` and `decide` hold
 the Work's lock from their check to the end of the run.
 
 ## Under the Host

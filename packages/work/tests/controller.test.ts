@@ -486,16 +486,21 @@ test('retry --step after failed checks reruns the Worker and re-verifies the new
   } } })
   const failed = await runFixture(h, 'software-engineering.yaml')
   assert.equal(failed.state.status, 'failed')
-  const firstChange = failed.state.steps.implement!.outputs.change
+  // The Workflow's one automatic further attempt failed too: the operator's retry is a third.
+  assert.equal(failed.events.filter((e) => e.type === 'reopened' && e.automatic).length, 1)
+  const secondChange = failed.state.steps.implement!.outputs.change
   await assert.rejects(() => h.controller.retry(failed.id, { caller, reason: 'x' }), /name one with --step/)
   verdict = 'pass'
   const done = await h.controller.retry(failed.id, { step: 'implement', caller, reason: 'fix the failing checks' })
   assert.equal(done.state.status, 'succeeded')
-  const reopened = done.events.find((e) => e.type === 'reopened')
+  const reopened = done.events.findLast((e) => e.type === 'reopened')
   assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'checks.checks', 'publish', 'accept'])
+  assert.deepEqual(reopened?.type === 'reopened' && reopened.caller, caller)
   const verifiedSubjects = done.events.filter((e) => e.type === 'verified').map((e) => e.type === 'verified' && e.subject)
-  assert.deepEqual(verifiedSubjects, [firstChange, done.state.steps.implement!.outputs.change])
-  assert.notEqual(verifiedSubjects[1], firstChange)
+  assert.equal(verifiedSubjects.length, 3)
+  assert.equal(verifiedSubjects[1], secondChange)
+  assert.equal(verifiedSubjects[2], done.state.steps.implement!.outputs.change)
+  assert.notEqual(verifiedSubjects[2], secondChange)
   assert.equal(h.controller.replay(failed.id).matches, true)
 })
 
@@ -581,4 +586,103 @@ test('an attempt that failed on a rate limit is recorded as rate-limited; anothe
     assert.ok(observed?.type === 'observed')
     assert.equal(observed.rateLimited, rateLimited ? true : undefined, reason)
   }
+})
+
+const RETRY = `schema: system.workflow/v1
+id: retrying
+version: 1
+steps:
+  - id: implement
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+    retry: { onFail: [checks, implement], max: 1 }
+  - id: checks
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: repo-checks-v1 }
+  - id: accept
+    dependsOn: [checks]
+    accept: { requires: [checks] }
+`
+
+async function runRetrying(h: Harness) {
+  const spec = resolve(parseWorkflow(RETRY), h.capabilities.available())
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'retrying.yaml' } })
+  return h.controller.run(admitted.id)
+}
+
+/** A verifier whose verdicts are taken from `verdicts` in turn (the last one repeats). */
+function scripted(specs: ReturnType<typeof memorySpecs>, verdicts: VerifyResult['verdict'][]): Partial<VerifierPort> {
+  let n = 0
+  return { async verify(r) {
+    const evidence = id(`evidence/${r.attemptId}`)
+    specs.stored.add(evidence)
+    return { verdict: verdicts[Math.min(n++, verdicts.length - 1)]!, reason: 'scripted', subject: r.subject, criteria: r.criteria, evidence: [evidence] }
+  } }
+}
+
+test('a failing verdict named in retry.onFail reopens the step once, automatically, with the verdict and the change as input', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: scripted(specs, ['fail', 'pass']) })
+  const done = await runRetrying(h)
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(h.calls.length, 2)
+  const reopened = done.events.filter((e) => e.type === 'reopened')
+  assert.equal(reopened.length, 1)
+  assert.ok(reopened[0]?.type === 'reopened')
+  assert.equal(reopened[0].automatic, true)
+  assert.equal(reopened[0].caller, undefined)
+  const failing = done.events.find((e) => e.type === 'verified')
+  assert.ok(failing?.type === 'verified')
+  assert.equal(h.calls[1]!.inputs.failure, failing.verdictId)
+  const first = done.events.find((e) => e.type === 'observed')
+  assert.ok(first?.type === 'observed')
+  assert.equal(h.calls[1]!.inputs.previous, first.outputs.change)
+  assert.equal(h.controller.replay(done.id).matches, true)
+})
+
+test('the automatic further attempt is made once: a second failure fails the Work', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: scripted(specs, ['fail']) })
+  const done = await runRetrying(h)
+  assert.equal(done.state.status, 'failed')
+  assert.equal(h.calls.length, 2)
+  assert.equal(done.events.filter((e) => e.type === 'reopened').length, 1)
+})
+
+test('only a failing verdict qualifies: an error or inconclusive verdict is not tried again', async () => {
+  for (const verdict of ['error', 'inconclusive'] as const) {
+    const specs = memorySpecs()
+    const h = harness({ specs, verifier: scripted(specs, [verdict]) })
+    await runRetrying(h)
+    assert.equal(h.calls.length, 1, verdict)
+  }
+})
+
+test('a Worker failure is tried afresh only when the Worker says so, and with no previous output or failure input', async () => {
+  for (const retryable of [true, false]) {
+    let n = 0
+    const h = harness({ worker: { async run(r) {
+      if (n++ === 0) return { status: 'failed', outputs: {}, reason: 'no output block', ...(retryable ? { retryable: true as const } : {}) }
+      const outputs = Object.fromEntries(r.outputs.map((slot) => [slot, id(`${r.attemptId}/${slot}`)]))
+      for (const out of Object.values(outputs)) h.specs.stored.add(out)
+      return { status: 'succeeded', outputs }
+    } } })
+    const done = await runRetrying(h)
+    assert.equal(done.state.status, retryable ? 'succeeded' : 'failed', String(retryable))
+    assert.equal(n, retryable ? 2 : 1)
+    if (retryable) assert.deepEqual(Object.keys(done.events.filter((e) => e.type === 'dispatched')[1]!.inputs), ['task'])
+    const observed = done.events.find((e) => e.type === 'observed')
+    assert.ok(observed?.type === 'observed')
+    assert.equal(observed.retryable, retryable ? true : undefined)
+  }
+})
+
+test('a step with no retry declared is never tried again by itself', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: scripted(specs, ['fail']) })
+  const spec = resolve(parseWorkflow(RETRY.replace(/    retry:.*\n/, '')), h.capabilities.available())
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'x.yaml' } })
+  await h.controller.run(admitted.id)
+  assert.equal(h.calls.length, 1)
 })

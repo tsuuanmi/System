@@ -40,6 +40,8 @@ export interface WorkerResult {
   /** What a cancelled or failed attempt left behind; never accepted. */
   partial?: Record<string, string>
   reason?: string
+  /** A failure that may be tried afresh: it happened before anything was sent that cannot be sent again. The Worker decides; the Workflow's `retry` says whether to. */
+  retryable?: true
   /** The Worker's own final message, if it gave one; the controller quotes it when it fails the step itself. */
   message?: string
   usage?: Omit<UsageObserved, 'state'>
