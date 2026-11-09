@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
@@ -142,8 +143,22 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(svc.seen.logins!.at(-1), ['web/chatgpt/default', 'recheck'])
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
+  // The status of a project: its Items from STATUS.md on dev; no Work names one here, so each is todo.
+  const project = realpathSync(mkdtempSync(join(dir, 'project-')))
+  const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
+  git('init', '-q', '-b', 'dev')
+  writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [x] p-1 First\n- [ ] p-2 Second\n- broken\n')
+  git('add', '.')
+  git('commit', '-qm', 'status')
+  assert.deepEqual(await call('status', { repository: project }), ['[x] p-1 First - done', '[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
+  assert.deepEqual(await call('status', { repository: project, state: 'todo', item: 'p-2' }), ['[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
+  await assert.rejects(call('status', { repository: project, item: 'Bad' }), /-32602|invalid|item/i)
+  await assert.rejects(call('task.new', { instructions: 'x', item: 'Bad' }), /-32602|invalid|item/i)
+  // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).
+  await call('work.submit', { capabilities: ['code-write'], input: input(f), force: true })
+  await call('task.new', { instructions: 'x', item: 'p-2' })
   const status = await call('host.status') as { works: number; recordBytes: number }
-  assert.equal(status.works, 3)
+  assert.equal(status.works, 4)
   assert.ok(status.recordBytes > 0)
 
   assert.deepEqual([...called].sort(), Object.keys(tableOf(table)).sort(), 'a method of the table has no round trip in this test')
@@ -488,7 +503,7 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   assert.match(failed.state.reason!, /checks\.checks=fail/)
   const implemented = failed.state.steps.implement!.attempts
 
-  // Choosing among runs of a check is the operator's: an agent is refused, and records a decision instead.
+  // Choosing among runs of a check is the operator's: an agent is refused, and tells the operator.
   await assert.rejects((await open(agent)).call('work.retry', { workId: work.id, step: 'checks.checks' }), /only a human verifies again/)
   // The environment is fixed; the same change is verified again, with the same pinned criteria.
   await assert.rejects(client.call('work.retry', { workId: work.id, step: 'checks.checks', worker: 'fake/claude' }), /verify step/)

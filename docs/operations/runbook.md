@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-08
+reviewed: 2026-11-09
 covers: [bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
 ---
 
@@ -531,6 +531,35 @@ attempt quiet for `stallMinutes` (10 by default; the `work` row's config) is
 `stalled: true`, and watchers get one `work.changed` with `stalled: true`. A
 stall is a notice, not a verdict: the attempt is not stopped. `live` is never
 recorded; it is gone once the attempt reports.
+
+## The status of a project
+
+A repository lists its planned work in a `STATUS.md` at its root: a heading,
+`Aim:` and one to three lines, then one line per **Item**,
+`- [ ] <id> <title>` (`- [x]` when done). An id is lower case and ends in a
+number, such as `df-3` or `dna-13`. Keep it near 100 lines and link details.
+A line that does not parse is skipped and reported by `system status` as a
+`note:`.
+
+```
+system task new --text "..." --repo . --ref dev --item df-3
+system status [--repo <path>] [--state todo|doing|done] [--item <id>]
+```
+
+`status` prints one line per Item, from the `dev` tip of the repository (git,
+not the working tree) and the Work records: `done` is `[x]` in `STATUS.md`,
+with the last Work and Artifact for the Item; `doing` is a Work whose Task
+names the Item and that is running or held (its ID, step, Account, since when,
+and the live progress the Host keeps, or why it is held); `todo` is `nobody`.
+Read a Work by its ID for details. The MCP tool `status` answers the same.
+
+While a Work for an Item runs or is held, `work submit` for the same Item is
+refused, naming that Work and its Account. `--force` (`force: true`) allows
+parallel work on purpose. A Task that names an Item is read with the Item's
+line and the Work and result IDs, or failure reasons, of its earlier Works
+added to its context, so a new session or Worker can carry on from the status
+alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
+pull request.
 
 ## Using System from an agent
 

@@ -39,6 +39,8 @@ function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string,
     },
     getSpec: (specId) => structuredClone(specs.get(specId)),
     exists: (artifactId) => stored.has(artifactId),
+    taskOf: () => undefined,
+    withNote: async () => { throw new Error('no Item in this test') },
   }
 }
 

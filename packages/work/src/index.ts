@@ -12,7 +12,7 @@ import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, typ
 import { CONVERSATION_KIND, addConversation, conversationSchema, type Asserted, type ConversationParts } from './conversation.ts'
 import { snapshot } from './git.ts'
 import { Host } from './host.ts'
-import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema } from './kinds.ts'
+import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema, type GitTreeContent, type Task } from './kinds.ts'
 import type { Caller } from './record.ts'
 import { workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
@@ -31,6 +31,7 @@ export * from './live.ts'
 export * from './record.ts'
 export * from './registry.ts'
 export * from './slots.ts'
+export * from './status.ts'
 export * from './summary.ts'
 export * from './workflow.ts'
 /** The zod the Work schemas are built with, for the packages that validate the same shapes. */
@@ -82,7 +83,7 @@ export class WorkService {
    * Store a `task@1` input; with a repository, first snapshot `ref` there as a
    * `git-tree@1` Artifact the task starts from.
    */
-  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = []): Promise<{ task: string; base?: string }> {
+  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string): Promise<{ task: string; base?: string }> {
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     let base: string | undefined
     if (repository) {
@@ -93,7 +94,7 @@ export class WorkService {
       })).id
     }
     const task = await this.artifacts.put({
-      ...TASK_KIND, content: { instructions, ...(base ? { base } : {}), ...(context.length ? { context } : {}) }, inputs: [...(base ? [base] : []), ...context],
+      ...TASK_KIND, content: { instructions, ...(base ? { base } : {}), ...(context.length ? { context } : {}), ...(item ? { item } : {}) }, inputs: [...(base ? [base] : []), ...context],
       classification: 'local-private', producer,
     })
     return { task: task.id, base }
@@ -123,6 +124,23 @@ function specStore(artifacts: Artifacts): SpecStore {
     kindOf(id) {
       const read = artifacts.get(id)
       return read.state === 'stored' ? read.envelope.kind : undefined
+    },
+    taskOf(id) {
+      const read = artifacts.get(id)
+      if (read.state !== 'stored' || read.envelope.kind !== TASK_KIND.kind) return undefined
+      const task = read.envelope.content as Task
+      const base = task.base ? artifacts.get(task.base) : undefined
+      return { task, ...(base?.state === 'stored' ? { repository: (base.envelope.content as GitTreeContent).repository } : {}) }
+    },
+    async withNote(id, note, caller) {
+      const task = (artifacts.get(id) as { envelope: Envelope }).envelope.content as Task
+      const producer = { type: 'operator' as const, ref: caller.operatorId }
+      const text = await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(note), mediaType: 'text/markdown', classification: 'local-private', producer })
+      const context = [...(task.context ?? []), text.id]
+      return (await artifacts.put({
+        ...TASK_KIND, content: { ...task, context }, inputs: [...(task.base ? [task.base] : []), ...context],
+        classification: 'local-private', producer,
+      })).id
     },
     async putVerdict(verdict) {
       return (await artifacts.put({

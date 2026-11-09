@@ -127,11 +127,11 @@ export function remoteHost(remote: Remote): ClientHost {
   }
 
   const work: WorkCommands = {
-    admitFile(path, input, worker) {
+    admitFile(path, input, worker, force) {
       const workflow = readFileSync(path, 'utf8')
-      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, worker })
+      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, worker, force })
     },
-    admitTask: (capabilities, input, worker) => change('work.submit', { capabilities, input, worker }),
+    admitTask: (capabilities, input, worker, force) => change('work.submit', { capabilities, input, worker, force }),
     async run(workId, options) {
       await change('work.run', { workId })
       return follow(workId, options)
@@ -156,9 +156,10 @@ export function remoteHost(remote: Remote): ClientHost {
       return follow(workId, options)
     },
     wait: (workId) => follow(workId),
-    async newTask(instructions, repository, ref, context) {
-      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context })
+    async newTask(instructions, repository, ref, context, item) {
+      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item })
     },
+    status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
     async addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]) {
       const part = (p: { name: string; data: Uint8Array; mediaType: string }) => ({ name: p.name, data: base64(p.data), mediaType: p.mediaType })
       // The CLI has already refused what the preview warned about, unless the operator accepted it.

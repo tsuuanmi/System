@@ -82,6 +82,8 @@ export function fixture(options: { seed?: number; slots?: number } = {}): Fixtur
     async putSpec(spec) { const s = id(JSON.stringify(spec)); specs.set(s, structuredClone(spec)); stored.add(s); return s },
     getSpec: (specId) => structuredClone(specs.get(specId)),
     exists: (artifactId) => stored.has(artifactId),
+    taskOf: () => undefined,
+    withNote: async () => { throw new Error('no Item in this test') },
   }
   const held = new Set<string>()
   const waiting = new Map<string, (() => void)[]>()

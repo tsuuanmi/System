@@ -23,6 +23,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   verifiers, route by capability with a reason for every candidate.
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
+- [src/status.ts](src/status.ts) — a project's status: `parseStatus` and `readStatus` (`STATUS.md` on `dev`), `itemLines` (done, doing, todo from the Work records) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/runbook.md#the-status-of-a-project).
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
 - [src/live.ts](src/live.ts) — `LiveAttempts`: each running Worker attempt's
   start, last activity and the `progress` its Worker reported (in memory
@@ -128,7 +129,7 @@ reruns the Work, a denial fails it.
 
 [src/kinds.ts](src/kinds.ts): `task@1` (`instructions`, optional `base`,
 optional `context`: Artifacts the Worker reads as data, also listed as the
-task's inputs) and
+task's inputs, optional `item`: the Item of the repository's `STATUS.md`) and
 `git-tree@1` (`repository`, `commit`, `tree`, `parent`), registered by this row.
 The `admitted` event's optional `goal` and the `orchestrator` caller type are read-only: records stored before the Goal feature was removed (ADR-0009, superseded) still open and replay, and new events never carry either. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 

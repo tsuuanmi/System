@@ -60,8 +60,8 @@ type Soon<T> = T | Promise<T>
 
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
-  admitFile(path: string, input: string | undefined, worker?: string): Promise<WorkRecord>
-  admitTask(capabilities: string[], input: string | undefined, worker?: string): Promise<WorkRecord>
+  admitFile(path: string, input: string | undefined, worker?: string, force?: boolean): Promise<WorkRecord>
+  admitTask(capabilities: string[], input: string | undefined, worker?: string, force?: boolean): Promise<WorkRecord>
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
@@ -74,7 +74,9 @@ export interface WorkCommands {
   wait(workId: string): Promise<Followed>
   /** A Work's measurements. */
   report(workId: string): Promise<unknown>
-  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[]): Promise<{ task: string; base?: string }>
+  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string): Promise<{ task: string; base?: string }>
+  /** The lines of the status of the project at `repository` (see the Host's `status`). */
+  status(repository: string, state: string | undefined, item: string | undefined): Promise<string[]>
   addConversation(parts: ConversationParts, asserted: Asserted, supersedes: string[]): Promise<{ id: string }>
 }
 
@@ -257,13 +259,26 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--repo <path>', 'a git repository the task starts from')
     .option('--ref <ref>', 'the commit or branch in --repo', 'HEAD')
     .option('--context <id>', 'an Artifact the Worker reads as data, such as a conversation (repeatable)', collect, [])
-    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[] }) => {
+    .option('--item <id>', 'the Item of the repository\'s STATUS.md this task is for (see system status)')
+    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string }) => {
       select(async () => {
         if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
-        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context)
+        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item)
         if (created.base) io.out(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
+        return 0
+      })
+    })
+  program.command('status')
+    .description('the status of a project: one line per Item of its STATUS.md on dev, done, doing (which Work, step, account, since when, progress) or todo (nobody)')
+    .option('--repo <path>', 'a git repository of the project', '.')
+    .option('--state <state>', 'only Items that are todo, doing or done')
+    .option('--item <id>', 'only this Item')
+    .action((options: { repo: string; state?: string; item?: string }) => {
+      select(async () => {
+        if (options.state && !['todo', 'doing', 'done'].includes(options.state)) throw new Error('--state is todo, doing or done')
+        for (const line of await host.work().status(options.repo, options.state, options.item)) io.out(`${line}\n`)
         return 0
       })
     })
@@ -350,15 +365,16 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
     .option('--worker <ref>', 'only this Worker may take its Worker steps (see system workers)')
+    .option('--force', 'admit although the input Task\'s Item already has a running or held Work')
     .option('--no-run', 'admit only')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
-    .action((options: { workflow?: string; capability?: string[]; input?: string; worker?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
+    .action((options: { workflow?: string; capability?: string[]; input?: string; worker?: string; force?: boolean; run: boolean; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
         const admitted = options.workflow
-          ? await commands.admitFile(options.workflow, options.input, options.worker)
-          : await commands.admitTask(options.capability!, options.input, options.worker)
+          ? await commands.admitFile(options.workflow, options.input, options.worker, options.force)
+          : await commands.admitTask(options.capability!, options.input, options.worker, options.force)
         io.out(`${admitted.id}\n`)
         if (!options.run) return 0
         return exitOf(await commands.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))

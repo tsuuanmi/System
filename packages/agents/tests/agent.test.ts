@@ -364,6 +364,8 @@ test('Codex takes over cancelled Claude work from the partial Artifact, in one W
     async putSpec(spec) { return (await artifacts.put({ kind: 'note-spec', schemaVersion: 1, content: spec, classification: 'public', producer: { type: 'operator', ref: 't' } })).id },
     getSpec: (id) => { const r = artifacts.get(id); return r.state === 'stored' ? r.envelope.content as ResolvedSpec : undefined },
     exists: (id) => artifacts.get(id).state === 'stored',
+    taskOf: () => undefined,
+    withNote: async () => { throw new Error('no Item in this test') },
     kindOf: (id) => { const r = artifacts.get(id); return r.state === 'stored' ? r.envelope.kind : undefined },
     putVerdict: async () => { throw new Error('no verify step in this test') },
   }
