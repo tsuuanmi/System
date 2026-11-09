@@ -553,3 +553,10 @@ test('checkEnv: HOME, PATH, CI and malformed names are refused', () => {
   }
   assert.equal(checkEnvSchema.safeParse({ RUSTUP_HOME: '/x', _A1: 'y' }).success, true)
 })
+
+test('a check run is gone when no process has its throwaway HOME; the limit is the verifier\'s maxConcurrentChecks', async () => {
+  const limited = requiredChecks(store(), processSpawner, Date.now, {}, 2)
+  assert.equal(limited.maxConcurrentChecks, 2)
+  assert.equal(requiredChecks(store(), processSpawner).maxConcurrentChecks, undefined)
+  assert.equal(await limited.gone!('attempt:never-ran'), true)
+})

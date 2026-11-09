@@ -47,6 +47,10 @@ export interface Fixture {
   arrived(stepId: string, count?: number): Promise<void>
   /** Let the attempts held at `stepId` go on. */
   release(stepId: string): void
+  /** The most runs of the fake verifier that went at once. */
+  checkPeak(): number
+  /** The fake verifier's attempt IDs that were started. */
+  checkAttempts: string[]
   /** Say that the process of an attempt is confirmed gone: its Account's Worker then reports it settled. */
   gone(attemptId: string): void
   /** Admit a Workflow file from workflows/ with a stored input. */
@@ -66,12 +70,14 @@ export interface Fixture {
 /** The two Accounts of the fake Workers: Brainstorm's proposals use different ones, as the bundle's do. */
 export const CLAUDE = 'fake/claude'
 export const CODEX = 'fake/codex'
+export const SPARE = 'fake/spare'
 
 /**
  * With a `seed`, every attempt first yields a seeded number (0 to 8) of
- * event-loop turns. `slots` is each Account's `maxConcurrentAttempts`.
+ * event-loop turns. `slots` is each Account's `maxConcurrentAttempts`; `checks`
+ * the fake verifier's `maxConcurrentChecks` (none: no limit).
  */
-export function fixture(options: { seed?: number; slots?: number } = {}): Fixture {
+export function fixture(options: { seed?: number; slots?: number; checks?: number; spare?: boolean } = {}): Fixture {
   const random = options.seed === undefined ? undefined : seeded(options.seed)
   const stored = new Set<string>()
   const specs = new Map<string, ResolvedSpec>()
@@ -94,6 +100,9 @@ export function fixture(options: { seed?: number; slots?: number } = {}): Fixtur
   const active: Record<string, number> = {}
   const peak: Record<string, number> = {}
   const attempts: string[] = []
+  const checkAttempts: string[] = []
+  let checking = 0
+  let checkPeak = 0
   const delay = async () => { for (let n = Math.floor((random?.() ?? 0) * 9); n > 0; n--) await turn() }
 
   const remote: Fixture['remote'] = { state: 'absent' }
@@ -129,14 +138,30 @@ export function fixture(options: { seed?: number; slots?: number } = {}): Fixtur
   })
   worker(CLAUDE, ['code-write', 'research', 'web-search', 'brainstorm.idea-a', 'brainstorm.synthesis'])
   worker(CODEX, ['brainstorm.idea-b'])
+  // A second Account offering what the first does, registered after it: the route for a step whose first capable Account is full.
+  if (options.spare) worker(SPARE, ['brainstorm.idea-a'])
   capabilities.registerVerifier({
     ref: 'fake-verifier', version: '1', capabilities: ['code.required-checks', 'research.citation-check'], accepts: ['output'],
+    ...(options.checks === undefined ? {} : { maxConcurrentChecks: options.checks }),
+    async gone(attemptId) { return goneAttempts.has(attemptId) },
     async criteria(request) { const c = id(`criteria/${request.name}`); stored.add(c); return c },
     async verify(request) {
-      await delay()
-      const evidence = id(`evidence/${request.attemptId}`)
-      stored.add(evidence)
-      return { verdict: next.shift() ?? 'pass', reason: 'scripted', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
+      checkAttempts.push(request.attemptId)
+      checking++
+      checkPeak = Math.max(checkPeak, checking)
+      try {
+        await delay()
+        if (held.has(request.stepId)) {
+          arrived.set(request.stepId, (arrived.get(request.stepId) ?? 0) + 1)
+          for (const waiter of arrivals.get(request.stepId) ?? []) if (arrived.get(request.stepId)! >= waiter.count) waiter.go()
+          await new Promise<void>((go) => waiting.set(request.stepId, [...(waiting.get(request.stepId) ?? []), go]))
+        }
+        const evidence = id(`evidence/${request.attemptId}`)
+        stored.add(evidence)
+        return { verdict: next.shift() ?? 'pass', reason: 'scripted', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
+      } finally {
+        checking--
+      }
     },
   })
   capabilities.registerEffect({
@@ -149,7 +174,7 @@ export function fixture(options: { seed?: number; slots?: number } = {}): Fixtur
   const table = memoryWorkTable()
   const controller = new WorkController(table, specStore, capabilities)
   return {
-    controller, capabilities, table, attempts, remote, peak, verdicts: next, files: workflowFile,
+    controller, capabilities, table, attempts, checkAttempts, checkPeak: () => checkPeak, remote, peak, verdicts: next, files: workflowFile,
     hold: (stepId) => { held.add(stepId) },
     arrived: (stepId, count = 1) => ((arrived.get(stepId) ?? 0) >= count ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, [...(arrivals.get(stepId) ?? []), { count, go }]))),
     release: (stepId) => { held.delete(stepId); for (const go of waiting.get(stepId) ?? []) go(); waiting.delete(stepId) },

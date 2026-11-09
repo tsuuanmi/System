@@ -9,7 +9,7 @@
  * Verdict: `pass` when every check exits 0 and leaves no Xvfb or Chrome running (it is named and killed), `fail` when any does not (a
  * timeout is a failure), `error` when the checks could not be run at all.
  */
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, matchesGlob } from 'node:path'
 import type { Spawner } from '@system/agents'
@@ -87,6 +87,22 @@ export function stopLeftovers(home: string): string[] {
 export const selected = (check: { paths?: string[] }, touched: readonly string[]): boolean =>
   !check.paths || touched.some((file) => check.paths!.some((glob) => matchesGlob(file, glob)))
 
+/** The throwaway directory (and HOME) of one verify attempt: its name carries the attempt ID, so a later Host can tell whether the run is gone. */
+const scratchOf = (attemptId: string): string => join(tmpdir(), `system-checks-${attemptId.replace(/[^A-Za-z0-9-]/g, '-')}`)
+
+/** Whether any process of this user has `home` as its HOME: what a check, and whatever it started, still running looks like. */
+function anyWithHome(home: string): boolean {
+  for (const entry of readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry)) continue
+    try {
+      if (readFileSync(`/proc/${entry}/environ`, 'utf8').split('\0').includes(`HOME=${home}`)) return true
+    } catch {
+      // Gone already or another user's.
+    }
+  }
+  return false
+}
+
 const tail = (text: string) => (text.length > TAIL ? text.slice(-TAIL) : text)
 
 function contentOf<T>(artifacts: Artifacts, id: string, kind: string): T {
@@ -95,7 +111,7 @@ function contentOf<T>(artifacts: Artifacts, id: string, kind: string): T {
   return read.envelope.content as T
 }
 
-export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () => number = Date.now, checkEnv: Record<string, string> = {}): VerifierPort {
+export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () => number = Date.now, checkEnv: Record<string, string> = {}, maxConcurrentChecks?: number): VerifierPort {
   const given = checkEnvSchema.safeParse(checkEnv)
   if (!given.success) throw new Error(`checkEnv is invalid: ${given.error.issues.map((i) => `${i.path.join('.')}${i.path.length ? ': ' : ''}${i.message}`).join('; ')}`)
   const extra = Object.keys(given.data)
@@ -104,6 +120,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     ref: 'code.required-checks',
     version: '1',
     capabilities: ['code.required-checks'],
+    ...(maxConcurrentChecks === undefined ? {} : { maxConcurrentChecks }),
+    // A check of a Host that died is gone when no process has its throwaway HOME any more.
+    async gone(attemptId) { return !anyWithHome(scratchOf(attemptId)) },
     // A task on its own (code-checks.yaml alone) has its base commit checked as it is.
     accepts: ['git-tree', 'task'],
     async criteria({ name, input }) {
@@ -131,7 +150,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const treeId = subject.state === 'stored' && subject.envelope.kind === TASK_KIND.kind ? (subject.envelope.content as Task).base ?? '' : request.subject
       const tree = contentOf<GitTreeContent>(artifacts, treeId, 'git-tree')
       const checks = contentOf<Checks>(artifacts, request.criteria, CHECKS_KIND.kind)
-      const scratch = mkdtempSync(join(tmpdir(), 'system-checks-'))
+      const scratch = scratchOf(request.attemptId)
+      rmSync(scratch, { recursive: true, force: true })
+      mkdirSync(scratch)
       const worktree = join(scratch, 'work')
       try {
         await addWorktree(tree.repository, worktree, tree.commit)

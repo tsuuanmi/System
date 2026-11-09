@@ -61,6 +61,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), attemptId: z.string(), executor: z.enum(['worker', 'verifier']),
     capability: z.string(), selected: z.string(), candidates: z.array(candidate),
     inputs: z.record(z.string(), contentIdSchema),
+    /** How long the step waited for a free slot before this dispatch (the Account's or the check's); absent when it did not wait. */
+    waitedMs: z.number().int().positive().optional(),
   }).strict(),
   z.object({
     type: z.literal('observed'), seq: z.number().int(), at,
@@ -71,6 +73,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     /** The bounded agent output, for audit only; never handed to another Worker. */
     log: contentIdSchema.optional(),
     worker: executorSchema.optional(),
+    /** The attempt failed on a rate limit of its Account. */
+    rateLimited: z.literal(true).optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,

@@ -72,7 +72,7 @@ The controller records `effect-intended` before `apply` and
 ## Verified
 
 Against a real bare git remote (`file://`) and a fake GitHub API, in unit
-tests and on the booted profile (`tests/publish.test.ts`), including a host
+tests and on the booted profile (`tests/publish*.test.ts`), including a host
 killed after the pull request was created, one killed during the push and one
 killed once the base moved (a `post-receive` hook of the remote). The merge
 queue's rounds (a change merged with a tip that has another, a conflict, a

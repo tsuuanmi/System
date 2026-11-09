@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { CLAUDE, CODEX, assertConsistent, caller, fixture, seeded } from '../../../test-support/fixture.ts'
+import { CLAUDE, CODEX, SPARE, assertConsistent, caller, fixture, seeded } from '../../../test-support/fixture.ts'
 import type { WorkRecord } from '../src/record.ts'
+import { summarize } from '../src/summary.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-slots-'))
 after(() => rmSync(dir, { recursive: true, force: true }))
@@ -275,3 +276,103 @@ for (let seed = 1; seed <= 50; seed++) {
     }
   })
 }
+
+test('three Works reach their checks at once: only two run until one finishes, and the third shows as waiting for a check slot', { timeout: 20_000 }, async () => {
+  const f = fixture({ checks: 2 })
+  const host = await f.startHost(newHome())
+  try {
+    const ids = [(await host.submit(f.admission('code-checks.yaml'))).id, (await host.submit(f.admission('code-checks.yaml'))).id, (await host.submit(f.admission('code-checks.yaml'))).id]
+    f.hold('checks')
+    const runs = ids.map((id) => host.run(id))
+    await f.arrived('checks', 2)
+    await turns(50)
+    assert.equal(f.checkAttempts.length, 2, 'the third check does not start')
+    const waiting = ids.filter((id) => host.view.live(id).some((a) => a.waiting === 'a check slot'))
+    assert.equal(waiting.length, 1)
+    assert.equal(host.view.get(waiting[0]!)!.events.some((e) => e.type === 'dispatched'), false, 'a waiting check is not dispatched')
+    f.release('checks')
+    for (const record of await Promise.all(runs)) assert.equal(record.state.status, 'succeeded')
+    assert.equal(f.checkAttempts.length, 3)
+    assert.equal(f.checkPeak(), 2, 'never more than the limit')
+    assert.deepEqual(ids.flatMap((id) => host.view.live(id)), [])
+    for (const id of ids) assertConsistent(f, id)
+  } finally {
+    await host.close()
+  }
+})
+
+test('a lost check keeps its check slot until its process is confirmed gone, then the slot is freed', { timeout: 20_000 }, async () => {
+  const f = fixture({ checks: 1 })
+  const home = newHome()
+  const first = await f.startHost(home)
+  const { id } = await first.submit(f.admission('code-checks.yaml'))
+  f.hold('checks')
+  const running = first.run(id)
+  await f.arrived('checks')
+  await first.close()
+  f.release('checks')
+  await assert.rejects(running, /Host is closed/)
+
+  const second = await f.startHost(home)
+  try {
+    const lost = second.slots.uncertain()
+    assert.equal(lost.length, 1)
+    assert.equal(lost[0]!.stepId, 'checks')
+    const other = await second.submit(f.admission('code-checks.yaml'))
+    const otherRun = second.run(other.id)
+    await turns(50)
+    assert.equal(f.checkAttempts.length, 1, 'the lost check still holds the only slot')
+    assert.equal(second.view.live(other.id)[0]?.waiting, 'a check slot')
+    assert.deepEqual(await second.slots.settle(), [], 'not confirmed gone: the slot stays held')
+    f.gone(lost[0]!.attemptId)
+    assert.deepEqual(await second.slots.settle(), lost)
+    assert.equal((await otherRun).state.status, 'succeeded', 'the waiting Work takes the freed slot')
+    assert.deepEqual(second.slots.uncertain(), [])
+    assert.equal(f.checkAttempts.length, 2)
+  } finally {
+    await second.close()
+  }
+})
+
+test('a step whose first capable Account is full goes to the next capable Account with a free slot, and the record says why', { timeout: 20_000 }, async () => {
+  const f = fixture({ spare: true })
+  const host = await f.startHost(newHome())
+  try {
+    const a = await host.submit(f.admission('brainstorm.yaml'))
+    const b = await host.submit(f.admission('brainstorm.yaml'))
+    f.hold('idea-a')
+    const runs = [host.run(a.id), host.run(b.id)]
+    await f.arrived('idea-a', 2)
+    const selected = [a.id, b.id].map((id) => host.view.get(id)!.events.find((e) => e.type === 'dispatched' && e.stepId === 'idea-a'))
+    assert.deepEqual(selected.map((e) => e?.type === 'dispatched' && e.selected), [CLAUDE, SPARE])
+    const second = selected[1]
+    assert.ok(second?.type === 'dispatched' && second.candidates.find((c) => c.ref === CLAUDE)?.reason.includes('no free slot'))
+    f.release('idea-a')
+    for (const record of await Promise.all(runs)) assert.equal(record.state.status, 'succeeded')
+  } finally {
+    await host.close()
+  }
+})
+
+test('a step waits when every capable Account is full; the time it waited is recorded and summed by the report', { timeout: 20_000 }, async () => {
+  const f = fixture()
+  const host = await f.startHost(newHome())
+  try {
+    const a = await host.submit(f.admission('brainstorm.yaml'))
+    const b = await host.submit(f.admission('brainstorm.yaml'))
+    f.hold('idea-a')
+    const runs = [host.run(a.id), host.run(b.id)]
+    await f.arrived('idea-a')
+    await turns()
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    f.release('idea-a')
+    await Promise.all(runs)
+    const waited = (id: string) => host.view.get(id)!.events.flatMap((e) => (e.type === 'dispatched' && e.waitedMs !== undefined ? [e.waitedMs] : []))
+    assert.deepEqual(waited(a.id), [], 'the first Work found a free slot at once')
+    assert.ok(waited(b.id).some((ms) => ms >= 50), `the second Work's waiting is recorded: ${waited(b.id)}`)
+    assert.ok(summarize(host.view.get(b.id)!).waitedForSlotMs >= 50)
+    assert.equal(summarize(host.view.get(a.id)!).waitedForSlotMs, 0)
+  } finally {
+    await host.close()
+  }
+})

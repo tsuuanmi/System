@@ -54,7 +54,8 @@ Steps (the tools may be shown as status, task_new, work_submit, with _ for .)
    ~/.system/current/workflows/software-engineering.yaml. The others there:
    code-checks, research, research-fanout, brainstorm, debate, second-opinion.
 4. Follow it with \`work_watch\` or \`work_events\`; read details by ID
-   (\`work_show\`, \`artifact_show\`).
+   (\`work_show\`, \`artifact_show\`). To know when a Work is done without
+   asking, run \`system work wait <id>\` as a background command.
 
 Bootstrap of a new repository (you do this, there is no script)
 1. Check the GitHub remote.

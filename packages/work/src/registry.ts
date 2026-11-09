@@ -115,6 +115,10 @@ export interface VerifierPort {
   /** Pin the named criteria for one Work at admission, as an Artifact; throws to refuse admission. */
   criteria(request: CriteriaRequest): Promise<string>
   verify(request: VerifyRequest): Promise<VerifyResult>
+  /** How many runs of this verifier go at once on the machine (the Host's check slots); absent: no limit. */
+  maxConcurrentChecks?: number
+  /** Whether the process of a run is confirmed gone: what settles a lost run, which until then keeps its check slot. Absent: never confirmed. */
+  gone?(attemptId: string): Promise<boolean>
 }
 
 /**
@@ -164,6 +168,8 @@ export interface EffectPort {
 export interface Route<P> {
   selected?: P
   candidates: { ref: string; selected: boolean; reason: string }[]
+  /** Some port is capable, but none has a free slot: the step waits for one instead of failing. */
+  full?: boolean
 }
 
 export class Capabilities {
@@ -195,16 +201,21 @@ export class Capabilities {
   }
 
   /**
-   * The first registered Worker with every needed capability; every candidate's reason is kept.
+   * The first registered Worker with every needed capability and, when `free` is given, a free slot; every candidate's reason is kept.
    * `only`: the one Worker allowed (`system work submit --worker`, or a takeover by `system work retry --worker`).
+   * Capable Workers but none free: `selected` is absent and `full` is set.
    */
-  routeWorker(needs: readonly string[], only?: string): Route<WorkerPort> {
-    return route(this.workers, needs, only)
+  routeWorker(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean): Route<WorkerPort> {
+    return route(this.workers, needs, only, free)
   }
 
   /** The Worker (Account) of a ref. */
   workerFor(ref: string): WorkerPort | undefined {
     return this.workers.find((w) => w.ref === ref)
+  }
+
+  verifierFor(ref: string): VerifierPort | undefined {
+    return this.verifiers.find((v) => v.ref === ref)
   }
 
   workerRefs(): string[] {
@@ -220,15 +231,17 @@ export class Capabilities {
   }
 }
 
-function route<P extends { ref: string; capabilities: readonly string[] }>(ports: readonly P[], needs: readonly string[], only?: string): Route<P> {
+function route<P extends { ref: string; capabilities: readonly string[] }>(ports: readonly P[], needs: readonly string[], only?: string, free?: (port: P) => boolean): Route<P> {
   let selected: P | undefined
+  let full = false
   const candidates = ports.map((port) => {
     const missing = needs.filter((c) => !port.capabilities.includes(c))
     if (only !== undefined && port.ref !== only) return { ref: port.ref, selected: false, reason: `only ${only} is allowed` }
     if (missing.length) return { ref: port.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
     if (selected) return { ref: port.ref, selected: false, reason: `capable; ${selected.ref} registered first` }
+    if (free && !free(port)) { full = true; return { ref: port.ref, selected: false, reason: 'capable; no free slot' } }
     selected = port
     return { ref: port.ref, selected: true, reason: `provides ${needs.join(', ')}` }
   })
-  return { selected, candidates }
+  return { selected, candidates, ...(!selected && full ? { full } : {}) }
 }

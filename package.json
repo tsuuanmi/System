@@ -10,8 +10,8 @@
     "build": "touch .building && tsc -p packages/artifacts/tsconfig.build.json && tsc -p packages/work/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && tsc -p packages/fakes/tsconfig.build.json && tsc -p packages/web-driver/tsconfig.build.json && tsc -p packages/agents/tsconfig.build.json && tsc -p packages/web-worker/tsconfig.build.json && tsc -p packages/verifiers/tsconfig.build.json && tsc -p packages/effects/tsconfig.build.json && tsc -p packages/app/tsconfig.build.json && rm -f .building",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "SYSTEM_NO_BROWSER=1 node --test $(ls packages/*/tests/*.test.ts | grep -Ev '^packages/web-worker/tests/(chatgpt|chrome|remote)|/(driver|conformance)\\.test\\.ts$')",
-    "test:web": "node --test --test-timeout=300000 packages/web-worker/tests/*.test.ts packages/web-driver/tests/driver.test.ts packages/web-driver/tests/conformance.test.ts tests/chatgpt-web.test.ts",
-    "smoke": "SYSTEM_NO_BROWSER=1 node --test --test-timeout=300000 --test-concurrency=16 $(ls tests/*.test.ts | grep -v '/chatgpt-web\\.test\\.ts$')",
+    "test:web": "node --test --test-timeout=300000 packages/web-worker/tests/*.test.ts packages/web-driver/tests/driver.test.ts packages/web-driver/tests/conformance.test.ts tests/chatgpt-web.test.ts tests/web-canary.test.ts",
+    "smoke": "SYSTEM_NO_BROWSER=1 node --test --test-timeout=300000 --test-concurrency=16 $(ls tests/*.test.ts | grep -Ev '/(chatgpt-web|web-canary)\\.test\\.ts$')",
     "check": "\"$npm_execpath\" run build && \"$npm_execpath\" run typecheck && \"$npm_execpath\" run test && \"$npm_execpath\" run smoke && \"$npm_execpath\" run test:web"
   },
   "devDependencies": {

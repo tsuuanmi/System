@@ -1,8 +1,9 @@
 /**
  * The status of a project (PLAN DF2c): the Items of a repository's `STATUS.md`
- * (done as it says on the `dev` tip) and the Works that carry them out.
+ * (done as it says on the `origin/dev` tip, else `dev`) and the Works that carry them out.
  * Nothing here is stored.
  */
+import { realpathSync } from 'node:fs'
 import { git, snapshot } from './git.ts'
 import { ITEM_ID } from './kinds.ts'
 import type { LiveAttempt } from './live.ts'
@@ -69,19 +70,44 @@ export function parseStatus(text: string): ParsedStatus {
 export interface StatusFile extends ParsedStatus {
   /** The repository's top level, as a Work's Task records it. */
   repository: string
-  /** The `dev` tip it was read at. */
+  /** The tip it was read at. */
   commit: string
+  /** The ref it was read from: `origin/dev` when the repository has it, else `dev`. */
+  ref: 'origin/dev' | 'dev'
+  /** One line saying which ref was read and, if git can tell, how old it is (never fetched here). */
+  note: string
 }
 
-/** `STATUS.md` at the `dev` tip of the repository that contains `path`, read from git and never from the working tree. */
+/** When the remote-tracking ref was last updated (its newest reflog entry), if git has that. */
+async function refAge(repository: string, ref: string): Promise<string | undefined> {
+  try {
+    const at = (await git(repository, ['log', '-g', '-1', '--format=%cI', `refs/remotes/${ref}`])).trim()
+    const ms = Date.now() - Date.parse(at)
+    if (!at || Number.isNaN(ms)) return undefined
+    const hours = Math.max(0, Math.floor(ms / 3_600_000))
+    return `updated ${hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} days`} ago, ${at}`
+  } catch { return undefined }
+}
+
+/**
+ * `STATUS.md` at the tip of `origin/dev` when the repository that contains
+ * `path` has that remote-tracking ref, else of the local `dev`; read from git
+ * and never from the working tree. It does not fetch: the note says how old
+ * the ref is, when git can tell.
+ */
 export async function readStatus(path: string): Promise<StatusFile> {
-  const { repository, commit } = await snapshot(path, 'dev')
+  const top = realpathSync((await git(path, ['rev-parse', '--show-toplevel'])).trim())
+  const remote = await git(top, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/dev^{commit}']).then(() => true, () => false)
+  const ref = remote ? 'origin/dev' : 'dev'
+  const { repository, commit } = await snapshot(top, remote ? 'refs/remotes/origin/dev' : 'dev')
+  const age = remote ? await refAge(repository, ref) : undefined
+  const note = `read ${ref} (${commit.slice(0, 12)})${remote ? `, not fetched: ${age ?? 'age unknown'}` : ', no origin/dev here'}`
   let text: string | undefined
   try {
     text = await git(repository, ['show', `${commit}:STATUS.md`])
   } catch { /* none at that commit */ }
-  const parsed = text === undefined ? { aim: [], items: [], problems: [`no STATUS.md on dev (${commit.slice(0, 12)}) in ${repository}`] } : parseStatus(text)
-  return { repository, commit, ...parsed }
+  const parsed = text === undefined ? { aim: [], items: [], problems: [`no STATUS.md on ${ref} (${commit.slice(0, 12)}) in ${repository}`] } : parseStatus(text)
+  return { repository, commit, ref, note, ...parsed }
 }
 
 type Admitted = Extract<WorkEvent, { type: 'admitted' }>
@@ -109,6 +135,7 @@ export function whoHas(record: WorkRecord): { step?: string; account?: string } 
 }
 
 const progressText = (attempt: LiveAttempt | undefined): string => {
+  if (attempt?.waiting) return `waiting for ${attempt.waiting}`
   const p = attempt?.progress
   const parts = [
     p?.turns !== undefined ? `turns ${p.turns}` : '', p?.lastTool ? `last tool ${p.lastTool}` : '',
@@ -118,16 +145,25 @@ const progressText = (attempt: LiveAttempt | undefined): string => {
 }
 
 function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | undefined): string {
-  const { step, account } = whoHas(record)
+  const waiting = live?.(record.id).find((a) => a.waiting)
+  const { step, account } = waiting ? { step: waiting.stepId, account: waiting.worker } : whoHas(record)
   const who = step ? `step ${step} on ${account}` : 'no step yet'
-  const tail = record.state.status === 'held' ? `held: ${record.state.reason ?? 'no reason recorded'}` : live ? progressText(live(record.id).find((a) => a.stepId === step)) : ''
+  const tail = record.state.status === 'held' ? `held: ${record.state.reason ?? 'no reason recorded'}` : live ? progressText(live(record.id).find((a) => a.stepId === step && (!!a.waiting || !waiting))) : ''
   return `${record.id} ${who} since ${admittedAt(record)}${tail ? `; ${tail}` : ''}`
 }
+
+/** Whether a Work's effects merged its change into `dev`: a `git.publish` the merge queue applied (it merges only into a base in `mergeInto`). */
+export const wasMerged = (record: WorkRecord): boolean => Object.values(record.state.effects).some((e) => e.state === 'applied' && e.detail?.merged === 'true')
+
+/** Whether a Work changed nothing: it did not succeed and a step of it failed on `no change` (a `code-write` tree equal to its base). */
+const changedNothing = (record: WorkRecord): boolean =>
+  record.state.status !== 'succeeded' && record.events.some((e) => e.type === 'observed' && e.status === 'failed' && /^no change\b/.test(e.reason ?? ''))
 
 const artifactsOf = (record: WorkRecord): string[] => Object.values(record.state.results)
 
 /**
- * One line per Item, as `[x] <id> <title> - <state>`: `done` (with the last
+ * One line per Item, as `[x] <id> <title> - <state>`: `done` (ticked in
+ * STATUS.md, or a Work for it was merged into `dev`; with the last merged or
  * succeeded Work and its Artifacts, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
  * the Host holds for it, or why it is held) or `todo: nobody`. An Item only
@@ -145,13 +181,15 @@ export function itemLines(
     if (filter.item && item.id !== filter.item) continue
     const works = worksFor(records, { id: item.id, repository })
     const active = works.filter(isActive)
-    const state = item.done ? 'done' : active.length ? 'doing' : 'todo'
+    // Done is derived: ticked by hand (done outside System) or a Work for the Item was merged into `dev`.
+    const merged = works.filter(wasMerged)
+    const state = item.done || merged.length ? 'done' : active.length ? 'doing' : 'todo'
     if (filter.state && filter.state !== state) continue
-    const last = works.findLast((r) => r.state.status === 'succeeded')
+    const last = merged.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const text = state === 'done'
       ? `done${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}`
       : state === 'doing' ? `doing: ${active.map((r) => doing(r, live)).join(' | ')}` : 'todo: nobody'
-    lines.push(`${item.listed ? `[${item.done ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
+    lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }
   return lines
 }
@@ -163,6 +201,7 @@ const MAX_EARLIER = 3
 function earlierText(r: WorkRecord, commitOf: ((id: string) => string | undefined) | undefined): string[] {
   const reason = r.state.status === 'running' ? `at step ${whoHas(r).step ?? 'none yet'}` : r.state.status === 'succeeded' ? artifactsOf(r).join(', ') : r.state.reason
   const lines = [`- ${r.id} ${r.state.status}${reason ? `: ${reason}` : ''}`]
+  if (changedNothing(r)) lines.push('  changed nothing: no change to start from; its Task is the only thing to learn from')
   if (r.state.input) lines.push(`  Task (read its instructions by this ID): ${r.state.input}`)
   const changes = new Map<string, string>()
   for (const id of [...Object.values(r.state.results), ...Object.values(r.state.steps).flatMap((s) => Object.values(s.outputs))]) {
@@ -185,8 +224,8 @@ export async function itemNote(item: ItemRef, records: WorkRecord[], commitOf?: 
   const status = item.repository ? await readStatus(item.repository).catch(() => undefined) : undefined
   const earlier = worksFor(records, item).slice(-MAX_EARLIER).reverse().flatMap((r) => earlierText(r, commitOf))
   return [
-    `Item ${item.id}${item.repository ? ` of ${item.repository}` : ''}, from STATUS.md on dev:`,
     itemLines(status ?? { items: [] }, item.repository, records, undefined, { item: item.id })[0]!,
+    `(Item ${item.id}${item.repository ? ` of ${item.repository}` : ''}, from STATUS.md on dev; done once a Work for it is merged into dev.)`,
     '',
     ...(earlier.length ? [
       'Earlier Works for this Item, newest first (at most 3). Read a Task or Artifact by its ID for the details. If an earlier Work left a change, you may start from its commit instead of from scratch, and fix what its failed check names:',

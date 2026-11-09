@@ -182,12 +182,15 @@ home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
 
 Names match `^[A-Z_][A-Z0-9_]*$`; `HOME`, `PATH` and `CI` cannot be set, and
 the profile is refused if it tries. A `check-run@1` records the names it was
-given, never the values.
+given, never the values. The same row's `maxConcurrentChecks` (default 2) is how many `code.required-checks` runs go at once on the machine; the others show as waiting for a check slot in `work show` and `system status`, and a lost run keeps its slot until its processes are gone.
 
 ## Attempts at once, and held slots
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
-attempt at a time; other steps and Works that need it wait in the Host. To allow
+attempt at a time; other steps and Works that need it wait in the Host, unless
+another Account offers the same capabilities and has a free slot, which takes
+the step. `system work report` shows the time a Work waited for a slot
+(`waitedForSlotMs`) and its rate-limited attempts (`rateLimitedAttempts`). To allow
 more, set `maxConcurrentAttempts` (a whole number of at least 1, else the account
 is skipped and `system workers` says why) in the profile's `agents` row, then
 restart the Host:
@@ -488,9 +491,10 @@ system task new --text "..." --repo . --ref dev --item df-3
 system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
-`status` prints one line per Item, from the `dev` tip of the repository (git,
-not the working tree) and the Work records: `done` is `[x]` in `STATUS.md`,
-with the last Work and Artifact for the Item; `doing` is a Work whose Task
+`status` prints one line per Item, from the tip of `origin/dev` (else the local `dev`) of the repository (git,
+not the working tree; it never fetches, and the `note:` line names the ref and its age) and the Work records: `done` is derived: a Work whose Task names the Item
+was merged into `dev` (its `git.publish` merge was applied, read from the Host's store), or the line is `[x]` for
+work done outside System; it names the last merged Work and its Artifact; `doing` is a Work whose Task
 names the Item and that is running or held (its ID, step, Account, since when,
 and the live progress the Host keeps, or why it is held); `todo` is `nobody`.
 Read a Work by its ID for details. The MCP tool `status` answers the same.
@@ -500,8 +504,9 @@ refused, naming that Work and its Account. `--force` (`force: true`) allows
 parallel work on purpose. A Task that names an Item is read with the Item's
 line and, for its last three earlier Works, their end reason, Task ID, change
 Artifact and commit, and each failed verdict's full reason and evidence IDs added
-to its context, so a new session or Worker can carry on from the status alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
-pull request.
+to its context, so a new session or Worker can carry on from the status alone; the context opens with the Item's line and marks an earlier Work that
+changed nothing (`no change`). Works do not edit `STATUS.md`: done is derived, so parallel Works never conflict on neighbouring lines.
+`task new --item` is refused when the Item has no line in `STATUS.md` on `dev` (or no `--repo` is given), so every Worker has its description.
 
 ## Using System from an agent
 

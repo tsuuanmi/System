@@ -138,7 +138,7 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'Duration, attempts, operator touches and usage of a Work, from its events.',
+      summary: 'Duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events.',
       params: z.object({ workId }).strict(),
       handler: (host, p) => summarize(known(host, p.workId)),
     },
@@ -177,18 +177,18 @@ export function operations(services: Services): Methods {
     },
     'task.new': {
       agent: true,
-      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`).',
+      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s `dev` has no line for the Item.',
       params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional() }).strict(),
       handler: (_host, p, caller) => services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item, p.repository ? p.against : undefined),
     },
     status: {
       read: true,
       agent: true,
-      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `dev` tip, as `[x] <id> <title> - <state>`. `done`: ticked in `STATUS.md` (with the last Work and Artifact IDs when known); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines. Read the Work by ID for details.',
+      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: a Work for the Item was merged into `dev` (read from the Host\'s store), or `[x]` in `STATUS.md` for work done outside System (with the last merged Work and Artifact IDs when known); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
       params: z.object({ repository: z.string().min(1), state: z.enum(['todo', 'doing', 'done']).optional(), item: z.string().regex(ITEM_ID).optional() }).strict(),
       async handler(host, p) {
         const status = await readStatus(p.repository)
-        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }), ...status.problems.map((problem) => `note: ${problem}`)]
+        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }), ...[status.note, ...status.problems].map((problem) => `note: ${problem}`)]
       },
     },
     'artifact.put': {

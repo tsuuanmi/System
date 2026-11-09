@@ -46,10 +46,25 @@ export interface ArtifactCommands {
 /** What a command that follows a Work accepts: Ctrl-C detaches, or with this cancels the Work and goes on following it. */
 export interface FollowOptions {
   cancelOnInterrupt?: boolean
+  /** Aborting it ends the following without a word; the result is `stopped`. */
+  signal?: AbortSignal
+}
+
+/** What `work wait` accepts: with `any` it returns at the first Work that ended, otherwise when all have; after `timeoutMs` it gives up. */
+export interface WaitOptions {
+  any: boolean
+  timeoutMs?: number
+}
+
+/** The Works as they are when the wait returned, and the one whose ending decided it (none on a timeout or Ctrl-C). */
+export interface Waited {
+  records: WorkRecord[]
+  decided?: string
+  timedOut: boolean
 }
 
 /** A Work's record once it is terminal, or `detached` when the operator left it running in the Host. */
-export type Followed = WorkRecord | 'detached'
+export type Followed = WorkRecord | 'detached' | 'stopped'
 
 /** A value now, or when the Host has answered. */
 type Soon<T> = T | Promise<T>
@@ -68,6 +83,8 @@ export interface WorkCommands {
   retry(workId: string, worker: string | undefined, reason: string, step: string | undefined, follow?: FollowOptions): Promise<Followed>
   /** Wait until nothing runs the Work, as after a cancel was requested. */
   wait(workId: string): Promise<Followed>
+  /** Wait for every one of `workIds`, or with `any` the first, to end, be held or await approval. */
+  waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** A Work's measurements. */
   report(workId: string): Promise<unknown>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string): Promise<{ task: string; base?: string }>
@@ -378,6 +395,31 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return exitOf(await host.work().run(workId, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
+  work.command('wait <workId...>')
+    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work. Exit: the code of the Work that decided it (0 succeeded, 1 failed, 3 held, 5 cancelled), 4 on timeout')
+    .option('--any', 'return at the first Work that ended, not when all have')
+    .option('--timeout <minutes>', 'give up after this many minutes (exit 4)')
+    .action((workIds: string[], options: { any?: boolean; timeout?: string }) => {
+      select(async () => {
+        let timeoutMs: number | undefined
+        if (options.timeout !== undefined) {
+          const minutes = Number(options.timeout)
+          if (!Number.isFinite(minutes) || minutes <= 0) throw new Error('--timeout takes a positive number of minutes')
+          timeoutMs = minutes * 60_000
+        }
+        const waited = await host.work().waitFor(workIds, { any: Boolean(options.any), timeoutMs })
+        for (const { id, state } of waited.records) {
+          const why = state.reason ?? (state.status === 'held' && state.awaiting ? `awaiting ${state.awaiting}` : undefined)
+          io.out(`${id}  ${state.status}${why ? `  ${why}` : ''}\n`)
+        }
+        if (waited.timedOut) {
+          io.err(`system: timed out after ${options.timeout} minutes; the Works above had not ended (exit 4)\n`)
+          return 4
+        }
+        const decider = waited.records.find((record) => record.id === waited.decided)
+        return decider ? exitCode(decider.state.status) : 0
+      })
+    })
   work.command('show <workId>')
     .description('print the Work record (events and state) as JSON')
     .action((workId: string) => {
@@ -417,7 +459,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
 }
 
 /** The exit code of a followed Work; leaving it running in the Host is not a failure. */
-const exitOf = (followed: Followed): number => (followed === 'detached' ? 0 : exitCode(followed.state.status))
+const exitOf = (followed: Followed): number => (typeof followed === 'string' ? 0 : exitCode(followed.state.status))
 
 /** succeeded 0, failed 1, held for the operator 3, not terminal 4, cancelled 5. */
 export function exitCode(status: string): number {

@@ -47,7 +47,7 @@ checks:
   Xvfb pid 123`, also in the `check-run@1`'s `leftovers`): after each check the
   processes of this user named Xvfb or Chrome whose environment has the check's
   `HOME` are killed. Leaked ones hold a Worker's pipes and profile (2026-11-07).
-  The row's optional config `checkEnv` (name to value, names `^[A-Z_][A-Z0-9_]*$`, never `HOME`, `PATH` or `CI`: refused) adds variables such as `RUSTUP_HOME` to every check; each `check-run@1` records the names, never the values ([runbook](../../docs/operations/runbook.md)).
+  The row's optional config `checkEnv` (name to value, names `^[A-Z_][A-Z0-9_]*$`, never `HOME`, `PATH` or `CI`: refused) adds variables such as `RUSTUP_HOME` to every check; each `check-run@1` records the names, never the values ([runbook](../../docs/operations/runbook.md)). The row's `maxConcurrentChecks` (default 2) limits the runs at once on the machine, as the Host's check slots (the Account-slot mechanism of `@system/work`): a verify attempt waits for a slot, and one lost with its Host keeps it until no process has its throwaway `HOME`.
   `pass` when every check exits 0 and leaves nothing; `fail` when any does not or times out;
   `error` when the commit cannot be checked out.
 - **Node** ([src/reasons.ts](src/reasons.ts), PROP-0007 decision 3): when the

@@ -38,7 +38,7 @@ independently running agent sessions. The DSH
 maps `brainstorm.idea-a` to Claude Code, `brainstorm.idea-b` to Codex,
 and `brainstorm.synthesis` to Claude Code. The
 [registry](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/work/src/registry.ts)
-selects the first capable account and fails preflight when a required
+selects the first capable account with a free slot and fails preflight when a required
 capability is missing. Configurable role labels are an **initial routing
 policy**, not a new class of Worker.
 
