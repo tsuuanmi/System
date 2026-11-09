@@ -75,9 +75,11 @@ full ID. Refused: recursion (a Workflow ID already in the chain), more than
 three levels, a Sub-workflow with an accept step, a step ID with a `.`, more
 than 32 steps once joined. The resolved spec has no `uses` left, so the
 controller, replay, per-step retry, slots and budgets apply as written. The
-CLI sends each used file, read from beside the using file, with the Workflow;
-a file not sent (an MCP caller's) is read by the Host from `workflows/` at the
-input Task's base commit, else from the `workflows/` beside its own code.
+CLI sends each used file it finds beside the using file, with the Workflow; a
+file not sent (not beside it, or an MCP caller's) is read by the Host from
+`workflows/` at the input Task's base commit, else from the `workflows/` beside
+its own code. The CLI's `usedFiles` ([packages/app/src/remote.ts](../../packages/app/src/remote.ts))
+leaves the rest to the Host and does not read them itself.
 
 Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
 another schema version, duplicate steps, unknown or self dependencies, cycles
@@ -147,7 +149,9 @@ the Work; they need a human at a terminal (ADR-0004 decision 3).
 `succeeded`; any `fail` or `error` verdict, a failed step, or a Worker missing
 at run time is `failed`; an `inconclusive` verdict or `approval: operator` is
 `held` for the operator. Missing evidence is never a pass, with or without an
-accept step.
+accept step. A `fail` or `error` verdict that no `retry` reopens ends the Work
+there: no step after it starts, so nothing builds on or publishes what failed
+its check (df-26); an `inconclusive` one lets the steps after it run.
 
 ## Deterministic admission and replay boundary
 

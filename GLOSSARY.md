@@ -110,7 +110,8 @@ _Avoid_: reviewer, judge, validator
 **Verdict**:
 What a Verifier concludes about one Artifact: pass; fail, when the Artifact
 itself is wrong (such as malformed); or inconclusive, when the check could
-not confirm it against the world (a page that changed or refused the fetch).
+not confirm it against the world (a page that changed or refused the fetch,
+or a check that the base fails too, so the change cannot be to blame).
 Only a check of the Artifact's own form may fail it.
 _Avoid_: score, review, result
 

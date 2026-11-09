@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
@@ -32,7 +32,7 @@ type Verified = { type: string; stepId?: string; subject?: string; criteria?: st
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as { events: Verified[]; state: { status: string; reason?: string; criteria: Record<string, string>; steps: Record<string, { outputs: Record<string, string> }> } }
 const artifact = (id: string) => JSON.parse(system(['artifact', 'show', id]).stdout) as { envelope: { kind: string; content: Record<string, unknown> } }
 
-function gitRepo(checks?: string): string {
+function gitRepo(checks?: string, files: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(home, 'repo-'))
   const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   git('init', '--quiet')
@@ -40,6 +40,10 @@ function gitRepo(checks?: string): string {
   if (checks) {
     mkdirSync(join(dir, '.system'))
     writeFileSync(join(dir, '.system', 'checks.yaml'), checks)
+  }
+  for (const [name, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, name)), { recursive: true })
+    writeFileSync(join(dir, name), text)
   }
   git('add', '.')
   git('commit', '--quiet', '-m', 'base')
@@ -79,7 +83,6 @@ const task = (text: string, repository?: string) => system(['task', 'new', '--te
 /** The Software Engineering file without its publish step: these tests are about verification (tests/publish.test.ts covers the whole file). */
 const SE = join(home, 'software-engineering-checks.yaml')
 writeFileSync(SE, readFileSync(join(repo, 'workflows', 'software-engineering.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]'))
-writeFileSync(join(home, 'code-checks.yaml'), readFileSync(join(repo, 'workflows', 'code-checks.yaml')))
 const RESEARCH = join(repo, 'workflows', 'research.yaml')
 
 test('Software Engineering: the exact changed commit passes the base commit\'s pinned checks', () => {
@@ -99,7 +102,7 @@ test('Software Engineering: the exact changed commit passes the base commit\'s p
 })
 
 test('Software Engineering: a change failing a check fails the Work with the check named', () => {
-  const repository = gitRepo('checks:\n  - name: note-exists\n    run: test -f NOTE.md\n')
+  const repository = gitRepo('checks:\n  - name: no-env\n    run: test ! -f ENV.json\n')
   const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:env', repository)])
   assert.equal(ran.status, 1)
   const record = show(ran.stdout.trim())
@@ -110,7 +113,7 @@ test('Software Engineering: a change failing a check fails the Work with the che
 test('Software Engineering: a check failed by the environment is verified again with work retry --step checks.checks, on the same change', () => {
   const marker = join(home, 'environment-fixed')
   rmSync(marker, { force: true })
-  const repository = gitRepo(`checks:\n  - name: environment\n    run: test -f ${marker}\n`)
+  const repository = gitRepo(`checks:\n  - name: environment\n    run: test ! -f NOTE.md || test -f ${marker}\n`)
   const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit FAKE:append', repository)])
   assert.equal(ran.status, 1)
   const workId = ran.stdout.trim()
@@ -124,6 +127,18 @@ test('Software Engineering: a check failed by the environment is verified again 
   assert.equal(verified[1]!.subject, verified[2]!.subject)
   assert.equal(record.events.filter((e) => e.type === 'dispatched' && e.stepId === 'implement').length, 2, 'the automatic further attempt only, none for work retry --step checks.checks')
   assert.equal(record.state.status, 'succeeded')
+})
+
+test('a Workflow file using code-checks.yaml, not beside it, gets it from workflows/ at the base commit of its input task', () => {
+  const dir = mkdtempSync(join(home, 'alone-'))
+  const file = join(dir, 'hygiene.yaml')
+  writeFileSync(file, 'schema: system.workflow/v1\nid: hygiene\nversion: 1\nsteps:\n  - id: c\n    uses: code-checks.yaml\n')
+  const bundled = readFileSync(join(repo, 'workflows', 'code-checks.yaml'), 'utf8')
+  const repository = gitRepo('checks:\n  - name: readme-exists\n    run: test -f README.md\n', { 'workflows/code-checks.yaml': bundled })
+  const ran = system(['work', 'submit', '--workflow', file, '--input', task('check it', repository)])
+  assert.equal(ran.status, 0, ran.stderr)
+  const record = show(ran.stdout.trim())
+  assert.equal(record.events.find((e) => e.type === 'verified')!.verdict, 'pass')
 })
 
 test('code-checks.yaml on its own checks the base commit of its input task, as it is', () => {

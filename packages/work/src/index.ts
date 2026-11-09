@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { Artifacts, Envelope } from '@system/artifacts'
-import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type ClaimTable, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { snapshot } from './git.ts'
 import { readStatus } from './status.ts'
@@ -16,7 +16,7 @@ import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
 import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema, type GitTreeContent, type Task } from './kinds.ts'
 import type { Caller } from './record.ts'
-import { workRecordSchema } from './record.ts'
+import { claimSchema, workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
 import type { ResolvedSpec } from './workflow.ts'
 
@@ -47,7 +47,7 @@ export const inject = ['storageDomain', 'artifacts']
 export const workDomain = defineDomain({
   name: 'system_work',
   version: 1,
-  tables: { work: domainTable(workRecordSchema) },
+  tables: { work: domainTable(workRecordSchema), claims: domainTable(claimSchema) },
 })
 
 /** The row's configuration. */
@@ -59,6 +59,7 @@ export interface Config {
 /** What the Host core is built over: the row's own table and specs. */
 export interface HostStorage {
   table: WorkTable
+  claims: ClaimTable
   specs: SpecStore
 }
 
@@ -190,7 +191,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
   const capabilities = new Capabilities()
   const table = domain.table('work') as unknown as WorkTable
+  const claims = domain.table('claims') as unknown as ClaimTable
   const specs = specStore(artifacts)
   ctx.provide('capabilities', capabilities)
-  ctx.provide('work', new WorkService(capabilities, artifacts, { table, specs }, config))
+  ctx.provide('work', new WorkService(capabilities, artifacts, { table, claims, specs }, config))
 }

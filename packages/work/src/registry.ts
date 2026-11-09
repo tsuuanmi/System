@@ -139,6 +139,8 @@ export interface EffectIntent {
   params: Record<string, string | number | boolean>
   /** The verify steps the effect requires, with their pinned criteria: what a provider runs again on a commit it makes, such as a merge. */
   required?: { capability: string; criteria: string }[]
+  /** An operator approved an inconclusive verdict of a required check (the base fails it too): the provider's re-check accepts inconclusive. */
+  acceptedInconclusive?: boolean
 }
 
 export interface EffectOutcome {

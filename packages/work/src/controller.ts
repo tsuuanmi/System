@@ -16,7 +16,7 @@ import type { Task, Verdict } from './kinds.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import { activeWork, itemNote, whoHas } from './status.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
-import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
+import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** What a failed attempt's reason says when its Account was rate-limited. */
@@ -28,6 +28,22 @@ export interface WorkTable {
   put(key: string, value: WorkRecord): Promise<void>
   update(key: string, fn: (current: WorkRecord) => WorkRecord): Promise<WorkRecord>
   keys(): IterableIterator<string>
+}
+
+/** The claims on Items: one key per Item of a repository (see `claimKey`). */
+export interface ClaimTable {
+  get(key: string): Claim | undefined
+  put(key: string, value: Claim): Promise<void>
+  delete(key: string): Promise<boolean>
+  keys(): IterableIterator<string>
+}
+
+const claimKey = (repository: string, item: string): string => `${repository}\n${item}`
+
+/** A claim table in memory, for a controller built without one. */
+function memoryClaims(): ClaimTable {
+  const rows = new Map<string, Claim>()
+  return { get: (key) => rows.get(key), put: async (key, value) => { rows.set(key, value) }, delete: async (key) => rows.delete(key), keys: () => rows.keys() }
 }
 
 /** The Artifact operations the controller needs. */
@@ -144,6 +160,7 @@ export interface WorkChange {
 
 export class WorkController {
   private readonly table: WorkTable
+  private readonly claimed: ClaimTable
   private readonly specs: SpecStore
   private readonly capabilities: Capabilities
   private readonly control = new MemoryControl()
@@ -170,8 +187,9 @@ export class WorkController {
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims()) {
     this.table = table
+    this.claimed = claims
     this.specs = specs
     this.capabilities = capabilities
     this.lane = lane
@@ -271,8 +289,29 @@ export class WorkController {
       ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
     }
     await this.table.put(id, workRecordSchema.parse(record))
+    // A Work for the Item takes over a session's claim on it.
+    if (item?.repository) await this.claimed.delete(claimKey(item.repository, item.id))
     this.changed(record)
     return record
+  }
+
+  /** The claims on Items, by session. */
+  claims(): Claim[] {
+    return [...this.claimed.keys()].map((key) => this.claimed.get(key)!)
+  }
+
+  /**
+   * Claim an Item for `caller` before submitting a Work for it. Refused while a Work for the Item is running or held,
+   * and while another caller holds the claim unless `force`. Call it in the commit lane.
+   */
+  async claim(repository: string, item: string, caller: Caller, force = false): Promise<Claim> {
+    const busy = activeWork(this.list(), { id: item, repository })
+    if (busy) throw new WorkError(`Item ${item} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'})`)
+    const held = this.claimed.get(claimKey(repository, item))
+    if (held && held.who !== caller.operatorId && !force) throw new WorkError(`Item ${item} is claimed by ${held.who} since ${held.at}; to take it over on purpose, give force (--force)`)
+    const claim: Claim = { repository, item, who: caller.operatorId, at: this.now() }
+    await this.claimed.put(claimKey(repository, item), claim)
+    return claim
   }
 
   get(workId: string): WorkRecord | undefined {
@@ -568,7 +607,8 @@ export class WorkController {
     const event = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === operationId)
     if (event?.type !== 'effect-intended') throw new WorkError(`no recorded intent for ${operationId}`)
     const step = this.specOf(record).steps.find((s) => s.id === event.stepId)
-    return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [] }
+    return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [],
+      ...(step && isEffectStep(step) && step.effect.requires.some((id) => this.verdictOf(record, this.specOf(record), id) === 'inconclusive') && this.decisionOf(record, step.id) ? { acceptedInconclusive: true } : {}) }
   }
 
   /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
@@ -633,6 +673,12 @@ export class WorkController {
     // A failed step fails the Work once the attempts in flight have reported.
     if (failed && busy) return { record, settles: [], waiting: true, epoch }
     if (failed) return { record: await this.finish(record, 'failed', `step ${failed.id} ${record.state.steps[failed.id]!.state}`), settles: [], epoch }
+    // A `fail` or `error` verdict no retry reopened is the Work's outcome (inconclusive waits for the operator at the end):
+    // a step after it never starts, so nothing builds on, or publishes, what failed its check.
+    const verdicts = spec.steps.filter(isVerifyStep).map((s) => [s.id, this.verdictOf(record, spec, s.id)] as const)
+    const refused = verdicts.find(([stepId, verdict]) => (verdict === 'fail' || verdict === 'error') && spec.steps.some((s) => s.dependsOn?.includes(stepId)))
+    if (refused && busy) return { record, settles: [], waiting: true, epoch }
+    if (refused) return { record: await this.finish(record, 'failed', `verification did not pass: ${refused[0]}=${refused[1]}`), settles: [], epoch }
     const ready = spec.steps.filter((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
     if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
     if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }
@@ -940,13 +986,24 @@ export class WorkController {
     if (notPass.some(([, verdict]) => verdict !== 'inconclusive')) {
       return this.finish(record, 'failed', `required verification did not pass: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
     }
-    const decided = this.decisionOf(record, s.id)
+    // One approval serves an effect step that requires the same verify steps (df-25: publish's approval of an inconclusive verdict).
+    const decided = this.decisionOf(record, s.id) ?? (notPass.length ? this.effectDecisionOn(record, spec, notPass.map(([id]) => id)) : undefined)
     if (notPass.length) {
       if (!decided) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id)
       return this.finish(record, 'succeeded', `accepted by ${decided.caller.operatorId} despite inconclusive ${notPass.map(([id]) => id).join(', ')}: ${decided.reason}`)
     }
     if (s.accept.approval === 'operator' && !decided) return this.finish(record, 'held', 'verification passed; awaiting operator approval', s.id)
     return this.finish(record, 'succeeded', decided ? `accepted by ${decided.caller.operatorId}: ${decided.reason}` : `accepted on ${s.accept.requires.join(', ')}`)
+  }
+
+  /** The approval of an effect step that requires all of `verifyIds`, if any. */
+  private effectDecisionOn(record: WorkRecord, spec: ResolvedSpec, verifyIds: string[]): Extract<WorkEvent, { type: 'decided' }> | undefined {
+    for (const t of spec.steps) {
+      if (!isEffectStep(t) || !verifyIds.every((id) => t.effect.requires.includes(id))) continue
+      const found = this.decisionOf(record, t.id)
+      if (found) return found
+    }
+    return undefined
   }
 
   /** The operator's approval of a step since it was last reset, if any. */
@@ -972,9 +1029,13 @@ export class WorkController {
   private async dispatchEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<{ record: WorkRecord; attempt?: { provider: EffectPort; intent: EffectIntent } }> {
     const subject = this.resolveRef(record, s.effect.subject)
     const decided = this.decisionOf(record, s.id)
-    // ADR-0004 decision 12: only a pass on this exact subject allows the effect; no decision overrides it.
+    // ADR-0004 decision 12: only a pass on this exact subject allows the effect; the one exception is an inconclusive verdict (a check the base fails too, df-25) that a human approved.
     const notPass = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const).filter(([, verdict]) => verdict !== 'pass')
-    if (notPass.length) {
+    const acceptedInconclusive = notPass.length > 0 && notPass.every(([, verdict]) => verdict === 'inconclusive')
+    if (acceptedInconclusive && !decided) {
+      return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id) }
+    }
+    if (notPass.length && !acceptedInconclusive) {
       return { record: await this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`) }
     }
     const provider = this.capabilities.routeEffect(s.effect.capability).selected
@@ -984,6 +1045,7 @@ export class WorkController {
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
       workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params }, required: this.requiredOf(record, s),
+      ...(acceptedInconclusive ? { acceptedInconclusive: true } : {}),
     }
     const why = provider.approval(intent)
     if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id) }

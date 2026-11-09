@@ -114,13 +114,14 @@ Works, so trimming the core and proving the dogfood are one job.
     as `system.service` (code `cf832c5d5856`), with
     `~/.system/profile.yml`, whose Effects now publish and merge into `dev`
     only. `system mcp` is registered at user scope.*
-- [ ] DF1. Any session drives DF (operator, 2026-11-09): it gives the items
+- [x] DF1. Any session drives DF (operator, 2026-11-09): it gives the items
   below to System as Works, from the CLI or MCP as an agent (`--item`), and
   follows them until System merges them into `dev`. No separate Orchestrator
   session or folder (removed), and no Goal: token use is not a limit today,
   and is measured per Work (`system work report`) when it is. Claude Code's
-  `/goal` keeps a session going.
-- [ ] DF2. In this order, each one Work and one pull request, with tests
+  `/goal` keeps a session going. *Done: df-1 to df-23 were given to System
+  this way; see `system status`.*
+- [x] DF2. In this order, each one Work and one pull request, with tests
   showing the rest behaves the same where it removes, and the core's line
   count recorded after each; (a) and (b) run in parallel:
   - (a) drop Goals, decisions, the brief, the Orchestrator caller and
@@ -156,7 +157,8 @@ Works, so trimming the core and proving the dogfood are one job.
   - (g) DF2b as a general mechanism, then DNA (DF2c). Count meanwhile how
     many Works fail their checks on their own change; with (h) in place, the
     count decides how much of DF2b code changes need.
-- [ ] DF2b. One automatic further attempt after a failure that can be
+  *Done: (a) to (h) are df-1 to df-9 in `STATUS.md`.*
+- [x] DF2b. One automatic further attempt after a failure that can be
   fixed, with the failure as its input (operator, 2026-11-09: one general
   mechanism, declared in the Workflow, for example
   `retry: { onFail: [checks.checks], max: 1 }`, instead of a Website Worker
@@ -173,8 +175,8 @@ Works, so trimming the core and proving the dogfood are one job.
   restarts and Accounts; the fresh attempt starts clean (a new chat), and its
   evidence and event say it was automatic. Basis: 1 of 20 canary runs failed
   on a missing output block; one fresh attempt would bring acceptance to about
-  95%. Until it ships, `work retry` by hand.
-- [ ] DF2c. Other repositories (operator, 2026-11-09). Any Claude Code session,
+  95%. Until it ships, `work retry` by hand. *Done in df-7.*
+- [x] DF2c. Other repositories (operator, 2026-11-09). Any Claude Code session,
   in any repository, uses System through its MCP tools; the session is a
   caller, and the change is made by a Worker in a clean worktree. A
   repository can use System when it is on GitHub, has a `dev` branch and a
@@ -203,11 +205,14 @@ Works, so trimming the core and proving the dogfood are one job.
     missing or downloaded every time. In `verifiers`, outside the core.
 
   Then `DNA` is the first other repository: bootstrapped by a session there,
-  and one change made through System.
+  and one change made through System. *Done: DNA's docs-1 and docs-2 were
+  merged into its `dev` by System Works; its Rust gates run first in df-20.*
 - [ ] DF3. Replace the session mid-milestone: stop it in the middle of a
   Work, start another anywhere, and it carries on from `system status` and
   the Works alone, without PLAN, an old chat or a memory. Whatever it has to
-  ask or guess is a defect: a record System is missing.
+  ask or guess is a defect: a record System is missing. *2026-11-09: a
+  session carried DF on from `system status` after another had left it;
+  what it had to ask or guess is df-24.*
 - [x] DF4. Check time measured again once WW is on `dev`; over 3 minutes is a
   defect. *2026-11-09, `work:c4f42349` on `3b7dc6e`: docs 0.9 s, install
   15.2 s, build 29.7 s, typecheck 9.3 s, unit 14.8 s, smoke 95.2 s, so

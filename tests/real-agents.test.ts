@@ -47,7 +47,7 @@ after(async () => {
   rmSync(gitRepo, { recursive: true, force: true })
 })
 
-const newTask = (text: string) => system(['task', 'new', '--text', text, '--repo', gitRepo]).stdout.trim().split('\n').at(-1)!
+const newTask = (text: string) => system(['task', 'new', '--text', text, '--repo', gitRepo]).stdout.trim()
 
 test('Claude Code makes a real change, captured as an exact commit with observed usage', { skip: !enabled && 'set SYSTEM_REAL_AGENTS=1' }, () => {
   const ran = system(['work', 'submit', '--capability', 'code-write', 'tier.economy', '--input', newTask('Create a file named HELLO.md whose only content is the line: hello from System. Change nothing else.')])

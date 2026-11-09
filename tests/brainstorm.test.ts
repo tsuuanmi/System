@@ -33,7 +33,7 @@ const dispatched = (record: WorkView) => record.events.filter((e) => e.type === 
 function brief(markers: string) {
   const out = system(['task', 'new', '--text', `How should System schedule Work? ${markers}`])
   assert.equal(out.status, 0, out.stderr)
-  return out.stdout.trim().split('\n').at(-1)!
+  return out.stdout.trim()
 }
 
 before(async () => {

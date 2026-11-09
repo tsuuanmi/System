@@ -9,7 +9,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   (the Worker and verifier registry) and `ctx.work` (the Host core's storage).
 - **Storage:** DSH storage domain `system_work` (version 1, SQLite), table
   `work`, one key per Work. A record holds the append-only events and the
-  state they fold to; every change is one atomic `update(workId, fn)`.
+  state they fold to; every change is one atomic `update(workId, fn)`. Table
+  `claims`: one key per claimed Item (a session's claim before a Work: who,
+  since when; a Work for the Item deletes it).
 - **Specs:** an admitted Workflow is pinned as an Artifact of kind
   `workflow-spec@1`; the Work records its ID and never reads the file again.
 
@@ -104,7 +106,8 @@ offers `maxConcurrentAttempts` (default 1, set per Account in the `agents` row)
 and an optional `gone(attemptId)`. A slot is reserved in the lane before
 `dispatched` is appended and released after `observed` is. Verifier and effect
 steps take none. Steps that find no slot wait in memory; a freed slot wakes the
-waiting Works in Work admission order. A cancel, a failed step or an unknown
+waiting Works in Work admission order. A cancel, a failed step, a `fail` or
+`error` verdict that a step depends on (after any `retry`) or an unknown
 effect stops new dispatches, and the Work's terminal event follows once the
 attempts in flight are recorded.
 

@@ -32,7 +32,7 @@ function machine(options: { current?: string; checks?: number; build?: number; h
       if (args.includes('rev-parse')) return { status: 0, stdout: `${SHA}\n` }
       if (args.includes('worktree') && args.includes('remove')) { dirs.delete(args.at(-1)!); return { status: 0, stdout: '' } }
       if (args.includes('worktree')) { dirs.add(`/i/releases/${SHA}`); return { status: 0, stdout: '' } }
-      if (args[0] === 'task') return { status: 0, stdout: 'base sha256:base\nsha256:task\n' }
+      if (args[0] === 'task') return { status: 0, stdout: 'sha256:task\n' }
       if (args[0] === 'work') return { status: options.checks ?? 0, stdout: 'work:checked\n' }
       if (command === 'corepack' && args.includes('build')) return { status: options.build ?? 0, stdout: '' }
       return { status: 0, stdout: '' }

@@ -34,6 +34,7 @@ checks:
     run: npm ci && npm test  # run with /bin/sh -c in the checked-out commit
     timeoutSeconds: 600      # default 600, at most 3600
     paths: [src/**, package.json]  # optional globs: run only when the change touches one
+    red: fail                # optional, for red-v1 below: pass or fail (the default)
 ```
 
 - **Verify:** check out the exact subject commit into a fresh worktree, run
@@ -48,8 +49,20 @@ checks:
   processes of this user named Xvfb or Chrome whose environment has the check's
   `HOME` are killed. Leaked ones hold a Worker's pipes and profile (2026-11-07).
   The row's optional config `checkEnv` (name to value, names `^[A-Z_][A-Z0-9_]*$`, never `HOME`, `PATH` or `CI`: refused) adds variables such as `RUSTUP_HOME` to every check; each `check-run@1` records the names, never the values ([runbook](../../docs/operations/runbook.md)). The row's `maxConcurrentChecks` (default 2) limits the runs at once on the machine, as the Host's check slots (the Account-slot mechanism of `@system/work`): a verify attempt waits for a slot, and one lost with its Host keeps it until no process has its throwaway `HOME`.
-  `pass` when every check exits 0 and leaves nothing; `fail` when any does not or times out;
-  `error` when the commit cannot be checked out.
+  `pass` when every check exits 0 and leaves nothing; `fail` when any does not or times out
+  (unless the base fails it too, below); `error` when the commit cannot be checked out.
+- **The base fails it too** (df-25): when a check fails on the change, the checks
+  are run again by name on the base commit the checks were pinned from (not the
+  parent of a further attempt, which is the failed change; a second worktree, the same
+  `HOME`), in file order up to the last check that failed, so `install` and
+  `build` run there too. When **every** check that failed on the change also
+  fails on the base, the verdict is `inconclusive`, the reason says `<check>: the
+  base fails it too (base <commit>)`, and the evidence holds the `check-run@1` of
+  both runs (the change's first). A check that passes on the base keeps `fail`.
+  A subject that is the base itself is not run twice. An `inconclusive` verdict
+  does not reopen `implement` (retry `onFail` fires on `fail` only): the Work is
+  held for an operator Approval before `publish`; approve lets it publish and merge,
+  deny fails it.
 - **Node** ([src/reasons.ts](src/reasons.ts), PROP-0007 decision 3): when the
   commit's `package.json` has `engines.node`, a Node that satisfies it goes
   first on the checks' `PATH`: the Host's own, else the newest under
@@ -68,6 +81,29 @@ checks:
   is (`code-checks.yaml` on its own) runs every check. A skipped check has no
   `check-run@1`. The verdict's reason lists what ran, with its time, and what
   was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
+- **Criteria names** (df-26): the name a verify step gives is pinned in
+  `checks@1` and chooses what the verdict means: `repo-checks-v1` (the rule
+  above, `code-checks.yaml`) or one of the two below. Any other name refuses
+  the Work at admission, naming the known ones.
+  - **`red-v1`**, the red check of `feature.yaml`, on the tests step's change
+    before any code: the selected checks run as above. A `red: fail` check
+    that failed counts as red only when it passes on the base (run again
+    there as df-25 does, up to the last such check). `pass` when every check
+    with `red: pass` passed (such as build, docs) and at least one check is
+    red; `fail` when a `red: pass` check failed (`failed: must pass with only
+    the new tests: ...`; not run on the base), when no `red: fail` check
+    failed (the tests prove nothing), when the change is the base itself, or
+    when a check left a process running; `inconclusive` when every `red: fail`
+    check that failed fails on the base too; `error` when the base cannot be
+    checked out.
+  - **`tests-frozen-v1`**, on the implement step's change with the tests
+    step's change as the verify step's input `tests`: `fail` when the change,
+    compared with the tests step's commit, adds, modifies or deletes a file
+    the tests step's own change (against its parent) touched, naming the
+    files; new files, new tests included, are allowed. No check runs (so
+    nothing is run again on the base); one
+    `check-run@1` records the `git diff` and the files. Without the input, or
+    when the tests change names no parent, the verdict is `error`.
 
 ## `research.citation-check` (version 4)
 

@@ -47,9 +47,12 @@ What a repository needs
 - System merges a change into \`dev\` when its checks pass. The operator
   merges \`dev\` into \`main\`.
 
-Steps (the tools may be shown as status, task_new, work_submit, with _ for .)
+Steps (the tools may be shown as status, item_claim, task_new, work_submit, with _ for .)
 1. \`status\` with the repository: what is done, in progress (by whom) and to do.
-2. \`task_new\` with the repository, the ref and the \`item\`.
+   To carry an Item on before a Work exists, \`item_claim\` it; status then
+   shows your claim, and the Work you submit for the Item takes it over.
+2. \`task_new\` with the repository, the ref and the \`item\`; its result is
+   \`{ task, base }\`: pass \`task\` alone as the input.
 3. \`work_submit\` with the Workflow file
    ~/.system/current/workflows/software-engineering.yaml. The others there:
    code-checks, research, research-fanout, brainstorm, debate, second-opinion.

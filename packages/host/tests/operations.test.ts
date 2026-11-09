@@ -149,6 +149,11 @@ test('every method of the table round-trips over the socket', async () => {
   assert.match(lines[2]!, /^note: read dev \(/)
   assert.equal(lines[3], 'note: line 4: not an Item line (- [ ] <id> <title>)')
   assert.deepEqual(((await call('status', { repository: project, state: 'todo', item: 'p-2' })) as string[]).filter((l) => !l.startsWith('note: read ')), ['[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
+  // A claim before a Work: status shows who and since when; an Item that is not in STATUS.md cannot be claimed.
+  const claimed = await call('item.claim', { repository: project, item: 'p-2' }) as { who: string; at: string }
+  assert.equal(claimed.who, 'tan')
+  assert.equal(((await call('status', { repository: project, item: 'p-2' })) as string[])[0], `[ ] p-2 Second - doing: claimed by tan since ${claimed.at}`)
+  await assert.rejects(call('item.claim', { repository: project, item: 'p-9' }), /p-9 has no line in STATUS\.md/)
   await assert.rejects(call('status', { repository: project, item: 'Bad' }), /-32602|invalid|item/i)
   await assert.rejects(call('task.new', { instructions: 'x', item: 'Bad' }), /-32602|invalid|item/i)
   // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).

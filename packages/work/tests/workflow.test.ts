@@ -286,3 +286,21 @@ test('software-engineering.yaml declares the retry on the checks of its Sub-work
   const implement = spec.steps.find((s) => s.id === 'implement')
   assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks'], max: 1 })
 })
+
+for (const file of ['feature.yaml', 'feature-research.yaml']) {
+  test(`${file} enforces tests first: a red check reopens tests, and implement may not change the tests step's files`, () => {
+    const caps = { ...available, workers: new Set([...available.workers, 'code.tests', 'code.docs', 'tier.economy']) }
+    const spec = resolve(parseWorkflow(fixture(file)), caps, fixture)
+    const step = (id: string) => spec.steps.find((s) => s.id === id) as Record<string, any>
+    // The red check judges the tests step's change, not a Worker's report of it.
+    assert.deepEqual(step('tests').outputs, ['change'])
+    assert.deepEqual(step('tests').retry, { onFail: ['red'], max: 1 })
+    assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1' })
+    assert.deepEqual(step('implement').dependsOn, ['red'])
+    assert.equal(step('implement').inputs.red, undefined)
+    // Tests frozen: judged on implement's change against the tests step's commit, before the checks run.
+    assert.deepEqual(step('tests-frozen').verify, { capability: 'code.required-checks', subject: '$steps.implement.change', criteria: 'tests-frozen-v1', inputs: { tests: '$steps.tests.change' } })
+    assert.deepEqual(step('implement').retry, { onFail: ['tests-frozen', 'checks-code.checks'], max: 1 })
+    assert.deepEqual(step('checks-code.checks').dependsOn, ['tests-frozen'])
+  })
+}

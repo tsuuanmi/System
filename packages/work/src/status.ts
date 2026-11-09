@@ -7,7 +7,7 @@ import { realpathSync } from 'node:fs'
 import { git, snapshot } from './git.ts'
 import { ITEM_ID } from './kinds.ts'
 import type { LiveAttempt } from './live.ts'
-import type { WorkEvent, WorkRecord } from './record.ts'
+import type { Claim, WorkEvent, WorkRecord } from './record.ts'
 
 export interface Item {
   id: string
@@ -170,15 +170,15 @@ const artifactsOf = (record: WorkRecord): string[] => Object.values(record.state
  * STATUS.md, or a Work for it was merged into `dev`; with the last merged or
  * succeeded Work and its Artifacts, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
- * the Host holds for it, or why it is held) or `todo: nobody`. An Item only
+ * the Host holds for it, or why it is held; or a session's claim: who, since when) or `todo: nobody`. An Item only
  * the Works name is shown as not in STATUS.md. Without `live`, no progress.
  */
 export function itemLines(
   status: Pick<ParsedStatus, 'items'>, repository: string | undefined, records: WorkRecord[],
-  live?: (workId: string) => LiveAttempt[], filter: { state?: 'todo' | 'doing' | 'done'; item?: string } = {},
+  live?: (workId: string) => LiveAttempt[], filter: { state?: 'todo' | 'doing' | 'done'; item?: string } = {}, claims: Claim[] = [],
 ): string[] {
   const listed = new Set(status.items.map((i) => i.id))
-  const named = records.flatMap((r) => (itemOf(r)?.repository === repository && isActive(r) ? [itemOf(r)!.id] : []))
+  const named = [...records.flatMap((r) => (itemOf(r)?.repository === repository && isActive(r) ? [itemOf(r)!.id] : [])), ...claims.filter((c) => c.repository === repository).map((c) => c.item)]
   const unlisted = [...new Set([...named, ...(filter.item ? [filter.item] : [])])].filter((id) => !listed.has(id))
   const lines: string[] = []
   for (const item of [...status.items.map((i) => ({ ...i, listed: true })), ...unlisted.map((id) => ({ id, title: '', done: false, listed: false }))]) {
@@ -187,12 +187,13 @@ export function itemLines(
     const active = works.filter(isActive)
     // Done is derived: ticked by hand (done outside System) or a Work for the Item was merged into `dev`.
     const merged = works.filter(wasMerged)
-    const state = item.done || merged.length ? 'done' : active.length ? 'doing' : 'todo'
+    const claim = claims.find((c) => c.item === item.id && c.repository === repository)
+    const state = item.done || merged.length ? 'done' : active.length || claim ? 'doing' : 'todo'
     if (filter.state && filter.state !== state) continue
     const last = merged.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const text = state === 'done'
       ? `done${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}`
-      : state === 'doing' ? `doing: ${active.map((r) => doing(r, live)).join(' | ')}` : 'todo: nobody'
+      : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}` : 'todo: nobody'
     lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }
   return lines

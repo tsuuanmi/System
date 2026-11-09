@@ -14,8 +14,12 @@ changes future admissions only.
   verdict. It becomes the default only if it often finds stale docs.
 - [feature.yaml](feature.yaml) — `plan` (`code-write`, read-only: what to
   change, where, which tests prove it) → `tests` (`code.tests`,
-  `tier.economy`: the plan's tests, failing, before any code) → `implement`
-  (`code-write`: make them pass without changing them; `retry` on `checks-code`) → `checks-code` → `docs` (`code.docs`,
+  `tier.economy`: the plan's tests, failing, before any code; `retry` on `red`) →
+  `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
+  and a `red: fail` one fails on the tests' change) → `implement`
+  (`code-write`: make them pass; `retry` on `tests-frozen` and `checks-code`) →
+  `tests-frozen` (`code.required-checks`, criteria `tests-frozen-v1`: no file the
+  tests step wrote changed) → `checks-code` → `docs` (`code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
   Artifacts it is given; the profile decides which Account takes each role.
   Compared with `software-engineering.yaml` before it becomes a default.
@@ -30,6 +34,7 @@ changes future admissions only.
   on the input change, criteria pinned from its base). A Sub-workflow of
   `software-engineering.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
+  A check that fails on the change and on its base is `inconclusive` (df-25): the Work is held for approval before `publish`, not retried ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`.

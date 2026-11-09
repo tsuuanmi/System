@@ -62,7 +62,7 @@ after(async () => {
 const newTask = (text: string) => {
   const out = system(['task', 'new', '--text', text, '--repo', gitRepo])
   assert.equal(out.status, 0, out.stderr)
-  return out.stdout.trim().split('\n').at(-1)!
+  return out.stdout.trim()
 }
 
 test('both configured accounts are registered, with the CLI version', () => {

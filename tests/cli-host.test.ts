@@ -184,7 +184,10 @@ test('status shows an Item as todo, then doing while its Work runs; a second Wor
   assert.equal(noLine.status, 1)
   assert.match(noLine.stderr, /Item p-9 has no line in STATUS\.md/)
   assert.equal(system('task', 'new', '--text', 'no repo', '--item', 'p-2').status, 1)
-  const task = system('task', 'new', '--text', 'do p-2', '--repo', project, '--ref', 'dev', '--item', 'p-2').stdout.trim().split('\n').at(-1)!
+  const made = system('task', 'new', '--text', 'do p-2', '--repo', project, '--ref', 'dev', '--item', 'p-2')
+  assert.match(made.stdout, /^sha256:[0-9a-f]{64}\n$/, 'the Task ID alone on stdout')
+  assert.match(made.stderr, /^base sha256:/)
+  const task = made.stdout.trim()
   rmSync(hold, { force: true })
   const run = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', task])
   const workId = await admitted(run)

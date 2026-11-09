@@ -52,7 +52,7 @@ function ok(args) {
   return ran.stdout
 }
 
-const taskFor = (text) => ok(['task', 'new', '--text', text]).trim().split('\n').at(-1)
+const taskFor = (text) => ok(['task', 'new', '--text', text]).trim()
 const canaryTask = () => taskFor(QUESTION)
 
 /** The Accounts of the web runtime that are registered Workers, from `system workers`. */

@@ -114,13 +114,36 @@ test('nothing is published unless the required verdict passed on that exact subj
   const failed = await controller(failing, { verdict: 'fail' }).run((await admit(controller(failing, { verdict: 'fail' }), failing)).id)
   assert.equal(failed.state.status, 'failed')
   assert.ok(!types(failed).includes('effect-intended'))
-  // ADR-0004 decision 12: the push happens only after a pass; an inconclusive verdict cannot be approved past it.
+  // ADR-0004 decision 12: the push happens only after a pass, or an inconclusive verdict a human approved (df-25): held until then.
   const unsure = world()
   const notPublished = await controller(unsure, { verdict: 'inconclusive' }).run((await admit(controller(unsure, { verdict: 'inconclusive' }), unsure)).id)
-  assert.equal(notPublished.state.status, 'failed')
-  assert.match(notPublished.state.reason!, /publish needs a passing verdict on its subject: checks\.checks=inconclusive/)
-  assert.equal(notPublished.state.awaiting, undefined)
+  assert.equal(notPublished.state.status, 'held')
+  assert.equal(notPublished.state.awaiting, 'publish')
+  assert.match(notPublished.state.reason!, /inconclusive verification needs an operator decision: checks\.checks/)
+  assert.ok(!types(notPublished).includes('effect-intended'))
   assert.equal(unsure.remote.applies + failing.remote.applies, 0)
+})
+
+test('an inconclusive verdict held before publish: approve publishes once and accepts with no second hold; deny fails; an agent is refused', async () => {
+  const w = world()
+  const seen: EffectIntent[] = []
+  const c = controller(w, { verdict: 'inconclusive', approval: (intent) => { seen.push(intent); return undefined } })
+  const held = await c.run((await admit(c, w)).id)
+  assert.equal(held.state.status, 'held')
+  await assert.rejects(() => c.decide(held.id, { decision: 'approved', caller: agent, reason: 'x' }), /only a human operator approves/)
+  const done = await c.decide(held.id, { decision: 'approved', caller: human, reason: 'the base fails it too' })
+  assert.equal(done.state.status, 'succeeded', done.state.reason)
+  assert.equal(w.remote.applies, 1)
+  assert.equal(seen.at(-1)?.acceptedInconclusive, true)
+  assert.match(done.state.reason!, /accepted by tan despite inconclusive checks\.checks/)
+  assert.equal(c.replay(done.id).matches, true)
+  const w2 = world()
+  const c2 = controller(w2, { verdict: 'inconclusive' })
+  const held2 = await c2.run((await admit(c2, w2)).id)
+  const denied = await c2.decide(held2.id, { decision: 'denied', caller: human, reason: 'not this' })
+  assert.equal(denied.state.status, 'failed')
+  assert.match(denied.state.reason!, /publish denied by tan/)
+  assert.equal(w2.remote.applies, 0)
 })
 
 test('a host lost after the intent and before the effect: reconcile finds nothing, the effect is applied once', async () => {

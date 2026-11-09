@@ -181,6 +181,10 @@ const receipt = z.object({
   result: z.object({ workId: z.string(), status }).strict(),
 }).strict()
 
+/** A session's claim on an Item before it submits a Work (df-24): who, and since when. A Work for the Item takes it over. */
+export const claimSchema = z.object({ repository: z.string(), item: z.string(), who: z.string(), at }).strict()
+export type Claim = z.infer<typeof claimSchema>
+
 export const workRecordSchema = z.object({
   id: z.string(),
   events: z.array(eventSchema).min(1),

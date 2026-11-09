@@ -10,18 +10,20 @@
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
 import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type ClaimTable, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
 import type { Capabilities } from './registry.ts'
 import { Slots } from './slots.ts'
-import { TERMINAL, type WorkRecord } from './record.ts'
+import { TERMINAL, type Caller, type Claim, type WorkRecord } from './record.ts'
 
 export interface HostOptions {
   /** `DSH_HOME`: the Host lock is named after its canonical path. */
   home: string
   table: WorkTable
+  /** Session claims on Items; in memory when not given. */
+  claims?: ClaimTable
   specs: SpecStore
   capabilities: Capabilities
   /** How long a running attempt may be quiet before it is reported stalled; default `DEFAULT_STALL_MINUTES`. */
@@ -48,7 +50,7 @@ interface Seen {
 export class Host {
   private readonly controller: WorkController
   /** Reads, `onChange`, `drain` and `held`: not `run`, `cancel` or `decide`, which only the commit lane and `commandId` may reach. */
-  readonly view: Pick<WorkController, 'get' | 'list' | 'live' | 'replay' | 'onChange' | 'drain' | 'held'>
+  readonly view: Pick<WorkController, 'get' | 'list' | 'claims' | 'live' | 'replay' | 'onChange' | 'drain' | 'held'>
   private readonly lock: HostLock
   private readonly lane: Lane
   /**
@@ -71,7 +73,7 @@ export class Host {
       return section()
     })
     this.slots = new Slots(options.capabilities)
-    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes)
+    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes, options.claims)
     this.view = this.controller
   }
 
@@ -124,6 +126,11 @@ export class Host {
   submit(admission: Admission, options: Idempotent = {}): Promise<WorkRecord> {
     const workId = options.commandId ? workIdOf(options.commandId) : undefined
     return this.once({ commandId: options.commandId, op: 'submit', args: admission }, (command) => this.lane(() => this.controller.admit(admission, { workId, command })))
+  }
+
+  /** Claim an Item for a session before it submits a Work for it. */
+  claim(repository: string, item: string, caller: Caller, force?: boolean): Promise<Claim> {
+    return this.lane(() => this.controller.claim(repository, item, caller, force))
   }
 
   run(workId: string, options: Starting = {}): Promise<WorkRecord> {
