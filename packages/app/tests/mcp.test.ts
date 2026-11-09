@@ -187,3 +187,32 @@ test('the instructions name feature.yaml as the Workflow for a code change and k
   assert.ok(text.includes('software-engineering.yaml'))
   assert.ok(text.includes('red:'))
 })
+
+test('an MCP server of older code than the Host recovers on the code under SYSTEM_CODE, and its session keeps working', { timeout: 60_000 }, async () => {
+  // A Host of other code than this build's, and an install whose `current` code is that Host's.
+  const dir = mkdtempSync('/tmp/sm-old-')
+  const lib = join(dir, 'packages', 'host', 'lib')
+  mkdirSync(lib, { recursive: true })
+  const real = new URL('../../host/lib/index.js', import.meta.url).href
+  writeFileSync(join(lib, 'index.js'), `export * from '${real}'\nexport const VERSION = 'newer-code'\n`)
+  mkdirSync(join(dir, 'system'))
+  const f = fixture()
+  mkdirSync(join(dir, 'data'))
+  const host = await f.startHost(join(dir, 'data'))
+  const server = await serve(host, { path: join(dir, 'system', 'host.sock'), methods: operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services), version: 'newer-code', onDisk: () => 'newer-code' })
+  // The client's own refusal names the client, not the Host.
+  const old = await connect(join(dir, 'system', 'host.sock'))
+  await assert.rejects(old.call('host.hello', { version: VERSION, caller: human }), /the client is older: restart the client/)
+  old.close()
+  const transport = new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp'], env: { ...process.env, DSH_HOME: dir, SYSTEM_CODE: dir, SYSTEM_OPERATOR_ID: 'o1' } as Record<string, string> })
+  const client = new Client({ name: 'test', version: '0' })
+  clients.push(client)
+  await client.connect(transport)
+  const listed = await call(client, 'work.list')
+  assert.equal(listed.error, undefined, listed.error)
+  assert.deepEqual(listed.value, [])
+  await client.close()
+  await server.close()
+  await host.close()
+  rmSync(dir, { recursive: true, force: true })
+})

@@ -113,12 +113,22 @@ test('a client built from the new code upgrades an idle Host at once, and is tol
   client.close()
   assert.equal(await serving.exited, UPGRADE_EXIT)
   assert.equal(existsSync(socketPath(home)), false)
-  // A client of another version than the disk's gets the plain refusal.
+  // A client of other code than the Host's, which runs the disk's code, is the older side: it is told to restart itself.
   const next = await incarnate(f, home, 'code-2', () => 'code-2', () => {}, 3_600_000)
   const other = await connect(socketPath(home))
-  await assert.rejects(other.call('host.hello', { version: 'code-9', caller: human }), /restart the Host/)
+  await assert.rejects(other.call('host.hello', { version: 'code-9', caller: human }), /the client is older: restart the client/)
   other.close()
   await next.stop()
+})
+
+test('a client of code that is neither the Host\'s nor the disk\'s is told to restart the Host, which is the older side', { timeout: 30_000 }, async () => {
+  const f = fixture()
+  const home = fresh()
+  const serving = await incarnate(f, home, 'code-1', () => 'code-2', () => {}, 3_600_000)
+  const client = await connect(socketPath(home))
+  await assert.rejects(client.call('host.hello', { version: 'code-9', caller: human }), /restart the Host/)
+  client.close()
+  await serving.stop()
 })
 
 test('a change seen once is not enough: a build still writing the files does not restart the Host', { timeout: 30_000 }, async () => {
