@@ -38,6 +38,12 @@ _Avoid_: persona, agent type
 
 ### Running and directing work
 
+**Item**:
+A planned piece of a project's work, with a stable ID in the project's
+status list; Works carry it out, and the change that finishes it marks it
+done.
+_Avoid_: task, ticket, issue, todo
+
 **Task**:
 An immutable record of what to do: instructions, optionally the repository
 commit to start from, and Artifacts to read as context. A Task does not run;
