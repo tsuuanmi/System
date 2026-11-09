@@ -75,12 +75,12 @@ bin/system workers                                   # which accounts are usable
 bin/system workers login web/chatgpt/default --cookies cookies.json   # an account that is not in the bundle; see the runbook
 ```
 
-A Software Engineering change needs a repository whose base commit has
-[`.system/checks.yaml`](.system/checks.yaml) and an `origin` remote:
+A code change needs a repository whose base commit has
+[`.system/checks.yaml`](.system/checks.yaml) (with `red:` declarations, for feature.yaml) and an `origin` remote:
 
 ```sh
 TASK=$(bin/system task new --repo <path> --text "<what to do>")   # the Task ID alone; the base goes to stderr
-bin/system work submit --workflow workflows/software-engineering.yaml --input "$TASK"
+bin/system work submit --workflow workflows/feature.yaml --input "$TASK"
 bin/system work show <work>          # events, verdicts, the published branch and pull request
 bin/system approve <work>...         # held Work (several: one typed confirmation): a human at a terminal only
 bin/system work cancel <work> --wait

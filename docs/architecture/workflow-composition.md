@@ -88,7 +88,7 @@ output that step does not declare, an accept step on a non-verify step, more
 than one accept step, and any Worker or verifier capability the **effective**
 composition does not provide.
 
-The repository's files are [`workflows/software-engineering.yaml`](../../workflows/software-engineering.yaml),
+The repository's files are [`workflows/feature.yaml`](../../workflows/feature.yaml) (the default for a code change), [`workflows/software-engineering.yaml`](../../workflows/software-engineering.yaml),
 [`workflows/research.yaml`](../../workflows/research.yaml) and
 [`workflows/brainstorm.yaml`](../../workflows/brainstorm.yaml). They differ
 only in capabilities, output slots, instructions and verifier; Brainstorm has

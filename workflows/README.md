@@ -4,15 +4,7 @@ Workflow definitions are **data** (ADR-0002): `system.workflow/v1` YAML files
 read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
-- [software-engineering.yaml](software-engineering.yaml) — `implement`
-  (`code-write`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
-  (`git.publish`: the checked commit to `system/<work>`, one draft pull
-  request) → `accept`.
-- [software-engineering-docs.yaml](software-engineering-docs.yaml) — the same,
-  plus `docs-impact` (`code-write`, `tier.economy`), which reads the change
-  while the checks run and lists the docs it makes stale: advice, never a
-  verdict. It becomes the default only if it often finds stale docs.
-- [feature.yaml](feature.yaml) — `plan` (`code-write`, read-only: what to
+- [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, read-only: what to
   change, where, which tests prove it) → `tests` (`code.tests`,
   `tier.economy`: the plan's tests, failing, before any code; `retry` on `red`) →
   `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
@@ -22,7 +14,17 @@ changes future admissions only.
   tests step wrote changed) → `checks-code` → `docs` (`code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
   Artifacts it is given; the profile decides which Account takes each role.
-  Compared with `software-engineering.yaml` before it becomes a default.
+  The default for a code change (df-27, concluded in df-20).
+- [software-engineering.yaml](software-engineering.yaml) — `implement`
+  (`code-write`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
+  (`git.publish`: the checked commit to `system/<work>`, one draft pull
+  request) → `accept`. Still fits a change too small for a plan, and a
+  repository with no `red:` in its `.system/checks.yaml` (feature.yaml's red
+  check would refuse it).
+- [software-engineering-docs.yaml](software-engineering-docs.yaml) — the same,
+  plus `docs-impact` (`code-write`, `tier.economy`), which reads the change
+  while the checks run and lists the docs it makes stale: advice, never a
+  verdict. It becomes the default only if it often finds stale docs.
 - [feature-research.yaml](feature-research.yaml) — the same, with `research`
   (`research`, `web-search`, `tier.standard`) first, whose report and sources
   the plan reads.
@@ -32,7 +34,7 @@ changes future admissions only.
   request of cleanup for any repository that has `.system/checks.yaml`.
 - [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
   on the input change, criteria pinned from its base). A Sub-workflow of
-  `software-engineering.yaml`; on its own, on a task with a base, it checks that commit as it is.
+  `software-engineering.yaml` and `feature.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
   A check that fails on the change and on its base is `inconclusive` (df-25): the Work is held for approval before `publish`, not retried ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`;

@@ -12,8 +12,8 @@
 # Stages run one after the other, each on the previous change. The code is
 # checked before the docs, so a failure goes back to the step that can fix it,
 # with the failure as input (retry); the second check, after docs, runs what
-# the docs change touches. Compared with
-# software-engineering.yaml before it becomes a default (PLAN DF, df-20).
+# the docs change touches. The default Workflow for a code change (df-27);
+# software-engineering.yaml remains for a change too small for a plan.
 schema: system.workflow/v1
 id: feature-research
 version: 2

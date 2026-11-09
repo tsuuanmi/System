@@ -164,3 +164,11 @@ test('the initialize result carries instructions: the steps, the checks file and
   const text = (await mcp()).getInstructions() ?? ''
   for (const word of ['status', 'item_claim', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
 })
+
+test('the instructions name feature.yaml as the Workflow for a code change and keep software-engineering.yaml for the small case', { timeout: 60_000 }, async () => {
+  const text = (await mcp()).getInstructions() ?? ''
+  assert.ok(text.includes('workflows/feature.yaml'), 'instructions lack workflows/feature.yaml')
+  assert.ok(text.indexOf('feature.yaml') < text.indexOf('software-engineering.yaml'), 'feature.yaml comes first')
+  assert.ok(text.includes('software-engineering.yaml'), 'instructions lack software-engineering.yaml')
+  assert.ok(text.includes('red:'), 'instructions lack the red: advice')
+})
