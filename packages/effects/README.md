@@ -52,7 +52,8 @@ The controller records `effect-intended` before `apply` and
   is `failed`, naming the files); the merge commit is pinned, stored as a
   `git-tree@1` and checked with the effect's `required` checks and their
   pinned criteria (the `effects` row runs them through the verifier
-  registry); a verdict other than `pass` is `failed`. The commit goes to
+  registry); a verdict other than `pass` is `failed`, except an `inconclusive` one the operator
+  approved (df-25: the base fails the check too), which counts as a pass. The commit goes to
   `system/<work>`, the pull request is opened ready, and the base moves to
   exactly that commit by a push with a lease on the checked tip; if the base
   moved, the change is merged and checked again (three rounds at most). The

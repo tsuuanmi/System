@@ -50,6 +50,17 @@ checks:
   The row's optional config `checkEnv` (name to value, names `^[A-Z_][A-Z0-9_]*$`, never `HOME`, `PATH` or `CI`: refused) adds variables such as `RUSTUP_HOME` to every check; each `check-run@1` records the names, never the values ([runbook](../../docs/operations/runbook.md)). The row's `maxConcurrentChecks` (default 2) limits the runs at once on the machine, as the Host's check slots (the Account-slot mechanism of `@system/work`): a verify attempt waits for a slot, and one lost with its Host keeps it until no process has its throwaway `HOME`.
   `pass` when every check exits 0 and leaves nothing; `fail` when any does not or times out;
   `error` when the commit cannot be checked out.
+- **The base fails it too** (df-25): when a check fails on the change, the checks
+  are run again by name on the change's base commit (a second worktree, the same
+  `HOME`), in file order up to the last check that failed, so `install` and
+  `build` run there too. When **every** check that failed on the change also
+  fails on the base, the verdict is `inconclusive`, the reason says `<check>: the
+  base fails it too (base <commit>)`, and the evidence holds the `check-run@1` of
+  both runs (the change's first). A check that passes on the base keeps `fail`.
+  A subject that is the base itself is not run twice. An `inconclusive` verdict
+  does not reopen `implement` (retry `onFail` fires on `fail` only): the Work is
+  held for an operator Approval before `publish`; approve lets it publish and merge,
+  deny fails it.
 - **Node** ([src/reasons.ts](src/reasons.ts), PROP-0007 decision 3): when the
   commit's `package.json` has `engines.node`, a Node that satisfies it goes
   first on the checks' `PATH`: the Host's own, else the newest under

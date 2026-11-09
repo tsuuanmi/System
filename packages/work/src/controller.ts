@@ -607,7 +607,8 @@ export class WorkController {
     const event = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === operationId)
     if (event?.type !== 'effect-intended') throw new WorkError(`no recorded intent for ${operationId}`)
     const step = this.specOf(record).steps.find((s) => s.id === event.stepId)
-    return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [] }
+    return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [],
+      ...(step && isEffectStep(step) && step.effect.requires.some((id) => this.verdictOf(record, this.specOf(record), id) === 'inconclusive') && this.decisionOf(record, step.id) ? { acceptedInconclusive: true } : {}) }
   }
 
   /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
@@ -979,13 +980,24 @@ export class WorkController {
     if (notPass.some(([, verdict]) => verdict !== 'inconclusive')) {
       return this.finish(record, 'failed', `required verification did not pass: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
     }
-    const decided = this.decisionOf(record, s.id)
+    // One approval serves an effect step that requires the same verify steps (df-25: publish's approval of an inconclusive verdict).
+    const decided = this.decisionOf(record, s.id) ?? (notPass.length ? this.effectDecisionOn(record, spec, notPass.map(([id]) => id)) : undefined)
     if (notPass.length) {
       if (!decided) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id)
       return this.finish(record, 'succeeded', `accepted by ${decided.caller.operatorId} despite inconclusive ${notPass.map(([id]) => id).join(', ')}: ${decided.reason}`)
     }
     if (s.accept.approval === 'operator' && !decided) return this.finish(record, 'held', 'verification passed; awaiting operator approval', s.id)
     return this.finish(record, 'succeeded', decided ? `accepted by ${decided.caller.operatorId}: ${decided.reason}` : `accepted on ${s.accept.requires.join(', ')}`)
+  }
+
+  /** The approval of an effect step that requires all of `verifyIds`, if any. */
+  private effectDecisionOn(record: WorkRecord, spec: ResolvedSpec, verifyIds: string[]): Extract<WorkEvent, { type: 'decided' }> | undefined {
+    for (const t of spec.steps) {
+      if (!isEffectStep(t) || !verifyIds.every((id) => t.effect.requires.includes(id))) continue
+      const found = this.decisionOf(record, t.id)
+      if (found) return found
+    }
+    return undefined
   }
 
   /** The operator's approval of a step since it was last reset, if any. */
@@ -1011,9 +1023,13 @@ export class WorkController {
   private async dispatchEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<{ record: WorkRecord; attempt?: { provider: EffectPort; intent: EffectIntent } }> {
     const subject = this.resolveRef(record, s.effect.subject)
     const decided = this.decisionOf(record, s.id)
-    // ADR-0004 decision 12: only a pass on this exact subject allows the effect; no decision overrides it.
+    // ADR-0004 decision 12: only a pass on this exact subject allows the effect; the one exception is an inconclusive verdict (a check the base fails too, df-25) that a human approved.
     const notPass = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const).filter(([, verdict]) => verdict !== 'pass')
-    if (notPass.length) {
+    const acceptedInconclusive = notPass.length > 0 && notPass.every(([, verdict]) => verdict === 'inconclusive')
+    if (acceptedInconclusive && !decided) {
+      return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id) }
+    }
+    if (notPass.length && !acceptedInconclusive) {
       return { record: await this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`) }
     }
     const provider = this.capabilities.routeEffect(s.effect.capability).selected
@@ -1023,6 +1039,7 @@ export class WorkController {
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
       workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params }, required: this.requiredOf(record, s),
+      ...(acceptedInconclusive ? { acceptedInconclusive: true } : {}),
     }
     const why = provider.approval(intent)
     if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id) }

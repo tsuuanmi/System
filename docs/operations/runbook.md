@@ -456,6 +456,15 @@ once more with the same `commandId`, so the Host does it once: look at
 3. If it is stuck, `systemctl --user restart system`. Whatever was running is
    left interrupted; nothing runs again until `system work run` or `retry`.
 
+## A check the base fails too
+
+A required check that fails on a change is run again on its base commit. When
+the base fails it too, the `checks` verdict is `inconclusive` (reason
+`<check>: the base fails it too`, evidence of both runs) and the Work is **held**
+before `publish`, not retried. `system work show <id>` shows the reason: look
+at the base run. `system work approve <id> --reason ...` lets it publish and
+merge; `system work deny` fails it.
+
 ## Following a Work, and detaching
 
 `work submit`, `work run`, `work retry`, `approve` and `deny` return once the

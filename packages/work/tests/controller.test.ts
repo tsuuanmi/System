@@ -659,6 +659,21 @@ test('only a failing verdict qualifies: an error or inconclusive verdict is not 
   }
 })
 
+test('an inconclusive verdict named in retry.onFail does not reopen: the Work is held, and approve finishes it (df-25)', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: scripted(specs, ['inconclusive']) })
+  const spec = resolve(parseWorkflow(RETRY.replace(/    retry:.*\n/, '    retry: { onFail: [checks], max: 1 }\n')), h.capabilities.available())
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'retrying.yaml' } })
+  const held = await h.controller.run(admitted.id)
+  assert.equal(h.calls.length, 1)
+  assert.equal(held.events.filter((e) => e.type === 'reopened').length, 0)
+  assert.equal(held.state.status, 'held')
+  assert.equal(held.state.awaiting, 'accept')
+  const done = await h.controller.decide(held.id, { decision: 'approved', caller, reason: 'the base fails it too' })
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(h.calls.length, 1)
+})
+
 test('a Worker failure is tried afresh only when the Worker says so, and with no previous output or failure input', async () => {
   for (const retryable of [true, false]) {
     let n = 0

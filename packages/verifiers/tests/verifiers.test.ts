@@ -136,6 +136,57 @@ test('a change that breaks a check fails; a Worker editing checks.yaml cannot we
   assert.match(result.reason, /value-is-good \(exit 1\)/)
 })
 
+async function verifyChange(yaml: string, files: Record<string, string>, subjectIsBase = false) {
+  const artifacts = store()
+  const repository = repo(yaml)
+  const { task, tree, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  const subject = subjectIsBase ? treeId : await change(artifacts, repository, tree.commit, files)
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
+  const commits = result.evidence.map((id) => {
+    const read = artifacts.get(id)
+    return read.state === 'stored' ? (read.envelope.content as { commit: string }).commit : ''
+  })
+  return { result, commits, base: tree.commit, repository }
+}
+
+test('a check the base fails too is inconclusive, with the evidence of both runs', async () => {
+  const { result, commits, base, repository } = await verifyChange('checks:\n  - name: ok\n    run: "true"\n  - name: broken\n    run: "false"\n', { 'NOTES.md': 'x\n' })
+  assert.equal(result.verdict, 'inconclusive')
+  assert.match(result.reason, /broken/)
+  assert.match(result.reason, /the base fails it too/)
+  assert.equal(result.evidence.length, 4)
+  assert.notEqual(commits[0], base)
+  assert.equal(commits[0], commits[1])
+  assert.deepEqual(commits.slice(2), [base, base])
+  assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1, 'both worktrees are removed')
+})
+
+test('a check that passes on the base keeps the fail verdict, and the base was run', async () => {
+  const { result } = await verifyChange('checks:\n  - name: value-is-good\n    run: grep -qx good value.txt\n', { 'value.txt': 'bad\n' })
+  assert.equal(result.verdict, 'fail')
+  assert.match(result.reason, /value-is-good \(exit 1\)/)
+  assert.equal(result.evidence.length, 2)
+})
+
+test('when only some failed checks fail on the base too, the verdict is fail', async () => {
+  const { result } = await verifyChange('checks:\n  - name: broken\n    run: "false"\n  - name: value-is-good\n    run: grep -qx good value.txt\n', { 'value.txt': 'bad\n' })
+  assert.equal(result.verdict, 'fail')
+})
+
+test('nothing runs on the base when the subject is the base itself', async () => {
+  const { result } = await verifyChange('checks:\n  - name: broken\n    run: "false"\n', {}, true)
+  assert.equal(result.verdict, 'fail')
+  assert.equal(result.evidence.length, 1)
+})
+
+test('the base run runs the checks before the failed one first', async () => {
+  const { result } = await verifyChange('checks:\n  - name: setup\n    run: touch ready\n  - name: needs-ready\n    run: test -f ready && exit 1\n  - name: after\n    run: "true"\n', { 'NOTES.md': 'x\n' })
+  assert.equal(result.verdict, 'inconclusive')
+  assert.equal(result.evidence.length, 5, 'three on the change, two on the base: nothing after the last failed check')
+})
+
 test('a check over its timeout fails', async () => {
   const artifacts = store()
   const repository = repo('checks:\n  - name: slow\n    run: sleep 30\n    timeoutSeconds: 1\n')
@@ -396,16 +447,17 @@ test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftove
 })
 
 /** A repository whose checks are `checks`, with `files` beside them (package.json, test files), and a change on it; returns the verdict. */
-async function verdictOf(checks: string, files: Record<string, string>) {
+/** `added` goes into the change itself, not the base: a check on it that fails the change passes the base. */
+async function verdictOf(checks: string, files: Record<string, string>, added: Record<string, string> = {}) {
   const artifacts = store()
   const repository = repo(checks)
   for (const [path, text] of Object.entries(files)) writeFileSync(join(repository, path), text)
   execFileSync('git', ['-C', repository, 'add', '.'])
-  execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'files'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  if (Object.keys(files).length) execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'files'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   const { task, tree } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
-  const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n' })
+  const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n', ...added })
   return verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
 }
 
@@ -425,14 +477,14 @@ test('the checks run on the Node the repository asks for, whatever Node is first
 
 test('a failed check says in one line which check, which test and its first error line', async () => {
   const failing = "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\ntest('adds', () => { assert.equal(1 + 1, 3) })\ntest('fine', () => {})\n"
-  const result = await verdictOf('checks:\n  - name: unit\n    run: node --test adds.test.mjs\n', { 'adds.test.mjs': failing })
+  const result = await verdictOf('checks:\n  - name: unit\n    run: test ! -f adds.test.mjs || node --test adds.test.mjs\n', {}, { 'adds.test.mjs': failing })
   assert.equal(result.verdict, 'fail')
   assert.equal(result.reason, 'failed: unit: adds.test.mjs "adds": Expected values to be strictly equal: 2 !== 3')
 })
 
 test('a timed-out check names the test that was running', { timeout: 60_000 }, async () => {
   const hanging = "import { test } from 'node:test'\ntest('first', () => {})\ntest('waits forever', () => new Promise(() => { setInterval(() => {}, 1000) }))\n"
-  const result = await verdictOf('checks:\n  - name: unit\n    run: node --test hangs.test.mjs\n    timeoutSeconds: 3\n', { 'hangs.test.mjs': hanging })
+  const result = await verdictOf('checks:\n  - name: unit\n    run: test ! -f hangs.test.mjs || node --test hangs.test.mjs\n    timeoutSeconds: 3\n', {}, { 'hangs.test.mjs': hanging })
   assert.equal(result.verdict, 'fail')
   assert.match(result.reason, /^failed: unit: timed out after 3 s while running hangs\.test\.mjs/)
 })

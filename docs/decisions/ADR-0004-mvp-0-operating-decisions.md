@@ -88,7 +88,7 @@ System tests so far.
 12. **Software Engineering verification.** The `code.required-checks`
     verifier runs pinned commands (captured at admission from the repo's
     `.system/checks.yaml` as a criteria Artifact) in a fresh worktree of the
-    exact tree Artifact. The push happens only after a pass. GitHub CI may be
+    exact tree Artifact. The push happens only after a pass, or an `inconclusive` verdict a human approved (df-25). GitHub CI may be
     added later as extra evidence.
 13. **Research.** The same agent binaries, with web tools and a research
     prompt, produce `report.md` plus a structured `sources.json` (URL, quoted

@@ -7,7 +7,8 @@
  * check runs `sh -c <run>` in the worktree with a minimal environment and its
  * own timeout; its exit, duration and output tails are one evidence Artifact.
  * Verdict: `pass` when every check exits 0 and leaves no Xvfb or Chrome running (it is named and killed), `fail` when any does not (a
- * timeout is a failure), `error` when the checks could not be run at all.
+ * timeout is a failure), `inconclusive` when every failing check fails on the base commit too (run again by name, up to the
+ * last failed check; the evidence holds both runs; not for a subject that is the base itself), `error` when the checks could not be run at all.
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -178,35 +179,73 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         const from = tree.parent ?? checks.source.commit
         const asItIs = tree.commit === from
         const touched = asItIs ? [] : (await git(tree.repository, ['diff', '--name-only', from, tree.commit])).split('\n').filter(Boolean)
-        for (const check of checks.checks) {
-          if (!asItIs && !selected(check, touched)) {
-            skipped.push(check.name)
-            continue
-          }
+        /** One check on one commit's worktree: the change and the base run it the same way, so "fails" means the same on both. */
+        const runCheck = async (check: Checks['checks'][number], cwd: string, commit: string): Promise<{ id: string; failed?: string; ms: number }> => {
           const started = now()
           // `timeout` interrupts the whole group first, so a test runner says what it was running; the abort is the backstop.
           const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
           const spawned = spawner.spawn({
-            argv: ['timeout', '-s', 'INT', '-k', '10', String(check.timeoutSeconds), '/bin/sh', '-c', check.run], cwd: worktree, signal: backstop, graceMs: 5000,
+            argv: ['timeout', '-s', 'INT', '-k', '10', String(check.timeoutSeconds), '/bin/sh', '-c', check.run], cwd, signal: backstop, graceMs: 5000,
             env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), ...given.data, LANG: process.env.LANG, PATH: path, HOME: scratch, CI: '1' },
           })
           const outcome = await spawned.done
           const leftovers = stopLeftovers(scratch)
           const output = `${spawned.stdout()}\n${spawned.stderr()}`
           const run = {
-            name: check.name, run: check.run, commit: tree.commit, exitCode: outcome.exitCode, signal: outcome.signal,
+            name: check.name, run: check.run, commit, exitCode: outcome.exitCode, signal: outcome.signal,
             timedOut: backstop.aborted || outcome.exitCode === 124, durationMs: Math.max(0, Math.round(now() - started)),
             stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}), ...(extra.length ? { checkEnv: extra } : {}),
           }
-          evidence.push((await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id)
-          ran.push(`${check.name} ${(run.durationMs / 1000).toFixed(1)} s`)
+          const id = (await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id
+          let failure: string | undefined
           if (run.timedOut) {
             const running = interrupted(output)
-            failed.push(running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`)
+            failure = running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`
           } else if (run.exitCode !== 0) {
             const first = firstFailure(output)
-            failed.push(first ? `${check.name}: ${first}` : `${check.name} (exit ${run.exitCode ?? run.signal})`)
-          } else if (leftovers.length) failed.push(`${check.name} (left running: ${leftovers.join(', ')})`)
+            failure = first ? `${check.name}: ${first}` : `${check.name} (exit ${run.exitCode ?? run.signal})`
+          } else if (leftovers.length) failure = `${check.name} (left running: ${leftovers.join(', ')})`
+          return { id, ...(failure ? { failed: failure } : {}), ms: run.durationMs }
+        }
+        const failedNames: string[] = []
+        const chosen = checks.checks.filter((check) => asItIs || selected(check, touched))
+        for (const check of checks.checks) if (!chosen.includes(check)) skipped.push(check.name)
+        for (const check of chosen) {
+          const result = await runCheck(check, worktree, tree.commit)
+          evidence.push(result.id)
+          ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s`)
+          if (result.failed) {
+            failed.push(result.failed)
+            failedNames.push(check.name)
+          }
+        }
+        // A check the change fails is run again on the base (PROP-0007 / df-25): when the base fails it too, the change is not to blame.
+        // The base shares the change's HOME (one scratch), so a check that keeps state there could differ from a clean run; accepted.
+        if (failedNames.length && !asItIs) {
+          let baseTree: string | undefined
+          try {
+            baseTree = join(scratch, 'base')
+            await addWorktree(tree.repository, baseTree, from)
+          } catch {
+            baseTree = undefined
+          }
+          if (baseTree) {
+            try {
+              // Up to the last check that failed on the change: the ones before it are its prerequisites (install, build) and are evidence too.
+              const last = Math.max(...failedNames.map((name) => chosen.findIndex((c) => c.name === name)))
+              const baseFailed = new Set<string>()
+              for (const check of chosen.slice(0, last + 1)) {
+                const result = await runCheck(check, baseTree, from)
+                evidence.push(result.id)
+                if (result.failed) baseFailed.add(check.name)
+              }
+              if (failedNames.every((name) => baseFailed.has(name))) {
+                return verdict('inconclusive', `${failedNames.map((name) => `${name}: the base fails it too (base ${from})`).join('; ')}; failed on the change: ${failed.join('; ')}`, evidence)
+              }
+            } finally {
+              await removeWorktree(tree.repository, baseTree)
+            }
+          }
         }
       } finally {
         await removeWorktree(tree.repository, worktree)
