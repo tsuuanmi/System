@@ -144,8 +144,11 @@ test('every method of the table round-trips over the socket', async () => {
   writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [x] p-1 First\n- [ ] p-2 Second\n- broken\n')
   git('add', '.')
   git('commit', '-qm', 'status')
-  assert.deepEqual(await call('status', { repository: project }), ['[x] p-1 First - done', '[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
-  assert.deepEqual(await call('status', { repository: project, state: 'todo', item: 'p-2' }), ['[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
+  const lines = (await call('status', { repository: project })) as string[]
+  assert.deepEqual(lines.slice(0, 2), ['[x] p-1 First - done', '[ ] p-2 Second - todo: nobody'])
+  assert.match(lines[2]!, /^note: read dev \(/)
+  assert.equal(lines[3], 'note: line 4: not an Item line (- [ ] <id> <title>)')
+  assert.deepEqual(((await call('status', { repository: project, state: 'todo', item: 'p-2' })) as string[]).filter((l) => !l.startsWith('note: read ')), ['[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
   await assert.rejects(call('status', { repository: project, item: 'Bad' }), /-32602|invalid|item/i)
   await assert.rejects(call('task.new', { instructions: 'x', item: 'Bad' }), /-32602|invalid|item/i)
   // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).
