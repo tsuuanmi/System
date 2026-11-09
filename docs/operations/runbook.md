@@ -571,6 +571,10 @@ start the Host first, then add the server:
 claude mcp add system -- system mcp
 ```
 
+The server sends `instructions` in its initialize result, which the client puts
+in the session's context, so a session in any repository knows when to use
+System, what a repository needs and the steps, without reading these docs.
+
 A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base
 commit, else beside its own code.

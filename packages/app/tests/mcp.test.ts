@@ -148,3 +148,8 @@ test('a notice only wakes the client: one that was away reads work.events from i
   assert.deepEqual(missed.events, all.events.slice(cursor + 1))
   assert.equal(missed.events.at(-1).type, 'terminal')
 })
+
+test('the initialize result carries instructions: the steps, the checks file and the human-only commands', { timeout: 60_000 }, async () => {
+  const text = (await mcp()).getInstructions() ?? ''
+  for (const word of ['status', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
+})
