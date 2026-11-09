@@ -423,6 +423,93 @@ test('a ratio outside 0 to 1 is not valid criteria', () => {
 })
 
 // 2026-11-07: Xvfb processes leaked by a Worker's own tests held a finished attempt "running" for 33 min.
+/** The tree content of a stored `git-tree@1` Artifact. */
+const treeOf = (artifacts: Artifacts, treeId: string) => {
+  const read = artifacts.get(treeId)
+  assert.ok(read.state === 'stored')
+  return read.envelope.content as GitTreeContent
+}
+
+// build must pass with only the new tests in place; unit runs them and must fail; docs is not touched.
+const RED = `checks:
+  - name: build
+    run: grep -qx good value.txt
+    red: pass
+  - name: unit
+    run: "! test -f tests/new.sh || sh tests/new.sh"
+  - name: docs
+    run: "true"
+    paths: [docs/**]
+    red: pass
+`
+
+test('red-v1: the tests step\'s change passes when every red: pass check passes and a red: fail check fails', async () => {
+  const artifacts = store()
+  const repository = repo(RED)
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'red-v1', input: task, operatorId: 't' })
+  const verify = (subject: string) => verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'red', capability: 'code.required-checks', subject, criteria })
+
+  const red = await verify(await change(artifacts, repository, tree.commit, { 'tests/new.sh': 'grep -qx better value.txt\n' }))
+  assert.equal(red.verdict, 'pass', red.reason)
+  assert.match(red.reason, /failed as it should, and passes on the base: unit \(exit 1\)/)
+  assert.match(red.reason, /passed: build/)
+  assert.match(red.reason, /skipped: docs/)
+  assert.equal(red.evidence.length, 4, 'build and unit on the change, then on the base, where unit passes')
+
+  const proves = await verify(await change(artifacts, repository, tree.commit, { 'tests/new.sh': 'true\n' }))
+  assert.equal(proves.verdict, 'fail')
+  assert.match(proves.reason, /no check with red: fail failed/)
+
+  const broken = await verify(await change(artifacts, repository, tree.commit, { 'tests/new.sh': 'false\n', 'value.txt': 'bad\n' }))
+  assert.equal(broken.verdict, 'fail')
+  assert.match(broken.reason, /must pass with only the new tests: build \(exit 1\)/)
+
+  // The same change under the ordinary criteria: a failing unit check is a failure.
+  const ordinary = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const plain = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: await change(artifacts, repository, tree.commit, { 'tests/new.sh': 'false\n' }), criteria: ordinary })
+  assert.equal(plain.verdict, 'fail')
+  await assert.rejects(verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    red: maybe\n'))).task, operatorId: 't' }), /is invalid/)
+})
+
+test('red-v1: a red: fail check that fails on the base too is not red: alone, the verdict is inconclusive', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: build\n    run: "true"\n    red: pass\n  - name: unit\n    run: test -f never-there\n')
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'red-v1', input: task, operatorId: 't' })
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'red', capability: 'code.required-checks', subject: await change(artifacts, repository, tree.commit, { 'tests/new.sh': 'false\n' }), criteria })
+  assert.equal(result.verdict, 'inconclusive', result.reason)
+  assert.match(result.reason, /fails on the base .* too/)
+  assert.equal(result.evidence.length, 4, 'build and unit on the change, then on the base')
+})
+
+test('tests-frozen-v1: implement may add files, but not change one the tests step changed', async () => {
+  const artifacts = store()
+  const repository = repo(CHECKS)
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'tests-frozen-v1', input: task, operatorId: 't' })
+  const tests = await change(artifacts, repository, tree.commit, { 'tests/a.test': 'a\n', 'value.txt': 'good\nand more\n' })
+  const testsCommit = treeOf(artifacts, tests).commit
+  const verify = (subject: string, inputs?: Record<string, string>) => verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'tests-frozen', capability: 'code.required-checks', subject, criteria, ...(inputs ? { inputs } : {}) })
+
+  const kept = await verify(await change(artifacts, repository, testsCommit, { 'src.txt': 'code\n', 'tests/b.test': 'another new test\n' }), { tests })
+  assert.equal(kept.verdict, 'pass', kept.reason)
+  assert.equal(kept.evidence.length, 1)
+  const run = artifacts.get(kept.evidence[0]!)
+  assert.equal(run.state === 'stored' && run.envelope.kind, 'check-run')
+
+  const rewritten = await verify(await change(artifacts, repository, testsCommit, { 'src.txt': 'code\n', 'tests/a.test': 'rewritten\n', 'value.txt': 'good\n' }), { tests })
+  assert.equal(rewritten.verdict, 'fail')
+  assert.match(rewritten.reason, /changed what the tests step wrote: tests\/a\.test, value\.txt/)
+
+  const missing = await verify(tests)
+  assert.equal(missing.verdict, 'error')
+  assert.match(missing.reason, /input "tests"/)
+})
+
 test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftover is stopped', async () => {
   const artifacts = store()
   const repository = repo('checks:\n  - name: leaky\n    run: ln -s "$(command -v sleep)" Xvfb && (setsid ./Xvfb 120 >/dev/null 2>&1 &) ; sleep 0.3\n  - name: clean\n    run: echo fine\n')

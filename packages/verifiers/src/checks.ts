@@ -21,6 +21,9 @@ import { firstFailure, interrupted, nodeBin } from './reasons.ts'
 import { z } from 'zod'
 
 export const CHECKS_FILE = '.system/checks.yaml'
+/** Criteria names that change what a verdict means (the name is pinned in the `checks@1` Artifact); any other name is every selected check passing. */
+export const RED = 'red-v1'
+export const TESTS_FROZEN = 'tests-frozen-v1'
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
@@ -31,6 +34,8 @@ export const checksFileSchema = z.object({
     timeoutSeconds: z.number().int().positive().max(3600).default(600),
     /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one; without it, always. */
     paths: z.array(z.string().min(1)).min(1).optional(),
+    /** Under `red-v1` (the tests step's change, before any code): `pass` must still pass, `fail` (absent) is where the new tests fail. */
+    red: z.enum(['pass', 'fail']).optional(),
   }).strict()).min(1).max(20),
 }).strict()
 export const checksSchema = z.object({
@@ -117,6 +122,31 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
   if (!given.success) throw new Error(`checkEnv is invalid: ${given.error.issues.map((i) => `${i.path.join('.')}${i.path.length ? ': ' : ''}${i.message}`).join('; ')}`)
   const extra = Object.keys(given.data)
   const producer = { type: 'verifier' as const, ref: 'code.required-checks' }
+  const diffNames = async (repository: string, from: string, to: string): Promise<string[]> =>
+    from === to ? [] : (await git(repository, ['diff', '--name-only', '--no-renames', from, to])).split('\n').filter(Boolean)
+
+  /**
+   * `tests-frozen-v1`: the subject (the implement step's change) leaves every file the tests step's change (input
+   * `tests`) added, modified or deleted as that step left it, compared with its commit; files of its own, new tests
+   * included, are allowed. One `check-run@1` records the git command and the files it found changed.
+   */
+  async function testsFrozen(testsId: string | undefined, tree: GitTreeContent, verdict: (v: VerifyResult['verdict'], reason: string, evidence: string[]) => VerifyResult): Promise<VerifyResult> {
+    if (!testsId) return verdict('error', `${TESTS_FROZEN} needs the tests step's change as input "tests"`, [])
+    const tests = contentOf<GitTreeContent>(artifacts, testsId, 'git-tree')
+    if (!tests.parent) return verdict('error', `the tests step's change ${tests.commit} names no parent: what it wrote is unknown`, [])
+    const started = now()
+    const written = new Set(await diffNames(tree.repository, tests.parent, tests.commit))
+    const changed = (await diffNames(tree.repository, tests.commit, tree.commit)).filter((file) => written.has(file))
+    const run = {
+      name: 'tests-frozen', run: `git diff --name-only --no-renames ${tests.commit} ${tree.commit}`, commit: tree.commit, exitCode: changed.length ? 1 : 0, signal: null,
+      timedOut: false, durationMs: Math.max(0, Math.round(now() - started)), stdoutTail: tail(changed.map((file) => `${file}\n`).join('')), stderrTail: '',
+    }
+    const evidence = [(await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [testsId], classification: 'local-private', producer })).id]
+    return changed.length
+      ? verdict('fail', `failed: tests-frozen: the change changed what the tests step wrote: ${changed.join(', ')} (compared with ${tests.commit})`, evidence)
+      : verdict('pass', `tests-frozen: none of the ${written.size} file(s) the tests step wrote changed between ${tests.commit} and ${tree.commit}`, evidence)
+  }
+
   return {
     ref: 'code.required-checks',
     version: '1',
@@ -151,6 +181,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const treeId = subject.state === 'stored' && subject.envelope.kind === TASK_KIND.kind ? (subject.envelope.content as Task).base ?? '' : request.subject
       const tree = contentOf<GitTreeContent>(artifacts, treeId, 'git-tree')
       const checks = contentOf<Checks>(artifacts, request.criteria, CHECKS_KIND.kind)
+      if (checks.name === TESTS_FROZEN) return testsFrozen(request.inputs?.tests, tree, verdict)
       const scratch = scratchOf(request.attemptId)
       rmSync(scratch, { recursive: true, force: true })
       mkdirSync(scratch)
@@ -180,7 +211,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         const asItIs = tree.commit === from
         const touched = asItIs ? [] : (await git(tree.repository, ['diff', '--name-only', from, tree.commit])).split('\n').filter(Boolean)
         /** One check on one commit's worktree: the change and the base run it the same way, so "fails" means the same on both. */
-        const runCheck = async (check: Checks['checks'][number], cwd: string, commit: string): Promise<{ id: string; failed?: string; ms: number }> => {
+        const runCheck = async (check: Checks['checks'][number], cwd: string, commit: string): Promise<{ id: string; failed?: string; leftover: boolean; ms: number }> => {
           const started = now()
           // `timeout` interrupts the whole group first, so a test runner says what it was running; the abort is the backstop.
           const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
@@ -198,22 +229,29 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           }
           const id = (await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id
           let failure: string | undefined
+          let leftover = false
           if (run.timedOut) {
             const running = interrupted(output)
             failure = running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`
           } else if (run.exitCode !== 0) {
             const first = firstFailure(output)
             failure = first ? `${check.name}: ${first}` : `${check.name} (exit ${run.exitCode ?? run.signal})`
-          } else if (leftovers.length) failure = `${check.name} (left running: ${leftovers.join(', ')})`
-          return { id, ...(failure ? { failed: failure } : {}), ms: run.durationMs }
+          } else if (leftovers.length) {
+            failure = `${check.name} (left running: ${leftovers.join(', ')})`
+            leftover = true
+          }
+          return { id, ...(failure ? { failed: failure } : {}), leftover, ms: run.durationMs }
         }
         const failedNames: string[] = []
+        /** Each check run and why it failed, if it did; `leftover` when only what it left running failed it. */
+        const results: { name: string; red?: 'pass' | 'fail'; failure?: string; leftover: boolean }[] = []
         const chosen = checks.checks.filter((check) => asItIs || selected(check, touched))
         for (const check of checks.checks) if (!chosen.includes(check)) skipped.push(check.name)
         for (const check of chosen) {
           const result = await runCheck(check, worktree, tree.commit)
           evidence.push(result.id)
           ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s`)
+          results.push({ name: check.name, red: check.red, failure: result.failed, leftover: result.leftover })
           if (result.failed) {
             failed.push(result.failed)
             failedNames.push(check.name)
@@ -223,30 +261,48 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         // The base shares the change's HOME (one scratch), so a check that keeps state there could differ from a clean run; accepted.
         // The base is the commit the checks were pinned from, not `from`: a further attempt on a failed change has that change as its parent, and it fails the check too.
         const base = checks.source.commit
-        if (failedNames.length && !asItIs && base !== tree.commit) {
-          let baseTree: string | undefined
+        /** Which of `names` fail on the base, running the chosen checks up to the last of them (the ones before are its prerequisites, such as install and build, and evidence too); undefined when the base cannot be checked out. */
+        const failingOnBase = async (names: string[]): Promise<Set<string> | undefined> => {
+          const baseTree = join(scratch, 'base')
           try {
-            baseTree = join(scratch, 'base')
             await addWorktree(tree.repository, baseTree, base)
           } catch {
-            baseTree = undefined
+            return undefined
           }
-          if (baseTree) {
-            try {
-              // Up to the last check that failed on the change: the ones before it are its prerequisites (install, build) and are evidence too.
-              const last = Math.max(...failedNames.map((name) => chosen.findIndex((c) => c.name === name)))
-              const baseFailed = new Set<string>()
-              for (const check of chosen.slice(0, last + 1)) {
-                const result = await runCheck(check, baseTree, base)
-                evidence.push(result.id)
-                if (result.failed) baseFailed.add(check.name)
-              }
-              if (failedNames.every((name) => baseFailed.has(name))) {
-                return verdict('inconclusive', `${failedNames.map((name) => `${name}: the base fails it too (base ${base})`).join('; ')}; failed on the change: ${failed.join('; ')}`, evidence)
-              }
-            } finally {
-              await removeWorktree(tree.repository, baseTree)
+          try {
+            const last = Math.max(...names.map((name) => chosen.findIndex((c) => c.name === name)))
+            const baseFailed = new Set<string>()
+            for (const check of chosen.slice(0, last + 1)) {
+              const result = await runCheck(check, baseTree, base)
+              evidence.push(result.id)
+              if (result.failed) baseFailed.add(check.name)
             }
+            return baseFailed
+          } finally {
+            await removeWorktree(tree.repository, baseTree)
+          }
+        }
+        if (checks.name === RED) {
+          // The tests step's change, before any code: what must still pass does, and the new tests fail somewhere the base does not.
+          // A check that leaves a process running is broken whatever its `red`.
+          const skips = skipped.length ? `; skipped: ${skipped.join(', ')}` : ''
+          const broke = results.filter((r) => r.failure && (r.red === 'pass' || r.leftover)).map((r) => r.failure!)
+          if (broke.length) return verdict('fail', `failed: must pass with only the new tests: ${broke.join('; ')}${skips}`, evidence)
+          const candidates = results.filter((r) => r.failure && r.red !== 'pass')
+          if (!candidates.length) return verdict('fail', `failed: no check with red: fail failed on ${tree.commit}, so the new tests prove nothing; run: ${ran.join(', ')}${skips}`, evidence)
+          if (base === tree.commit) return verdict('fail', `failed: the change is the base ${base}: there are no new tests`, evidence)
+          // Only a check that passes on the base is red because of the new tests (df-25's rule, applied to red-v1).
+          const onBase = await failingOnBase(candidates.map((r) => r.name))
+          if (!onBase) return verdict('error', `could not check out the base ${base} to tell the new tests' failures from the base's`, evidence)
+          const red = candidates.filter((r) => !onBase.has(r.name)).map((r) => r.failure!)
+          const passed = results.filter((r) => !r.failure).map((r) => r.name)
+          if (!red.length) return verdict('inconclusive', `every check that failed fails on the base ${base} too, so the new tests' failures cannot be told apart: ${candidates.map((r) => r.failure!).join('; ')}${skips}`, evidence)
+          return verdict('pass', `red on ${tree.commit}: failed as it should, and passes on the base: ${red.join('; ')}; passed: ${passed.join(', ') || 'none'}${skips}`, evidence)
+        }
+        if (failedNames.length && !asItIs && base !== tree.commit) {
+          const baseFailed = await failingOnBase(failedNames)
+          if (baseFailed && failedNames.every((name) => baseFailed.has(name))) {
+            return verdict('inconclusive', `${failedNames.map((name) => `${name}: the base fails it too (base ${base})`).join('; ')}; failed on the change: ${failed.join('; ')}`, evidence)
           }
         }
       } finally {

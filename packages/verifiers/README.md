@@ -34,6 +34,7 @@ checks:
     run: npm ci && npm test  # run with /bin/sh -c in the checked-out commit
     timeoutSeconds: 600      # default 600, at most 3600
     paths: [src/**, package.json]  # optional globs: run only when the change touches one
+    red: fail                # optional, for red-v1 below: pass or fail (the default)
 ```
 
 - **Verify:** check out the exact subject commit into a fresh worktree, run
@@ -80,6 +81,28 @@ checks:
   is (`code-checks.yaml` on its own) runs every check. A skipped check has no
   `check-run@1`. The verdict's reason lists what ran, with its time, and what
   was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
+- **Criteria names** (df-26): the name a verify step gives is pinned in
+  `checks@1` and chooses what the verdict means; any name but these two is
+  the rule above (`repo-checks-v1` in `code-checks.yaml`).
+  - **`red-v1`**, the red check of `feature.yaml`, on the tests step's change
+    before any code: the selected checks run as above. A `red: fail` check
+    that failed counts as red only when it passes on the base (run again
+    there as df-25 does, up to the last such check). `pass` when every check
+    with `red: pass` passed (such as build, docs) and at least one check is
+    red; `fail` when a `red: pass` check failed (`failed: must pass with only
+    the new tests: ...`; not run on the base), when no `red: fail` check
+    failed (the tests prove nothing), when the change is the base itself, or
+    when a check left a process running; `inconclusive` when every `red: fail`
+    check that failed fails on the base too; `error` when the base cannot be
+    checked out.
+  - **`tests-frozen-v1`**, on the implement step's change with the tests
+    step's change as the verify step's input `tests`: `fail` when the change,
+    compared with the tests step's commit, adds, modifies or deletes a file
+    the tests step's own change (against its parent) touched, naming the
+    files; new files, new tests included, are allowed. No check runs (so
+    nothing is run again on the base); one
+    `check-run@1` records the `git diff` and the files. Without the input, or
+    when the tests change names no parent, the verdict is `error`.
 
 ## `research.citation-check` (version 4)
 
