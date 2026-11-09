@@ -75,9 +75,11 @@ full ID. Refused: recursion (a Workflow ID already in the chain), more than
 three levels, a Sub-workflow with an accept step, a step ID with a `.`, more
 than 32 steps once joined. The resolved spec has no `uses` left, so the
 controller, replay, per-step retry, slots and budgets apply as written. The
-CLI sends each used file, read from beside the using file, with the Workflow;
-a file not sent (an MCP caller's) is read by the Host from `workflows/` at the
-input Task's base commit, else from the `workflows/` beside its own code.
+CLI sends each used file it finds beside the using file, with the Workflow; a
+file not sent (not beside it, or an MCP caller's) is read by the Host from
+`workflows/` at the input Task's base commit, else from the `workflows/` beside
+its own code. The CLI's `usedFiles` ([packages/app/src/remote.ts](../../packages/app/src/remote.ts))
+leaves the rest to the Host and does not read them itself.
 
 Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
 another schema version, duplicate steps, unknown or self dependencies, cycles
