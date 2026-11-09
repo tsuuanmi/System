@@ -133,8 +133,10 @@ test('a stop after the first proposal reuses it: the retry runs only the second 
   for (let i = 0; i < 300 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
   for (let i = 0; i < 300 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
   assert.ok(existsSync(marker), 'idea-b started')
+  // idea-a and idea-b run in parallel (H5): wait for idea-a to finish while idea-b hangs.
+  for (let i = 0; i < 300 && !show(workId).state.steps['idea-a']!.outputs.proposal; i++) await new Promise((r) => setTimeout(r, 100))
   const first = show(workId).state.steps['idea-a']!.outputs.proposal!
-  assert.ok(first, 'idea-a finished before idea-b started')
+  assert.ok(first, 'idea-a finished while idea-b hangs')
 
   assert.equal(system(['work', 'cancel', workId, '--reason', 'stop after the first idea', '--wait']).status, 0)
   assert.equal((await submit.done).status, 5)
