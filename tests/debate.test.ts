@@ -44,7 +44,7 @@ after(async () => {
 test('a brief is debated in two Rounds, each side reading the other side\'s exact proposal, then synthesised', { timeout: 120_000 }, () => {
   const made = system(['task', 'new', '--text', 'How should System schedule Work? FAKE:outputs FAKE:sign'])
   assert.equal(made.status, 0, made.stderr)
-  const input = made.stdout.trim().split('\n').at(-1)!
+  const input = made.stdout.trim()
   const ran = system(['work', 'submit', '--workflow', DEBATE, '--input', input])
   assert.equal(ran.status, 0, ran.stderr)
   const workId = ran.stdout.trim()

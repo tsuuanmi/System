@@ -48,7 +48,7 @@ export async function update({ install, cli, origin, run, exists, readlink, swit
     // The commit `current` points to, when it is a release of this install; the new commit is checked as a change from it.
     const running = before?.startsWith('releases/') ? before.slice('releases/'.length) : undefined
     log(`checking ${commit.slice(0, 12)} with its required checks, as a System Work${running ? `, as a change from the running release ${running.slice(0, 12)}` : ' (the first install: the whole commit)'}`)
-    const task = lastLine(await must('system task new', run(cli, ['task', 'new', '--text', `Release check of ${commit} for the install`, '--repo', repo, '--ref', commit, ...(running ? ['--against', running] : [])])))
+    const task = (await must('system task new', run(cli, ['task', 'new', '--text', `Release check of ${commit} for the install`, '--repo', repo, '--ref', commit, ...(running ? ['--against', running] : [])]))).trim()
     const checked = await run(cli, ['work', 'submit', '--workflow', join(release, 'workflows', 'code-checks.yaml'), '--input', task])
     const work = checked.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
     // The verdict names the checks it skipped; the Work record carries it.

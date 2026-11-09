@@ -188,7 +188,17 @@ export function operations(services: Services): Methods {
       params: z.object({ repository: z.string().min(1), state: z.enum(['todo', 'doing', 'done']).optional(), item: z.string().regex(ITEM_ID).optional() }).strict(),
       async handler(host, p) {
         const status = await readStatus(p.repository)
-        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }), ...[status.note, ...status.problems].map((problem) => `note: ${problem}`)]
+        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }, host.view.claims()), ...[status.note, ...status.problems].map((problem) => `note: ${problem}`)]
+      },
+    },
+    'item.claim': {
+      agent: true,
+      summary: 'Claim an Item of the repository\'s STATUS.md before submitting a Work for it: `{ repository, item, who, at }`, with `who` the caller\'s operator ID. `status` then shows the Item as `doing`, claimed by `who` since `at`; a Work submitted for the Item takes the claim over. Refused when the Item has no line in STATUS.md, has a running or held Work, or is claimed by another caller, unless `force` is true.',
+      params: z.object({ repository: z.string().min(1), item: z.string().regex(ITEM_ID), force: z.boolean().optional() }).strict(),
+      async handler(host, p, caller) {
+        const status = await readStatus(p.repository)
+        if (!status.items.some((i) => i.id === p.item)) throw new WorkError(`Item ${p.item} has no line in STATUS.md on ${status.ref} of ${status.repository}`)
+        return host.claim(status.repository, p.item, caller, p.force)
       },
     },
     'artifact.put': {

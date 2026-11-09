@@ -345,3 +345,27 @@ test('the takeover context opens with the Item\'s line and marks an earlier Work
   assert.match(note, /^\[ \] df-3 The status of a project - todo: nobody\n/, 'opens with the Item\'s line')
   assert.match(note, new RegExp(`- ${first.id} failed[^\\n]*\\n(  Task[^\\n]*\\n)?  changed nothing`))
 })
+
+test('a session can claim an Item before it submits a Work: status shows who and since when, and a Work for the Item takes the claim over', async () => {
+  const dir = repository(STATUS)
+  const { controller, task, admit } = setup()
+  const status = await readStatus(dir)
+  const line = () => itemLines(status, dir, controller.list(), () => [], { item: 'df-3' }, controller.claims())[0]
+  const claimed = await controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
+  assert.equal(claimed.who, 'session-a')
+  assert.equal(line(), `[ ] df-3 The status of a project - doing: claimed by session-a since ${claimed.at}`)
+  assert.deepEqual(itemLines(status, dir, controller.list(), () => [], { state: 'doing' }, controller.claims()).length, 1)
+  assert.match(itemLines(status, dir, controller.list(), () => [], { item: 'df-4' }, controller.claims())[0]!, /todo: nobody/)
+
+  // The same session claims again; another one is refused, naming the first, unless it forces.
+  await controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
+  await assert.rejects(controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-b' }), (error: Error) => error.message.includes('session-a') && error.message.includes('force'))
+  assert.equal((await controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-b' }, true)).who, 'session-b')
+
+  // A Work submitted for the Item takes the claim over: the line shows the Work, not the claim.
+  const work = await admit(task(dir, 'df-3'))
+  assert.deepEqual(controller.claims(), [])
+  assert.equal(line(), `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}`)
+  // An Item with a running Work cannot be claimed.
+  await assert.rejects(controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' }), (error: Error) => error.message.includes(work.id))
+})

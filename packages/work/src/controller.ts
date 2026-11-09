@@ -16,7 +16,7 @@ import type { Task, Verdict } from './kinds.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import { activeWork, itemNote, whoHas } from './status.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
-import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
+import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** What a failed attempt's reason says when its Account was rate-limited. */
@@ -28,6 +28,22 @@ export interface WorkTable {
   put(key: string, value: WorkRecord): Promise<void>
   update(key: string, fn: (current: WorkRecord) => WorkRecord): Promise<WorkRecord>
   keys(): IterableIterator<string>
+}
+
+/** The claims on Items: one key per Item of a repository (see `claimKey`). */
+export interface ClaimTable {
+  get(key: string): Claim | undefined
+  put(key: string, value: Claim): Promise<void>
+  delete(key: string): Promise<boolean>
+  keys(): IterableIterator<string>
+}
+
+const claimKey = (repository: string, item: string): string => `${repository}\n${item}`
+
+/** A claim table in memory, for a controller built without one. */
+function memoryClaims(): ClaimTable {
+  const rows = new Map<string, Claim>()
+  return { get: (key) => rows.get(key), put: async (key, value) => { rows.set(key, value) }, delete: async (key) => rows.delete(key), keys: () => rows.keys() }
 }
 
 /** The Artifact operations the controller needs. */
@@ -144,6 +160,7 @@ export interface WorkChange {
 
 export class WorkController {
   private readonly table: WorkTable
+  private readonly claimed: ClaimTable
   private readonly specs: SpecStore
   private readonly capabilities: Capabilities
   private readonly control = new MemoryControl()
@@ -170,8 +187,9 @@ export class WorkController {
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims()) {
     this.table = table
+    this.claimed = claims
     this.specs = specs
     this.capabilities = capabilities
     this.lane = lane
@@ -271,8 +289,29 @@ export class WorkController {
       ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
     }
     await this.table.put(id, workRecordSchema.parse(record))
+    // A Work for the Item takes over a session's claim on it.
+    if (item?.repository) await this.claimed.delete(claimKey(item.repository, item.id))
     this.changed(record)
     return record
+  }
+
+  /** The claims on Items, by session. */
+  claims(): Claim[] {
+    return [...this.claimed.keys()].map((key) => this.claimed.get(key)!)
+  }
+
+  /**
+   * Claim an Item for `caller` before submitting a Work for it. Refused while a Work for the Item is running or held,
+   * and while another caller holds the claim unless `force`. Call it in the commit lane.
+   */
+  async claim(repository: string, item: string, caller: Caller, force = false): Promise<Claim> {
+    const busy = activeWork(this.list(), { id: item, repository })
+    if (busy) throw new WorkError(`Item ${item} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'})`)
+    const held = this.claimed.get(claimKey(repository, item))
+    if (held && held.who !== caller.operatorId && !force) throw new WorkError(`Item ${item} is claimed by ${held.who} since ${held.at}; to take it over on purpose, give force (--force)`)
+    const claim: Claim = { repository, item, who: caller.operatorId, at: this.now() }
+    await this.claimed.put(claimKey(repository, item), claim)
+    return claim
   }
 
   get(workId: string): WorkRecord | undefined {

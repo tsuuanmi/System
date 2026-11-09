@@ -487,7 +487,8 @@ A line that does not parse is skipped and reported by `system status` as a
 `note:`.
 
 ```
-system task new --text "..." --repo . --ref dev --item df-3
+system task new --text "..." --repo . --ref dev --item df-3   # prints the Task ID alone
+system claim df-3 [--repo .] [--force]   # before a Work exists: shown as doing
 system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
@@ -496,7 +497,9 @@ not the working tree; it never fetches, and the `note:` line names the ref and i
 was merged into `dev` (its `git.publish` merge was applied, read from the Host's store), or the line is `[x]` for
 work done outside System; it names the last merged Work and its Artifact; `doing` is a Work whose Task
 names the Item and that is running or held (its ID, step, Account, since when,
-and the live progress the Host keeps, or why it is held); `todo` is `nobody`.
+and the live progress the Host keeps, or why it is held), or a session's claim
+(`system claim`, `item_claim`: who and since when, kept in the Host's store until a Work
+for the Item is submitted, which takes it over; another session's claim is refused without `--force`); `todo` is `nobody`.
 Read a Work by its ID for details. The MCP tool `status` answers the same.
 
 While a Work for an Item runs or is held, `work submit` for the same Item is

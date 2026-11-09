@@ -194,6 +194,7 @@ export function remoteHost(remote: Remote): ClientHost {
     async newTask(instructions, repository, ref, context, item, against) {
       return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against })
     },
+    claim: (repository, item, force) => change('item.claim', { repository: resolve(repository), item, force }),
     status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
   }
 

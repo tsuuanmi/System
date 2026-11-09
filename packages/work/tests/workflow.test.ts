@@ -286,3 +286,14 @@ test('software-engineering.yaml declares the retry on the checks of its Sub-work
   const implement = spec.steps.find((s) => s.id === 'implement')
   assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks'], max: 1 })
 })
+
+for (const file of ['feature.yaml', 'feature-research.yaml']) {
+  test(`${file} records, as an Artifact the implement step is given, the run of the tests step's new tests on the base`, () => {
+    const spec = parseWorkflow(readFileSync(new URL(`../../../workflows/${file}`, import.meta.url), 'utf8'))
+    const tests = spec.steps.find((s) => s.id === 'tests') as { outputs?: string[]; instructions?: string }
+    const implement = spec.steps.find((s) => s.id === 'implement') as { inputs?: Record<string, string> }
+    assert.ok(tests.outputs?.includes('red'), 'tests outputs the evidence as "red"')
+    assert.equal(implement.inputs?.red, '$steps.tests.red')
+    assert.match(tests.instructions ?? '', /\bred\b/)
+  })
+}

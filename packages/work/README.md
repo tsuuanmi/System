@@ -9,7 +9,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   (the Worker and verifier registry) and `ctx.work` (the Host core's storage).
 - **Storage:** DSH storage domain `system_work` (version 1, SQLite), table
   `work`, one key per Work. A record holds the append-only events and the
-  state they fold to; every change is one atomic `update(workId, fn)`.
+  state they fold to; every change is one atomic `update(workId, fn)`. Table
+  `claims`: one key per claimed Item (a session's claim before a Work: who,
+  since when; a Work for the Item deletes it).
 - **Specs:** an admitted Workflow is pinned as an Artifact of kind
   `workflow-spec@1`; the Work records its ID and never reads the file again.
 

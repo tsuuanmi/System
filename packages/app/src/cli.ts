@@ -88,6 +88,8 @@ export interface WorkCommands {
   /** A Work's measurements. */
   report(workId: string): Promise<unknown>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string): Promise<{ task: string; base?: string }>
+  /** Claim an Item of the project at `repository` before submitting a Work for it. */
+  claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
   status(repository: string, state: string | undefined, item: string | undefined): Promise<string[]>
 }
@@ -201,23 +203,42 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
-  const decide = (decision: 'approved' | 'denied') => (workId: string, options: { reason: string }) => {
+  const decide = (decision: 'approved' | 'denied') => (workIds: string[], options: { reason: string }) => {
     select(async () => {
-      const record = await host.work().get(workId)
-      if (!record) throw new Error(`no Work ${workId}`)
-      io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
-      const short = shortCode(workId)
+      const commands = host.work()
+      const records = []
+      for (const workId of workIds) {
+        const record = await commands.get(workId)
+        if (!record) throw new Error(`no Work ${workId}`)
+        io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
+        records.push(record)
+      }
+      const verb = decision === 'approved' ? 'approve' : 'deny'
+      // One Work: its short ID. Several: the verb and their number, typed after reading the list above.
+      const expected = workIds.length === 1 ? shortCode(workIds[0]!) : `${verb} ${workIds.length}`
+      const what = workIds.length === 1 ? `for ${records[0]!.state.awaiting ?? 'it'}` : `for each of these ${workIds.length} Works`
       // On a line of its own, so a pasted command is not taken for the answer.
-      const operatorId = await io.confirmHuman(`Nothing is decided unless you type exactly ${short} to record "${decision}" for ${record.state.awaiting ?? 'it'}\n> `, short)
-      return exitOf(await host.work().decide(workId, decision, operatorId, options.reason))
+      const operatorId = await io.confirmHuman(`Nothing is decided unless you type exactly ${expected} to record "${decision}" ${what}\n> `, expected)
+      let code = 0
+      for (const workId of workIds) {
+        try {
+          const outcome = exitOf(await commands.decide(workId, decision, operatorId, options.reason))
+          code = code || outcome
+        } catch (error) {
+          if (workIds.length === 1) throw error
+          io.err(`system: ${workId}: ${(error as Error).message}\n`)
+          code = code || 1
+        }
+      }
+      return code
     })
   }
-  program.command('approve <workId>')
-    .description('approve what held Work awaits (an effect, or an inconclusive verdict); a human at a terminal only')
+  program.command('approve <workIds...>')
+    .description('approve what each held Work awaits (an effect, or an inconclusive verdict); a human at a terminal only, one typed confirmation for all the Works given')
     .option('--reason <text>', 'why', 'approved by the operator')
     .action(decide('approved'))
-  program.command('deny <workId>')
-    .description('deny what held Work awaits; the Work fails. A human at a terminal only')
+  program.command('deny <workIds...>')
+    .description('deny what each held Work awaits; the Work fails. A human at a terminal only, one typed confirmation for all the Works given')
     .requiredOption('--reason <text>', 'why')
     .action(decide('denied'))
   const workers = program.command('workers')
@@ -269,7 +290,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     })
   const task = program.command('task').description('task inputs for Work')
   task.command('new')
-    .description('store a task@1 Artifact (and, with --repo, the exact base commit) and print its ID')
+    .description('store a task@1 Artifact (and, with --repo, the exact base commit) and print its ID alone on stdout; the base commit\'s ID goes to stderr')
     .option('--text <instructions>', 'the instructions')
     .option('--file <path>', 'read the instructions from a file')
     .option('--repo <path>', 'a git repository the task starts from')
@@ -282,8 +303,19 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
         const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against)
-        if (created.base) io.out(`base ${created.base}\n`)
+        if (created.base) io.err(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
+        return 0
+      })
+    })
+  program.command('claim <item>')
+    .description('claim an Item of the project\'s STATUS.md before submitting a Work for it: system status then shows it as doing, claimed by you since now; a Work submitted for the Item takes the claim over')
+    .option('--repo <path>', 'a git repository of the project', '.')
+    .option('--force', 'take over an Item another session has claimed')
+    .action((item: string, options: { repo: string; force?: boolean }) => {
+      select(async () => {
+        const claim = await host.work().claim(options.repo, item, options.force)
+        io.out(`${item} claimed by ${claim.who} since ${claim.at}\n`)
         return 0
       })
     })
