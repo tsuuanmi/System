@@ -1,7 +1,7 @@
 // What `bin/system` decides before it runs DSH: which Node to use, and whether
 // `system init` installs the systemd user unit. Plain JavaScript that needs no
 // build, so it also runs under the Node it replaces.
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 export const MIN_NODE = '24.9.0'
 
@@ -42,15 +42,25 @@ function word(text) {
   return /[\s"']/.test(text) ? `"${escaped.replace(/"/g, '\\"')}"` : escaped
 }
 
-/** The `system.service` text: a plain user unit running `system host`, with no socket activation. */
-export function unitText({ node, entry, home, path }) {
+/**
+ * The code a Host runs and watches: for a release under `<install>/releases/<commit>`
+ * (`system update`), the install's `current` link, so a switch of that link is new code;
+ * for a checkout, the checkout itself.
+ */
+export function installRoot(repo, exists) {
+  const install = dirname(dirname(repo))
+  return basename(dirname(repo)) === 'releases' && exists(join(install, 'current')) ? join(install, 'current') : repo
+}
+
+/** The `system.service` text: a plain user unit running `system host` (with the install's profile as a patch, if any), with no socket activation. */
+export function unitText({ node, entry, home, path, patch }) {
   return `[Unit]
 Description=System Host: the one process that owns this home's Work
 StartLimitIntervalSec=300
 StartLimitBurst=10
 
 [Service]
-ExecStart=${word(node)} ${word(entry)} host
+ExecStart=${word(node)} ${word(entry)}${patch ? ` --patch ${word(patch)}` : ''} host
 Environment=${word(`DSH_HOME=${home}`)}
 Environment=${word(`PATH=${path}`)}
 Restart=on-failure

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { createConnection, type Socket } from 'node:net'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { after, test } from 'node:test'
 import { fixture } from '../../../test-support/fixture.ts'
-import { MAX_FRAME, NotAnswering, NotRunning, PACKAGE_VERSION, VERSION, codeVersion, connect, serve, type Methods, type Served } from '../src/index.ts'
+import { MAX_FRAME, NotAnswering, NotRunning, PACKAGE_VERSION, VERSION, codeRoot, codeVersion, codeVersionAt, connect, serve, type Methods, type Served } from '../src/index.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-host-api-'))
 // A socket path is limited to about 100 bytes, and tmpdir() may be longer.
@@ -245,4 +246,31 @@ test('close stops waiting for a call that outlasts the grace, and its client see
   assert.equal(Date.now() - started < 2_000, true)
   await stuck
   client.close()
+})
+
+/** An install's code root as `codeVersionAt` reads it: two packages' built files and the bundle's patch. */
+function root(text: string): string {
+  const dir = fresh()
+  for (const name of ['work', 'host']) { mkdirSync(join(dir, 'packages', name, 'lib'), { recursive: true }); writeFileSync(join(dir, 'packages', name, 'lib', 'index.js'), `export const v = '${text}'\n`) }
+  mkdirSync(join(dir, 'packages', 'bundle'), { recursive: true })
+  writeFileSync(join(dir, 'packages', 'bundle', 'cordis.patch.yml'), '[]\n')
+  return dir
+}
+
+test('the code at a root is this build for its own root, and follows a link that is switched to other code', () => {
+  assert.equal(codeVersionAt(codeRoot({})), VERSION)
+  const a = root('a')
+  const b = root('b')
+  const current = join(fresh(), 'current')
+  symlinkSync(a, current)
+  assert.equal(codeVersionAt(current), codeVersionAt(a))
+  rmSync(current)
+  symlinkSync(b, current)
+  assert.equal(codeVersionAt(current), codeVersionAt(b))
+  assert.notEqual(codeVersionAt(a), codeVersionAt(b))
+})
+
+test('the code root is SYSTEM_CODE when set (an install\'s current link), else this checkout', () => {
+  assert.equal(codeRoot({ SYSTEM_CODE: '/home/tan/.system/current' }), '/home/tan/.system/current')
+  assert.equal(codeRoot({}), fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, ''))
 })

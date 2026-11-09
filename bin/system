@@ -1,17 +1,23 @@
 #!/usr/bin/env node
 // The `system` wrapper (ADR-0004 decision 2): `system init` creates or refreshes
-// the `system` DSH profile (and, on Linux, the Host's user unit); `host` and
+// the `system` DSH profile (and, on Linux, the Host's user unit); `update` moves the install
+// to the newest checked commit of `main` (update.mjs); `host` and
 // `doctor` run `dsh --profile system "$@"`, and every other command is a thin
 // client of the Host (packages/app/src/client.ts).
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { constants, homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { MIN_NODE, hostCommand, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
+import { MIN_NODE, hostCommand, installRoot, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
+import { update } from './update.mjs'
 
 const PROFILE = 'system'
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// A release of the install runs as the install's `current` link, so the profile, the unit and the Host's
+// look for new code all follow a switch of that link (`system update`); a checkout runs as itself.
+const install = installRoot(repo, existsSync)
+process.env.SYSTEM_CODE ??= install
 const home = process.env.DSH_HOME || join(homedir(), '.dsh')
 const profileDir = join(home, 'profiles', PROFILE)
 const dshBin = join(repo, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
@@ -46,7 +52,7 @@ if (choice.use === 'other') process.exit(await run(join(nodes, choice.version, '
 if (!existsSync(dshBin)) fail(`DSH is not installed at ${dshBin}: run \`corepack pnpm install\` in ${repo}`)
 if (!existsSync(join(repo, 'packages', 'app', 'lib', 'index.js'))) fail(`the System app is not built: run \`corepack pnpm build\` in ${repo}`)
 
-/** Every command but `init`, `host` and `doctor` goes to the Host; a leading flag is for DSH. */
+/** Every command but `init`, `update`, `host` and `doctor` goes to the Host; a leading flag is for DSH. */
 const thin = (args) => args.length > 0 && !args[0].startsWith('-') && !['host', 'doctor'].includes(args[0])
 
 function dsh(args) {
@@ -65,7 +71,9 @@ function installService(args) {
   }
   const unit = unitPath(homedir())
   mkdirSync(dirname(unit), { recursive: true })
-  writeFileSync(unit, unitText({ node: process.execPath, entry: join(repo, 'bin', 'system'), home, path: process.env.PATH ?? '' }))
+  // An install's profile file (`~/.system/profile.yml`: the Accounts and Effects of this machine) is the Host's patch.
+  const profile = install === repo ? undefined : join(dirname(install), 'profile.yml')
+  writeFileSync(unit, unitText({ node: process.execPath, entry: join(install, 'bin', 'system'), home, path: process.env.PATH ?? '', patch: profile && existsSync(profile) ? profile : undefined }))
   process.stdout.write(`service unit written: ${unit}\n`)
   for (const [command, ...rest] of [['systemctl', '--user', 'daemon-reload'], ['loginctl', 'enable-linger', userInfo().username]]) {
     const ran = spawnSync(command, rest, { stdio: 'inherit' })
@@ -82,7 +90,7 @@ async function init(args) {
     ...current,
     name: `dsh-profile-${PROFILE}`,
     private: true,
-    dependencies: { ...current.dependencies, '@system/bundle': `link:${join(repo, 'packages', 'bundle')}` },
+    dependencies: { ...current.dependencies, '@system/bundle': `link:${join(install, 'packages', 'bundle')}` },
     dsh: { ...current.dsh, profile: { ...current.dsh?.profile, bundles: ['@system/bundle'] } },
   }
   mkdirSync(profileDir, { recursive: true, mode: 0o700 })
@@ -99,8 +107,54 @@ async function init(args) {
   installService(args)
 }
 
+/** `system update [--wait <minutes>]`: see update.mjs. */
+async function runUpdate(args) {
+  const at = args.indexOf('--wait')
+  const waitMs = (at >= 0 ? Number(args[at + 1]) : 75) * 60_000
+  if (!(waitMs > 0)) fail('--wait takes a number of minutes')
+  const base = process.env.SYSTEM_INSTALL || join(homedir(), '.system')
+  mkdirSync(join(base, 'releases'), { recursive: true })
+  const path = [dirname(process.execPath), process.env.PATH].filter(Boolean).join(':')
+  /** Run a command with its output shown and kept; resolves its status and output. */
+  const capture = (command, args, cwd) => new Promise((done) => {
+    const child = spawn(command, args, { cwd, stdio: ['inherit', 'pipe', 'inherit'], env: { ...process.env, PATH: path } })
+    let stdout = ''
+    child.stdout.on('data', (data) => { stdout += data; process.stdout.write(data) })
+    child.on('error', (error) => done({ status: 127, stdout: `${error.message}\n` }))
+    child.on('exit', (code) => done({ status: code ?? 1, stdout }))
+  })
+  const origin = spawnSync('git', ['-C', repo, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).stdout.trim()
+  return update({
+    install: base,
+    cli: join(repo, 'bin', 'system'),
+    origin,
+    run: capture,
+    exists: existsSync,
+    readlink: (link) => { try { return readlinkSync(link) } catch { return undefined } },
+    switchLink: (link, target) => { rmSync(`${link}.new`, { force: true }); symlinkSync(target, `${link}.new`); renameSync(`${link}.new`, link) },
+    releases: () => readdirSync(join(base, 'releases')),
+    // A hello of the new code: accepted only by a Host running it; to a Host of other code, the ask to upgrade.
+    probe: async (release) => {
+      const { VERSION, connectHello } = await import(pathToFileURL(join(release, 'packages', 'host', 'lib', 'index.js')).href)
+      const { socketPath } = await import(pathToFileURL(join(release, 'packages', 'host', 'lib', 'process.js')).href)
+      try {
+        const client = await connectHello(socketPath(home), { version: VERSION, caller: { type: 'agent', operatorId: userInfo().username } })
+        client.close()
+        return true
+      } catch {
+        return false
+      }
+    },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: Date.now,
+    log: (line) => process.stderr.write(`system update: ${line}\n`),
+    waitMs,
+  })
+}
+
 const args = process.argv.slice(2)
 if (args[0] === 'init') await init(args.slice(1))
+else if (args[0] === 'update') process.exit(await runUpdate(args.slice(1)))
 else if (thin(args)) {
   // The Host's thin client does not boot DSH: no profile is needed to ask a Host.
   const { main } = await import(pathToFileURL(join(repo, 'packages', 'app', 'lib', 'client.js')).href)
@@ -112,7 +166,8 @@ else if (thin(args)) {
     let stopped = false
     for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { stopped = true })
     const inner = args.filter((arg) => arg !== '--supervise')
-    process.exit(await supervise({ run: () => dsh(['--profile', PROFILE, ...inner]), stopped: () => stopped, log: (line) => process.stderr.write(`system host: ${line}\n`) }))
+    // Each run starts `bin/system` of the install afresh, so after an upgrade it runs the code `current` points to now.
+    process.exit(await supervise({ run: () => run(process.execPath, [join(install, 'bin', 'system'), ...inner], process.env), stopped: () => stopped, log: (line) => process.stderr.write(`system host: ${line}\n`) }))
   }
   process.exit(await dsh(['--profile', PROFILE, ...args]))
 }

@@ -1,188 +1,49 @@
-# PLAN.md — System next implementation: Brainstorm first
+# PLAN.md — System next implementation: dogfood
 
-> **Status:** draft execution handoff for the next iteration, updated 2026-11-06.
-> **Implementation target:** [PR #2](https://github.com/tsuuanmi/System/pull/2)
-> (`mvp0/implementation`, observed at `7099428`), **not PR #1**.
-> **B0–B4 are done on PR #2 (B3 scored by a model judge, see RES-0008).**
-> This checklist is not a new ADR or an alternate source of product requirements.
+> **Status:** execution handoff, updated 2026-11-08. The next milestone is
+> **DF, dogfood** (below). The checklists and evidence of the finished
+> milestones are in [PLAN.md at `aaa38f6`](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md); this file keeps one line
+> each. This checklist is not an ADR or an alternate source of product
+> requirements.
 
 ## 0. Read and align
 
 - [Product Charter](docs/requirements/purpose.md), [accepted ADRs](docs/decisions/README.md)
   and [MVP scope](docs/requirements/mvp.md) define product/architecture truth.
-- [PROP-0002 roadmap](docs/proposals/PROP-0002-post-mvp-roadmap.md) is the
-  **canonical draft priority proposal**. [RES-0006](docs/research/RES-0006-brainstorm-workflow-feasibility.md)
-  explains implementation feasibility and what to learn from System 1.
-- The earlier M0–M6 implementation checklist is in the Git history and
-  [PR #2's PLAN.md](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md).
-  Do not reset MVP-0 progress or repeat its completed work. At the observed
-  PR #2 commit, tests and authorized throwaway GitHub publish were reported
-  complete; recheck the actual current local state before modifying code.
-- **Research now:** keep the existing end-to-end Research flow operational.
-  Claim-level checking and more rigorous citation verification are **future
-  capabilities**, not blockers for this Brainstorm iteration.
-- **Website Worker:** research that needs interactive/login-gated websites
-  comes **after** the Brainstorm milestone, not before.
-- **Security isolation:** not the goal of this iteration; do not expand scope
-  into container/egress infrastructure merely to ship Brainstorm.
+  The terms are in [GLOSSARY.md](GLOSSARY.md).
+- Recheck the actual current state before changing code; do not repeat
+  finished work.
+- **Deferred MVP-1 items** (operator, 2026-11-08): sandbox, egress denial,
+  and a plugin unload with Work in flight (MVP failure tests 3 and 4) wait for
+  a Worker that runs untrusted code or content.
 
-## 1. What we are shipping
+## 1. Finished milestones
 
-**Outcome:** a user submits one Brainstorm brief and receives **three
-immutable Worker output Artifacts**: two independent alternative proposals
-from **Claude Code + Codex** and one synthesis from either existing Worker.
-The same `WorkController` executes the externally configured Workflow.
-No additional provider type, new Work authority, domain engine or required
-VerifierPort. Three *executions/roles* are sufficient; not three provider
-implementations. Completion means output delivery, **not** factual approval.
+| Milestone | What it gave | Where |
+|---|---|---|
+| MVP-0 | Work and Artifact IDs that survive restart, Worker takeover, effects with intent and outcome, two YAML Workflows on one controller | PR #2 (`8b6a4c8`), [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md) |
+| B0–B4 Brainstorm | Three Worker attempts (Claude, Codex, synthesis) from one brief; evaluation in [RES-0008](docs/research/RES-0008-brainstorm-evaluation.md); the concurrency fixes | PR #2, [section 2 and 5](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#2-execution-checklist-and-gates) |
+| P | Stance per proposal by default, System publishes its own PRs and merges into `dev` ([ADR-0008](docs/decisions/ADR-0008-dev-integration-branch.md)) | PRs #5–#7 |
+| H (releases R1, R2) | One long-lived Host ([ADR-0007](docs/decisions/ADR-0007-one-long-lived-host.md)), parallel steps per Account | PRs #8–#28, [H](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#h--one-long-lived-host-adr-0007-as-amended-prop-0004-accepted) |
+| O | Goals, `system mcp`, the Orchestrator, completion notices ([ADR-0009](docs/decisions/ADR-0009-goals-and-orchestrators.md)) | [O](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#o--orchestrator-and-goal-adr-0009) |
+| A (with the speed pass F), D, L1 | Faster checks (2 min 28 s), the Host restarts itself on new code, the remote sign-in races | PRs #31–#33 |
+| OC | A replaceable Orchestrator: decisions, the brief, live progress, stalls, Sub-workflows ([PROP-0006](docs/proposals/PROP-0006-replaceable-orchestrator-and-code-checks.md)) | PR #39, [OC](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#oc--a-replaceable-orchestrator-and-the-checks-as-a-sub-workflow-prop-0006) |
+| CQ | Worker policy, `paths` checks, the merge queue by leased push ([PROP-0007](docs/proposals/PROP-0007-worker-policy-checks-and-merge-queue.md)) | PR #42, [CQ](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#cq--worker-policy-faster-and-clearer-checks-and-a-merge-queue-prop-0007) |
+| After CQ | Profile patches merge by `ref`, fflate 0.8.3, the Host-exit backstop, reads while the Host waits to upgrade | PRs #45, #46, #59, #62 |
+| WW | Website Workers: Runtime `web`, generic Procedures on a UI map, Power by tier, the canary, `citations-v2`, `research-fanout`; built by System Works on branch `web-workers` | [WW](#ww--website-workers-that-work-built-with-website-workers-branch-web-workers) |
 
-```text
-brief Artifact ID
-    ├── idea-a (Claude) → proposal-a Artifact ID ─┐
-    └── idea-b (Codex)  → proposal-b Artifact ID ─┤
-                                                      ↓
-                                       synthesis (Claude or Codex)
-                                                      ↓
-                                            summary Artifact ID
-```
+Who built them: PRs #5–#36 were System Works, apart from #34 and #35 (the
+operator's sessions); OC, CQ and the PRs after CQ were built by the
+operator's sessions directly. DF turns that back.
 
-The two idea steps have only the initial brief as input. The synthesis
-step receives the two exact proposal IDs and brief. **Scheduling is
-sequential** in current code even if dependencies are independent;
-parallelism is explicitly not a release requirement.
+## 2. Growth and feedback budgets (Charter 11 and 12)
 
-## 2. Execution checklist and gates
-
-### B0 — Confirm the MVP-0 baseline (short)
-
-- [x] Check the current PR #2 head, clean local working tree and pinned DSH
-  version. Do not overwrite local uncommitted work or rebase without consent.
-  *(PR #1 merged into `mvp0/implementation` at `41d2e0a`, no rebase; tree clean; DSH `0.2.2-rc.1`.)*
-- [x] Run existing offline build/unit/smoke tests and `system doctor`;
-  record command, exit status, source SHA and enabled Worker accounts.
-  *(`corepack pnpm check` at `41d2e0a`, Node 24.21.0: exit 1, unit 114/114, smoke 33/36 with 2 skipped and 1 failure: `tests/concurrency.test.ts`, "entries did not activate"; fixed under B4. `system doctor` exit 0; `system workers`: `claude-code/default` (2.1.311) and `codex/default` (0.166.0) available.)*
-- [x] Inspect `packages/work/src/workflow.ts`, `controller.ts`,
-  `registry.ts`, `packages/agents/src/index.ts`, `workspace.ts`
-  before changing anything. Existing `system.workflow/v1` can express B1.
-  *(Confirmed: file inputs reach a step as read-only files, a Workflow without `accept` ends "every step succeeded", ready steps run in file order, and submit already refuses a capability no enabled Worker provides.)*
-- [x] Keep existing Software Engineering and Research workflows passing.
-  No verifier rewrite or independent DSH plugin framework.
-
-**Gate:** baseline documented, both existing workflow fixtures preserved.
-
-### B1 — Brainstorm YAML, reuse Claude and Codex (next feature)
-
-- [x] Add `workflows/brainstorm.yaml` using current strict
-  `system.workflow/v1`: `idea-a`, `idea-b`, `synthesis` Worker steps.
-  Each produces a named file Artifact; no `verify` or `accept` required.
-- [x] Add account capability labels via DSH composition/profile config:
-  `brainstorm.idea-a` for Claude, `brainstorm.idea-b` for Codex, and
-  `brainstorm.synthesis` for one existing account. Retain provider-neutral
-  `WorkerPort`; no new Worker or domain-specific Controller branch.
-- [x] Ensure `idea-b` has no input reference to `idea-a`; synthesis
-  declares `dependsOn: [idea-a, idea-b]` and inputs both proposal slots.
-- [x] Write concise role instructions asking for distinct alternatives,
-  assumptions, trade-offs, failure modes and unresolved questions. Synthesis
-  compares arguments and proposes next experiments; no false consensus.
-- [x] Add fake Worker tests: exactly three attempts, expected provider refs,
-  two independent inputs, Artifact ID handoff, distinct provenance, pinned
-  spec, failed capability preflight and no required verifier.
-- [x] Make result Artifact IDs and step statuses inspectable using existing
-  CLI. Do not build a new UI or transcript-chat layer.
-
-**Gate:** fake Brainstorm run completes with three stored Artifact outputs,
-correct independent/synthesis inputs and no Work Core modifications.
-
-### B2 — Real run and recovery
-
-- [x] Run a real credential-gated brief: Claude proposal, Codex proposal,
-  third synthesis. Record provider/model/tier actually served, attempts,
-  input/output Artifact IDs and elapsed time. *(Evidence in the table below.)*
-- [x] Inject stop/crash after first idea; restart and confirm the completed
-  Artifact is reused, not generated again. `work replay` matches.
-  *(Stop: `tests/brainstorm.test.ts` cancels from another process while
-  `idea-b` runs; `work retry` reruns only `idea-b` and `synthesis`, and
-  `proposal-a` stays the same Artifact. A killed host is the generic takeover
-  already covered by the controller and agents tests; not repeated with real
-  models.)*
-- [x] Test cancellation, unavailable Codex account and changed Workflow file:
-  route refusal explicit; old Work retains admitted spec and output IDs.
-- [x] Re-run existing code and research smoke tests after adding account
-  capability labels.
-
-**Gate:** real three-attempt run and recovery pass; no accidental
-same-provider substitution for the two independent perspectives.
-
-### B3 — Brainstorm daily-driver evaluation
-
-- [x] Try at least five varied briefs (architecture, tradeoffs, feature
-  design, failure analysis and open-ended ideation). *(Five open questions
-  about System itself; table below.)*
-- [x] Compare a single-Worker baseline to the three-role workflow. Record
-  operator usefulness, novelty, diversity, actual disagreements, latency,
-  usage observations (or `unknown`) and manual interventions.
-- [x] Capture operator feedback as evidence Artifacts where useful. A model
-  self-scoring quality is not sufficient evidence of better decisions.
-- [x] Only optimize role/tier selection or add optional critique on observed
-  limitations. No team ballots or debate rounds without demonstrated need.
-- [x] Compare, as the PR #2 review suggested, a stance per proposal
-  (pragmatist, skeptic) with one shared prompt, and a Codex synthesis with a
-  Claude one, using the config in
-  [workflows/experiments](workflows/experiments/README.md). Score blind:
-  the operator reads outputs without knowing the arm or the provider.
-  Criteria, 1 to 5 each: usefulness for a decision, diversity of the
-  proposals, critical thinking (wrong assumptions, blind spots),
-  actionability, and whether the extra attempts were worth their time and
-  tokens. *(Scored blind by a Claude Sonnet subagent at the operator's
-  request, not by the operator; see [RES-0008](docs/research/RES-0008-brainstorm-evaluation.md).)*
-
-**Gate:** a report of real tasks and measured trade-offs, not just a demo.
-
-### B4 — Focused reliability (may run alongside B1–B3)
-
-- [x] Keep and extend multi-CLI same-Work concurrency regression tests
-  for the DSH SQLite `busy_timeout` patch. Test lost updates, duplicate
-  dispatch and replay after forced termination. *(`tests/concurrency.test.ts`
-  also creates the store from scratch every round; `tests/brainstorm.test.ts`
-  kills the host mid-step and starts four `work run` at once.)*
-- [x] Avoid new process daemon/lease framework unless a minimal reproducer
-  demonstrates a correctness defect. Record fixes independently. *(Two
-  fixes, each with a red test first: `c9fc13b` store creation, `ccc5dd5` the
-  Work lock. No daemon, no OS lock.)*
-
-**Gate:** no known Work state correctness regression from the Brainstorm
-feature and retained tests for the SQLite patch.
-
-## 3. System 1 reference: adopt only the small mechanisms
-
-See the [pinned source audit](docs/research/RES-0006-brainstorm-workflow-feasibility.md#system-1-as-a-reference-what-to-copy-conceptually)
-at `tsuuanmi/system_1@f199a277`:
-
-- **Adopt:** independent proposals, distinct provider/account perspectives,
-  immutable member results, explicit synthesis, candidate objections and
-  decision provenance.
-- **Adapt:** use role capability labels and current Artifact-ID bindings in
-  external YAML; track which provider *actually* handled each role.
-- **Defer:** sealed ballots, majority vote, debate rounds, persistent team
-  conversations, a monolithic team engine, cross-member peer messaging.
-- **Future Research reference:** two independent literature reviews,
-  structured evidence table, independent critique and conclusion are useful
-  once Website Worker/research evaluation is in scope. Do not port its coded
-  research template directly.
-
-## 3b. Next milestones (decided 2026-11-06)
-
-These follow a grilling session on architecture and roadmap. The terms are
-in [GLOSSARY.md](GLOSSARY.md), the host decision in
-[ADR-0007](docs/decisions/ADR-0007-one-long-lived-host.md), and the
-principles in [Charter philosophy](docs/requirements/purpose.md#philosophy)
-items 8, 11 and 12.
-
-### Growth and feedback budgets (Charter 11 and 12)
-
-Growth is expected. The budgets make it visible and justified; they do not
-forbid it. Record the measures at the end of every milestone. Growth above
-budget is either justified in the milestone's row or paid for by removal.
+Record the measures at the end of every milestone. Growth above budget is
+justified in the milestone's row or paid for by removal. The core budget is
++10% per milestone from 3,403 lines
+([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)); the older
+columns are history, and the reasoning behind each is in [PLAN.md at
+`aaa38f6`](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#growth-and-feedback-budgets-charter-11-and-12).
 
 | Measure | Baseline (PR #3, 2026-11-06) | Budget per milestone | R1 (end of H4, 2026-11-07) | H, before the pass | H, after the pass | O, before → after the pass | F, speed pass (2026-11-07) |
 |---|---|---|---|---|---|---|---|
@@ -196,67 +57,13 @@ budget is either justified in the milestone's row or paid for by removal.
 | Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured | not measured | not measured |
 | Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured | not measured | not measured |
 
-**Growth at R1.** The core grew 10.7% since the baseline, inside the +20%
-budget. Before H4b-2 it was 2,852 lines (+23.1%, over the budget): the Host
-(`host.ts`, `lane.ts`, `host-lock.ts`, 247 lines), receipts in `controller.ts`
-and `record.ts`, and `conversation.ts` and `summary.ts` from before H. H4b-2
-took out 288 lines (`FileControl`, its lock and mutex code, the write fence and
-the row's own controller and admission path) and brought it back inside. All
-source grew more (+29.8%, recorded only) because the Host (`packages/host`),
-the thin CLI and the unit file are new. Docs are at +20.0%, 1 line under the
-budget: the Host design, the runbook and the API reference are new, and H4b-2
-rewrote the ownership document to a pointer instead of keeping both. The next
-milestone has to pay for its docs by removal.
-
-**Growth at R2 (H5).** The core is 2,721 lines (+17.4%, inside the +20%
-budget; the scheduler, slots and recovery of held slots are about 170 lines of
-`controller.ts`, the agent worker's queue went). All package source is 5,489
-(+34.5%, recorded only). Docs are 4,333 lines in 43 files (+21.4%, 48 lines over
-the budget): host.md's slot section and guarantee row and the runbook's
-`maxConcurrentAttempts` section are the new facts and have no other home. The
-end-of-milestone simplification pass has to take the 48 lines out.
-
-**Growth at H (the simplification pass).** The pass changed no behaviour.
-It left the core 2,953 lines (+27.4%, over the +20% budget; the Host's
-receipts, slots and the conversation and summary modules are the growth, and
-none of it was cut by this pass: moving the slots into `slots.ts` adds a module
-header and a class wrapper, about 40 lines, which the removed duplicates
-(three Artifact-ID patterns, a status enum, `host.ping`, the `Counts` flags,
-the retry and decision option types written twice) only partly paid back). All
-package source is 6,374 (+25 over the pass: the two programs of the app and the
-slots module outweigh the deleted stubs). Tests fell by 74 lines (the
-start/stop, stale-socket, second-Host and idempotency duplicates). Docs held
-at 4,557 lines: the pass trimmed the package READMEs, which are not counted,
-and did not take out the 48 lines over budget at R2. The next
-milestone has to pay the core and the docs down by removal.
-
-**Growth at O (the simplification pass).** The pass changed no behaviour.
-- **Docs: budget met.** 4,648 lines fell to 4,283 (+19.9%, inside the +20%
-  budget; the 4,285-line limit). Facts stated twice went to one home and the
-  copies became links: the Host protocol and notices (the Host README), CLI
-  following and exit codes (the runbook), the five defects (ADR-0007), the
-  test matrices of RES-0002/3/4 (the MVP contract). Research and proposals
-  were cut to what is still evidence (their front matter and IDs stay), and
-  the stale "draft PR #2" and "no implementation yet" statements went. No
-  document was retired: none was clearly superseded.
-- **Core: budget not met.** 3,006 to 3,008 lines (+29.8%, over the +20%
-  budget by about 230 lines). No removal was obvious: no exported name of
-  `packages/work/src` or `packages/artifacts/src` is unused, and the `NewGoal`
-  type (+2) and the exported `callerSchema` pay for removing the Host's own
-  `GOAL_ID` and hand-written caller check in `packages/host`, outside the core.
-  The overage is the Host's receipts, slots, scheduler, conversation and Goal
-  folds (see H and R2), which are behaviour, not duplication. Paying it down
-  takes a decision to drop a feature, not a cleanup; it stays an open debt.
-- **Other findings of the Standards review:** one `inScope`, one `shortCode`,
-  `positive` out of the builder, `forwarded` reused by the MCP tool handler,
-  the `work.changed` rule kept in the Host README, `chatgpt.ts` split into the
-  attempt and `chatgpt-login.ts` (cookie import and sign-in). The
-  `{} as Services` cast in `mcp.ts` stays: the table is built by a closure
-  over `Services`, so there is no typed way to get its shapes alone.
-- **Tests:** 7,364 to 7,351 lines. The orchestrator `agent: false` test over
-  the socket (kept in the Host's operations test) and the budget refusal and
-  raise in `tests/goal.test.ts` (kept in `packages/work/tests/goal.test.ts`)
-  were duplicates.
+| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) |
+|---|---|---|
+| Active core, lines | 3,403 | 3,420 |
+| All package source, lines | 11,062 | 11,366 |
+| Tests, lines | 9,540 | 9,712 |
+| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents |
+| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files |
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -264,193 +71,90 @@ duplicated tests, docs that restate others. The operator reviews it like any
 PR. After each milestone, the Sonnet code review's Standards axis also checks
 the code against Charter items 8, 11 and 12.
 
-### P — Finish PR #3 and small decided items
+## 3. DF — Dogfood (decided 2026-11-08)
 
-- [x] Brainstorm default: put the pragmatist/skeptic stances in
-  `workflows/brainstorm.yaml`. Keep the one-shared-prompt version in
-  `workflows/experiments/` for comparison.
-- [x] Quality evaluations use **Sonnet as the evaluator Worker**, blind
-  (operator's choice). Record that the judge shares a model family with most
-  writers. *(Applied in B3; the limit is stated in [RES-0008](docs/research/RES-0008-brainstorm-evaluation.md).)*
-- [x] System publishes its own changes: from the next Work, System's
-  Software Engineering Workflow pushes `system/<work>` and opens a draft PR
-  on the real repository. It never merges. *(PRs #5 and #6, Works `f7170bdb` and `b2f35f9f`, published in parallel.)*
-- [x] A System Work resolves the Dependabot alerts on `main` (9 high,
-  2 moderate), verified by the required checks. *(Work `b2f35f9f`, PR #6.)*
-- [x] `dev` integration branch ([ADR-0008](docs/decisions/ADR-0008-dev-integration-branch.md)):
-  - publish against `dev`;
-  - a merge step in `git.publish`, allowed only for an allowlist (`dev`), only
-    when the checks passed on the exact head, and recorded as an effect with
-    reconciliation;
-  - only the operator merges `dev` into `main`.
+**Aim:** System develops System. No new feature in this milestone; unneeded
+logic may be removed. The core-debt cuts of
+[ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md) are its first
+Works, so trimming the core and proving the dogfood are one job.
 
-### H — One long-lived Host (ADR-0007 as amended, PROP-0004 accepted)
+**Sessions** are replaceable ([AGENTS.md](AGENTS.md#sessions)).
 
-Architecture: [Host](docs/architecture/host.md). Components, verdicts and
-deferral triggers: [PROP-0004](docs/proposals/PROP-0004-host-design.md).
-Every step is a System Work (Sonnet) merged into `dev`, with its tests
-written first.
+- [x] DF0. Release: `dev` merged into `main` (PR #71); PR #3 closed, PR #4
+  was already merged; the release report deleted (PR #70).
+- [ ] DF0b. An install apart from the development checkouts (operator,
+  2026-11-08). Today the live Host runs from the development checkout with
+  its config in a session's `/tmp` scratchpad, against the Sessions rule.
+  Done by the Development session as a blocker fix ("fixed outside System"):
+  - `~/.system/releases/<commit>/`, one install per commit of `main`, never
+    edited by hand; `~/.system/current` points to the one the Host runs;
+    `~/.local/bin/system` links to `~/.system/current/bin/system`;
+  - `~/.system/profile.yml` holds the Accounts and Effects (replacing the
+    `/tmp` patch); the store and secrets stay in `~/.dsh/system` (DSH's);
+  - the Host runs as the `system.service` user unit, from `current`;
+  - `system update`: fetch `main`, install and build it into a new release,
+    run that commit's own `.system/checks.yaml` there, and only when they
+    pass switch `current`, so the Host restarts on it (D); if the new Host
+    does not come up, switch back. Code that has not passed its checks on
+    this machine never runs live. A script outside the core;
+  - System 1 is only a reference now: its launcher and its install
+    (`system-live`) go; the source `~/workspaces/system` stays;
+  - last, `system mcp` without `--goal` registered at user scope, so a
+    session in any repository has System's agent tools (no approval: that
+    stays human, at a terminal). A Goal-scoped Orchestrator stays a folder
+    of its own (`~/workspaces/system-orchestrator`).
+- [ ] DF1. One Goal, "a smaller core, the same behaviour", with an attempt and
+  token budget. The Orchestrator is a **new** Claude Code session connected
+  only to `system mcp --goal`, with no shell, edit or push. It runs Works up
+  to their approval; the operator approves and merges. Claude Code's `/goal`
+  keeps the session going, with a stop condition read from System (every
+  scope item has a Work at approval, or the budget is spent); System's Goal
+  holds the budget, the authority and the state any session takes over from.
+- [ ] DF2. Core debt, each cut one Work and one pull request, with tests
+  showing the rest behaves the same, and the core's line count recorded
+  after each:
+  - without dropping a feature (about 35 lines, about 75 with header comments
+    that restate ADRs): `Host.interrupted`, used only by tests; the `Host`
+    pass-throughs to the controller; the `executor` and `usage` shapes written
+    twice;
+  - drop the conversation intake (`system conversation add`, about 43 core
+    lines); the `conversation@1` kind stays, the ChatGPT Worker stores one per
+    exchange;
+  - keep Goals, decisions and the Orchestrator caller, live progress and
+    stalls, and Sub-workflows: DF uses them. At the end of DF, a feature that
+    no Work used is proposed for removal.
+- [ ] DF2b. One automatic fresh attempt per Work after a conclusive failure
+  (operator, 2026-11-08; decided on `web-workers`, PLAN "Decisions of
+  2026-11-08, second round"), a System Work of this Goal after DF0b. Allowed
+  after a failure before the send, a site error, or a complete but malformed
+  answer; never after an unknown send, a challenge, a sign-in wall or
+  `invalid_state`. The Worker says whether a failure may be tried afresh,
+  through the port and in generic terms; the counter is durable across
+  restarts and Accounts; the fresh attempt starts clean (a new chat), and its
+  evidence and event say it was automatic. Basis: 1 of 20 canary runs failed
+  on a missing output block; one fresh attempt would bring acceptance to about
+  95%. Until it ships, `work retry` by hand.
+- [ ] DF3. Replace the Orchestrator mid-milestone: stop its session in the
+  middle of a Work, start a new session with only `system goal brief`, and it
+  carries on without reading PLAN, an old chat or a memory. Whatever it has to
+  ask or guess is a defect: a record System is missing.
+- [ ] DF4. Check time measured again once WW is on `dev`; over 3 minutes is a
+  defect.
 
-- [x] H1. Controller seam and the deterministic concurrency fixture (barriers,
-  seeded delays), with one regression per defect of 2026-11-06. Evidence:
-  `packages/work/tests/seam.test.ts` (characterization, barrier cancel,
-  seeds 1 to 50) passes before and after the dispatch/execute/observe split.
-- [x] H2. Host lock (abstract socket), commit lane, recovery (interrupted
-  attempts, uncertain slots, no auto-resume), `commandId` receipts. Evidence:
-  `packages/work/tests/host-lock.test.ts` and `host.test.ts` (lock incl. a
-  SIGKILLed child, lane, receipts, recovery); the slot itself is H5, so
-  `host.slots.uncertain()` only lists the attempts that will keep one.
-- [x] H3. API on a temporary socket (`packages/host`: transport, then the operation table). Evidence: `packages/host/tests/` (`transport`, `operations`, `api`). Includes:
-  - the operation table with its `agent` flag and the exclusion test;
-  - the version handshake and the caller;
-  - `work.events` with a cursor;
-  - `host.status` with the memory report.
-- [x] H4. Cutover. Includes:
-  - the thin CLI (reads through the Host; Ctrl-C detaches);
-  - `system.service` (plain unit, captured PATH, lingering);
-  - removing the old mode;
-  - the CLI picks a Node that DSH accepts (>= 24.9) by itself, or names the
-    fix (an operator ran `bin/system` under Node 22 on 2026-11-06);
-  - operator-facing errors print one line, with no stack trace (a mistyped
-    approval confirmation printed one on 2026-11-06). The confirmation prompt
-    is on its own line and says that nothing is decided unless the typed
-    text matches, so pasted commands are not taken as the answer;
-  - the operations runbook with its cutover and rollback checklist (`docs/operations/`);
-  - the API reference.
-  **Release R1.**
-  H4a: `system host`, unit, Node selection.
-  H4b-1: the thin CLI (`packages/app`: `remote.ts`, `client.ts`, `io.ts`), the
-  old in-process mode unused but not yet deleted. Evidence:
-  `tests/cli-host.test.ts` (no Host, not answering, Ctrl-C detach,
-  `--cancel-on-interrupt`, timeout retry with one `commandId`, one-line errors,
-  doctor); every test of `tests/` runs through a Host started by
-  `test-support/cli.ts`. Found on the way: a Host restart after an effect was
-  read as absent recorded an `attempt-lost` event with no attempt (the stored
-  record then failed its schema at the next start); fixed in
-  `WorkController.recover`, test `an effect found absent on start is published
-  only by an explicit run`.
-  H4b-2: the old mode removed: the per-command path in `packages/app`,
-  `FileControl` with its per-Work lock, takeover mutex and write fence, the
-  controller's `hold`, `noteWrite`, `lastWrite` and `HostIdentity`, the H4a
-  transition guard (`hostHeld`), the row's own controller and admission
-  (`WorkService.controller`, `admitFile`, `admitTask`), `snapshotWorkTable` and
-  `LocalControl`, with `control.test.ts` and the five fence tests of
-  `controller.test.ts`. The Host ignores leftover `control/*.lock`, `*.takeover`
-  and `*.written` files and deletes none: test `the Host ignores the control
-  files of the old mode and leaves them where they are; it makes no control
-  directory` (`tests/host-process.test.ts`). The runbook has the cutover
-  checklist and the rollback. Each guarantee the deleted tests held has its
-  test against the Host in host.md's table; the added one is `no copy of the
-  store outlives its Host: a second Host is refused while one runs a Work, and
-  the next one starts from what the first wrote` (`host.test.ts`).
-- [x] H5. Parallel steps and Works with per-Account slots. Barrier tests for
-  shared-Account contention and for restarts. **Release R2.** Evidence:
-  `packages/work/tests/slots.test.ts` (the tests are named in the `Slots hold
-  (R2)` row of host.md's guarantees table), `tests/brainstorm.test.ts`, and the
-  agent side in `packages/agents/tests/agent.test.ts`. Found on the way: the
-  in-memory Work table's `update` was not atomic, which two attempts of one Work
-  reporting together exposed; as in DSH it now is (`test-support/memory.ts`).
-  The agent worker's own per-account queue is gone (the Host's slots replace
-  it); each attempt's CLI writes a pid file first, which is what lets a later
-  Host confirm a lost attempt's process gone.
-- [x] Self-restart on new code (D): the Host notices new code on disk, stops dispatching, lets running attempts finish and exits 75; the unit and `system host --supervise` restart it, the thin client retries the swap, and Works held at the gate continue (host.md "Upgrading on new code (D)"). Evidence: `packages/host/tests/upgrade.test.ts`
-  ("on new code a supervised Host starts nothing new, finishes its attempt, exits 75, and the next Host
-  serves the new version and runs what was queued", "a client built from the new code upgrades an idle
-  Host at once"), `packages/work/tests/upgrade.test.ts` (drain, held, resume),
-  `packages/app/tests/service.test.ts` ("the supervisor runs the Host again after exit 75") and
-  `packages/app/tests/remote.test.ts` (a follow reconnects across the swap).
-- [x] Gate R1 (checked 2026-11-07, each item against a test that exists):
-  - [x] every existing smoke behaviour passes through the Host: every file of
-    `tests/` drives `bin/system` through `systemCli` (`test-support/cli.ts`),
-    which starts a Host; `with no Host, a command prints one line and exits 1`
-    (`tests/cli-host.test.ts`) shows that no command runs Work without one.
-    `corepack pnpm smoke` passes (63 passed; 2 skipped, the credential-gated
-    `real-agents.test.ts`, which also go through the Host when enabled);
-  - [x] a Host killed mid-step recovers on restart, conservatively, and replay
-    matches: `a Host killed mid-attempt: the new Host marks the attempt lost,
-    does not run the Work, and an explicit run continues it` (`host.test.ts`);
-    through the process, `the pinned spec survives a Workflow file edit and a
-    killed host; done steps never re-run` (`tests/work.test.ts`: the Work stays
-    `running` after the restart until `work run`) and `after the Host is killed
-    mid-step, four runs asked for at once dispatch the lost step once, losing no
-    event` (`tests/brainstorm.test.ts`, which ends with `work replay` exit 0);
-  - [x] an agent caller cannot approve: `an agent connection is refused every
-    method flagged agent: false, and only those` and `approval.decide needs a
-    human even when its row is opened to agents`
-    (`packages/host/tests/operations.test.ts`); `marking the pull request ready
-    waits for a human at a terminal; an agent or a pipe cannot approve`
-    (`tests/publish.test.ts`);
-  - [x] the guarantees table in host.md has a passing test per row, but the
-    last: `Slots hold (R2)` belongs to H5 and checkpoint R2, not R1. The rows the
-    deleted tests held are now `One Host per home` and `No change from a stale
-    copy`;
-  - [x] growth measures are recorded: the budget table above. The core grew
-    10.7% since the baseline (within +20%), and docs 20.0% (1 line under).
-- [x] Attempt time limit (found 2026-11-07): an attempt that hung on a test
-  ran for 2 hours with nothing to stop it (Work `38ff51c3`). Done:
-  `attemptTimeoutMinutes` in the `agents` row config (per Account, default 60;
-  not in the Workflow, ADR-0006); past it the attempt is stopped like a cancel,
-  partial output kept, and fails with the limit as its reason.
-- [x] Gate R2 (checked 2026-11-07, each item against a test that exists):
-  - [x] Brainstorm's two proposals overlap in time: `Brainstorm: idea-a
-    (Claude) and idea-b (Codex) are in execute at once` (both held at fixture
-    barriers at once) and, through `bin/system` on the real profile with the fake
-    CLI, `the two proposals overlap in time: both are dispatched before either is
-    observed, and the synthesis waits for both` (`tests/brainstorm.test.ts`);
-  - [x] two Works on one Account never run two attempts at once: `two Works on
-    one Account never run two attempts at once with a limit of 1`, and with a
-    limit of 2 `two Works on one Account run two attempts at once with a limit of
-    2` (`slots.test.ts`); `seed 1` to `seed 50` (three concurrent Brainstorms,
-    never above the limit);
-  - [x] restarts: `a Host killed with two attempts in flight: both are lost,
-    their slots are held until settled, and nothing is dispatched by itself`,
-    `a lost attempt whose Worker cannot confirm it gone keeps its slot` and `a
-    lost attempt confirmed gone at the next start frees its slot at once; one
-    confirmed later is settled when its Work waits for the slot`;
-  - [x] replay: `seed 1` to `seed 50` replay exactly with no event lost or
-    repeated (`assertConsistent`), and `a cancel while two attempts run records
-    both, then one terminal event`.
-- [x] End of milestone: the two-axis Sonnet review (Charter 8, 11 and 12 on
-  the Standards axis), the simplification pass, and the growth record (the
-  growth table above, column "H, after the pass").
-  *(Spec review 2026-11-07, three defects fixed: `git.publish` now matches a
-  pull request by head and base and fails on one aimed elsewhere; the version
-  handshake is a hash of the built code, not the package version; ADR-0008
-  "required checks" clarified as System's own verifier.)*
+**Done =** at least five consecutive changes into `dev` made by System Works,
+each recording the operator's touches, time, usage and failed attempts; DF3
+passed; the attempt budget, live progress and an Orchestrator over
+`system mcp` exercised for real.
 
-### O — Orchestrator and Goal ([ADR-0009](docs/decisions/ADR-0009-goals-and-orchestrators.md))
+**Defects found by DF** are fixed before features. A defect that blocks DF
+may be fixed directly by the Development session, marked "fixed outside
+System" and not counted among the five. The Host hang behind PR #59 gets no
+separate investigation: if it recurs, its log names the cause and it becomes
+such a defect. Outside those fixes, the Development session only reviews
+System's pull requests when the operator asks, and writes docs pull requests.
 
-Steps: O1 `goal@1`, admission with a Goal and the budget fold; O2 `system mcp`
-and orchestrator scope; O3 completion notices.
 
-- [x] **Goal** (O1): the operator's aim, scope and budget (attempts and observed
-  tokens; once spent, new Works for that Goal are refused and running Works
-  finish; only the operator raises it). Every Work an Orchestrator creates
-  names its Goal. A Goal carries the Charter principles as context for its
-  Works.
-- [x] **`system mcp`** (moved from H, ADR-0007 amendment): the agent client
-  of the Host's socket, offering only operations flagged `agent`.
-- [x] **Orchestrator**: an agent connected through MCP, a caller scoped to
-  one Goal. It may submit, run, cancel and retry, and read Artifacts. It may
-  never approve, mark a PR ready, accept an inconclusive verdict or merge.
-- [x] **Completion notices** (operator, 2026-11-06): instead of polling, the
-  Host tells a connected Orchestrator when one of its Works changes state,
-  for example finishes, is held, or needs approval. Use MCP's own
-  server-to-client notifications (resource subscriptions), not a new
-  protocol. A notice is only a wake-up: the event log stays the source of
-  truth, and a client that missed notices reads on from its last
-  `work.events` cursor, so nothing is lost while it was away.
-- [x] Spec review fixes (F2): a Goal's Work needs an input Task for the Goal's
-  context; Goal tokens count cache writes; admitted, unfinished Works count as
-  attempts; only the newest Goal can be superseded; chatgpt-web records the
-  model label and `SELECTORS.version`; `system mcp` announces a changed
-  resource list after it reconnects; the code version covers
-  `cordis.patch.yml`.
-- [x] End of milestone: review, simplification pass, growth record (the
-  growth table, column "O, before → after the pass").
-- [ ] Later, not in O: an Orchestrator that System spawns on a schedule.
-
-### W — ChatGPT Website Worker (PROP-0005, after H checkpoint R1)
+### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
   (accepted 2026-11-07). The operator accepted the Terms-of-Use risk for their own account
@@ -468,7 +172,7 @@ and orchestrator scope; O3 completion notices.
   the real-site run, `SYSTEM_REAL_WEB=1`, is still to do.)*
 
 - [x] W2. Remote sign-in over SSH, as System 1 does (operator, 2026-11-07).
-  *(2026-11-07: pure Node, no VNC and no new package; the viewer was replaced by VNC and noVNC in W9.)*
+  *(2026-11-07: pure Node, no VNC and no new package.)*
   - `system workers login <ref> --remote` opens the account's profile headed
     on its own Xvfb and serves a viewer on 127.0.0.1 behind a random 32-byte
     token: a CDP screencast over Server-Sent Events, input sent back by POST,
@@ -586,48 +290,6 @@ and orchestrator scope; O3 completion notices.
     header as the info string (README, "Fences without Copy").
   - Red test first: driver tests where the fake page's Copy gives text without
     fences, and where it gives nothing, must still fill `report` and `sources`.
-- [x] W9. Port System 1's remote login viewer (VNC desktop through noVNC),
-  replacing the CDP screencast viewer (operator, 2026-11-07). *(Real-site
-  result pending: the operator tries `system workers login chatgpt-web/second
-  --remote` after the merge.)*
-  - Why (operator evidence, 2026-11-07): the W2 viewer showed a blank white page
-    for `chatgpt-web/second` (the profile had restored an `auth.openai.com`
-    "Session ended" tab, and the screencast shows only the page it attached
-    to), its canvas did not fit the window, and Cloudflare Turnstile looped on
-    CDP-dispatched clicks. System 1 works: the whole Xvfb screen through VNC and
-    noVNC, scaled to the window, with real X input. PROP-0005's "Why not VNC" is
-    reversed.
-  - `packages/agents/src/remote-login.ts` is System 1's
-    `packages/plugins/login/src/remote.ts` (commit `f199a277`, last changed in
-    `750257ae`), fixes kept: a VNC server on the account's private Xvfb behind an
-    owner-only unix socket, a loopback HTTP server under a random token that
-    serves `@novnc/novnc` 1.7.0 (MPL-2.0, unmodified) and bridges its WebSocket
-    (`ws` 8.22.0) to the socket, Save, Cancel from the page's own origin only,
-    the TTL, cleanup. `findVnc` (display.ts) is System 1's lookup of
-    `x0vncserver` or `x11vnc` on `PATH`; without one `--remote` fails at once,
-    naming both. System's side is kept: `workers.loginRemote`/`loginWait`
-    (`agent: false`), the printed `ssh -L` line and URL, Ctrl-C cancels, the
-    persistent profile, never headless, and the Save check is the driver's
-    `checkAuth` (W7). Chrome runs headed on that Xvfb as in an attempt.
-  - **One difference, forced by the tool:** x11vnc 0.9.16 (the version here) has
-    no `-unixsockonly`, and its `-unixsock` still listens on TCP 5900 with no
-    password. `x11vnc` is therefore run per connection with `-inetd` behind a
-    unix socket the Host listens on, and no TCP port is opened; `x0vncserver`
-    runs as in System 1 (not installed here, so that path is not exercised).
-  - Deleted: the screencast, its input code (`toCdp`) and their tests.
-  - x11vnc 0.9.16 was installed without root from Ubuntu packages (runbook).
-  - Tests: the session over a real Xvfb and x11vnc (skipped with the reason
-    when either is missing): token required, the WebSocket reaches the VNC socket
-    of the whole 1440x1000 screen with no TCP port open, a real pointer click
-    reaches the page, Save and Cancel, expiry, nothing left running; the CLI
-    `--remote` test through the real Host.
-  - **Growth recorded** (lines of `.ts`; baseline `ff5e594`): the active core is
-    3,076, **unchanged**; `packages/agents/src` 1,693 → 1,751 (+58);
-    `remote-login.test.ts` 303 → 339.
-  - `pnpm-lock.yaml` is not part of this change (instructions): it needs
-    `@novnc/novnc` 1.7.0, `ws` 8.22.0 and `@types/ws` 8.18.2 under
-    `packages/agents`; regenerate it with `corepack pnpm install
-    --no-frozen-lockfile` when merging.
 - [ ] W3. Two ChatGPT accounts for Brainstorm (operator, 2026-11-07). With
   temporary chats, two signed-in accounts (`chatgpt-web/default`,
   `chatgpt-web/second`) can each give an independent proposal. A Brainstorm
@@ -635,549 +297,44 @@ and orchestrator scope; O3 completion notices.
   ChatGPT accounts through role capabilities. Compare it with the Claude/Codex
   default on real briefs, judged by the Sonnet evaluator (B3's method).
 
-### Decisions of 2026-11-07 (grilling after the parallel batch)
-
-- **Merge queue.** System merges into an integration branch only when the
-  required checks passed on the merge result with the branch's current tip,
-  one merge at a time through the commit lane; a branch that moved after the
-  checks is rebased and checked again (the bors "not rocket science" rule, as
-  GitHub's merge queue does). Until it exists, one Work runs at a time.
-- **Core budget.** The +29.8% core overage is behaviour (receipts, slots,
-  scheduler, Goal folds), justified at O. The baseline moves to O's 3,008
-  lines, and +20% per milestone counts from there.
-- **Website Workers first:** real-site run, selectors, then additive Account
-  config (B), then W3. Done through milestone WW below.
-- **Dogfood the Orchestrator** with a `goal@1` per milestone, through
-  `system mcp --goal`, once WW's loop is running.
-- **Release** (GLOSSARY): the operator merges `dev` into `main` after each
-  milestone, reading a release report; H's R1 and R2 are now called
-  checkpoints.
 
 ### WW — Website Workers that work, built with Website Workers (branch `web-workers`)
 
-The operator's decisions (2026-11-07). The branch `web-workers` is where
-System develops Website Workers by using them; `dev` takes no changes
-meanwhile, the Host runs `web-workers`, and only the operator merges it into
-`dev` ([ADR-0008 amendment](docs/decisions/ADR-0008-dev-integration-branch.md)).
-Terms: Site, UI map, Procedure ([GLOSSARY](GLOSSARY.md)).
+Merged into `dev` on 2026-11-09 by the operator's decision, with the canary
+at 94% (47 of 50 at Power Medium, verifier `citations-v2`, both Accounts):
+every failure was the model leaving out an output block, none a UI stage or
+a verifier rejection. Its detail is in the branch's history (PLAN.md at
+`6af50a7`). What it gave: Runtime `web` with `site: chatgpt` and Accounts
+`web/chatgpt/<name>`, generic Procedures on a UI map (the legacy driver
+removed), Power by tier, a circuit breaker per Account, the canary, the
+`citations-v2` verifier, and the Workflows `second-opinion`, `debate`,
+`brainstorm` on web Accounts and `research-fanout`. Left open:
+- the model leaving out an output block (about 6%): the automatic fresh
+  attempt is a DF Work after DF0b; a repair turn in the same chat was
+  proposed (WW6m), not decided;
+- `tests/chatgpt-web.test.ts` flaky under load: its failure now names the
+  registration's reason (WW6l), the cause is not reproduced yet;
+- deferred by measurement: a long-lived Chrome per Account (step 3), with
+  the operator's open questions; a second Site; `digest`.
 
-- **Loop for each step.** (1) Brainstorm: `idea-a` on `chatgpt-web/default`,
-  `idea-b` on `chatgpt-web/second`, Claude synthesis; the operator's agent
-  chooses. (2) Implement: Claude Sonnet, required checks, merge into
-  `web-workers`. (3) Second opinion: a ChatGPT account reviews the diff, as a
-  reference Artifact, never a verifier.
-- **Design.**
-  - One Runtime `web` for every Site. Accounts are `web/<site>/<name>`
-    with `site: chatgpt`; the old names go.
-  - Code holds the generic Procedures (check-auth, open, ensure-mode,
-    new-temporary-chat, insert, send, wait-complete, read-answer, read-links)
-    and the UI engine; everything Site-specific is in the Site's UI map:
-    selectors, the mode to select and the mode refused (ChatGPT's Work), how
-    a temporary chat starts, what "done" looks like, the code-block shape, how
-    a challenge shows. One Site (ChatGPT) now; Gemini later.
-  - Resources: no restored tabs; one long-lived Chrome per Account in the
-    Host, a tab per attempt; one shared Xvfb; Chrome closed after an idle
-    time. One attempt per Account at a time; more Accounts for more
-    parallelism, and two tabs per Account only after measuring.
-  - Self-heal stays off: fail fast with evidence. A deliberate difference
-    from System 1 (web-driver README).
-- **Canary.** A `canary` Workflow (a Research question with a known answer)
-  runs on each Account after each merge into `web-workers` and every six
-  hours (a systemd user timer).
-- **Steps.**
-  1. [x] Known defects: restored tabs (14 tabs and 5.5 GB on `default`,
-     measured 2026-11-07); the Chat/Work switch sometimes not found; the
-     1.5 s Chrome launch timeout in `chatgpt.test.ts` (flaky under load); the
-     Worker rules no longer forbid the lockfile. *Done (WW1), except the last:
-     the lockfile rule is in the Worker prompts, outside this repository, and
-     is left to the operator's agent.* Measured: on Chrome for Testing 155,
-     preferences alone left 6 tabs (the launch's `--restore-last-session`
-     outranks them) and, without the flag, lost the session-only cookie; the
-     flag with `Default/Sessions` removed before launch gave 1 tab and kept the
-     cookie, after a clean close, and 1 tab after a SIGKILL (3 s launch, 4 tabs
-     seeded; the real profile's stall was 60 s+ with 17). The switch is
-     awaited (map `settings.modeReadyMs`, 15 s) and failures are named; no
-     selector changed. Each attempt keeps a stage-chain evidence record as
-     partial output.
-  1c. [x] Found while running WW1 (2026-11-07): a Runtime waits for the
-     Worker's output pipe to close, so two Xvfb leaked by the Worker's own
-     tests held a finished attempt "running" for 33 min (end the attempt on
-     process exit, then drain briefly; required checks fail on leftover
-     processes); `tests/host-process.test.ts` "SIGTERM stops the Host ..."
-     timed out once at a host load average of about 200 (flaky under load).
-     *Done (WW1c), except the last: the attempt ends on the process's exit
-     and drains for 5 s; a check that leaves Xvfb or Chrome fails, naming
-     it; the host-process test is untouched.* Also done: the review of WW1
-     (second opinion, `work:d72ce675`): the failure DOM is structure only,
-     a timed-out launch kills its Chrome, a held profile is never launched,
-     the mode wait is bounded and read again before the send, `close` is
-     `ok` only when the process exited, `promptSubmitted` is apart from
-     `promptSendAttempted` (PROP-0005 lists each); and a 66 KB prompt took
-     5.5 min to type, so the composer takes one paste (`do: pasteText`, its
-     own `insert` stage; 60 KB in about a second on the fake page).
-     *Then (PR #38) unit took 202 s (38 s before WW), all its slow tests
-     driving a real Chrome: unit and smoke leave those out and `test:web`
-     runs them as the required check `web` (unit 23 s; web about 4 min at
-     load 90-200).*
-  1g. [x] A prompt in two parts (operator, 2026-11-07): short instructions typed in the
-     composer, long inputs pasted after them as their own paste. On `chatgpt-web/second`
-     (a Team workspace) a 61,581-character paste became an attachment chip and the
-     read-back failed (2 characters, 16 s); on `default` 69,410 stayed text. The generic
-     Procedure "attach text" accepts either (text, or one new chip named by the body's
-     start, nothing still adding) and fails anything else before the send in the stage
-     `attach`; the Site's selectors and clocks are in the UI map (`ui-map@1.6`). Short
-     prompts stay one part. Evidence: the stages `insert` and `attach`, the outcome and
-     the chip count. Tests on the fake page, in `test:web`. *Not yet checked on the real
-     site: the selectors come from the DOM the operator's agent captured.*
-  1h. [x] The second opinion of WW1c (`work:ce23f210`, 7 defects), all seven fixed:
-     launch cleanup kills only a Chrome this process started (1); `close` is `ok`
-     only for an identified, exited process (2); only a known mode can settle (3);
-     each mode-wait operation ends at the deadline (4); a late page that will not
-     close fails the one-tab invariant (5); one `read` record, binding inside it (6);
-     the Xvfb leak test signals only its recorded pid (7). Also: a failure names the
-     stage that failed and its own limit ("open: page.goto timed out after 60 s"),
-     where an open failure was reported as the answer stage's 900 s.
-  1d, 1e, 2p. *Moved to milestone CQ (PROP-0007 on branch `checks-and-merge-queue`,
-     built from `dev` by the Development session; operator, 2026-11-07): the
-     Worker tool policy and per-attempt budget, checks on the repository's
-     Node with one-line reasons, checks selected by `paths`, the merge queue.
-     They are not Website-Worker-specific.*
-  Order from here (operator, 2026-11-07): 5, 2a, 2, 3, 4, 6, 2b, 7.
-  5. [x] Output contract bake-off, on the real site with both Accounts:
-     fences, per-output sentinels with the attempt id, JSON; then the second
-     opinion of WW1c again. (The two second-opinion runs so far lost their
-     `review` block: long Markdown with code fences inside.) Result
-     (2026-11-07, both Accounts): A, a backtick fence with "use a longer
-     fence", passed once; **B, four tildes (`~~~~review` ... `~~~~`), passed on
-     both**; C, `===BEGIN/END===` sentinel lines, failed on both (Copy escapes
-     them to `\===BEGIN`). B is safe by construction: only tildes close a
-     tilde fence, and ChatGPT still renders one widget labelled with the name.
-     The second opinion of WW1c under B ran on 2026-11-08 (`work:ce23f210`,
-     `second`): a complete 9 KB review read from the tilde block, 7 defects,
-     all fixed in 1h.
-  5a. [x] Output blocks with a longer fence, or holding fenced code, read as
-     the answer meant them (the driver's copy path and `parseBlocks`); found
-     on the real site 2026-11-07 (`work:d72ce675`, `work:a4bd030d`).
-  5b. [x] An output is filled from the rendered code block that carries its
-     name (`AskResult.blocks`), else from the Markdown text; found on the real
-     site 2026-11-07 (`work:feee282d`: one `review` widget holding fences).
-  5c. [x] The contract is B, and an output that may be cut short is never
-     accepted: `webPrompt` asks for `~~~~<name>` ... `~~~~`, `parseBlocks` and
-     the driver read tilde fences by CommonMark, and an answer with more than
-     `maxOutsideChars` (200) characters outside its output blocks fails with
-     the answer kept as partial output. Found on the real site 2026-11-07
-     (`work:7f820cb2`, `second`: a three-backtick `review` holding ```` ```ts ````
-     was closed by the inner fence, 339 bytes of it accepted, the rest outside).
-  5d. [x] When no rendered block and no Markdown fence gives an output, it is
-     read from the answer's rendered text (`AskResult.rendered`), evidence
-     `filled: rendered`; never from escaped Markdown. Found on the real site
-     2026-11-08 (`default`: "~~~~report" shown as paragraphs, Copy escaped
-     `\~` and `https\://`).
-  2a. [x] The web Runtime as its own package and an optional DSH row: core
-     and the CLI Runtimes do not depend on it; a smoke test runs the main
-     path with the web row off. *Done (WW2a).* `packages/web-worker`
-     (`@system/web-worker`, row `web-worker`, off in the bundle) holds the web
-     Runtime and the browser dependencies; `@system/agents` keeps the CLI
-     Runtimes and has none of them. `chatgpt-web` accounts stay in the `agents`
-     row's `accounts`; it hands each to the row's service (`ctx.webWorker`,
-     contract in `packages/agents/src/web.ts`), and with the row off reports
-     it `unavailable`, "the web-worker row is disabled". `workers login` (CLI
-     and Host) reach the same service and say the same. `test:web` and the
-     `web` check's `paths` follow the move; `tests/web-worker-off.test.ts`
-     runs a fake-agent Software Engineering Work and a Brainstorm with the row
-     off. Dependencies (workspace packages; `->` is "depends on"):
 
-     | | Before | After |
-     |---|---|---|
-     | agents | -> artifacts, work, **web-driver**, patchright-core, @puppeteer/browsers, @novnc/novnc, ws | -> artifacts, work |
-     | web-worker | (did not exist) | -> agents, artifacts, work, web-driver, patchright-core, @puppeteer/browsers, @novnc/novnc, ws |
-     | app | -> agents, artifacts, work (and so the browser, through agents) | -> agents, artifacts, work (agents has no browser) |
-     | verifiers | -> agents, artifacts, work (and so the browser) | unchanged (agents has no browser) |
-     | bundle | -> agents, app, artifacts, effects, fakes, verifiers, work | adds web-worker (row off) |
-     | host | -> work | unchanged; its code version also hashes web-worker |
+## 4. Future, not current gates
 
-     Nothing but the bundle depends on web-worker. Lines moved by `git mv`
-     (before -> after, the rest is the seam): source `chatgpt.ts` 559 -> 586,
-     `chatgpt-login.ts` 129 -> 123, `remote-login.ts` 330 -> 331,
-     `display.ts` 120, `chrome.ts` 108, `evidence.ts` 93 (1,339 -> 1,361);
-     tests `chatgpt.test.ts` 815 -> 813, `chrome.test.ts` 66, `remote-login.test.ts`
-     339 -> 341 (1,220 -> 1,220); `chrome.lock.json` and `fake-chatgpt/` unchanged.
-     Growth, not moved: the seam is +106 source lines (all package source
-     12,097 -> 12,203): `web.ts` 59 and the row's `index.ts` 84, less 51 from
-     `agents/src/index.ts` and 9 from `agent.ts`, plus 27 in `chatgpt.ts`
-     (`WebAccount`, `webWorker`: the web Worker was a branch of `agentWorker`), 5 net in
-     `chatgpt-login.ts`, `remote-login.ts` and the app; tests +140
-     (10,627 -> 10,767: `web-worker-off.test.ts` 90 and `agents/tests/index.test.ts`
-     41). The core (`work` + `artifacts` source) is unchanged at 3,420. The growth buys
-     the optional row; it is justified here, not paid for by removal.
-  2. [x] Generic Procedures and the ChatGPT UI map; Runtime `web`.
-     Designed by System's own Brainstorm (`work:2287a535`, proposals on both
-     ChatGPT Accounts, Claude synthesis): A's binding model (`ui-map@1.7`,
-     fixed TypeScript Procedures) checked first against a deliberately hostile
-     fake second Site; B's safety vocabulary (`ok / failed / unknown`, no
-     resend after `unknown`). Inspection of the driver, its callers and the
-     engine: [RES-0009](docs/research/RES-0009-web-driver-inspection.md)
-     (274 lines generic, 143 ChatGPT, 297 unused by the Runtime; four new map
-     kinds: `site`, `modes`, `answer`, `settings`).
-  2-ii. [x] Generic Procedures on the binding model, proved on a hostile fake
-     second Site with only a map and a page (WW2-ii): `packages/web-driver`
-     `src/procedures.ts`, `ui-map@1.7` (`site`, `modes`, `answer`, `settings`, the
-     condition `countAtLeast`; 1.6 maps still load), `tests/conformance.ts` run on
-     the hostile Site and on ChatGPT's map and fake. The bindings sufficed; no `steps`
-     list. Gaps: [RES-0009 section 6](docs/research/RES-0009-web-driver-inspection.md#6-result-of-the-hostile-site).
-     The ChatGPT driver is unchanged; moving it onto the Procedures is the rest of 2.
-  2-iii. [x] The `chatgpt-web` Runtime can run an attempt through the Procedures
-     (WW2-iii): the Account option `procedures: legacy | generic` (default `legacy`,
-     validated); the attempt around them is unchanged and its evidence says which ran.
-     A send of `unknown` fails as "send outcome unknown: not resent". Gaps of RES-0009
-     section 6 closed with a conformance test each: the attachment chip binding
-     (`attach`), the `attr` condition with a pattern (the Work composer), a snippet
-     with no label, and ChatGPT's unknown send. `chatgpt.test.ts` runs for both values.
-     The legacy path stays until the two are compared live; removing it is the rest of 2.
-  2-iv. [x] The legacy driver path removed (`work:af3442ce`, about 950 lines net):
-     no UI-stage failure in 82 canary runs on `generic`. Then Runtime `web`,
-     `site: chatgpt`, Accounts `web/chatgpt/<name>` (`work:4a295b48` failed
-     its `web` check, finished by `work:6be114a8`); the live Accounts' state
-     moved at registration on 2026-11-08 with no new sign-in.
-  3. [ ] Long-lived Chrome per Account, shared Xvfb, idle close. **Deferred
-     by measurement** (2026-11-08). System's own Brainstorm
-     (`work:deaecc61`, both ChatGPT Accounts and Claude) recommended
-     measuring first and building reuse only if the gain shows. The
-     records show Chrome launching in 1.8-2.4 s, 3-5% of an attempt
-     (34-65 s), and an Account's attempts minutes to hours apart (no gap
-     under 120 s): reuse would save about 2 s and keep an idle Chrome most
-     of the time. Fresh per attempt stays; the question returns with the
-     research fan-out (step 7), when one Account's attempts follow each
-     other closely. Measured from 6 attempts only, because successful
-     attempts dropped their evidence (WW6c). The operator's open questions
-     from that synthesis: whether a tail-latency gain alone justifies
-     reuse; the idle timeout (120 s); whether remote login may cancel a
-     running attempt or must wait; a cap on simultaneous cold launches
-     (about 3) before the research phase; a shared Xvfb against a few
-     displays.
-  4. [x] Canary (WW4, `work:83bc6867`): `system work submit --worker <ref>`;
-     a fixed canary Task; `tools/web-canary` (runs it on each web Account,
-     `--report` with the gate); a systemd user timer every 6 h (the operator
-     installs it). First run (2026-11-08): `default` got the site error "This
-     response couldn't load" (WW6a recognises it), `second` answered but the
-     page it cited answered 403 to the verifier (WW4b: the canary cites
-     Wikipedia; the report separates Worker, site and verifier).
-  6. [ ] Account supervision: preflight, spacing, cooldown, an
-     `AUTH_REQUIRED` notice for re-login. Done so far (2026-11-08):
-     6a the Site's error answer "This response couldn't load" fails fast as
-     a retryable site error (`work:ca2b4eec`); 6b leaked control tokens
-     `<escape>` / `</escape>` stripped at an output's edges, from the UI map
-     (`work:38df4c9e` and `212c8ec`); 6c a successful attempt keeps its
-     evidence and conversation (`work:24864619`). The rest was designed by
-     System's first real Debate (`work:3a6ac1f1`, two Rounds between the two
-     ChatGPT Accounts, Claude synthesis): PR 1 is a per-Account circuit
-     breaker with an operator `recheck` (6d, `work:a67065df`); PR 2 retries,
-     the send marker, a richer canary.
-     Found tonight, generic, handed to the Development session: the Host
-     printed "exiting 75" and did not exit (down 04:03-05:16; PR #59 into dev
-     adds a backstop exit with the open resources logged, supervisor
-     retries and no upgrade mid-build; not reproduced in isolation). Flaky
-     under load, to fix here: `tests/chatgpt-web.test.ts` "login imports a
-     cookie file ..." failed once in a merge re-check (passed 2/2 alone and
-     on the retried publish).
-     Since (2026-11-08): 6d merged by hand (a real conflict with 6e in the
-     row's service; the Work is recorded as failed at publish); 6e
-     operations wait up to 60 s for a pending registration (`work:900a8a44`,
-     the cause of the flaky re-check above); 6f the UI maps are read once
-     at load and hashed into the Host's code version (`work:24214200`):
-     rounds 5-12 of the canary failed because an old Host read the new
-     `ui-map@1.7` from disk. Canary after that window (26 runs, 13 per
-     Account): the Worker step 26/26, accepted 18; all 8 rejections were
-     the citation verifier's false "quote not found" (the quotes are on the
-     page; tag removal left a space before punctuation, and an infobox row
-     quoted with `|`), fixed by 6g. From 6g on, both Accounts run
-     `procedures: generic`: the comparison with `legacy` on one Account
-     (`default`) decides removing the legacy path (2-iv).
-- **What Website Workers do** (operator, 2026-11-07): `research` (web search
-  with citations, checked by the citation verifier), `brainstorm.idea-*`,
-  `review.second-opinion` (a diff or document given as text; a reference
-  Artifact) and `critique` (rebutting another proposal). Not: code, work that
-  needs files or tools, inputs over 200 KB, latency-bound work, verification.
-  Deep research later.
-- **Debate** ([GLOSSARY](GLOSSARY.md)): Rounds unrolled as steps of a fixed
-  Workflow (`debate.yaml`, 2 Rounds by default; each side reads the other's
-  previous Artifact; every attempt a temporary chat), then a Claude synthesis.
-  No persistent chats across Rounds and no run-until-agreement loop now.
-- **Digest.** No economy-tier (Haiku) step between Website Workers and Sonnet
-  for Brainstorm or Debate: a strict output contract checked
-  deterministically instead (step 5). A `digest` step only where many sources
-  are merged (about ≥5 inputs or >50 KB, the research phase), and Sonnet then
-  gets the digest and the original Artifact IDs; measured by Sonnet tokens
-  saved against quality.
-- **Research fan-out.** Claude splits the question into k sub-questions, k
-  fixed in the Workflow and equal to the web Accounts (2 now); k Website
-  Workers search in parallel; citations are checked per sub-question; an
-  optional digest; a Sonnet synthesis. A dynamic k waits for a need.
-- **Sub-workflows** ([ADR-0002 amendment](docs/decisions/ADR-0002-work-primitive-configured-workflows.md)):
-  a step `uses:` another Workflow, expanded at admission into the pinned
-  spec; the controller is unchanged. The WW loop itself becomes a Workflow
-  (`brainstorm`, then `software-engineering`, then `second-opinion`).
-- **Moved to milestone OC** (operator, 2026-11-07; built from `dev` by the
-  Development session, branch `orchestrator-continuity`, PROP-0006):
-  decisions as Artifacts, the Goal brief, live attempt progress and stall
-  notices, Sub-workflows, `code-checks.yaml` and retrying a verify step.
-- **Order of the new Workflows.** 1b. `second-opinion.yaml` right after WW1
-  (the loop needs it; done). Sub-workflows come with OC. 2b. `debate.yaml`
-  (done, WW2b `work:db784215`; first real run `work:3a6ac1f1`: 2 Rounds on the
-  two ChatGPT Accounts and a Claude synthesis in about 3.5 min). 7. research fan-out (`research.yaml`
-  used k times) and `digest` after step 6.
-- **Decisions of 2026-11-08 (operator).**
-  - The Verifier stays; only a check of the Artifact's own form may fail it
-    ([GLOSSARY](GLOSSARY.md) Verifier, Verdict). Citations are matched
-    loosely: words in order, a threshold in the criteria (0.8), the nearest
-    passage in the evidence; a report is checked for completeness by code
-    (every `[sX]` resolves, every source is used, every sub-question is
-    answered); a descriptive User-Agent; a 403 is unreadable, not wrong.
-    Criteria `citations-v2`; earlier verdicts keep v1 (6k).
-  - Reasoning level: the model and Power shown before the send are recorded
-    in the evidence first; later the tiers (`tier.economy|standard|frontier`)
-    map to Power as the CLI Accounts map them to models (8a, then 8b).
-  - The default `test` and `smoke` cannot launch a browser:
-    `SYSTEM_NO_BROWSER=1` makes a Chrome or Xvfb launch throw. The flaky
-    `chatgpt-web.test.ts` under load is fixed at its cause (6l).
-  - `legacy` is removed after at least 20 canary runs per Account on the
-    loose verifier with the Worker step at least 95% on each and no
-    wrong-mode or malformed acceptance (2-iv).
-  - Then the rename: Runtime `web`, `site: chatgpt`, Accounts
-    `web/chatgpt/<name>`; `runtime: chatgpt-web` is refused with the new
-    name (no alias); state moves once from `system/chatgpt-web/<name>` to
-    `system/web/chatgpt/<name>`; old records keep their refs and the canary
-    report reads both.
-- **Decisions of 2026-11-08, second round (operator).**
-  - Power by tier (8b): the levels are read from the live menu, never
-    guessed; `tier.economy` is the lowest, `tier.standard` the middle,
-    `tier.frontier` the highest; a step that asks no tier gets the middle.
-    A level that cannot be selected stops the attempt before the send. The
-    canary runs at `tier.standard`, like research (a new series).
-  - `legacy` goes when no attempt failed at a UI stage (launch, auth, mode,
-    insert, send, wait, read) in at least 20 runs per Account; model faults
-    (a missing output block, a reworded quote) do not count. `generic`
-    meets it (82 runs); removal follows the running canary series, then the
-    rename to Runtime `web`.
-  - One automatic fresh attempt per Work after a conclusive failure (before
-    the send, a site error, an answer complete but malformed); never after
-    an unknown send. It is the controller's: a System Work of milestone DF,
-    after DF0b (operator); until then a manual `work retry`.
-  - After the gate: merge into `dev` and use Website Workers for System's
-    own work (research fan-out for design questions, second opinions on
-    PRs); a second Site and long-lived Chrome wait for that evidence.
-- **Gate to merge into `dev`.** Canary ≥95% over ≥50 attempts across both
-  Accounts; zero wrong-Account, wrong-mode or malformed-output acceptances;
-  operator touches other than re-login under 5%; no flaky test; required
-  checks within budget; each new Workflow has run once for real.
-- **Evidence so far.** Brainstorm Work `work:a8aeee38` (this programme's own
-  brief) ran `idea-a` on `default` and `idea-b` on `second` (one launch
-  timeout, retried), synthesis on Claude: every step succeeded.
+- [ ] Publishing for other repositories (operator, 2026-11-08; right after
+  DF): each repository names its branches beside its checks (`.system/`,
+  pinned from the base commit); the Host keeps the allowlist of branches it
+  may merge into, since that is authority a repository cannot grant itself.
+  Until then, a Work on another repository ends at its checked change.
 
-### OC — A replaceable Orchestrator, and the checks as a Sub-workflow ([PROP-0006](docs/proposals/PROP-0006-replaceable-orchestrator-and-code-checks.md))
-
-Decided by the operator on 2026-11-07, built from `dev` as one pull request
-by the Development session, apart from the Website Worker programme on
-`web-workers` (whose PLAN records milestone WW). Each step with a test that
-failed first; the acceptance list is in PROP-0006.
-
-- [x] OC1. `decision@1`, `system decision add|list` (`decision.add` agent,
-  Goal-scoped).
-- [x] OC2. Live attempt progress in the Host (`work show`), and the stall
-  notice after `stallMinutes`.
-- [x] OC3. `system goal brief` / `goal.brief`, generated from records.
-- [x] OC4. Sub-workflows in the Workflow compiler (ADR-0002 amendment).
-- [x] OC5. `workflows/code-checks.yaml`, used by `software-engineering.yaml`,
-  and `work retry --step` on a verify step ("verify again").
-- [x] Growth recorded (core lines, docs, check time) and a simplification
-  pass, as for every milestone.
-
-**Growth at OC** (measured from `orchestrator-continuity` at `a4862d7`, the
-same line counts before and after; all checks with `env -i PATH LANG
-HOME=<fresh> CI=1`, the machine at a load average of about 270):
-
-| Measure | Before OC | OC, before → after the pass |
-|---|---|---|
-| Active core (`packages/work/src`, `packages/artifacts/src`), lines | 3,076 | 3,403 → 3,403 (+327, +10.6%; +46.9% over the PR #3 baseline) |
-| All package source, lines | 10,505 | 11,069 → 11,062 |
-| Tests, lines | 9,162 | 9,540 → 9,540 |
-| Docs under `docs/`, lines (files) | 4,786 (46) | 4,821 (46) → 4,821 (46) (+35) |
-| Required checks | not measured | docs 0.4 s, install 12 s, build 33 s, typecheck 10 s, unit 3 min 14 s (463 pass, 1 fail, see below), smoke 1 min 32 s (73 pass): 5 min 44 s |
-
-- **Core: over budget, justified.** The +327 lines are behaviour asked for
-  by PROP-0006, none of it duplication: Sub-workflows in the compiler (about
-  110 lines of `workflow.ts`), live progress and the stall timer (`live.ts`,
-  88), decisions in the Goal store with their kind and `Artifacts.ofKind`
-  (about 80), and the `work` row's config, the verify-step retry and the
-  controller's dotted step IDs (about 50). The brief lives in `packages/host`,
-  outside the core. The operator then measured the budget from here
-  ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)): 3,403
-  lines, +10% per milestone, paid back within the milestone.
-- **Docs: +35 lines**, the new facts only (the `uses` step, verify again,
-  `live` and stalls, replacing the Orchestrator); the package READMEs carry
-  the rest. Docs were over the 4,285-line limit before OC (the WW programme's
-  documents); OC does not pay that down.
-- **Check time: over the 3-minute goal on this machine.** The unit check took
-  3 min 14 s against 38 s at F, with the machine at a load average of about
-  270 (other users' sessions). The same commands measured 2 min 28 s at F.
-  It is measured again on a quiet machine once OC is on `dev`, and the row
-  above corrected; a unit check still over 1 minute is then a defect of the
-  next milestone (operator, 2026-11-07). The merge does not wait for it.
-  **Measured again (2026-11-08).** The load never fell below about 400 that
-  night, so F (`1adb430`) and `dev` (`6d92315`) were measured the same way
-  at the same load, with CPU time beside wall time (`/usr/bin/time`, `env -i`,
-  fresh HOME). Unit: F 40 s (34 CPU-s), `dev` 178 s (122 CPU-s); `dev`
-  without the three headed-browser test files of WW (`chatgpt`,
-  `remote-login`, `driver`) 20 s (31 CPU-s), those three alone 181 s
-  (99 CPU-s). Smoke: F 75 s, `dev` 85 s (354 and 386 CPU-s); install, build
-  and typecheck 56 s and 55 s. So the overrun is WW's browser tests, not
-  OC or CQ, and it ends when `web-workers` moves them to `test:web` (the
-  rule above); no defect is carried into the next milestone. The machine
-  then went quiet (load about 10, 03:56): `dev` took 4 min 20 s in all
-  (install 9 s, build 28 s, typecheck 9 s, unit 133 s with 474 of 474 passing,
-  smoke 80 s), and unit without the three browser files 13.5 s, so about
-  2 min 20 s without them, under the 3-minute goal.
-- **One flaky test, outside OC:** `packages/agents/tests/chatgpt.test.ts`
-  "a page that is neither signed in nor signed out" failed once in the full
-  run (Chrome did not start within its 1.5 s launch timeout under load) and
-  passed 24/24 alone. It belongs to the web Runtime (WW) and is a defect to
-  fix there (Charter 12).
-- **Default tests have no Website Worker and no browser** (operator,
-  2026-11-07): the unit and smoke checks run without headed Chrome or Xvfb;
-  those tests run apart (`test:web`, introduced on `web-workers`).
-- **Review fixes before the merge** (operator, 2026-11-07): the human's
-  approval type is `Approval`, apart from `decision@1`; only a human verifies
-  a step again (an agent would otherwise keep the luckiest run, so it records
-  a decision and tells the operator); `code.required-checks` pins its checks
-  only from a task's base commit, never from the change itself.
-- **Simplification pass:** the orchestrator scopes of the Goal rows became
-  two helpers (`ownGoal`, `inChain`); `goal.brief` uses `inScope`. No
-  feature was dropped.
-
-### CQ — Worker policy, faster and clearer checks, and a merge queue ([PROP-0007](docs/proposals/PROP-0007-worker-policy-checks-and-merge-queue.md))
-
-Decided by the operator on 2026-11-07, built from `dev` after OC (PR #39) by
-the Development session; moved out of milestone WW, which keeps only what is
-Website-Worker-specific. Acceptance in PROP-0007.
-
-- [x] CQ1. Worker policy (no background tasks or monitors for `code-write`
-  Accounts) and the per-attempt budget.
-- [x] CQ2. Checks run on the repository's Node; one-line failure reasons.
-- [x] CQ3. Checks selected by `paths`; the verdict lists run and skipped.
-- [x] CQ4. The merge queue for `mergeInto` branches (push with a lease, not
-  GitHub's merge endpoint: operator, 2026-11-07; ADR-0008 amendment).
-- [x] CQ5. The Host resolves Sub-workflows for `work.submit`; the flaky
-  host-process test.
-- [x] Growth recorded and a simplification pass.
-
-**Growth at CQ** (from `dev` at `4af8bf0`; budget per
-[ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md): +10%):
-
-| Measure | Before CQ | After CQ |
-|---|---|---|
-| Active core, lines | 3,405 | 3,420 (+15, +0.4%: the effect intent's `required` checks) |
-| All package source, lines | 11,068 | 11,366 (+298: the merge queue, the checks' Node and reasons, the attempt budget) |
-| Tests, lines | 9,549 | 9,712 |
-| Docs under `docs/`, lines (files) | 4,872 (47) | 4,985 (48), PROP-0007 included |
-| Required checks | | docs 0.4 s, install 12 s, build 21 s, typecheck 7 s, unit 2 min 52 s (473 pass; 1 fail, the chatgpt-web launch test fixed on `web-workers`), smoke 1 min 11 s (74 pass): 4 min 45 s at a load average of about 210; a docs-only change now runs docs alone |
-
-- **Simplification pass:** GitHub's merge endpoint went, and with it the
-  merged-pull lookups and the pull request fields only they read; the fake
-  GitHub servers lost their merge endpoint and `--kill-host-on-merge`.
-- **A lost stop signal, found by CQ5:** the Host replaced the launcher's
-  signal handlers by removing them first; a SIGTERM sent in between (right
-  after `listening on`) was dropped and the Host never stopped. That was the
-  flaky SIGTERM test. Fixed (4 of 9 failures before, 16 of 16 passes after,
-  in parallel).
-- **Not tested end to end:** the merge queue against github.com (a branch
-  protection that requires pull requests refuses its push), and the attempt
-  budget against a real Claude Code attempt.
-
-### Core debt ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md))
-
-After OC and WW are on `dev`, so it does not compete with them for code:
-
-- [x] A Sonnet agent read `packages/work/src` and `packages/artifacts/src`
-  at `dev` 6d92315 (3,420 lines) and proposed cuts; the Development session
-  checked them (2026-11-08). Without dropping a feature: about 35 lines
-  (`Host.interrupted`, used only by tests; the `Host` pass-throughs to the
-  controller; the `executor` and `usage` shapes written twice), about 75 with
-  header comments that restate ADRs. Every class method has a caller, and the
-  defaults kept for records written before M4 to M6 must stay (a stored record
-  would fail to open). Feature drops, approximate core lines each:
-  Goals, decisions and the Orchestrator caller (288); live progress and
-  stall notices (125; the attempt budget reads it); Sub-workflows (90; only
-  `software-engineering.yaml` uses one); the conversation intake (43; the
-  `conversation@1` kind stays, the ChatGPT Worker stores one per exchange).
-  Not cut: external effects, receipts, drain and hold (AGENTS.md invariants),
-  and settling lost attempts (`gone`, which the agent Worker implements).
-- [ ] The operator decides each: drop the feature, or keep it.
-- [ ] Each cut is its own pull request, with tests showing the rest behaves
-  the same.
-- [ ] The core's line count is recorded after each.
-
-## 4. After Brainstorm — future, not current gates
-
-- [x] Website Worker for interactive/browser-assisted Research **only when**
-  a real source workflow requires it; keep the same WorkerPort/Artifact IDs.
-  *Layer 1 (conversation-to-Artifact ingestion) is being built on PR #3 per
-  [PROP-0003](docs/proposals/PROP-0003-conversation-ingestion.md): `system
-  conversation add|show`, `task new --context`. Dogfood: the operator's
-  ChatGPT review of PR #2 stored as a conversation (`selection: excerpts`)
-  and given as context to Brainstorm Work `work:cc9a38a7…` (roles, standard
-  tier, 3 attempts, 176 s); the synthesis treated it as operator-supplied
-  data and named its uncheckable claims.*
-  *Observed need (2026-11-06): the System 1 audit and this roadmap update
-  (PR #1 `2dcfe48`) were produced by the operator in ChatGPT on the web and
-  carried into the repository by hand, with no Artifact recording what was
-  asked and what came back. The B2 Brainstorm Work `work:cad623e9…` is a
-  first design comparison for this Worker (summary `sha256:c4eb1e20…`).*
-  *Decided: layer 1 shipped (PROP-0003); the interactive Worker is milestone W
-  ([PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)).*
-- [x] Split the Website Worker into three layers (PR #2 review), each its
-  own step: (1) **conversation-to-Artifact ingestion**: the prompt, the
-  response and metadata from a web session become Artifacts with honest
-  provenance, with no browser automation (can be tried early); (2) **source
-  fetching and snapshots** with content identity (future Research); (3) the
-  **interactive Website Worker** with a signed-in session and recovery
-  (after B3/B4). System 1 is a reference for session lifecycle only; no
-  persistent team sessions in Work Core. *(Layer 1: PROP-0003, shipped.
-  Layer 3: milestone W. Layer 2 waits for its trigger, below.)*
+- [ ] An Orchestrator that System spawns on a schedule (after O).
 - [ ] Research quality capabilities (source snapshots, citation consistency,
-  claim-to-evidence checking) as separately selected verifiers. The **current
-  Research flow continues to work**, without mandatory stronger verification.
-  *Trigger: a Research Work whose accepted report the operator finds wrong
-  because a source changed or a claim was not supported. Until then, V1's
-  ratio policy (unconfirmed quotes are listed, not hidden) is the bar the
-  operator chose (2026-11-06).*
-- [ ] Optional Skill, LSP, web-fetch or third Worker adapter only if a
-  measured use case requires it and the pinned DSH plugin can satisfy
-  the System contract without duplicating the model loop. *(The third
-  Runtime, `chatgpt-web`, is milestone W. Others: trigger is a Work that fails
-  for want of one.)*
-- [x] Parallel independent steps, additional provider accounts and adaptive
-  routing only if B3 results justify their overhead. *(Parallel steps are
-  H5 (ADR-0007). More Accounts: the profile already takes several (ADR-0005);
-  adaptive routing waits for a measured need, such as quota exhaustion.)*
-
-## 5. Progress and handoff
-
-| Stage | Status | Commit / PR | Test/evidence |
-|---|---|---|---|
-| B0 MVP-0 baseline | done | `41d2e0a` (merge of PR #1) | See the B0 checklist: one concurrency failure at baseline, fixed in B4. |
-| B1 Brainstorm YAML | done | `b74f97e` | No Work Core change. `corepack pnpm check`: unit 115/115, smoke 40/42 (2 credential-gated skipped); with `SYSTEM_REAL_AGENTS=1` both pass (a real Claude change; a cancelled Claude attempt taken over by Codex, 132 s). Fake run: three attempts (Claude, Codex, Claude), `idea-a` and `idea-b` inputs are the brief only, `synthesis` inputs the two exact proposal IDs, provenance per Artifact, no verifier, `work replay` matches; refused at submit without Codex; a pinned spec survives an edited file. |
-| B2 Real three Worker attempts | done (economy tier) | Work `work:cad623e9-4a65-45ab-bb2d-eb473044811d` | Brief: design a Website Worker. `idea-a` Claude Code 2.1.311 `claude-haiku-5-5` (31 s, 42,940 in / 4,881 out) → proposal `sha256:e0e6c883…`; `idea-b` Codex 0.166.0 `gpt-6-luna` requested (the served model is not reported by Codex; 43 s, 30,148 / 1,783) → `sha256:d2c72a35…`; `synthesis` Claude `claude-haiku-5-5` (53 s, 99,560 / 9,616) → `sha256:c4eb1e20…`, inputs exactly those two IDs. 3 attempts, 0 operator touches, 127 s, `work replay` matches. The synthesis named six real disagreements (session expiry, automatic publish versus operator confirmation, screenshots, partial transcripts, CDP exposure, account check) with the evidence that would settle each. |
-| B3 Daily driver evaluation | done (model judge) | `6dc0244` (arms) | 15 Works, all succeeded, 5 hosts in parallel, 35 attempts, 0 operator touches. Tier standard everywhere: Claude `claude-sonnet-5-5`, Codex `gpt-6.1-sol` requested. Arms per brief: S = one Claude attempt (`brainstorm-single`), B = `brainstorm.yaml`, R = `brainstorm-roles.yaml` (Codex synthesis on *failure* and *openended*). Mean per Work: S 37 s, 40k input / 3.4k output tokens; B 157 s, 164k / 10.0k; R 162 s, 152k / 8.9k (about 4× S). Proposal similarity (word cosine of A and B, lower = more different): B 0.52 / 0.59 / 0.57 / 0.48 / 0.36, R 0.53 / 0.50 / 0.44 / 0.43 / 0.39 (mean 0.50 vs 0.46): the stances add a little diversity in 3 of 5 briefs. Blind scores (Sonnet subagent, operator's choice; key kept apart), mean of U/D/C/A: S 3.60, B 4.65, R 4.45. S was never best; R was best on the three briefs with a Claude synthesis, and B beat R where Codex synthesised. Caveats: a model judge from the same family as most writers, five briefs and one run each. Report and recommendation: [RES-0008](docs/research/RES-0008-brainstorm-evaluation.md). |
-| B4 Concurrency regression | done | `c9fc13b`, `ccc5dd5`, stale-snapshot fence | Baseline failure reproduced: commands that all find the store missing raced in DSH storage-sqlite (WAL switch "database is locked" despite `busy_timeout`; `UNIQUE constraint failed: units.name`). Patch extended; new test red 9/12 rounds, green 3/3; 300 parallel commands on fresh stores, 0 failures. Review finding (PR #2, P1): `FileControl` created the lock before writing its pid, so a host could read it empty, take it as stale and also acquire the Work. Red test with an empty lock; fixed by linking a complete file (a recent pid-less lock counts as held). Same-Work test: a host SIGKILLed during `idea-b`, then four `work run` at once: exactly one runs, `idea-b` is dispatched once more, every event `seq` kept in order, replay matches; 3/3 runs. A free-lock race between processes did not reproduce the window (microseconds) and stays as a regression test. `corepack pnpm check`: unit 118/118, smoke 41/43 (2 credential-gated skipped). Then (PR #1 review RES-0007, hypotheses confirmed): DSH `storage-domain` serves each host an in-memory snapshot taken at start, so a host that took the lock after another wrote acted on an older record; `retry` also checked before locking and released between reopening and running. Red controller tests (one snapshot per host) for `run` and `retry`; fixed by an event-count fence in `FileControl` and by holding the lock through `retry`/`approve`. `corepack pnpm check`: unit 122/122, smoke 41/43. |
-
-Update this table *after executing tests*. Each implementation milestone
-should be a small reviewable commit on the chosen implementation branch.
-If YAML role routing cannot ensure Claude + Codex, provide a failing
-reproducer before proposing a schema change. **Do not silently add another
-runtime, change a decided ADR, or mutate the documentation-only PR into a
-code PR.**
-
-**Done =** one System Work containing two independently authored proposal
-Artifacts and one synthesized Artifact, replayable after restart, with
-provider provenance and no need for an additional Worker type. The
-research/verifier/browser expansions remain future work.
+  claim-to-evidence checking) as separately selected verifiers. *Trigger: a
+  Research Work whose accepted report the operator finds wrong because a
+  source changed or a claim was not supported. Until then, V1's ratio policy
+  (unconfirmed quotes are listed, not hidden) is the bar (2026-11-06).*
+- [ ] Source fetching and snapshots with content identity (the Website
+  Worker's layer 2), with the trigger above.
+- [ ] Optional Skill, LSP, web-fetch or another Worker adapter only if a Work
+  fails for want of one and the pinned DSH plugin can satisfy the System
+  contract without duplicating the model loop.
+- [ ] Adaptive routing only on a measured need, such as quota exhaustion.
