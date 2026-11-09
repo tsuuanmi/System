@@ -114,7 +114,7 @@ export interface RemoteLoginView {
 
 export interface WorkersView {
   registered: string[]
-  accounts: { ref: string; runtime: string; available: boolean; reason: string; version?: string }[]
+  accounts: { ref: string; runtime: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string> }[]
 }
 
 /** What the thin client's commands run against: the Host, over its socket. */
@@ -228,6 +228,10 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`} (${a.runtime})\n`)
+          // Their own lines, after the account's: tools/web-canary reads the line that ends in the runtime.
+          if (a.capabilities?.length) io.out(`  capabilities: ${a.capabilities.join(', ')}\n`)
+          const models = Object.entries(a.models ?? {})
+          if (models.length) io.out(`  models: ${models.map(([tier, model]) => `${tier}=${model}`).join(', ')}\n`)
         }
         return 0
       })

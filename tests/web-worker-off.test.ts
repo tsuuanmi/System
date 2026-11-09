@@ -55,6 +55,14 @@ test('system workers reports a web account unavailable because the row is disabl
   assert.match(out.stdout, /web\/chatgpt\/default\s+unavailable.*\(web\)\n/, 'the runtime ends each account line: tools/web-canary reads it')
 })
 
+test('system workers shows each account\'s capabilities and the model of each tier (df-23), and no secret', () => {
+  const out = system(['workers'])
+  assert.equal(out.status, 0, out.stderr)
+  assert.match(out.stdout, /claude-code\/default[^\n]*\(claude-code\)\n\s+capabilities: code-write, research,[^\n]*tier\.economy, tier\.standard, tier\.frontier\n\s+models: economy=haiku, standard=sonnet, frontier=opus\n/)
+  assert.match(out.stdout, /codex\/default[^\n]*\(codex\)\n\s+capabilities: code-write, brainstorm\.idea-b\n/)
+  assert.doesNotMatch(out.stdout, /CLAUDE_CODE_OAUTH_TOKEN|auth\.json/)
+})
+
 test('login, the remote viewer and recheck say the row is disabled', () => {
   writeFileSync(join(home, 'cookies.json'), '[]')
   for (const args of [['workers', 'login', 'web/chatgpt/default', '--cookies', join(home, 'cookies.json')], ['workers', 'login', 'web/chatgpt/default', '--remote'], ['workers', 'recheck', 'web/chatgpt/default']]) {

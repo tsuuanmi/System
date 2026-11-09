@@ -70,6 +70,11 @@ export interface Config {
   accounts?: AccountConfig[]
 }
 
+/** The configured models in tier order; a tier that is not a tier is left for the registration to refuse. */
+function modelsOf(models: AccountConfig['models']): Partial<Record<Tier, string>> {
+  return Object.fromEntries(TIERS.filter((tier) => models?.[tier]).map((tier) => [tier, models![tier]]))
+}
+
 /** The reason of an account whose registration is not done yet. */
 export const REGISTERING = 'registering'
 
@@ -77,6 +82,8 @@ export interface AccountStatus {
   ref: string
   runtime: AccountConfig['runtime']
   capabilities: string[]
+  /** The model of each configured tier (never a credential). */
+  models: Partial<Record<Tier, string>>
   available: boolean
   reason: string
   command?: string
@@ -152,7 +159,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const dispose: (() => void)[] = []
   // Every account is listed from the start, as registering: the Host serves while this loop is still going (WW6e).
   const entries = (config.accounts ?? []).map((account) => {
-    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, available: false, reason: REGISTERING }
+    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, models: modelsOf(account.models), available: false, reason: REGISTERING }
     statuses.push(status)
     return { account, status }
   })
