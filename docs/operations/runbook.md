@@ -498,9 +498,9 @@ Read a Work by its ID for details. The MCP tool `status` answers the same.
 While a Work for an Item runs or is held, `work submit` for the same Item is
 refused, naming that Work and its Account. `--force` (`force: true`) allows
 parallel work on purpose. A Task that names an Item is read with the Item's
-line and the Work and result IDs, or failure reasons, of its earlier Works
-added to its context, so a new session or Worker can carry on from the status
-alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
+line and, for its last three earlier Works, their end reason, Task ID, change
+Artifact and commit, and each failed verdict's full reason and evidence IDs added
+to its context, so a new session or Worker can carry on from the status alone. The change that finishes an Item ticks it in `STATUS.md`, in the same
 pull request.
 
 ## Using System from an agent

@@ -128,6 +128,10 @@ function specStore(artifacts: Artifacts): SpecStore {
       const tree = read.envelope.content as GitTreeContent
       return tree.commit === tree.parent ? tree.commit : undefined
     },
+    commitOf(id) {
+      const read = artifacts.get(id)
+      return read.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? (read.envelope.content as GitTreeContent).commit : undefined
+    },
     taskOf(id) {
       const read = artifacts.get(id)
       if (read.state !== 'stored' || read.envelope.kind !== TASK_KIND.kind) return undefined

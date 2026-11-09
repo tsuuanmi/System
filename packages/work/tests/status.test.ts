@@ -73,6 +73,8 @@ test('STATUS.md is read from the dev tip, not the working tree; a repository wit
   assert.match(absent.problems[0]!, /no STATUS\.md on dev/)
 })
 
+const CHANGE = id('a change')
+const COMMIT = 'c'.repeat(40)
 interface Stored { task: Task; repository?: string; note?: string }
 
 function memory(): SpecStore & { stored: Set<string>; tasks: Map<string, Stored> } {
@@ -83,6 +85,7 @@ function memory(): SpecStore & { stored: Set<string>; tasks: Map<string, Stored>
     stored,
     tasks,
     unchangedBase: () => undefined,
+    commitOf: (artifactId) => (artifactId === CHANGE ? COMMIT : undefined),
     kindOf: (artifactId) => (tasks.has(artifactId) ? 'task' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) { const v = id(JSON.stringify(verdict)); stored.add(v); return v },
     async putSpec(spec) { const s = id(JSON.stringify(spec)); specs.set(s, structuredClone(spec)); stored.add(s); return s },
@@ -237,6 +240,31 @@ test('a failed earlier Work is named with its reason', async () => {
   const second = await admit(task(dir, 'df-3', 'again'))
   assert.match(specs.tasks.get(second.state.input!)!.note!, new RegExp(`${first.id} failed: step task failed`))
   void controller
+})
+
+test('an earlier failed Work gives its Task, change and commit, and the failing check\'s reason and evidence', async () => {
+  const dir = repository(STATUS)
+  const { table, specs, task, admit } = setup()
+  const first = await admit(task(dir, 'df-3', 'make it'))
+  const evidence = id('evidence')
+  const reason = 'publish needs a passing verdict on its subject: checks.checks=fail (unit: 2 tests failed: a, b)'
+  const events: WorkEvent[] = [
+    ...first.events,
+    { type: 'dispatched', seq: 1, at: '2026-11-09T01:00:00.000Z', stepId: 'task', attemptId: 'a:1', executor: 'worker', capability: 'code-write', selected: 'fake/claude', candidates: [], inputs: {} },
+    { type: 'observed', seq: 2, at: '2026-11-09T01:01:00.000Z', stepId: 'task', attemptId: 'a:1', status: 'succeeded', outputs: { change: CHANGE }, usage: { state: 'unknown' } },
+    { type: 'verified', seq: 3, at: '2026-11-09T01:02:00.000Z', stepId: 'checks', attemptId: 'a:2', subject: CHANGE, criteria: 'c', verdict: 'fail', reason: 'unit: 2 tests failed: a, b', evidence: [evidence] },
+    { type: 'terminal', seq: 4, at: '2026-11-09T01:05:00.000Z', outcome: 'failed', reason, results: {} },
+  ]
+  await table.put(first.id, { ...first, events, state: fold(['task', 'checks'], events) })
+  const second = await admit(task(dir, 'df-3', 'again'))
+  const note = specs.tasks.get(second.state.input!)!.note!
+  assert.ok(note.includes(`${first.id} failed: ${reason}`), note)
+  assert.ok(note.includes(`Task (read its instructions by this ID): ${first.state.input}`), note)
+  assert.ok(note.includes(`change: Artifact ${CHANGE}, commit ${COMMIT}`), note)
+  assert.ok(note.includes('verify step checks fail'), note)
+  assert.ok(note.includes('unit: 2 tests failed: a, b'), note)
+  assert.ok(note.includes(`evidence: ${evidence}`), note)
+  assert.match(note, /start from its commit/)
 })
 
 test('a Task from before Items, and one naming an Item without a readable STATUS.md, are admitted as they are', async () => {

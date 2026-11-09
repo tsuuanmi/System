@@ -36,6 +36,8 @@ export interface SpecStore {
   kindOf(id: string): string | undefined
   /** The base commit of a stored `git-tree@1` Artifact whose tree is its base's own tree (a change that changes nothing); undefined otherwise. */
   unchangedBase(id: string): string | undefined
+  /** The commit of a stored `git-tree@1` Artifact (a change); undefined for any other Artifact. */
+  commitOf?(id: string): string | undefined
   /** Store a `verdict@1` Artifact; returns its ID. */
   putVerdict(verdict: Verdict): Promise<string>
   /** A stored Task, and the repository of its base commit; undefined when `id` is not a Task. */
@@ -248,7 +250,7 @@ export class WorkController {
       if (busy) throw new WorkError(`Item ${item.id} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'}); to run another on purpose, give force (--force)`)
     }
     // A Task that names an Item is read with the Item's status and its earlier Works added to its context.
-    const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list()), admission.caller) : input
+    const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list(), this.specs.commitOf?.bind(this.specs)), admission.caller) : input
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = options.workId ?? `work:${randomUUID()}`
     const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: read, ...(item ? { item } : {}), ...(admission.worker ? { worker: admission.worker } : {}), criteria, verifiers, source: admission.source }

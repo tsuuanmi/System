@@ -156,22 +156,42 @@ export function itemLines(
   return lines
 }
 
-/** The most earlier Works a Worker is told of. */
-const MAX_EARLIER = 10
+/** The most recent earlier Works a Worker is told of in detail. */
+const MAX_EARLIER = 3
 
-/** What a Worker is told of an Item beyond its Task: the Item's line, and the result or failure of each earlier Work for it. */
-export async function itemNote(item: ItemRef, records: WorkRecord[]): Promise<string> {
+/** One earlier Work as text with IDs: end status and reason, its Task, its changes and commits, and each failed verdict in full. */
+function earlierText(r: WorkRecord, commitOf: ((id: string) => string | undefined) | undefined): string[] {
+  const reason = r.state.status === 'running' ? `at step ${whoHas(r).step ?? 'none yet'}` : r.state.status === 'succeeded' ? artifactsOf(r).join(', ') : r.state.reason
+  const lines = [`- ${r.id} ${r.state.status}${reason ? `: ${reason}` : ''}`]
+  if (r.state.input) lines.push(`  Task (read its instructions by this ID): ${r.state.input}`)
+  const changes = new Map<string, string>()
+  for (const id of [...Object.values(r.state.results), ...Object.values(r.state.steps).flatMap((s) => Object.values(s.outputs))]) {
+    const commit = commitOf?.(id)
+    if (commit) changes.set(id, commit)
+  }
+  for (const [id, commit] of changes) lines.push(`  change: Artifact ${id}, commit ${commit}`)
+  const last = new Map<string, Extract<WorkEvent, { type: 'verified' }>>()
+  for (const e of r.events) if (e.type === 'verified') last.set(e.stepId, e)
+  for (const e of last.values()) {
+    if (e.verdict === 'pass') continue
+    lines.push(`  verify step ${e.stepId} ${e.verdict} (subject ${e.subject}): ${e.reason}`)
+    if (e.evidence?.length) lines.push(`  evidence: ${e.evidence.join(', ')}`)
+  }
+  return lines
+}
+
+/** What a Worker is told of an Item beyond its Task: the Item's line, and what each of the last earlier Works did and why it ended. */
+export async function itemNote(item: ItemRef, records: WorkRecord[], commitOf?: (id: string) => string | undefined): Promise<string> {
   const status = item.repository ? await readStatus(item.repository).catch(() => undefined) : undefined
-  const earlier = worksFor(records, item).slice(-MAX_EARLIER).map((r) => {
-    const outcome = r.state.status
-    const detail = outcome === 'succeeded' ? artifactsOf(r).join(', ') : outcome === 'running' ? `step ${whoHas(r).step ?? 'none yet'}` : (r.state.reason ?? '')
-    return `- ${r.id} ${outcome}: ${detail}`
-  })
+  const earlier = worksFor(records, item).slice(-MAX_EARLIER).reverse().flatMap((r) => earlierText(r, commitOf))
   return [
     `Item ${item.id}${item.repository ? ` of ${item.repository}` : ''}, from STATUS.md on dev:`,
     itemLines(status ?? { items: [] }, item.repository, records, undefined, { item: item.id })[0]!,
     '',
-    ...(earlier.length ? ['Earlier Works for this Item:', ...earlier] : ['No earlier Work for this Item.']),
+    ...(earlier.length ? [
+      'Earlier Works for this Item, newest first (at most 3). Read a Task or Artifact by its ID for the details. If an earlier Work left a change, you may start from its commit instead of from scratch, and fix what its failed check names:',
+      ...earlier,
+    ] : ['No earlier Work for this Item.']),
     '',
   ].join('\n')
 }
