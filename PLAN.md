@@ -140,6 +140,36 @@ Works, so trimming the core and proving the dogfood are one job.
   evidence and event say it was automatic. Basis: 1 of 20 canary runs failed
   on a missing output block; one fresh attempt would bring acceptance to about
   95%. Until it ships, `work retry` by hand.
+- [ ] DF2c. Other repositories (operator, 2026-11-09). Any Claude Code session,
+  in any repository, uses System through its MCP tools; the session is a
+  caller, and the change is made by a Worker in a clean worktree. A
+  repository can use System when it is on GitHub, has a `dev` branch and a
+  committed `.system/checks.yaml`: the Effects' `base: dev` and
+  `mergeInto: [dev]` then hold for it as they are (its own `origin`), so
+  System merges its checked changes into `dev` and the operator merges
+  `dev` into `main`. No per-repository publishing is needed. Two System
+  Works of this Goal, as exceptions to "no new feature" because other
+  repositories need them:
+  - the MCP server's `instructions` (the MCP standard's field, read by the
+    client at connect): what System is, that the session is a caller, the
+    conditions above, the Workflows and when to use each, the steps
+    (`task_new`, `work_submit`, follow), the bootstrap checklist, and that
+    what only a human may do is printed as the exact command for the
+    operator to run. The bootstrap, done by the session in the repository,
+    with no script: check the GitHub remote; write `AGENTS.md` from the
+    agent contract of
+    [the documentation architecture standard](docs/governance/documentation-architecture.md)
+    if it is missing; create `dev` from `main` after asking the operator;
+    write `.system/checks.yaml` from the repository's CI and commit it on
+    `dev`, the one direct commit, since no checks exist yet to pin;
+  - the environment of the checks: the machine's profile names variables
+    passed to every check (such as `RUSTUP_HOME`, `CARGO_HOME` and a shared
+    `CARGO_TARGET_DIR`), because the verifier runs each check with a fresh
+    `HOME` and toolchains kept under `HOME` (rustup, uv) would otherwise be
+    missing or downloaded every time. In `verifiers`, outside the core.
+
+  Then `DNA` is the first other repository: bootstrapped by a session there,
+  and one change made through System.
 - [ ] DF3. Replace the Orchestrator mid-milestone: stop its session in the
   middle of a Work, start a new session with only `system goal brief`, and it
   carries on without reading PLAN, an old chat or a memory. Whatever it has to
@@ -325,12 +355,6 @@ removed), Power by tier, a circuit breaker per Account, the canary, the
 
 
 ## 4. Future, not current gates
-
-- [ ] Publishing for other repositories (operator, 2026-11-08; right after
-  DF): each repository names its branches beside its checks (`.system/`,
-  pinned from the base commit); the Host keeps the allowlist of branches it
-  may merge into, since that is authority a repository cannot grant itself.
-  Until then, a Work on another repository ends at its checked change.
 
 - [ ] An Orchestrator that System spawns on a schedule (after O).
 - [ ] Research quality capabilities (source snapshots, citation consistency,
