@@ -33,12 +33,21 @@ nothing else.
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
   through the operator's Host when one answers, or one the test starts.
-- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `chatgpt-web` account on
+- [web-worker-off.test.ts](web-worker-off.test.ts) — WW2a: the profile with the
+  `web-worker` row off (the bundle's default) runs a Software Engineering Work and a
+  Brainstorm on the fake Runtimes, `system workers` reports a `web` account
+  unavailable with "the web-worker row is disabled", and `workers login` says the same.
+- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `web` account (the
+  `web-worker` row turned on by a profile patch) on
   the booted profile against the local fake site ([web-driver](../packages/web-driver/tests/fake-chatgpt.ts)): `workers login --cookies`
   (no value printed), a sign-in wall reported, a Work filling its slot and
   producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).
 - [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
-  one Research Work on the operator's signed-in `chatgpt-web/default` profile.
+  one Research Work on the operator's signed-in `web/chatgpt/default` profile.
+- [web-canary.test.ts](web-canary.test.ts) — WW4: the canary Task has the same
+  Artifact ID every time, `work submit --worker` refuses an unregistered Worker, and
+  `tools/web-canary` runs and reports (each run classified as passed, worker-failed, verifier or other, the Worker step rate, older version apart, the WW gate)
+  through a fake `system` (`SYSTEM_BIN`) with scripted records; the timer units' fields.
 - [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
   accounts (CLI pointed at the fake): two proposals by different providers
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal
@@ -47,6 +56,9 @@ nothing else.
   the lost step is dispatched once more; no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
+- [debate.test.ts](debate.test.ts) — WW2b: the Debate Workflow on the fake CLI: dispatch
+  order a1/b1, a2/b2, synthesis; each Round 2 step's inputs are exactly the
+  Round 1 proposals and the brief; the synthesis gets all four; replay.
 - [goal.test.ts](goal.test.ts) — ADR-0009 O1: `system goal new` behind a terminal
   confirmation (refused to a pipe or an agent), the Goal's context reaching the
   Worker, the budget refusal, `work report` with the spend, and a raise.

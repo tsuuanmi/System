@@ -14,7 +14,7 @@ import { callerSchema, type Caller, type Host, type WorkChange, type z } from '@
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
-const SYSTEM_PACKAGES = ['artifacts', 'work', 'agents', 'verifiers', 'effects', 'host', 'app']
+const SYSTEM_PACKAGES = ['artifacts', 'work', 'agents', 'web-worker', 'verifiers', 'effects', 'host', 'app']
 
 const jsFiles = (dir: string, at = ''): string[] =>
   readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(dir, join(at, e.name)) : e.name.endsWith('.js') ? [join(at, e.name)] : []))
@@ -22,14 +22,17 @@ const jsFiles = (dir: string, at = ''): string[] =>
 /** Files besides the built code that change what the Host does. */
 const BEHAVIOUR_FILES = [new URL('../../bundle/cordis.patch.yml', import.meta.url).pathname]
 
+/** The shipped UI maps and their schema: data, but part of what the web-worker row runs, so changing one is an upgrade (WW6f). */
+const UI_DIR = new URL('../../web-driver/ui', import.meta.url).pathname
+
 /**
  * What identifies the code: a short sha256 over the built `.js` files of the
  * System packages, in a stable order, and the `extra` files that change
- * behaviour (the bundle's Cordis patch). A directory that is not built counts as
+ * behaviour (the bundle's Cordis patch), and the UI maps in `ui` (`*.yaml`, `*.json`). A directory that is not built counts as
  * empty. The Host and each client compute it from their own files, so a
  * Host still running old code refuses a client built from new code.
  */
-export function codeVersion(libs: Record<string, string> = Object.fromEntries(SYSTEM_PACKAGES.map((name) => [name, new URL(`../../${name}/lib`, import.meta.url).pathname])), extra: string[] = BEHAVIOUR_FILES): string {
+export function codeVersion(libs: Record<string, string> = Object.fromEntries(SYSTEM_PACKAGES.map((name) => [name, new URL(`../../${name}/lib`, import.meta.url).pathname])), extra: string[] = BEHAVIOUR_FILES, ui: string = UI_DIR): string {
   const hash = createHash('sha256')
   for (const name of Object.keys(libs).sort()) {
     let files: string[] = []
@@ -37,6 +40,9 @@ export function codeVersion(libs: Record<string, string> = Object.fromEntries(SY
     for (const file of files) hash.update(`${name}/${file}\0`).update(readFileSync(join(libs[name]!, file))).update('\0')
   }
   for (const file of extra) hash.update(`${file.split('/').at(-1)}\0`).update(readFileSync(file)).update('\0')
+  let maps: string[] = []
+  try { maps = readdirSync(ui).filter((f) => f.endsWith('.yaml') || f.endsWith('.json')).sort() } catch { /* no maps */ }
+  for (const file of maps) hash.update(`ui/${file}\0`).update(readFileSync(join(ui, file))).update('\0')
   return hash.digest('hex').slice(0, 12)
 }
 

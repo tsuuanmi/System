@@ -2,12 +2,66 @@
 # ChatGPT Web UI map (ui-map@1.0, ADR-0021). Checked against the live site on 2026-10-11
 # (a research note, now in Git history).
 # When the site changes, edit this file (and the fixture), not the driver code.
-schema: ui-map@1.3
+schema: ui-map@1.7
 provider: chatgpt-web
 uiRevision: '2026-10-11'
 locales: [en]
 
+# WW1: the Chat/Work switch renders after the composer on a slow page, so a missing switch is waited for
+# (never read as Chat mode), then the mode it shows must hold for the settle time.
+settings:
+  modeReadyMs: 15000
+  modeSettleMs: 600
+  # WW1g: inputs shorter than this stay in the prompt's one part. A pasted body that the site turns into an
+  # attachment is waited for this long; its chip's label must start with the body's first 24 characters.
+  attachMinChars: 4000
+  attachWaitMs: 30000
+  attachLabelChars: 24
+
+# WW2-ii: what the generic Procedures (src/procedures.ts) bind to.
+site:
+  origin: 'https://chatgpt.com'
+  conversationUrl: '^/c/([0-9a-f-]+)$'
+  temporaryChat: { action: temporary.enable }
+
+# Chat is the required mode and is verified by its own state: the Chat button pressed, or the temporary chat
+# that hides the switch (live: the switch is absent there). Work spends the Codex quota and is forbidden.
+modes:
+  switch: mode.group
+  required: mode.chat-selected
+  forbidden: [mode.work-selected, mode.work-composer]
+  select: mode.select-chat
+
+# WW6b: ChatGPT sometimes leaks a model control token into the visible text, inside a rendered code block
+# (live 2026-11-08: "<escape>" before a sources JSON). Removed at an output's start and end only.
+answer:
+  turn: turn.assistant
+  userTurn: turn.user
+  # The answer is the heading's container, which starts with the heading's own text.
+  container: parent
+  prefix: '^\s*ChatGPT said:?\s*'
+  running: turn.running
+  done: answer.finished
+  error: answer.site-error
+  code: answer.code
+  codeLabel: answer.code-label
+  leakedTokens: ['<escape>', '</escape>']
+
 elements:
+  composer.attachment:
+    description: >-
+      A pasted text the site turned into an attachment (live 2026-11-07, a Team workspace): in the
+      composer's `[data-composer-attachments]`, a button whose aria-label is the start of the text
+      (whitespace collapsed) followed by an ellipsis.
+    cardinality: many
+    candidates:
+      - { css: '[data-composer-attachments] button[aria-label$="…"]' }
+  composer.attachment-adding:
+    description: >-
+      The attachment area while a paste is being added: it shows "Adding pasted text…" (live
+      2026-11-07), and no longer once the chip holds the text.
+    candidates:
+      - { css: '[data-composer-attachments]:has-text("Adding pasted text")' }
   auth.login:
     description: Sign-in entry points shown to a signed-out visitor.
     candidates:
@@ -212,6 +266,11 @@ elements:
     candidates:
       - { role: menuitem, name: { en: '^Power$' } }
       - { css: '[data-reasoning-slider]' }
+  model.selected:
+    description: The model radio that is checked (view B); read, never clicked (WW8a).
+    scope: model.menu
+    candidates:
+      - { css: '[role="menuitemradio"][aria-checked="true"]' }
   model.power-status:
     description: 'Reads "<level>, <n> of <total>."'
     scope: model.menu
@@ -247,15 +306,36 @@ elements:
     cardinality: many
     candidates:
       - { role: button, name: { en: '^Copy$' }, exact: true }
+  answer.error:
+    description: >-
+      The site's own error in place of an answer, looked for inside the newest answer only (the state
+      `answer.site-error`). Live 2026-11-07 and 2026-11-08 (System): the answer held only "This response
+      couldn't load" (a site-side generation error). The alert is any element the site marks as an error
+      there; its own Retry control is not named yet (the DOM of that answer has not been captured).
+    cardinality: many
+    candidates:
+      - { text: { en: '^This response couldn.t load' } }
+      - { css: '[role="alert"]' }
   answer.code:
     description: >-
       A code block's text in an answer, its rows kept (the answer's Copy loses them). Live since
-      2026-10-11 code blocks are pre > code; the editable "Edit code" block is the fallback.
+      2026-10-11 code blocks are pre > code; the editable "Edit code" block is the fallback. Live on
+      2026-11-07 (System, W8) a block has no pre: [data-code-block] holds a header bar
+      ([data-markdown-copy="exclude"], the language) and the text in [data-code-block-source] code.
     cardinality: many
     candidates:
+      - { css: '[data-code-block="true"] [data-code-block-source] code' }
       - { css: 'pre code' }
       - { role: textbox, name: { en: '^Edit code$' } }
 
+
+  answer.code-label:
+    description: >-
+      A code block's label: the header bar of the live widget (2026-11-07), whose first line is the language.
+      The older `pre` form, with its header before the `pre`, is not covered (a label per block is paired by order).
+    cardinality: many
+    candidates:
+      - { css: '[data-code-block="true"] [data-markdown-copy="exclude"]' }
 
   # Deleting one conversation (PROP-0004 Phase 5). NOT yet verified live: the names follow the
   # site's conversation menu as documented by OpenAI; the live check replaces them.
@@ -371,6 +451,14 @@ actions:
     sideEffect: reversible
     heal: deterministic
     timeouts: { resolveMs: 5000, verifyMs: 5000 }
+  model.close:
+    description: Closes the model menu again after a read (WW8a). The menu is verified gone, so nothing is typed under it.
+    do: press
+    key: Escape
+    target: composer.model
+    verify: { hidden: model.menu }
+    sideEffect: reversible
+    timeouts: { resolveMs: 3000, verifyMs: 3000 }
   model.show-models:
     do: click
     target: model.view-toggle
@@ -409,10 +497,22 @@ actions:
     sideEffect: reversible
     timeouts: { resolveMs: 15000, verifyMs: 5000 }
   composer.insert:
-    do: insertText
+    do: pasteText
     target: composer.input
     require: [editable]
-    # The engine reads the text back; Send's label is not part of this check, so a renamed Send cannot fail it.
+    # One paste event (typing 66 KB took 5.5 min), typed instead when the editor ignores it. The engine reads the text back; Send's label is not part of this check, so a renamed Send cannot fail it.
+    verify: { visible: composer.input }
+    sideEffect: none
+    heal: deterministic
+    timeouts: { resolveMs: 15000, verifyMs: 5000 }
+  composer.attach:
+    description: >-
+      The prompt's body, pasted after its header. The engine's "attach text" Procedure then accepts
+      the text in the composer or one new chip (composer.attachment) named by it; the paste is not
+      read back here.
+    do: attachText
+    target: composer.input
+    require: [editable]
     verify: { visible: composer.input }
     sideEffect: none
     heal: deterministic
@@ -466,6 +566,14 @@ states:
   auth.login-page: { anyOf: [{ url: '^https?://auth\.openai\.com/|/auth/login' }, { allOf: [{ visible: auth.login }, { not: { visible: composer.input } }] }] }
   auth.signed-out: { anyOf: [{ state: auth.login-page }, { allOf: [{ visible: auth.logged-out-home }, { not: { visible: composer.input } }] }] }
   site.error-page: { allOf: [{ visible: site.error }, { not: { visible: composer.input } }] }
+  # Evaluated inside the newest answer on every poll of the wait: it can replace the streaming or follow it.
+  answer.site-error: { visible: answer.error }
+  # Every answer has its Copy: finished when the Copy buttons are as many as the answers.
+  answer.finished: { countAtLeast: { of: turn.assistant.done, as: turn.assistant } }
+  mode.chat-selected: { anyOf: [{ attr: { of: mode.chat, name: aria-pressed, equals: 'true' } }, { visible: temporary.off }] }
+  # The composer's own label names Work (Codex quota) whatever the switch shows: the check that was code in the driver.
+  mode.work-composer: { attr: { of: composer.input, name: aria-label, matches: '\bWork\b' } }
+  mode.work-selected: { attr: { of: mode.work, name: aria-pressed, equals: 'true' } }
   turn.running: { visible: composer.stop }
   # Nothing generating and nothing open: the page can be kept for the session's next turn.
   page.idle: { allOf: [{ not: { state: turn.running } }, { hidden: page.overlay }] }

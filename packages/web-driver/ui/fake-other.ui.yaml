@@ -1,0 +1,126 @@
+# The map of tests/fake-other.ts, an invented Site made unlike chatgpt.com on purpose (WW2-ii): it is the proof that
+# the generic Procedures need only a map and a page. It has no temporary chat (no `site.temporaryChat`), no mode
+# switch (no `modes`), a plain textarea, no Stop button (a status element: "Generating…" / "Done"), its error inside
+# the answer, the code label in its own element above the code, and a long paste turned into a file chip labelled by its text.
+schema: ui-map@1.7
+provider: fake-other
+uiRevision: '2026-11-08'
+locales: [en]
+
+site:
+  # A test serves the fake on a free port and gives that origin to the Procedures.
+  origin: 'http://127.0.0.1'
+  conversationUrl: '^/chat/([0-9a-f]+)$'
+
+settings:
+  modeReadyMs: 1000
+  signedOutHoldMs: 500
+  sendAckMs: 1500
+  answerPollMs: 100
+  answerStableMs: 400
+  answerTimeoutMs: 20000
+
+# The chip is this Site's own: other elements than ChatGPT's, and its label is its text, not an aria-label.
+attach:
+  chip: composer.file
+  adding: composer.file-reading
+  label: text
+
+answer:
+  turn: turn.assistant
+  userTurn: turn.user
+  container: self
+  prefix: '^Bot:'
+  running: answer.running
+  done: answer.finished
+  error: answer.site-error
+  code: answer.code
+  codeLabel: answer.code-label
+
+elements:
+  auth.login:
+    candidates:
+      - { css: 'a.signin' }
+  auth.challenge:
+    candidates:
+      - { role: heading, name: { en: '^Checking your browser$' } }
+  composer.input:
+    candidates:
+      - { css: 'textarea#box' }
+  composer.send:
+    candidates:
+      - { css: 'button.go' }
+  composer.file:
+    description: 'A long paste becomes a file chip: a list item whose own text starts with the pasted text.'
+    cardinality: many
+    candidates:
+      - { css: '#files li.file' }
+  composer.file-reading:
+    candidates:
+      - { css: '#files li.reading' }
+  turn.user:
+    cardinality: many
+    candidates:
+      - { css: 'article.me' }
+  turn.assistant:
+    cardinality: many
+    candidates:
+      - { css: 'article.bot' }
+  status.generating:
+    candidates:
+      - { css: '#status:has-text("Generating")' }
+  status.done:
+    candidates:
+      - { css: '#status:has-text("Done")' }
+  answer.error:
+    description: The site's own error, inside the answer's container, with the status already "Done".
+    candidates:
+      - { css: '.oops' }
+  answer.code:
+    cardinality: many
+    candidates:
+      - { css: 'pre code' }
+  answer.code-label:
+    description: The label is its own element above the block's `pre`, not part of the code.
+    cardinality: many
+    candidates:
+      - { css: '.blk > .lbl' }
+
+actions:
+  composer.clear:
+    do: clearText
+    target: composer.input
+    require: [editable]
+    verify: { visible: composer.input }
+    sideEffect: reversible
+    timeouts: { resolveMs: 3000, verifyMs: 2000 }
+  composer.insert:
+    do: pasteText
+    target: composer.input
+    require: [editable]
+    verify: { visible: composer.input }
+    sideEffect: none
+    timeouts: { resolveMs: 3000, verifyMs: 2000 }
+  composer.attach:
+    do: attachText
+    target: composer.input
+    require: [editable]
+    verify: { visible: composer.input }
+    sideEffect: none
+    timeouts: { resolveMs: 3000, verifyMs: 2000 }
+  composer.send:
+    do: click
+    target: composer.send
+    require: [enabled]
+    verify: { countIncreased: turn.user }
+    sideEffect: irreversible
+    timeouts: { resolveMs: 3000, verifyMs: 1000 }
+
+states:
+  auth.signed-in: { visible: composer.input }
+  auth.login-page: { allOf: [{ visible: auth.login }, { not: { visible: composer.input } }] }
+  auth.signed-out: { state: auth.login-page }
+  auth.challenge: { visible: auth.challenge }
+  answer.running: { visible: status.generating }
+  answer.finished: { visible: status.done }
+  answer.site-error: { visible: answer.error }

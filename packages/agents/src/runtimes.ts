@@ -5,7 +5,7 @@
 import type { Progress } from '@system/work'
 import type { Workspace } from './workspace.ts'
 
-export type Runtime = 'claude-code' | 'codex' | 'chatgpt-web'
+export type Runtime = 'claude-code' | 'codex'
 
 export interface Invocation {
   argv: string[]

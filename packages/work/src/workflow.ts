@@ -53,7 +53,8 @@ const workerStep = z.object({
 const verifyStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
-  verify: z.object({ capability, subject: ref, criteria: z.string().min(1) }).strict(),
+  /** `inputs` are further Artifacts the verifier is given beside the subject, such as the report a sources file belongs to. */
+  verify: z.object({ capability, subject: ref, criteria: z.string().min(1), inputs: z.record(slot, ref).optional() }).strict(),
 }).strict()
 
 const acceptStep = z.object({
@@ -217,6 +218,7 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
       for (const c of s.capabilities) if (!available.workers.has(c)) problems.push(`step ${s.id} needs Worker capability ${c}, which no enabled Worker provides`)
     } else if (isVerifyStep(s)) {
       checkRef(s, s.verify.subject, 'verifies')
+      for (const [name, value] of Object.entries(s.verify.inputs ?? {})) checkRef(s, value, `input ${name} uses`)
       if (!available.verifiers.has(s.verify.capability)) problems.push(`step ${s.id} needs verifier ${s.verify.capability}, which no enabled verifier provides`)
     } else if (isEffectStep(s)) {
       checkRef(s, s.effect.subject, 'publishes')
@@ -260,7 +262,7 @@ export type WorkflowFiles = (name: string) => string
 function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {
   const ids = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
   if (isWorkerStep(s)) return { ...s, ...ids, ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
-  if (isVerifyStep(s)) return { ...s, ...ids, verify: { ...s.verify, subject: ref(s.verify.subject) } }
+  if (isVerifyStep(s)) return { ...s, ...ids, verify: { ...s.verify, subject: ref(s.verify.subject), ...(s.verify.inputs ? { inputs: Object.fromEntries(Object.entries(s.verify.inputs).map(([k, v]) => [k, ref(v)])) } : {}) } }
   if (isEffectStep(s)) return { ...s, ...ids, effect: { ...s.effect, subject: ref(s.effect.subject), requires: s.effect.requires.map(id) } }
   return { ...s, ...ids, accept: { ...s.accept, requires: s.accept.requires.map(id) } }
 }

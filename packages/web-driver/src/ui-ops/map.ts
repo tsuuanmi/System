@@ -24,7 +24,9 @@ export type SourcedCandidate = Candidate & { source: 'shipped' | 'overlay' }
 
 export type Condition =
   | { visible: string } | { hidden: string } | { countIncreased: string }
-  | { attr: { of: string; name: string; equals?: string; present?: boolean } }
+  /** `ui-map@1.7`: at least as many matches of `of` as of `as`. */
+  | { countAtLeast: { of: string; as: string } }
+  | { attr: { of: string; name: string; equals?: string; matches?: string; present?: boolean } }
   | { url: string } | { network: string } | { state: string }
   | { stableTextMs: number; of: string }
   | { anyOf: Condition[] } | { allOf: Condition[] } | { not: Condition }
@@ -51,7 +53,7 @@ export type SideEffect = 'none' | 'reversible' | 'irreversible'
 
 export interface ActionSpec {
   description?: string
-  do: 'click' | 'insertText' | 'clearText' | 'press' | 'setFiles' | 'select'
+  do: 'click' | 'insertText' | 'pasteText' | 'attachText' | 'clearText' | 'press' | 'setFiles' | 'select'
   target: string
   key?: string
   require?: Array<'enabled' | 'editable'>
@@ -86,11 +88,90 @@ export interface ErrorRule {
   on?: 'act' | 'answer'
 }
 
+/** The site's own clocks (`ui-map@1.5`), milliseconds; a map without `settings` gets the defaults. */
+export interface UiSettings {
+  /** How long the mode switch may take to render before the mode counts as unknown. */
+  modeReadyMs: number
+  /** How long the mode the switch shows must hold before it is trusted. */
+  modeSettleMs: number
+  /** A prompt's inputs shorter than this stay in its one part (`ui-map@1.6`): no attachment is made of a short text. */
+  attachMinChars: number
+  /** How long a pasted body may take to settle, as text in the composer or as one finished chip. */
+  attachWaitMs: number
+  /** How many of the body's first characters (whitespace collapsed) a chip's label must start with. */
+  attachLabelChars: number
+  /** How long a logged-out home must stay before it counts as signed out (`ui-map@1.7`; the app may paint it before its session loads). */
+  signedOutHoldMs: number
+  /** How long a sent prompt may take to show as a new user turn before the send is unknown. */
+  sendAckMs: number
+  /** The wait for an answer: polling interval, how long its text must hold, and its deadline. */
+  answerPollMs: number
+  answerStableMs: number
+  answerTimeoutMs: number
+}
+export const DEFAULT_SETTINGS: UiSettings = {
+  modeReadyMs: 15_000, modeSettleMs: 600, attachMinChars: 4000, attachWaitMs: 30_000, attachLabelChars: 24,
+  signedOutHoldMs: 3000, sendAckMs: 10_000, answerPollMs: 250, answerStableMs: 1500, answerTimeoutMs: 15 * 60_000,
+}
+
+/** The site itself (`ui-map@1.7`). */
+export interface UiSite {
+  origin: string
+  /** A regular expression over a conversation page's path; its first group is the conversation's id. */
+  conversationUrl?: string
+  /** The action that enters a temporary chat; absent, the site has none. */
+  temporaryChat?: { action: string }
+}
+
+/** The site's modes (`ui-map@1.7`): an absent `modes` means the site has none. */
+export interface UiModes {
+  /** The element that shows the mode; absent at the deadline the mode is unverified. */
+  switch: string
+  /** The state that must hold. */
+  required: string
+  /** States that must not hold, refused before a send. */
+  forbidden?: string[]
+  /** The action that moves to the required mode. */
+  select?: string
+}
+
+/** How a pasted text that the site turns into an attachment shows (`ui-map@1.7`); absent, the engine's defaults (see `attachBinding`). */
+export interface UiAttach {
+  /** The element of one finished attachment, one match each. */
+  chip: string
+  /** The element that shows while one is being added. */
+  adding?: string
+  /** Where a chip's label (the start of the pasted text) is read: its `aria-label` (default) or its own text. */
+  label?: 'aria-label' | 'text'
+}
+
+/** How an answer is found and read (`ui-map@1.7`); a map without `answer` lists nothing. */
+export interface UiAnswer {
+  turn?: string
+  userTurn?: string
+  container?: 'self' | 'parent'
+  prefix?: string
+  running?: string
+  done?: string
+  /** A state looked for inside the newest answer, on every poll. */
+  error?: string
+  code?: string
+  codeLabel?: string
+  /** Literal strings the site leaks into its visible text: removed where they sit at the very start or end of an output. */
+  leakedTokens: string[]
+}
+export const DEFAULT_ANSWER: UiAnswer = { leakedTokens: [] }
+
 export interface UiMap {
-  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4'
+  schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4' | 'ui-map@1.5' | 'ui-map@1.6' | 'ui-map@1.7'
   provider: string
   uiRevision: string
   locales: string[]
+  settings: UiSettings
+  answer: UiAnswer
+  site?: UiSite
+  modes?: UiModes
+  attach?: UiAttach
   elements: Record<string, ElementSpec>
   actions: Record<string, ActionSpec>
   network: Record<string, NetworkPattern>
@@ -120,7 +201,11 @@ function assertMap(value: unknown): void {
     const ajv = new Ajv2020({ strict: true, allErrors: true, validateFormats: false })
     validator = ajv.compile(JSON.parse(readFileSync(new URL('../../ui/ui-map.v1.json', import.meta.url), 'utf8')) as object)
   }
-  if (!validator(value)) throw new Error(`ui-map@1.0: ${new Ajv2020().errorsText(validator.errors)}`)
+  if (!validator(value)) {
+    // The first error only: a wrong version makes hundreds, and the first names the cause.
+    const [first, ...more] = validator.errors!
+    throw new Error(`ui-map@1.0: ${new Ajv2020().errorsText([first!])}${more.length ? ` (and ${more.length} more)` : ''}`)
+  }
 }
 
 function references(map: Omit<UiMap, 'hash'>): string[] {
@@ -128,11 +213,19 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
   const element = (id: string, where: string): void => {
     if (!map.elements[id]) missing.push(`${where}: unknown element ${id}`)
   }
+  const pattern = (source: string | undefined, where: string): void => {
+    try {
+      if (source) new RegExp(source)
+    } catch {
+      missing.push(`${where}: not a regular expression`)
+    }
+  }
   const walk = (c: Condition, where: string): void => {
     if ('visible' in c) element(c.visible, where)
     else if ('hidden' in c) element(c.hidden, where)
     else if ('countIncreased' in c) element(c.countIncreased, where)
-    else if ('attr' in c) element(c.attr.of, where)
+    else if ('countAtLeast' in c) { element(c.countAtLeast.of, where); element(c.countAtLeast.as, where) }
+    else if ('attr' in c) { element(c.attr.of, where); pattern(c.attr.matches, `${where}.attr.matches`) }
     else if ('stableTextMs' in c) element(c.of, where)
     else if ('network' in c) { if (!map.network[c.network]) missing.push(`${where}: unknown network signal ${c.network}`) }
     else if ('state' in c) { if (!map.states[c.state]) missing.push(`${where}: unknown state ${c.state}`) }
@@ -148,6 +241,28 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
   }
   for (const [id, s] of Object.entries(map.states)) walk(s, `states.${id}`)
   map.errors.forEach((e, i) => walk(e.when, `errors[${i}]`))
+  const action = (id: string | undefined, where: string): void => {
+    if (id && !map.actions[id]) missing.push(`${where}: unknown action ${id}`)
+  }
+  const state = (id: string | undefined, where: string): void => {
+    if (id && !map.states[id]) missing.push(`${where}: unknown state ${id}`)
+  }
+  action(map.site?.temporaryChat?.action, 'site.temporaryChat')
+  pattern(map.site?.conversationUrl, 'site.conversationUrl')
+  if (map.modes) {
+    element(map.modes.switch, 'modes.switch')
+    state(map.modes.required, 'modes.required')
+    for (const id of map.modes.forbidden ?? []) state(id, 'modes.forbidden')
+    action(map.modes.select, 'modes.select')
+  }
+  if (map.attach) {
+    element(map.attach.chip, 'attach.chip')
+    if (map.attach.adding) element(map.attach.adding, 'attach.adding')
+  }
+  const { answer } = map
+  for (const [key, id] of [['turn', answer.turn], ['userTurn', answer.userTurn], ['code', answer.code], ['codeLabel', answer.codeLabel]] as const) if (id) element(id, `answer.${key}`)
+  for (const [key, id] of [['running', answer.running], ['done', answer.done], ['error', answer.error]] as const) state(id, `answer.${key}`)
+  pattern(answer.prefix, 'answer.prefix')
   return missing
 }
 
@@ -160,7 +275,7 @@ function references(map: Omit<UiMap, 'hash'>): string[] {
 export function loadUiMap(text: string, overlayText?: string): UiMap {
   const raw = parse(text) as Record<string, unknown>
   assertMap(raw)
-  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
+  const shipped = raw as unknown as Omit<UiMap, 'hash' | 'settings' | 'answer' | 'site' | 'modes' | 'attach' | 'actions' | 'network' | 'states' | 'errors'> & Partial<UiMap>
   const elements: Record<string, ElementSpec> = {}
   let overlayErrors: ErrorRule[] = []
   for (const [id, e] of Object.entries(shipped.elements)) {
@@ -180,6 +295,11 @@ export function loadUiMap(text: string, overlayText?: string): UiMap {
     provider: shipped.provider,
     uiRevision: shipped.uiRevision,
     locales: shipped.locales,
+    settings: { ...DEFAULT_SETTINGS, ...shipped.settings },
+    answer: { ...DEFAULT_ANSWER, ...shipped.answer },
+    ...(shipped.site ? { site: shipped.site } : {}),
+    ...(shipped.modes ? { modes: shipped.modes } : {}),
+    ...(shipped.attach ? { attach: shipped.attach } : {}),
     elements,
     actions: shipped.actions ?? {},
     network: shipped.network ?? {},
@@ -217,4 +337,9 @@ export function appendOverlay(path: string, element: string, candidate: Candidat
   doc.addIn(['elements', element, 'candidates'], node)
   writeFileDurable(path, doc.toString(), 0o600)
   return true
+}
+
+/** The elements and the label source an attachment chip is read by: the map's `attach`, else the ChatGPT-shaped defaults. */
+export function attachBinding(map: Pick<UiMap, 'attach'>): { chip: string; adding: string; label: 'aria-label' | 'text' } {
+  return { chip: map.attach?.chip ?? 'composer.attachment', adding: map.attach?.adding ?? 'composer.attachment-adding', label: map.attach?.label ?? 'aria-label' }
 }

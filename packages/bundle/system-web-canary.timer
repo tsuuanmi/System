@@ -1,0 +1,12 @@
+# Every six hours, on the hour of 00, 06, 12 and 18, up to 15 minutes late; a run
+# missed while the machine was off is made up at the next boot.
+[Unit]
+Description=System web canary, every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

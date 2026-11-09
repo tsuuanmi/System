@@ -18,9 +18,12 @@
         "ui-map@1.1",
         "ui-map@1.2",
         "ui-map@1.3",
-        "ui-map@1.4"
+        "ui-map@1.4",
+        "ui-map@1.5",
+        "ui-map@1.6",
+        "ui-map@1.7"
       ],
-      "description": "1.1 adds element `frames`; 1.2 adds `unverified` on elements and actions; 1.4 adds error-rule `feature` and `on`."
+      "description": "1.1 adds element `frames`; 1.2 adds `unverified` on elements and actions; 1.4 adds error-rule `feature` and `on`; 1.5 adds `settings`; 1.6 adds the attachment settings and the action `attachText`; 1.7 adds `answer`, then (WW2-ii) the Procedures' bindings: `site`, `modes`, more of `answer`, and the holds in `settings`, and the condition `countAtLeast`."
     },
     "provider": {
       "type": "string",
@@ -41,6 +44,79 @@
         "type": "string",
         "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$"
       }
+    },
+    "settings": {
+      "type": "object",
+      "description": "The site's own clocks, in milliseconds: `modeReadyMs` bounds the wait for the mode switch to render, `modeSettleMs` is how long the mode it shows must hold; `attachMinChars` is the size under which inputs stay in the one-part prompt, `attachWaitMs` bounds the wait for a pasted body to settle, `attachLabelChars` is how much of the body a chip's label must start with; `signedOutHoldMs` is how long a logged-out home must stay before it counts as signed out, `sendAckMs` how long a sent prompt may take to show as a new user turn, `answerPollMs`, `answerStableMs` and `answerTimeoutMs` the wait for an answer's polling, the time its text must hold and its deadline.",
+      "properties": {
+        "modeReadyMs": { "type": "integer", "minimum": 0, "maximum": 120000 },
+        "modeSettleMs": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "attachMinChars": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "attachWaitMs": { "type": "integer", "minimum": 0, "maximum": 300000 },
+        "attachLabelChars": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "signedOutHoldMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "sendAckMs": { "type": "integer", "minimum": 0, "maximum": 120000 },
+        "answerPollMs": { "type": "integer", "minimum": 10, "maximum": 10000 },
+        "answerStableMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "answerTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 3600000 }
+      },
+      "additionalProperties": false
+    },
+    "site": {
+      "type": "object",
+      "description": "The site itself (1.7). `origin`: where its home is (a caller may give another, a test's local one). `conversationUrl`: a regular expression over the path of a conversation's page, whose first group is its id. `temporaryChat`: the action that enters a temporary chat; absent, the site has none.",
+      "required": ["origin"],
+      "properties": {
+        "origin": { "type": "string", "pattern": "^https?://[^/\\s]+$", "maxLength": 256 },
+        "conversationUrl": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "temporaryChat": {
+          "type": "object",
+          "required": ["action"],
+          "properties": { "action": { "$ref": "#/$defs/id" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "modes": {
+      "type": "object",
+      "description": "The site's modes (1.7); absent, the site has none. `switch`: the element that shows the mode, awaited; absent at the deadline the mode is unverified, never assumed. `required`: the state that must hold. `forbidden`: states that must not, refused before a send. `select`: the action that moves to the required mode.",
+      "required": ["switch", "required"],
+      "properties": {
+        "switch": { "$ref": "#/$defs/id" },
+        "required": { "$ref": "#/$defs/id" },
+        "forbidden": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "select": { "$ref": "#/$defs/id" }
+      },
+      "additionalProperties": false
+    },
+    "attach": {
+      "type": "object",
+      "description": "How a pasted text the site turns into an attachment shows (1.7); absent, the elements `composer.attachment` and `composer.attachment-adding` and the chip's `aria-label`. `chip`: the element of one finished attachment, one match each. `adding`: the element that shows while one is being added. `label`: where a chip's label, which starts with the pasted text, is read: its `aria-label` attribute or its own text.",
+      "required": ["chip"],
+      "properties": {
+        "chip": { "$ref": "#/$defs/id" },
+        "adding": { "$ref": "#/$defs/id" },
+        "label": { "enum": ["aria-label", "text"] }
+      },
+      "additionalProperties": false
+    },
+    "answer": {
+      "type": "object",
+      "description": "How an answer is found and read. `turn`, `userTurn`: elements, one match per turn. `container`: the answer is the matched element (`self`) or its parent (`parent`). `prefix`: a regular expression for text the site puts before the answer, removed. `running`, `done`: page states for generating and finished; `error`: the site's own error, a state looked for inside the newest answer on every poll. `code`, `codeLabel`: elements inside the answer, one label per code block in order. `leakedTokens`: literal strings the site leaks into its visible text (a model's control tokens), removed where they sit at the very start or end of an output.",
+      "properties": {
+        "turn": { "$ref": "#/$defs/id" },
+        "userTurn": { "$ref": "#/$defs/id" },
+        "container": { "enum": ["self", "parent"] },
+        "prefix": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "running": { "$ref": "#/$defs/id" },
+        "done": { "$ref": "#/$defs/id" },
+        "error": { "$ref": "#/$defs/id" },
+        "code": { "$ref": "#/$defs/id" },
+        "codeLabel": { "$ref": "#/$defs/id" },
+        "leakedTokens": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 64 } }
+      },
+      "additionalProperties": false
     },
     "elements": {
       "type": "object",
@@ -137,6 +213,7 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$", "maxLength": 96 },
     "localized": {
       "type": "object",
       "description": "Regex per locale (anchored as written), e.g. {\"en\": \"^Send prompt$\"}.",
@@ -261,6 +338,25 @@
         },
         {
           "type": "object",
+          "description": "1.7: there are at least as many matches of `of` as of `as` (a finished marker under every answer).",
+          "required": [
+            "countAtLeast"
+          ],
+          "properties": {
+            "countAtLeast": {
+              "type": "object",
+              "required": ["of", "as"],
+              "properties": {
+                "of": { "$ref": "#/$defs/id" },
+                "as": { "$ref": "#/$defs/id" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "required": [
             "countIncreased"
           ],
@@ -298,6 +394,12 @@
                 "equals": {
                   "type": "string",
                   "maxLength": 256
+                },
+                "matches": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "A regular expression the attribute's value must match (an absent attribute never does)."
                 },
                 "present": {
                   "type": "boolean"
@@ -494,6 +596,8 @@
           "enum": [
             "click",
             "insertText",
+            "pasteText",
+            "attachText",
             "clearText",
             "press",
             "setFiles",

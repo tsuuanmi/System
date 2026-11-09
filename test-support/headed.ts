@@ -13,8 +13,8 @@ import { spawnSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import { discoverChrome, installManagedChrome } from '../packages/agents/src/chrome.ts'
-import { findXvfb } from '../packages/agents/src/display.ts'
+import { discoverChrome, installManagedChrome } from '../packages/web-worker/src/chrome.ts'
+import { findXvfb } from '../packages/web-worker/src/display.ts'
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 

@@ -75,6 +75,8 @@ export interface VerifyRequest {
   subject: string
   /** The criteria Artifact ID pinned at admission. */
   criteria: string
+  /** Further exact Artifact IDs the step names (`verify.inputs`), by slot. */
+  inputs?: Record<string, string>
 }
 
 /**
@@ -191,7 +193,7 @@ export class Capabilities {
 
   /**
    * The first registered Worker with every needed capability; every candidate's reason is kept.
-   * `only`: a takeover names the one Worker allowed (`system work retry --worker`).
+   * `only`: the one Worker allowed (`system work submit --worker`, or a takeover by `system work retry --worker`).
    */
   routeWorker(needs: readonly string[], only?: string): Route<WorkerPort> {
     return route(this.workers, needs, only)
@@ -219,7 +221,7 @@ function route<P extends { ref: string; capabilities: readonly string[] }>(ports
   let selected: P | undefined
   const candidates = ports.map((port) => {
     const missing = needs.filter((c) => !port.capabilities.includes(c))
-    if (only !== undefined && port.ref !== only) return { ref: port.ref, selected: false, reason: `the takeover names ${only}` }
+    if (only !== undefined && port.ref !== only) return { ref: port.ref, selected: false, reason: `only ${only} is allowed` }
     if (missing.length) return { ref: port.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
     if (selected) return { ref: port.ref, selected: false, reason: `capable; ${selected.ref} registered first` }
     selected = port

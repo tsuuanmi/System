@@ -15,9 +15,12 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
   off by default.
 - [web-driver](web-driver/README.md) — `@system/web-driver`, System 1's ChatGPT
   web driver, its UI map and its UI engine, ported whole; the page logic of the
-  `chatgpt-web` Runtime.
+  `web` Runtime (used by web-worker).
 - [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code
-  and Codex accounts as Workers.
+  and Codex accounts as Workers, and the seam to the web Runtime.
+- [web-worker](web-worker/README.md) — `@system/web-worker`, the optional,
+  off-by-default `web-worker` row: the `web` Runtime (browser, sign-in and
+  remote viewer) and the browser dependencies, depended on by nothing in the core.
 - [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
   `code.required-checks` and `research.citation-check`.
 - [effects](effects/README.md) — `@system/effects`, the `effects` row:

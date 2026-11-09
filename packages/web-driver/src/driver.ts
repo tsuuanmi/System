@@ -1,66 +1,77 @@
 // Ported from System 1 (tsuuanmi/system @ f199a277): packages/plugins/provider-chatgpt-web/src/driver.ts. Changes: packages/web-driver/README.md.
 /**
- * The ChatGPT Web provider driver (docs/design/provider-turns.md). Procedures only: every
- * element, action, and state comes from `ui/chatgpt-web.ui.yaml` through the UI engine
+ * The ChatGPT Web provider driver (docs/design/provider-turns.md), what is left of it after the
+ * turn went to the generic Procedures (WW2-iv): the sign-in check, the opening of a chat in Chat
+ * mode, the page diagnostics and the shipped map, for the login and the recheck. Every
+ * element, action, and state comes from `ui/chatgpt.ui.yaml` through the UI engine
  * (ADR-0021), so a UI change is a map change. Rules that are not UI:
  * - a new conversation starts in **Chat** mode, never Work (Work spends the Codex quota);
- * - one-shot turns run in Temporary chat; persistent turns bind `/c/<id>`;
- * - running is Stop in the action slot; completion also needs the answer's finished
- *   marker and stable text (the event stream stays open, so it is never consulted).
+ * - one-shot turns run in Temporary chat; persistent turns bind `/c/<id>`.
  */
-import { type AskOptions, type AskResult, type AuthState, bindingReporter, completionOptions, type DeleteOptions, modePresets, ProviderError, type ProviderDriver, type ProviderFeature, type ProviderMode, type ResearchState, type TurnSnapshot, splitAfterLastFence, waitForReport, waitForStableCompletion, withMissingSources } from './core/index.ts'
-import { copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, type StallEvent, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
+import { type OpenOptions, type AuthState, type DeleteOptions, ProviderError, type ProviderFeature, type ResearchState, type TurnSnapshot, sleep, splitAfterLastFence, withMissingSources } from './core/index.ts'
+import { copiedMarkdown, type CopyRefusedEvent, type DriftEvent, type HealEvent, deletionUnverified, inspectConversationMenu, linksIn, pageIdle, preWrapText, shippedMapOf, shippedMapProblemOf, UiEngine, type UiMap, type UiOutline } from './ui-ops/index.ts'
 import type { Frame, Locator, Page, Route } from 'patchright-core'
 
 /** How long the logged-out home must hold, with no composer, before it counts as signed out. */
 const LOGGED_OUT_HOLD_MS = 3000
 
 export interface DriverTimeouts {
-  /** Hard deadline for one turn (default 15 min). */
-  turnMs?: number
-  /** No-progress deadline (default 3 min). */
-  stallMs?: number
-  /** Unchanged-text window before an answer counts as complete (default 1.5 s). */
-  stableMs?: number
   pollMs?: number
   /** Page readiness after navigation (default 30 s). */
   readyMs?: number
-  /** After Deep research's acknowledgement, how long to wait for its frame before treating the reply as a clarifying question (default 60 s). */
-  researchStartMs?: number
   /** How long a reopened conversation may take to render before it counts as not observed (default 20 s). */
   snapshotMs?: number
-  /** How long a completed Deep research report may stay unreadable before it is UI drift (default 30 s). */
-  reportReadMs?: number
+  /** How long the Chat/Work switch may take to render (default: the map's `settings.modeReadyMs`). */
+  modeReadyMs?: number
+  /** How long the mode the switch shows must hold (default: the map's `settings.modeSettleMs`). */
+  modeSettleMs?: number
 }
+
+/** The stages `open` runs, as `onStage` reports them. */
+export type TurnStage = 'open' | 'auth'
+export interface StageEvent {
+  stage: TurnStage
+  status: 'start' | 'ok' | 'failed'
+  /** The first line of the failure, for `failed`. */
+  error?: string
+}
+
+/** What `diagnostics` keeps of a page: bounded, with no cookie, token, input value or text: lengths stand for text and values. */
+export interface PageDiagnostics {
+  url: string
+  viewport: { width: number; height: number }
+  uiMap: { revision: string; hash: string }
+  dom: string
+  truncated: boolean
+}
+const DIAGNOSTIC_DOM_CHARS = 20_000
 
 export interface DriverOptions {
   /** Site origin; tests point it at a local fake (default https://chatgpt.com). */
   origin?: string
-  /** Local overlay text (`<DSH_HOME>/system/ui/chatgpt-web.overlay.yaml`). */
+  /** Local overlay text (`<DSH_HOME>/system/ui/chatgpt.overlay.yaml`). */
   overlay?: string
   timeouts?: DriverTimeouts
-  /** Named mode presets (model and Power level as the site names them). */
-  modes?: Record<string, ProviderMode>
-  /** Preset used when a turn names none; with no default the site's current selection is kept and read back. */
-  defaultMode?: string
   /** The account's page opens are spaced at least this far apart (default 10 s, ADR-0030). */
   pageGapMs?: number
 }
 
-const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
 /** Sign-in steps run on signed-out pages, where the map's sign-out guard would always fire. */
 const NO_GUARDS = { guards: false } as const
 
-const MAP_URL = new URL('../ui/chatgpt-web.ui.yaml', import.meta.url)
+const MAP_URL = new URL('../ui/chatgpt.ui.yaml', import.meta.url)
 const CONVERSATION = /^\/c\/([0-9a-f-]{36})(?:[/?#]|$)/
 /** Every request that could delete or change a conversation: during a deletion only the bound one's deletion passes. */
 const DELETE_REQUEST = /\/backend-api\/conversations?(?:\/[^?#]*)?(?:[?#]|$)/
 
-/** The shipped map, with an optional local overlay merged after it. */
+/** The shipped map, with an optional local overlay merged after it; read and validated when this package loads, never again (WW6f). */
 export function shippedMap(overlay?: string): UiMap {
   return shippedMapOf(MAP_URL, overlay)
 }
+
+/** Why the shipped map did not load (one line), if it did not: the web-worker row reports its accounts unavailable with it. */
+export const shippedMapProblem = (file: URL = MAP_URL): string | undefined => shippedMapProblemOf(file)
+shippedMapProblem()
 
 /** The tools popover entry that proves each account feature. */
 const FEATURE_ENTRIES = [['deep-research', 'tools.deep-research'], ['web-search', 'tools.web-search'], ['image-generation', 'tools.create-image']] as const
@@ -76,7 +87,7 @@ function siteErrorPage(): ProviderError {
   return error
 }
 
-export class ChatGptWebDriver implements ProviderDriver<Page> {
+export class ChatGptWebDriver {
   readonly provider = 'chatgpt-web'
   /** The site's name for people: its Workers' display name starts with it (the roster). */
   readonly title = 'ChatGPT'
@@ -98,33 +109,24 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   onDrift: ((event: DriftEvent) => void) | undefined
   /** An answer's Copy that was not kept, so it was read as rendered text: counts only; the plugin records it (`provider.copy-refused`). */
   onCopyRefused: ((event: CopyRefusedEvent) => void) | undefined
-  /** A turn whose answer stalled or ran out of time, outlined; the plugin records it (`provider.stall`). */
-  onStall: ((event: StallEvent) => void) | undefined
-  /**
-   * A Deep research report as read: from its frame or inline, its length, and the source links it
-   * carries; counts only, never text (`provider.report-read`), so an unread citation is decidable.
-   */
-  onReport: ((event: { provider: string; path: ReportPath; chars: number; links: number }) => void) | undefined
   onHeal: ((event: HealEvent) => void) | undefined
   /** Records a chosen heal before it acts (INV-13); a throw aborts the action. */
   beforeHealedAction: ((event: HealEvent) => void | Promise<void>) | undefined
   /** Whether self-heal may run; the plugin turns it off when no decision store exists. */
   healEnabled: () => boolean = () => true
+  /** Each stage of a turn as it starts and ends; the Runtime writes it into its evidence record. */
+  onStage: ((event: StageEvent) => void) | undefined
   private readonly origin: string
-  private readonly timeouts: Required<DriverTimeouts>
+  private readonly timeouts: Required<Omit<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>> & Pick<DriverTimeouts, 'modeReadyMs' | 'modeSettleMs'>
   private readonly engines = new WeakMap<Page, UiEngine>()
-  readonly modes: readonly string[]
-  private readonly preset: (name: string | undefined) => ProviderMode | undefined
 
   constructor(options: DriverOptions = {}) {
     this.map = shippedMap(options.overlay)
     this.origin = (options.origin ?? 'https://chatgpt.com').replace(/\/$/, '')
-    this.preset = modePresets(this.provider, options.modes, options.defaultMode)
-    this.modes = Object.keys(options.modes ?? {})
     this.loginUrl = `${this.origin}/auth/login`
     this.stateOrigins = [this.origin]
     this.pageGapMs = options.pageGapMs ?? 10_000
-    this.timeouts = { turnMs: 15 * 60_000, stallMs: 3 * 60_000, stableMs: 1500, pollMs: 250, readyMs: 30_000, researchStartMs: 60_000, snapshotMs: 20_000, reportReadMs: 30_000, ...options.timeouts }
+    this.timeouts = { pollMs: 250, readyMs: 30_000, snapshotMs: 20_000, ...options.timeouts }
   }
 
   /**
@@ -171,102 +173,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     return `${this.provider}:${body.id}`
   }
 
-  /** One turn: open the conversation, select Chat, submit, and wait for the answer. */
-  async ask(page: Page, prompt: string, options: AskOptions): Promise<AskResult> {
-    const feature = options.feature ?? 'chat'
-    if (feature === 'deep-research' && options.conversation !== 'persistent') {
-      throw new ProviderError('invalid_input', 'chatgpt-web: Deep research needs a persistent conversation (it is not offered in Temporary chat)')
-    }
-    const preset = this.preset(options.mode)
-    await this.open(page, options)
-    const engine = this.engine(page)
-    const before = await engine.count('turn.assistant')
-    const previousResponse = before > 0 ? await this.answerText(engine) : null
-    // An unsent draft the site kept (as Gemini does in a login profile) never goes with the prompt.
-    await engine.act('composer.clear')
-    const mode = await this.selectMode(page, preset)
-    if (feature === 'deep-research' || feature === 'web-search') {
-      await engine.act('tools.open')
-      await engine.act(feature === 'deep-research' ? 'tools.deep-research' : 'tools.web-search')
-    }
-    await engine.act('composer.insert', { text: prompt })
-    try {
-      await this.requireChat(engine, 'before sending')
-      await this.refuseWorkComposer(engine)
-      options.signal?.throwIfAborted()
-      await options.beforeSend?.({ previousResponse, mode })
-    } catch (error) {
-      // Typed, never sent: the text is not left behind as a draft for the next turn or the operator.
-      await engine.act('composer.clear').catch(() => undefined)
-      throw error
-    }
-    await engine.act('composer.send')
-    const reply = await this.waitForAnswer(page, before, options.signal, options.deadlines, options.conversation === 'persistent' && !options.binding ? options.onBinding : undefined)
-    // Deep research answers with an acknowledgement; the report arrives later in its frame.
-    const text = feature === 'deep-research' ? await this.waitForResearch(page, reply, options.signal, options.deadlines) : await this.markdownOf(page, reply)
-    // The site answered with its own usage limit (a map rule `on: answer`, ADR-0034): sent, never
-    // resent. Only this answer is looked at, never an earlier one of the conversation.
-    if ((await engine.count('turn.assistant')) > 0) await engine.answerErrors((await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
-    if (options.conversation === 'temporary') return { text, binding: undefined, mode }
-    const binding = await this.binding(page)
-    if (options.binding !== undefined && binding !== options.binding) {
-      throw new ProviderError('session_broken', `chatgpt-web: conversation moved from ${options.binding} to ${binding}`)
-    }
-    return { text, binding, mode }
-  }
-
-  /**
-   * Select a model and Power level in the model menu, then read both back. Nothing is
-   * assumed: an unknown or locked model, or an unreachable level, fails before sending.
-   */
-  async selectMode(page: Page, wanted: ProviderMode | undefined): Promise<ProviderMode> {
-    const engine = this.engine(page)
-    try {
-      // View A: the Power level.
-      await this.openModelMenu(engine)
-      if (wanted?.effort) await this.selectEffort(engine, wanted.effort)
-      const effort = (await this.effortStatus(engine))?.level
-      // View B: the model list.
-      await engine.act('model.show-models')
-      let options = (await engine.resolve('model.option', 3000)).locator
-      if (wanted?.model) {
-        const names = await this.optionNames(options)
-        const match = options.filter({ hasText: new RegExp(`^\\s*${escapeRegex(wanted.model)}(?![\\w.])`) })
-        if ((await match.count()) !== 1) {
-          throw new ProviderError('config_error', `chatgpt-web: model ${wanted.model} is not offered (available: ${names.join(', ')})`)
-        }
-        if ((await match.getAttribute('aria-disabled')) === 'true') {
-          throw new ProviderError('config_error', `chatgpt-web: model ${wanted.model} is locked for this account`)
-        }
-        if ((await match.getAttribute('aria-checked')) !== 'true') {
-          await match.click()
-          // Choosing a model may close the menu or return to view A: reopen the list to read it back.
-          await this.openModelMenu(engine)
-          if ((await engine.count('model.option')) === 0) await engine.act('model.show-models')
-          options = (await engine.resolve('model.option', 3000)).locator
-        }
-      }
-      const states = await options.evaluateAll((els) => els.map((el) => [el.getAttribute('aria-checked'), (el as HTMLElement).innerText] as const))
-      const checked = states.filter(([state]) => state === 'true')
-      const model = checked.length === 1 ? this.optionName(checked[0]![1]) : undefined
-      if (wanted?.model && model !== wanted.model) throw new ProviderError('config_error', `chatgpt-web: model reads back as ${model ?? 'none'}, not ${wanted.model}`)
-      if (wanted?.effort && effort !== wanted.effort) throw new ProviderError('config_error', `chatgpt-web: Power reads back as ${effort ?? 'none'}, not ${wanted.effort}`)
-      return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) }
-    } finally {
-      await page.keyboard.press('Escape')
-      await engine.waitFor({ hidden: 'model.menu' }, 3000).catch(() => page.keyboard.press('Escape'))
-    }
-  }
-
-  /** Open the model menu unless it is already open. */
-  private async openModelMenu(engine: UiEngine): Promise<void> {
-    if ((await engine.count('model.menu')) === 0) await engine.act('model.open')
-  }
-
-  /**
-   * Which features this account offers (REQ-PRV-7): a new chat's "+" tools popover is opened and
-   * read, then closed. Nothing is typed or sent.
-   */
   async probeFeatures(page: Page): Promise<string[]> {
     await this.open(page, { conversation: 'persistent' })
     const engine = this.engine(page)
@@ -278,35 +184,122 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
   }
 
   /** Navigate to a new or bound conversation in the requested mode. */
-  async open(page: Page, options: AskOptions): Promise<void> {
+  async open(page: Page, options: OpenOptions): Promise<void> {
+    await this.reach(page, options)
+    await this.enterMode(page, this.engine(page), options)
+  }
+
+  /** Load the conversation's page and require a signed-in app on it. */
+  private async reach(page: Page, options: OpenOptions): Promise<void> {
     if (options.conversation === 'temporary' && options.binding !== undefined) {
       throw new ProviderError('invalid_input', 'chatgpt-web: a temporary turn has no conversation to continue')
     }
     const url = options.binding ? `${this.origin}/c/${options.binding}` : `${this.origin}/`
     // A kept tab already showing the conversation is checked as it is, never loaded again (ADR-0030).
-    if (!(options.binding && (await this.showing(page, options.binding)))) await page.goto(url, { waitUntil: 'domcontentloaded' })
-    // The site's own error page in place of the app (live, a fresh profile's first page): nothing
-    // is typed yet, so it is loaded once more; a second one fails as transient.
-    const auth = await this.checkAuth(page).catch(async (error: unknown) => {
-      if (!SITE_ERROR_PAGES.has(error as object)) throw error
-      await page.reload({ waitUntil: 'domcontentloaded' })
-      return this.checkAuth(page)
+    await this.staged('open', async () => {
+      if (!(options.binding && (await this.showing(page, options.binding)))) await page.goto(url, { waitUntil: 'domcontentloaded' })
     })
-    if (auth === 'signed-out') throw new ProviderError('reauth_required', 'chatgpt-web: signed out')
-    // Neither signed in nor signed out (outlined as drift): loading it again on this account only adds traffic.
-    if (auth === 'unknown') throw new ProviderError('ui_drift', 'chatgpt-web: the page showed neither the composer nor a sign-in page in time (outlined as a ui.drift of composer.input)')
-    const engine = this.engine(page)
+    await this.staged('auth', async () => {
+      // The site's own error page in place of the app (live, a fresh profile's first page): nothing
+      // is typed yet, so it is loaded once more; a second one fails as transient.
+      const auth = await this.checkAuth(page).catch(async (error: unknown) => {
+        if (!SITE_ERROR_PAGES.has(error as object)) throw error
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        return this.checkAuth(page)
+      })
+      if (auth === 'signed-out') throw new ProviderError('reauth_required', 'chatgpt-web: signed out')
+      // Neither signed in nor signed out (outlined as drift): loading it again on this account only adds traffic.
+      if (auth === 'unknown') throw new ProviderError('ui_drift', 'chatgpt-web: the page showed neither the composer nor a sign-in page in time (outlined as a ui.drift of composer.input)')
+    })
+  }
+
+  /** Chat on the home page (a temporary chat when asked), or kept in a bound conversation. */
+  private async enterMode(page: Page, engine: UiEngine, options: OpenOptions): Promise<void> {
     if (!options.binding) {
-      // A new conversation: Chat must be selected on the home page first.
-      if ((await engine.count('mode.group')) === 0) {
-        throw new ProviderError('ui_drift', 'chatgpt-web: the Chat/Work switch was not found; refusing to start a conversation in an unknown mode')
-      }
+      // A new conversation: Chat must be selected on the home page first, once the switch is there.
+      await this.awaitModeSwitch(engine)
       await this.ensureChat(engine, 'on the home page')
       if (options.conversation === 'temporary') await engine.act('temporary.enable')
     } else if ((await engine.count('mode.group')) > 0) {
       await this.ensureChat(engine, 'in the bound conversation')
     }
     await this.requireChat(engine, 'after opening the conversation')
+  }
+
+  /**
+   * Wait for the Chat/Work switch, which the site renders after the composer; a missing switch is
+   * never read as Chat mode. Once shown, the mode it reads must hold for `modeSettleMs`, sampled every poll (a site that
+   * restores its last mode late changes it under us); a change starts the hold again, and the whole wait ends at `modeReadyMs`. At the deadline
+   * the page's state is named: a challenge, a signed-out page, or a mode unknown.
+   */
+  private async awaitModeSwitch(engine: UiEngine): Promise<void> {
+    const readyMs = this.timeouts.modeReadyMs ?? this.map.settings.modeReadyMs
+    const settleMs = this.timeouts.modeSettleMs ?? this.map.settings.modeSettleMs
+    const deadline = Date.now() + readyMs
+    // The mode is sampled every poll: any change (or the switch going) starts the hold again; the whole wait ends at the deadline.
+    let seen: string | undefined
+    let since = 0
+    // Each page operation ends at the deadline too: one that hangs is a sample that never came (`undefined`). Naming the page's state afterwards gets a one-second window of its own.
+    const bounded = async <T>(run: Promise<T>, until = deadline): Promise<T | undefined> => {
+      let timer: NodeJS.Timeout | undefined
+      try {
+        return await Promise.race([run.catch(() => undefined), new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), Math.max(0, until - Date.now())) })])
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+    while (Date.now() < deadline) {
+      const shown = ((await bounded(engine.count('mode.group'))) ?? 0) > 0
+      // Only a mode that is known (pressed or not) can hold: an unreadable one is as good as no switch.
+      const now = shown ? await bounded(this.pressed(engine)) : undefined
+      if (now !== 'true' && now !== 'false') seen = undefined
+      else if (seen === undefined || now !== seen) { seen = now; since = Date.now() }
+      else if (Date.now() - since >= settleMs && Date.now() <= deadline) return
+      await sleep(Math.max(0, Math.min(this.timeouts.pollMs, deadline - Date.now())))
+    }
+    if (await bounded(engine.state('auth.challenge'), Date.now() + 1000)) throw new ProviderError('challenge', 'chatgpt-web: the site shows a challenge while the Chat/Work switch is awaited; nothing was sent')
+    if (await bounded(engine.state('auth.signed-out'), Date.now() + 1000)) throw new ProviderError('reauth_required', 'chatgpt-web: signed out while the Chat/Work switch was awaited')
+    throw new ProviderError('ui_drift', `chatgpt-web: mode unknown: the Chat/Work switch did not appear within ${readyMs / 1000} s (or its mode kept changing); refusing to start a conversation in an unknown mode`)
+  }
+
+  /** A stage of a turn, reported to `onStage` as it starts and ends. */
+  private async staged<T>(stage: TurnStage, run: () => Promise<T>): Promise<T> {
+    this.onStage?.({ stage, status: 'start' })
+    try {
+      const result = await run()
+      this.onStage?.({ stage, status: 'ok' })
+      return result
+    } catch (error) {
+      this.onStage?.({ stage, status: 'failed', error: (error as Error).message.split('\n')[0] ?? '' })
+      throw error
+    }
+  }
+
+  /**
+   * What the page shows, for a failure nobody watched: its URL without query, the viewport, the UI
+   * map's version, and the DOM's structure (tags, roles, aria-labels, data-testid, attribute names) with
+   * scripts, styles and input values taken out and every text node and other attribute value (URLs
+   * included) replaced by its length (`[text:42]`), cut to a fixed size. No cookie or storage is read.
+   */
+  async diagnostics(page: Page): Promise<PageDiagnostics> {
+    const captured = await page.evaluate((limit) => {
+      const root = document.documentElement.cloneNode(true) as HTMLElement
+      root.querySelectorAll('script,style,noscript,svg,link,meta,template,iframe').forEach((el) => el.remove())
+      root.querySelectorAll('input,textarea,select,[contenteditable]').forEach((el) => { el.textContent = '' })
+      // Structure only: tags, attribute names, and the values of role, aria-label and data-testid; every other value and every text node is its length.
+      for (const el of [root, ...root.querySelectorAll('*')]) {
+        for (const attr of [...el.attributes]) {
+          if (/^(on|style$|value$|checked$|srcset$)/.test(attr.name)) el.removeAttribute(attr.name)
+          else if (!/^(role|aria-label|data-testid)$/.test(attr.name) && attr.value !== '') el.setAttribute(attr.name, `[text:${attr.value.length}]`)
+        }
+      }
+      const texts = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let node = texts.nextNode(); node; node = texts.nextNode()) if ((node.nodeValue ?? '').trim() !== '') node.nodeValue = `[text:${node.nodeValue!.length}]`
+      const html = root.outerHTML
+      return { html: html.slice(0, limit), truncated: html.length > limit, width: window.innerWidth, height: window.innerHeight }
+    }, DIAGNOSTIC_DOM_CHARS)
+    const at = new URL(page.url(), this.origin)
+    return { url: `${at.origin}${at.pathname}`, viewport: { width: captured.width, height: captured.height }, uiMap: { revision: this.map.uiRevision, hash: this.map.hash }, dom: captured.html, truncated: captured.truncated }
   }
 
   /** The page shows `binding` already: its URL is the conversation's, and its turns are rendered. */
@@ -539,7 +532,7 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     }
     // Its citations may stand outside the answer's own container (inline source pills): every
     // link to another site after the prompt, in the conversation, follows the report as a source.
-    return withMissingSources(await this.markdownOf(page, rendered), await this.linksAfterPrompt(engine))
+    return withMissingSources((await this.markdownOf(page, rendered)).text, await this.linksAfterPrompt(engine))
   }
 
   /** The links to another site after the last prompt, within its conversation (href → text, first text wins). */
@@ -607,52 +600,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     }
   }
 
-  /** The canonical conversation id from the URL, waiting briefly for it to appear. */
-  async binding(page: Page): Promise<string> {
-    const deadline = Date.now() + this.timeouts.readyMs
-    for (;;) {
-      const id = this.bindingOf(page)
-      if (id) return id
-      if (Date.now() >= deadline) throw new ProviderError('session_broken', 'chatgpt-web: no conversation id after the answer')
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-  }
-
-  private optionName(text: string): string {
-    // A radio's text may carry a note after the name, e.g. "GPT-5.5\nLeaving on October 14".
-    return text.split('\n')[0]!.trim()
-  }
-
-  private async optionNames(options: import('patchright-core').Locator): Promise<string[]> {
-    return (await options.allInnerTexts()).map((t) => this.optionName(t))
-  }
-
-  private async effortStatus(engine: UiEngine): Promise<{ level: string; index: number; total: number } | undefined> {
-    const status = await engine.resolve('model.power-status', 2000).catch(() => undefined)
-    const text = status ? await status.locator.innerText() : ''
-    const m = /^\s*([^,]+),\s*(\d+)\s+of\s+(\d+)/.exec(text)
-    return m ? { level: m[1]!.trim(), index: Number(m[2]), total: Number(m[3]) } : undefined
-  }
-
-  /** Step the Power slider with arrow keys until the status names the wanted level. */
-  private async selectEffort(engine: UiEngine, level: string): Promise<void> {
-    const control = (await engine.resolve('model.power', 3000)).locator
-    await control.focus()
-    const seen: string[] = []
-    for (const key of ['ArrowLeft', 'ArrowRight'] as const) {
-      for (let step = 0; step < 8; step++) {
-        const status = await this.effortStatus(engine)
-        if (!status) throw new ProviderError('ui_drift', 'chatgpt-web: the Power level cannot be read')
-        if (!seen.includes(status.level)) seen.push(status.level)
-        if (status.level === level) return
-        if (key === 'ArrowLeft' ? status.index <= 1 : status.index >= status.total) break
-        await control.press(key)
-        await engine.waitFor({ anyOf: [{ visible: 'model.power-status' }] }, 1000)
-      }
-    }
-    throw new ProviderError('config_error', `chatgpt-web: Power level ${level} is not offered (available: ${seen.join(', ')})`)
-  }
-
   engine(page: Page): UiEngine {
     let engine = this.engines.get(page)
     if (!engine) {
@@ -681,60 +628,6 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
     }
   }
 
-  /**
-   * The textbox names the tab it sends to ("Work with ChatGPT" on Work, live 2026-10-18): one that
-   * names Work never sends, whatever the switch shows (the switch is hidden in some views).
-   */
-  private async refuseWorkComposer(engine: UiEngine): Promise<void> {
-    const input = await engine.resolve('composer.input', 1000).catch(() => undefined)
-    const label = input ? await input.locator.getAttribute('aria-label') : null
-    if (label && /\bWork\b/.test(label)) {
-      throw new ProviderError('ui_drift', `chatgpt-web: the composer reads "${label.slice(0, 60)}" before sending; refusing to use Work (Codex quota)`)
-    }
-  }
-
-  /**
-   * Wait for Deep research's report. If no research frame appears within `researchStartMs`,
-   * the reply was a clarifying question, which is returned so the caller can answer it in the
-   * same session.
-   */
-  private async waitForResearch(page: Page, reply: string, signal: AbortSignal | undefined, deadlines: AskOptions['deadlines']): Promise<string> {
-    const engine = this.engine(page)
-    const startBy = Date.now() + this.timeouts.researchStartMs
-    for (;;) {
-      const state = await this.researchState(page, engine, reply)
-      if (state.running || state.done) break
-      if (Date.now() > startBy) {
-        // A clarifying question, or a run this map cannot see: the page is outlined, so a missed run can be mapped.
-        if (this.onStall) await engine.stall('research-start').then((event) => this.onStall?.(event), () => undefined)
-        return reply
-      }
-      signal?.throwIfAborted()
-      await page.waitForTimeout(500)
-    }
-    // How this run's report was read: per run, since one driver serves concurrent turns.
-    let path: ReportPath = 'inline'
-    const state = async (): Promise<ResearchState> => {
-      const read = await this.researchState(page, engine, reply)
-      if (read.path) path = read.path
-      return read
-    }
-    const report = waitForReport(state, this.timeouts, { provider: this.provider, element: 'research.report-title', deadlines, signal })
-    void report.then((text) => this.onReport?.({ provider: this.provider, path, chars: text.length, links: (text.match(/https?:\/\/[^\s)>"\]]+/g) ?? []).length }), () => undefined)
-    return report.catch(async (error: unknown) => {
-      await this.stalled(engine, 'research', error)
-      // A completed report that cannot be read is outlined as drift evidence of the report's entry.
-      if (error instanceof ProviderError && error.kind === 'ui_drift') await engine.drift('research.report-title').catch(() => undefined)
-      throw error
-    })
-  }
-
-  /**
-   * The report in its frame: the container of the report's title (live layout of 2026-10-12),
-   * then its citation links as a `Sources:` list, since rendered text keeps only the labels: the
-   * frame's own, then the source pills the conversation shows after the prompt, outside the frame
-   * (live 2026-10-18: a framed report whose links were all pills in the thread).
-   */
   private async reportText(engine: UiEngine, frame: Frame): Promise<string> {
     const title = await engine.findIn('research.report-title', frame)
     if (!title) return ''
@@ -761,25 +654,30 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
    * the clipboard, and kept only when its words are the rendered answer's words (the clipboard
    * may be shared). Otherwise the rendered text stands, followed by the answer's cited links.
    */
-  private async markdownOf(page: Page, rendered: string): Promise<string> {
+  private async markdownOf(page: Page, rendered: string): Promise<{ text: string; blocks: Array<{ label: string; code: string }> }> {
     const engine = this.engine(page)
     const text = await copiedMarkdown(engine, rendered, async () => (await engine.resolve('turn.assistant.done', 1000)).locator.last(), async (markdown) => {
       // Copy rebuilds code blocks from the page and loses their line breaks: take each block's
       // text from its rendered element instead, or keep the rendered answer if they do not pair.
       const [fenced, rest] = splitAfterLastFence(markdown)
-      const fences = [...fenced.matchAll(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm)]
+      const fences = fencedBlocks(fenced)
       if (!fences.length) return markdown.trim()
-      const answer = (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..')
-      const code = await engine.findIn('answer.code', answer)
-      const blocks = code ? await code.locator.evaluateAll((els) => els.map((el) => {
-        ;(el as HTMLElement).style.whiteSpace = 'pre-wrap'
-        return (el as HTMLElement).innerText.replace(/\n$/, '')
-      })) : []
+      const blocks = await this.renderedBlocks(engine)
       if (blocks.length !== fences.length) return rendered
-      let index = 0
-      return `${fenced.replace(/^(```[^\n]*)\n([\s\S]*?)\n```[ \t]*$/gm, (_, open: string) => `${open}\n${blocks[index++]}\n\`\`\``)}${rest}`.trim()
+      // The live Copy (2026-11-07) drops a block's info string: the block's own header names it.
+      let at = 0
+      let out = ''
+      fences.forEach((fence, index) => {
+        const block = blocks[index]!
+        out += fenced.slice(at, fence.start) + fencedText(fence.info || block.label, block.code)
+        at = fence.end
+      })
+      return `${out}${fenced.slice(at)}${rest}`.trim()
     }, async () => (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..'))
-    return /^```/m.test(text) ? text : this.withFencedBlocks(engine, text)
+    // A block's own fence lines (its content) do not make the text Markdown: a block still needs its fence when none of that name is in the text.
+    const blocks = await this.renderedBlocks(engine)
+    const unfenced = blocks.some(({ label }) => !new RegExp(`^\\s{0,3}(?:\`{3,}|~{3,})\\s*${escapeRegExp(label)}\\s*$`, 'm').test(text))
+    return { text: unfenced ? this.withFencedBlocks(blocks, text) : text, blocks }
   }
 
   /**
@@ -788,14 +686,27 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
    * written as a fenced block again, in place where the text still carries it, else after the text.
    * Not in System 1's driver as such: it kept Markdown fences only when Copy worked (W8).
    */
-  private async withFencedBlocks(engine: UiEngine, text: string): Promise<string> {
+  private withFencedBlocks(blocks: Array<{ label: string; code: string }>, text: string): string {
+    let result = text
+    for (const { label, code: body } of blocks) {
+      const fenced = fencedText(label, body)
+      const where = new RegExp(`${label ? `${escapeRegExp(label)}[ \\t]*\\n+` : ''}${escapeRegExp(body)}`)
+      result = where.test(result) ? result.replace(where, () => fenced) : `${result}\n\n${fenced}`
+    }
+    return result
+  }
+
+  /** The final answer's rendered code blocks: each one's text, rows kept, and its header's label as the info string. */
+  private async renderedBlocks(engine: UiEngine): Promise<Array<{ label: string; code: string }>> {
     const answer = (await engine.resolve('turn.assistant', 1000)).locator.last().locator('xpath=..')
     const code = await engine.findIn('answer.code', answer).catch(() => undefined)
-    if (!code) return text
-    const blocks = await code.locator.evaluateAll((els) => els.map((el) => {
-      // The header sits before the block's `pre`, in it or in one of its wrappers.
-      let label = ''
-      for (let node: Element | null = el.closest('pre') ?? el; node && !label && node.tagName !== 'MAIN'; node = node.parentElement) {
+    if (!code) return []
+    return code.locator.evaluateAll((els) => els.map((el) => {
+      // The live code widget (2026-11-07) names its language in its own header bar.
+      const bar = el.closest('[data-code-block]')?.querySelector('[data-markdown-copy="exclude"]')
+      let label = bar ? ((bar as HTMLElement).innerText ?? '').trim().split('\n')[0]!.trim() : ''
+      // Otherwise the header sits before the block's `pre`, in it or in one of its wrappers.
+      if (!bar) for (let node: Element | null = el.closest('pre') ?? el; node && !label && node.tagName !== 'MAIN'; node = node.parentElement) {
         const header = node.previousElementSibling
         const line = header && !header.querySelector('pre') ? (header.textContent ?? '').trim() : ''
         if (line && line.length <= 40 && !line.includes('\n')) label = line
@@ -804,39 +715,41 @@ export class ChatGptWebDriver implements ProviderDriver<Page> {
       ;(el as HTMLElement).style.whiteSpace = 'pre-wrap'
       return { label, code: (el as HTMLElement).innerText.replace(/\n$/, '') }
     })).catch(() => [])
-    let result = text
-    for (const { label, code: body } of blocks) {
-      const fenced = `\`\`\`${label}\n${body}\n\`\`\``
-      const where = new RegExp(`${label ? `${escapeRegExp(label)}[ \\t]*\\n+` : ''}${escapeRegExp(body)}`)
-      result = where.test(result) ? result.replace(where, () => fenced) : `${result}\n\n${fenced}`
-    }
-    return result
   }
 
-  private async waitForAnswer(page: Page, before: number, signal: AbortSignal | undefined, deadlines: AskOptions['deadlines'], onBinding?: (binding: string) => void): Promise<string> {
-    const engine = this.engine(page)
-    const reportBinding = bindingReporter(() => this.bindingOf(page), onBinding)
-    const read = async () => {
-      reportBinding()
-      const count = await engine.count('turn.assistant')
-      if (count <= before) return { responsePresent: false, text: '', html: '', running: true }
-      const text = await this.answerText(engine)
-      const finished = (await engine.count('turn.assistant.done')) >= count
-      const running = (await engine.state('turn.running')) || !finished
-      return { responsePresent: true, text, html: '', running }
-    }
-    const completed = await waitForStableCompletion(read, completionOptions(this.timeouts, deadlines, signal)).catch(async (error: unknown) => {
-      await this.stalled(engine, 'answer', error)
-      throw error
-    })
-    return completed.text
-  }
+}
 
-  /** A stall or a deadline, with the page as it stands: outlined, never retried from here. */
-  private async stalled(engine: UiEngine, phase: string, error: unknown): Promise<void> {
-    if (!this.onStall || !(error instanceof ProviderError) || (error.kind !== 'provider_stalled' && error.kind !== 'timeout')) return
-    this.onStall(await engine.stall(phase))
+/**
+ * The fenced code blocks of Markdown by CommonMark's rule: a closing fence is the opening one's
+ * character, at least as long, with nothing after it; a shorter fence, or one of the other character, inside is content. `start`
+ * and `end` bound the block's lines in the text; an unclosed block is not one.
+ */
+function fencedBlocks(markdown: string): Array<{ start: number; end: number; info: string }> {
+  const found: Array<{ start: number; end: number; info: string }> = []
+  let open: { start: number; char: string; length: number; info: string } | undefined
+  let at = 0
+  for (const line of markdown.split('\n')) {
+    const end = at + line.length
+    if (!open) {
+      // A backtick fence's info string holds no backtick; a tilde fence's may.
+      const start = /^ {0,3}(?:(`{3,})([^`]*)|(~{3,})(.*))$/.exec(line)
+      if (start) open = { start: at, char: start[1] ? '`' : '~', length: (start[1] ?? start[3])!.length, info: (start[2] ?? start[4])!.trim() }
+    } else {
+      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)
+      if (close && close[1]![0] === open.char && close[1]!.length >= open.length) {
+        found.push({ start: open.start, end, info: open.info })
+        open = undefined
+      }
+    }
+    at = end + 1
   }
+  return found
+}
+
+/** A block written as Markdown: its fence one backtick longer than the longest run in its body (three at least). */
+function fencedText(label: string, body: string): string {
+  const fence = '`'.repeat(Math.max(3, 1 + Math.max(0, ...(body.match(/`+/g) ?? []).map((run) => run.length))))
+  return `${fence}${label}\n${body}\n${fence}`
 }
 
 function escapeRegExp(text: string): string {

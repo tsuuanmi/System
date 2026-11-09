@@ -25,6 +25,15 @@ before(async () => {
     if (req.url === '/article') {
       res.writeHead(200, { 'content-type': 'text/html' })
       res.end('<html><body><p>System verifies <b>citations</b>&nbsp;exactly &amp; carefully.</p><script>var hidden = "secret quote here"</script></body></html>')
+    } else if (req.url === '/paris') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<p>Its capital, largest city and main cultural and economic centre is <a href="/wiki/Paris">Paris</a>, with a metropolitan population of over 13 million.</p>')
+    } else if (req.url === '/france') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<p>Paris is the capital and most populous city of France.</p>')
+    } else if (req.url === '/forbidden') {
+      res.writeHead(403)
+      res.end('no bots')
     } else {
       res.writeHead(404)
       res.end('not found')
@@ -183,6 +192,83 @@ test('a malformed sources file, no sources, or an empty quote fails', async () =
   assert.equal((await cite('not an object')).result.verdict, 'fail')
 })
 
+/** Like `cite`, with the `citations-v2` criteria the verifier pins itself, and the report as a second input when given. */
+async function citeV2(json: unknown, report?: string) {
+  const artifacts = store()
+  const verifier = citationCheck(artifacts)
+  const criteria = await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
+  const subject = await sources(artifacts, json)
+  const reportId = report === undefined ? undefined : (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(report), mediaType: 'text/markdown', classification: 'public', producer })).id
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'citations', capability: 'research.citation-check', subject, criteria, ...(reportId ? { inputs: { report: reportId } } : {}) })
+  const evidence = artifacts.get(result.evidence[0]!)
+  return { result, evidence: evidence.state === 'stored' ? evidence.envelope.content as { problems: string[]; confirmedRatio?: number; results: { id: string; found: boolean; readable?: boolean; wordRatio?: number; passage?: string }[] } : undefined }
+}
+
+const parisQuote = 'Its capital, largest city and main cultural and economic centre is Paris.'
+const franceQuote = 'Paris is the capital and largest city of France.'
+
+test('v2: the shortened and the reworded canary quotes pass; v1 still rejects both', async () => {
+  for (const [path, quote] of [['paris', parisQuote], ['france', franceQuote]] as const) {
+    const json = { sources: [{ id: 's1', url: `${base}/${path}`, quote, claims: ['c'] }] }
+    const v2 = await citeV2(json)
+    assert.equal(v2.result.verdict, 'pass', v2.result.reason)
+    assert.ok((v2.evidence?.results[0]?.wordRatio ?? 0) >= 0.8)
+    assert.match(v2.evidence?.results[0]?.passage ?? '', /paris/)
+    assert.ok((v2.evidence?.results[0]?.passage ?? '').length <= 300)
+    assert.equal((await cite(json)).result.verdict, 'inconclusive')
+  }
+})
+
+test('v2: a quote of other words is not confirmed; the reason names the source with its ratio', async () => {
+  const { result, evidence } = await citeV2({ sources: [{ id: 's1', url: `${base}/france`, quote: 'Berlin is the largest metropolis on the river Spree', claims: ['c'] }] })
+  assert.equal(result.verdict, 'inconclusive')
+  assert.match(result.reason, /s1 \(HTTP 200, 22% of the quote/)
+  assert.equal(evidence?.results[0]?.found, false)
+})
+
+test('v2: the words must come in order', async () => {
+  const { evidence } = await citeV2({ sources: [{ id: 's1', url: `${base}/france`, quote: 'France of city populous most and capital the is Paris', claims: ['c'] }] })
+  assert.equal(evidence?.results[0]?.found, false)
+})
+
+test('v2: a report citing [s2] with only s1 in sources fails, naming s2', async () => {
+  const { result } = await citeV2({ sources: [{ id: 's1', url: `${base}/france`, quote: franceQuote, claims: ['c'] }] }, 'Paris is the capital [s1]. It is big [s2].')
+  assert.equal(result.verdict, 'fail')
+  assert.match(result.reason, /s2/)
+  assert.doesNotMatch(result.reason, /s1/)
+})
+
+test('v2: a source the report never cites fails, naming it; Markdown links are not citations', async () => {
+  const two = { sources: [
+    { id: 's1', url: `${base}/france`, quote: franceQuote, claims: ['c'] },
+    { id: 's2', url: `${base}/paris`, quote: parisQuote, claims: ['c'] },
+  ] }
+  const unused = await citeV2(two, 'Paris is the capital [s1]. See [the guide](https://example.com).')
+  assert.equal(unused.result.verdict, 'fail')
+  assert.match(unused.result.reason, /s2/)
+  assert.equal((await citeV2(two, 'Paris [s1] [s2], [s1].')).result.verdict, 'pass')
+})
+
+test('v2: a 403 source is unreadable, not wrong: with one confirmed readable source it passes', async () => {
+  const { result, evidence } = await citeV2({ sources: [
+    { id: 's1', url: `${base}/france`, quote: franceQuote, claims: ['c'] },
+    { id: 's2', url: `${base}/forbidden`, quote: parisQuote, claims: ['c'] },
+  ] })
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.equal(evidence?.confirmedRatio, 1)
+  assert.equal(evidence?.results[1]?.readable, false)
+  assert.match(result.reason, /s2 \(HTTP 403/)
+})
+
+test('v2: when no source is readable the verdict is inconclusive', async () => {
+  const { result, evidence } = await citeV2({ sources: [
+    { id: 's1', url: `${base}/forbidden`, quote: franceQuote, claims: ['c'] },
+    { id: 's2', url: 'http://127.0.0.1:1/x', quote: parisQuote, claims: ['c'] },
+  ] })
+  assert.equal(result.verdict, 'inconclusive')
+  assert.equal(evidence?.confirmedRatio, undefined)
+})
+
 test('normalize folds markup, entities, typographic quotes and whitespace', () => {
   assert.equal(normalize('<p>It’s  &quot;A&quot;\n<b>B</b></p>'), 'it\'s "a" b')
 })
@@ -193,6 +279,44 @@ test('normalize drops Markdown code and emphasis marks and keeps link text (real
   assert.equal(normalize('**bold** and *italic* and __strong__ and _em_'), 'bold and italic and strong and em')
   assert.equal(normalize('see [the guide](https://example.com/a_b?x=1) now'), 'see the guide now')
   assert.equal(normalize('[`fetch`](https://example.com) returns **`ok`**'), 'fetch returns ok')
+})
+
+test('normalize finds a quote whose punctuation follows a link (France, Wikipedia)', () => {
+  const page = '<p>Its capital, largest city and main cultural and economic centre is <a href="/wiki/Paris">Paris</a>, with a metropolitan population of over 13 million.</p>'
+  const quote = 'Its capital, largest city and main cultural and economic centre is Paris, with a metropolitan population of over 13 million.'
+  assert.ok(normalize(page).includes(normalize(quote)))
+})
+
+test('normalize finds a quote that ends a link before a full stop (Paris, Wikipedia)', () => {
+  const page = "<p>As the capital of France, Paris is the seat of France's national government<a href=\"#cite\">.</a> As the capital of France, Paris is the seat of France's <a href=\"/wiki/Government\">national government</a>.</p>"
+  const quote = "As the capital of France, Paris is the seat of France's national government."
+  assert.ok(normalize(page).includes(normalize(quote)))
+  assert.ok(normalize("see (<a href=\"/x\">this</a> ) one").includes(normalize('see (this) one')))
+})
+
+test('normalize treats inline elements as no word boundary (RFC 9113, RFC 9001)', () => {
+  const tcp = '<p>HTTP/2 runs over a TCP connection\n (<span>[<a href="#RFC0793" class="xref">TCP</a>]</span>).</p>'
+  assert.ok(normalize(tcp).includes(normalize('runs over a TCP connection ([TCP]).')))
+  const alpn = '<p>negotiated <span>in TLS</a></span> [<a href="#TLS-ALPN" class="xref">TLS-ALPN</a>].</p>'
+  assert.ok(normalize(alpn).includes(normalize('in TLS [TLS-ALPN].')))
+  const quic = '<p>TLS 1.3 <span>[<a href="#TLS13" class="xref">TLS13</a>]</span> is used with QUIC.</p>'
+  assert.ok(normalize(quic).includes(normalize('TLS 1.3 [TLS13] is used with QUIC.')))
+})
+
+test('normalize keeps block elements as word boundaries', () => {
+  assert.ok(!normalize('<p>alpha</p><p>beta</p>').includes(normalize('alphabeta')))
+  assert.ok(normalize('<p>alpha</p><p>beta</p>').includes(normalize('alpha beta')))
+})
+
+test('normalize reads a Markdown table cell separator as whitespace (France infobox)', () => {
+  const page = '<tr><th>Capital and largest city</th><td><a href="/wiki/Paris">Paris</a> (de facto)</td></tr>'
+  const quote = 'Capital and largest city | Paris (de facto)'
+  assert.ok(normalize(page).includes(normalize(quote)))
+})
+
+test('normalize does not find a quote with different words', () => {
+  const page = '<p>The capital is <a href="/wiki/Paris">Paris</a>, with many people.</p>'
+  assert.ok(!normalize(page).includes(normalize('The capital is Lyon, with many people.')))
 })
 
 test('a quote that differs from the page only in Markdown formatting is found', async () => {
@@ -245,6 +369,30 @@ test('the reason names every unconfirmed source with why: quote not found, or fe
 test('a ratio outside 0 to 1 is not valid criteria', () => {
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 1.5 })).success, false)
   assert.equal(citationCriteriaSchema.safeParse(criteriaWith({ minConfirmedRatio: 0 })).success, true)
+})
+
+// 2026-11-07: Xvfb processes leaked by a Worker's own tests held a finished attempt "running" for 33 min.
+test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftover is stopped', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: leaky\n    run: ln -s "$(command -v sleep)" Xvfb && (setsid ./Xvfb 120 >/dev/null 2>&1 &) ; sleep 0.3\n  - name: clean\n    run: echo fine\n')
+  const { task, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'v1', input: task, operatorId: 't' })
+  // The leftover is known by the pid the verifier names, never by its name: this machine is shared.
+  let leftover = 0
+  try {
+    const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
+    assert.equal(result.verdict, 'fail')
+    assert.match(result.reason, /leaky \(left running: Xvfb pid \d+\)/)
+    leftover = Number(/Xvfb pid (\d+)/.exec(result.reason)![1])
+    assert.doesNotMatch(result.reason, /clean/)
+    const run = artifacts.get(result.evidence[0]!)
+    assert.match(JSON.stringify(run.state === 'stored' && (run.envelope.content as { leftovers: string[] }).leftovers), /Xvfb pid \d+/)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.throws(() => process.kill(leftover, 0), 'the leftover is stopped')
+  } finally {
+    if (leftover) try { process.kill(leftover, 'SIGKILL') } catch { /* stopped */ }
+  }
 })
 
 /** A repository whose checks are `checks`, with `files` beside them (package.json, test files), and a change on it; returns the verdict. */
@@ -313,7 +461,7 @@ test('a check with paths runs only when the change touches one of them, and the 
   await assert.rejects(verifier.criteria({ capability: 'x', name: 'n', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    paths: []\n'))).task, operatorId: 't' }), /is invalid/)
 })
 
-test('System\'s own checks: a change to docs alone runs only docs; a change to code, tests or the Charter runs them all', async () => {
+test('System\'s own checks: a change to docs alone runs only docs; code, tests or the Charter run the main checks; the web Runtime adds web', async () => {
   const { readFileSync } = await import('node:fs')
   const { parse } = await import('yaml')
   const { checksFileSchema, selected } = await import('../src/checks.ts')
@@ -321,7 +469,10 @@ test('System\'s own checks: a change to docs alone runs only docs; a change to c
   const run = (touched: string[]) => own.checks.filter((c) => selected(c, touched)).map((c) => c.name)
   assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
   const all = own.checks.map((c) => c.name)
-  for (const file of ['packages/work/src/controller.ts', 'tests/work.test.ts', 'pnpm-lock.yaml', 'docs/requirements/purpose.md', 'workflows/code-checks.yaml']) assert.deepEqual(run([file]), all, file)
+  const main = all.filter((name) => name !== 'web')
+  for (const file of ['packages/work/src/controller.ts', 'tests/work.test.ts', 'docs/requirements/purpose.md', 'workflows/code-checks.yaml']) assert.deepEqual(run([file]), main, file)
+  // The Website Worker's headed-browser tests run only when the web Runtime, its driver or the build inputs change (PLAN WW).
+  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'pnpm-lock.yaml']) assert.deepEqual(run([file]), all, file)
 })
 
 test('a commit checked as it is (code-checks.yaml on its own) runs every check, paths or not', async () => {

@@ -34,7 +34,7 @@
       name: '@system/fakes'
       disabled: true
       config:
-        workers: [code-write, research, web-search]
+        workers: [code-write, research, web-search, tier.standard]
         verifiers: [code.required-checks, research.citation-check]
         effects: [git.publish]
 
@@ -55,15 +55,24 @@
       config:
         remote: origin
         base: dev  # System's changes integrate into dev; only the operator merges dev into main (ADR-0008)
-        mergeInto: [dev]  # the base branches System may merge into; any other base refuses a Workflow that merges
+        mergeInto: [dev, web-workers]  # the base branches System may merge into; any other base refuses a Workflow that merges
         apiUrl: https://api.github.com
         tokenRef: GITHUB_TOKEN
+
+    # The web Runtime (WW2a): `web` accounts of the agents row, served through a
+    # genuine headed Chrome. Optional and off: with it off those accounts are reported
+    # unavailable ("the web-worker row is disabled") and nothing of the browser is loaded.
+    # A profile patch turns it on with `disabled: false` (docs/operations/runbook.md).
+    - id: web-worker
+      name: '@system/web-worker'
+      disabled: true
 
     # Agent CLI accounts as Workers (ADR-0004, ADR-0005). An account whose CLI
     # or credential is missing is skipped with its reason (`system workers`).
     # One entry per account; routing takes the first capable one. Brainstorm
     # roles (workflows/brainstorm.yaml) are capabilities too: the two
-    # independent proposals go to different providers.
+    # independent proposals go to different providers. So are the lanes of
+    # research-fanout: a profile gives each lane to a different web Account.
     - id: agents
       name: '@system/agents'
       config:
@@ -74,7 +83,7 @@
         accounts:
           - ref: claude-code/default
             runtime: claude-code
-            capabilities: [code-write, research, web-search, brainstorm.idea-a, brainstorm.synthesis]
+            capabilities: [code-write, research, web-search, brainstorm.idea-a, brainstorm.synthesis, research.plan, research.lane-a, research.lane-b, research.synthesis]
             tokenRef: CLAUDE_CODE_OAUTH_TOKEN
             # A step asks for a tier with the capability tier.<name>.
             models:

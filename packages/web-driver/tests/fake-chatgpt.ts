@@ -13,7 +13,7 @@
  *   visible form does too, without the textbox;
  * - the textbox's accessible name is no longer "Ask ChatGPT" (since 2026-10-11; the new text is a stand-in);
  * - the model menu (`menu "Select ChatGPT model"`) has two views, as checked live on 2026-10-12: view A shows
- *   the Power slider (arrow keys; `status` "Instant, 1 of 3."; levels Instant, Medium, High) and a view toggle
+ *   the Power slider (arrow keys; `status` "Instant, 1 of 5."; levels Instant, Low, Medium, High, Max, or `powers`) and a view toggle
  *   (`[data-model-picker-view-toggle]`) labelled with the level; view B, after the toggle, shows only the model
  *   radios. Choosing a model returns to view A;
  * - the "+" popover lists tools as buttons ("Deep research Get a detailed report"); Deep research inserts a
@@ -46,6 +46,32 @@ function totpValid(secret: string, token: string): boolean {
 export interface FakeOptions {
   /** Start on the Work tab (the trap the driver must avoid). Default true. */
   startOnWork?: boolean
+  /**
+   * Code blocks as the live site renders them (checked 2026-11-07): no `pre`; a
+   * `[data-code-block]` with the language in its header bar and the text in
+   * `[data-code-block-source] code`. Default: System 1's `pre > code` with a header before it.
+   */
+  codeWidget?: boolean
+  /** Fences shown as plain paragraph text, never as code blocks (`default` account, live 2026-11-08: "~~~~report" lines as they were written). */
+  literalFences?: boolean
+  /** The Chat/Work switch is rendered at all (default true); false: it never appears (the driver must refuse to send). */
+  modeSwitch?: boolean
+  /** The switch appears this long after the page loads, the composer being there already (default 0). */
+  modeSwitchDelayMs?: number
+  /** This long after the switch appears the site flips the mode to Work (a late restore of the last mode; 0: never). */
+  modeFlipToWorkMs?: number
+  /** The composer takes a pasted text/plain as the live editor does (default true); false: the paste is ignored, only typed text goes in. */
+  pasteTaken?: boolean
+  /** A pasted text over this many characters becomes an attachment chip, as on a Team workspace (live 2026-11-07), not composer text (0: never). */
+  attachOver?: number
+  /** The chip shows "Adding pasted text…" this long before it holds the text (default 0; a huge value: never done). */
+  attachAddingMs?: number
+  /** The chip's label is not the start of the pasted text. */
+  attachWrongLabel?: boolean
+  /** This long after load the app turns into the logged-out home (a session that ended; 0: never). */
+  signOutAfterMs?: number
+  /** This long after load a challenge heading appears (0: never). */
+  challengeAfterMs?: number
   /** Clicking Chat does nothing (the driver must refuse to send). */
   chatToggleBroken?: boolean
   signedIn?: boolean
@@ -99,6 +125,13 @@ export interface FakeOptions {
   copied?: (markdown: string) => string
   /** Delay before streaming starts, in ms. */
   thinkMs?: number
+  /**
+   * The answer's text is streamed (none for an empty `answer`), then the site gives up like the live one
+   * (2026-11-07): the answer holds only "This response couldn’t load", with no Copy and nothing running.
+   */
+  loadFailure?: boolean
+  /** The send reaches the site, but the page shows neither the user's turn nor an answer (the acknowledgement is lost). */
+  dropSend?: boolean
   /** Model radios in the model menu. */
   models?: string[]
   /** Models shown but locked for this account. */
@@ -140,6 +173,12 @@ export interface FakeOptions {
   report?: string
   /** Whether the account has a model picker (default true); without one the driver refuses to send. */
   modelPicker?: boolean
+  /** The model menu is already open when the page loads (a previous attempt left it so). */
+  menuOpen?: boolean
+  /** The Power levels, lowest first (default five). */
+  powers?: string[]
+  /** The Power slider ignores the arrow keys: it stays at the first level. */
+  powerStuck?: boolean
   /** Features this account's tools popover offers (default all). */
   features?: string[]
   /** Deep research asks a clarifying question instead of starting. */
@@ -160,6 +199,8 @@ export interface Sent {
   conversationId: string | undefined
   model: string
   power: string
+  /** The model menu was open when the prompt went in. */
+  menuOpen: boolean
   deepResearch: boolean
   webSearch: boolean
 }
@@ -266,6 +307,7 @@ ${missing ? `<div role="alert">Unable to load conversation ${missing}</div>` : '
       <button type="button" aria-label="Select ChatGPT model" aria-haspopup="menu" aria-expanded="false" id="picker"${options.modelPicker === false ? ' hidden' : ''}>Instant</button>
       <button type="button" aria-label="Dictate">d</button>
       <span id="slot"></span>
+      <div data-composer-attachments id="attachments"></div>
     </form>
   </main>
 </main>
@@ -273,7 +315,7 @@ ${options.floatingChat ? '<section role="dialog" aria-label="Quick chat" data-fl
 <div role="menu" aria-label="Select ChatGPT model" id="model-menu" hidden>
   <div role="menuitem" data-model-picker-view-toggle id="power-label">Instant</div>
   <div id="view-a">
-    <div role="status" id="power-status">Instant, 1 of 3.</div>
+    <div role="status" id="power-status">Instant, 1 of ${options.powers.length}.</div>
     <div role="menuitem" aria-label="Power" tabindex="0" id="power" data-reasoning-slider><span role="slider" aria-hidden="true">●──</span></div>
   </div>
   <div id="model-radios" hidden></div>
@@ -287,18 +329,19 @@ ${options.floatingChat ? '<section role="dialog" aria-label="Quick chat" data-fl
 <script>
 const { options, conversationId } = ${state}
 let mode = options.startOnWork ? 'work' : 'chat'
-const POWERS = ['Instant', 'Medium', 'High']
+const POWERS = options.powers
 let power = 0
 let model = options.models[0]
 let temporary = new URLSearchParams(location.search).get('temporary-chat') === 'true'
 let running = false
+let modesShown = false
 let convId = conversationId
 const $ = (id) => document.getElementById(id)
 function render() {
   $('mode-chat').setAttribute('aria-pressed', String(mode === 'chat'))
   $('mode-work').setAttribute('aria-pressed', String(mode === 'work'))
   $('input').setAttribute('aria-label', options.workComposer || mode === 'work' ? 'Work with ChatGPT' : 'Chat with ChatGPT')
-  $('modes').hidden = temporary
+  $('modes').hidden = temporary || !modesShown
   $('temp').hidden = temporary
   $('temp-off').hidden = !temporary
   $('title').textContent = temporary ? 'Temporary chat' : 'Where should we begin?'
@@ -314,7 +357,7 @@ function render() {
 }
 function renderMenu() {
   $('power-label').textContent = POWERS[power]
-  $('power-status').textContent = POWERS[power] + ', ' + (power + 1) + ' of 3.'
+  $('power-status').textContent = POWERS[power] + ', ' + (power + 1) + ' of ' + POWERS.length + '.'
   $('picker').textContent = POWERS[power]
   $('model-radios').innerHTML = options.models.map((m) => '<div role="menuitemradio" aria-checked="' + (m === model) + '"'
     + (options.lockedModels.includes(m) ? ' aria-disabled="true"' : '') + ' data-model="' + m + '">' + m + '</div>').join('')
@@ -326,10 +369,12 @@ function showView(view) { $('view-a').hidden = view !== 'a'; $('model-radios').h
 $('power-label').onclick = () => showView($('model-radios').hidden ? 'b' : 'a')
 $('picker').onclick = () => { const open = $('model-menu').hidden; $('model-menu').hidden = !open; $('picker').setAttribute('aria-expanded', String(open)); showView('a'); renderMenu() }
 $('power').addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowRight') power = Math.min(2, power + 1)
+  if (options.powerStuck) return
+  if (e.key === 'ArrowRight') power = Math.min(POWERS.length - 1, power + 1)
   if (e.key === 'ArrowLeft') power = Math.max(0, power - 1)
   renderMenu()
 })
+if (options.menuOpen) { $('model-menu').hidden = false; $('picker').setAttribute('aria-expanded', 'true'); renderMenu() }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('model-menu').hidden = true; $('tools').hidden = true; $('picker').setAttribute('aria-expanded', 'false') } })
 document.querySelector('[aria-label="Add files and more"]').onclick = () => {
   const features = options.features ?? ['deep-research', 'web-search', 'image-generation']
@@ -362,11 +407,48 @@ $('conv-confirm').onclick = async () => {
   $('conv-dialog').hidden = true
   if (res.ok) location.assign('/')
 }
+if (options.modeSwitch) setTimeout(() => {
+  modesShown = true
+  render()
+  if (options.modeFlipToWorkMs) setTimeout(() => { mode = 'work'; render() }, options.modeFlipToWorkMs)
+}, options.modeSwitchDelayMs)
+if (options.signOutAfterMs) setTimeout(() => {
+  $('composer').remove()
+  document.body.insertAdjacentHTML('beforeend', '<form data-logged-out><input aria-label="Ask anything"></form><button data-login-button>Get started</button>')
+}, options.signOutAfterMs)
+if (options.challengeAfterMs) setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<h1>Verify you are human</h1>'), options.challengeAfterMs)
 $('mode-chat').onclick = () => { if (!options.chatToggleBroken) mode = 'chat'; render() }
 $('mode-work').onclick = () => { mode = 'work'; render() }
 $('temp').onclick = () => { temporary = true; history.pushState({}, '', '/?temporary-chat=true'); render() }
 $('temp-off').onclick = () => { temporary = false; history.pushState({}, '', '/'); render() }
 $('input').addEventListener('input', render)
+// Like the live editor: a paste is handled by the page (the default is prevented), as one insertion of its text/plain.
+const attached = []
+$('input').addEventListener('paste', (e) => {
+  if (!options.pasteTaken) return
+  e.preventDefault()
+  const pasted = e.clipboardData.getData('text/plain')
+  if (options.attachOver && pasted.length > options.attachOver) {
+    // Like the live site: a long paste becomes a chip labelled with the start of the text and an ellipsis, after an adding state.
+    const adding = document.createElement('span')
+    adding.textContent = 'Adding pasted text…'
+    $('attachments').append(adding)
+    setTimeout(() => {
+      adding.remove()
+      const surface = document.createElement('span')
+      surface.className = 'composer-attachment-surface'
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('aria-label', (options.attachWrongLabel ? 'Something else entirely' : pasted.replace(/\\s+/g, ' ').slice(0, 60)) + '…')
+      surface.append(button)
+      $('attachments').append(surface)
+      attached.push(pasted)
+    }, options.attachAddingMs)
+    return
+  }
+  $('input').dataset.pasted = String(Number($('input').dataset.pasted || 0) + 1)
+  document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
+})
 $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!running && $('input').textContent.trim()) send() } })
 async function send() {
   const deepResearch = !!$('input').querySelector('[data-prompt-link-href="app://connector_openai_deep_research"]')
@@ -375,17 +457,19 @@ async function send() {
   const chips = [...$('input').querySelectorAll('[contenteditable="false"]')].map((el) => el.innerText)
   let prompt = $('input').innerText
   for (const chip of chips) prompt = prompt.replace(chip, '')
-  prompt = prompt.replace(/\u00a0/g, ' ').trim()
+  prompt = [prompt.replace(/\\u00a0/g, ' ').trim(), ...attached].join('\\n')
+  attached.length = 0
+  $('attachments').textContent = ''
   $('input').textContent = ''
   const user = document.createElement('div')
   user.className = 'turn'
   user.innerHTML = '<h4 class="sr-only">You said:</h4><div></div><button aria-label="Copy message">c</button><button aria-label="Edit message">e</button>'
   user.querySelector('div').textContent = prompt
-  $('log').append(user)
+  if (!options.dropSend) $('log').append(user)
   running = true
   render()
   const res = await fetch('/backend-api/f/conversation', { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ prompt, mode, temporary, conversationId: convId, model, power: POWERS[power], deepResearch, webSearch }) })
+    body: JSON.stringify({ prompt, mode, temporary, conversationId: convId, model, power: POWERS[power], menuOpen: !$('model-menu').hidden, deepResearch, webSearch }) })
   const reader = res.body.getReader()
   const answer = document.createElement('div')
   answer.className = 'turn'
@@ -405,7 +489,7 @@ async function send() {
         if (!temporary) history.pushState({}, '', '/c/' + convId)
       }
       if (event.delta !== undefined) {
-        if (!started) { $('log').append(answer); started = true }
+        if (!started) { if (!options.dropSend) $('log').append(answer); started = true }
         raw += event.delta
         answer.querySelector('p').textContent += event.delta
       }
@@ -445,6 +529,12 @@ async function send() {
         answer.before(holder)
         holder.outerHTML = '<iframe title="Deep research" src="/web-sandbox.oai/' + convId + '/' + event.research + '" style="display:block;width:960px;height:640px;border:0"></iframe>' + (options.framePills ? ${JSON.stringify(INLINE_PILLS)} : '')
       }
+      if (event.failed) {
+        if (!started) { $('log').append(answer); started = true }
+        answer.querySelector('p').textContent = 'This response couldn\u2019t load'
+        running = false
+        render()
+      }
       if (event.done) {
         // Like the live site: the finished answer renders its Markdown; Copy copies the Markdown itself.
         const markdown = raw
@@ -462,10 +552,15 @@ async function send() {
   }
 }
 function renderMarkdown(text) {
+  // Code blocks are set aside while the inline rules run, so their backticks stay as they are.
+  const blocks = []
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\x60\x60\x60([^\\n]*)\\n([\\s\\S]*?)\\n\x60\x60\x60/g, (_, lang, code) => '<div>' + (lang || 'Code') + '</div><pre><code>' + code + '</code></pre>')
+    .replace(options.literalFences ? /$^/ : /(\x60{3,}|~{3,})([^\\n]*)\\n([\\s\\S]*?)\\n\\1[\x60~]*[ \\t]*(?=\\n|$)/g, (_, _fence, lang, code) => '\x00' + (blocks.push(options.codeWidget
+      ? '<div data-client-defined-widget="code_block"><div data-code-block="true" data-markdown-copy="code-block"><div data-markdown-copy="exclude" contenteditable="false"><div class="min-w-0 truncate flex-1">' + (lang || 'Code') + '</div><button type="button" aria-label="Copy code"></button></div><div data-code-block-source="true"><code><span><span>' + code + '</span></span></code></div></div></div>'
+      : '<div>' + (lang || 'Code') + '</div><pre><code>' + code + '</code></pre>') - 1) + '\x00')
   return escaped.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>').replace(/\x60([^\x60]+)\x60/g, '<code>$1</code>')
     .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>')
+    .replace(/\x00(\\d+)\x00/g, (_, i) => blocks[i])
 }
 // The floating quick chat mirrors the conversation, its turns copied without their source pills.
 if (options.floatingChat) {
@@ -517,9 +612,9 @@ export class FakeChatGpt {
 
   constructor(options: FakeOptions = {}) {
     this.options = {
-      startOnWork: true, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
+      startOnWork: true, modeSwitch: true, pasteTaken: true, attachOver: 0, attachAddingMs: 0, attachWrongLabel: false, modeSwitchDelayMs: 0, modeFlipToWorkMs: 0, signOutAfterMs: 0, challengeAfterMs: 0, codeWidget: false, literalFences: false, chatToggleBroken: false, signedIn: true, loginOffer: false, requireCookie: false, rotateOnLoad: false, deleteMenu: true, captcha: false, interstitial: false, deviceBound: false, floatingChat: false, researchPanel: false, framePills: false, unmarkedComposer: false, workComposer: false, researchInline: false, inlineReportDelayMs: 0, untitledReport: false, errorPages: 0, loadFailure: false, dropSend: false, loggedOutHome: false, logoutFlashMs: 0, paneMenu: true, dialogTarget: '', userId: 'user-fake123', sendLabel: 'Send', sendTestId: '',
       answer: 'OK', thinkMs: 300, models: ['Latest', 'GPT-6', 'GPT-5.6 Sol', 'GPT-5.5'], lockedModels: [],
-      researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true,
+      researchMs: 1500, researchHeld: false, report: 'Deep research report body.', clarify: false, features: ['deep-research', 'web-search', 'image-generation'], modelPicker: true, menuOpen: false, powers: ['Instant', 'Low', 'Medium', 'High', 'Max'], powerStuck: false,
       mfa: 'totp', email: 'operator@example.test', password: 'correct horse', totpSecret: 'JBSWY3DPEHPK3PXP',
       copied: (markdown) => markdown.replace(/(```)[^\n]*\n([\s\S]*?)\n```/g, (_, fence: string, code: string) => `${fence}\n${code.split('\n').join('')}\n${fence}`), ...options,
     }
@@ -610,6 +705,7 @@ export class FakeChatGpt {
         res.write(`data: ${JSON.stringify({ delta: word })}\n\n`)
         await new Promise((resolve) => setTimeout(resolve, 60))
       }
+      if (this.options.loadFailure) return void res.write(`data: ${JSON.stringify({ failed: true })}\n\n`)
       conversation.turns.push({ role: 'assistant', text: answer })
       res.write(`data: ${JSON.stringify({ done: true, research: user.research ?? false, copy: this.options.copied(answer) })}\n\n`)
       // Like the live site, the stream is left open after the answer is complete.

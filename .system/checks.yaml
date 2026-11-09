@@ -40,3 +40,11 @@ checks:
     run: corepack pnpm smoke
     timeoutSeconds: 600
     paths: *code
+  - name: web
+    # The Website Worker's tests, which drive a real headed Chrome on Xvfb
+    # (milestone WW). Kept out of unit and smoke so the main path stays fast and
+    # System is tested without the web Runtime; it runs only when a change
+    # touches the web Runtime, its driver or what they are built from.
+    run: corepack pnpm test:web
+    timeoutSeconds: 600
+    paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/**, .system/**, package.json, pnpm-lock.yaml]

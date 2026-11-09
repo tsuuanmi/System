@@ -68,8 +68,8 @@ type Soon<T> = T | Promise<T>
 
 /** The Work operations the CLI offers. */
 export interface WorkCommands {
-  admitFile(path: string, input: string | undefined, goal?: string): Promise<WorkRecord>
-  admitTask(capabilities: string[], input: string | undefined, goal?: string): Promise<WorkRecord>
+  admitFile(path: string, input: string | undefined, goal?: string, worker?: string): Promise<WorkRecord>
+  admitTask(capabilities: string[], input: string | undefined, goal?: string, worker?: string): Promise<WorkRecord>
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
@@ -100,6 +100,12 @@ export interface LoginView {
   skipped?: number
 }
 
+export interface RecheckView {
+  ready: boolean
+  state: string
+  detail: string
+}
+
 export interface RemoteLoginView {
   url: string
   port: number
@@ -109,7 +115,7 @@ export interface RemoteLoginView {
 
 export interface WorkersView {
   registered: string[]
-  accounts: { ref: string; available: boolean; reason: string; version?: string }[]
+  accounts: { ref: string; runtime: string; available: boolean; reason: string; version?: string }[]
 }
 
 /** What the thin client's commands run against: the Host, over its socket. */
@@ -119,6 +125,8 @@ export interface ClientHost {
   credentials(): CredentialCommands
   workers(): Promise<WorkersView>
   login(ref: string, cookies: string | undefined): Promise<LoginView>
+  /** Check an account that is quarantined or cooling down, sending nothing; ready again only when the check passes. */
+  recheck(ref: string): Promise<RecheckView>
   /** The remote sign-in: `show` is given where to reach the viewer once it is up; resolves when it ends. Ctrl-C cancels it. */
   loginRemote(ref: string, show: (view: RemoteLoginView) => void): Promise<LoginView>
 }
@@ -220,13 +228,13 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         const { registered, accounts } = await host.workers()
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
-          io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}\n`)
+          io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`} (${a.runtime})\n`)
         }
         return 0
       })
     })
   workers.command('login <ref>')
-    .description('sign a chatgpt-web account in: import a cookie file, sign in remotely over SSH (--remote), or without either open a window for a manual sign-in (needs a display on the Host); operators only')
+    .description('sign a web account (web/<site>/<name>) in: import a cookie file, sign in remotely over SSH (--remote), or without either open a window for a manual sign-in (needs a display on the Host); operators only')
     .option('--cookies <file>', 'a JSON (browser-extension export) or Netscape cookie file for chatgpt.com; read once, never stored')
     .option('--remote', 'sign in, and clear a Cloudflare challenge by hand, in a viewer you reach through an SSH tunnel; no display needed')
     .action((ref: string, options: { cookies?: string; remote?: boolean }) => {
@@ -245,6 +253,15 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         if (report.imported !== undefined) io.out(`imported ${report.imported} cookie(s), skipped ${report.skipped ?? 0} of other sites\n`)
         io.out(`${ref}: ${report.signedIn ? 'signed in' : `not signed in: ${report.detail}`}\n`)
         return report.signedIn ? 0 : 1
+      })
+    })
+  workers.command('recheck <ref>')
+    .description('check a web account that is quarantined or cooling down (sign-in, Chat mode, temporary chat), sending nothing, and make it ready again only when the check passes; operators only')
+    .action((ref: string) => {
+      select(async () => {
+        const report = await host.recheck(ref)
+        io.out(`${ref}: ${report.ready ? 'ready' : `not ready (${report.state})`}: ${report.detail}\n`)
+        return report.ready ? 0 : 1
       })
     })
   const task = program.command('task').description('task inputs for Work')
@@ -410,15 +427,16 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
     .option('--goal <id>', 'count the Work toward this Goal: its context goes to the Task and its budget limits admission')
+    .option('--worker <ref>', 'only this Worker may take its Worker steps (see system workers)')
     .option('--no-run', 'admit only')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
-    .action((options: { workflow?: string; capability?: string[]; input?: string; goal?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
+    .action((options: { workflow?: string; capability?: string[]; input?: string; goal?: string; worker?: string; run: boolean; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
         const commands = host.work()
         const admitted = options.workflow
-          ? await commands.admitFile(options.workflow, options.input, options.goal)
-          : await commands.admitTask(options.capability!, options.input, options.goal)
+          ? await commands.admitFile(options.workflow, options.input, options.goal, options.worker)
+          : await commands.admitTask(options.capability!, options.input, options.goal, options.worker)
         io.out(`${admitted.id}\n`)
         if (!options.run) return 0
         return exitOf(await commands.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))

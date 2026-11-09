@@ -12,7 +12,7 @@ import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts'
-import type { AgentsService } from '@system/agents'
+import { WEB_WORKER_DISABLED, type AgentsService, type WebWorkerService } from '@system/agents'
 import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
@@ -120,10 +120,11 @@ async function workersView(ctx: Context): Promise<WorkersView> {
   return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
 }
 
-async function agentsService(ctx: Context): Promise<AgentsService> {
-  const agents = ctx.get('agents') as AgentsService | undefined
-  if (!agents) throw new Error('the agents row is not mounted (run `system doctor`)')
-  return agents
+/** The web Runtime's service: its row is optional, and off by default. */
+function webWorkerService(ctx: Context): WebWorkerService {
+  const web = ctx.get('webWorker') as WebWorkerService | undefined
+  if (!web) throw new Error(WEB_WORKER_DISABLED)
+  return web
 }
 
 /** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT (status 0) or on new code on disk (`UPGRADE_EXIT`). */
@@ -166,9 +167,10 @@ async function runHost(ctx: Context): Promise<number> {
       decisions: (chain) => work.decisions(chain),
       credentials,
       workers: () => workersView(ctx),
-      login: async (ref, cookies) => (await agentsService(ctx)).login(ref, cookies),
-      loginRemote: async (ref) => (await agentsService(ctx)).loginRemote(ref),
-      loginWait: async (ref, cancel) => (await agentsService(ctx)).loginWait(ref, cancel),
+      login: async (ref, cookies) => webWorkerService(ctx).login(ref, cookies),
+      loginRemote: async (ref) => webWorkerService(ctx).loginRemote(ref),
+      loginWait: async (ref, cancel) => webWorkerService(ctx).loginWait(ref, cancel),
+      recheck: async (ref) => webWorkerService(ctx).recheck(ref),
     },
   }).catch(async (error: unknown) => {
     await host.close()

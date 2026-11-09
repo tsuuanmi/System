@@ -1,8 +1,8 @@
 // Ported from System 1 (tsuuanmi/system @ f199a277): packages/provider-core/src/driver.ts. Changes: packages/web-driver/README.md.
 /**
- * The provider driver contract (ADR-0005, docs/design/provider-turns.md#driver-interface,
- * docs/design/browser-runtime.md#accounts-ctxaccounts-provider-agnostic-multi-account).
- * Generic over the page type so this package stays engine-free.
+ * The types the driver and the UI engine share (ADR-0005, docs/design/provider-turns.md#driver-interface):
+ * the sign-in state, a conversation's snapshot, the options of `open` and of a deletion. The driver contract
+ * itself (`ProviderDriver`) went with the legacy turn.
  */
 
 /** What the provider page shows now: the last assistant response and whether it is generating. */
@@ -18,136 +18,13 @@ export interface TurnSnapshot {
 export type AuthState = 'signed-in' | 'signed-out' | 'unknown'
 export type ConversationMode = 'temporary' | 'persistent'
 
-/** A model selection as the website names it; either part may be left to the site. */
-export interface ProviderMode {
-  model?: string
-  /** Reasoning effort level (ChatGPT calls it Power: Instant, Medium, High). */
-  effort?: string
-}
-
 export type ProviderFeature = 'chat' | 'deep-research' | 'web-search'
 
-export interface AskOptions {
+/** What `open` needs of a conversation: temporary or persistent, and the persistent one to continue. */
+export interface OpenOptions {
   conversation: ConversationMode
-  /** Name of a configured mode preset; the driver's default preset when absent. */
-  mode?: string | undefined
-  /** `deep-research` needs a persistent conversation. Default `chat`. */
-  feature?: ProviderFeature | undefined
   /** Persistent conversation to continue. */
   binding?: string | undefined
-  signal?: AbortSignal
-  /** Two-clock completion deadlines for this turn; the driver's defaults when absent. */
-  deadlines?: { timeoutMs: number; stallTimeoutMs: number; now?: () => number } | undefined
-  /**
-   * Called after the prompt is in the composer and the mode is verified, immediately
-   * before the send. The runtime persists the turn receipt here (INV-4); a throw aborts
-   * the turn without sending. `previousResponse` is the last answer already in the
-   * conversation (null for a new one), the boundary used by reconciliation.
-   */
-  beforeSend?: (boundary: { previousResponse: string | null; mode: ProviderMode }) => void | Promise<void>
-  /**
-   * Called once, as soon as a new persistent conversation has its canonical id (before the
-   * answer completes), so a crash mid-answer can still be reconciled by reopening it.
-   */
-  onBinding?: (binding: string) => void
-}
-
-export interface AskResult {
-  text: string
-  /** Canonical conversation id for persistent turns; undefined for temporary ones. */
-  binding: string | undefined
-  /** The mode read back from the page before sending (never assumed). */
-  mode: ProviderMode
-}
-
-export interface ProviderDriver<Page = unknown> {
-  readonly provider: string
-  /**
-   * The site's name for people (optional; plain text on one line, at most 64 characters), such as
-   * its product name: its Workers carry it (`capability-descriptor@1.8` `title`), and the roster's
-   * display name starts with it. Only the driver names its site; never a routing input (INV-11).
-   */
-  readonly title?: string
-  /**
-   * Routing capabilities this driver implements and its tests prove (docs/design/routing.md
-   * #capability-vocabulary), e.g. `reason`, `persistent-conversation`, `deep-research`.
-   */
-  readonly capabilities: readonly string[]
-  /**
-   * Website features an account may or may not have (REQ-PRV-7), each a routing capability once
-   * `probeFeatures` proved it on that account, e.g. `deep-research`, `web-search`.
-   */
-  readonly features?: readonly string[]
-  /**
-   * The names of the configured mode presets. An account tier mapped to another name could never
-   * run, so its Worker is unavailable rather than failing each turn (`config_error`).
-   */
-  readonly modes?: readonly string[]
-  /** Which of `features` this signed-in account offers now, read from the site without sending anything. */
-  probeFeatures?(page: Page): Promise<string[]>
-  /** Where an interactive login starts. */
-  readonly loginUrl: string
-  /**
-   * The site ties a session to the browser profile that signed it in (ADR-0030): every operation
-   * on the account runs as a page of its persistent login profile, and its portable state is
-   * never loaded or written back.
-   */
-  readonly sessionBound?: boolean
-  /** A session-bound account's page loads are spaced at least this far apart, in milliseconds. */
-  readonly pageGapMs?: number
-  /**
-   * The longest prompt the site takes, in characters, when it is known: its Workers declare it, so
-   * admission never sends it a longer one (ADR-0032).
-   */
-  readonly maxInputChars?: number
-  /**
-   * Nothing generating, no dialog or menu open: a session-bound account keeps such a page, after
-   * a completed turn, for the session's next turn (ADR-0030). Absent, no page is kept.
-   */
-  pageIdle?(page: Page): Promise<boolean>
-  /** Origins whose cookies, localStorage, and IndexedDB make up the portable state. */
-  readonly stateOrigins: readonly string[]
-  /**
-   * Whether the page is signed in. `save` marks the operator's Save, which then reads `identity`:
-   * a driver may count an account the page names but does not show as signed in there (Gemini's
-   * account button while a side panel is collapsed), never for a turn.
-   */
-  checkAuth(page: Page, options?: { save?: boolean }): Promise<AuthState>
-  /** A stable identity hint for the signed-in account; only its hash is ever stored. */
-  identity(page: Page): Promise<string>
-  ask(page: Page, prompt: string, options: AskOptions): Promise<AskResult>
-  /**
-   * Optional credential sign-in on a signed-out page (ADR-0017): a bounded state machine
-   * that asks `code` for one-time codes (`totp` computed locally, or `email`), stops at any
-   * challenge (never solved), and gives up after two code submissions.
-   */
-  signIn?(page: Page, credentials: { email: string; password: string }, code: (kind: 'totp' | 'email') => Promise<string>): Promise<void>
-  /** Reopen a bound conversation and report its last answer and whether it is still generating. */
-  snapshot(page: Page, binding: string, options?: { feature?: ProviderFeature }): Promise<TurnSnapshot>
-  /**
-   * The features whose conversations `deleteConversation` is proven to delete (a live check per
-   * feature, PROP-0004 Phase 5). A conversation of another feature is kept, and reported so.
-   */
-  readonly deletes?: readonly ProviderFeature[]
-  /**
-   * Delete one bound conversation from the account's history: open it, verify the page shows
-   * exactly that conversation, delete it from its own menu (never a bulk deletion), confirm when
-   * the site asks, and check that it is gone. `gone` when the site shows positively that it no
-   * longer exists, before anything is clicked. Anything else throws a ProviderError: a deletion
-   * is never assumed.
-   */
-  deleteConversation?(page: Page, binding: string, options?: DeleteOptions): Promise<'deleted' | 'gone'>
-  /**
-   * The deletion's UI map entries not yet checked on the live site. While any is, the runtime
-   * deletes nothing (an irreversible click on a guessed entry could reach another chat).
-   */
-  deletionUnverified?(): readonly string[]
-  /**
-   * Read-only evidence of how a conversation is deleted (PROP-0004 Phase 5): open it, outline the
-   * page, open its own menu, outline that, and close it with Escape; no menu item is ever chosen.
-   * Outlines hold structure only, never text (`ui-outline@1.0`).
-   */
-  inspectConversation?(page: Page, binding: string): Promise<PageOutline[]>
 }
 
 /** How one deletion runs (PROP-0004 Phase 5). */
@@ -156,12 +33,4 @@ export interface DeleteOptions {
   beforeConfirm?: () => void | Promise<void>
   /** A confirm was already recorded for it: only check that it is gone, and never click again. */
   confirmed?: boolean
-}
-
-/** A structural page outline (`ui-outline@1.x`, docs/design/ui-operations.md#drift-evidence): never text. */
-export interface PageOutline {
-  schema: 'ui-outline@1.0' | 'ui-outline@1.1'
-  root: string
-  nodes: unknown[]
-  truncated: boolean
 }

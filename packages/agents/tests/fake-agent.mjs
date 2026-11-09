@@ -5,11 +5,12 @@
 //   FAKE:outputs  write every listed output file
 //   FAKE:sign     with FAKE:outputs, each file names its runtime, repeats the prompt's Context header and quotes every input file listed
 //   FAKE:hang=STEP:FILE  at step STEP, unless FILE exists: create it and wait (until SIGTERM, then exit 143)
-//   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below
+//   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below, and every other output ends with the citation [s1]
 //   FAKE:sleep    unless PARTIAL.md exists: wait; on SIGTERM write PARTIAL.md and exit 143
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
 //   FAKE:grandchild=FILE  start a process in the agent's own group that waits, and write its pid to FILE
 //   FAKE:escaped=FILE     the same, but in a session of its own (setsid), as a `system host` a test started might be
+//   FAKE:holdstdout=FILE  with FAKE:outputs, leave a process in the agent's group that holds stdout open (as a leaked Xvfb does) and write its pid to FILE
 //   FAKE:delay=MS finish only after MS milliseconds, so attempts can be seen to overlap
 //   FAKE:turns    (claude, stream-json) first print two assistant messages that use tools, as progress
 //   FAKE:background=FILE  (claude) start a background job (its pid in FILE), unless background tasks are disabled and Monitor is disallowed
@@ -87,11 +88,13 @@ const cited = /FAKE:cite=(\S+)/.exec(prompt)?.[1]
 if (has('outputs')) {
   for (const [, slot, path] of prompt.matchAll(/^- ([a-z][a-z0-9-]*) \(the file (\/[^)]+)\)$/gm)) {
     const sources = { sources: cited ? [{ id: 's1', url: cited, quote: QUOTE, claims: ['System checks quotes'] }] : [] }
-    writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : has('sign') ? signed(slot) : `# ${slot} [s1]\n`)
+    writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : has('sign') ? `${signed(slot)}${cited ? '\n[s1]\n' : ''}` : `# ${slot} [s1]\n`)
   }
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')
 if (has('fail')) finish(false, 'scripted failure')
+const held = /FAKE:holdstdout=(\S+)/.exec(prompt)?.[1]
+if (held) writeFileSync(held, String(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).pid))
 for (const [marker, detached] of [['grandchild', false], ['escaped', true]]) {
   const pidFile = new RegExp(`FAKE:${marker}=(\\S+)`).exec(prompt)?.[1]
   if (pidFile) writeFileSync(pidFile, String(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached, stdio: 'ignore' }).pid))
