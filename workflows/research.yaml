@@ -4,10 +4,10 @@
 # capabilities, outputs, step instructions and verifier differ.
 schema: system.workflow/v1
 id: research
-version: 1
+version: 3
 steps:
   - id: investigate
-    capabilities: [research, web-search]
+    capabilities: [research, web-search, tier.standard]
     inputs:
       question: $work.input
     outputs: [report, sources]
@@ -25,7 +25,9 @@ steps:
     verify:
       capability: research.citation-check
       subject: $steps.investigate.sources
-      criteria: citations-v1
+      criteria: citations-v2
+      inputs:
+        report: $steps.investigate.report
   - id: accept
     dependsOn: [citations]
     accept:

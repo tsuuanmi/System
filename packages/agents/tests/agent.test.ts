@@ -330,12 +330,31 @@ test('the time limit stops what the agent spawned in its process group, but not 
   assert.equal(result.status, 'failed')
   const [grandchild, runaway] = [child, escaped].map((file) => Number(readFileSync(file, 'utf8')))
   try {
+    // A killed process takes a moment to exit under load: wait for it, with a deadline, instead of looking once.
+    for (const deadline = Date.now() + 5000; alive(grandchild!) && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50))
     assert.ok(!alive(grandchild!), 'a grandchild in the agent group is gone')
     // The gap of the process-group kill, which is also DSH's fallback without user-systemd: a
     // setsid descendant survives. DSH's systemd scope owns such descendants, so the gap is a host without one.
     assert.ok(alive(runaway!), 'a setsid grandchild escapes a process-group kill')
   } finally {
     try { process.kill(runaway!, 'SIGKILL') } catch { /* gone */ }
+  }
+})
+
+// 2026-11-07: two Xvfb leaked by a Worker's own tests held a finished attempt "running" for 33 min: the pipes stayed open.
+test('the attempt ends when the agent exits, even if a process it left behind holds its output open', { timeout: 20_000 }, async () => {
+  const { artifacts } = memory()
+  const holder = join(root, 'holder.pid')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-holder'), 300, 300)
+  const started = Date.now()
+  try {
+    const result = await worker.run(request({ question: await task(artifacts, `FAKE:outputs FAKE:holdstdout=${holder}`) }, ['report']))
+    assert.equal(result.status, 'succeeded', result.reason)
+    assert.ok(Date.now() - started < 5000, `ended ${Date.now() - started} ms after the start, not when the pipe closed`)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    assert.ok(!alive(Number(readFileSync(holder, 'utf8'))), 'what the agent left in its group is stopped')
+  } finally {
+    try { process.kill(Number(readFileSync(holder, 'utf8')), 'SIGKILL') } catch { /* gone */ }
   }
 })
 

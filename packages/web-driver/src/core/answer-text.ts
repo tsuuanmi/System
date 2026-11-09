@@ -25,7 +25,7 @@ function renderedWords(markdown: string): { prose: string[]; linkWords: number; 
   const definition = /^ {0,3}\[([^\]\n^][^\]\n]*)\]:[ \t]*\S.*$/gm
   const defined = new Set([...markdown.matchAll(definition)].map((m) => m[1]!.toLowerCase()))
   const plain = markdown
-    .replace(/^```[^\n]*$/gm, ' ')
+    .replace(/^(?:```|~~~)[^\n]*$/gm, ' ')
     .replace(definition, ' ')
   const linked = replaceLinks(plain, link)
   const marked = replaceMarkers(linked, (marker, id) => defined.has(id.toLowerCase()) ? link(marker, id) : marker)
@@ -85,14 +85,14 @@ function replaceMarkers(text: string, replace: (marker: string, id: string) => s
 }
 
 /**
- * Markdown cut after its last closing fence line (a line break, then ``` and only spaces or tabs),
+ * Markdown cut after its last closing fence line (a line break, then three or more backticks or tildes and only spaces or tabs),
  * and the rest. A driver runs its fenced-block pattern on the first part only: no block ends
- * later, and there every opening fence has a closing one after it, so a lazy `[\s\S]*?` pattern
- * never rescans to the end from each of many unclosed fences (quadratic). It finds the same blocks.
+ * later, and there every opening fence has a closing one after it, so a scan never reads
+ * to the end from each of many unclosed fences (quadratic). It finds the same blocks.
  */
 export function splitAfterLastFence(markdown: string): [fenced: string, rest: string] {
   let end = 0
-  for (const m of markdown.matchAll(/\n```[ \t]*$/gm)) end = m.index + m[0].length
+  for (const m of markdown.matchAll(/\n(?:`{3,}|~{3,})[ \t]*$/gm)) end = m.index + m[0].length
   return [markdown.slice(0, end), markdown.slice(end)]
 }
 
@@ -123,7 +123,7 @@ export interface WordsComparison {
 export function compareWords(markdown: string, rendered: string): WordsComparison {
   const { prose, linkWords, links } = renderedWords(markdown)
   const shown = words(rendered)
-  const blocks = Math.ceil((markdown.match(/^```/gm) ?? []).length / 2)
+  const blocks = Math.ceil((markdown.match(/^(?:```|~~~)/gm) ?? []).length / 2)
   const allowance = 2 + 3 * blocks + linkWords + 2 * links
   let matched = 0
   for (const word of shown) if (matched < prose.length && word === prose[matched]) matched++

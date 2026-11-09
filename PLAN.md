@@ -30,6 +30,7 @@
 | OC | A replaceable Orchestrator: decisions, the brief, live progress, stalls, Sub-workflows ([PROP-0006](docs/proposals/PROP-0006-replaceable-orchestrator-and-code-checks.md)) | PR #39, [OC](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#oc--a-replaceable-orchestrator-and-the-checks-as-a-sub-workflow-prop-0006) |
 | CQ | Worker policy, `paths` checks, the merge queue by leased push ([PROP-0007](docs/proposals/PROP-0007-worker-policy-checks-and-merge-queue.md)) | PR #42, [CQ](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md#cq--worker-policy-faster-and-clearer-checks-and-a-merge-queue-prop-0007) |
 | After CQ | Profile patches merge by `ref`, fflate 0.8.3, the Host-exit backstop, reads while the Host waits to upgrade | PRs #45, #46, #59, #62 |
+| WW | Website Workers: Runtime `web`, generic Procedures on a UI map, Power by tier, the canary, `citations-v2`, `research-fanout`; built by System Works on branch `web-workers` | [WW](#ww--website-workers-that-work-built-with-website-workers-branch-web-workers) |
 
 Who built them: PRs #5–#36 were System Works, apart from #34 and #35 (the
 operator's sessions); OC, CQ and the PRs after CQ were built by the
@@ -295,6 +296,26 @@ System's pull requests when the operator asks, and writes docs pull requests.
   variant in `workflows/experiments/` routes `idea-a` and `idea-b` to the two
   ChatGPT accounts through role capabilities. Compare it with the Claude/Codex
   default on real briefs, judged by the Sonnet evaluator (B3's method).
+
+
+### WW — Website Workers that work, built with Website Workers (branch `web-workers`)
+
+Merged into `dev` on 2026-11-09 by the operator's decision, with the canary
+at 94% (47 of 50 at Power Medium, verifier `citations-v2`, both Accounts):
+every failure was the model leaving out an output block, none a UI stage or
+a verifier rejection. Its detail is in the branch's history (PLAN.md at
+`6af50a7`). What it gave: Runtime `web` with `site: chatgpt` and Accounts
+`web/chatgpt/<name>`, generic Procedures on a UI map (the legacy driver
+removed), Power by tier, a circuit breaker per Account, the canary, the
+`citations-v2` verifier, and the Workflows `second-opinion`, `debate`,
+`brainstorm` on web Accounts and `research-fanout`. Left open:
+- the model leaving out an output block (about 6%): the automatic fresh
+  attempt is a DF Work after DF0b; a repair turn in the same chat was
+  proposed (WW6m), not decided;
+- `tests/chatgpt-web.test.ts` flaky under load: its failure now names the
+  registration's reason (WW6l), the cause is not reproduced yet;
+- deferred by measurement: a long-lived Chrome per Account (step 3), with
+  the operator's open questions; a second Site; `digest`.
 
 
 ## 4. Future, not current gates

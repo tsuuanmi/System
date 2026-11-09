@@ -39,6 +39,8 @@ export interface Services {
   loginRemote(ref: string): Promise<{ url: string; port: number; ssh: string; expiresAt: number }>
   /** Wait for the remote sign-in of `ref` to end (Save, Cancel, expiry), or end it first with `cancel`; the signed-in state. */
   loginWait(ref: string, cancel: boolean): Promise<{ signedIn: boolean; detail: string }>
+  /** Check a browser Account without sending anything; it is `ready` again only when the check passes. */
+  recheck(ref: string): Promise<{ ready: boolean; state: string; detail: string }>
 }
 
 const commandId = z.string().min(1).optional()
@@ -154,14 +156,14 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent.',
-      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), commandId }).strict()
+      summary: 'Admit a Work from the contents of a Workflow file, or a single Task by capability, and return its record. It does not run it. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `goal`, it counts toward that Goal and is refused once the budget of the Goal is spent. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step.',
+      params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), goal: artifactId.optional(), worker: z.string().min(1).optional(), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
         const available = services.capabilities.available()
         const admission: Admission = p.workflow
-          ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses, (name) => services.workflowFile(name, p.input))), input: p.input, goal: p.goal, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
-          : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, caller, source: { kind: 'direct-task' } }
+          ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses, (name) => services.workflowFile(name, p.input))), input: p.input, goal: p.goal, worker: p.worker, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
+          : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, goal: p.goal, worker: p.worker, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId })
       },
       scope: ownGoal('work.submit'),
@@ -373,7 +375,7 @@ export function operations(services: Services): Methods {
     },
     'workers.login': {
       agent: false,
-      summary: 'Sign a browser Account (`chatgpt-web/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
+      summary: 'Sign a browser Account (`web/<site>/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
       params: z.object({ ref: z.string().min(1), cookies: z.string().max(MAX_FRAME).optional() }).strict(),
       handler: (_host, p) => services.login(p.ref, p.cookies),
     },
@@ -388,6 +390,12 @@ export function operations(services: Services): Methods {
       summary: 'Wait until the remote sign-in of an Account ends (Save, Cancel in the viewer, or its 15 minutes), or with `cancel` end it now. Returns whether the profile is signed in.',
       params: z.object({ ref: z.string().min(1), cancel: z.boolean().optional() }).strict(),
       handler: (_host, p) => services.loginWait(p.ref, p.cancel === true),
+    },
+    'workers.recheck': {
+      agent: false,
+      summary: 'Recheck a browser Account that is quarantined or cooling down: its profile opens headed on a private display and the sign-in, Chat mode and temporary chat are checked; nothing is sent. Returns `{ ready, state, detail }`; the Account is `ready` again only when the check passes, and this is the only way out of `needs-sign-in` and `challenged`.',
+      params: z.object({ ref: z.string().min(1) }).strict(),
+      handler: (_host, p) => services.recheck(p.ref),
     },
     'credentials.status': {
       read: true,

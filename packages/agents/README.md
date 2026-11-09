@@ -1,11 +1,12 @@
 # @system/agents
 
-The `agents` row: each configured agent CLI account (and, as a third Runtime,
-the operator's ChatGPT website session) becomes a System Worker
+The `agents` row: each configured agent CLI account (and a `web` account, through
+the optional web-worker row) becomes a System Worker
 ([ADR-0004](../../docs/decisions/ADR-0004-mvp-0-operating-decisions.md) decisions 4-6,
 [ADR-0005](../../docs/decisions/ADR-0005-subscription-tokens-for-workers.md)).
 
-- **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH), `credentials` (DSH).
+- **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH), `credentials` (DSH). Reads
+  `webWorker` if the web-worker row provides it.
   **Provides:** `ctx.agents` (`system workers`).
 - **Accounts:** one config entry per account; an account whose CLI or
   credential is missing is skipped with its reason. Routing takes the first
@@ -23,7 +24,7 @@ the operator's ChatGPT website session) becomes a System Worker
         capabilities: [code-write, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
-        maxConcurrentAttempts: 2        # attempts of this account at once; default 1
+        maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
       - ref: codex/default
         runtime: codex
         capabilities: [code-write]
@@ -51,7 +52,7 @@ Tiers are those of System 1: `economy`, `standard`, `frontier`. An account's
 `models` maps each tier it offers to a model; each listed tier adds the
 capability `tier.<name>`, so a Workflow step asks for one like any other
 capability (`capabilities: [code-write, tier.frontier]`) and preflight refuses
-a tier no enabled account offers. A step with no tier gets the `standard`
+a tier no enabled account offers. A `web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../web-worker/README.md)). A step with no tier gets the `standard`
 model, or the CLI's default when the account lists none. Each attempt records
 the tier, the configured model, and the models the CLI reports it served.
 
@@ -118,13 +119,21 @@ model is recorded for it.
 and SIGKILL after 30 s. Whatever the attempt left is captured as unaccepted
 partial output; `system work retry` hands it to the next attempt as `previous`.
 
+**Exit ends the attempt (WW1c):** the attempt ends when the agent process exits,
+never when its pipes close. Its output is then drained and its process range given
+`DRAIN_MS` (5 s) to empty; after that the pipes are closed and what is left is
+terminated. On 2026-11-07 two Xvfb leaked by a Worker's own tests held a finished
+attempt "running" for 33 min, because the Runtime waited for the whole range and its
+output to end. [agent.test.ts](tests/agent.test.ts) tests it with a fake agent that
+leaves a child holding stdout open.
+
 **Codex auth** (ADR-0005 decision 4, decided by test on 2026-11-06): even
 with `--ephemeral`, Codex 0.166.0 writes `memories_1.sqlite`, `state_5.sqlite`,
 shell snapshots and logs into `CODEX_HOME`, so a shared directory would carry
 state between attempts. Each attempt therefore gets a fresh `CODEX_HOME` with
 only `auth.json`; a refreshed `auth.json` is copied back to the account
 directory unless that file changed meanwhile. The Host's slots decide how many
-attempts of an account run at once (`maxConcurrentAttempts`, default 1); the
+attempts of an account run at once (`maxConcurrentAttempts`, default 1; always 1 for a web account, one Chrome profile); the
 worker queues nothing itself. Raise the limit for a Codex account only if its
 `auth.json` refresh can tolerate it: the copy-back keeps the first refresh and
 drops a later one when the file changed meanwhile.
@@ -142,105 +151,15 @@ Linux 5.4 (no Landlock), Claude Code 2.1.311 with a `setup-token` token,
 Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 `HOME`; Codex's `workspace-write` sandbox works; both report token usage.
 
-## The `chatgpt-web` Runtime
+## The `web` Runtime
 
-An Account `chatgpt-web/<name>` runs one step as one prompt in the operator's
-own signed-in ChatGPT web session ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
-It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives a genuine headed Chrome with
-`patchright-core` 1.63.0 (System 1's pin; [chrome.ts](src/chrome.ts) chooses the Chrome and installs the pinned Chrome for Testing on first use), and runs inside the Host,
-not as a spawned process. It is not in the bundle's `agents` row; add it as in
-the [runbook](../../docs/operations/runbook.md#the-chatgpt-web-account).
-
-```yaml
-      - ref: chatgpt-web/default
-        runtime: chatgpt-web
-        capabilities: [research, web-search]   # brainstorm.idea-<role> too, by role
-        # all optional, with these defaults:
-        profileDir: chatgpt-web/default        # under $DSH_HOME/system unless absolute; mode 0700
-        temporaryChat: true                    # each attempt in a temporary chat
-        url: https://chatgpt.com/
-        executablePath: ...                    # default: CHROME_PATH, a recent system Chrome, else the managed Chrome for Testing
-        timeouts: {load: 60, answer: 900, stable: 3}   # seconds
-```
-
-One attempt:
-
-1. **Launch** a persistent Chrome context on `profileDir`, **headed**: the
-   profile is the Account's credential and is reused by every attempt. One
-   attempt at a time per Account (Chrome locks the profile). The browser is
-   never headless: it runs on the Host's `DISPLAY`, or when there is none on a
-   private Xvfb ([display.ts](src/display.ts)) that the attempt starts and stops,
-   also on cancel and on the time limit. Without Xvfb on `PATH` the Account is
-   `unavailable`, with a reason naming it, and an account that sets `headless` is
-   too.
-2. **Open and send** with System 1's ChatGPT web driver, ported whole into
-   [`@system/web-driver`](../web-driver/README.md): `open` loads the site's home
-   and reads the page's state (`checkAuth`: up to `load` seconds; a visible
-   composer is signed in; a challenge, the login page, the logged-out home held
-   3 s and the site's own error page are each their own failure), selects
-   **Chat** (a composer that names Work is refused: Work spends the Codex
-   quota) and, when `temporaryChat`, **Temporary chat** by the page's own
-   control. System never types into or solves a challenge. The driver then
-   clears the composer, reads the model back and sends one prompt built like the
-   CLI prompt, with the inputs (and context) inlined as text, and each output
-   slot asked for as a fenced block labelled with its name. At most 200 KiB.
-   Nothing in the Runtime knows a selector: the UI map is the driver's.
-3. **Wait** as the driver does: the answer's finished marker and text unchanged
-   for `stable` seconds, within `answer` seconds (a stall clock of 3 minutes, or
-   half of `answer` when that is shorter).
-4. **Read** the answer as Markdown from the page's own Copy control (kept only
-   when its words are the rendered answer's; the rendered text otherwise),
-   followed by the cited links the text lacks. Its links are the URLs in it.
-5. **Drift and heal:** what the driver reports (a drifted element, a refused
-   Copy, a stall) goes to the attempt's log as counts and structure only.
-   Self-heal is off: no decision store exists.
-6. **Fill** each slot from its labelled block (a longer fence holds shorter
-   ones; the first block of a name wins). A missing block fails the attempt;
-   what was found stays as unaccepted partial output.
-7. **Record** a `conversation@1`: `prompt.md` and `response.md` as parts,
-   `links.json` (the cited hrefs) as an attachment, asserted `provider:
-   ChatGPT`, the page `url`, the `model` the driver read back from the model
-   menu and `context: [ui-map:<uiRevision>, temporary-chat]` (the latter when
-   used). Its
-   producer is the Worker (the attempt observed the exchange). It is returned as
-   the extra output `conversation` (the controller records only a step's
-   declared slots). Usage is unknown. The log is the stage notes.
-
-On any failure the page's screenshot is kept as partial output `screenshot`.
-Cancel and `attemptTimeoutMinutes` close the browser, as they stop a CLI. A UI
-change is a change to the driver's map (`packages/web-driver/ui/chatgpt-web.ui.yaml`),
-not to this Runtime. After a lost attempt the Account's slot is held while the
-process in Chrome's `SingletonLock` lives.
-
-**Login** (`system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
-operator-only operations `workers.login`, `workers.loginRemote` and
-`workers.loginWait`): `--cookies` imports a JSON (browser-extension export) or
-Netscape cookie file, keeping only chatgpt.com and openai.com cookies and giving
-a session cookie a 30-day lifetime, and deletes nothing; the file is read once by
-the CLI. With neither flag, a visible window opens on the Host's `DISPLAY` and
-waits up to ten minutes for a sign-in. Each uses the same headed browser as an
-attempt, so a check cleared in one stays valid for attempts that share the
-profile. The signed-in state is then checked and reported; no cookie value is
-printed.
-
-`--remote` ([remote-login.ts](src/remote-login.ts)) is for a Host with no display
-and for a Cloudflare challenge that only a human can pass. It opens the profile
-headed on a private Xvfb (over the engine's pipe: no CDP port) and serves a
-viewer on `127.0.0.1` on a random port under a random 32-byte token (403
-without it). The viewer shows a CDP screencast over Server-Sent Events and
-posts the operator's clicks, scrolls and keys back as `Input.dispatchMouseEvent`
-and `Input.dispatchKeyEvent`, scaled to the page's pixels, with **Save** and
-**Cancel**. The CLI prints the `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
-line and the URL; the runbook has the steps. Save closes the browser cleanly (so
-`cf_clearance` and the session stay in the profile), checks the signed-in state
-(the driver's `checkAuth`) and reports it; Cancel, Ctrl-C or the 15-minute TTL end the session without a
-check. Everything it started (Xvfb, browser, server) is stopped. Nothing solves
-or clicks a challenge. Unlike System 1's VNC, its input is CDP-dispatched
-(PROP-0005 names that as the difference left).
+An account with `runtime: web` is not run here: the optional [`web-worker` row](../web-worker/README.md)
+serves it, and `agents` only hands it over through the `webWorker` service ([web.ts](src/web.ts):
+the contract, and `WEB_WORKER_DISABLED`). With that row off the account is reported
+`unavailable` with the reason "the web-worker row is disabled". It keeps the `agents` row's settings
+(`models` tiers, `attemptTimeoutMinutes`, `maxConcurrentAttempts`) and its entry in `accounts`.
 
 ## Limits
-
-The `chatgpt-web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that for their own account (PROP-0005). It needs a Chrome new enough for chatgpt.com: the pinned build is installed under `$DSH_HOME/system/browsers` when no recent one exists.
 
 No sandbox or egress control (ADR-0004 decision 14): the agent runs as the
 operator and could read the operator's files, including the credential store.

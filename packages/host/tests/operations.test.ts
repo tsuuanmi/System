@@ -60,6 +60,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
     async workers() { return { registered: f.capabilities.workerRefs(), accounts: [] } },
     async login(ref, cookies) { seen.logins!.push([ref, cookies]); return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 } },
     async loginRemote(ref) { seen.logins!.push([ref, 'remote']); return { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 } },
+    async recheck(ref) { seen.logins!.push([ref, 'recheck']); return { ready: false, state: 'needs-sign-in', detail: 'signed out' } },
     async loginWait(ref, cancel) { seen.logins!.push([ref, cancel ? 'cancel' : 'wait']); return { signedIn: !cancel, detail: cancel ? 'cancelled' : 'signed in' } },
   }
 }
@@ -150,22 +151,29 @@ test('every method of the table round-trips over the socket', async () => {
   await call('work.run', { workId: second.id })
   assert.equal((await terminal(client, second.id)).status, 'succeeded')
 
+  const pinned = await call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/claude' }) as { id: string; events: { type: string; worker?: string }[] }
+  assert.equal(pinned.events[0]!.worker, 'fake/claude')
+  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'nobody/default' }), /no enabled Worker nobody\/default/)
+  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/codex' }), /fake\/codex does not provide code-write/)
+
   const parts = { response: { name: 'r.md', data: b64('an answer'), mediaType: 'text/markdown' }, attachments: [] }
   const preview = await call('conversation.preview', { parts }) as { parts: { role: string }[]; warnings: string[] }
   assert.deepEqual(preview.parts.map((p) => p.role), ['response'])
   assert.deepEqual(await call('conversation.add', { parts, asserted: { provider: 'web' }, supersedes: [] }), { id: 'conversation:1' })
 
   assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake/claude', 'fake/codex'])
-  assert.deepEqual(await call('workers.login', { ref: 'chatgpt-web/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
-  assert.deepEqual(svc.seen.logins, [['chatgpt-web/default', 'the file']])
-  assert.deepEqual(await call('workers.loginRemote', { ref: 'chatgpt-web/default' }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })
-  assert.deepEqual(await call('workers.loginWait', { ref: 'chatgpt-web/default' }), { signedIn: true, detail: 'signed in' })
-  assert.deepEqual(await call('workers.loginWait', { ref: 'chatgpt-web/default', cancel: true }), { signedIn: false, detail: 'cancelled' })
-  assert.deepEqual(svc.seen.logins!.slice(1), [['chatgpt-web/default', 'remote'], ['chatgpt-web/default', 'wait'], ['chatgpt-web/default', 'cancel']])
+  assert.deepEqual(await call('workers.login', { ref: 'web/chatgpt/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
+  assert.deepEqual(svc.seen.logins, [['web/chatgpt/default', 'the file']])
+  assert.deepEqual(await call('workers.loginRemote', { ref: 'web/chatgpt/default' }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })
+  assert.deepEqual(await call('workers.loginWait', { ref: 'web/chatgpt/default' }), { signedIn: true, detail: 'signed in' })
+  assert.deepEqual(await call('workers.loginWait', { ref: 'web/chatgpt/default', cancel: true }), { signedIn: false, detail: 'cancelled' })
+  assert.deepEqual(svc.seen.logins!.slice(1), [['web/chatgpt/default', 'remote'], ['web/chatgpt/default', 'wait'], ['web/chatgpt/default', 'cancel']])
+  assert.deepEqual(await call('workers.recheck', { ref: 'web/chatgpt/default' }), { ready: false, state: 'needs-sign-in', detail: 'signed out' })
+  assert.deepEqual(svc.seen.logins!.at(-1), ['web/chatgpt/default', 'recheck'])
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   const status = await call('host.status') as { works: number; recordBytes: number }
-  assert.equal(status.works, 4)
+  assert.equal(status.works, 5)
   assert.ok(status.recordBytes > 0)
 
   assert.deepEqual([...called].sort(), Object.keys(tableOf(table)).sort(), 'a method of the table has no round trip in this test')
@@ -175,7 +183,7 @@ test('an agent connection is refused every method flagged agent: false, and only
   const { table, open } = await started()
   const client = await open(agent)
   const closed = Object.entries(tableOf(table)).filter(([, m]) => !m.agent).map(([name]) => name)
-  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('conversation.add') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait'))
+  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('conversation.add') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait') && closed.includes('workers.recheck'))
   for (const [name, method] of Object.entries(tableOf(table))) {
     const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
     if (method.agent) assert.notEqual(outcome?.code, NOT_ALLOWED, `${name} is open to agents`)

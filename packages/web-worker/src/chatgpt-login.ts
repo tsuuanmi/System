@@ -1,11 +1,12 @@
 /**
- * The sign-in of the `chatgpt-web` Runtime (PROP-0005): the profile is signed
+ * The sign-in of the `web` Runtime (PROP-0005): the profile is signed
  * in by importing a cookie file the operator exported from their own browser,
  * by hand in a window on a real display, or in the remote viewer
  * (remote-login.ts). The browser is always headed, on a display this owns. A
  * cookie value is never stored outside the profile or reported.
  */
 import type { BrowserContext, Cookie } from 'patchright-core'
+import type { LoginReport } from '@system/agents'
 import { startXvfb, type Display } from './display.ts'
 import { authState, chatGptDriver, launch, type WebConfig } from './chatgpt.ts'
 
@@ -52,13 +53,6 @@ export function parseCookies(text: string, domains: readonly string[] = DEFAULT_
   const cookies = all.filter((c) => domainOf(c.domain!, domains))
   if (!cookies.length) throw new Error(`no cookie for ${domains[0]} in the file`)
   return { cookies, skipped: all.length - cookies.length }
-}
-
-export interface LoginReport {
-  signedIn: boolean
-  detail: string
-  imported?: number
-  skipped?: number
 }
 
 export interface LoginOptions {

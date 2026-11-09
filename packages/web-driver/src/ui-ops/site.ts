@@ -12,8 +12,37 @@ const DELETION_ENTRIES = ['conversation.pane', 'conversation.options', 'conversa
 /** How long a page may take to settle (its Stop control gone) before it counts as busy and is not kept. */
 const PAGE_IDLE_WAIT_MS = 3000
 
-/** A driver's shipped map file, with an optional local overlay merged after it. */
-export const shippedMapOf = (file: URL, overlay?: string): UiMap => loadUiMap(readFileSync(file, 'utf8'), overlay)
+/** Each shipped map file's text as it was when first read and validated, or why it is not valid: a map is part of the code, so it is read once per process (WW6f). */
+const shipped = new Map<string, { text: string } | { problem: string }>()
+
+/** Read and validate a shipped map file once; later calls give the same answer whatever the file has become. */
+function shippedText(file: URL): { text: string } | { problem: string } {
+  let found = shipped.get(file.href)
+  if (!found) {
+    try {
+      const text = readFileSync(file, 'utf8')
+      loadUiMap(text)
+      found = { text }
+    } catch (error) {
+      found = { problem: (error as Error).message.split('\n')[0]! }
+    }
+    shipped.set(file.href, found)
+  }
+  return found
+}
+
+/** A driver's shipped map file as loaded once, with an optional local overlay merged after it. */
+export function shippedMapOf(file: URL, overlay?: string): UiMap {
+  const found = shippedText(file)
+  if ('problem' in found) throw new Error(found.problem)
+  return loadUiMap(found.text, overlay)
+}
+
+/** Why a shipped map file did not load (one line), if it did not. */
+export const shippedMapProblemOf = (file: URL): string | undefined => {
+  const found = shippedText(file)
+  return 'problem' in found ? found.problem : undefined
+}
 
 /** The deletion's map entries of `map` not yet checked on the live site: while any is, nothing is deleted. */
 export const deletionUnverified = (map: UiMap): string[] => unverifiedEntries(map, DELETION_ENTRIES)

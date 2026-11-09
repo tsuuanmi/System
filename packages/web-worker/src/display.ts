@@ -1,5 +1,5 @@
 /**
- * The private display of the `chatgpt-web` Runtime (PROP-0005): System never
+ * The private display of the `web` Runtime (PROP-0005): System never
  * runs the browser headless. It runs a real, headed Chrome on an invisible
  * display, a private Xvfb that this process owns and stops. Other local users
  * cannot draw on it or read it: it takes only an X authority cookie that sits
@@ -10,23 +10,34 @@ import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, w
 import { hostname, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { refuseBrowser } from './no-browser.ts'
 
 export const XVFB_MISSING = 'Xvfb is not installed (apt install xvfb): System runs the browser headed on a private display, never headless'
 
-/** `Xvfb` on `PATH`, or undefined. */
-export function findXvfb(): string | undefined {
-  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    if (!dir) continue
-    const file = join(dir, 'Xvfb')
-    try {
-      accessSync(file, constants.X_OK)
-      return file
-    } catch {
-      // Next directory.
+/** The first of `names` found executable on `PATH` (the names in order, as System 1's login plugin looks for a VNC server), or undefined. */
+function findOnPath(names: readonly string[]): string | undefined {
+  for (const name of names) {
+    for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+      if (!dir) continue
+      const file = join(dir, name)
+      try {
+        accessSync(file, constants.X_OK)
+        return file
+      } catch {
+        // Next directory.
+      }
     }
   }
   return undefined
 }
+
+/** `Xvfb` on `PATH`, or undefined. */
+export const findXvfb = (): string | undefined => findOnPath(['Xvfb'])
+
+export const VNC_MISSING = 'remote login needs a VNC server on PATH: x11vnc (apt install x11vnc) or x0vncserver (apt install tigervnc-scraping-server)'
+
+/** The VNC server of the remote login on `PATH`: `x0vncserver` (TigerVNC) or `x11vnc`, or undefined. */
+export const findVnc = (): string | undefined => findOnPath(['x0vncserver', 'x11vnc'])
 
 export interface Display {
   /** For example `:101`. */
@@ -60,6 +71,7 @@ const owns = (number: number, pid: number) => {
 
 /** Start an Xvfb on the first free display number from a random start; one that loses a race for a number exits, and the next number is tried. */
 export async function startXvfb(): Promise<Display> {
+  refuseBrowser()
   const xvfb = findXvfb()
   if (!xvfb) throw new Error(XVFB_MISSING)
   const dir = mkdtempSync(join(tmpdir(), 'system-xvfb-'))

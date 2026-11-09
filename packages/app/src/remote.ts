@@ -19,6 +19,8 @@ export const POLL_MS = 1000
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
 const LOGIN_TIMEOUT = 11 * 60_000
+/** How long `workers.recheck` may take: a Chrome start and the page's own clocks. */
+const RECHECK_TIMEOUT = 3 * 60_000
 /** How long `workers.loginWait` may take: the viewer's session is 15 minutes, then the check. */
 const REMOTE_LOGIN_TIMEOUT = 17 * 60_000
 
@@ -125,11 +127,11 @@ export function remoteHost(remote: Remote): ClientHost {
   }
 
   const work: WorkCommands = {
-    admitFile(path, input, goal) {
+    admitFile(path, input, goal, worker) {
       const workflow = readFileSync(path, 'utf8')
-      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, goal })
+      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, goal, worker })
     },
-    admitTask: (capabilities, input, goal) => change('work.submit', { capabilities, input, goal }),
+    admitTask: (capabilities, input, goal, worker) => change('work.submit', { capabilities, input, goal, worker }),
     async run(workId, options) {
       await change('work.run', { workId })
       return follow(workId, options)
@@ -216,6 +218,7 @@ export function remoteHost(remote: Remote): ClientHost {
         process.off('SIGINT', onInterrupt)
       }
     },
+    recheck: async (ref) => (await link()).call('workers.recheck', { ref }, RECHECK_TIMEOUT) as any,
     login: async (ref, cookies) => (await link()).call('workers.login', { ref, ...(cookies === undefined ? {} : { cookies }) }, LOGIN_TIMEOUT) as any,
   }
 }

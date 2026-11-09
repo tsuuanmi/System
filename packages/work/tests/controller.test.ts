@@ -60,7 +60,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
   const verdicts: string[] = []
   capabilities.registerWorker({
     ref: 'fake',
-    capabilities: ['code-write', 'research', 'web-search'],
+    capabilities: ['code-write', 'research', 'web-search', 'tier.standard'],
     async run(request) {
       calls.push(request)
       const outputs = Object.fromEntries(request.outputs.map((slot) => {
@@ -111,6 +111,19 @@ async function runFixture(h: Harness, name: string) {
   return h.controller.run(admitted.id)
 }
 
+test('a verify step\'s further inputs reach the verifier as exact Artifact IDs (the report beside the sources)', async () => {
+  const seen: Record<string, string>[] = []
+  const h = harness({ verifier: { async verify(request) {
+    seen.push(request.inputs ?? {})
+    const evidence = id(`evidence/${request.attemptId}`)
+    h.specs.stored.add(evidence)
+    return { verdict: 'pass', reason: 'scripted', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
+  } } })
+  const done = await runFixture(h, 'research.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(seen, [{ report: done.state.steps.investigate!.outputs.report! }])
+})
+
 test('a direct Task with no Workflow file runs one attempt to a result', async () => {
   const h = harness()
   const spec = directTask(['code-write'], false, h.capabilities.available())
@@ -127,7 +140,7 @@ test('Software Engineering and Research run through the same controller code', a
   const research = await runFixture(h, 'research.yaml')
   assert.equal(se.state.status, 'succeeded')
   assert.equal(research.state.status, 'succeeded')
-  assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write']], ['investigate', ['research', 'web-search']]])
+  assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write']], ['investigate', ['research', 'web-search', 'tier.standard']]])
   // The verifier got the exact Artifact the Worker produced, resolved from the slot.
   assert.equal(h.verdicts[0], `checks.checks:${se.state.steps.implement!.outputs.change}`)
   assert.equal(h.verdicts[1], `citations:${research.state.steps.investigate!.outputs.sources}`)
@@ -244,7 +257,7 @@ test('a Worker that disappears after admission fails the Work with a missing-cap
   const bare = new WorkController(h.table, h.specs, new Capabilities())
   const done = await bare.run(admitted.id)
   assert.equal(done.state.status, 'failed')
-  assert.match(done.state.reason!, /no enabled Worker provides research, web-search/)
+  assert.match(done.state.reason!, /no enabled Worker provides research, web-search, tier.standard/)
 })
 
 test('usage a Worker does not report is recorded as unknown, never zero', async () => {
@@ -259,8 +272,8 @@ test('routing records every candidate and why it was or was not chosen', async (
   const done = await runFixture(h, 'research.yaml')
   const dispatched = done.events.find((e) => e.type === 'dispatched')
   assert.deepEqual(dispatched && 'candidates' in dispatched && dispatched.candidates, [
-    { ref: 'fake', selected: true, reason: 'provides research, web-search' },
-    { ref: 'coder-only', selected: false, reason: 'lacks research, web-search' },
+    { ref: 'fake', selected: true, reason: 'provides research, web-search, tier.standard' },
+    { ref: 'coder-only', selected: false, reason: 'lacks research, web-search, tier.standard' },
   ])
 })
 
@@ -284,6 +297,35 @@ test('retry is refused for running or succeeded Work and for an unknown Worker',
   const failed = await runFixture(harness({ worker: { run: async () => ({ status: 'failed', outputs: {}, reason: 'red' }) } }), 'research.yaml')
   const fresh = harness({ table: memoryWorkTable(new Map([[failed.id, failed]])) })
   await assert.rejects(() => fresh.controller.retry(failed.id, { worker: 'nobody', caller, reason: 'x' }), /no enabled Worker nobody/)
+})
+
+test('a Work submitted for one Worker runs its Worker steps only there, and is refused for one that cannot', async () => {
+  const h = harness()
+  const ran: string[] = []
+  const register = (ref: string, capabilities: string[]) => h.capabilities.registerWorker({
+    ref, capabilities,
+    async run(request) {
+      ran.push(ref)
+      const out = id(`${ref}/${request.attemptId}`)
+      h.specs.stored.add(out)
+      return { status: 'succeeded', outputs: Object.fromEntries(request.outputs.map((slot) => [slot, out])) }
+    },
+  })
+  register('first', ['research', 'web-search', 'tier.standard'])
+  register('plain', ['code-write'])
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
+  const base = { spec, input: await input(h), caller, source: { kind: 'workflow-file' as const } }
+  await assert.rejects(() => h.controller.admit({ ...base, worker: 'nobody' }), /no enabled Worker nobody/)
+  await assert.rejects(() => h.controller.admit({ ...base, worker: 'plain' }), /plain does not provide research, web-search, tier.standard for step investigate/)
+  const admitted = await h.controller.admit({ ...base, worker: 'first' })
+  assert.equal(admitted.events[0]!.type === 'admitted' && admitted.events[0]!.worker, 'first')
+  const done = await h.controller.run(admitted.id)
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(ran, ['first'], 'the Worker "fake", registered first, did not take the step')
+  assert.equal(h.controller.replay(admitted.id).matches, true)
+  // Without the pin the first registered Worker that fits takes the step.
+  const free = await h.controller.run((await h.controller.admit(base)).id)
+  assert.equal(free.events.find((e) => e.type === 'dispatched')?.type === 'dispatched' && free.events.find((e) => e.type === 'dispatched')!.selected, 'fake')
 })
 
 test('a cancel during an attempt keeps its partial output, and retry hands it on as previous', async () => {
@@ -314,6 +356,30 @@ test('a cancel during an attempt keeps its partial output, and retry hands it on
   assert.equal(done.state.status, 'succeeded')
   const second = done.events.filter((e) => e.type === 'dispatched')[1]
   assert.equal(second?.type === 'dispatched' && second.inputs.previous, id('partial'))
+  assert.equal(h.controller.replay(admitted.id).matches, true)
+})
+
+test('a succeeded attempt keeps the Artifacts it reports beside its outputs, and replay matches', async () => {
+  const h = harness({
+    worker: {
+      async run(request) {
+        const out = id(`${request.attemptId}/done`)
+        const extra = id(`${request.attemptId}/evidence`)
+        h.specs.stored.add(out)
+        h.specs.stored.add(extra)
+        return { status: 'succeeded', outputs: Object.fromEntries(request.outputs.map((s) => [s, out])), partial: { evidence: extra } }
+      },
+    },
+  })
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
+  const done = await h.controller.run(admitted.id)
+  assert.equal(done.state.status, 'succeeded')
+  const step = done.state.steps.investigate!
+  assert.equal(step.state, 'succeeded')
+  assert.deepEqual(Object.keys(step.partial ?? {}), ['evidence'])
+  const observed = done.events.find((e) => e.type === 'observed')
+  assert.ok(observed?.type === 'observed' && observed.partial?.evidence, 'the observation records it')
   assert.equal(h.controller.replay(admitted.id).matches, true)
 })
 

@@ -10,9 +10,15 @@ import { sleep } from '../core/util.ts'
 import type { Frame, Locator, Page } from 'patchright-core'
 import { type Scored, choose, parseAiSnapshot, scoreNodes } from './heal.ts'
 import { candidateFromLocator, toLocator } from './locate.ts'
-import type { ActionSpec, Candidate, Condition, ElementSpec, UiMap } from './map.ts'
+import { attachBinding, type ActionSpec, type Candidate, type Condition, type ElementSpec, type UiMap } from './map.ts'
 import { NetworkObserver } from './network.ts'
 import { outlineOf, type UiOutline } from './outline.ts'
+
+/** What the site made of a pasted body: text in the composer, or attachment chips (the new ones). */
+export interface AttachOutcome {
+  outcome: 'text' | 'attachment'
+  chips: number
+}
 
 export interface Resolved {
   locator: Locator
@@ -116,22 +122,6 @@ export function readbackDiff(inserted: string, read: string): ReadbackDiff {
     insertedChars: inserted.length, readChars: read.length, insertedLines: a ? al.length : 0, readLines: b ? bl.length : 0,
     line, offset, inserted: charClass(x[offset]), read: charClass(y[offset]), truncated: b.length < a.length && a.startsWith(b),
   }
-}
-
-/**
- * A turn whose answer stalled or ran out of time: the page outlined (structure only, redacted as a
- * drift outline is), with what it said of itself. So a stall can be read without the operator's
- * browser.
- */
-export interface StallEvent {
-  provider: string
-  /** Where it stalled: `answer`, `research`. */
-  phase: string
-  /** `document.visibilityState` and `document.hasFocus()` of the page, when readable. */
-  visibility?: string
-  focused?: boolean
-  url?: string
-  outline?: UiOutline
 }
 
 /**
@@ -262,6 +252,42 @@ export class UiEngine {
     })
   }
 
+  /**
+   * The Procedure "attach text": paste `body` into the composer, which already holds `header`, and accept
+   * what the site made of it: (a) the composer holds header and body, as text, or (b) it holds the header and
+   * exactly one new chip (the map's `attach.chip`) whose label starts with the body's first characters, with
+   * nothing still being added (`attach.adding`). Anything else, still unsettled at the map's
+   * `attachWaitMs`, is a failure that says what the page held (counts only, never text).
+   */
+  async attachText(action: string, body: string, header: string, waitMs?: number): Promise<AttachOutcome> {
+    const { attachLabelChars } = this.map.settings
+    const attachWaitMs = waitMs ?? this.map.settings.attachWaitMs
+    const spec = this.map.actions[action]
+    if (!spec) throw new ProviderError('config_error', `${this.map.provider}: unknown action ${action}`)
+    const { chip, adding: addingId, label: labelFrom } = attachBinding(this.map)
+    const before = await this.count(chip)
+    await this.act(action, { text: body })
+    const input = (await this.resolve(spec.target)).locator
+    const collapse = (s: string): string => s.replace(/[\s\u00a0]+/g, ' ').trim()
+    const start = collapse(body).slice(0, attachLabelChars)
+    let seen = ''
+    for (const end = Date.now() + attachWaitMs; ; await sleep(TICK_MS)) {
+      const adding = (await this.count(addingId)) > 0
+      const composer = lineText(await typedText(input))
+      const chips = await this.tryResolve(chip)
+      const labels = chips ? await chips.locator.filter({ visible: true }).evaluateAll((els, from) => els.map((el) => (from === 'text' ? (el as HTMLElement).innerText : el.getAttribute('aria-label')) ?? ''), labelFrom) : []
+      const added = labels.length - before
+      const named = labels.filter((label) => collapse(label).startsWith(start)).length
+      if (!adding) {
+        if (composer === lineText(header + body) && added === 0) return { outcome: 'text', chips: 0 }
+        if (composer === lineText(header) && added === 1 && named >= 1) return { outcome: 'attachment', chips: added }
+      }
+      seen = `${adding ? 'an attachment is still being added' : 'no attachment is being added'}; the composer holds ${composer.length} characters (header ${lineText(header).length}, header and body ${lineText(header + body).length}); ${added} new chip(s), ${named} named by the body's first ${start.length} characters`
+      if (Date.now() >= end) break
+    }
+    throw new ProviderError('ui_drift', `${this.map.provider}: attach text failed: ${/still being added/.test(seen) ? 'the attachment was still being added' : 'neither the text nor one named attachment was found'} after ${attachWaitMs} ms (${seen})`)
+  }
+
   /** Number of visible matches of a `many` element (or 0/1 for a `one` element). */
   async count(id: string): Promise<number> {
     const found = await this.tryResolve(id)
@@ -306,6 +332,11 @@ export class UiEngine {
   /** Evaluate a named state now. */
   async state(id: string): Promise<boolean> {
     return this.evaluate({ state: id }, new Map())
+  }
+
+  /** Whether a map state holds inside `root` only (the newest answer, say); its elements are looked for there. */
+  async stateIn(id: string, root: Locator): Promise<boolean> {
+    return this.evaluate({ state: id }, new Map(), root)
   }
 
   /** Poll a condition until it holds; a timeout is a typed failure. */
@@ -471,18 +502,6 @@ export class UiEngine {
     }
   }
 
-  /**
-   * The page as it stands, for a stall: outlined (structure only, redacted, its side navigation
-   * folded), with its visibility, focus, and path.
-   */
-  async stall(phase: string): Promise<StallEvent> {
-    const redact = await this.options.redact?.().catch(() => []) ?? []
-    const outline = await outlineOf(this.page, `turn page (${phase} stalled)`, undefined, redact, { foldNavigation: true }).catch(() => undefined)
-    const seen = await this.page.evaluate(() => ({ visibility: document.visibilityState as string, focused: document.hasFocus() })).catch(() => undefined)
-    const url = this.path()
-    return { provider: this.map.provider, phase, ...seen, ...(url ? { url } : {}), ...(outline ? { outline } : {}) }
-  }
-
   /** The map's `errors` conditions guard every action: a login surface or challenge is never healed around. */
   private async checkGuards(): Promise<void> {
     await this.checkErrors('act')
@@ -576,13 +595,26 @@ export class UiEngine {
         }
         return
       }
-      case 'insertText': {
+      case 'insertText':
+      case 'pasteText':
+      case 'attachText': {
         const text = args.text ?? ''
         await locator.click()
         // After anything already in the composer (such as a tool mention chip).
         await locator.press('ControlOrMeta+End')
+        // A paste is one event the editor handles as one insertion (typing a 66 KB prompt into the live editor took 5.5 min);
+        // an editor that does not handle it leaves it unprevented, and the text is typed instead.
+        const pasted = spec.do !== 'insertText' && (await locator.evaluate((el, pasting) => {
+          const data = new DataTransfer()
+          data.setData('text/plain', pasting)
+          const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+          el.dispatchEvent(event)
+          return event.defaultPrevented
+        }, text))
         // Insert as text (no key events), so editor shortcuts never fire; then read back.
-        await this.page.keyboard.insertText(text)
+        if (!pasted) await this.page.keyboard.insertText(text)
+        // What the site made of the paste is the Procedure's to judge (`attachText`), not a read-back of one text.
+        if (spec.do === 'attachText') return
         const value = await typedText(locator)
         // Editors turn line breaks into paragraphs and may change spacing; the lines and
         // their characters must survive.
@@ -622,6 +654,7 @@ export class UiEngine {
     if ('visible' in condition) return (await find(condition.visible)) !== undefined
     if ('hidden' in condition) return (await find(condition.hidden)) === undefined
     if ('countIncreased' in condition) return (await this.count(condition.countIncreased)) > (baselines.get(`count:${condition.countIncreased}`) ?? 0)
+    if ('countAtLeast' in condition) return (await this.count(condition.countAtLeast.of)) >= (await this.count(condition.countAtLeast.as))
     if ('network' in condition) {
       const open = this.map.network[condition.network]?.open
       const seen = this.network.seen(condition.network)
@@ -634,6 +667,7 @@ export class UiEngine {
       if (!found) return false
       const value = await found.locator.getAttribute(condition.attr.name)
       if (condition.attr.equals !== undefined) return value === condition.attr.equals
+      if (condition.attr.matches !== undefined) return value !== null && new RegExp(condition.attr.matches).test(value)
       return (value !== null) === (condition.attr.present ?? true)
     }
     if ('stableTextMs' in condition) {

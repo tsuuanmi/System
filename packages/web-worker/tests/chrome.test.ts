@@ -1,5 +1,5 @@
 /**
- * Which Chrome the `chatgpt-web` Runtime runs (chrome.ts): the configured path,
+ * Which Chrome the `web` Runtime runs (chrome.ts): the configured path,
  * `CHROME_PATH`, a system Chrome as new as the engine's Chromium, else the pinned
  * managed build. No browser is started and nothing is downloaded: the installer is injected.
  */

@@ -2,8 +2,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { launch, webDefaults } from '../packages/agents/src/chatgpt.ts'
-import { startXvfb } from '../packages/agents/src/display.ts'
+import { launch, webDefaults } from '../packages/web-worker/src/chatgpt.ts'
+import { startXvfb } from '../packages/web-worker/src/display.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-probe-'))
 const display = await startXvfb()

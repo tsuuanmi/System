@@ -3,14 +3,14 @@ id: PROP-0005
 type: proposal
 status: accepted
 created: 2026-11-06
-summary: A Website Worker that runs a step in the operator's signed-in ChatGPT web session through a genuine headed Chrome (patchright-core), returns the answer and its cited links as Artifacts, and records each exchange as a conversation; built on the Host after milestone H's release R1.
+summary: A Website Worker that runs a step in the operator's signed-in ChatGPT web session through a genuine headed Chrome (patchright-core), returns the answer and its cited links as Artifacts, and records each exchange as a conversation; built on the Host after milestone H's checkpoint R1.
 evidence: [RES-0008]
 related: [PROP-0003, PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 ---
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2, W5, W7 and W8, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1 and the review of WW1 in WW1c; moved to its own optional row `web-worker` in WW2a, 2026-11-07).
 
 ## Decision context
 
@@ -32,6 +32,9 @@ fix V1; their content is used here as reference.
   Other risks are Cloudflare bot checks, UI changes, and a signed-in browser
   profile that must be guarded like a password. **The operator accepted these
   risks for their own account.**
+  On 2026-11-07 the operator extended this to both accounts
+  (`chatgpt-web/default` and `chatgpt-web/second`) and to regular unattended
+  use, scheduled canaries included (milestone WW).
 
 Because the ChatGPT-specific drivers have no license, System does not copy
 their code. It may learn from their approach, such as recognising that an
@@ -41,12 +44,14 @@ fallback.
 ## Proposal and what was built
 
 1. **A third Runtime**, `chatgpt-web`, beside Claude Code and Codex, in
-   `packages/agents/src/chatgpt.ts`: an Account `chatgpt-web/<name>` of the
+   `packages/web-worker/src/chatgpt.ts` (its own package and optional, off-by-default `web-worker`
+   row since WW2a: with the row off the account is `unavailable`, "the web-worker row is disabled"):
+   an Account `chatgpt-web/<name>` of the
    `agents` row (default `chatgpt-web/default`) with the capabilities
    `research`, `brainstorm.idea-*` (by role) and `web-search`. It drives the
    page with `patchright-core` 1.63.0 (Apache-2.0, the version System 1 pins;
    W5 replaced `playwright-core`) on a Chrome chosen as in System 1
-   (`packages/agents/src/chrome.ts`): the configured `executablePath`, then
+   (`packages/web-worker/src/chrome.ts`): the configured `executablePath`, then
    `CHROME_PATH`, then a system Chrome no older than the engine's Chromium,
    then the pinned Chrome for Testing (`chrome.lock.json`), installed with
    `@puppeteer/browsers` under `$DSH_HOME/system/browsers` the first time it is
@@ -56,7 +61,7 @@ fallback.
    **Not enabled in the bundle**; the runbook says how to add it.
    **Never headless** (operator, 2026-11-07). System always runs a real,
    headed Chrome on an invisible display, a private Xvfb that it starts and
-   stops (`packages/agents/src/display.ts`). The option `headless` does not
+   stops (`packages/web-worker/src/display.ts`). The option `headless` does not
    exist, and an account that sets it is `unavailable`. The reason: a real
    headed browser is closer to the operator's own and is challenged less. Each
    attempt and each login uses the operator's `DISPLAY` when one is set, and
@@ -71,7 +76,7 @@ fallback.
    Workers. The operator signs in once with
    `system workers login chatgpt-web/<name> [--cookies <file> | --remote]`,
    the Host operations `workers.login`, `workers.loginRemote` and
-   `workers.loginWait` (all `agent: false`). Three ways:
+   `workers.loginWait` (all `agent: false`; `workers.recheck` checks an Account afterwards, WW6d). Three ways:
    - `--cookies`: a session cookie export (JSON or Netscape) from the
      operator's own browser, read once by the CLI into the profile and stored
      nowhere else. The browser is the same headed one, on its own Xvfb.
@@ -79,36 +84,46 @@ fallback.
    - `--remote`, for a machine with no display (the operator's, checked
      2026-11-07), which also lets the operator clear a Cloudflare challenge
      that the cookies did not carry (W2).
-   **The remote flow, as built** (`packages/agents/src/remote-login.ts`; the
-   idea is System 1's "remote" flow, in pure Node):
-   1. The Host starts a private Xvfb and opens the account's profile headed on
-      it, with the engine's default pipe (no CDP port exists), and loads
-      chatgpt.com.
-   2. It serves a viewer on `127.0.0.1` on a random port, under a random
-      32-byte token in the path; a request without the token gets 403.
-   3. The page shows a CDP screencast of the tab (`Page.startScreencast`),
-      streamed with Server-Sent Events, and sends the operator's clicks,
-      scrolls and keys back as POSTs that become `Input.dispatchMouseEvent` and
-      `Input.dispatchKeyEvent`, scaled from the canvas to the page's pixels.
+   **The remote flow, as built** (`packages/web-worker/src/remote-login.ts`,
+   W9; a port of System 1's remote login, `packages/plugins/login/src/remote.ts`):
+   1. Without `x11vnc` or `x0vncserver` on `PATH` it fails at once, naming
+      both. Otherwise the Host starts a private Xvfb, a VNC server on it, and
+      opens the account's profile headed on it (the engine's pipe: no CDP
+      port exists), and loads chatgpt.com.
+   2. The VNC server is reachable only through an owner-only unix socket in a
+      directory of mode 0700 (no TCP port), and the Host serves noVNC
+      (`@novnc/novnc`, served unmodified) on `127.0.0.1` on a random port,
+      under a random 32-byte token in the path; a request without the token,
+      or with a Host header other than loopback, gets 404, and a WebSocket on
+      `<token>/websockify` is bridged to the VNC socket.
+   3. The page shows the **whole screen** of that Xvfb, scaled to the browser
+      window (`scaleViewport`), with real X input: every tab (a restored
+      one too), the popups and a challenge's checkbox are there, and the
+      browser sees what it sees from a person at a keyboard.
    4. The CLI prints the line `ssh -L <port>:127.0.0.1:<port> <user>@<host>`
       and the URL. The operator opens the tunnel from their own machine, opens
       the URL, signs in, clears any check by hand, and presses **Save**.
    5. On Save the browser closes cleanly, so the profile keeps `cf_clearance`
       and the session; then the signed-in check of a normal login runs and its
-      result is reported. **Cancel**, Ctrl-C in the CLI, or 15 minutes, end the
-      session without a check. Either way the browser, the Xvfb and the server
+      result is reported. **Cancel** (accepted only from the page's own
+      origin), Ctrl-C in the CLI, or 15 minutes, end the session without a
+      check. Either way the browser, the VNC server, the Xvfb and the server
       are stopped.
    System never solves or clicks a challenge; the human does, in the viewer.
-   **Why not VNC:** `x11vnc` and noVNC/websockify are not installed here, and
-   a VNC server adds an extra listener and another password to guard. The
-   screencast needs only Node and the Chrome already in use, and the token
-   plus the loopback bind plus SSH are the whole access control.
-   System 1's remote login does use VNC (noVNC over a VNC server on the
-   display), so the operator's clicks are real X input events. Here they are
-   CDP-dispatched (`Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`):
-   **that is the remaining difference** from System 1 if a Cloudflare
-   challenge still loops after W5, and the next step would then be a VNC
-   server on the private display behind the same token and tunnel.
+   **Why VNC (reversed, W9).** W2 built a CDP screencast of one tab with
+   CDP-dispatched input, on the grounds that no VNC server was installed and
+   that one adds a listener. The operator's evidence of 2026-11-07 refuted
+   it: for `chatgpt-web/second` the profile had restored another tab (an
+   `auth.openai.com` "Session ended" page) and the screencast, which shows only
+   the page it attached to, was blank; its canvas did not fit the window; and
+   Cloudflare Turnstile looped on the dispatched clicks. System 1's remote
+   login, which works, shows the whole Xvfb screen through VNC and noVNC. The
+   listener is a unix socket with owner-only access, and the token, the
+   loopback bind and SSH remain the access control. `x11vnc` 0.9.16 has no
+   unix-socket-only mode (System 1's `-unixsockonly`; its `-unixsock` also
+   listens on TCP port 5900, with no password), so it is run once per
+   connection with `-inetd` behind a socket the Host itself listens on:
+   no TCP port is opened at all.
 3. **One attempt.**
    1. Open a **temporary chat** (W7: System 1's driver turns the page's own
       Temporary chat control on; `?temporary-chat=true` is not used, see item
@@ -125,9 +140,22 @@ fallback.
       seconds.
    4. Extract the answer as Markdown (the page's own Copy, checked against the
       rendered words) and the cited links. Output
-      slots are filled from labelled, fenced blocks the prompt asks for (such
-      as `report` and `sources`); a missing block fails the attempt, as a
-      missing file does today.
+      slots are filled from labelled blocks the prompt asks for (such as
+      `report` and `sources`), each as a line `~~~~<name>`, the output, a line
+      `~~~~` and nothing after the last (WW5c; a tilde fence is closed only by
+      tildes, so code fences inside never end it); a missing block fails the
+      attempt, as a missing file does today, and so does an answer that holds
+      more than `maxOutsideChars` (200) characters outside its blocks, since an
+      output may then be cut short. When the site shows the fences as paragraph
+      text and its Copy escapes the Markdown (`\~`, `https\://`; seen live
+      2026-11-08, WW5d), slots are read from the answer's rendered text by the
+      same rules; escaped Markdown never fills one.
+   5. The page logic is the Account option `procedures` (WW2-iii): `legacy`, System 1's
+      driver (default), or `generic`, the generic Procedures bound to the ChatGPT map,
+      so both can be compared on the real site before the legacy path goes. The
+      attempt around them is the same. `generic` reads no Markdown (the rendered
+      text and its labelled blocks only), reads no model, and fails a send it cannot
+      confirm as "send outcome unknown: not resent", never resending it.
 4. **Provenance.** Each attempt also stores the exchange as a
    `conversation@1` ([PROP-0003](PROP-0003-conversation-ingestion.md)): the
    prompt and response as parts, the conversation URL, the model the driver
@@ -192,15 +220,133 @@ fallback.
    found. W8: the answer keeps its fences; where Copy does not give them, each
    rendered code block is fenced again from the page (`pre code`, its header
    as the info string).
+   WW5a: a review holding code is answered in a four-backtick fence, which
+   the driver's three-backtick pairing broke (second opinions `work:d72ce675`
+   and `work:a4bd030d` lost their `review` block); fences are read by
+   CommonMark's rule and rebuilt one backtick longer than their content.
+   WW5b: a second opinion (`work:feee282d`) was answered as one `review` widget
+   whose text holds ```` ```ts ```` fences; the driver took those lines for
+   Markdown and did not fence the widget. The driver now returns the rendered
+   blocks as data and the Runtime fills each output from the block labelled
+   with its name (verbatim; two such blocks are ambiguous and fail), else from
+   the Markdown text; the evidence records which (`filled`).
+   WW5c: a second opinion (`work:7f820cb2`) was accepted with a 339-byte
+   `review`: ChatGPT wrapped it in a three-backtick fence although it holds
+   ```` ```ts ````, the inner closing fence ended the block, and the page,
+   the widget and the parser agreed on the truncated text. A bake-off on both
+   Accounts chose four tildes (backtick fences passed once, `===BEGIN===`
+   sentinels failed on both: Copy escapes them). The prompt asks for tilde
+   fences, the parsers read them by CommonMark, and an answer with more than
+   `maxOutsideChars` characters outside its output blocks fails, the answer
+   kept as partial output (evidence `outsideChars`).
+   WW6a: the answer element twice held only "This response couldn’t load" (a
+   site-side generation error; 2026-11-07 probe, `work:78fbf67b`), and the
+   attempt failed as "wrote no output block", which hid the cause. The UI map
+   declares that error (the text, or any alert inside the newest answer) as a
+   state polled during the wait; when it shows, the wait stops at once and the
+   attempt fails with "site error: the answer did not load (retryable)"
+   (evidence `siteError`, `waitEnded`), the screenshot and structure-only DOM
+   kept. Nothing is resent or regenerated: a retry is `work retry`.
+   WW6b: a canary Worker step succeeded but its `sources` began with the literal
+   `<escape>`, a control token ChatGPT leaked inside the rendered code block, and
+   the citation check refused it as not JSON. The UI map's `answer.leakedTokens`
+   (ChatGPT: `<escape>`) lists such tokens; the Runtime removes one only at the
+   very start or end of an output, repeatedly, never inside the content, and the
+   evidence records `stripped` per output. An output still invalid for its
+   verifier fails as before.
+
+WW6d (the circuit breaker; System's Debate `work:3a6ac1f1`): each Account has a durable state
+(`ready | cooling | needs-sign-in | challenged`, in `state.json` in its directory) moved by the
+attempts' outcomes: a sign-in wall, the login page, "Session ended, invalid_state" and a
+Cloudflare/CAPTCHA challenge quarantine at once; a site error or a suspected rate limit cools it down
+(2, then 5 minutes after consecutive ones, cleared by a success); a failure attributable to the Host
+(a launch failure, anything before the browser reached the Site, a page timeout while the Host's load is
+high) never counts. While not `ready` the Worker offers no capability (routing skips it; the Work
+controller and slots are unchanged) and `system workers` says why and what to do. One notice per state
+change (Host log, `lastNotice`). `system workers recheck` (`workers.recheck`, `agent: false`) opens the
+profile on its own Xvfb, runs `checkAuth` and the mode and temporary-chat checks without sending, and is
+the only way out of a quarantine; a successful remote login does it itself. Not in this change, by
+decision: automatic retry and the uncertain-send marker (a prompt is still never resent), the canary and
+the metrics.
+
+## Known defects, fixed in WW1 (2026-11-07)
+
+- **Restored tabs.** A profile that had held 14 to 17 tabs reopened them all:
+  5.5 GB, and on `second` Playwright's launch never returned within 60 s, so
+  cleaning up after launch could not help. Measured: moving only `Default/Sessions`
+  aside launched in 0.8 s, still signed in. The Runtime removes the tab sessions
+  before each launch and marks the last exit clean, then keeps one working tab
+  (its own, opened first). The preferences alone did not stop the restore: the
+  launch keeps `--restore-last-session`, which outranks them and which keeps
+  session-only cookies alive ([web-worker README](../../packages/web-worker/README.md)).
+  Cancel and the time limit end Chrome with `context.close()`, and a SIGKILL
+  relaunch is tested to open one tab.
+- **Chat/Work switch not found.** The switch is awaited (a bounded setting of
+  the UI map), then required to hold; a page that never shows it fails as
+  `mode unknown`, and a challenge or sign-out is named as such. No selector
+  changed: no failing page had been captured, and each failure now keeps the
+  screenshot, a redacted DOM, the URL, the viewport and the map version.
+- **A 1.5 s launch clock** in the Runtime's test was the page clock reused for
+  Chrome's launch; the test never asserted the timeout. Chrome has its own
+  `timeouts.launch` (30 s).
+- **Evidence.** Each attempt writes a stage chain as it happens, before Chrome
+  starts, with `promptSendAttempted` and `promptSubmitted`, and keeps it as
+  partial output.
+
+## Review findings of WW1, fixed in WW1c (2026-11-07)
+
+A second opinion (`chatgpt-web/second`, Work `work:d72ce675`) reviewed the WW1 diff.
+Fixed, each with a test that failed first:
+
+- **D1, the failure DOM kept text.** The snapshot is now structure only: every text
+  node and every attribute value but `role`, `aria-label` and `data-testid` is its
+  length.
+- **D2, a timed-out launch left Chrome running.** The process group that took the
+  profile's lock is killed.
+- **D3, a held profile was launched.** `launch` fails naming the live Chrome and
+  leaves it alone.
+- **D4, D5, the mode wait.** Bounded by its deadline as a whole, sampled every poll
+  (a change that comes back restarts the hold), and the mode is read again right
+  before the send.
+- **D6, D7, D8, D9.** `close` is `ok` only when the browser process exited (one that
+  outlives it is killed and the stage fails); `promptSendAttempted` is apart from
+  `promptSubmitted`, which needs a user turn on the page; the conversation binding
+  read belongs to the `read` stage, and the first failed stage stays the failed
+  stage; closed pages are counted when confirmed, and a page that will not close
+  fails the attempt.
+- **Questions answered in the READMEs:** `close()` is the Playwright context's, and the
+  process's exit is now checked (web-worker README); stages are in the evidence list.
+- **Also found (WW1c):** typing a 66 KB prompt took 5.5 min, so the composer takes one
+  paste event ([web-driver README](../../packages/web-driver/README.md)), recorded as
+  the `insert` stage; and a Runtime waited for a Worker's pipes to close, which two
+  leaked Xvfb held open for 33 min: the attempt now ends on process exit
+  ([web-worker README](../../packages/web-worker/README.md)).
+- **Also found (WW1g):** the paste of a 61,581-character prompt became an attachment chip on a
+  Team workspace (the composer read 2 characters and the read-back failed) and stayed text on
+  another account. A prompt is now a header typed in the composer and a body pasted after it,
+  accepted as text or as one chip named by its start, else failed before the send in the stage
+  `attach`; the evidence records the outcome and the chip count
+  ([web-driver README](../../packages/web-driver/README.md),
+  [web-worker README](../../packages/web-worker/README.md)).
+- **Also found (WW1h, second opinion of WW1c, `work:ce23f210`):** fixed: a failed launch
+  kills only a Chrome this process started (1); a close with no identified process is not
+  `ok` (2); only a known mode can settle (3); each page operation of the mode wait ends at
+  its deadline (4); a late page that will not close fails the one-tab invariant (5); the
+  binding is checked inside the one `read` stage (6); the Xvfb leak test signals only the
+  pid the verifier names (7). A failure names the stage that failed and its own limit
+  ("open: page.goto timed out after 60 s"), not the answer clock.
+- **Not fixed, as risks:** the lock check is not atomic; the `page` handler closes
+  legitimate pop-ups; evidence writes that fail are silent; `skip`-gated headed tests
+  depend on the environment.
 
 ## Tests and what is still to verify
 
 System 1's fake site (`packages/web-driver/tests/fake-chatgpt.ts`, ported with
-the driver, driven by `packages/agents/tests/chatgpt.test.ts` and
+the driver, driven by `packages/web-worker/tests/chatgpt.test.ts` and
 `tests/chatgpt-web.test.ts`) covers send, wait and extract, a sign-in wall, a
 CAPTCHA page, the logged-out home, the site's error page, a composer on Work,
 a missing output block and cancel mid-answer, deterministically and without an
-account. The ported engine tests are in `packages/web-driver/tests`. `packages/agents/tests/remote-login.test.ts` covers the
+account. The ported engine tests are in `packages/web-driver/tests`. `packages/web-worker/tests/remote-login.test.ts` covers the
 remote flow (token, frames, input, Save, Cancel, expiry, cleanup) and the
 private Xvfb. A headed Chrome that cannot start is a failure of these tests,
 not a skip (`test-support/headed.ts`; `SYSTEM_SKIP_HEADED=1` skips them on a

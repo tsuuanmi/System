@@ -3,6 +3,6 @@
 import { FakeChatGpt, type FakeOptions } from './fake-chatgpt.ts'
 
 const options = JSON.parse(process.argv[2] ?? '{}') as FakeOptions
-const fake = new FakeChatGpt({ thinkMs: 100, copied: (markdown) => markdown, ...options })
+const fake = new FakeChatGpt({ thinkMs: 100, codeWidget: true, ...options })
 console.log(await fake.start())
 process.on('SIGTERM', () => void fake.stop().then(() => process.exit(0)))

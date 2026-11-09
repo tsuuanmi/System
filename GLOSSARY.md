@@ -10,7 +10,7 @@ back, and what was checked.
 
 **Runtime**:
 An agent program that System runs to do a step, such as Claude Code or
-Codex.
+Codex, or the `web` Runtime, which drives a signed-in Site in a browser.
 _Avoid_: agent, engine, tool
 
 **Account**:
@@ -90,6 +90,45 @@ An aim the operator writes down, with its scope and budget, that an
 Orchestrator works toward; every Work it creates names its Goal.
 _Avoid_: project, charter, epic, campaign
 
+**Sub-workflow**:
+A Workflow used as one step of another Workflow; its steps are joined into
+the using Workflow's spec when the Work is admitted.
+_Avoid_: child Work, nested run, subroutine
+
+**Round**:
+One pass of a Debate in which each side answers having read the other
+sides' answers of the previous Round.
+_Avoid_: turn, iteration
+
+**Debate**:
+A Workflow of several Rounds between independent Workers, ended by a
+synthesis; the number of Rounds is fixed in the Workflow.
+_Avoid_: discussion, conversation (a Conversation is outside material)
+
+**Lane**:
+One of the k parallel branches of a fan-out Workflow, each on a capability of its
+own so that a profile gives it to its own Account; k is fixed in the Workflow.
+_Avoid_: track, thread, branch (a branch is a git term)
+
+**Release**:
+The operator merging `dev` into `main` after reading a release report. System
+never makes a Release.
+_Avoid_: deploy, ship; checkpoint (a milestone's internal gate)
+
+### Checking work
+
+**Verifier**:
+A check System runs on one exact Artifact against pinned criteria. It is
+not a Worker and never changes what it checks.
+_Avoid_: reviewer, judge, validator
+
+**Verdict**:
+What a Verifier concludes about one Artifact: pass; fail, when the Artifact
+itself is wrong (such as malformed); or inconclusive, when the check could
+not confirm it against the world (a page that changed or refused the fetch).
+Only a check of the Artifact's own form may fail it.
+_Avoid_: score, review, result
+
 ### Outside material
 
 **Conversation**:
@@ -106,3 +145,18 @@ _Avoid_: citation, scrape
 **Website Worker**:
 A Worker that System drives on a website where the operator is signed in.
 _Avoid_: browser agent, conversation import
+
+**Site**:
+A web product a Website Worker uses, such as chatgpt.com; each Site belongs to
+a Provider.
+_Avoid_: provider (for the product), website type
+
+**UI map**:
+The configuration of one Site: its elements, its page states, and how each
+Procedure is done on its interface. A new Site is a new UI map, not new code.
+_Avoid_: selectors file, driver
+
+**Procedure**:
+An operation every Site has, such as opening a chat, sending, waiting for the
+answer or reading it; the UI map says how it is done on a given Site.
+_Avoid_: action, step (a step is part of a Workflow)

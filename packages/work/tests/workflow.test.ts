@@ -9,7 +9,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'utf8')
 
 const available: AvailableCapabilities = {
-  workers: new Set(['code-write', 'research', 'web-search']),
+  workers: new Set(['code-write', 'research', 'web-search', 'tier.standard']),
   verifiers: new Set(['code.required-checks', 'research.citation-check']),
   effects: new Set(['git.publish']),
 }
@@ -138,6 +138,12 @@ test('accept must require verify steps it depends on, appear once, and come last
   assert.match(problems(`${head}  - id: ok\n    dependsOn: [a]\n    accept:\n      requires: [v]\n`)[0]!, /does not depend on it/)
   assert.match(problems(`${head}  - id: ok\n    dependsOn: [v]\n    accept:\n      requires: [v]\n  - id: ok2\n    dependsOn: [v]\n    accept:\n      requires: [v]\n`)[0]!, /at most one accept step/)
   assert.match(problems(`${head}  - id: ok\n    dependsOn: [v]\n    accept:\n      requires: [v]\n  - id: after\n    dependsOn: [ok]\n    capabilities: [research]\n    outputs: [z]\n`).join(';'), /must be last/)
+})
+
+test('a verify step\'s inputs are checked like a Worker step\'s: the slot must exist and its step be depended on', () => {
+  const head = `${base}  - id: a\n    capabilities: [research]\n    outputs: [x]\n  - id: v\n    dependsOn: [a]\n    verify:\n      capability: research.citation-check\n      subject: $steps.a.x\n      criteria: c1\n`
+  assert.doesNotThrow(() => resolve(parseWorkflow(`${head}      inputs:\n        report: $steps.a.x\n`), available))
+  assert.match(problems(`${head}      inputs:\n        report: $steps.a.nope\n`).join(';'), /input report uses \$steps\.a\.nope: step a has no output nope/)
 })
 
 test('how dependsOn is written never changes the resolved spec', () => {
