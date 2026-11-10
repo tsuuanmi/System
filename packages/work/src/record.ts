@@ -46,7 +46,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     specId: contentIdSchema, input: contentIdSchema.optional(),
     /** Read-only: the Goal a Work was admitted for, in records stored before Goals were removed. New events never carry it. */
     goal: contentIdSchema.optional(),
-    /** The Item of a repository's STATUS.md the input Task names (PLAN DF2c); absent when it names none. */
+    /** The Item of a repository's STATUS.md the input Task names (Item df-3); absent when it names none. */
     item: z.object({ id: z.string(), repository: z.string().optional() }).strict().optional(),
     /** Only this Worker may take the Work's Worker steps (`system work submit --worker`), unless a retry names another. */
     worker: z.string().optional(),
@@ -77,6 +77,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     rateLimited: z.literal(true).optional(),
     /** The Worker says this failure may be tried afresh (`retry.onFail` names the step itself). */
     retryable: z.literal(true).optional(),
+    /** The Worker's final message objects to an earlier step's output (`OBJECTION: <what and why>`); the step failed, and the earlier step that lists it in `retry.onFail` is reopened with this text. */
+    objection: z.string().optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,
@@ -98,6 +100,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), reason: z.string(),
     /** An automatic retry after a failing verdict: that verdict Artifact, handed to the new attempt as input `failure`. */
     failure: contentIdSchema.optional(),
+    /** An automatic reopening after this later step's objection: the step, whose recorded objection is handed to the new attempt as input `failure`. */
+    objectedBy: z.string().optional(),
     /** Only this Worker may take the step over. */
     worker: z.string().optional(),
     /** The previous attempt's partial output, handed to the new attempt as input `previous`. */

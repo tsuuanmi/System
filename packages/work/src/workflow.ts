@@ -27,9 +27,9 @@ const capability = z.string().regex(CAPABILITY)
 const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<slot>')
 
 /**
- * One automatic further attempt after a failure that can be fixed (PLAN DF2b):
+ * One automatic further attempt after a failure that can be fixed (Item df-7):
  * `onFail` names the verify steps that judge, or come after, this step and whose
- * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh.
+ * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh, and a later Worker step whose final message objects (`OBJECTION:`) to this step's output.
  */
 const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3) }).strict()
 
@@ -42,6 +42,8 @@ const workerStep = z.object({
   /** What this step's Worker is told besides the task, such as an output format. */
   instructions: z.string().min(1).max(8 * 1024).optional(),
   retry: retry.optional(),
+  /** The step's change may equal its base (a docs step with nothing stale): passed on instead of failing with "no change". */
+  mayBeEmpty: z.boolean().optional(),
 }).strict()
 
 const verifyStep = z.object({
@@ -213,7 +215,7 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
       for (const failing of s.retry?.onFail ?? []) {
         const target = byId.get(failing)
         if (!target) problems.push(`step ${s.id} retry.onFail names ${failing}, which is not a step`)
-        else if (failing !== s.id && !(isVerifyStep(target) && (s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`) || before.get(failing)!.has(s.id)))) problems.push(`step ${s.id} retry.onFail names ${failing}, which neither judges nor follows ${s.id}`)
+        else if (failing !== s.id && !(isWorkerStep(target) && before.get(failing)!.has(s.id)) && !(isVerifyStep(target) && (s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`) || before.get(failing)!.has(s.id)))) problems.push(`step ${s.id} retry.onFail names ${failing}, which neither judges nor follows ${s.id}`)
       }
     } else if (isVerifyStep(s)) {
       checkRef(s, s.verify.subject, 'verifies')

@@ -1,4 +1,4 @@
-// `system update` (PLAN DF0b): switch the install to the newest commit of `main`, and only to code that
+// `system update`: switch the install to the newest commit of `main`, and only to code that
 // passed its own required checks on this machine. Plain JavaScript that needs no build, like service.mjs.
 //
 // The install (`~/.system`): `repo/`, a clone of the origin; `releases/<commit>/`, one worktree of it per

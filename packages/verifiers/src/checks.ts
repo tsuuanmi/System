@@ -6,6 +6,7 @@
  * base commit**, so a Worker cannot weaken them by editing that file. Each
  * check runs `sh -c <run>` in the worktree with a minimal environment and its
  * own timeout; its exit, duration and output tails are one evidence Artifact.
+ * The change is what differs from the task's base (and from the subject's parent); a check that failed in an earlier verdict of the same step in the Work runs again.
  * Verdict: `pass` when every check exits 0 and leaves no Xvfb or Chrome running (it is named and killed), `fail` when any does not (a
  * timeout is a failure), `inconclusive` when every failing check fails on the base commit too (run again by name, up to the
  * last failed check; the evidence holds both runs; not for a subject that is the base itself), `error` when the checks could not be run at all.
@@ -34,7 +35,7 @@ export const checksFileSchema = z.object({
     name: z.string().regex(/^[a-z][a-z0-9-]*$/),
     run: z.string().min(1),
     timeoutSeconds: z.number().int().positive().max(3600).default(600),
-    /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one; without it, always. */
+    /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one or it failed earlier in the Work; without it, always. */
     paths: z.array(z.string().min(1)).min(1).optional(),
     /** Under `red-v1` (the tests step's change, before any code): `pass` must still pass, `fail` (absent) is where the new tests fail. */
     red: z.enum(['pass', 'fail']).optional(),
@@ -64,7 +65,7 @@ export const checkRunSchema = z.object({
   stderrTail: z.string(),
 }).strict()
 
-/** The verifiers row's `checkEnv`: variables every check is given on top of its minimal environment (DF2c). */
+/** The verifiers row's `checkEnv`: variables every check is given on top of its minimal environment (Item df-2). */
 export const checkEnvSchema = z.record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
   .refine((env) => !['HOME', 'PATH', 'CI'].some((k) => k in env), { message: 'HOME, PATH and CI cannot be set' })
 
@@ -211,9 +212,18 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         const path = [bin, process.env.PATH].filter(Boolean).join(':')
         // What the change touches against the base its checks were pinned from (PROP-0007 decision 5); a commit checked as it is runs them all.
         // A tree that names its parent is a change from that commit (a captured change; a release against the running one); otherwise from the commit the checks were pinned from.
+        // It is also a change from the Task's base, so a reopened step's second attempt is selected by everything changed since the base, not only since the previous attempt.
         const from = tree.parent ?? checks.source.commit
-        const asItIs = tree.commit === from
-        const touched = asItIs ? [] : (await git(tree.repository, ['diff', '--name-only', from, tree.commit])).split('\n').filter(Boolean)
+        const asItIs = tree.commit === from && tree.commit === checks.source.commit
+        const touched = asItIs ? [] : [...new Set([...await diffNames(tree.repository, from, tree.commit), ...await diffNames(tree.repository, checks.source.commit, tree.commit)])]
+        // A check that failed in an earlier verdict of this verify step in the Work runs again, whatever the diff selects.
+        const failedBefore = new Set<string>()
+        for (const id of request.earlier ?? []) {
+          const read = artifacts.get(id)
+          if (read.state !== 'stored' || read.envelope.kind !== CHECK_RUN_KIND.kind) continue
+          const run = read.envelope.content as z.infer<typeof checkRunSchema>
+          if (run.exitCode !== 0 || run.timedOut || run.leftovers?.length) failedBefore.add(run.name)
+        }
         /** One check on one commit's worktree: the change and the base run it the same way, so "fails" means the same on both. */
         const runCheck = async (check: Checks['checks'][number], cwd: string, commit: string): Promise<{ id: string; failed?: string; leftover: boolean; ms: number }> => {
           const started = now()
@@ -249,12 +259,12 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         const failedNames: string[] = []
         /** Each check run and why it failed, if it did; `leftover` when only what it left running failed it. */
         const results: { name: string; red?: 'pass' | 'fail'; failure?: string; leftover: boolean }[] = []
-        const chosen = checks.checks.filter((check) => asItIs || selected(check, touched))
+        const chosen = checks.checks.filter((check) => asItIs || selected(check, touched) || failedBefore.has(check.name))
         for (const check of checks.checks) if (!chosen.includes(check)) skipped.push(check.name)
         for (const check of chosen) {
           const result = await runCheck(check, worktree, tree.commit)
           evidence.push(result.id)
-          ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s`)
+          ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s${!asItIs && !selected(check, touched) ? ' (failed earlier)' : ''}`)
           results.push({ name: check.name, red: check.red, failure: result.failed, leftover: result.leftover })
           if (result.failed) {
             failed.push(result.failed)
