@@ -131,6 +131,16 @@ or a check that the base fails too, so the change cannot be to blame; or a check
 Only a check of the Artifact's own form may fail it.
 _Avoid_: score, review, result
 
+**Outside failure**:
+An execution or verification incident whose cause is outside the change
+being evaluated (for example a Provider quota limit, Host interruption or
+environmental test instability). Classify from recorded evidence, not a
+Worker's assertion. It describes the origin of a failure, **not** a new
+Verifier verdict or an automatic permission to retry. An ambiguous cause
+remains unknown. An outside incident can result in waiting, held, recovery
+or a terminal outcome; measure those separately.
+_Avoid_: infra error, flake (only one subtype)
+
 ### Outside material
 
 **Conversation**:
