@@ -52,7 +52,7 @@ steps:
       Say "none found" rather than invent any.
   - id: plan
     dependsOn: [scout-docs, scout-code, scout-tree]
-    capabilities: [code-write]
+    capabilities: [code-write, code.develop]
     inputs:
       task: $work.input
       docs: $steps.scout-docs.findings
@@ -69,7 +69,7 @@ steps:
       valuable and list the rest as later.
   - id: implement
     dependsOn: [plan]
-    capabilities: [code-write]
+    capabilities: [code-write, code.develop]
     inputs:
       task: $work.input
       plan: $steps.plan.plan

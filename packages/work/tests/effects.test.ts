@@ -58,7 +58,7 @@ function world(rows = new Map<string, WorkRecord>(), remote: Remote = { publishe
 function controller(w: ReturnType<typeof world>, options: Options = {}) {
   const capabilities = new Capabilities()
   capabilities.registerWorker({
-    ref: 'coder', capabilities: ['code-write'],
+    ref: 'coder', capabilities: ['code-write', 'code.develop'],
     async run(request) { return { status: 'succeeded', outputs: { change: w.store(`change/${request.attemptId}`, 'git-tree') } } },
   })
   capabilities.registerVerifier({

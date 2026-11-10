@@ -44,7 +44,7 @@ export function publishHarness(prefix: string) {
     accounts:
       - ref: claude-code/default
         runtime: claude-code
-        capabilities: [code-write]
+        capabilities: [code-write, code.develop]
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 - id: effects

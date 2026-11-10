@@ -29,13 +29,13 @@ the optional web-worker row) becomes a System Worker
         label: me@example.com           # free text for people
         priority: primary               # at most one per Runtime; omitted = secondary
         claudeHome: claude/default      # holds .claude.json (provider account ID); under $DSH_HOME/system unless absolute; this is the default (claude/<name>)
-        capabilities: [code-write, research, web-search]
+        capabilities: [code-write, code.develop, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
         maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
       - ref: codex/default
         runtime: codex
-        capabilities: [code-write]
+        capabilities: [code-write, code.tests]
         codexHome: codex/default        # under $DSH_HOME/system unless absolute
       # A second account is another entry with its own ref and credential.
 ```
@@ -56,6 +56,8 @@ quota twice`. An ID that cannot be read leaves the account registered with
 account in its `claudeHome`.
 
 ## Software Engineering policy and the attempt budget
+
+`code.develop` is a role: the plan, implement and docs steps of the code Workflows ask for it (see the [Workflows README](../../workflows/README.md)), so the Claude Code account above takes them. `code-write` is the permission to write the checkout, not a role; in the example, Codex has `code-write` and `code.tests`, so it takes only the `tests` step.
 
 A `code-write` attempt runs every command in the foreground (PROP-0007
 decision 1): Claude Code gets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and

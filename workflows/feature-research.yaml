@@ -7,7 +7,7 @@
 # any code, on its own Account (the role code.tests); the red check proves they
 # fail where they should and nothing else breaks; implement makes them pass
 # without changing them (tests-frozen checks it); docs brings the docs in line
-# (the role code.docs); the repository's checks verify the result and System
+# (the role code.docs); the plan, implement and docs steps carry the role code.develop; the repository's checks verify the result and System
 # merges it into its base (df-26).
 # Stages run one after the other, each on the previous change. The code is
 # checked before the docs, so a failure goes back to the step that can fix it,
@@ -33,7 +33,7 @@ steps:
       not confirm.
   - id: plan
     dependsOn: [research]
-    capabilities: [code-write]
+    capabilities: [code-write, code.develop]
     inputs:
       task: $work.input
       report: $steps.research.report
@@ -88,7 +88,7 @@ steps:
       holdInconclusive: true
   - id: implement
     dependsOn: [red]
-    capabilities: [code-write]
+    capabilities: [code-write, code.develop]
     retry: { onFail: [tests-frozen, checks-code.checks], max: 1 }
     inputs:
       task: $work.input
@@ -123,7 +123,7 @@ steps:
       input: $steps.implement.change
   - id: docs
     dependsOn: [checks-code]
-    capabilities: [code.docs, tier.economy]
+    capabilities: [code.develop, code.docs, tier.economy]
     retry: { onFail: [checks.checks], max: 1 }
     inputs:
       task: $work.input
