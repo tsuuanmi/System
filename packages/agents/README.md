@@ -34,7 +34,7 @@ the optional web-worker row) becomes a System Worker
 
 ## Software Engineering policy and the attempt budget
 
-`code.develop` is a role: the plan, implement and docs steps of the code Workflows ask for it (see the [Workflows README](../../workflows/README.md)), so the Claude Code account above takes them. `code-write` is the permission to write the checkout, not a role; Codex gets `code-write` and `code.tests`, so it takes only the `tests` step.
+`code.develop` is a role: the plan, implement and docs steps of the code Workflows ask for it (see the [Workflows README](../../workflows/README.md)), so the Claude Code account above takes them. `code-write` is the permission to write the checkout, not a role; in the example, Codex has `code-write` and `code.tests`, so it takes only the `tests` step.
 
 A `code-write` attempt runs every command in the foreground (PROP-0007
 decision 1): Claude Code gets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and

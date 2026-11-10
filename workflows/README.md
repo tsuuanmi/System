@@ -4,6 +4,11 @@ Workflow definitions are **data** (ADR-0002): `system.workflow/v1` YAML files
 read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
+The code Workflows use two roles: `code.develop` (the plan, implement and docs
+steps; in `hygiene.yaml`, the plan and implement steps) and `code.tests` (the
+tests step). `code-write` is the permission to write the checkout, not a role.
+See [GLOSSARY.md](../GLOSSARY.md) for the term.
+
 - [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, `code.develop`, read-only: what to
   change, where, which tests prove it) → `tests` (`code.tests`,
   `tier.economy`: the plan's tests, failing, before any code; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
@@ -35,8 +40,6 @@ changes future admissions only.
   request of cleanup for any repository that has `.system/checks.yaml`. Like
   software-engineering.yaml it fits a change that keeps behaviour: feature.yaml's
   red check needs a new failing test, so such a change cannot pass it.
-Roles of the code Workflows: `code.develop` (plan, implement, docs; in hygiene.yaml, plan and implement) and `code.tests` (tests); `code-write` is the permission to write the checkout, not a role.
-
 - [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
   on the input change, criteria pinned from its base). A Sub-workflow of
   `software-engineering.yaml` and `feature.yaml`; on its own, on a task with a base, it checks that commit as it is.

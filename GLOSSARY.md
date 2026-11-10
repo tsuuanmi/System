@@ -33,7 +33,8 @@ _Avoid_: model size, level
 
 **Role**:
 A capability naming a step's part in a Workflow, given to one Account so
-that the step runs on that Account, such as the first Brainstorm proposal or the development of a code change.
+that the step runs on that Account, such as the first Brainstorm proposal or
+the development of a code change (`code.develop`).
 _Avoid_: persona, agent type
 
 ### Running and directing work
