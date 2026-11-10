@@ -106,6 +106,14 @@ registration or in `accounts()`.
   reservations or per-model windows. Code: [quota.ts](src/quota.ts). The reading is
   returned here; routing records the readings it used (below).
 
+`system workers` and the MCP tool `workers.list` show each account's last reading, read
+through `quota(ref)` and its cache (never a model turn, never a token): under the account's
+line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or `quota: unreadable - <reason>`.
+The reasons: `a web account has no quota reader`; `its CLI version <v> is not one checked`
+(unverified); `its token is not configured`; `not registered: <why>` or `still registering`
+for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
+asks `quota(ref)` for each account.
+
 ## Routing by headroom
 
 Among the accounts that have every capability of a step and a free slot (the rule is

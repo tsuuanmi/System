@@ -9,6 +9,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import { fakeCodexHome } from '../test-support/accounts.ts'
+import { codexRateLimits, fakeQuotaCli } from '../test-support/quota.ts'
 import { fakeAgent, systemCli } from '../test-support/cli.ts'
 
 const cli = systemCli('system-agents')
@@ -142,6 +144,19 @@ test('workers lists account label, priority and provider account without credent
   assert.doesNotMatch(out.stdout, /fake-token/)
 })
 
+test('workers shows each account quota or why its CLI version is unreadable', () => {
+  const out = system(['workers'])
+  assert.equal(out.status, 0, out.stderr)
+  assert.doesNotMatch(out.stdout, /fake-token/)
+  const blocks = out.stdout.trimEnd().split(/\n(?=\S)/).slice(1)
+  for (const ref of ['claude-code/default', 'codex/default']) {
+    const block = blocks.find((line) => line.startsWith(ref))
+    assert.ok(block, `${ref} is listed`)
+    assert.match(block, /^  quota: unreadable - [^\n]*version/m)
+    assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
+  }
+})
+
 test('two primary accounts in one Runtime are refused with a clear reason', async () => {
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: claude-code/c1, runtime: claude-code, capabilities: [code-write], command: ${fakeAgent}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN, priority: primary}\n      - {ref: claude-code/c2, runtime: claude-code, capabilities: [code-write], command: ${fakeAgent}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN, priority: primary}\n`)
   await cli.start()
@@ -163,4 +178,30 @@ test('duplicate provider account IDs refuse the later account, while unreadable 
   const out = system(['workers'])
   assert.match(out.stdout, /codex\/x2[^\n]*codex\/x1[^\n]*provider account/i)
   assert.match(out.stdout, /codex\/x3\s+available/)
+})
+
+async function readableQuotaAccount() {
+  const codexHome = fakeCodexHome(join(home, 'quota-home'), 'quota-provider')
+  const fake = fakeQuotaCli(join(home, 'quota-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: null } }) })
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  config:
+    $patch: replace
+    accounts:
+      - {ref: codex/quota, runtime: codex, capabilities: [research], command: ${JSON.stringify(fake.command)}, codexHome: ${JSON.stringify(codexHome)}}
+      - {ref: web/chatgpt/quota, runtime: web, site: chatgpt, capabilities: [research]}
+`)
+  await cli.start()
+  return fake
+}
+
+test('workers shows a readable quota from the real Host and one quota line per account', async () => {
+  await readableQuotaAccount()
+  const out = system(['workers'])
+  assert.equal(out.status, 0, out.stderr)
+  assert.doesNotMatch(out.stdout, /fake-token|SECRET-ACCESS|SECRET-REFRESH/)
+  assert.match(out.stdout, /quota: 5h 17%, read /)
+  const blocks = out.stdout.trimEnd().split(/\n(?=\S)/).slice(1)
+  assert.equal(blocks.length, 2)
+  for (const block of blocks) assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
+  assert.match(out.stdout, /quota: unreadable - a web account has no quota reader/)
 })
