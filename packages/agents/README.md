@@ -109,9 +109,9 @@ registration or in `accounts()`.
 `system workers` and the MCP tool `workers.list` show each account's last reading, read
 through `quota(ref)` and its cache (never a model turn, never a token): under the account's
 line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or `quota: unreadable - <reason>`.
-The reasons: `a web account has no quota reader`; `its CLI version <v> is not one checked`
-(unverified); `its token is not configured`; `not registered: <why>` or `still registering`
-for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
+The reasons: `a web account has no quota reader`; `the usage report of <label> <v> is not
+verified (verified: …)` (the CLI version is not one checked); `its token is not configured`;
+`not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
 asks `quota(ref)` for each account.
 
 ## Routing by headroom
