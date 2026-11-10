@@ -77,6 +77,8 @@ export interface Config {
   maxConcurrentAttempts?: number
   /** What one attempt may spend before it is stopped as over budget; default none. */
   attemptBudget?: AttemptBudget
+  /** From this share of a quota window used (1-100, default 80) an account is not chosen while another is under it; when all are over, the step waits. */
+  quotaCeilingPercent?: number
   accounts?: AccountConfig[]
   /** A test hook: the quota cache's lifetime (default 10 minutes) and clock. */
   quota?: { ttlMs?: number; now?: () => number }
@@ -188,6 +190,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return { account, status }
   })
   // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
+  const ceiling = config.quotaCeilingPercent
+  if (ceiling !== undefined && !(typeof ceiling === 'number' && ceiling >= 1 && ceiling <= 100)) throw new Error(`quotaCeilingPercent is ${String(ceiling)}; it must be a number from 1 to 100`)
   const outcomes = new Map<string, { done(): void; refuse(error: Error): void }>()
   for (const { account } of entries) {
     if (account.runtime !== 'web' || webRefProblem(account) || !webWorker) continue
@@ -233,7 +237,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
         status.command = command
         askVersion = lazyVersion(subprocess, command)
-        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots }
+        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, priority: account.priority ?? 'secondary', quotaCeilingPercent: ceiling, quota: () => quota(account.ref) }
         if (account.runtime === 'claude-code') {
           const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
           if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)

@@ -156,7 +156,9 @@ Decisions (operator, 2026-11-10; Items sc-1 to sc-6 in STATUS.md):
   ready run at once); `feature.yaml` stays a chain, since each stage works on
   the previous change. Parallelism comes from more Items at once.
 - **Budget:** sc-4 grows the active core (routing); the growth is recorded
-  here at SC's close against DG's 3,636 lines.
+  here at SC's close against DG's 3,636 lines. sc-4 itself: 3,636 → 3,776
+  (+140: the pure ranking `headroom.ts` 72, the controller's wait and reading
+  50, registry 31, live and status 6, and the verifier/effect `route` shrank).
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 

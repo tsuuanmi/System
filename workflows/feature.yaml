@@ -3,7 +3,7 @@
 # and which tests prove it; tests writes those tests from the plan alone, before
 # any code, on its own Account (the role code.tests); the red check proves they
 # fail where they should and nothing else breaks; implement makes them pass
-# without changing them (tests-frozen checks it); docs brings the docs in line
+# without changing them (the controller puts the files the tests step wrote back when it records the change, dg-10; tests-frozen is the backstop); docs brings the docs in line
 # (the role code.docs); the plan, implement and docs steps carry the role code.develop; the repository's checks verify the result and System
 # merges it into its base (df-26).
 # Stages run one after the other, each on the previous change. The code is
@@ -72,6 +72,7 @@ steps:
     dependsOn: [red]
     capabilities: [code-write, code.develop]
     retry: { onFail: [tests-frozen, checks-code.checks], max: 1 }
+    freeze: $steps.tests.change
     inputs:
       task: $work.input
       plan: $steps.plan.plan
@@ -79,8 +80,8 @@ steps:
     outputs: [change]
     instructions: |
       The files the tests step wrote are frozen. A change to any of them
-      (edit, rename, delete) is rejected by tests-frozen. Do not edit them
-      even to fix a typo or a broken import. If a frozen test is wrong (it
+      (edit, rename, delete) is undone automatically when your change is
+      recorded. Do not edit them even to fix a typo or a broken import. If a frozen test is wrong (it
       contradicts an existing rule, or cannot pass as written), change nothing
       and end your final message with a line "OBJECTION: <test file and name>:
       <why it is wrong>"; that reopens the tests step with your reason.

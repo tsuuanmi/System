@@ -524,6 +524,64 @@ test('tests-frozen-v1: implement may add files, but not change one the tests ste
   assert.match(missing.reason, /input "tests"/)
 })
 
+/** Assert the pending public API inside each test, keeping unrelated verifier tests runnable. */
+async function restoration() {
+  const work = await import('@system/work')
+  assert.ok('restoreFiles' in work && typeof work.restoreFiles === 'function', '@system/work must export restoreFiles')
+  return work.restoreFiles as (repository: string, change: GitTreeContent, from: GitTreeContent, message: string) => Promise<GitTreeContent>
+}
+
+test('restoreFiles puts back what the tests step wrote, and tests-frozen-v1 then passes', async () => {
+  const restoreFiles = await restoration()
+  const artifacts = store()
+  const repository = repo(CHECKS)
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'tests-frozen-v1', input: task, operatorId: 't' })
+  const tests = await change(artifacts, repository, tree.commit, { 'tests/a.test': 'a\n', 'value.txt': 'good\nand more\n' })
+  const testsTree = treeOf(artifacts, tests)
+  const implement = await change(artifacts, repository, testsTree.commit, { 'src.txt': 'code\n', 'tests/a.test': 'rewritten\n', 'value.txt': 'good\n', 'tests/b.test': 'new\n' })
+  const verify = (subject: string) => verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'tests-frozen', capability: 'code.required-checks', subject, criteria, inputs: { tests } })
+  assert.equal((await verify(implement)).verdict, 'fail')
+
+  const restored = await restoreFiles(repository, treeOf(artifacts, implement), testsTree, 'restore frozen files')
+  const show = (path: string) => execFileSync('git', ['-C', repository, 'show', `${restored.commit}:${path}`], { encoding: 'utf8' })
+  assert.equal(show('tests/a.test'), 'a\n')
+  assert.equal(show('value.txt'), 'good\nand more\n')
+  assert.equal(show('src.txt'), 'code\n')
+  assert.equal(show('tests/b.test'), 'new\n')
+  assert.equal(restored.parent, testsTree.commit)
+  assert.equal(execFileSync('git', ['-C', repository, 'rev-parse', `${restored.commit}^`], { encoding: 'utf8' }).trim(), testsTree.commit)
+  const restoredId = (await artifacts.put({ ...GIT_TREE_KIND, content: restored, classification: 'local-private', producer })).id
+  const result = await verify(restoredId)
+  assert.equal(result.verdict, 'pass', result.reason)
+})
+
+test('restoreFiles deletes a file the tests step deleted and implement re-created', async () => {
+  const restoreFiles = await restoration()
+  const artifacts = store()
+  const repository = repo(CHECKS)
+  const { tree } = await taskOn(artifacts, repository)
+  const tests = treeOf(artifacts, await change(artifacts, repository, tree.commit, { 'value.txt': null }))
+  const implement = treeOf(artifacts, await change(artifacts, repository, tests.commit, { 'value.txt': 're-created\n', 'src.txt': 'code\n' }))
+  const restored = await restoreFiles(repository, implement, tests, 'restore deletion')
+  assert.equal(execFileSync('git', ['-C', repository, 'ls-tree', restored.commit, '--', 'value.txt'], { encoding: 'utf8' }), '')
+  assert.equal(execFileSync('git', ['-C', repository, 'show', `${restored.commit}:src.txt`], { encoding: 'utf8' }), 'code\n')
+  assert.equal(restored.parent, tests.commit)
+})
+
+test('restoreFiles keeps the same commit when the frozen files are unchanged', async () => {
+  const restoreFiles = await restoration()
+  const artifacts = store()
+  const repository = repo(CHECKS)
+  const { tree } = await taskOn(artifacts, repository)
+  const tests = treeOf(artifacts, await change(artifacts, repository, tree.commit, { 'tests/a.test': 'a\n' }))
+  const implement = treeOf(artifacts, await change(artifacts, repository, tests.commit, { 'src.txt': 'code\n' }))
+  const restored = await restoreFiles(repository, implement, tests, 'nothing to restore')
+  assert.equal(restored.commit, implement.commit)
+  assert.deepEqual(restored, implement)
+})
+
 test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftover is stopped', async () => {
   const artifacts = store()
   const repository = repo('checks:\n  - name: leaky\n    run: ln -s "$(command -v sleep)" Xvfb && setsid ./Xvfb 120 >/dev/null 2>&1 & until [ "$(cat /proc/$!/comm 2>/dev/null)" = Xvfb ]; do sleep 0.05; done\n  - name: clean\n    run: echo fine\n')

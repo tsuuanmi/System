@@ -11,7 +11,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync }
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
-import { quotaFromRateLimitEvent, type QuotaEvent } from './quota.ts'
+import { quotaFromRateLimitEvent, type QuotaEvent, type QuotaReport } from './quota.ts'
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
@@ -71,6 +71,12 @@ export interface Account {
   attemptBudget?: AttemptBudget
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
+  /** `primary` is preferred while its quota is under the ceiling (routing by headroom). */
+  priority?: 'primary' | 'secondary'
+  /** From this share of a quota window used the account is not chosen (the row's `quotaCeilingPercent`; routing's default is 80). */
+  quotaCeilingPercent?: number
+  /** The account's cached quota reading; routing reads it and records it with the choice. */
+  quota?: () => Promise<QuotaReport>
   /** claude-code: told the quota windows an attempt's `rate_limit_event`s reported (the last of each window); a throwing hook never fails the attempt. */
   onRateLimit?: (events: ReadonlyArray<QuotaEvent>) => void
 }
@@ -116,6 +122,9 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
+    priority: account.priority,
+    quotaCeilingPercent: account.quotaCeilingPercent,
+    quota: account.quota,
     run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs),
     async gone(attemptId) {
       const file = pidFile(attemptsDir, attemptId)
