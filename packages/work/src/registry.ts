@@ -82,6 +82,8 @@ export interface VerifyRequest {
   criteria: string
   /** Further exact Artifact IDs the step names (`verify.inputs`), by slot. */
   inputs?: Record<string, string>
+  /** Evidence IDs of the verdicts this verify step gave earlier in the Work that were not a `pass`, oldest first. */
+  earlier?: string[]
 }
 
 /**

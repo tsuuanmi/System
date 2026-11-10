@@ -145,6 +145,8 @@ interface VerifierAttempt {
   criteria: string
   /** The step's further inputs, resolved. */
   inputs: Record<string, string>
+  /** Evidence of this step's earlier verdicts against the same criteria that were not a pass, oldest first. */
+  earlier: string[]
   refusal?: string
 }
 
@@ -914,14 +916,15 @@ export class WorkController {
       this.slots.release(checkAccount(verifier), attemptId)
       throw error
     }
-    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, refusal } }
+    const earlier = record.events.flatMap((e) => e.type === 'verified' && e.stepId === s.id && e.criteria === criteria && e.verdict !== 'pass' ? e.evidence ?? [] : [])
+    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, earlier, refusal } }
   }
 
   /** Outside the lane: ask the verifier, touching no Work state. */
-  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, inputs, refusal }: VerifierAttempt): Promise<VerifyResult> {
+  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, inputs, earlier, refusal }: VerifierAttempt): Promise<VerifyResult> {
     if (refusal) return { verdict: 'error', reason: refusal, subject, criteria, evidence: [] }
     try {
-      return await verifier.verify({ workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria, ...(Object.keys(inputs).length ? { inputs } : {}) })
+      return await verifier.verify({ workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria, ...(Object.keys(inputs).length ? { inputs } : {}), ...(earlier.length ? { earlier } : {}) })
     } catch (error) {
       return { verdict: 'error', reason: `the verifier threw: ${(error as Error).message}`, subject, criteria, evidence: [] }
     }
