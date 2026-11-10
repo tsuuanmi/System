@@ -30,6 +30,9 @@ Helpers shared by the tests, so each stand-in has one implementation:
 - [accounts.ts](accounts.ts) — `fakeClaudeHome` and `fakeCodexHome`: a temp
   directory with the `.claude.json` / `auth.json` an account's provider ID is
   read from (with secrets beside it that must never be read), `tempDir`.
+- [quota.ts](quota.ts) and [fake-quota-cli.mjs](fake-quota-cli.mjs) — fresh synthetic
+  quota answers and a private CLI/log in each test directory for the sc-3
+  reader tests. Logs are written synchronously before a reply or wait.
 - [headed.ts](headed.ts) — `CHROME` (the Chrome the Runtime chooses; the pinned
   Chrome for Testing is installed once into `SYSTEM_TEST_BROWSERS`, default
   `<tmp>/system-test-browsers-<user>`, shared by the test processes) and

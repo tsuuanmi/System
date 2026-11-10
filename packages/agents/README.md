@@ -7,7 +7,7 @@ the optional web-worker row) becomes a System Worker
 
 - **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH), `credentials` (DSH). Reads
   `webWorker` if the web-worker row provides it.
-  **Provides:** `ctx.agents` (`system workers`).
+  **Provides:** `ctx.agents` (`system workers`; `quota(ref)`).
 - **Accounts:** one config entry per account; an account whose CLI or
   credential is missing is skipped with its reason. Routing takes the first
   capable registered account; `system work retry --worker <ref>` names one.
@@ -54,6 +54,52 @@ already registered as <first ref>; two refs on one account would count its
 quota twice`. An ID that cannot be read leaves the account registered with
 `providerAccount` unknown. The operator puts the `.claude.json` of a Claude
 account in its `claudeHome`.
+
+## Quota
+
+`quota(ref)` says how much of an account's 5-hour and weekly window is used and
+when each resets, without a model turn. It spawns only when asked, never at
+registration or in `accounts()`.
+
+- **Claude Code:** `claude -p --input-format stream-json --output-format stream-json
+  --verbose --no-session-persistence --strict-mcp-config` with no prompt and no model,
+  started with only `HOME` (the account's `claudeHome`), `TMPDIR`, the account's
+  `CLAUDE_CODE_OAUTH_TOKEN`, `PATH`, `LANG`, `LC_ALL` and `TZ`. One stdin line, the
+  control request `get_usage` (`skip_behaviors: true`); the `control_response` with that
+  `request_id` is the answer. Then stdin is closed and the process group ended.
+- **Codex:** `codex app-server` with the account's `CODEX_HOME`: `initialize` (with
+  `capabilities: null`), `initialized`, `account/rateLimits/read`. Windows are named by
+  length (300 minutes is `five_hour`, 10080 is `seven_day`), never by `primary`/`secondary`.
+  The app server may refresh `auth.json` in that `CODEX_HOME`; attempts copy a fresh
+  `CODEX_HOME`, so a refresh by the reader can race the copy-back's digest check
+  (not changed here).
+- **Output:** `{ observedAt, windows: { five_hour?, seven_day? } }`, each window
+  `{ percentUsed (0-100), resetsAt? }`, or `{ unreadable: <reason> }`. An answer is readable
+  or unreadable as a whole: one malformed entry (a share below 0 or above 100, a window that
+  is not an object, a reset in the wrong unit or not a time) makes it unreadable. Only
+  `five_hour` and `seven_day` are read; other entries are ignored unvalidated. A `web` or
+  unknown ref is unreadable.
+- **Reset rule:** a reset is dropped (keeping `percentUsed`) only when it is already past
+  while the share is 100%, or more than 400 days from the reading (System 1's `PLAUSIBLE_MS`).
+  A future reset at 100% is kept.
+- **Version gate:** only Claude Code 2.1.322 and Codex 0.166.0 are read; `--version` is
+  asked first and nothing else is spawned for another version, which is `unreadable`
+  and names it. Checked on 2026-11-10 from the installed binaries and
+  `codex app-server generate-ts`, **not on a live account**: Claude's `get_usage` and
+  `control_response` envelopes, its `{ utilization, resets_at }` windows, and the
+  `rate_limit_event` fields; Codex's `RateLimitWindow`, `GetAccountRateLimitsResponse` and
+  the nullable `InitializeParams.capabilities`. Not checked: that a live account answers,
+  and that 2.1.322 starts with no user message (a release check for the operator).
+- **Cache:** each reading is kept 10 minutes (`quota.ttlMs` in the row's config is a test
+  hook); simultaneous asks share one read; an aborted read is not cached. Claude Code's
+  `rate_limit_event` in an attempt's output (`utilization` is a fraction, `resetsAt` Unix
+  seconds) replaces that window in the cached reading and sets `observedAt`, without
+  extending the expiry.
+- **Source:** System 1, `/home/tan/workspaces/system-agents` commit `15e2bd5`:
+  `packages/plugins/runtime-claude-agent-sdk/src/limits.ts` and
+  `packages/plugins/runtime-codex-sdk/src/rate-limits.ts`; not its ledger, pools,
+  reservations or per-model windows. Code: [quota.ts](src/quota.ts). The reading is
+  returned, not recorded; recording it is sc-4's.
 
 ## Software Engineering policy and the attempt budget
 
@@ -182,7 +228,7 @@ pid keeps it held.
 
 Linux 5.4 (no Landlock), Claude Code 2.1.311 with a `setup-token` token,
 Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
-`HOME`; Codex's `workspace-write` sandbox works; both report token usage.
+`HOME`; Codex's `workspace-write` sandbox works; both report token usage. The quota shapes were checked on 2026-11-10 from the installed binary and `generate-ts`, not on a live account (see Quota).
 
 ## The `web` Runtime
 
