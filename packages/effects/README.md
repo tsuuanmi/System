@@ -78,8 +78,8 @@ killed after the pull request was created, one killed during the push and one
 killed once the base moved (a `post-receive` hook of the remote). The merge
 queue's rounds (a change merged with a tip that has another, a conflict, a
 failed check on the merge, a tip moving while it is checked) are unit tests.
-**Not yet run against github.com**: that needs a throwaway repository and a
-token the operator authorises.
+The tests do not touch github.com; System itself publishes its Works as pull
+requests and merges them into `dev` on GitHub, which is the live use.
 
 Sources: [src/github.ts](src/github.ts), [src/index.ts](src/index.ts);
 tests: [tests](tests/README.md).

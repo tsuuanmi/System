@@ -11,7 +11,7 @@ boundary contracts. Selection is not the same as a working implementation.
   handoff, replay boundaries and configurable verifier capabilities.
 - [Brainstorm composition](brainstorm-composition.md) — three Worker attempts and Artifact ID handoff.
 - [Work ownership and recovery](work-ownership-and-recovery.md) — the old file mechanisms, removed in R1; recovery invariants.
-- [Host](host.md) — milestone H: one long-lived process owning every Work (accepted design, not yet implemented).
+- [Host](host.md) — milestone H: one long-lived process owning every Work (implemented; see its status).
 - [Boundary and failure questions](boundaries.md) — draft interface sketches,
   risks and implementation questions not yet proven in code.
 
