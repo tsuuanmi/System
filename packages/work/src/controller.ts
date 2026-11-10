@@ -8,7 +8,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
-import { MemoryControl, type CancelRequest } from './control.ts'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
@@ -168,12 +167,19 @@ export interface WorkChange {
   type: WorkEvent['type'] | 'stalled'
 }
 
+export interface CancelRequest {
+  reason: string
+  caller: Caller
+}
+
 export class WorkController {
   private readonly table: WorkTable
   private readonly claimed: ClaimTable
   private readonly specs: SpecStore
   private readonly capabilities: Capabilities
-  private readonly control = new MemoryControl()
+  /** The Works being run, and the cancel request a running Work polls; the Host owns every Work, so both live in memory. */
+  private readonly locked = new Set<string>()
+  private readonly cancels = new Map<string, CancelRequest>()
   private readonly lane: Lane
   /** Commands whose receipt the next `terminal` event of a Work carries. */
   private readonly expected = new Map<string, Receipt[]>()
@@ -235,16 +241,15 @@ export class WorkController {
 
   /** The Work's running Worker attempts and what they last reported; empty when none runs. */
   live(workId: string): LiveAttempt[] {
-    const waiting = this.waitingForCheck.get(workId)
-    const since = waiting ? new Date(waiting.since).toISOString() : ''
-    const quota = [...this.waitingForQuota.values()].filter((w) => w.workId === workId).map((w): LiveAttempt => {
-      const at = new Date(w.since).toISOString()
-      return { stepId: w.stepId, attemptId: '', worker: w.worker, startedAt: at, lastActivityAt: at, elapsedSeconds: Math.round((Date.now() - w.since) / 1000), quietSeconds: 0, stalled: false, waiting: 'quota', ...(w.until ? { until: w.until } : {}) }
-    })
+    const waiting = (stepId: string, worker: string, since: number, kind: LiveAttempt['waiting'], until?: string): LiveAttempt => {
+      const at = new Date(since).toISOString()
+      return { stepId, attemptId: '', worker, startedAt: at, lastActivityAt: at, elapsedSeconds: Math.round((Date.now() - since) / 1000), quietSeconds: 0, stalled: false, waiting: kind, ...(until ? { until } : {}) }
+    }
+    const check = this.waitingForCheck.get(workId)
     return [
       ...this.running.of(workId),
-      ...quota,
-      ...(waiting ? [{ stepId: waiting.stepId, attemptId: '', worker: waiting.verifier, startedAt: since, lastActivityAt: since, elapsedSeconds: Math.round((Date.now() - waiting.since) / 1000), quietSeconds: 0, stalled: false, waiting: 'a check slot' as const }] : []),
+      ...[...this.waitingForQuota.values()].filter((w) => w.workId === workId).map((w) => waiting(w.stepId, w.worker, w.since, 'quota', w.until)),
+      ...(check ? [waiting(check.stepId, check.verifier, check.since, 'a check slot')] : []),
     ]
   }
 
@@ -367,10 +372,17 @@ export class WorkController {
     }
   }
 
+  /** Take the Work's lock; throws when it is already being run. Returns the release. */
+  private lock(workId: string): () => void {
+    if (this.locked.has(workId)) throw new WorkError(`${workId} is already being run`)
+    this.locked.add(workId)
+    return () => { this.locked.delete(workId) }
+  }
+
   /** In the lane, take the Work's lock, so runs and cancels reach it in the order they were asked. */
   private enter(workId: string, command?: Command): Promise<() => void> {
     return this.lane(async () => {
-      const release = this.control.acquire(workId)
+      const release = this.lock(workId)
       if (command) this.expect(workId, command)
       return release
     })
@@ -464,7 +476,7 @@ export class WorkController {
 
   private async advance(workId: string, busy: boolean): Promise<Turn> {
     const record = this.require(workId)
-    const cancel = this.control.cancelRequest(workId)
+    const cancel = this.cancels.get(workId)
     const unknown = Object.values(record.state.effects).find((e) => e.state === 'unknown')
     // Cancelling, or holding on an unknown effect, waits for the attempts in flight: they are aborted or finish, and are recorded first.
     if (busy && (cancel || unknown)) return { record, settles: [], waiting: true, epoch: this.epoch }
@@ -491,7 +503,7 @@ export class WorkController {
   }
 
   runningElsewhere(workId: string): boolean {
-    return this.control.heldElsewhere(workId)
+    return this.locked.has(workId)
   }
 
   /**
@@ -502,14 +514,14 @@ export class WorkController {
     return this.lane(async () => {
       const record = this.require(workId)
       if (TERMINAL.has(record.state.status)) throw new WorkError(`${workId} is already ${record.state.status}`)
-      if (this.control.heldElsewhere(workId)) {
-        this.control.requestCancel(workId, request)
+      if (this.locked.has(workId)) {
+        this.cancels.set(workId, request)
         this.notify()
         // The run that holds the Work records the cancellation; its terminal event carries this receipt too.
         if (command) this.expect(workId, command)
         return 'requested'
       }
-      const release = this.control.acquire(workId)
+      const release = this.lock(workId)
       if (command) this.expect(workId, command)
       try {
         return await this.cancelled(await this.recover(record), request)
@@ -552,7 +564,7 @@ export class WorkController {
     if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
     const reset = [step.id, ...dependentsOf(spec, step.id)]
-    this.control.clearCancel(workId)
+    this.cancels.delete(workId)
     await this.append(record, { type: 'reopened', caller: options.caller, stepId: step.id, reason: options.reason, worker: options.worker, previous: partial, reset })
   }
 
@@ -744,14 +756,10 @@ export class WorkController {
   }
 
   /**
-   * In the lane, with nothing in flight: the Workflow's `retry` (Item df-7). A Worker step with
-   * `retry` is reopened by the controller itself when a verify step in `onFail` has a `fail`
-   * verdict on its current output, or when it failed itself and its Worker said the failure may
-   * be tried afresh. At most `max` times per source (each verify step in `onFail`, and the step
-   * itself), counted from the recorded events, so a restart or another Account does not reset it.
-   * When several steps list the failing verify step, the one latest in dependency order that
-   * still has budget is reopened. A failed verdict hands the new attempt the verdict as input
-   * `failure` and the change as `previous`; a fresh attempt gets neither.
+   * In the lane, with nothing in flight: the Workflow's `retry` (Item df-7; the rule is in
+   * [workflow composition](../../../docs/architecture/workflow-composition.md)). The count comes from
+   * recorded events; the latest step in dependency order with budget is reopened; a failed verdict
+   * is handed to the new attempt as input `failure`.
    */
   private async retryAutomatically(record: WorkRecord, spec: ResolvedSpec): Promise<WorkRecord> {
     if (TERMINAL.has(record.state.status)) return record
@@ -816,7 +824,8 @@ export class WorkController {
     const only = takeover?.worker ?? (admitted?.type === 'admitted' ? admitted.worker : undefined)
     const waitKey = `${record.id}/${s.id}`
     // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))))
+    const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
+    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable))
     if (route.quotaWait) {
       const was = this.waitingForQuota.get(waitKey)
       if (!was || was.until !== route.quotaWait.resetsAt) {
@@ -825,7 +834,7 @@ export class WorkController {
         const timer = setTimeout(() => { this.waitingForQuota.delete(waitKey); this.notify() }, delay)
         // A retry timer never keeps the process alive by itself.
         timer.unref()
-        this.waitingForQuota.set(waitKey, { workId: record.id, stepId: s.id, worker: this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))[0]!.ref, since: was?.since ?? Date.now(), ...(route.quotaWait.resetsAt ? { until: route.quotaWait.resetsAt } : {}), timer })
+        this.waitingForQuota.set(waitKey, { workId: record.id, stepId: s.id, worker: capable[0]!.ref, since: was?.since ?? Date.now(), ...(route.quotaWait.resetsAt ? { until: route.quotaWait.resetsAt } : {}), timer })
       }
       return { record, blocked: true }
     }
@@ -874,7 +883,7 @@ export class WorkController {
   private async executeWorker(attempt: WorkerAttempt): Promise<WorkerExecution> {
     const { workId, attemptId, step: s, inputs } = attempt
     const abort = new AbortController()
-    const poll = setInterval(() => { if (this.control.cancelRequest(workId)) abort.abort() }, CANCEL_POLL_MS)
+    const poll = setInterval(() => { if (this.cancels.get(workId)) abort.abort() }, CANCEL_POLL_MS)
     // A poll never keeps the process alive by itself.
     poll.unref()
     const progress = this.running.start({ workId, stepId: s.id, attemptId, worker: attempt.worker.ref })
@@ -940,7 +949,7 @@ export class WorkController {
   private async cancelled(record: WorkRecord, request: CancelRequest): Promise<WorkRecord> {
     record = await this.recover(record, { resumeEffects: false })
     const done = await this.append(record, { type: 'terminal', outcome: 'cancelled', reason: `cancelled by ${request.caller.type} ${request.caller.operatorId}: ${request.reason}`, results: {}, caller: request.caller })
-    this.control.clearCancel(record.id)
+    this.cancels.delete(record.id)
     return done
   }
 

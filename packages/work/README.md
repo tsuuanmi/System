@@ -33,7 +33,6 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   start, last activity and the `progress` its Worker reported (in memory
   only, never an event), and the stall notice after `stallMinutes` (the row's
   config, default 10): a `WorkChange` of type `stalled`, once until it reports again.
-- [src/control.ts](src/control.ts) — `MemoryControl`: the per-Work lock and cancel request, in memory.
 - [src/host.ts](src/host.ts) — `Host` ([the Host](../../docs/architecture/host.md),
   H2, in process): takes the Host lock, owns the controller, runs every
   Work-changing operation through the commit lane, answers repeated
@@ -67,7 +66,7 @@ Worker step is then routed only there; `retry --worker` names another for the
 step it takes over.
 
 The Host owns every Work, so a Work's lock and its cancel request live in
-memory (`MemoryControl`). A cancel of a running Work is a request its run polls
+memory (in the controller). A cancel of a running Work is a request its run polls
 every 250 ms: the run aborts its attempt, records `observed` (`cancelled`, with
 partial output) and `terminal` (`cancelled`, with the caller). With no run, the
 cancel is recorded directly. `system work retry` appends `reopened` (caller,
