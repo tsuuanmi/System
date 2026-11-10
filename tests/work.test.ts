@@ -137,17 +137,26 @@ test('a held Work exits 3 and a failed verification exits 1', async () => {
   await host()
 })
 
-test('SQLite commits are durable: WAL with synchronous FULL (DSH sets neither pragma but the journal)', async () => {
+test("a booted profile's state.sqlite commits durably: WAL with synchronous FULL", async () => {
   const { DatabaseSync } = await import('node:sqlite')
-  const probe = new DatabaseSync(join(home, 'probe.sqlite'))
+  const file = join(home, 'system', 'state.sqlite')
+  assert.ok(existsSync(file), file)
+  const db = new DatabaseSync(file, { readOnly: true })
   try {
-    probe.exec('PRAGMA journal_mode = WAL')
-    assert.deepEqual({ ...probe.prepare('PRAGMA synchronous').get() }, { synchronous: 2 })
-    const options = probe.prepare('PRAGMA compile_options').all().map((row) => (row as { compile_options: string }).compile_options)
+    // DSH persists WAL in the file but never issues `PRAGMA synchronous`, so a
+    // fresh connection reports the level DSH's own connection has.
+    assert.deepEqual({ ...db.prepare('PRAGMA journal_mode').get() }, { journal_mode: 'wal' })
+    assert.deepEqual({ ...db.prepare('PRAGMA synchronous').get() }, { synchronous: 2 })
+    const options = db.prepare('PRAGMA compile_options').all().map((row) => (row as { compile_options: string }).compile_options)
     assert.ok(options.includes('DEFAULT_WAL_SYNCHRONOUS=2'), options.join(','))
   } finally {
-    probe.close()
+    db.close()
   }
+  const readme = readFileSync(join(repo, 'packages', 'bundle', 'README.md'), 'utf8')
+  assert.match(readme, /synchronous/)
+  assert.match(readme, /FULL/)
+  assert.doesNotMatch(readme, /the M2 crash\s+tests must measure/)
+  assert.doesNotMatch(readme, /development install, not a release/)
 })
 
 test('a three-step Work record stays small', () => {
