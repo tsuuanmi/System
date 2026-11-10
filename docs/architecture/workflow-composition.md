@@ -158,7 +158,9 @@ at run time is `failed`; an `inconclusive` verdict or `approval: operator` is
 `held` for the operator. Missing evidence is never a pass, with or without an
 accept step. A `fail` or `error` verdict that no `retry` reopens ends the Work
 there: no step after it starts, so nothing builds on or publishes what failed
-its check (df-26); an `inconclusive` one lets the steps after it run.
+its check (df-26); an `inconclusive` one lets the steps after it run, unless the verify step sets
+`holdInconclusive`: the Work is then held at that step (`awaiting` it) before any
+step after it starts (dg-2; `red` sets it).
 
 ## Deterministic admission and replay boundary
 

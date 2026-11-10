@@ -684,6 +684,11 @@ export class WorkController {
     const refused = verdicts.find(([stepId, verdict]) => (verdict === 'fail' || verdict === 'error') && spec.steps.some((s) => s.dependsOn?.includes(stepId)))
     if (refused && busy) return { record, settles: [], waiting: true, epoch }
     if (refused) return { record: await this.finish(record, 'failed', `verification did not pass: ${refused[0]}=${refused[1]}`), settles: [], epoch }
+    // A verify step marked `holdInconclusive` whose verdict is inconclusive holds the Work for the operator before any step after it starts.
+    const unsure = spec.steps.find((s) => isVerifyStep(s) && s.verify.holdInconclusive && this.verdictOf(record, spec, s.id) === 'inconclusive'
+      && !this.decisionOf(record, s.id) && spec.steps.some((t) => t.dependsOn?.includes(s.id) && record.state.steps[t.id]!.state === 'pending'))
+    if (unsure && busy) return { record, settles: [], waiting: true, epoch }
+    if (unsure) return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${unsure.id}`, unsure.id), settles: [], epoch }
     const ready = spec.steps.filter((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
     if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
     if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }
@@ -994,7 +999,7 @@ export class WorkController {
     const verdicts = spec.steps.filter(isVerifyStep).map((s) => [s.id, this.verdictOf(record, spec, s.id)] as const)
     const bad = verdicts.filter(([, verdict]) => verdict !== 'pass' && verdict !== 'inconclusive')
     if (bad.length) return this.finish(record, 'failed', `verification did not pass: ${bad.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
-    const unsure = verdicts.filter(([, verdict]) => verdict === 'inconclusive')
+    const unsure = verdicts.filter(([id, verdict]) => verdict === 'inconclusive' && !this.decisionOf(record, id))
     if (unsure.length) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${unsure.map(([id]) => id).join(', ')}`)
     return this.finish(record, 'succeeded', 'every step succeeded')
   }

@@ -306,6 +306,21 @@ test('every shipped Workflow with a code-write step judged by checks declares th
   assert.ok(judged >= 3, String(judged))
 })
 
+test('holdInconclusive on a verify step accepts only true', () => {
+  const flow = (flag: string) => `${base}  - id: implement
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+  - id: v
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: c${flag} }
+`
+  const spec = resolve(parseWorkflow(flow(', holdInconclusive: true')), available)
+  assert.equal((spec.steps.find((s) => s.id === 'v') as Record<string, any>).verify.holdInconclusive, true)
+  assert.throws(() => parseWorkflow(flow(', holdInconclusive: false')))
+  assert.throws(() => parseWorkflow(flow(', holdInconclusive: yes')))
+})
+
 for (const file of ['feature.yaml', 'feature-research.yaml']) {
   test(`${file} enforces tests first: a red check reopens tests, and implement may not change the tests step's files`, () => {
     const caps = { ...available, workers: new Set([...available.workers, 'code.tests', 'code.docs', 'tier.economy']) }
@@ -316,7 +331,7 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     assert.deepEqual(step('tests').retry, { onFail: ['red', 'checks-code.checks', 'implement'], max: 1 })
     assert.match(step('implement').instructions, /frozen/)
     assert.match(step('tests').instructions, /typecheck/)
-    assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1' })
+    assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1', holdInconclusive: true })
     assert.deepEqual(step('implement').dependsOn, ['red'])
     assert.equal(step('implement').inputs.red, undefined)
     // Tests frozen: judged on implement's change against the tests step's commit, before the checks run.

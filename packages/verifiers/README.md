@@ -101,7 +101,8 @@ checks:
     the new tests: ...`; not run on the base), when no `red: fail` check
     failed (the tests prove nothing), when the change is the base itself, or
     when a check left a process running; `inconclusive` when every `red: fail`
-    check that failed fails on the base too; `error` when the base cannot be
+    check that failed fails on the base too (the Work is held at `red` for the
+    operator); `error` when the base cannot be
     checked out.
   - **`tests-frozen-v1`**, on the implement step's change with the tests
     step's change as the verify step's input `tests`: `fail` when the change,

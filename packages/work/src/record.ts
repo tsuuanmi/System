@@ -245,6 +245,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         // A verify step asked again: its last verdict is recorded and no longer counts.
         delete steps[event.stepId]!.verdict
         delete steps[event.stepId]!.subject
+        delete steps[event.stepId]!.decision
         state.status = 'running'
         delete state.reason
         state.results = {}
