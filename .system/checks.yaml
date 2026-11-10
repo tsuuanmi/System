@@ -9,9 +9,9 @@
 # check would buy nothing.
 #
 # `paths` (PROP-0007 decision 5): every check but `docs` runs only when the
-# change touches code, its tests, its tooling or the Charter, or the same
-# verify step gave a verdict earlier in the Work in which that check failed; a change to docs alone
-# runs `docs`.
+# change touches code, its tests, its tooling or the Charter, or a check of the
+# same verify step failed earlier in the Work; a change to docs alone runs
+# `docs`. How the verifier selects checks: packages/verifiers/README.md.
 # One list for all of them, so `install` and `build` run whenever a later
 # check needs them.
 #

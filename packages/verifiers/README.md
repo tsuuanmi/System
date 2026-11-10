@@ -77,14 +77,15 @@ checks:
 - **Paths** (decision 5): a check with `paths` (globs, as GitHub Actions'
   `paths` filter, matched by `path.matchesGlob`) runs only when
   `git diff --name-only <base> <subject>` names a file one of them matches;
-  the base is the commit the checks were pinned from, and also the subject's
-  `parent` when it names one, so a reopened step's second attempt is selected
-  by everything it changed since the base, not by its delta over the previous
-  attempt. A check that failed in an earlier verdict of the same verify step
-  in the Work (`VerifyRequest.earlier`, the evidence IDs of its non-pass
-  verdicts) runs again whatever the diff selects, marked `(failed earlier)`
-  in the reason. A commit checked as it
-  is (`code-checks.yaml` on its own) runs every check. A skipped check has no
+  the change is the union of two diffs: from the commit the checks were pinned
+  from (the base) to the subject, and, when the subject names a `parent`, from
+  that parent to the subject. So a reopened step's second attempt is selected
+  by everything it changed since the base, as well as by its own delta over
+  the previous attempt. A check that failed in an earlier verdict of the same
+  verify step in the Work (`VerifyRequest.earlier`, the evidence IDs of its
+  non-pass verdicts) runs again whatever the diff selects, marked
+  `(failed earlier)` in the reason. A commit checked as it is
+  (`code-checks.yaml` on its own) runs every check. A skipped check has no
   `check-run@1`. The verdict's reason lists what ran, with its time, and what
   was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
 - **Criteria names** (df-26): the name a verify step gives is pinned in
