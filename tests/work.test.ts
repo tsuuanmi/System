@@ -92,16 +92,15 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   assert.equal(crashed.signal, null, 'the CLI survives; the Host was killed')
   assert.notEqual(crashed.status, 0)
   const workId = crashed.stdout.trim()
-  await host()
-  const pinned = show(workId).state.specId
-  assert.equal(show(workId).state.status, 'running')
 
   // Edit the file mid-run: a capability no Worker has. Running Work must not notice.
   writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write, code.develop]', 'capabilities: [teleport]'))
-  const resumed = system(['work', 'run', workId])
+  // The new Host settles the lost attempt and dispatches it again by itself (sc-8): no `work run`.
+  await host()
+  const resumed = system(['work', 'wait', workId])
   assert.equal(resumed.status, 0, resumed.stderr)
   const done = show(workId)
-  assert.equal(done.state.specId, pinned)
+  assert.equal(done.state.specId, (done.events[0] as { specId?: string }).specId)
   assert.equal(done.state.status, 'succeeded')
   assert.deepEqual(done.events.map((e) => e.type), ['admitted', 'dispatched', 'attempt-lost', 'dispatched', 'observed', 'dispatched', 'verified', 'effect-intended', 'effect-observed', 'terminal'])
   assert.equal(done.state.steps.implement!.attempts.length, 2)
