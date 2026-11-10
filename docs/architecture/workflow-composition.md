@@ -118,7 +118,7 @@ check failed for a reason outside the change; only a human asks it, so no
 agent keeps the luckiest of several runs; the earlier verdict stays in
 the record and no longer counts.
 
-**`retry: { onFail: [<step>...], max: n }`** on a Worker step (Item df-7) is
+**`retry: { onFail: [<step>...], max: n, rerunUnchanged?: true }`** on a Worker step (Item df-7) is
 the one automatic further attempt, declared in the Workflow and the same for
 every domain. `onFail` names the verify steps that judge the step's output or come after it
 and depend on it (a `fail` verdict qualifies; `error` and `inconclusive` do not) and the step
