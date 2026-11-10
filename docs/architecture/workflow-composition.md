@@ -54,7 +54,7 @@ one form:
 | Form | Fields | Meaning |
 |---|---|---|
 | Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry`, optional `mayBeEmpty` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
-| verify step | `verify: {capability, subject, criteria, inputs?}` | one verifier call on the exact Artifact the `subject` reference resolves to; `inputs` (as a Worker step's) hands it further exact Artifacts, such as the report beside the sources |
+| verify step | `verify: {capability, subject, criteria, inputs?, holdInconclusive?}` | one verifier call on the exact Artifact the `subject` reference resolves to; `inputs` (as a Worker step's) hands it further exact Artifacts, such as the report beside the sources; `holdInconclusive: true` holds the Work at this step for the operator on an `inconclusive` verdict (see Operator decisions) |
 | effect step | `effect: {capability, subject, requires: [verify steps], params?}` | one external effect of the exact subject, only after every required verdict on that subject is `pass`; recorded as intent, then outcome |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
 | uses step | `uses: <file>`, optional `inputs: {input: <ref>}`, optional `outputs: {<slot>: $steps.<step>.<slot>}` | a Sub-workflow ([ADR-0002 amendment](../decisions/ADR-0002-work-primitive-configured-workflows.md)): the steps of the Workflow file beside this one, joined at admission |
@@ -158,9 +158,9 @@ at run time is `failed`; an `inconclusive` verdict or `approval: operator` is
 `held` for the operator. Missing evidence is never a pass, with or without an
 accept step. A `fail` or `error` verdict that no `retry` reopens ends the Work
 there: no step after it starts, so nothing builds on or publishes what failed
-its check (df-26); an `inconclusive` one lets the steps after it run, unless the verify step sets
-`holdInconclusive`: the Work is then held at that step (`awaiting` it) before any
-step after it starts (dg-2; `red` sets it).
+its check (df-26); an `inconclusive` one lets the steps after it run, unless the
+verify step sets `holdInconclusive`: the Work is then held at that step (`awaiting`
+it) before any step after it starts (dg-2; `red` sets it).
 
 ## Deterministic admission and replay boundary
 
