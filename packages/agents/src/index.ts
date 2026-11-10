@@ -13,11 +13,13 @@ import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
 import { readClaudeAccountId, readCodexAccountId } from './identity.ts'
+import { createQuotaCache, readClaudeQuota, readCodexQuota, type QuotaCache, type QuotaReport } from './quota.ts'
 import type { Runtime } from './runtimes.ts'
 import { WEB_WORKER_DISABLED, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
 export * from './agent.ts'
 export * from './identity.ts'
+export * from './quota.ts'
 export * from './runtimes.ts'
 export * from './web.ts'
 export * from './workspace.ts'
@@ -76,6 +78,8 @@ export interface Config {
   /** What one attempt may spend before it is stopped as over budget; default none. */
   attemptBudget?: AttemptBudget
   accounts?: AccountConfig[]
+  /** A test hook: the quota cache's lifetime (default 10 minutes) and clock. */
+  quota?: { ttlMs?: number; now?: () => number }
 }
 
 /** The configured models in tier order; a tier that is not a tier is left for the registration to refuse. */
@@ -106,6 +110,8 @@ export interface AccountStatus {
 export interface AgentsService {
   /** Every configured account; the CLI version of each available one is asked here, once. */
   accounts(): Promise<AccountStatus[]>
+  /** The account's 5-hour and weekly quota, read without a model turn and cached for 10 minutes; `unreadable` for a `web` or unknown ref. */
+  quota(ref: string): Promise<QuotaReport>
 }
 
 /** A `Spawner` over the DSH subprocess service, which owns each process range. */
@@ -170,8 +176,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     if (reason) return { ...status, available: false, reason, ...(askVersion ? { version: await askVersion() } : {}) }
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
+  const quotas = new Map<string, QuotaCache>()
+  const quota = async (ref: string): Promise<QuotaReport> => quotas.get(ref)?.get() ?? { unreadable: `no quota reader for ${ref}` }
   // Provided before the loop: `system workers` shows the accounts still registering.
-  ctx.provide('agents', { accounts } satisfies AgentsService)
+  ctx.provide('agents', { accounts, quota } satisfies AgentsService)
   const dispose: (() => void)[] = []
   // Every account is listed from the start, as registering: the Host serves while this loop is still going (WW6e).
   const entries = (config.accounts ?? []).map((account) => {
@@ -237,11 +245,24 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         }
         // The provider's account ID, read from the account's own files: unknown leaves it registered; a known one registers once.
         let id: string | undefined
+        const quotaOptions = { ttlMs: config.quota?.ttlMs, now: config.quota?.now }
         if (account.runtime === 'claude-code') {
           const h = account.claudeHome ?? `claude/${account.ref.split('/')[1] ?? 'default'}`
-          id = readClaudeAccountId(isAbsolute(h) ? h : systemPath(ctx, h))
+          const claudeHome = isAbsolute(h) ? h : systemPath(ctx, h)
+          id = readClaudeAccountId(claudeHome)
+          const cache = createQuotaCache({
+            ...quotaOptions,
+            read: async () => {
+              const token = await resolved.token?.()
+              return token ? readClaudeQuota({ command, home: claudeHome, token, now: quotaOptions.now }) : { unreadable: 'its token is not configured' }
+            },
+          })
+          resolved.onRateLimit = (events) => cache.observe(events)
+          quotas.set(account.ref, cache)
         } else {
-          id = readCodexAccountId(resolved.codexHome!)
+          const codexHome = resolved.codexHome!
+          quotas.set(account.ref, createQuotaCache({ ...quotaOptions, read: () => readCodexQuota({ command, codexHome, now: quotaOptions.now }) }))
+          id = readCodexAccountId(codexHome)
         }
         const key = id && `${account.runtime}:${id}`
         if (id) status.providerAccount = id
@@ -255,6 +276,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       outcomes.get(account.ref)?.done()
     } catch (error) {
       status.reason = (error as Error).message
+      quotas.delete(account.ref)
       outcomes.get(account.ref)?.refuse(error as Error)
     }
   }

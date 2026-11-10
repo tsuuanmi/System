@@ -473,3 +473,37 @@ test('lazyVersion spawns `<command> --version` once, on first use', async () => 
   assert.deepEqual(await Promise.all([version(), version()]), ['1.2.3 (Fake)', '1.2.3 (Fake)'])
   assert.deepEqual(spawned, [['/bin/fake', '--version']])
 })
+
+
+// sc-3: an attempt's quota observations reach its account hook.
+for (const mode of ['event', 'none', 'throwing'] as const) {
+  test(`Claude attempt rate-limit hook: ${mode}`, async (t) => {
+    const ownRoot = mkdtempSync(join(tmpdir(), 'agent-ratelimit-'))
+    t.after(() => rmSync(ownRoot, { recursive: true, force: true }))
+    const { artifacts } = memory()
+    type Event = { window: 'five_hour' | 'seven_day'; percentUsed: number; resetsAt?: string }
+    const seen: Event[][] = []
+    // Intersection lets the red tests compile before Account gains this optional hook.
+    const ownAccount: Account & { onRateLimit: (events: ReadonlyArray<Event>) => void } = {
+      ...account('claude-code'),
+      onRateLimit: (events: ReadonlyArray<Event>) => {
+        seen.push([...events])
+        if (mode === 'throwing') throw new Error('bad hook')
+      },
+    }
+    const worker = agentWorker(ownAccount, artifacts, processSpawner, join(ownRoot, 'attempts'))
+    const instructions = `FAKE:outputs${mode === 'none' ? '' : ' FAKE:ratelimit=five_hour:0.9'}`
+    const result = await worker.run(request({ question: await task(artifacts, instructions) }, ['report']))
+    assert.equal(result.status, 'succeeded', result.reason)
+    if (mode === 'none') assert.deepEqual(seen, [])
+    else {
+      assert.equal(seen.length, 1)
+      const events = seen[0]!
+      assert.equal(events.length, 1)
+      const event = events[0]!
+      assert.ok(typeof event.resetsAt === 'string')
+      assert.ok(Number.isFinite(Date.parse(event.resetsAt)))
+      assert.deepEqual(events, [{ window: 'five_hour', percentUsed: 90, resetsAt: event.resetsAt }])
+    }
+  })
+}

@@ -19,6 +19,7 @@
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
 //   FAKE:noise    with FAKE:followup, print 300 KB of other events between the results
+//   FAKE:ratelimit=<five_hour|seven_day>:<fraction> (claude, stream-json) emit a quota event before the result
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
 // The model given with --model / -m is written into ENV.json and reported as served.
 import { spawn } from 'node:child_process'
@@ -57,6 +58,8 @@ function finish(ok, message) {
     // `--output-format stream-json` prints every event as a line; the json format prints only the last result.
     const stream = args.includes('stream-json')
     if (stream) console.log(JSON.stringify({ type: 'system', subtype: 'init' }))
+    const rate = /FAKE:ratelimit=(five_hour|seven_day):([0-9.]+)/.exec(prompt)
+    if (stream && rate) console.log(JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: rate[1], utilization: Number(rate[2]), resetsAt: Math.floor(Date.now() / 1000) + 3600 } }))
     if (has('followup')) {
       const first = result({ input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, 0.5)
       if (stream) console.log(first)
