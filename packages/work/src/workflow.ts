@@ -27,7 +27,7 @@ const capability = z.string().regex(CAPABILITY)
 const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<slot>')
 
 /**
- * One automatic further attempt after a failure that can be fixed (PLAN DF2b):
+ * One automatic further attempt after a failure that can be fixed (Item df-7):
  * `onFail` names the verify steps that judge, or come after, this step and whose
  * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh.
  */

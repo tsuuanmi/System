@@ -721,7 +721,7 @@ export class WorkController {
   }
 
   /**
-   * In the lane, with nothing in flight: the Workflow's `retry` (PLAN DF2b). A Worker step with
+   * In the lane, with nothing in flight: the Workflow's `retry` (Item df-7). A Worker step with
    * `retry` is reopened by the controller itself when a verify step in `onFail` has a `fail`
    * verdict on its current output, or when it failed itself and its Worker said the failure may
    * be tried afresh. At most `max` times per source (each verify step in `onFail`, and the step

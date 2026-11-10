@@ -1,5 +1,5 @@
 /**
- * The status of a project (PLAN DF2c): the Items of a repository's `STATUS.md`
+ * The status of a project (Item df-3): the Items of a repository's `STATUS.md`
  * (done as it says on the `origin/dev` tip, else `dev`) and the Works that carry them out.
  * Nothing here is stored.
  */
