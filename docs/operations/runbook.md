@@ -111,8 +111,8 @@ The Host's side of an upgrade:
    A process still alive 10 s after it stopped is made to exit, and logs
    `still running ... open: <resources>`: what held it, to report.
 3. The new Host recovers as on any start and logs `continuing N Works held for
-   the upgrade`: the Works whose runs waited at the gate go on, and nothing
-   that was interrupted does.
+   the upgrade`: the Works whose runs waited at the gate go on; what was
+   interrupted is left to recovery (see [Stop, restart, status](#stop-restart-status)).
 
 A command run meanwhile waits up to 3 s for the swap before it says the Host
 is not running. While the Host waits on a long attempt, a CLI of the new code
@@ -136,8 +136,9 @@ ln -sfn releases/<commit> ~/.system/current.new && mv -T ~/.system/current.new ~
 systemctl --user restart system
 ```
 
-The restart interrupts running attempts; do it when `system work list` shows
-none running. A release refuses a store whose records it does not know only if
+The restart interrupts running attempts (a Worker attempt is then run again by
+the Host once its process is confirmed gone; a verifier run or an effect waits
+for `system work run`); do it when `system work list` shows none running. A release refuses a store whose records it does not know only if
 a later release changed the record schema (`git diff <commit>..<later> --
 packages/work/src/record.ts packages/artifacts/src` shows it).
 

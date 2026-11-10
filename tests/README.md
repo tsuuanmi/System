@@ -52,8 +52,8 @@ nothing else.
   accounts (CLI pointed at the fake): two proposals by different providers
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal
   without Codex, a stop after the first proposal reusing it, a host killed
-  mid-step then four `work run`s at once against the restarted Host (one wins;
-  the lost step is dispatched once more; no event lost), a pinned spec, and
+  mid-step, then the restarted Host dispatches the lost step again by itself,
+  once, with no `work run` (no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
 - [debate.test.ts](debate.test.ts) — WW2b: the Debate Workflow on the fake CLI: dispatch
