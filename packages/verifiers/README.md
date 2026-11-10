@@ -59,7 +59,7 @@ checks:
   fails on the base, the verdict is `inconclusive`, the reason says `<check>: the
   base fails it too (base <commit>)`, and the evidence holds the `check-run@1` of
   both runs (the change's first). A check that passes on the base keeps `fail`.
-  A subject that is the base itself is not run twice. An `inconclusive` verdict
+  A subject that is the base itself is not run twice. A check that fails twice on the same change (`retry.rerunUnchanged`, sc-9) is also recorded `inconclusive`, with both runs' evidence. An `inconclusive` verdict
   does not reopen `implement` (retry `onFail` fires on `fail` only): the Work is
   held for an operator Approval before `publish`; approve lets it publish and merge,
   deny fails it.

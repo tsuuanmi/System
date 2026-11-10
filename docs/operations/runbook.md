@@ -449,6 +449,17 @@ fails on the base, the `red` verdict is `inconclusive` and the Work is held at
 `red`, before `implement` starts. `system approve` continues; `system deny`
 fails the Work.
 
+## A check that fails again on the same change
+
+When a failing check reopens `implement` and `implement` changes nothing, the
+check runs once more on that same change (`retry.rerunUnchanged`, sc-9;
+[the vocabulary](../architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1)).
+If the second run passes, the Work goes on and `system work show <id>` notes
+the check as flaky. If it fails again, the verdict is `inconclusive` with both
+runs as evidence and the Work is **held**: `system work approve <id>` lets it
+go on, `system work deny` fails it, and `system work retry <id> --step <verify
+step>` asks the check again.
+
 ## Following a Work, and detaching
 
 `work submit`, `work run`, `work retry`, `approve` and `deny` return once the

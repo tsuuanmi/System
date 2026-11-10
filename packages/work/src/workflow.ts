@@ -28,10 +28,11 @@ const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<
 
 /**
  * One automatic further attempt after a failure that can be fixed (Item df-7):
+ * `rerunUnchanged`: when a failing check reopened the step and it changes nothing, the check runs again on the same change once (sc-9).
  * `onFail` names the verify steps that judge, or come after, this step and whose
  * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh, and a later Worker step whose final message objects (`OBJECTION:`) to this step's output.
  */
-const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3) }).strict()
+const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3), rerunUnchanged: z.literal(true).optional() }).strict()
 
 const workerStep = z.object({
   id,

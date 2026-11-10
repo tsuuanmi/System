@@ -898,6 +898,7 @@ export class WorkController {
     const objection = status === 'succeeded' && spec.steps.some((o) => isWorkerStep(o) && o.retry?.onFail.includes(s.id) && o.id !== s.id) ? OBJECTION.exec(result.message ?? '')?.[1]?.trim() : undefined
     if (objection) [status, reason] = ['failed', `objection: ${objection}`]
     const restored: string[] = []
+    let unchangedAfter: string | undefined
     if (status === 'succeeded' && !objection) {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot]))
@@ -918,7 +919,12 @@ export class WorkController {
         const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
         if (base) {
           const said = result.message?.replace(/\s+/g, ' ').trim()
-          ;[status, reason] = ['failed', `no change: the working tree is the same as the base commit ${base.slice(0, 7)}${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`]
+          unchangedAfter = s.retry?.rerunUnchanged ? this.failingCheckOf(this.require(workId), s) : undefined
+          if (unchangedAfter) {
+            // The step was reopened by a failing check and changed nothing: the check runs again on the change it failed.
+            outputs[s.outputs[0]] = this.latestReopening(this.require(workId), s.id)!.previous!
+            reason = `no change: ran the check again on the same change${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`
+          } else [status, reason] = ['failed', `no change: the working tree is the same as the base commit ${base.slice(0, 7)}${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`]
         }
       }
     }
@@ -932,6 +938,7 @@ export class WorkController {
       ...(result.executor ? { worker: result.executor } : {}),
       ...(status === 'failed' && RATE_LIMITED.test(reason ?? '') ? { rateLimited: true as const } : {}),
       ...(objection ? { objection } : {}),
+      ...(unchangedAfter ? { unchangedAfter } : {}),
       ...(status === 'failed' && result.retryable && !aborted ? { retryable: true as const } : {}),
     })
   }
@@ -1006,16 +1013,36 @@ export class WorkController {
     }
   }
 
+  private latestReopening(record: WorkRecord, stepId: string) {
+    const e = record.events.findLast((r) => r.type === 'reopened' && r.stepId === stepId)
+    return e?.type === 'reopened' ? e : undefined
+  }
+
+  /** The verdict of a check in `retry.onFail` that automatically reopened this step, with its change to hand back (`retry.rerunUnchanged`). */
+  private failingCheckOf(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): string | undefined {
+    const r = this.latestReopening(record, s.id)
+    if (!r?.automatic || !r.failure || r.objectedBy || !r.previous) return undefined
+    return record.events.some((v) => v.type === 'verified' && v.verdictId === r.failure && v.verdict === 'fail' && s.retry?.onFail.includes(v.stepId)) ? r.failure : undefined
+  }
+
   /** In the lane: read the committed record again and append the verdict. */
   private async observeVerifier({ workId, attemptId, step: s, verifier, subject, criteria }: VerifierAttempt, result: VerifyResult): Promise<WorkRecord> {
-    const bound = this.bind(result, subject, criteria)
+    const record = this.require(workId)
+    let bound = this.bind(result, subject, criteria)
+    // The second run of a check on the same change (`retry.rerunUnchanged`): a pass is flaky, a second fail is held for the operator as inconclusive.
+    const lastRun = record.events.findLast((e) => e.type === 'verified' && e.stepId === s.id)
+    const first = lastRun?.type === 'verified' && lastRun.verdict === 'fail' && lastRun.verdictId
+      && record.events.some((e) => e.type === 'observed' && e.seq > lastRun.seq && e.unchangedAfter === lastRun.verdictId) ? lastRun : undefined
+    if (first && bound.verdict === 'pass') bound = { ...bound, reason: `flaky: failed (${first.verdictId}) then passed on the same change; ${bound.reason}` }
+    else if (first && bound.verdict === 'fail') bound = { verdict: 'inconclusive', reason: `failed twice on the same change, held for an operator decision (verifier said fail: ${bound.reason}); first run ${first.verdictId}`, evidence: [...(first.evidence ?? []), ...(bound.evidence ?? [])] }
     const verdictId = await this.specs.putVerdict({
       subject, criteria, capability: s.verify.capability, verifier: { ref: verifier.ref, version: verifier.version },
       verdict: bound.verdict, reason: bound.reason, evidence: bound.evidence,
     })
-    return this.append(this.require(workId), {
+    return this.append(record, {
       type: 'verified', stepId: s.id, attemptId, subject, criteria,
       verdict: bound.verdict, reason: bound.reason, verdictId, evidence: bound.evidence,
+      ...(first ? { rerunOf: first.verdictId } : {}),
       verifier: { ref: verifier.ref, version: verifier.version },
     })
   }
