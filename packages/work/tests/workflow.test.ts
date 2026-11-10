@@ -9,7 +9,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'utf8')
 
 const available: AvailableCapabilities = {
-  workers: new Set(['code-write', 'research', 'web-search', 'tier.standard']),
+  workers: new Set(['code-write', 'code.develop', 'research', 'web-search', 'tier.standard']),
   verifiers: new Set(['code.required-checks', 'research.citation-check']),
   effects: new Set(['git.publish']),
 }
@@ -127,6 +127,7 @@ test('capabilities no enabled Worker or verifier provides are refused before any
   const found = problems(fixture('software-engineering.yaml'), none)
   assert.deepEqual(found, [
     'step implement needs Worker capability code-write, which no enabled Worker provides',
+    'step implement needs Worker capability code.develop, which no enabled Worker provides',
     'step checks.checks needs verifier code.required-checks, which no enabled verifier provides',
     'step publish needs effect git.publish, which no enabled effect provider offers',
   ])

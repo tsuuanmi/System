@@ -136,7 +136,7 @@ export function fixture(options: { seed?: number; slots?: number; checks?: numbe
       }
     },
   })
-  worker(CLAUDE, ['code-write', 'research', 'web-search', 'brainstorm.idea-a', 'brainstorm.synthesis'])
+  worker(CLAUDE, ['code-write', 'code.develop', 'research', 'web-search', 'brainstorm.idea-a', 'brainstorm.synthesis'])
   worker(CODEX, ['brainstorm.idea-b'])
   // A second Account offering what the first does, registered after it: the route for a step whose first capable Account is full.
   if (options.spare) worker(SPARE, ['brainstorm.idea-a'])

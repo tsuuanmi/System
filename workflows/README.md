@@ -4,19 +4,24 @@ Workflow definitions are **data** (ADR-0002): `system.workflow/v1` YAML files
 read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
-- [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, read-only: what to
+The code Workflows use two roles: `code.develop` (the plan, implement and docs
+steps; in `hygiene.yaml`, the plan and implement steps) and `code.tests` (the
+tests step). `code-write` is the permission to write the checkout, not a role.
+See [GLOSSARY.md](../GLOSSARY.md) for the term.
+
+- [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, `code.develop`, read-only: what to
   change, where, which tests prove it) → `tests` (`code.tests`,
   `tier.economy`: the plan's tests, failing, before any code; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
   `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
   and a `red: fail` one fails on the tests' change; an `inconclusive` verdict holds the Work before `implement`: approve continues, deny fails) → `implement`
-  (`code-write`: make them pass; one `retry` per `tests-frozen` and `checks-code`; a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
+  (`code-write`, `code.develop`: make them pass; one `retry` per `tests-frozen` and `checks-code`; a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
   `tests-frozen` (`code.required-checks`, criteria `tests-frozen-v1`: no file the
-  tests step wrote changed) → `checks-code` → `docs` (`code.docs`,
+  tests step wrote changed) → `checks-code` → `docs` (`code.develop`, `code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
   Artifacts it is given; the profile decides which Account takes each role.
   The default for a code change (df-27, concluded in df-20).
 - [software-engineering.yaml](software-engineering.yaml) — `implement`
-  (`code-write`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
+  (`code-write`, `code.develop`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
   (`git.publish`: the checked commit to `system/<work>`, one draft pull
   request) → `accept`. Still fits a change too small for a plan, a change
   that keeps behaviour (a cleanup, a refactor, a docs-only change), and a
