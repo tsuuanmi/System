@@ -178,6 +178,23 @@ Distinguish outcome (succeeded/failed/held/cancelled), failure origin
 and actual human-intervention count. These are orthogonal to a Verifier's
 pass/fail/inconclusive decision; do not weaken exact-Artifact verification.
 
+**Feedback-loop gap (cross-cutting R acceptance):** events and
+`retryAutomatically()` exist, but a unified *detect -> evidence ->
+classify -> pinned policy -> bounded recovery -> verify outcome* is missing.
+Make every failed/held/stalled Work visibly actionable: cause must be grounded,
+unknown stays unknown, and retry exhaustion must be explicit. Start with a
+pure failure classification/projection over the existing event record; add
+durable recovery decisions only where needed for restart safety. Measure
+closed-loop recovery rather than merely the number of retries. Research and
+failure matrix: [RES-0010](docs/research/RES-0010-reliability-reuse-audit.md).
+
+**Authority correction before autonomy:** `work.retry` is currently
+`agent: true` in the Host's operation table; `reopen()` restricts only
+verify-step retries to humans. This conflicts with Q5. Require human caller
+for *all manual* Work retries (including the RPC path), keep approved
+policy-driven `automatic` reopens, and add a real Host/MCP refusal test.
+Audit `force` submissions against the same authority boundary.
+
 **Implementation order (existing Items, no new core subsystem):**
 1. sc-8: Host resumes eligible interrupted Works after process death and
    confirms the old process is gone; an unknown effect remains hold/reconcile.
