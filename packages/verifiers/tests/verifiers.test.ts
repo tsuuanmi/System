@@ -12,7 +12,7 @@ import { after, before, test } from 'node:test'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
-import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, restoreFiles, snapshot, taskSchema, type GitTreeContent } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, requiredChecks } from '../src/checks.ts'
 import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
 
@@ -524,7 +524,15 @@ test('tests-frozen-v1: implement may add files, but not change one the tests ste
   assert.match(missing.reason, /input "tests"/)
 })
 
+/** Assert the pending public API inside each test, keeping unrelated verifier tests runnable. */
+async function restoration() {
+  const work = await import('@system/work')
+  assert.ok('restoreFiles' in work && typeof work.restoreFiles === 'function', '@system/work must export restoreFiles')
+  return work.restoreFiles as (repository: string, change: GitTreeContent, from: GitTreeContent, message: string) => Promise<GitTreeContent>
+}
+
 test('restoreFiles puts back what the tests step wrote, and tests-frozen-v1 then passes', async () => {
+  const restoreFiles = await restoration()
   const artifacts = store()
   const repository = repo(CHECKS)
   const { task, tree } = await taskOn(artifacts, repository)
@@ -532,26 +540,46 @@ test('restoreFiles puts back what the tests step wrote, and tests-frozen-v1 then
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'tests-frozen-v1', input: task, operatorId: 't' })
   const tests = await change(artifacts, repository, tree.commit, { 'tests/a.test': 'a\n', 'value.txt': 'good\nand more\n' })
   const testsTree = treeOf(artifacts, tests)
+  const implement = await change(artifacts, repository, testsTree.commit, { 'src.txt': 'code\n', 'tests/a.test': 'rewritten\n', 'value.txt': 'good\n', 'tests/b.test': 'new\n' })
   const verify = (subject: string) => verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'tests-frozen', capability: 'code.required-checks', subject, criteria, inputs: { tests } })
-  const show = (commit: string, file: string) => execFileSync('git', ['-C', repository, 'show', `${commit}:${file}`], { encoding: 'utf8' })
+  assert.equal((await verify(implement)).verdict, 'fail')
 
-  const edited = treeOf(artifacts, await change(artifacts, repository, testsTree.commit, { 'src.txt': 'code\n', 'tests/a.test': 'rewritten\n', 'value.txt': 'good\n', 'tests/b.test': 'new\n' }))
-  const restored = await restoreFiles(repository, edited, testsTree, 'msg')
+  const restored = await restoreFiles(repository, treeOf(artifacts, implement), testsTree, 'restore frozen files')
+  const show = (path: string) => execFileSync('git', ['-C', repository, 'show', `${restored.commit}:${path}`], { encoding: 'utf8' })
+  assert.equal(show('tests/a.test'), 'a\n')
+  assert.equal(show('value.txt'), 'good\nand more\n')
+  assert.equal(show('src.txt'), 'code\n')
+  assert.equal(show('tests/b.test'), 'new\n')
   assert.equal(restored.parent, testsTree.commit)
-  assert.equal(show(restored.commit, 'tests/a.test'), 'a\n')
-  assert.equal(show(restored.commit, 'value.txt'), 'good\nand more\n')
-  assert.equal(show(restored.commit, 'src.txt'), 'code\n')
-  assert.equal(show(restored.commit, 'tests/b.test'), 'new\n')
-  assert.equal((await verify((await artifacts.put({ ...GIT_TREE_KIND, content: restored, subject: { type: 'git-commit', ref: restored.commit }, classification: 'local-private', producer: { type: 'operator', ref: 't' } })).id)).verdict, 'pass')
+  assert.equal(execFileSync('git', ['-C', repository, 'rev-parse', `${restored.commit}^`], { encoding: 'utf8' }).trim(), testsTree.commit)
+  const restoredId = (await artifacts.put({ ...GIT_TREE_KIND, content: restored, classification: 'local-private', producer })).id
+  const result = await verify(restoredId)
+  assert.equal(result.verdict, 'pass', result.reason)
+})
 
-  // Nothing to restore: the same change.
-  assert.equal(await restoreFiles(repository, restored, testsTree, 'msg'), restored)
+test('restoreFiles deletes a file the tests step deleted and implement re-created', async () => {
+  const restoreFiles = await restoration()
+  const artifacts = store()
+  const repository = repo(CHECKS)
+  const { tree } = await taskOn(artifacts, repository)
+  const tests = treeOf(artifacts, await change(artifacts, repository, tree.commit, { 'value.txt': null }))
+  const implement = treeOf(artifacts, await change(artifacts, repository, tests.commit, { 'value.txt': 're-created\n', 'src.txt': 'code\n' }))
+  const restored = await restoreFiles(repository, implement, tests, 'restore deletion')
+  assert.equal(execFileSync('git', ['-C', repository, 'ls-tree', restored.commit, '--', 'value.txt'], { encoding: 'utf8' }), '')
+  assert.equal(execFileSync('git', ['-C', repository, 'show', `${restored.commit}:src.txt`], { encoding: 'utf8' }), 'code\n')
+  assert.equal(restored.parent, tests.commit)
+})
 
-  // A file the tests step deleted and implement brought back is deleted again.
-  const deleting = treeOf(artifacts, await change(artifacts, repository, testsTree.commit, { 'tests/a.test': null }))
-  const recreated = treeOf(artifacts, await change(artifacts, repository, deleting.commit, { 'tests/a.test': 'back\n' }))
-  const again = await restoreFiles(repository, recreated, deleting, 'msg')
-  assert.throws(() => show(again.commit, 'tests/a.test'))
+test('restoreFiles keeps the same commit when the frozen files are unchanged', async () => {
+  const restoreFiles = await restoration()
+  const artifacts = store()
+  const repository = repo(CHECKS)
+  const { tree } = await taskOn(artifacts, repository)
+  const tests = treeOf(artifacts, await change(artifacts, repository, tree.commit, { 'tests/a.test': 'a\n' }))
+  const implement = treeOf(artifacts, await change(artifacts, repository, tests.commit, { 'src.txt': 'code\n' }))
+  const restored = await restoreFiles(repository, implement, tests, 'nothing to restore')
+  assert.equal(restored.commit, implement.commit)
+  assert.deepEqual(restored, implement)
 })
 
 test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftover is stopped', async () => {

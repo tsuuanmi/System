@@ -122,6 +122,22 @@ test('a reference must name an output of a step this step depends on', () => {
   assert.ok(problems(two('steps.a.x')).length, 'a reference starts with $')
 })
 
+test('freeze must name an output of a step this one depends on', () => {
+  const workflow = (freeze: string, dependsOn = '[tests]') => `${base}  - id: tests
+    capabilities: [research]
+    outputs: [change]
+  - id: implement
+    dependsOn: ${dependsOn}
+    capabilities: [research]
+    outputs: [change]
+    freeze: ${freeze}
+`
+  assert.doesNotThrow(() => resolve(parseWorkflow(workflow('$steps.tests.change')), available))
+  assert.throws(() => resolve(parseWorkflow(workflow('$steps.nope.change')), available), (error: unknown) => error instanceof WorkflowError && /freezes .*nope/.test(error.message))
+  assert.match(problems(workflow('$steps.tests.missing')).join(';'), /freezes .*has no output missing/)
+  assert.match(problems(workflow('$steps.tests.change', '[]')).join(';'), /freezes .*does not depend on tests/)
+})
+
 test('capabilities no enabled Worker or verifier provides are refused before any Worker runs', () => {
   const none: AvailableCapabilities = { workers: new Set(), verifiers: new Set(), effects: new Set() }
   const found = problems(fixture('software-engineering.yaml'), none)
