@@ -19,6 +19,7 @@ import { z, type Caller } from '@system/work'
 import { RpcError, tableOf, type Client, type Methods } from '../../host/lib/index.js'
 import { operations, type Services } from '../../host/lib/operations.js'
 import { explain, operatorId } from './io.ts'
+import { readWorkflowFile } from './remote.ts'
 
 /** What a code root offers `system mcp`: its operation table builder. */
 export interface Code { operations: (services: Services) => Methods; tableOf: typeof tableOf }
@@ -36,6 +37,19 @@ export const tools = toolsOf({ operations, tableOf })
  * What a session is told when it connects (the MCP `instructions`), so that
  * it can use System from any repository without reading System's docs.
  */
+/** `work.submit`'s `workflow` as a path: one line ending in .yaml or .yml. The MCP server runs on the Host's machine, so it reads the file as the CLI does; anything else is contents. */
+export function withWorkflowFile(method: string, args: Record<string, unknown>): Record<string, unknown> {
+  const path = typeof args.workflow === 'string' ? args.workflow.trim() : ''
+  if (method !== 'work.submit' || !path || /[\r\n]/.test(path) || !/\.ya?ml$/i.test(path)) return args
+  try {
+    const { workflow, uses } = readWorkflowFile(path)
+    const sent = args.uses && typeof args.uses === 'object' ? args.uses : {}
+    return { ...args, workflow, uses: { ...uses, ...sent } }
+  } catch (error) {
+    throw new Error(`workflow ${path}: not a readable file (${(error as NodeJS.ErrnoException).code ?? (error as Error).message}); give the path of a Workflow .yaml file on this machine, or the Workflow's contents`)
+  }
+}
+
 export const INSTRUCTIONS = `System is the durable work control plane on this machine. This session is a
 caller: a Worker (a separate agent, in a clean worktree of the repository)
 makes the change, and results come back as Artifact IDs.
@@ -61,7 +75,8 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    \`{ task, base }\`: pass \`task\` alone as the input.
 3. \`work_submit\` with the Workflow file
    ~/.system/current/workflows/feature.yaml for a code change (a plan, then
-   tests that fail first, then the code, then the docs). Use
+   tests that fail first, then the code, then the docs); \`workflow\` is that
+   file's path on this machine (\`~\` expanded), or the Workflow's contents. Use
    \`software-engineering.yaml\` there instead for a change too small for a
    plan, for a change that keeps behaviour (a cleanup, a refactor; hygiene.yaml
    fits too), or in a repository whose \`.system/checks.yaml\` has no \`red:\`
@@ -152,7 +167,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {
       if (!current.some((tool) => tool.name === params.name)) throw new Error(`unknown tool ${params.name}`)
-      return { content: [{ type: 'text' as const, text: JSON.stringify(await forwarded(params.name, params.arguments ?? {}) ?? null) }] }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(await forwarded(params.name, withWorkflowFile(params.name, params.arguments ?? {})) ?? null) }] }
     } catch (error) {
       return { isError: true, content: [{ type: 'text' as const, text: (error as Error).message }] }
     }

@@ -83,13 +83,21 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work and run it (unless `run` is false), from the contents of a Workflow file, or a single Task by capability, and return its record; with `run` false it only admits, and `work.run` starts it later. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true.',
+      summary: 'Admit a Work and run it (unless `run` is false), from the contents of a Workflow file (through MCP, `system mcp`, `workflow` may instead be the path of a Workflow .yaml file on this machine, `~` expanded, and the Sub-workflows beside it are read too; the Host\'s own call takes contents only), or a single Task by capability, and return its record; with `run` false it only admits, and `work.run` starts it later. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true.',
       params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), worker: z.string().min(1).optional(), force: z.boolean().optional(), run: z.boolean().default(true), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
         const available = services.capabilities.available()
+        const parsed = (text: string) => {
+          try {
+            return parseWorkflow(text)
+          } catch (error) {
+            if (error instanceof WorkflowError && error.message.includes('expected object, received')) throw new Error('workflow is neither the path of a readable .yaml file nor the contents of a Workflow file')
+            throw error
+          }
+        }
         const admission: Admission = p.workflow
-          ? { spec: resolve(parseWorkflow(p.workflow), available, usedFile(p.uses, (name) => services.workflowFile(name, p.input))), input: p.input, worker: p.worker, force: p.force, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
+          ? { spec: resolve(parsed(p.workflow), available, usedFile(p.uses, (name) => services.workflowFile(name, p.input))), input: p.input, worker: p.worker, force: p.force, caller, source: { kind: 'workflow-file', fileHash: `sha256:${createHash('sha256').update(p.workflow).digest('hex')}` } }
           : { spec: directTask(p.capabilities, p.input !== undefined, available), input: p.input, worker: p.worker, force: p.force, caller, source: { kind: 'direct-task' } }
         return host.submit(admission, { commandId: p.commandId }).then((work) => (p.run ? started(host, work.id, (go) => host.run(work.id, { commandId: p.commandId && `${p.commandId}:run`, started: go })) : work))
       },
