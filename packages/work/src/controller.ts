@@ -837,7 +837,7 @@ export class WorkController {
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
       // A change that is judged or published must be one: a Worker that changed nothing fails here, not three steps later.
       // Only a first output that a later verify or effect step takes as its subject, so a read-only step's `checkout` stays unchanged.
-      else if (s.outputs[0] && isJudged(spec, s.id, s.outputs[0])) {
+      else if (s.outputs[0] && !s.mayBeEmpty && isJudged(spec, s.id, s.outputs[0])) {
         const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
         if (base) {
           const said = result.message?.replace(/\s+/g, ' ').trim()

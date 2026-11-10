@@ -42,6 +42,8 @@ const workerStep = z.object({
   /** What this step's Worker is told besides the task, such as an output format. */
   instructions: z.string().min(1).max(8 * 1024).optional(),
   retry: retry.optional(),
+  /** The step's change may equal its base (a docs step with nothing stale): passed on instead of failing with "no change". */
+  mayBeEmpty: z.boolean().optional(),
 }).strict()
 
 const verifyStep = z.object({

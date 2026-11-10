@@ -155,6 +155,16 @@ test('a code-write step whose change is its base tree fails with "no change", qu
   assert.equal(h.verdicts.length, 0)
 })
 
+test('a step declared mayBeEmpty passes an unchanged tree on instead of failing', async () => {
+  const h: Harness = harness({ worker: treeWorker(() => h, () => true) })
+  const text = fixture('software-engineering.yaml').replace('    outputs: [change]\n', '    outputs: [change]\n    mayBeEmpty: true\n')
+  assert.notEqual(text, fixture('software-engineering.yaml'))
+  const spec = resolve(parseWorkflow(text), h.capabilities.available(), fixture)
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'software-engineering.yaml' } })
+  const done = await h.controller.run(admitted.id)
+  assert.equal(done.state.steps.implement!.state, 'succeeded')
+})
+
 test('a changed tree still passes, and a read-only scout with an unchanged checkout still succeeds', async () => {
   const changed: Harness = harness({ worker: treeWorker(() => changed, () => false) })
   assert.equal((await runFixture(changed, 'software-engineering.yaml')).state.status, 'succeeded')

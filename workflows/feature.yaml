@@ -103,6 +103,7 @@ steps:
     dependsOn: [checks-code]
     capabilities: [code.docs, tier.economy]
     retry: { onFail: [checks.checks], max: 1 }
+    mayBeEmpty: true
     inputs:
       task: $work.input
       plan: $steps.plan.plan
@@ -110,7 +111,7 @@ steps:
     outputs: [change]
     instructions: |
       The checkout holds the change (`git diff HEAD~2` shows the tests and the
-      code). Update the docs under "Docs" in the plan, and any other doc the
+      code). If nothing is stale, change nothing: that passes the change on. Update the docs under "Docs" in the plan, and any other doc the
       change makes untrue, and nothing else: no code, no tests. One home per
       fact: link rather than repeat. If the repository has a docs check in
       .system/checks.yaml, run it.

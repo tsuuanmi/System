@@ -101,7 +101,8 @@ model is recorded for it.
    as the base commit <short sha>" and that message, shortened, but only when a
    later verify or effect step takes that output as its subject. Read-only
    steps (the scouts of `hygiene.yaml`) name a `checkout` nothing verifies or
-   publishes, so an unchanged one stays a success.
+   publishes, so an unchanged one stays a success, as does a step declared
+   `mayBeEmpty` (the docs step of `feature.yaml`).
 5. **Record:** usage from the CLI's own output (unknown when absent), summed
    over every turn: a background command's completion notification starts a
    second turn, and Claude Code's `stream-json` prints a `result` for each,
