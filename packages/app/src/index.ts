@@ -3,7 +3,7 @@
  * after the host has started, and exits through the launcher's shutdown path.
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -13,13 +13,13 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts'
 import { WEB_WORKER_DISABLED, type AgentsService, type WebWorkerService } from '@system/agents'
-import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities, type GitTreeContent, type Task, type WorkService } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
 import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { VERSION, connect } from '../../host/lib/index.js'
+import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
 import { exitWithin, serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
@@ -127,6 +127,18 @@ function webWorkerService(ctx: Context): WebWorkerService {
   return web
 }
 
+/** Whether `commit` is in the code this Host runs (its commit read once): false when it is not (git exits 1 without a message), undefined when git cannot say. */
+let running: Promise<string> | undefined
+export async function releaseHolds(repository: string, commit: string): Promise<boolean | undefined> {
+  try {
+    const head = await (running ??= git(realpathSync(codeRoot()), ['rev-parse', 'HEAD']).then((out) => out.trim()))
+    await git(repository, ['merge-base', '--is-ancestor', commit, head])
+    return true
+  } catch (error) {
+    return /failed:$/.test((error as Error).message) ? false : undefined
+  }
+}
+
 /** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT (status 0) or on new code on disk (`UPGRADE_EXIT`). */
 async function runHost(ctx: Context): Promise<number> {
   const work = ctx.get('work') as WorkService | undefined
@@ -167,6 +179,7 @@ async function runHost(ctx: Context): Promise<number> {
       loginRemote: async (ref) => webWorkerService(ctx).loginRemote(ref),
       loginWait: async (ref, cancel) => webWorkerService(ctx).loginWait(ref, cancel),
       recheck: async (ref) => webWorkerService(ctx).recheck(ref),
+      releaseHolds: (repository, commit) => releaseHolds(repository, commit),
     },
   }).catch(async (error: unknown) => {
     await host.close()

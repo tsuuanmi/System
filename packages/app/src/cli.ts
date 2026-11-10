@@ -48,6 +48,8 @@ export interface FollowOptions {
   cancelOnInterrupt?: boolean
   /** Aborting it ends the following without a word; the result is `stopped`. */
   signal?: AbortSignal
+  /** Keep reading across a Host restart, for up to `RECONNECT_MS` (`work wait`, which only watches). */
+  patient?: boolean
 }
 
 /** What `work wait` accepts: with `any` it returns at the first Work that ended, otherwise when all have; after `timeoutMs` it gives up. */

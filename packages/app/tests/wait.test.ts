@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import type { Client } from '../../host/lib/index.js'
 import { buildProgram, type ClientHost, type Run, type WaitOptions, type Waited } from '../src/cli.ts'
 import { remoteHost } from '../src/remote.ts'
+import { NotRunning } from '../../host/lib/index.js'
 
 const record = (id: string, status: string, extra: object = {}) => ({ id, events: [], state: { status, ...extra } }) as any
 
@@ -76,9 +77,10 @@ test('work wait refuses a timeout that is not a positive number', async () => {
 })
 
 /** A Host whose `work.events`/`work.show` answer from `status`. */
-function fakeRemote(status: Record<string, string>, opened: { readOnly: (boolean | undefined)[] } = { readOnly: [] }) {
+function fakeRemote(status: Record<string, string>, opened: { readOnly: (boolean | undefined)[] } = { readOnly: [] }, down = 0) {
   const open = async (_caller: unknown, options?: { readOnly?: boolean }): Promise<Client> => {
     opened.readOnly.push(options?.readOnly)
+    if (down-- > 0) throw new NotRunning('the System Host is not running')
     return {
       call: async (method: string, params: any) => method === 'work.events'
         ? { events: [], status: status[params.workId] }
@@ -109,4 +111,10 @@ test('waitFor gives up at the timeout with timedOut set and the Works as they ar
   assert.equal(waited.decided, undefined)
   assert.equal(waited.records[0]!.state.status, 'running')
   assert.ok(Date.now() - started < 5000)
+})
+
+test('waitFor reconnects after repeated Host startup failures', { timeout: 20_000 }, async () => {
+  const waited = await fakeRemote({ 'work:a': 'succeeded' }, { readOnly: [] }, 4).waitFor(['work:a'], { any: false })
+  assert.equal(waited.decided, 'work:a')
+  assert.equal(waited.records[0]!.state.status, 'succeeded')
 })

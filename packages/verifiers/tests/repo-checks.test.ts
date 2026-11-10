@@ -22,3 +22,8 @@ test('the parts run in order: install, build, then the checks that need them', (
   assert.ok(order.indexOf('install') < order.indexOf('build'))
   for (const name of ['typecheck', 'unit', 'smoke']) assert.ok(order.indexOf('build') < order.indexOf(name), name)
 })
+
+test('the red check: docs, install and build must pass with only the new tests; typecheck and the tests may fail (new tests name code not written yet)', () => {
+  const red = Object.fromEntries(checks.map((check) => [check.name, (check as { red?: string }).red ?? 'fail']))
+  assert.deepEqual(red, { docs: 'pass', install: 'pass', build: 'pass', typecheck: 'fail', unit: 'fail', smoke: 'fail', web: 'fail' })
+})

@@ -652,10 +652,43 @@ steps:
 `
 
 async function runRetrying(h: Harness) {
-  const spec = resolve(parseWorkflow(RETRY), h.capabilities.available())
+  return runWith(RETRY, h)
+}
+
+async function runWith(yaml: string, h: Harness) {
+  const spec = resolve(parseWorkflow(yaml), h.capabilities.available())
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'retrying.yaml' } })
   return h.controller.run(admitted.id)
 }
+
+const RETRY_TWO = `schema: system.workflow/v1
+id: retry-two
+version: 1
+steps:
+  - id: tests
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+    retry: { onFail: [red, checks], max: 1 }
+  - id: red
+    dependsOn: [tests]
+    verify: { capability: code.required-checks, subject: $steps.tests.change, criteria: red-v1 }
+  - id: implement
+    dependsOn: [red]
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+    retry: { onFail: [frozen, checks], max: 1 }
+  - id: frozen
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: frozen-v1 }
+  - id: checks
+    dependsOn: [frozen]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: repo-checks-v1 }
+  - id: accept
+    dependsOn: [checks]
+    accept: { requires: [checks] }
+`
 
 /** A verifier whose verdicts are taken from `verdicts` in turn (the last one repeats). */
 function scripted(specs: ReturnType<typeof memorySpecs>, verdicts: VerifyResult['verdict'][]): Partial<VerifierPort> {
@@ -666,6 +699,70 @@ function scripted(specs: ReturnType<typeof memorySpecs>, verdicts: VerifyResult[
     return { verdict: verdicts[Math.min(n++, verdicts.length - 1)]!, reason: 'scripted', subject: r.subject, criteria: r.criteria, evidence: [evidence] }
   } }
 }
+
+function byStep(specs: ReturnType<typeof memorySpecs>, verdicts: Record<string, VerifyResult['verdict'][]>): Partial<VerifierPort> {
+  const calls = new Map<string, number>()
+  return { async verify(r) {
+    const n = calls.get(r.stepId) ?? 0
+    calls.set(r.stepId, n + 1)
+    const sequence = verdicts[r.stepId] ?? ['pass']
+    const evidence = id(`evidence/${r.attemptId}`)
+    specs.stored.add(evidence)
+    return { verdict: sequence[Math.min(n, sequence.length - 1)]!, reason: 'scripted', subject: r.subject, criteria: r.criteria, evidence: [evidence] }
+  } }
+}
+
+function autoReopens(w: WorkRecord) {
+  return w.events.flatMap((e) => (e.type === 'reopened' && e.automatic ? [e] : []))
+}
+
+test('budget is per verify step: frozen then checks each reopen implement once', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: byStep(specs, { red: ['pass'], frozen: ['fail', 'pass'], checks: ['fail', 'pass'] }) })
+  const done = await runWith(RETRY_TWO, h)
+  assert.equal(done.state.status, 'succeeded')
+  const reopened = autoReopens(done)
+  assert.deepEqual(reopened.map((e) => e.stepId), ['implement', 'implement'])
+  const failedVerdicts = done.events.flatMap((e) => (e.type === 'verified' && e.verdict === 'fail' ? [e.verdictId] : []))
+  assert.deepEqual(reopened.map((e) => e.failure), failedVerdicts)
+})
+
+test('a failing checks verdict reopens the nearest step that has budget: tests when implement is spent', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: byStep(specs, { red: ['pass'], frozen: ['fail', 'pass'], checks: ['fail', 'fail', 'pass'] }) })
+  const done = await runWith(RETRY_TWO, h)
+  assert.equal(done.state.status, 'succeeded')
+  const reopened = autoReopens(done)
+  assert.deepEqual(reopened.map((e) => e.stepId), ['implement', 'implement', 'tests'])
+  const last = reopened[2]!
+  assert.deepEqual(last.reset, ['tests', 'red', 'implement', 'frozen', 'checks', 'accept'])
+  const priorTests = done.events.find((e) => e.type === 'observed' && e.stepId === 'tests')
+  assert.ok(priorTests?.type === 'observed')
+  const firstTestsCall = h.calls.find((c) => c.stepId === 'tests')!
+  const testsCalls = h.calls.filter((c) => c.stepId === 'tests')
+  assert.equal(testsCalls.length, 2)
+  assert.equal(firstTestsCall.inputs.failure, undefined)
+  assert.equal(testsCalls[1]!.inputs.failure, last.failure)
+  assert.equal(testsCalls[1]!.inputs.previous, priorTests.outputs.change)
+  assert.equal(h.controller.replay(done.id).matches, true)
+})
+
+test('the nearest step is reopened first: with budget on both, implement and not tests', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: byStep(specs, { red: ['pass'], frozen: ['pass'], checks: ['fail', 'pass'] }) })
+  const done = await runWith(RETRY_TWO, h)
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(autoReopens(done).map((e) => e.stepId), ['implement'])
+  assert.equal(h.calls.filter((c) => c.stepId === 'tests').length, 1)
+})
+
+test('when no candidate has budget left, the Work does not succeed', async () => {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: byStep(specs, { red: ['pass'], frozen: ['pass'], checks: ['fail'] }) })
+  const done = await runWith(RETRY_TWO, h)
+  assert.notEqual(done.state.status, 'succeeded')
+  assert.deepEqual(autoReopens(done).map((e) => e.stepId), ['implement', 'tests'])
+})
 
 test('a failing verdict named in retry.onFail reopens the step once, automatically, with the verdict and the change as input', async () => {
   const specs = memorySpecs()

@@ -21,9 +21,9 @@ test('following a Work reconnects once when the Host closes the connection for a
   assert.equal((followed as { id: string }).id, 'work:x')
 })
 
-test('a Host that is still away after the reconnect is the error', { timeout: 20_000 }, async () => {
+test('a Host that is still away after RECONNECT_MS is the error', { timeout: 20_000 }, async () => {
   const open = async (): Promise<Client> => client(async () => { throw new NotRunning('the Host is not running') })
-  await assert.rejects(remoteHost({ open, err: () => {} }).work().wait('work:x'), /not running/)
+  await assert.rejects(remoteHost({ open, err: () => {}, reconnectMs: 1500 }).work().wait('work:x'), /not running/)
 })
 
 test('a Workflow file is sent with every Workflow file it uses, read from beside it, nested ones too', async () => {

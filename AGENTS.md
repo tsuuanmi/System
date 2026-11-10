@@ -58,6 +58,8 @@ test stand-ins. Changes to this repository are checked by
   - Never let docs restate what code, tests or another doc already say.
 - **Fast, testable feedback** (Charter 12):
   - Every behavior change comes with a test that failed first.
+  - A new CLI command or MCP tool has a smoke test through a real Host: three
+    DF features passed their unit tests and failed at first real use.
   - Keep `.system/checks.yaml` within its time budget.
   - Treat a flaky test as a defect to fix before new features.
 - **Standards and determinism** (Charter 8): before inventing a format or

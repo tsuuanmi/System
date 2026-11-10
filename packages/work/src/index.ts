@@ -114,6 +114,11 @@ export class WorkService {
 
 function specStore(artifacts: Artifacts): SpecStore {
   artifacts.registerKind({ kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: resolvedSpecSchema })
+  /** The stored Artifact `id`, if it is stored and (when given) of `kind`. */
+  const stored = (id: string, kind?: string): Envelope | undefined => {
+    const read = artifacts.get(id)
+    return read.state === 'stored' && (!kind || read.envelope.kind === kind) ? read.envelope : undefined
+  }
   return {
     async putSpec(spec, caller) {
       const envelope = await artifacts.put({
@@ -122,34 +127,22 @@ function specStore(artifacts: Artifacts): SpecStore {
       })
       return envelope.id
     },
-    getSpec(specId) {
-      const read = artifacts.get(specId)
-      return read.state === 'stored' && read.envelope.kind === SPEC_KIND ? read.envelope.content as ResolvedSpec : undefined
-    },
+    getSpec: (specId) => stored(specId, SPEC_KIND)?.content as ResolvedSpec | undefined,
     exists: (id) => artifacts.get(id).state === 'stored',
-    kindOf(id) {
-      const read = artifacts.get(id)
-      return read.state === 'stored' ? read.envelope.kind : undefined
-    },
+    kindOf: (id) => stored(id)?.kind,
     unchangedBase(id) {
-      const read = artifacts.get(id)
-      if (read.state !== 'stored' || read.envelope.kind !== GIT_TREE_KIND.kind) return undefined
-      const tree = read.envelope.content as GitTreeContent
-      return tree.commit === tree.parent ? tree.commit : undefined
+      const tree = stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined
+      return tree && tree.commit === tree.parent ? tree.commit : undefined
     },
-    commitOf(id) {
-      const read = artifacts.get(id)
-      return read.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? (read.envelope.content as GitTreeContent).commit : undefined
-    },
+    commitOf: (id) => (stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined)?.commit,
     taskOf(id) {
-      const read = artifacts.get(id)
-      if (read.state !== 'stored' || read.envelope.kind !== TASK_KIND.kind) return undefined
-      const task = read.envelope.content as Task
-      const base = task.base ? artifacts.get(task.base) : undefined
-      return { task, ...(base?.state === 'stored' ? { repository: (base.envelope.content as GitTreeContent).repository } : {}) }
+      const task = stored(id, TASK_KIND.kind)?.content as Task | undefined
+      if (!task) return undefined
+      const base = task.base ? stored(task.base) : undefined
+      return { task, ...(base ? { repository: (base.content as GitTreeContent).repository } : {}) }
     },
     async withNote(id, note, caller) {
-      const task = (artifacts.get(id) as { envelope: Envelope }).envelope.content as Task
+      const task = stored(id)!.content as Task
       const producer = { type: 'operator' as const, ref: caller.operatorId }
       const text = await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(note), mediaType: 'text/markdown', classification: 'local-private', producer })
       const context = [...(task.context ?? []), text.id]

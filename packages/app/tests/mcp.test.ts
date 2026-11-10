@@ -4,8 +4,8 @@
  * fake Workers.
  */
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -83,7 +83,22 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
   }
   const submit = tools.find((t) => t.name === 'work.submit')!
   assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'force', 'input', 'run', 'uses', 'worker', 'workflow'])
+  const claim = tools.find((t) => t.name === 'item.claim')!
+  assert.ok(Object.hasOwn(claim.inputSchema.properties ?? {}, 'commandId'))
   for (const closed of ['approval.decide', 'credentials.set', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
+})
+
+test('item_claim accepts commandId through MCP and status reports the claim', { timeout: 60_000 }, async () => {
+  const project = realpathSync(mkdtempSync(join(home, 'mcp-claim-')))
+  const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
+  git('init', '-q', '-b', 'dev')
+  writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [ ] p-2 Second\n')
+  git('add', '.'); git('commit', '-qm', 'status')
+  const client = await mcp()
+  const claimed = await call(client, 'item.claim', { repository: project, item: 'p-2', commandId: 'c-mcp' })
+  assert.equal(claimed.error, undefined, claimed.error)
+  assert.equal(claimed.value.who, 'o1')
+  assert.match(((await call(client, 'status', { repository: project, item: 'p-2' })).value as string[])[0]!, /doing: claimed by o1 since/)
 })
 
 test('work.submit runs the Work unless run is false; work.list shows an unrun Work as admitted, not running', { timeout: 60_000 }, async () => {
@@ -163,4 +178,41 @@ test('a notice only wakes the client: one that was away reads work.events from i
 test('the initialize result carries instructions: the steps, the checks file and the human-only commands', { timeout: 60_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
   for (const word of ['status', 'item_claim', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
+})
+
+test('the instructions name feature.yaml as the Workflow for a code change and keep software-engineering.yaml for the small case', { timeout: 60_000 }, async () => {
+  const text = (await mcp()).getInstructions() ?? ''
+  assert.ok(text.includes('workflows/feature.yaml'))
+  assert.ok(text.indexOf('feature.yaml') < text.indexOf('software-engineering.yaml'))
+  assert.ok(text.includes('software-engineering.yaml'))
+  assert.ok(text.includes('red:'))
+})
+
+test('an MCP server of older code than the Host recovers on the code under SYSTEM_CODE, and its session keeps working', { timeout: 60_000 }, async () => {
+  // A Host of other code than this build's, and an install whose `current` code is that Host's.
+  const dir = mkdtempSync('/tmp/sm-old-')
+  const lib = join(dir, 'packages', 'host', 'lib')
+  mkdirSync(lib, { recursive: true })
+  const real = new URL('../../host/lib/index.js', import.meta.url).href
+  writeFileSync(join(lib, 'index.js'), `export * from '${real}'\nexport const VERSION = 'newer-code'\n`)
+  mkdirSync(join(dir, 'system'))
+  const f = fixture()
+  mkdirSync(join(dir, 'data'))
+  const host = await f.startHost(join(dir, 'data'))
+  const server = await serve(host, { path: join(dir, 'system', 'host.sock'), methods: operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services), version: 'newer-code', onDisk: () => 'newer-code' })
+  // The client's own refusal names the client, not the Host.
+  const old = await connect(join(dir, 'system', 'host.sock'))
+  await assert.rejects(old.call('host.hello', { version: VERSION, caller: human }), /the client is older: restart the client/)
+  old.close()
+  const transport = new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp'], env: { ...process.env, DSH_HOME: dir, SYSTEM_CODE: dir, SYSTEM_OPERATOR_ID: 'o1' } as Record<string, string> })
+  const client = new Client({ name: 'test', version: '0' })
+  clients.push(client)
+  await client.connect(transport)
+  const listed = await call(client, 'work.list')
+  assert.equal(listed.error, undefined, listed.error)
+  assert.deepEqual(listed.value, [])
+  await client.close()
+  await server.close()
+  await host.close()
+  rmSync(dir, { recursive: true, force: true })
 })

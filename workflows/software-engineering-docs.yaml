@@ -5,13 +5,14 @@
 # default only if it often finds stale docs.
 schema: system.workflow/v1
 id: software-engineering-docs
-version: 1
+version: 2
 steps:
   - id: implement
     capabilities: [code-write]
     inputs:
       task: $work.input
     outputs: [change]
+    retry: { onFail: [checks.checks], max: 1 }
   - id: checks
     dependsOn: [implement]
     uses: code-checks.yaml

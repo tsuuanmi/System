@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, parseWorkflow, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -33,6 +33,8 @@ export interface Services {
   loginWait(ref: string, cancel: boolean): Promise<{ signedIn: boolean; detail: string }>
   /** Check a browser Account without sending anything; it is `ready` again only when the check passes. */
   recheck(ref: string): Promise<{ ready: boolean; state: string; detail: string }>
+  /** Whether `commit` is in the running release of `repository`: false when it is not, undefined when unknown. */
+  releaseHolds?(repository: string, commit: string): Promise<boolean | undefined>
 }
 
 const commandId = z.string().min(1).optional()
@@ -184,17 +186,20 @@ export function operations(services: Services): Methods {
     status: {
       read: true,
       agent: true,
-      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: a Work for the Item was merged into `dev` (read from the Host\'s store), or `[x]` in `STATUS.md` for work done outside System (with the last merged Work and Artifact IDs when known); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
+      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: a Work for the Item was merged into `dev` (read from the Host\'s store), or `[x]` in `STATUS.md` for work done outside System (with the last merged Work and Artifact IDs when known); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. A `done` Item whose merge commit is not in the running release says `done, not yet released`. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
       params: z.object({ repository: z.string().min(1), state: z.enum(['todo', 'doing', 'done']).optional(), item: z.string().regex(ITEM_ID).optional() }).strict(),
       async handler(host, p) {
         const status = await readStatus(p.repository)
-        return [...itemLines(status, status.repository, host.view.list(), (workId) => host.view.live(workId), { state: p.state, item: p.item }, host.view.claims()), ...[status.note, ...status.problems].map((problem) => `note: ${problem}`)]
+        const records = host.view.list()
+        const held = new Map<string, boolean | undefined>()
+        if (services.releaseHolds) for (const commit of new Set(records.flatMap((r) => mergeCommitOf(r) ?? []))) held.set(commit, await services.releaseHolds(status.repository, commit).catch(() => undefined))
+        return [...itemLines(status, status.repository, records, (workId) => host.view.live(workId), { state: p.state, item: p.item }, host.view.claims(), (c) => held.get(c)), ...[status.note, ...status.problems].map((problem) => `note: ${problem}`)]
       },
     },
     'item.claim': {
       agent: true,
       summary: 'Claim an Item of the repository\'s STATUS.md before submitting a Work for it: `{ repository, item, who, at }`, with `who` the caller\'s operator ID. `status` then shows the Item as `doing`, claimed by `who` since `at`; a Work submitted for the Item takes the claim over. Refused when the Item has no line in STATUS.md, has a running or held Work, or is claimed by another caller, unless `force` is true.',
-      params: z.object({ repository: z.string().min(1), item: z.string().regex(ITEM_ID), force: z.boolean().optional() }).strict(),
+      params: z.object({ repository: z.string().min(1), item: z.string().regex(ITEM_ID), force: z.boolean().optional(), commandId }).strict(),
       async handler(host, p, caller) {
         const status = await readStatus(p.repository)
         if (!status.items.some((i) => i.id === p.item)) throw new WorkError(`Item ${p.item} has no line in STATUS.md on ${status.ref} of ${status.repository}`)

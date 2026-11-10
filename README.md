@@ -75,18 +75,23 @@ bin/system workers                                   # which accounts are usable
 bin/system workers login web/chatgpt/default --cookies cookies.json   # an account that is not in the bundle; see the runbook
 ```
 
-A Software Engineering change needs a repository whose base commit has
-[`.system/checks.yaml`](.system/checks.yaml) and an `origin` remote:
+A code change needs a repository whose base commit has
+[`.system/checks.yaml`](.system/checks.yaml) (with `red:` declarations, for feature.yaml) and an `origin` remote:
 
 ```sh
 TASK=$(bin/system task new --repo <path> --text "<what to do>")   # the Task ID alone; the base goes to stderr
-bin/system work submit --workflow workflows/software-engineering.yaml --input "$TASK"
+bin/system work submit --workflow workflows/feature.yaml --input "$TASK"
 bin/system work show <work>          # events, verdicts, the published branch and pull request
 bin/system approve <work>...         # held Work (several: one typed confirmation): a human at a terminal only
 bin/system work cancel <work> --wait
 bin/system work retry <work> [--step implement] [--worker codex/default]
 bin/system work submit ... --worker codex/default   # only that Worker takes its Worker steps
 ```
+
+`workflows/feature.yaml` is the default for a code change. For a change too
+small for a plan, or a repository with no `red:` declarations,
+[`workflows/software-engineering.yaml`](workflows/software-engineering.yaml) is
+the shorter path (implement → checks → publish).
 
 Research takes a question as its input
 (`bin/system task new --text "<question>"`, then `--workflow workflows/research.yaml`).
