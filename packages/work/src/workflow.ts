@@ -42,6 +42,8 @@ const workerStep = z.object({
   /** What this step's Worker is told besides the task, such as an output format. */
   instructions: z.string().min(1).max(8 * 1024).optional(),
   retry: retry.optional(),
+  /** A `git-tree` Artifact (such as `$steps.tests.change`) whose changed files are put back, as it left them, into this step's first output before it is recorded; a Worker cannot change them (dg-10). */
+  freeze: ref.optional(),
   /** The step's change may equal its base (a docs step with nothing stale): passed on instead of failing with "no change". */
   mayBeEmpty: z.boolean().optional(),
 }).strict()
@@ -213,6 +215,7 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
     if (isWorkerStep(s)) {
       if (new Set(s.outputs).size !== s.outputs.length) problems.push(`step ${s.id} names an output twice`)
       for (const [name, value] of Object.entries(s.inputs ?? {})) checkRef(s, value, `input ${name} uses`)
+      if (s.freeze) checkRef(s, s.freeze, 'freezes')
       for (const c of s.capabilities) if (!available.workers.has(c)) problems.push(`step ${s.id} needs Worker capability ${c}, which no enabled Worker provides`)
       for (const failing of s.retry?.onFail ?? []) {
         const target = byId.get(failing)
@@ -264,7 +267,7 @@ export type WorkflowFiles = (name: string) => string
 /** Rename what a joined step refers to: step IDs by `id`, `$steps` references by `ref`. */
 function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {
   const ids = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
-  if (isWorkerStep(s)) return { ...s, ...ids, ...(s.retry ? { retry: { ...s.retry, onFail: s.retry.onFail.map(id) } } : {}), ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
+  if (isWorkerStep(s)) return { ...s, ...ids, ...(s.retry ? { retry: { ...s.retry, onFail: s.retry.onFail.map(id) } } : {}), ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}), ...(s.freeze ? { freeze: ref(s.freeze) } : {}) }
   if (isVerifyStep(s)) return { ...s, ...ids, verify: { ...s.verify, subject: ref(s.verify.subject), ...(s.verify.inputs ? { inputs: Object.fromEntries(Object.entries(s.verify.inputs).map(([k, v]) => [k, ref(v)])) } : {}) } }
   if (isEffectStep(s)) return { ...s, ...ids, effect: { ...s.effect, subject: ref(s.effect.subject), requires: s.effect.requires.map(id) } }
   return { ...s, ...ids, accept: { ...s.accept, requires: s.accept.requires.map(id) } }

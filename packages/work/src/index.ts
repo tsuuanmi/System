@@ -10,7 +10,7 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import type { Artifacts, Envelope } from '@system/artifacts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type ClaimTable, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
-import { snapshot } from './git.ts'
+import { git, pin, restoreFiles, snapshot } from './git.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
@@ -135,6 +135,20 @@ function specStore(artifacts: Artifacts): SpecStore {
       return tree && tree.commit === tree.parent ? tree.commit : undefined
     },
     commitOf: (id) => (stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined)?.commit,
+    async restoreFrozen(changeId, frozenId, caller) {
+      const change = stored(changeId, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined
+      const frozen = stored(frozenId, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined
+      if (!change || !frozen) throw new Error('the change and the frozen change must be stored git-tree Artifacts')
+      const done = await restoreFiles(change.repository, change, frozen, `system: frozen files restored\n\nFrom: ${frozen.commit}`)
+      if (done === change) return { id: changeId, restored: [] }
+      await pin(done.repository, done.commit)
+      const names = (await git(change.repository, ['diff', '--name-only', '--no-renames', change.commit, done.commit])).split('\n').filter(Boolean)
+      const id = (await artifacts.put({
+        ...GIT_TREE_KIND, content: done, inputs: [changeId, frozenId], subject: { type: 'git-commit', ref: done.commit },
+        classification: 'local-private', producer: { type: 'operator', ref: caller.operatorId },
+      })).id
+      return { id, restored: names }
+    },
     taskOf(id) {
       const task = stored(id, TASK_KIND.kind)?.content as Task | undefined
       if (!task) return undefined

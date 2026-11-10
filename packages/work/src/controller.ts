@@ -57,6 +57,8 @@ export interface SpecStore {
   unchangedBase(id: string): string | undefined
   /** The commit of a stored `git-tree@1` Artifact (a change); undefined for any other Artifact. */
   commitOf?(id: string): string | undefined
+  /** Put the files that `git-tree@1` Artifact `frozenId` changed back, as it left them, into change `changeId`; the stored result's ID (`changeId` itself when nothing differed) and the files restored. */
+  restoreFrozen?(changeId: string, frozenId: string, caller: Caller): Promise<{ id: string; restored: string[] }>
   /** Store a `verdict@1` Artifact; returns its ID. */
   putVerdict(verdict: Verdict): Promise<string>
   /** A stored Task, and the repository of its base commit; undefined when `id` is not a Task. */
@@ -855,13 +857,24 @@ export class WorkController {
     // A Worker that calls an earlier step's output wrong fails its own step; only a step another step lists in `retry.onFail` may.
     const objection = status === 'succeeded' && spec.steps.some((o) => isWorkerStep(o) && o.retry?.onFail.includes(s.id) && o.id !== s.id) ? OBJECTION.exec(result.message ?? '')?.[1]?.trim() : undefined
     if (objection) [status, reason] = ['failed', `objection: ${objection}`]
+    const restored: string[] = []
     if (status === 'succeeded' && !objection) {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot]))
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
+      // Put the frozen files back before judging whether anything is left: a Worker that only edited them changed nothing (dg-10).
+      if (status === 'succeeded' && s.freeze && s.outputs[0] && this.specs.restoreFrozen) {
+        try {
+          const done = await this.specs.restoreFrozen(outputs[s.outputs[0]]!, this.resolveRef(this.require(workId), s.freeze), { type: 'agent', operatorId: 'system' })
+          outputs[s.outputs[0]] = done.id
+          restored.push(...done.restored)
+        } catch (error) {
+          [status, reason] = ['failed', `could not restore the frozen files: ${(error as Error).message}`]
+        }
+      }
       // A change that is judged or published must be one: a Worker that changed nothing fails here, not three steps later.
       // Only a first output that a later verify or effect step takes as its subject, so a read-only step's `checkout` stays unchanged.
-      else if (s.outputs[0] && !s.mayBeEmpty && isJudged(spec, s.id, s.outputs[0])) {
+      if (status === 'succeeded' && s.outputs[0] && !s.mayBeEmpty && isJudged(spec, s.id, s.outputs[0])) {
         const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
         if (base) {
           const said = result.message?.replace(/\s+/g, ' ').trim()
@@ -872,7 +885,7 @@ export class WorkController {
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
     // A cancel request is recorded by the drive, once every attempt of the Work has reported.
     return this.append(this.require(workId), {
-      type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason,
+      type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason: reason ?? (restored.length ? `restored frozen files: ${restored.join(', ')}` : undefined),
       usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),

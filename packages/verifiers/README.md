@@ -104,7 +104,7 @@ checks:
     check that failed fails on the base too (the Work is held at `red` for the
     operator); `error` when the base cannot be
     checked out.
-  - **`tests-frozen-v1`**, on the implement step's change with the tests
+  - **`tests-frozen-v1`** (the controller restores the frozen files first, so a `fail` is now only a defect of that restore), on the implement step's change with the tests
     step's change as the verify step's input `tests`: `fail` when the change,
     compared with the tests step's commit, adds, modifies or deletes a file
     the tests step's own change (against its parent) touched, naming the

@@ -17,7 +17,8 @@ const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'u
 const caller = { type: 'human', operatorId: 'tan' } as const
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 
-function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string> } {
+function memorySpecs(restoreError?: string): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string>; restores: string[][] } {
+  const restores: string[][] = []
   const unchanged = new Map<string, string>()
   const specs = new Map<string, ResolvedSpec>()
   const stored = new Set<string>()
@@ -26,6 +27,7 @@ function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string,
     stored,
     verdicts,
     unchanged,
+    restores,
     unchangedBase: (artifactId) => unchanged.get(artifactId),
     kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) {
@@ -44,6 +46,13 @@ function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string,
     exists: (artifactId) => stored.has(artifactId),
     taskOf: () => undefined,
     withNote: async () => { throw new Error('no Item in this test') },
+    async restoreFrozen(changeId, frozenId) {
+      restores.push([changeId, frozenId])
+      if (restoreError) throw new Error(restoreError)
+      const restoredId = id('restored')
+      stored.add(restoredId)
+      return { id: restoredId, restored: ['tests/a.test'] }
+    },
   }
 }
 
@@ -153,6 +162,57 @@ test('a code-write step whose change is its base tree fails with "no change", qu
   assert.ok(reason?.type === 'observed' && reason.reason?.startsWith('no change: the working tree is the same as the base commit abcdef0. The Worker said: I looked and found nothing to do x'))
   assert.ok(reason.reason!.length < 400)
   assert.equal(h.verdicts.length, 0)
+})
+
+const FREEZE = `schema: system.workflow/v1
+id: freeze
+version: 1
+steps:
+  - id: tests
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+  - id: implement
+    dependsOn: [tests]
+    capabilities: [code-write]
+    inputs: { task: $work.input }
+    outputs: [change]
+    freeze: $steps.tests.change
+  - id: checks
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: repo-checks-v1 }
+`
+
+async function runFreeze(h: Harness) {
+  const spec = resolve(parseWorkflow(FREEZE), h.capabilities.available(), fixture)
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'freeze.yaml' } })
+  return h.controller.run(admitted.id)
+}
+
+test('a step with freeze records the change with the frozen files restored', async () => {
+  const h: Harness = harness({ worker: treeWorker(() => h, () => false) })
+  const done = await runFreeze(h)
+  assert.equal(done.state.status, 'succeeded')
+  const { implement, tests } = done.state.steps
+  assert.equal(implement!.outputs.change, id('restored'))
+  assert.deepEqual(h.specs.restores, [[id(`${implement!.attempts[0]}/change`), tests!.outputs.change!]])
+  assert.ok(done.events.some((e) => e.type === 'observed' && e.reason === 'restored frozen files: tests/a.test'))
+})
+
+test('a step with freeze fails when the files cannot be restored', async () => {
+  const specs = memorySpecs('boom')
+  const h: Harness = harness({ specs, worker: treeWorker(() => h, () => false) })
+  const done = await runFreeze(h)
+  assert.equal(done.state.steps.implement!.state, 'failed')
+  assert.ok(done.events.some((e) => e.type === 'observed' && /could not restore the frozen files: boom/.test(e.reason ?? '')))
+})
+
+test('a step with freeze whose restored change is its base fails with "no change"', async () => {
+  const h: Harness = harness({ worker: treeWorker(() => h, () => false) })
+  h.specs.unchanged.set(id('restored'), 'abcdef0123456789')
+  const done = await runFreeze(h)
+  assert.equal(done.state.steps.implement!.state, 'failed')
+  assert.ok(done.events.some((e) => e.type === 'observed' && /^no change/.test(e.reason ?? '')))
 })
 
 test('a step declared mayBeEmpty passes an unchanged tree on instead of failing', async () => {

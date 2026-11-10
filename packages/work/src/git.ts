@@ -72,6 +72,33 @@ export async function captureTree(repository: string, worktree: string, base: st
   }
 }
 
+/**
+ * `change` with every file that `from` (the tests step's change) added, modified or deleted put back as `from` left
+ * it, as one commit on `change`'s parent (`from`'s commit when it has none); `change` itself when nothing differs.
+ */
+export async function restoreFiles(repository: string, change: GitTreeContent, from: GitTreeContent, message: string): Promise<GitTreeContent> {
+  if (!from.parent) throw new Error(`the tests step's change ${from.commit} names no parent: what it wrote is unknown`)
+  const names = (await git(repository, ['diff', '--name-only', '--no-renames', '-z', from.parent, from.commit])).split('\0').filter(Boolean)
+  const scratch = mkdtempSync(join(tmpdir(), 'system-index-'))
+  try {
+    const index = { GIT_INDEX_FILE: join(scratch, 'index') }
+    await git(repository, ['read-tree', change.commit], index)
+    for (const name of names) {
+      const listed = (await git(repository, ['ls-tree', '-z', from.commit, '--', name])).split('\0')[0]!
+      const match = /^(\d+) \w+ ([0-9a-f]{40})\t/.exec(listed)
+      if (match) await git(repository, ['update-index', '--add', '--cacheinfo', `${match[1]},${match[2]},${name}`], index)
+      else await git(repository, ['update-index', '--force-remove', '--', name], index)
+    }
+    const tree = (await git(repository, ['write-tree'], index)).trim()
+    if (tree === change.tree) return change
+    const parent = change.parent ?? from.commit
+    const commit = (await git(repository, ['commit-tree', tree, '-p', parent, '-m', message], index)).trim()
+    return { repository, commit, tree, ...(change.parent ? { parent: change.parent } : { parent }) }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
+}
+
 /** Keep a commit reachable so garbage collection never drops an Artifact's subject. */
 export async function pin(repository: string, commit: string): Promise<void> {
   await git(repository, ['update-ref', `refs/system/artifacts/${commit}`, commit])
