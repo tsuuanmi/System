@@ -54,7 +54,7 @@ steps:
       Name exact files, functions and commands; quote the code you refer to.
   - id: tests
     dependsOn: [plan]
-    capabilities: [code.tests, tier.economy]
+    capabilities: [code.tests, tier.standard]
     inputs:
       task: $work.input
       plan: $steps.plan.plan

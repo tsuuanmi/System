@@ -51,13 +51,13 @@ test('code-write stays on the steps that write the checkout', () => {
 test('the tests step keeps code.tests and never asks for code.develop', () => {
   for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
-    assert.deepEqual(caps(spec, 'tests'), ['code.tests', 'tier.economy'])
+    assert.deepEqual(caps(spec, 'tests'), ['code.tests', 'tier.standard'])
   }
 })
 
 test('Claude-like and Codex-like Accounts split the steps', () => {
   const claude = new Set(['code-write', 'code.develop', 'code.docs', 'research', 'web-search', 'tier.standard', 'tier.economy'])
-  const codex = new Set(['code-write', 'code.tests', 'tier.economy'])
+  const codex = new Set(['code-write', 'code.tests', 'tier.standard', 'tier.economy'])
   for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
     const workerSteps = spec.steps.filter((step) => 'capabilities' in step)
