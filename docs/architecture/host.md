@@ -65,7 +65,7 @@ file can be left behind.
 **Implemented (H2):** `acquireHostLock` in `host-lock.ts`; `Host.start`
 takes it first and gives it back if recovery fails. Off Linux it refuses and
 says so. A Host keeps its Works' locks and cancel requests in memory
-(`MemoryControl`).
+(in the controller).
 
 The old per-Work lock files, takeover mutex and write marks
 (`$DSH_HOME/system/control/*.lock`, `*.takeover`, `*.written`) are gone from
