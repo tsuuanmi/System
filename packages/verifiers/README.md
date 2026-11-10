@@ -111,7 +111,9 @@ checks:
     files; new files, new tests included, are allowed. No check runs (so
     nothing is run again on the base); one
     `check-run@1` records the `git diff` and the files. Without the input, or
-    when the tests change names no parent, the verdict is `error`.
+    when the tests change names no parent, the verdict is `error`. The
+    controller restores those files before it records the change (the
+    Workflow's `freeze`), so a `fail` now means that restore did not hold.
 
 ## `research.citation-check` (version 4)
 
