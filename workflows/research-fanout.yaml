@@ -2,9 +2,9 @@
 # sub-questions; one investigation per Lane answers each on the web; each Lane's
 # sources are checked; a synthesis merges both Lanes into one report and one
 # sources file, which is checked again. The number of Lanes (2) is fixed here and
-# equals the web Accounts. Routing takes the first capable Account, so each Lane
-# has a capability of its own (research.lane-a, research.lane-b), which a profile
-# gives to a different Account (as brainstorm.yaml does with its ideas). The two
+# equals the web Accounts. A capability of its own pins each Lane to its Account
+# (research.lane-a, research.lane-b), which a profile gives to a different Account
+# (as brainstorm.yaml does with its ideas). The two
 # investigations share their instructions through a YAML anchor. Same schema and
 # controller as research.yaml: no engine change.
 schema: system.workflow/v1

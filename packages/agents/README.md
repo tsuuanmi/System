@@ -23,6 +23,7 @@ the optional web-worker row) becomes a System Worker
     attemptTimeoutMinutes: 60           # row-wide default; an account may set its own
     maxConcurrentAttempts: 1            # row-wide default (1); an account may set its own
     attemptBudget: {inputTokens: 30000000, minutes: 45}  # row-wide default (none); an account may set its own
+    quotaCeilingPercent: 80             # 1-100; a window at or above this share used is over (see Routing by headroom)
     accounts:
       - ref: claude-code/default        # <runtime>/<account>
         runtime: claude-code
@@ -118,7 +119,7 @@ each, once per choice):
    accounts under the ceiling, in registration order, but stays usable.
 4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
    shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
-   that reset, or every 5 minutes.
+   that reset, or every 5 minutes, whichever comes first.
 
 The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; another value
 refuses every account). The `dispatched` event records each candidate's reason

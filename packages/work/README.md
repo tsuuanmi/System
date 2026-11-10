@@ -22,7 +22,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   given), preflight, resolve, and the direct Task's implicit spec. Pure.
 - [src/record.ts](src/record.ts) — event and state schemas and the pure `fold`.
 - [src/registry.ts](src/registry.ts) — `Capabilities`: register Workers and
-  verifiers, route by capability with a reason for every candidate.
+  verifiers, route by capability, then by quota headroom, with a reason for
+  every candidate. The ranking is [src/headroom.ts](src/headroom.ts) (pure);
+  the rule is in the [agents README](../agents/README.md#routing-by-headroom).
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
 - [src/status.ts](src/status.ts) — a project's status: `parseStatus` and `readStatus` (`STATUS.md` on `dev`), `itemLines` (done, doing, todo from the Work records) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/runbook.md#the-status-of-a-project).
@@ -99,14 +101,18 @@ attempt again at once, only an explicit `run` or `retry` continues.
 ## Scheduling and slots
 
 A `drive` dispatches every ready step (pending, every `dependsOn` succeeded) whose
-Account has a free slot (routing passes over a capable Account that is full for
-the next capable one), in Workflow file order, then waits for an attempt to
+Account routing chooses has a free slot (a capable Account that is full, or over
+its quota ceiling, is passed over for the next one; see the
+[agents README](../agents/README.md#routing-by-headroom)), in Workflow file order, then waits for an attempt to
 report or a slot to be freed. An Account is a Worker's `ref`; a `WorkerPort`
 offers `maxConcurrentAttempts` (default 1, set per Account in the `agents` row)
 and an optional `gone(attemptId)`. A slot is reserved in the lane before
 `dispatched` is appended and released after `observed` is. Verifier and effect
 steps take none. Steps that find no slot wait in memory; a freed slot wakes the
-waiting Works in Work admission order. A cancel, a failed step, a `fail` or
+waiting Works in Work admission order. A step whose every free capable Account
+is over the quota ceiling waits as `waiting: quota` (no attempt spent) and is
+tried again when a slot frees, at the earliest reset or every 5 minutes, whichever
+comes first. A cancel, a failed step, a `fail` or
 `error` verdict that a step depends on (after any `retry`) or an unknown
 effect stops new dispatches, and the Work's terminal event follows once the
 attempts in flight are recorded.
