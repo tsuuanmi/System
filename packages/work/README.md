@@ -93,9 +93,12 @@ and the steps of one Work overlap in their execute phases (below).
 A command with a `commandId` leaves a receipt in the optional `receipts` of
 its Work record, in the update of the event it caused; a submitted Work's ID
 derives from the `commandId` (UUIDv5-style). On start the Host marks every
-unreported attempt `attempt-lost`, reconciles effects without applying, and
-runs nothing: unlike `WorkController.run` on its own, which dispatches a lost
-attempt again at once, only an explicit `run` or `retry` continues.
+unreported attempt `attempt-lost` and reconciles effects without applying. It
+runs again by itself only a Work whose lost attempts are all Worker attempts
+confirmed gone by `settle()`, with no effect left unresolved (see
+[the Host](../../docs/architecture/host.md#start-stop-and-recovery)); any other
+waits for an explicit `run` or `retry`. Unlike `WorkController.run` on its own,
+which dispatches a lost attempt again at once.
 
 ## Scheduling and slots
 
@@ -150,7 +153,7 @@ The `admitted` event's optional `goal` and the `orchestrator` caller type are re
 | Crash after | Left behind | On `system work run` |
 |---|---|---|
 | spec Artifact stored, before the Work record | an unreferenced spec Artifact | nothing: no Work exists |
-| `dispatched` persisted, during the attempt | a running step; maybe orphan output Artifacts | `attempt-lost`, then a new attempt with the same inputs |
+| `dispatched` persisted, during the attempt | a running step; maybe orphan output Artifacts | `attempt-lost`, then a new attempt with the same inputs (a Host on start runs a settled Worker attempt again by itself) |
 | `observed` persisted | a completed step | not re-run |
 
 A Worker attempt is not an external effect; external effects are M5 and are
