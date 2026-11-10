@@ -99,6 +99,8 @@ finding the cause of a failure and submitting again. In DF's last night,
   In every feature.yaml Work (5 of 5 after the release) implement first edited
   a frozen test and tests-frozen sent it back: one more implement attempt
   each, about 15 minutes. Core: 3636 lines.*
+- *Stopped for review (operator, 2026-11-10) before 10 consecutive Items;
+  open: dg-10 and dg-11.*
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
