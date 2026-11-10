@@ -36,7 +36,7 @@ steps:
       Name exact files, functions and commands; quote the code you refer to.
   - id: tests
     dependsOn: [plan]
-    capabilities: [code.tests, tier.standard]
+    capabilities: [code-write, code.tests, tier.standard]
     inputs:
       task: $work.input
       plan: $steps.plan.plan
@@ -106,7 +106,7 @@ steps:
       input: $steps.implement.change
   - id: docs
     dependsOn: [checks-code]
-    capabilities: [code.develop, code.docs, tier.economy]
+    capabilities: [code-write, code.develop, code.docs, tier.economy]
     retry: { onFail: [checks.checks], max: 1 }
     mayBeEmpty: true
     inputs:

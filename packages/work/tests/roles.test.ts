@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -37,8 +37,8 @@ test('code.develop is on the plan, implement and docs steps of the code Workflow
 
 test('code-write stays on the steps that write the checkout', () => {
   for (const [file, ids] of [
-    ['feature.yaml', ['plan', 'implement']],
-    ['feature-research.yaml', ['plan', 'implement']],
+    ['feature.yaml', ['plan', 'tests', 'implement', 'docs']],
+    ['feature-research.yaml', ['plan', 'tests', 'implement', 'docs']],
     ['software-engineering.yaml', ['implement']],
     ['software-engineering-docs.yaml', ['implement']],
     ['hygiene.yaml', ['plan', 'implement']],
@@ -48,10 +48,25 @@ test('code-write stays on the steps that write the checkout', () => {
   }
 })
 
+test('no shipped Workflow outputs a checkout without code-write', () => {
+  const available = {
+    ...everything,
+    workers: new Set([...everything.workers, 'research.plan', 'research.lane-a', 'research.lane-b', 'research.synthesis', 'review.second-opinion', 'brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']),
+  }
+  for (const file of readdirSync(join(repo, 'workflows')).filter((name) => name.endsWith('.yaml'))) {
+    const spec = resolve(parseWorkflow(fixture(file)), available, fixture)
+    for (const step of spec.steps) {
+      if ('capabilities' in step && step.outputs.includes('checkout')) {
+        assert.ok(step.capabilities.includes('code-write'), `${file}:${step.id}`)
+      }
+    }
+  }
+})
+
 test('the tests step keeps code.tests and never asks for code.develop', () => {
   for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
-    assert.deepEqual(caps(spec, 'tests'), ['code.tests', 'tier.standard'])
+    assert.deepEqual(caps(spec, 'tests'), ['code-write', 'code.tests', 'tier.standard'])
   }
 })
 

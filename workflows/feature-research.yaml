@@ -23,9 +23,9 @@ steps:
     capabilities: [research, web-search, tier.standard]
     inputs:
       task: $work.input
-    outputs: [checkout, report, sources]
+    outputs: [report, sources]
     instructions: |
-      Read-only: change no file in the checkout. Find what the Task needs
+      The checkout is for reading only. Find what the Task needs
       from outside this repository: the APIs, standards or libraries it
       touches, their current versions and behaviour, and known pitfalls.
       Write "report" as Markdown, each claim with its source, and "sources"
@@ -54,7 +54,7 @@ steps:
       Name exact files, functions and commands; quote the code you refer to.
   - id: tests
     dependsOn: [plan]
-    capabilities: [code.tests, tier.standard]
+    capabilities: [code-write, code.tests, tier.standard]
     inputs:
       task: $work.input
       plan: $steps.plan.plan
@@ -124,7 +124,7 @@ steps:
       input: $steps.implement.change
   - id: docs
     dependsOn: [checks-code]
-    capabilities: [code.develop, code.docs, tier.economy]
+    capabilities: [code-write, code.develop, code.docs, tier.economy]
     retry: { onFail: [checks.checks], max: 1 }
     inputs:
       task: $work.input

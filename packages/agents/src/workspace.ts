@@ -4,10 +4,12 @@
  * outputs, and `work/`: a detached git worktree of the exact input commit, or
  * an empty directory when no input names a commit.
  *
- * Output capture, the same rule for every domain: in a git workspace the
- * step's first output slot is the working tree, captured as one commit on the
- * base (`git-tree@1`, pinned); every other slot, and every slot when there is
- * no git workspace, is the file `out/<slot>` (`file@1`). The adapter captures;
+ * Output capture, the same rule for every domain: for a step with `code-write`
+ * in a git workspace the first output slot is the working tree, captured as one
+ * commit on the base (`git-tree@1`, pinned); every other slot, and every slot
+ * of a step without `code-write` or without a git workspace, is the file
+ * `out/<slot>` (`file@1`). A change a step without `code-write` makes to the
+ * checkout is not an output. The adapter captures;
  * the agent's claim of what it produced is never used.
  *
  * A Task's `context` Artifacts are written read-only under
@@ -106,14 +108,14 @@ async function writeContext(artifacts: Artifacts, ws: Workspace, name: string, e
 }
 
 /** The slot captured from the working tree, if any. */
-function treeSlot(ws: Workspace, outputs: readonly string[]): string | undefined {
-  return ws.base ? outputs[0] : undefined
+function treeSlot(ws: Workspace, request: WorkerRequest): string | undefined {
+  return ws.base && request.capabilities.includes('code-write') ? request.outputs[0] : undefined
 }
 
 const CHECKS_LINE = 'Before you finish, run the checks in `.system/checks.yaml` whose `paths` match the files you changed, the way the verifier would run them, and fix your change until they pass. If a check cannot pass for a reason outside your change, say so in your final message.'
 
 export function prompt(ws: Workspace, request: WorkerRequest): string {
-  const tree = treeSlot(ws, request.outputs)
+  const tree = treeSlot(ws, request)
   const files = request.outputs.filter((slot) => slot !== tree)
   return [
     'You are a Worker for System, a work control plane. Complete this one step, then stop.',
@@ -154,7 +156,7 @@ export interface Captured {
 
 /** Capture what the attempt produced; partial captures keep whatever exists. */
 export async function capture(artifacts: Artifacts, ws: Workspace, request: WorkerRequest, producer: string): Promise<Captured> {
-  const tree = treeSlot(ws, request.outputs)
+  const tree = treeSlot(ws, request)
   const outputs: Record<string, string> = {}
   const missing: string[] = []
   const common = {

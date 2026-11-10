@@ -188,10 +188,12 @@ model is recorded for it.
    While it runs, its stdout is read every 0.5 s; when it grew, the attempt
    reports its progress (`progressReader`: turns, the last tool, tokens so
    far) to the Host, which keeps it in memory only.
-4. **Capture**, the same rule for every domain: in a git workspace the first
-   output slot is the working tree, committed on the base with a private index
-   as `git-tree@1` and pinned at `refs/system/artifacts/<commit>`; every other
-   slot is the file `out/<slot>` as `file@1`. A missing output fails the attempt.
+4. **Capture**, the same rule for every domain: for a step with `code-write`
+   in a git workspace the first output slot is the working tree, committed on
+   the base with a private index as `git-tree@1` and pinned at
+   `refs/system/artifacts/<commit>`; every other slot, and every slot of a step
+   without `code-write`, is the file `out/<slot>` as `file@1`. A change such a
+   step makes to the checkout is not an output. A missing output fails the attempt.
    A change equal to its base (the tree is the base commit's own) is still
    captured, and the Worker reports its final message beside the outputs; the
    controller then fails the step with "no change: the working tree is the same
