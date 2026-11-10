@@ -61,6 +61,32 @@ Do not install third-party `retry any failure` plugins that lack a bounded
 policy and effect-identity guarantees. DSH retry records are instructive, but
 their Session step is **not** a System Work/Attempt or publish effect.
 
+## Adaptation rule: reuse the knowledge, not the machinery
+
+For any external example, record **upstream invariant -> existing System seam
+-> smallest missing delta -> failure test -> measured outcome -> deletion**.
+Prefer a small, dependency-free rule or pure function over loading or copying
+an entire plugin. Before porting implementation code, check upstream license,
+version, maintenance and test coverage; preserve attribution when applicable.
+Do not duplicate a behavior already owned by DSH or System.
+
+Concrete patterns to adapt, rather than wholesale integrations:
+- From [DSH retry events](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm-retry/src/types.ts):
+  durable schedule-before-wait and start-before-execution. Map onto System's
+  existing Work record; do not persist a competing Session retry log.
+- From [Temporal Workflow Execution](https://docs.temporal.io/workflow-execution):
+  replay recorded decisions without repeating effects. Maintain System's
+  pinned Workflow and pure record fold; do not import Temporal workers.
+- From [BullMQ idempotent jobs](https://docs.bullmq.io/patterns/idempotent-jobs):
+  retries require effect idempotency or reconciliation. Extend existing
+  `effect-intended`/`effect-observed` and operationId tests, not a queue.
+
+**Review gate:** reject an adaptation without a demonstrated existing failure,
+a red test reproducing it, a bounded/pinned recovery policy, deterministic
+replay and side-effect safety, and evidence that the change reduces manual
+intervention. Count new core branches and removed/manual mechanisms alongside
+LOC. A source example is not permission to copy its API or runtime structure.
+
 ## Recommended next step: bounded reliability, no new dependency
 
 1. **SC-8:** On Host start, reconstruct eligible running Works from durable
