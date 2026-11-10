@@ -310,6 +310,45 @@ async function runGated(verdicts: VerifyResult['verdict'][]) {
   return { h, done: await h.controller.run(admitted.id) }
 }
 
+const GATED_HOLD = GATED.replace('criteria: red-v1 }', 'criteria: red-v1, holdInconclusive: true }')
+
+async function runGatedHold(verdicts: VerifyResult['verdict'][], accept = true) {
+  const specs = memorySpecs()
+  const h = harness({ specs, verifier: scripted(specs, verdicts) })
+  const source = accept ? GATED_HOLD : GATED_HOLD.replace(/  - id: accept[\s\S]*$/, '')
+  const spec = resolve(parseWorkflow(source), h.capabilities.available())
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'gated.yaml' } })
+  return { h, done: await h.controller.run(admitted.id) }
+}
+
+test('an inconclusive verdict of a holdInconclusive verify step holds the Work at that step', async () => {
+  const { h, done } = await runGatedHold(['inconclusive', 'pass'])
+  assert.equal(done.state.status, 'held')
+  assert.equal(done.state.awaiting, 'red')
+  assert.match(done.state.reason!, /operator decision: red/)
+  assert.equal(h.calls.length, 1, 'implement did not run')
+  assert.equal(h.controller.replay(done.id).matches, true)
+
+  const approved = await h.controller.decide(done.id, { decision: 'approved', caller, reason: 'continue' })
+  assert.equal(approved.state.status, 'succeeded')
+  assert.equal(h.calls.length, 2)
+  assert.equal(approved.events.filter((e) => e.type === 'terminal' && e.outcome === 'held').length, 1)
+
+  const deniedRun = await runGatedHold(['inconclusive', 'pass'])
+  const denied = await deniedRun.h.controller.decide(deniedRun.done.id, { decision: 'denied', caller, reason: 'stop' })
+  assert.equal(denied.state.status, 'failed')
+  assert.match(denied.state.reason!, /red denied by/)
+  assert.equal(deniedRun.h.calls.length, 1)
+})
+
+test('an approved holdInconclusive verify step without an accept step does not hold again', async () => {
+  const { h, done } = await runGatedHold(['inconclusive', 'pass'], false)
+  assert.equal(done.state.status, 'held')
+  const approved = await h.controller.decide(done.id, { decision: 'approved', caller, reason: 'continue' })
+  assert.equal(approved.state.status, 'succeeded')
+  assert.equal(approved.events.filter((e) => e.type === 'terminal' && e.outcome === 'held').length, 1)
+})
+
 test('a step never starts after a failed or errored verdict it follows: the Work fails there, naming the verdict', async () => {
   for (const verdict of ['fail', 'error'] as const) {
     const { h, done } = await runGated([verdict, 'pass'])
@@ -318,7 +357,7 @@ test('a step never starts after a failed or errored verdict it follows: the Work
     assert.equal(h.calls.length, 1, `implement never ran after a ${verdict} verdict`)
     assert.equal(h.controller.replay(done.id).matches, true)
   }
-  // Inconclusive is the operator's to decide at the end, as before: the steps after it run.
+  // Inconclusive is decided at the end unless the verify step sets holdInconclusive.
   const { h, done } = await runGated(['inconclusive', 'pass'])
   assert.equal(h.calls.length, 2)
   assert.equal(done.state.status, 'succeeded')

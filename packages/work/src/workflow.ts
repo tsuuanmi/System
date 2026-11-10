@@ -50,7 +50,9 @@ const verifyStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
   /** `inputs` are further Artifacts the verifier is given beside the subject, such as the report a sources file belongs to. */
-  verify: z.object({ capability, subject: ref, criteria: z.string().min(1), inputs: z.record(slot, ref).optional() }).strict(),
+  verify: z.object({ capability, subject: ref, criteria: z.string().min(1), inputs: z.record(slot, ref).optional(),
+    /** An `inconclusive` verdict holds the Work at this step for the operator (`awaiting` it) before any step after it starts (dg-2). */
+    holdInconclusive: z.literal(true).optional() }).strict(),
 }).strict()
 
 const acceptStep = z.object({

@@ -199,7 +199,7 @@ steps:
     outputs: [report]
   - id: check
     dependsOn: [write]
-    verify: { capability: research.citation-check, subject: $steps.write.report, criteria: c1 }
+    verify: { capability: research.citation-check, subject: $steps.write.report, criteria: c1, holdInconclusive: true }
 `
 
 test('a step that uses another Workflow is expanded in place, with namespaced step IDs, references and dependencies', () => {
@@ -222,11 +222,25 @@ test('a step that uses another Workflow is expanded in place, with namespaced st
   const spec = resolve(parseWorkflow(outer), available, files({ 'review.yaml': review }))
   assert.deepEqual(spec.steps.map((s) => s.id), ['implement', 'second.write', 'second.check', 'publish', 'accept'])
   assert.deepEqual(spec.steps[1], { id: 'second.write', dependsOn: ['implement'], capabilities: ['research'], inputs: { task: '$steps.implement.change' }, outputs: ['report'] })
-  assert.deepEqual(spec.steps[2], { id: 'second.check', dependsOn: ['second.write'], verify: { capability: 'research.citation-check', subject: '$steps.second.write.report', criteria: 'c1' } })
+  assert.deepEqual(spec.steps[2], { id: 'second.check', dependsOn: ['second.write'], verify: { capability: 'research.citation-check', subject: '$steps.second.write.report', criteria: 'c1', holdInconclusive: true } })
   assert.deepEqual(spec.steps[3], { id: 'publish', dependsOn: ['second.check', 'second.write'], effect: { capability: 'git.publish', subject: '$steps.second.write.report', requires: ['second.check'] } })
   // The same files give the same spec; a Workflow without `uses` resolves as before.
   assert.deepEqual(resolve(parseWorkflow(outer), available, files({ 'review.yaml': review })), spec)
   assert.deepEqual(resolve(parseWorkflow(review), available), resolve(parseWorkflow(review), available, files({})))
+})
+
+test('holdInconclusive accepts only true on a verify step', () => {
+  const workflow = (flag: string) => `${base}  - id: a
+    capabilities: [research]
+    outputs: [report]
+  - id: check
+    dependsOn: [a]
+    verify: { capability: research.citation-check, subject: $steps.a.report, criteria: c1, holdInconclusive: ${flag} }
+`
+  const spec = resolve(parseWorkflow(workflow('true')), available)
+  assert.equal((spec.steps[1] as { verify: { holdInconclusive?: true } }).verify.holdInconclusive, true)
+  assert.ok(problems(workflow('false')).length)
+  assert.ok(problems(workflow('yes')).length)
 })
 
 test('Sub-workflows: recursion, depth 4, a missing file, an accept step inside and a dotted step ID are refused', () => {
@@ -316,7 +330,7 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     assert.deepEqual(step('tests').retry, { onFail: ['red', 'checks-code.checks', 'implement'], max: 1 })
     assert.match(step('implement').instructions, /frozen/)
     assert.match(step('tests').instructions, /typecheck/)
-    assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1' })
+    assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1', holdInconclusive: true })
     assert.deepEqual(step('implement').dependsOn, ['red'])
     assert.equal(step('implement').inputs.red, undefined)
     // Tests frozen: judged on implement's change against the tests step's commit, before the checks run.

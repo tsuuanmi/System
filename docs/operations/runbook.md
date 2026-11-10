@@ -440,6 +440,11 @@ before `publish`, not retried. `system work show <id>` shows the reason: look
 at the base run. `system work approve <id> --reason ...` lets it publish and
 merge; `system work deny` fails it.
 
+The same applies at `red`, earlier: when every `red: fail` check that failed also
+fails on the base, the `red` verdict is `inconclusive` and the Work is held at
+`red`, before `implement` starts. `system approve` continues; `system deny`
+fails the Work.
+
 ## Following a Work, and detaching
 
 `work submit`, `work run`, `work retry`, `approve` and `deny` return once the
