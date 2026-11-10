@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import { ResourceUpdatedNotificationSchema, ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 import { TASK_KIND, taskSchema } from '@system/work'
 import { fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
@@ -211,6 +211,39 @@ test('an MCP server of older code than the Host recovers on the code under SYSTE
   const listed = await call(client, 'work.list')
   assert.equal(listed.error, undefined, listed.error)
   assert.deepEqual(listed.value, [])
+  await client.close()
+  await server.close()
+  await host.close()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('an MCP server that recovers on newer code lists that code\'s tools and sends tools/list_changed', { timeout: 60_000 }, async () => {
+  const dir = mkdtempSync('/tmp/sm-new-')
+  const lib = join(dir, 'packages', 'host', 'lib')
+  mkdirSync(lib, { recursive: true })
+  const real = new URL('../../host/lib/index.js', import.meta.url).href
+  const realOps = new URL('../../host/lib/operations.js', import.meta.url).href
+  writeFileSync(join(lib, 'index.js'), `export * from '${real}'\nexport const VERSION = 'newer-code'\n`)
+  writeFileSync(join(lib, 'operations.js'), `import { operations as real } from '${realOps}'\nexport const operations = (s) => ({ ...real(s), 'test.ping': { agent: true, summary: 'ping', handler: () => 'pong' } })\n`)
+  mkdirSync(join(dir, 'system'))
+  const f = fixture()
+  mkdirSync(join(dir, 'data'))
+  const host = await f.startHost(join(dir, 'data'))
+  const methods = { ...operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services), 'test.ping': { agent: true, summary: 'ping', handler: () => 'pong' } }
+  const server = await serve(host, { path: join(dir, 'system', 'host.sock'), methods, version: 'newer-code', onDisk: () => 'newer-code' })
+  const transport = new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp'], env: { ...process.env, DSH_HOME: dir, SYSTEM_CODE: dir, SYSTEM_OPERATOR_ID: 'o1' } as Record<string, string> })
+  const client = new Client({ name: 'test', version: '0' })
+  clients.push(client)
+  let changed = 0
+  client.setNotificationHandler(ToolListChangedNotificationSchema, () => { changed++ })
+  await client.connect(transport)
+  assert.equal(client.getServerCapabilities()?.tools?.listChanged, true)
+  assert.ok(!(await client.listTools()).tools.some((tool) => tool.name === 'test.ping'))
+  assert.equal((await call(client, 'work.list')).error, undefined)
+  await until('the tools/list_changed notification', async () => changed > 0)
+  assert.ok((await client.listTools()).tools.some((tool) => tool.name === 'test.ping'))
+  assert.equal((await call(client, 'test.ping')).value, 'pong')
+  assert.ok((await call(client, 'test.nope')).error)
   await client.close()
   await server.close()
   await host.close()

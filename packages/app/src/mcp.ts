@@ -1,7 +1,8 @@
 /**
  * `system mcp`: a stdio MCP server that
- * is a client of the Host. Its tools are the rows of the Host's operation
- * table flagged `agent: true`, with the row's zod params as JSON Schema and
+ * is a client of the Host. Its tools are the rows flagged `agent: true` of the
+ * operation table of the code the Host runs (rebuilt when the process recovers
+ * on newer code, with `notifications/tools/list_changed`), with the row's zod params as JSON Schema and
  * its summary as the description; each call is forwarded over the socket. It
  * decides nothing: who may do what is the Host's, from the caller it declares.
  * Each Work is also a resource, `system://work/<id>`, whose reading
@@ -15,19 +16,21 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema, SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z, type Caller } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { RpcError, tableOf, type Client } from '../../host/lib/index.js'
+import { RpcError, tableOf, type Client, type Methods } from '../../host/lib/index.js'
 import { operations, type Services } from '../../host/lib/operations.js'
 import { explain, operatorId } from './io.ts'
 
-/** The Host's table, for its shapes only: no handler of it runs here. */
-const table = tableOf(operations({} as Services))
+/** What a code root offers `system mcp`: its operation table builder. */
+export interface Code { operations: (services: Services) => Methods; tableOf: typeof tableOf }
 
-/** The MCP tools: one per row flagged `agent: true`. */
-export const tools = Object.entries(table).filter(([, row]) => row.agent).map(([name, row]) => ({
+/** The MCP tools of a code's table, for its shapes only (no handler runs here): one per row flagged `agent: true`. */
+export const toolsOf = ({ operations, tableOf }: Code) => Object.entries(tableOf(operations({} as Services))).filter(([, row]) => row.agent).map(([name, row]) => ({
   name,
   description: row.summary,
   inputSchema: z.toJSONSchema(row.params ?? z.object({}).strict(), { io: 'input' }) as { type: 'object'; [key: string]: unknown },
 }))
+
+export const tools = toolsOf({ operations, tableOf })
 
 /**
  * What a session is told when it connects (the MCP `instructions`), so that
@@ -95,7 +98,7 @@ const workOf = (uri: string): string => {
 }
 
 /** Serve MCP on stdio until the client closes it; resolves the exit code. */
-export async function runMcp(args: string[], home: string, open: (who: Caller) => Promise<Client>): Promise<number> {
+export async function runMcp(args: string[], home: string, open: (who: Caller, onCode: (code: Code) => void) => Promise<Client>): Promise<number> {
   try {
     parseArgs({ args, options: {}, allowPositionals: false })
   } catch (error) {
@@ -104,7 +107,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
   }
   const who: Caller = { type: 'agent', operatorId: operatorId() }
 
-  const server = new Server({ name: 'system', version: '0.0.0' }, { capabilities: { tools: {}, resources: { subscribe: true } }, instructions: INSTRUCTIONS })
+  const server = new Server({ name: 'system', version: '0.0.0' }, { capabilities: { tools: { listChanged: true }, resources: { subscribe: true } }, instructions: INSTRUCTIONS })
   /** The Works the client subscribed to; each connection to the Host watches them again when it is opened. */
   const subscribed = new Set<string>()
   const heard = (method: string, params: unknown) => {
@@ -112,8 +115,18 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
     const { workId } = params as { workId: string }
     if (subscribed.has(workId)) void server.sendResourceUpdated({ uri: `system://work/${workId}` }).catch(() => {})
   }
+  let current = tools
+  /** The Host runs newer code: list its tools; if its table cannot be read, keep the list. */
+  const newCode = (code: Code) => {
+    try {
+      current = toolsOf(code)
+    } catch {
+      return
+    }
+    void server.sendToolListChanged().catch(() => {})
+  }
   const connectHost = async (): Promise<Client> => {
-    const client = await open(who)
+    const client = await open(who, newCode)
     client.onNotice(heard)
     const watches = [...subscribed].map((workId) => ({ workId }))
     await Promise.allSettled(watches.map((params) => client.call('work.watch', params)))
@@ -127,7 +140,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
     const failure = explain(error, home)
     return failure instanceof Error ? failure : new Error(String(failure))
   }
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools }))
+  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: current }))
   /** Run a Host call for a request: a failure is the request's error. */
   const forwarded = async (method: string, params: object): Promise<unknown> => {
     try {
@@ -138,7 +151,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller) =
   }
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {
-      if (!tools.some((tool) => tool.name === params.name)) throw new Error(`unknown tool ${params.name}`)
+      if (!current.some((tool) => tool.name === params.name)) throw new Error(`unknown tool ${params.name}`)
       return { content: [{ type: 'text' as const, text: JSON.stringify(await forwarded(params.name, params.arguments ?? {}) ?? null) }] }
     } catch (error) {
       return { isError: true, content: [{ type: 'text' as const, text: (error as Error).message }] }
