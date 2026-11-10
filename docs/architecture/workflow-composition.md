@@ -190,8 +190,10 @@ structure alone cannot guarantee exactly-once effects.
 (`admitted`, `dispatched`, `observed`, `verified`, `attempt-lost`, `terminal`)
 and the state they fold to; every change is one atomic update. A step whose
 last attempt was dispatched but never observed is recorded `attempt-lost` and
-dispatched again as a new attempt with the same recorded inputs; completed
-steps are never re-run. `system work replay` folds the events again and
+dispatched again as a new attempt with the same recorded inputs (a Worker
+attempt by the Host on start, once its process is confirmed gone; otherwise on
+`system work run`, see [Start, stop and recovery](host.md#start-stop-and-recovery));
+completed steps are never re-run. `system work replay` folds the events again and
 compares the result with the stored state.
 
 DAG support should emerge from `dependsOn` only. Do not require a

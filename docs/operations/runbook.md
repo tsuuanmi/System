@@ -64,8 +64,10 @@ Clients still connected do not delay the stop: the Host lets admitted calls
 finish for 2 s, then closes every connection, and the CLI says the Host is not
 running.
 
-Whatever was running when the Host stopped is lost at the next start and is
-left interrupted; nothing runs again until `system work run` or `retry`. (A
+Whatever was running when the Host stopped is lost at the next start. A Worker
+attempt cut short is dispatched again by the Host once its process is confirmed
+gone; a lost attempt not confirmed gone, a verifier run or a publish or merge
+effect waits for `system work run` or `retry`. (A
 Host that stopped itself for new code waits for its attempts first; see
 [Upgrading](#upgrading).)
 
@@ -109,8 +111,8 @@ The Host's side of an upgrade:
    A process still alive 10 s after it stopped is made to exit, and logs
    `still running ... open: <resources>`: what held it, to report.
 3. The new Host recovers as on any start and logs `continuing N Works held for
-   the upgrade`: the Works whose runs waited at the gate go on, and nothing
-   that was interrupted does.
+   the upgrade`: the Works whose runs waited at the gate go on; what was
+   interrupted is left to recovery (see [Stop, restart, status](#stop-restart-status)).
 
 A command run meanwhile waits up to 3 s for the swap before it says the Host
 is not running. While the Host waits on a long attempt, a CLI of the new code
@@ -135,8 +137,10 @@ systemctl --user restart system
 ```
 
 The restart interrupts running attempts; do it when `system work list` shows
-none running. A release refuses a store whose records it does not know only if
-a later release changed the record schema (`git diff <commit>..<later> --
+none running. What the Host then runs again by itself, and what waits for
+`system work run`, is in [Stop, restart, status](#stop-restart-status). A
+release refuses a store whose records it does not know only if a later release
+changed the record schema (`git diff <commit>..<later> --
 packages/work/src/record.ts packages/artifacts/src` shows it).
 
 ## Changing the profile's config
@@ -433,7 +437,8 @@ once more with the same `commandId`, so the Host does it once: look at
    the Host alive, and busy or stuck?
 2. `system doctor` boots DSH beside the Host and says whether it answers.
 3. If it is stuck, `systemctl --user restart system`. Whatever was running is
-   left interrupted; nothing runs again until `system work run` or `retry`.
+   lost; a Worker attempt is dispatched again by the Host once its process is
+   confirmed gone, and anything else waits for `system work run` or `retry`.
 
 ## A check the base fails too
 
