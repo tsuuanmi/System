@@ -313,7 +313,7 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const step = (id: string) => spec.steps.find((s) => s.id === id) as Record<string, any>
     // The red check judges the tests step's change, not a Worker's report of it.
     assert.deepEqual(step('tests').outputs, ['change'])
-    assert.deepEqual(step('tests').retry, { onFail: ['red', 'checks-code.checks'], max: 1 })
+    assert.deepEqual(step('tests').retry, { onFail: ['red', 'checks-code.checks', 'implement'], max: 1 })
     assert.match(step('implement').instructions, /frozen/)
     assert.match(step('tests').instructions, /typecheck/)
     assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1' })
