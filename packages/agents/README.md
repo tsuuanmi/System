@@ -77,8 +77,9 @@ registration or in `accounts()`.
   `{ percentUsed (0-100), resetsAt? }`, or `{ unreadable: <reason> }`. An answer is readable
   or unreadable as a whole: one malformed entry (a share below 0 or above 100, a window that
   is not an object, a reset in the wrong unit or not a time) makes it unreadable. Only
-  `five_hour` and `seven_day` are read; other entries are ignored unvalidated. A `web` or
-  unknown ref is unreadable.
+  `five_hour` and `seven_day` are read: Claude Code's other entries are ignored unvalidated,
+  and a Codex window of another length is validated, then ignored. A `web` or unknown ref
+  is unreadable.
 - **Reset rule:** a reset is dropped (keeping `percentUsed`) only when it is already past
   while the share is 100%, or more than 400 days from the reading (System 1's `PLAUSIBLE_MS`).
   A future reset at 100% is kept.
@@ -90,11 +91,14 @@ registration or in `accounts()`.
   `rate_limit_event` fields; Codex's `RateLimitWindow`, `GetAccountRateLimitsResponse` and
   the nullable `InitializeParams.capabilities`. Not checked: that a live account answers,
   and that 2.1.322 starts with no user message (a release check for the operator).
-- **Cache:** each reading is kept 10 minutes (`quota.ttlMs` in the row's config is a test
-  hook); simultaneous asks share one read; an aborted read is not cached. Claude Code's
-  `rate_limit_event` in an attempt's output (`utilization` is a fraction, `resetsAt` Unix
-  seconds) replaces that window in the cached reading and sets `observedAt`, without
-  extending the expiry.
+- **Cache:** each reading, readable or `unreadable`, is kept 10 minutes (`quota.ttlMs` in
+  the row's config is a test hook); simultaneous asks share one read. The cache does not
+  check for an aborted read, and the row passes no abort signal, so an aborted read is kept
+  too. Claude Code's `rate_limit_event` in an attempt's output (`utilization` is a fraction,
+  `resetsAt` Unix seconds; a share outside 0 to 1 is ignored, not clamped; `status: rejected`
+  with no utilization is 100%) replaces that window in the cached reading and sets
+  `observedAt`, without extending the expiry. With no reading cached, the event makes a
+  reading of that one window, which expires 10 minutes later.
 - **Source:** System 1, `/home/tan/workspaces/system-agents` commit `15e2bd5`:
   `packages/plugins/runtime-claude-agent-sdk/src/limits.ts` and
   `packages/plugins/runtime-codex-sdk/src/rate-limits.ts`; not its ledger, pools,
