@@ -65,7 +65,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
   const verdicts: string[] = []
   capabilities.registerWorker({
     ref: 'fake',
-    capabilities: ['code-write', 'research', 'web-search', 'tier.standard', 'tier.economy'],
+    capabilities: ['code-write', 'code.develop', 'research', 'web-search', 'tier.standard', 'tier.economy'],
     async run(request) {
       calls.push(request)
       const outputs = Object.fromEntries(request.outputs.map((slot) => {
@@ -193,7 +193,7 @@ test('Software Engineering and Research run through the same controller code', a
   const research = await runFixture(h, 'research.yaml')
   assert.equal(se.state.status, 'succeeded')
   assert.equal(research.state.status, 'succeeded')
-  assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write']], ['investigate', ['research', 'web-search', 'tier.standard']]])
+  assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write', 'code.develop']], ['investigate', ['research', 'web-search', 'tier.standard']]])
   // The verifier got the exact Artifact the Worker produced, resolved from the slot.
   assert.equal(h.verdicts[0], `checks.checks:${se.state.steps.implement!.outputs.change}`)
   assert.equal(h.verdicts[1], `citations:${research.state.steps.investigate!.outputs.sources}`)

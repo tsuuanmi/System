@@ -21,7 +21,7 @@ const FAKES_ON = `- id: verifiers
 - id: fakes
   disabled: false
   config:
-    workers: [code-write, research, web-search, tier.standard]
+    workers: [code-write, code.develop, research, web-search, tier.standard]
     verifiers: [code.required-checks, research.citation-check]
     effects: [git.publish]
 `
