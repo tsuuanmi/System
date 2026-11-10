@@ -10,11 +10,11 @@ import type { WorkerPort } from '../../work/src/registry.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { webDefaults, webWorker } from '../../web-worker/src/chatgpt.ts'
 
-async function mount(dir: string, accounts: AccountConfig[], now: () => number, options: { ports?: WorkerPort[]; quotaCeilingPercent?: unknown } = {}) {
+async function mount(dir: string, accounts: AccountConfig[], now: () => number, options: { ports?: WorkerPort[]; quotaCeilingPercent?: unknown; configured?: boolean; token?: string } = {}) {
   const services: Record<string, unknown> = {
     artifacts: {},
     subprocess: { resolveExecutable: async (c: string): Promise<string> => c, spawn: (): never => { throw new Error('registration must not spawn') } },
-    credentials: { describe: async (): Promise<{ configured: boolean }> => ({ configured: true }), resolve: async (): Promise<{ value: string }> => ({ value: 'tok-1' }) },
+    credentials: { describe: async (): Promise<{ configured: boolean }> => ({ configured: options.configured ?? true }), resolve: async (): Promise<{ value: string }> => ({ value: options.token ?? 'tok-1' }) },
     capabilities: { registerWorker: (worker: WorkerPort): (() => void) => { options.ports?.push(worker); return () => {} } },
   }
   let agents: unknown
@@ -88,7 +88,7 @@ test('listing accounts spawns no quota reader; web and unknown refs are unreadab
     { ref: x.spec.ref, runtime: 'codex', capabilities: ['research'], models: {}, priority: 'secondary', available: true, reason: 'registered', command: x.fake.command, providerAccount: 'codex-account', version: '' },
     { ref: web.ref, runtime: 'web', capabilities: ['research'], models: {}, priority: 'secondary', available: false, reason: 'the web-worker row is disabled' },
   ])
-  for (const ref of [web.ref, 'unknown']) assert.deepEqual(await row.quota(ref), { unreadable: `no quota reader for ${ref}` })
+  assert.deepEqual(await row.quota('unknown'), { unreadable: 'no quota reader for unknown' })
   assert.equal(existsSync(c.fake.log), false)
   assert.equal(existsSync(x.fake.log), false)
 })
@@ -101,6 +101,7 @@ test('an unknown version on the row only runs --version', async (t) => {
   assert.deepEqual(Object.keys(report), ['unreadable'])
   assert.ok(typeof report.unreadable === 'string')
   assert.match(report.unreadable, /2\.1\.999.*not verified/)
+  assert.doesNotMatch(JSON.stringify(report), /tok-1/)
   assert.deepEqual(fake.readLog(), [{ argv: ['--version'] }])
 })
 
@@ -152,4 +153,29 @@ test('web port has no quota; CLI default ceiling is unset and omitted priority b
   assert.equal(ports.length, 1)
   assert.equal(Reflect.get(ports[0]!, 'quotaCeilingPercent'), undefined)
   assert.equal(Reflect.get(ports[0]!, 'priority'), 'secondary')
+})
+
+test('quota() of a web account says it has no quota reader', async (t) => {
+  const dir = tempDir('quota-web-reason-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const row = await mount(dir, [{ ref: 'web/chatgpt/x', runtime: 'web', site: 'chatgpt', capabilities: ['research'] }], () => 0)
+  assert.deepEqual(await row.quota('web/chatgpt/x'), { unreadable: 'a web account has no quota reader' })
+})
+
+test('quota() of an account whose registration failed says it is not registered', async (t) => {
+  const dir = tempDir('quota-unregistered-reason-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { spec, fake } = claude(dir)
+  const row = await mount(dir, [spec], () => 0, { configured: false })
+  const report = object(await row.quota(spec.ref))
+  assert.equal(typeof report.unreadable, 'string')
+  assert.match(String(report.unreadable), /not registered.*token.*not configured/)
+  assert.doesNotMatch(JSON.stringify(report), /tok-1/)
+  assert.equal(existsSync(fake.log), false)
+  // Registration can also succeed before the token disappears at read time.
+  const noToken = await mount(dir, [spec], () => 0, { token: '' })
+  const missing = await noToken.quota(spec.ref)
+  assert.deepEqual(missing, { unreadable: 'its token is not configured' })
+  assert.doesNotMatch(JSON.stringify(missing), /tok-1/)
+  assert.equal(existsSync(fake.log), false)
 })

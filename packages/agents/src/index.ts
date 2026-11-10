@@ -179,7 +179,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
   const quotas = new Map<string, QuotaCache>()
-  const quota = async (ref: string): Promise<QuotaReport> => quotas.get(ref)?.get() ?? { unreadable: `no quota reader for ${ref}` }
+  const quota = async (ref: string): Promise<QuotaReport> => {
+    const cache = quotas.get(ref)
+    if (cache) return cache.get()
+    const status = statuses.find((s) => s.ref === ref)
+    if (!status) return { unreadable: `no quota reader for ${ref}` }
+    if (status.runtime === 'web') return { unreadable: 'a web account has no quota reader' }
+    if (status.reason === REGISTERING) return { unreadable: 'still registering' }
+    return { unreadable: status.available ? `no quota reader for ${ref}` : `not registered: ${status.reason}` }
+  }
   // Provided before the loop: `system workers` shows the accounts still registering.
   ctx.provide('agents', { accounts, quota } satisfies AgentsService)
   const dispose: (() => void)[] = []

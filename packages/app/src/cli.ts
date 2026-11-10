@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
 import { CONVERSATION_KIND, conversationSchema, type WorkRecord, type WorkState } from '@system/work'
+import type { QuotaReport } from '@system/agents'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 
 /** A repeatable option's values, in order. */
@@ -122,9 +123,27 @@ function identityOf(a: WorkersView['accounts'][number]): string {
   return parts.length ? ` [${parts.join(', ')}]` : ''
 }
 
+/** `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or why it is unreadable. Reset times are local. */
+export function quotaLine(quota: QuotaReport, now: number): string {
+  if ('unreadable' in quota) return `quota: unreadable - ${quota.unreadable}`
+  const at = (iso: string): string => {
+    const d = new Date(iso)
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    return d.toDateString() === new Date(now).toDateString() ? time : `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${time}`
+  }
+  const parts: string[] = []
+  for (const [name, label] of [['five_hour', '5h'], ['seven_day', '7d']] as const) {
+    const w = quota.windows[name]
+    if (w) parts.push(`${label} ${Math.round(w.percentUsed)}%${w.resetsAt && !Number.isNaN(Date.parse(w.resetsAt)) ? ` (resets ${at(w.resetsAt)})` : ''}`)
+  }
+  const minutes = Math.max(0, Math.floor((now - Date.parse(quota.observedAt)) / 60_000))
+  parts.push(`read ${minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : `${Math.floor(minutes / 60)} h ago`}`)
+  return `quota: ${parts.join(', ')}`
+}
+
 export interface WorkersView {
   registered: string[]
-  accounts: { ref: string; runtime: string; label?: string; priority?: string; providerAccount?: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string> }[]
+  accounts: { ref: string; runtime: string; label?: string; priority?: string; providerAccount?: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
 /** What the thin client's commands run against: the Host, over its socket. */
@@ -261,6 +280,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
           if (a.capabilities?.length) io.out(`  capabilities: ${a.capabilities.join(', ')}\n`)
           const models = Object.entries(a.models ?? {})
           if (models.length) io.out(`  models: ${models.map(([tier, model]) => `${tier}=${model}`).join(', ')}\n`)
+          if (a.quota) io.out(`  ${quotaLine(a.quota, Date.now())}\n`)
         }
         return 0
       })
