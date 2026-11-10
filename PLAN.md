@@ -88,6 +88,17 @@ finding the cause of a failure and submitting again. In DF's last night,
 - **Budget:** the active core does not grow (3,599 lines at DF's close). If
   a diagnose step is needed, it lives in Workflow config and Worker
   instructions, not in the controller.
+- *First measure, 2026-11-10 (14 Items, all merged; no slot wait):
+  first-Work acceptance 12/14 (86%): DNA 5/5 (software-engineering.yaml),
+  System 7/9. Human diagnosis 1 (dg-1). Both misses were System defects, not
+  the Items': a docs step with nothing to change failed the Work (dg-7), a
+  flaky leftover-process test (dg-9), a frozen test the implement step could
+  not call wrong (dg-8), and a reopened step's checks chosen against the
+  previous attempt, which let DNA gates-1 merge without its Rust gates (dg-6);
+  all four fixed in DG and released. 7 consecutive Items accepted first since.
+  In every feature.yaml Work (5 of 5 after the release) implement first edited
+  a frozen test and tests-frozen sent it back: one more implement attempt
+  each, about 15 minutes. Core: 3636 lines.*
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
