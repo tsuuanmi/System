@@ -1,7 +1,8 @@
-# PLAN.md — System next implementation: first-attempt acceptance
+# PLAN.md — System execution and reliability milestone
 
-> **Status:** execution handoff, updated 2026-11-10. The next milestone is
-> **DG, first-attempt acceptance** (below). The checklists and evidence of the finished
+> **Status:** execution handoff, updated 2026-11-10. DG and SC measurements
+> motivate **Reliability (R)** as the next priority, before unattended
+> orchestration or new Worker Runtimes. DG and SC history remains below. The checklists and evidence of the finished
 > milestones are in [PLAN.md at `aaa38f6`](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md); this file keeps one line
 > each. This checklist is not an ADR or an alternate source of product
 > requirements.
@@ -159,6 +160,56 @@ Decisions (operator, 2026-11-10; Items sc-1 to sc-6 in STATUS.md):
   here at SC's close against DG's 3,636 lines. sc-4 itself: 3,636 → 3,776
   (+140: the pure ranking `headroom.ts` 72, the controller's wait and reading
   50, registry 31, live and status 6, and the verifier/effect `route` shrank).
+
+## 3b. R — Outside-failure resilience (proposed handoff, 2026-11-10)
+
+**Decision:** reliability before autonomous Item driving, before Antigravity or
+another Site. Preserve the operator's decisions: no DG/SC core rebaseline,
+first fix condition-driven flaky checks (load-shedding only if measured),
+manual Work retry and approval remain human-only. Existing declared, bounded
+Workflow recovery is not an agent-initiated retry.
+
+**Outcome contract:** outside incidents must never be misreported as a change
+defect or incorrectly terminalize a Work when safe bounded recovery is
+available. A permanently unavailable Provider can leave Work waiting/held;
+"zero outside incidents" is not a physically enforceable guarantee.
+Distinguish outcome (succeeded/failed/held/cancelled), failure origin
+(change/outside/unknown), recovery disposition (resumed/waiting/held/terminal)
+and actual human-intervention count. These are orthogonal to a Verifier's
+pass/fail/inconclusive decision; do not weaken exact-Artifact verification.
+
+**Implementation order (existing Items, no new core subsystem):**
+1. sc-8: Host resumes eligible interrupted Works after process death and
+   confirms the old process is gone; an unknown effect remains hold/reconcile.
+2. sc-14: normalize quota-exhausted and rate-limit failures at the Runtime
+   boundary; immediately refresh quota, route to a capable Account or wait
+   without charging a code-rework attempt.
+3. sc-9, sc-13: bounded check reruns with both runs' evidence, including
+   comparison with the base when needed; an unstable result cannot silently
+   authorize publish.
+4. sc-7: bounded publish conflict repair through Workflow, rechecking the
+   exact change against the current base; effect replay must be reconciled.
+5. Simplification and measurement pass: no mechanism merely to improve LOC;
+   record measured operator actions eliminated, active-core growth, coupling,
+   first-Work acceptance and outside-recovery outcomes.
+
+**Acceptance experiment:** controlled crash at dispatch, during attempt, after
+effect intent, and around remote publish; load-stressed check, stale quota,
+quota exhaustion, and concurrent publish conflict. Require zero duplicate
+external effects and zero incorrectly terminalized outside failures *in this
+declared matrix*, with every retry bounded, recorded, and pinned at admission.
+Track waiting time across restart, known uncertainty, and resolution by a
+human separately; keep existing first-Work acceptance denominator explicit.
+Do not claim production-wide 100% success from passing fault injection.
+
+**Reuse decision:** [RES-0010](docs/research/RES-0010-reliability-reuse-audit.md)
+compares DSH `llm-retry`, typed model errors, session persistence, jobs,
+ACP, Temporal, BullMQ and GitHub Merge Queue. Reuse DSH semantics only at the
+proper Runtime/agent-loop boundary; do **not** replace System's Work owner,
+merge queue or evidence record with a new orchestration backend. No external
+dependency is approved by the research alone. Avoid increasing active core
+beyond the SC-approved baseline; request an operator decision for any
+unavoidable overrun rather than rebaselining automatically.
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
