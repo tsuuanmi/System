@@ -87,6 +87,119 @@ replay and side-effect safety, and evidence that the change reduces manual
 intervention. Count new core branches and removed/manual mechanisms alongside
 LOC. A source example is not permission to copy its API or runtime structure.
 
+## Feedback loop: visible failure, evidence, policy, outcome
+
+**Observed gap in System `dev` (2026-11-10):** events already preserve
+`observed`, `verified`, `attempt-lost` and `terminal` failures, and
+`retryAutomatically()` reopens selected Workflow steps. But there is no
+single failure-origin classification, durable follow-up obligation or
+uniform *diagnosis -> decision -> recovery result* across Worker, checks,
+Host and publish. Do not describe the product as having no retries: it has
+some; the missing contract is *closed-loop recovery*.
+
+**Authority mismatch worth an explicit defect/test:** in
+[Host operations](../../packages/host/src/operations.ts),
+`work.retry` has `agent: true`. In
+[controller](../../packages/work/src/controller.ts), `reopen()` restricts
+only verify-step retry to the human caller; Worker-step retry remains
+agent-callable. This contradicts the 2026-11-10 operator direction (Q5):
+only a human may initiate **manual Work retry**. Change the Host operation
+authority and enforce the same rule server-side, with a real Host/MCP
+negative test. Keep `work.run` for safe continuation distinct from
+`work.retry`, and preserve automatic `reopened: automatic` under a
+pinned bounded Workflow policy; do not accidentally disable that path.
+Likewise inspect `work.submit force` and fresh-Work submissions for
+policy bypass: prohibiting the method name alone is insufficient.
+
+### Smallest contract (proposed, not implemented)
+
+1. **Detect:** surface `failed`, `held`, exhausted retry budget,
+   unexpected no-progress/stall, unreadable quota and unknown effect as
+   *actionable* Work conditions; do not page on every transient attempt.
+   Periodic reconciliation must find outstanding conditions after Host
+   restart. Never label a stalled *running* attempt failed on silence alone.
+2. **Observe:** preserve error code, provider/account, step, attempt,
+   exact Artifact/verdict/effect identifiers, relevant logs, last progress,
+   current base/head, timestamps and prior recovery attempts. Avoid
+   copying full transcripts or leaking credentials.
+3. **Classify:** pure deterministic classification of known error signatures
+   into origin (change/outside/unknown), cause (quota, transport, lost
+   process, unstable check, conflict, bad input, unknown) and evidence
+   confidence. **Unknown is the default** when evidence cannot establish
+   cause; heuristic guesses never authorize a risky retry.
+4. **Decide:** resolve pinned policy to `continue`, `wait`,
+   `retry-step`, `repair-through-workflow`, `hold` or
+   `terminal-failure`. Record decision, reason, evidence, budget,
+   next eligible time and safety preconditions *before* scheduling.
+   Never escalate Worker privileges or mutate the admitted Workflow.
+5. **Act:** retry the smallest idempotent step using current retained
+   inputs; no retry of successful steps. For effect-intended/unknown,
+   reconcile external state first, never blindly publish again. A
+   repeated identical failure with unchanged conditions must stop
+   looping and transition to a visible hold/terminal outcome.
+6. **Verify and learn:** retain both previous and subsequent outcomes,
+   classify `recovered`, `still-waiting`, `held` or `failed`;
+   count false terminalizations, time-to-diagnosis/recovery and operator
+   interventions. Repeated patterns become candidate Items with a
+   reproducing regression test (human/operator-approved), **not**
+   automatic authority to self-modify policy.
+
+No new model-based "Failure Manager" in core. A separate optional
+diagnostic Research Work may inspect existing evidence and propose a cause
+or an Item; its output is **advisory** and cannot trigger a new retry,
+change a check or approve an effect. Keep one controller and append-only
+record. If new durable recovery events are truly needed, add the fewest
+events to `record.ts` and test fold/replay and legacy records rather than
+a second incident database. The first implementation can be a pure
+`diagnoseFailure(record)` projection and existing events wherever
+sufficient; persist additional decisions only where timing/replay needs
+them.
+
+| Observed signal | Safe feedback | Never do automatically |
+|---|---|---|
+| Account out of credits | Refresh quota, route to other capable Account or wait | Consume code retry budget or keep retrying exhausted Account |
+| Host restarted mid-Worker | Confirm prior process gone, resume pending step | Run two competing attempts or replay unknown effect |
+| Flaky check / base also fails | Bounded repeat, compare evidence, hold if inconclusive | Select lucky green check, bypass verification |
+| Publish conflict | Produce a repaired change in Workflow, verify against new base | Reuse stale verdict or blind re-publish |
+| Faulty test / code | Return exact failed verdict to eligible Worker stage within budget | Call failure outside without corroboration |
+| Unknown external effect | Reconcile then hold for human if still unknown | Assume absent or immediately retry |
+| No activity beyond threshold | Emit stall/diagnostic signal, inspect liveness | Treat quietness alone as a failed attempt |
+
+### Research informing the design
+
+- [DSH agent/request-error](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/core.md):
+  a handler returns a structured retry action or delegates the failure
+  instead of retrying every error. This is at *agent model-step*, not System Work.
+- [Temporal tasks vs Workflow failure](https://docs.temporal.io/tasks)
+  and [retry policies](https://docs.temporal.io/encyclopedia/retry-policies):
+  separate infrastructure/task failures from an outcome failure; retry
+  the smallest failed activity under policy.
+- [Inngest error handlers](https://www.inngest.com/docs/durable-execution/guides-and-advanced/error-handling):
+  distinguish a failed attempt, exhausted step and failed run; propagate
+  non-retryable failures and handle exhaustion explicitly.
+- [Google SRE monitoring](https://sre.google/sre-book/monitoring-distributed-systems/):
+  separate symptoms from causes and make human alerts actionable, not noisy.
+- [Temporal resumable activity](https://docs.temporal.io/design-patterns/resumable-activity):
+  bounded automatic retries can hand off to human correction without
+  restarting prior completed work; System should retain its own authority gate.
+
+### Acceptance tests and metrics
+
+- Fault-inject each class above, including Host restart **between recovery
+  decision append and retry dispatch**; replay makes at most the authorized
+  decision and executes no duplicate external effect.
+- Every terminal/held Work exposes **why**, evidence, whether an action was
+  attempted, what's next and who can do it (CLI/MCP status).
+- Every known eligible transient failure either resumes, waits with a
+  recorded reason, or explicitly exhausts its pinned budget. No infinite
+  spin; no false automatic conclusion for an unknown cause.
+- No Agent/MCP path invokes **manual** Work retry or approval, while
+  safe policy-driven auto-reopen remains functional.
+- Track rates: `silent_unresolved`, `misclassified_outside`,
+  `incorrect_terminal`, `retry_recovered`, `retry_exhausted`,
+  `time_to_recover`, and human diagnoses per 10 Items. Validate with
+  System's real Work records, not generated examples alone.
+
 ## Recommended next step: bounded reliability, no new dependency
 
 1. **SC-8:** On Host start, reconstruct eligible running Works from durable
