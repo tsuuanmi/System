@@ -15,8 +15,23 @@ _Avoid_: agent, engine, tool
 
 **Account**:
 One signed-in identity of a Runtime, with its own credential and the
-capabilities the profile gives it.
+capabilities the profile gives it. Each Account is a distinct account of its
+Provider, so two Accounts never share one quota.
 _Avoid_: login, user, key
+
+**Primary Account**:
+The Account of a Runtime that takes a step first while it is under the
+Ceiling; the other Accounts of the Runtime are secondary.
+_Avoid_: main account, default account
+
+**Headroom**:
+The share of an Account's quota left in its fuller window (5-hour or
+weekly); work goes to the Account with the most Headroom.
+_Avoid_: capacity, remaining
+
+**Ceiling**:
+The share of a quota window above which an Account takes no new step.
+_Avoid_: limit, threshold
 
 **Worker**:
 An Account registered with System to run steps. A Worker is never a model.
