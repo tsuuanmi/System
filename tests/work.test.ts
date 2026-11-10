@@ -97,7 +97,7 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   assert.equal(show(workId).state.status, 'running')
 
   // Edit the file mid-run: a capability no Worker has. Running Work must not notice.
-  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write]', 'capabilities: [teleport]'))
+  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write, code.develop]', 'capabilities: [teleport]'))
   const resumed = system(['work', 'run', workId])
   assert.equal(resumed.status, 0, resumed.stderr)
   const done = show(workId)
