@@ -116,9 +116,15 @@ export interface RemoteLoginView {
   expiresAt: number
 }
 
+/** An account's priority, label and provider account ID (never a credential), for the end of its line; a web account has no provider account. */
+function identityOf(a: WorkersView['accounts'][number]): string {
+  const parts = [...(a.priority === 'primary' ? ['primary'] : []), ...(a.label ? [`label: ${a.label}`] : []), ...(a.runtime === 'web' ? [] : [`provider account: ${a.providerAccount ?? 'unknown'}`])]
+  return parts.length ? ` [${parts.join(', ')}]` : ''
+}
+
 export interface WorkersView {
   registered: string[]
-  accounts: { ref: string; runtime: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string> }[]
+  accounts: { ref: string; runtime: string; label?: string; priority?: string; providerAccount?: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string> }[]
 }
 
 /** What the thin client's commands run against: the Host, over its socket. */
@@ -250,7 +256,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         const { registered, accounts } = await host.workers()
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
-          io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`} (${a.runtime})\n`)
+          io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}${identityOf(a)} (${a.runtime})\n`)
           // Their own lines, after the account's: tools/web-canary reads the line that ends in the runtime.
           if (a.capabilities?.length) io.out(`  capabilities: ${a.capabilities.join(', ')}\n`)
           const models = Object.entries(a.models ?? {})

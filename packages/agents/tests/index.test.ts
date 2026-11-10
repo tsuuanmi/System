@@ -5,6 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
 import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '../src/index.ts'
 
 /** Mount the row on a bare context with `webWorker` (if any); the accounts it reports and what it disposed. */
@@ -116,4 +117,81 @@ test('a web account whose ref is not web/<site>/<name> with its own site is unav
   assert.equal(accounts[0]!.reason, 'the ref web/gemini/default does not match site chatgpt: a web account is web/<site>/<name>, here web/chatgpt/<name>')
   assert.match(accounts[1]!.reason, /web\/default does not match site chatgpt/)
   assert.equal(accounts[2]!.reason, 'a web account names its site (site: chatgpt)', 'a site is required')
+})
+
+// Account identity (sc-1): CLI accounts over fake homes.
+const cliMount = async (accounts: object[], hold = false): Promise<{ registered: string[]; accounts: any[]; before: any[]; started: Promise<void> }> => {
+  const registered: string[] = []
+  const provided: Record<string, any> = {}
+  const services = {
+    capabilities: { registerWorker: (w: { ref: string }) => { registered.push(w.ref); return () => {} } },
+    artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
+    subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
+  } as Record<string, unknown>
+  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value }, baseDir: tempDir('base-') }
+  const started = apply(ctx as never, { accounts: accounts as never })
+  const before = await provided.agents.accounts() as any[]
+  if (hold) return { registered, before, accounts: before, started }
+  await started
+  return { registered, before, accounts: await provided.agents.accounts() as any[], started }
+}
+const claude = (ref: string, own: object = {}) => ({ ref, runtime: 'claude-code', capabilities: ['code-write'], ...own })
+const codex = (ref: string, home: string, own: object = {}) => ({ ref, runtime: 'codex', capabilities: ['code-write'], codexHome: home, ...own })
+
+test('a second primary of a Runtime is refused naming the first; one primary or none registers', async () => {
+  const dir = tempDir()
+  const { accounts, registered } = await cliMount([claude('claude-code/c1', { priority: 'primary', claudeHome: dir }), claude('claude-code/c2', { priority: 'primary', claudeHome: dir }), codex('codex/x1', fakeCodexHome(undefined, 'a'), { priority: 'primary' }), claude('claude-code/c3', { claudeHome: dir })])
+  assert.deepEqual(accounts.map((a) => a.available), [true, false, true, true])
+  assert.match(accounts[1].reason, /priority: primary is already held by claude-code\/c1/)
+  assert.deepEqual(registered, ['claude-code/c1', 'codex/x1', 'claude-code/c3'])
+})
+
+test('a priority other than primary is refused', async () => {
+  const { accounts } = await cliMount([claude('claude-code/c1', { priority: 'secondary' })])
+  assert.equal(accounts[0].available, false)
+  assert.match(accounts[0].reason, /priority must be primary or omitted/)
+})
+
+test('a duplicate provider account is refused for the later account with the first ref in the reason', async () => {
+  const one = fakeCodexHome(undefined, 'acct-1')
+  const two = fakeCodexHome(undefined, 'acct-1')
+  const { accounts, registered } = await cliMount([codex('codex/x1', one), codex('codex/x2', two)])
+  assert.deepEqual([accounts[0].available, accounts[0].providerAccount], [true, 'acct-1'])
+  assert.deepEqual([accounts[1].available, accounts[1].providerAccount], [false, 'acct-1'])
+  assert.equal(accounts[1].reason, 'provider account acct-1 is already registered as codex/x1; two refs on one account would count its quota twice')
+  assert.deepEqual(registered, ['codex/x1'])
+  const swapped = await cliMount([codex('codex/x2', two), codex('codex/x1', one)])
+  assert.deepEqual(swapped.accounts.map((a) => a.available), [true, false])
+})
+
+test('two Claude accounts on one accountUuid, or one emailAddress, collide; another Runtime with that ID does not', async () => {
+  for (const id of [{ accountUuid: 'u-1' }, { emailAddress: 'me@example.com' }]) {
+    const { accounts } = await cliMount([claude('claude-code/c1', { claudeHome: fakeClaudeHome(undefined, id) }), claude('claude-code/c2', { claudeHome: fakeClaudeHome(undefined, id) })])
+    assert.deepEqual(accounts.map((a) => a.available), [true, false])
+  }
+  const { accounts } = await cliMount([claude('claude-code/c1', { claudeHome: fakeClaudeHome(undefined, { accountUuid: 'same' }) }), codex('codex/x1', fakeCodexHome(undefined, 'same'))])
+  assert.deepEqual(accounts.map((a) => a.available), [true, true])
+})
+
+test('an unreadable ID leaves the account registered with the ID unknown', async () => {
+  const { accounts, registered } = await cliMount([codex('codex/x1', fakeCodexHome(undefined)), codex('codex/x2', fakeCodexHome(undefined)), claude('claude-code/c1', { claudeHome: tempDir() }), claude('claude-code/c2', { claudeHome: tempDir() })])
+  assert.deepEqual(accounts.map((a) => [a.available, a.reason, a.providerAccount]), Array(4).fill([true, 'registered', undefined]))
+  assert.equal(registered.length, 4)
+})
+
+test('the listing shows label, priority and provider account from the first moment, and no secret', async () => {
+  const specs = [claude('claude-code/c1', { label: 'me@example.com', priority: 'primary', claudeHome: fakeClaudeHome(undefined, { accountUuid: 'u-1' }) }), codex('codex/x1', fakeCodexHome(undefined, 'acct-1'))]
+  const { before, started } = await cliMount(specs, true)
+  assert.deepEqual(before.map((a) => [a.label, a.priority]), [['me@example.com', 'primary'], [undefined, 'secondary']])
+  await started
+  const { accounts } = await cliMount(specs)
+  assert.deepEqual(accounts.map((a) => [a.label, a.priority, a.providerAccount]), [['me@example.com', 'primary', 'u-1'], [undefined, 'secondary', 'acct-1']])
+  assert.doesNotMatch(JSON.stringify(accounts), /SECRET-|TOKEN-VALUE/)
+})
+
+test('a ref without a rename stays valid, and a web account has no provider account', async () => {
+  const { accounts } = await cliMount([claude('claude-code/default')])
+  assert.deepEqual([accounts[0].available, accounts[0].priority], [true, 'secondary'])
+  const web = await mount({ expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined }) }, false, [{ label: 'w', priority: 'primary' }])
+  assert.deepEqual([web.accounts[0]!.available, web.accounts[0]!.providerAccount, web.accounts[0]!.priority], [true, undefined, 'primary'])
 })

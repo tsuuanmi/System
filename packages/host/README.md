@@ -84,7 +84,7 @@ await serving.stop()                                // server, then the Host cor
 | `artifact.put` | yes | `data: string`, `mediaType?: string`, `classification?: "public" \| "operator-shared" \| "local-private"` | Store bytes (base64, within the frame limit) as a `file@1` Artifact: its envelope. |
 | `artifact.show` | yes | `id: string` | An Artifact's envelope and occurrences, or why it is not stored. |
 | `artifact.cat` | yes | `id: string` | The bytes of a blob Artifact as `{ data }` in base64; refused when they do not fit a frame. |
-| `workers.list` | yes | none | The registered Workers, and each configured agent account with why it is or is not available. |
+| `workers.list` | yes | none | The registered Workers, and each configured agent account with why it is or is not available, its label, priority and provider account ID (never a token). |
 | `workers.login` | no | `ref: string`, `cookies?: string` | Sign a browser Account (`web/<site>/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned. |
 | `workers.loginRemote` | no | `ref: string` | Start a remote sign-in of a browser Account: its profile opens headed on a private display and a viewer is served on 127.0.0.1 behind a random token. Returns `{ url, port, ssh, expiresAt }`; the operator tunnels to the port over SSH. Follow with `workers.loginWait`. |
 | `workers.loginWait` | no | `ref: string`, `cancel?: boolean` | Wait until the remote sign-in of an Account ends (Save, Cancel in the viewer, or its 15 minutes), or with `cancel` end it now. Returns whether the profile is signed in. |
