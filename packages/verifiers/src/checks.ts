@@ -65,7 +65,7 @@ export const checkRunSchema = z.object({
   stderrTail: z.string(),
 }).strict()
 
-/** The verifiers row's `checkEnv`: variables every check is given on top of its minimal environment (DF2c). */
+/** The verifiers row's `checkEnv`: variables every check is given on top of its minimal environment (Item df-2). */
 export const checkEnvSchema = z.record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
   .refine((env) => !['HOME', 'PATH', 'CI'].some((k) => k in env), { message: 'HOME, PATH and CI cannot be set' })
 

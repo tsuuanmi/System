@@ -46,7 +46,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     specId: contentIdSchema, input: contentIdSchema.optional(),
     /** Read-only: the Goal a Work was admitted for, in records stored before Goals were removed. New events never carry it. */
     goal: contentIdSchema.optional(),
-    /** The Item of a repository's STATUS.md the input Task names (PLAN DF2c); absent when it names none. */
+    /** The Item of a repository's STATUS.md the input Task names (Item df-3); absent when it names none. */
     item: z.object({ id: z.string(), repository: z.string().optional() }).strict().optional(),
     /** Only this Worker may take the Work's Worker steps (`system work submit --worker`), unless a retry names another. */
     worker: z.string().optional(),
