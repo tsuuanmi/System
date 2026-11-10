@@ -65,7 +65,7 @@ file can be left behind.
 **Implemented (H2):** `acquireHostLock` in `host-lock.ts`; `Host.start`
 takes it first and gives it back if recovery fails. Off Linux it refuses and
 says so. A Host keeps its Works' locks and cancel requests in memory
-(`MemoryControl`).
+(in the controller).
 
 The old per-Work lock files, takeover mutex and write marks
 (`$DSH_HOME/system/control/*.lock`, `*.takeover`, `*.written`) are gone from
@@ -124,7 +124,8 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
 - **Implemented (H3), the socket and the operation table:** `packages/host`.
   Its README is the protocol (hello, 1 MiB frames, table rows, long calls) and the API reference, the latter generated from the
   table and checked by a test. `work.submit` takes the Workflow file's
-  contents, never a path, and `work.run`, `work.retry` and `approval.decide`
+  contents, never a path (`system mcp` reads a path and sends its contents;
+  see [the app README](../../packages/app/README.md)), and `work.run`, `work.retry` and `approval.decide`
   answer once the Work is being driven, so a refusal still reaches the caller
   and a long run does not hold the call. A closed connection never cancels a
   Work.

@@ -12,7 +12,7 @@ import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts'
-import { WEB_WORKER_DISABLED, type AgentsService, type WebWorkerService } from '@system/agents'
+import { WEB_WORKER_DISABLED, type AgentsService, type QuotaReport, type WebWorkerService } from '@system/agents'
 import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
@@ -117,7 +117,10 @@ function credentialCommands(ctx: Context): CredentialCommands {
 async function workersView(ctx: Context): Promise<WorkersView> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
   const agents = ctx.get('agents') as AgentsService | undefined
-  return { registered: capabilities?.workerRefs() ?? [], accounts: (await agents?.accounts()) ?? [] }
+  const accounts = (await agents?.accounts()) ?? []
+  // The cache and the readers' own timeouts bound each read; none sends a model turn.
+  const quota = async (ref: string): Promise<QuotaReport> => agents!.quota(ref).catch(() => ({ unreadable: 'the quota read failed' }))
+  return { registered: capabilities?.workerRefs() ?? [], accounts: await Promise.all(accounts.map(async (a) => ({ ...a, quota: await quota(a.ref) }))) }
 }
 
 /** The web Runtime's service: its row is optional, and off by default. */

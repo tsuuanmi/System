@@ -29,7 +29,8 @@ nothing else.
   the pinned spec across a file edit and a SIGKILLed host, SQLite durability.
 - [agents.test.ts](agents.test.ts) — M3 on the real profile with the `agents`
   row pointed at a fake CLI: worktree capture, cross-process cancel, Codex
-  takeover, `retry` refusals.
+  takeover, `retry` refusals, and the `quota:` line `system workers` prints per account
+  (a readable one from a fake Codex CLI, unreadable where the CLI version is unverified).
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
   through the operator's Host when one answers, or one the test starts.

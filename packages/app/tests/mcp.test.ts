@@ -52,8 +52,8 @@ after(async () => {
 })
 
 /** An MCP client on a `bin/system mcp` child of this Host. */
-async function mcp(...args: string[]): Promise<Client> {
-  const transport = new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp', ...args], env: { ...process.env, DSH_HOME: home, SYSTEM_OPERATOR_ID: 'o1' } as Record<string, string> })
+async function mcp(env: Record<string, string> = {}): Promise<Client> {
+  const transport = new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp'], env: { ...process.env, DSH_HOME: home, SYSTEM_OPERATOR_ID: 'o1', ...env } as Record<string, string> })
   const client = new Client({ name: 'test', version: '0' })
   clients.push(client)
   await client.connect(transport)
@@ -71,6 +71,77 @@ const until = async (what: string, ok: () => Promise<boolean>) => {
   for (const end = Date.now() + 20_000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (await ok()) return
   assert.fail(`timed out waiting for ${what}`)
 }
+
+const workflow = `schema: system.workflow/v1
+id: mcp-file
+version: 1
+steps:
+  - id: write
+    capabilities: [code-write]
+    outputs: [result]
+`
+
+test('work.submit with a path admits the Work as the agent', { timeout: 60_000 }, async () => {
+  const path = join(mkdtempSync(join(home, 'wf-')), 'wf.yaml')
+  writeFileSync(path, workflow)
+  const submitted = await call(await mcp(), 'work.submit', { workflow: path, run: false })
+  assert.equal(submitted.error, undefined, submitted.error)
+  assert.ok(submitted.value.id)
+  assert.deepEqual(submitted.value.events[0].caller, { type: 'agent', operatorId: 'o1' })
+})
+
+test('work.submit with a ~ path expands the MCP process HOME', { timeout: 60_000 }, async () => {
+  const dir = mkdtempSync(join(home, 'wf-home-'))
+  writeFileSync(join(dir, 'wf.yaml'), workflow)
+  const submitted = await call(await mcp({ HOME: dir }), 'work.submit', { workflow: '~/wf.yaml', run: false })
+  assert.equal(submitted.error, undefined, submitted.error)
+  assert.ok(submitted.value.id)
+})
+
+test('work.submit with a path reads a Sub-workflow beside the file', { timeout: 60_000 }, async () => {
+  const dir = mkdtempSync(join(home, 'wf-sub-'))
+  writeFileSync(join(dir, 'main.yaml'), 'schema: system.workflow/v1\nid: main\nversion: 1\nsteps:\n  - id: c\n    uses: sub.yaml\n')
+  writeFileSync(join(dir, 'sub.yaml'), workflow)
+  const client = await mcp()
+  const submitted = await call(client, 'work.submit', { workflow: join(dir, 'main.yaml'), run: false })
+  assert.equal(submitted.error, undefined, submitted.error)
+  assert.ok(submitted.value.id)
+  const shown = await call(client, 'work.show', { workId: submitted.value.id })
+  assert.equal(shown.error, undefined, shown.error)
+  assert.deepEqual(Object.keys(shown.value.state.steps), ['c.write'])
+})
+
+test('work.submit with contents still admits the Work', { timeout: 60_000 }, async () => {
+  const submitted = await call(await mcp(), 'work.submit', { workflow, run: false })
+  assert.equal(submitted.error, undefined, submitted.error)
+  assert.ok(submitted.value.id)
+})
+
+test('work.submit with a missing path reports an unreadable file', { timeout: 60_000 }, async () => {
+  const path = join(mkdtempSync(join(home, 'wf-missing-')), 'missing.yaml')
+  const submitted = await call(await mcp(), 'work.submit', { workflow: path, run: false })
+  assert.equal(typeof submitted.error, 'string')
+  assert.match(submitted.error!, /not a readable file/)
+  assert.doesNotMatch(submitted.error!, /expected object/)
+})
+
+test('work.submit with neither a file nor Workflow contents explains both accepted forms', { timeout: 60_000 }, async () => {
+  const submitted = await call(await mcp(), 'work.submit', { workflow: 'hello', run: false })
+  assert.equal(typeof submitted.error, 'string')
+  assert.match(submitted.error!, /neither the path of a readable \.yaml file nor the contents of a Workflow/)
+})
+
+test('the instructions and the work.submit description agree on paths and contents', { timeout: 60_000 }, async () => {
+  const client = await mcp()
+  const instructions = client.getInstructions() ?? ''
+  assert.ok(instructions.includes('workflows/feature.yaml'))
+  const { tools } = await client.listTools()
+  const submit = tools.find((tool) => tool.name === 'work.submit')
+  assert.ok(submit)
+  assert.match(submit.description ?? '', /path/)
+  assert.match(submit.description ?? '', /contents/)
+  assert.match(instructions, /contents/)
+})
 
 test('the tools are exactly the rows flagged agent: true, with their schemas and descriptions', { timeout: 60_000 }, async () => {
   const client = await mcp()

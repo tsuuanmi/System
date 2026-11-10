@@ -106,6 +106,14 @@ registration or in `accounts()`.
   reservations or per-model windows. Code: [quota.ts](src/quota.ts). The reading is
   returned here; routing records the readings it used (below).
 
+`system workers` and the MCP tool `workers.list` show each account's last reading, read
+through `quota(ref)` and its cache (never a model turn, never a token): under the account's
+line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or `quota: unreadable - <reason>`.
+The reasons: `a web account has no quota reader`; `the usage report of <label> <v> is not
+verified (verified: …)` (the CLI version is not one checked); `its token is not configured`;
+`not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
+asks `quota(ref)` for each account.
+
 ## Routing by headroom
 
 Among the accounts that have every capability of a step and a free slot (the rule is
@@ -201,7 +209,9 @@ model is recorded for it.
    later verify or effect step takes that output as its subject. Read-only
    steps (the scouts of `hygiene.yaml`) name a `checkout` nothing verifies or
    publishes, so an unchanged one stays a success, as does a step declared
-   `mayBeEmpty` (the docs step of `feature.yaml`).
+   `mayBeEmpty` (the docs step of `feature.yaml`). The exception is a step with
+   `retry.rerunUnchanged` that a failing check reopened (sc-9): the check runs
+   again on the same change instead.
 5. **Record:** usage from the CLI's own output (unknown when absent), summed
    over every turn: a background command's completion notification starts a
    second turn, and Claude Code's `stream-json` prints a `result` for each,

@@ -192,6 +192,8 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 
 An `agents` account may carry `label` and `priority: primary` (at most one per Runtime); name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
 
+`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. A reading is at most 10 minutes old (cached; an attempt's rate-limit events refresh it), and reading never spends a model turn. When it cannot be read the line says why (`quota: unreadable - ...`): a web account, an unverified CLI version, no token, not registered. See the [agents README](../../packages/agents/README.md#quota).
+
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
 another Account offers the same capabilities and has a free slot, which takes
@@ -451,6 +453,17 @@ The same applies at `red`, earlier: when every `red: fail` check that failed als
 fails on the base, the `red` verdict is `inconclusive` and the Work is held at
 `red`, before `implement` starts. `system approve` continues; `system deny`
 fails the Work.
+
+## A check that fails again on the same change
+
+When a failing check reopens `implement` and `implement` changes nothing, the
+check runs once more on that same change (`retry.rerunUnchanged`, sc-9;
+[the vocabulary](../architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1)).
+If the second run passes, the Work goes on and `system work show <id>` notes
+the check as flaky. If it fails again, the verdict is `inconclusive` with both
+runs as evidence and the Work is **held**: `system work approve <id>` lets it
+go on, `system work deny` fails it, and `system work retry <id> --step <verify
+step>` asks the check again.
 
 ## Following a Work, and detaching
 

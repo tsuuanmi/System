@@ -53,7 +53,7 @@ one form:
 
 | Form | Fields | Meaning |
 |---|---|---|
-| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry`, optional `freeze` (a `$steps.<step>.<slot>` change whose files are put back, as it left them, into this step's first output when it is recorded; dg-10), optional `mayBeEmpty` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
+| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry` (with `rerunUnchanged`, sc-9), optional `freeze` (a `$steps.<step>.<slot>` change whose files are put back, as it left them, into this step's first output when it is recorded; dg-10), optional `mayBeEmpty` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
 | verify step | `verify: {capability, subject, criteria, inputs?, holdInconclusive?}` | one verifier call on the exact Artifact the `subject` reference resolves to; `inputs` (as a Worker step's) hands it further exact Artifacts, such as the report beside the sources; `holdInconclusive: true` holds the Work at this step for the operator on an `inconclusive` verdict (see Operator decisions) |
 | effect step | `effect: {capability, subject, requires: [verify steps], params?}` | one external effect of the exact subject, only after every required verdict on that subject is `pass`; recorded as intent, then outcome |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
@@ -118,7 +118,7 @@ check failed for a reason outside the change; only a human asks it, so no
 agent keeps the luckiest of several runs; the earlier verdict stays in
 the record and no longer counts.
 
-**`retry: { onFail: [<step>...], max: n }`** on a Worker step (Item df-7) is
+**`retry: { onFail: [<step>...], max: n, rerunUnchanged?: true }`** on a Worker step (Item df-7) is
 the one automatic further attempt, declared in the Workflow and the same for
 every domain. `onFail` names the verify steps that judge the step's output or come after it
 and depend on it (a `fail` verdict qualifies; `error` and `inconclusive` do not) and the step
@@ -137,6 +137,13 @@ neither. A later Worker step may also be in `onFail`: when its final message has
 reopened (budget counted per objecting step) with a `fail` verdict Artifact holding the text as
 input `failure`; a step no other step lists cannot object. Anything else, and every later
 failure, is the operator's `work retry`.
+With `rerunUnchanged: true` in `retry` (sc-9), a step reopened by a failing check that then
+changes nothing does not fail with "no change": the check runs again once on the same change
+(the `observed` event names the first verdict as `unchangedAfter`). A pass goes on and its
+reason says it is flaky (`rerunOf` names the first run); a second `fail` is recorded
+`inconclusive` with both runs' evidence, so the Work is held for the operator to approve,
+deny or retry, as for any `inconclusive` verdict. Without a failing check behind the
+reopening, no change still fails the step.
 It is no operator touch in `work report`.
 
 **Effects** (ADR-0004 decision 10): an effect step's provider validates its

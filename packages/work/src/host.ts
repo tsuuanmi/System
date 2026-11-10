@@ -11,8 +11,7 @@
  */
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
-import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type ClaimTable, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type CancelRequest, type ClaimTable, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'

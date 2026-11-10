@@ -9,7 +9,7 @@
 # Stages run one after the other, each on the previous change. The code is
 # checked before the docs, so a failure goes back to the step that can fix it,
 # with the failure as input (retry); a failing code check reopens tests when
-# implement is out of budget, and so does implement saying a frozen test is wrong (dg-8); the second check, after docs, runs what
+# implement is out of budget, and so does implement saying a frozen test is wrong (dg-8); implement changing nothing after a failing check runs that check again once (sc-9); the second check, after docs, runs what
 # the docs change touches. The default Workflow for a code change (df-27);
 # software-engineering.yaml remains for a change too small for a plan.
 schema: system.workflow/v1
@@ -71,7 +71,7 @@ steps:
   - id: implement
     dependsOn: [red]
     capabilities: [code-write, code.develop]
-    retry: { onFail: [tests-frozen, checks-code.checks], max: 1 }
+    retry: { onFail: [tests-frozen, checks-code.checks], max: 1, rerunUnchanged: true }
     freeze: $steps.tests.change
     inputs:
       task: $work.input

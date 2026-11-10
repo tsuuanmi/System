@@ -20,7 +20,6 @@ import { claimSchema, workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
 import type { ResolvedSpec } from './workflow.ts'
 
-export * from './control.ts'
 export * from './controller.ts'
 export * from './conversation.ts'
 export * from './errors.ts'
