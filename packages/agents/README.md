@@ -54,7 +54,10 @@ profile order is not registered, with the reason `provider account <id> is
 already registered as <first ref>; two refs on one account would count its
 quota twice`. An ID that cannot be read leaves the account registered with
 `providerAccount` unknown. The operator puts the `.claude.json` of a Claude
-account in its `claudeHome`.
+account in its `claudeHome`. Registering a Claude Code account creates a missing
+`claudeHome` (mode 700), as the row owns it; if it cannot be created the account
+stays registered and its quota reason names the directory. A `codexHome` is not
+created: Codex needs a signed-in home.
 
 ## Quota
 

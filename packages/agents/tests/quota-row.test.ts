@@ -1,6 +1,6 @@
 /** Quota on the agents row: registration stays lazy; each account owns its read/cache. */
 import assert from 'node:assert/strict'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
@@ -12,6 +12,7 @@ import { webDefaults, webWorker } from '../../web-worker/src/chatgpt.ts'
 
 async function mount(dir: string, accounts: AccountConfig[], now: () => number, options: { ports?: WorkerPort[]; quotaCeilingPercent?: unknown; configured?: boolean; token?: string } = {}) {
   const services: Record<string, unknown> = {
+    dshHomePath: (...segments: string[]) => join(dir, ...segments),
     artifacts: {},
     subprocess: { resolveExecutable: async (c: string): Promise<string> => c, spawn: (): never => { throw new Error('registration must not spawn') } },
     credentials: { describe: async (): Promise<{ configured: boolean }> => ({ configured: options.configured ?? true }), resolve: async (): Promise<{ value: string }> => ({ value: options.token ?? 'tok-1' }) },
@@ -39,6 +40,45 @@ function codex(dir: string) {
   const spec: AccountConfig = { ref: 'codex/x1', runtime: 'codex', capabilities: ['research'], command: fake.command, codexHome: home }
   return { home, fake, spec }
 }
+test('the agents row creates a missing claudeHome (mode 700) and the quota reads', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const home = join(dir, 'absent', 'c1')
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command, claudeHome: home }
+  const now = Date.parse('2026-11-10T12:00:00.000Z')
+  const row = await mount(dir, [spec], () => now)
+  assert.ok(existsSync(home), 'registration creates claudeHome before any quota read')
+  assert.ok(statSync(home).isDirectory())
+  assert.equal(statSync(home).mode & 0o777, 0o700)
+  assert.deepEqual(await row.quota(spec.ref), { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42 } } })
+  assert.equal(fake.readLog().find((entry) => entry.home !== undefined)?.home, home)
+})
+test('a default claudeHome under $DSH_HOME/system is created too', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command }
+  await mount(dir, [spec], () => 0)
+  assert.ok(existsSync(join(dir, 'system', 'claude', 'c1')), 'registration creates the default claudeHome in the temporary DSH home')
+})
+test('the reason names the directory when claudeHome cannot be created', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  writeFileSync(join(dir, 'blocker'), 'a file cannot contain the account home')
+  const home = join(dir, 'blocker', 'c1')
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command, claudeHome: home }
+  const ports: WorkerPort[] = []
+  const row = await mount(dir, [spec], () => 0, { ports })
+  assert.equal(ports.length, 1, 'an uncreatable home still leaves the account registered')
+  const report = object(await row.quota(spec.ref))
+  assert.deepEqual(Object.keys(report), ['unreadable'])
+  assert.ok(typeof report.unreadable === 'string')
+  assert.match(report.unreadable, /claudeHome .*blocker.*c1 does not exist/)
+  assert.ok(report.unreadable.includes(home), 'the reason includes the account directory')
+  assert.doesNotMatch(report.unreadable, /ENOENT|version unreadable/)
+})
 test('the agents row caches a Claude reading for ten minutes then rereads', async (t) => {
   const dir = tempDir('quota-row-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
