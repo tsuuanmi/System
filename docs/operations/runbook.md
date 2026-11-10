@@ -64,8 +64,10 @@ Clients still connected do not delay the stop: the Host lets admitted calls
 finish for 2 s, then closes every connection, and the CLI says the Host is not
 running.
 
-Whatever was running when the Host stopped is lost at the next start and is
-left interrupted; nothing runs again until `system work run` or `retry`. (A
+Whatever was running when the Host stopped is lost at the next start. A Worker
+attempt cut short is dispatched again by the Host once its process is confirmed
+gone; a lost attempt not confirmed gone, a verifier run or a publish or merge
+effect waits for `system work run` or `retry`. (A
 Host that stopped itself for new code waits for its attempts first; see
 [Upgrading](#upgrading).)
 
@@ -431,7 +433,8 @@ once more with the same `commandId`, so the Host does it once: look at
    the Host alive, and busy or stuck?
 2. `system doctor` boots DSH beside the Host and says whether it answers.
 3. If it is stuck, `systemctl --user restart system`. Whatever was running is
-   left interrupted; nothing runs again until `system work run` or `retry`.
+   lost; a Worker attempt is dispatched again by the Host once its process is
+   confirmed gone, and anything else waits for `system work run` or `retry`.
 
 ## A check the base fails too
 
