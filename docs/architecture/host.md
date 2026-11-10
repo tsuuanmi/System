@@ -124,7 +124,8 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
 - **Implemented (H3), the socket and the operation table:** `packages/host`.
   Its README is the protocol (hello, 1 MiB frames, table rows, long calls) and the API reference, the latter generated from the
   table and checked by a test. `work.submit` takes the Workflow file's
-  contents, never a path, and `work.run`, `work.retry` and `approval.decide`
+  contents, never a path (`system mcp` reads a path and sends its contents;
+  see [the app README](../../packages/app/README.md)), and `work.run`, `work.retry` and `approval.decide`
   answer once the Work is being driven, so a refusal still reaches the caller
   and a long run does not hold the call. A closed connection never cancels a
   Work.
