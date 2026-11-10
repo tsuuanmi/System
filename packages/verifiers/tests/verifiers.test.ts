@@ -75,11 +75,15 @@ async function taskOn(artifacts: Artifacts, repository: string): Promise<{ task:
 }
 
 /** Commit a change on top of `base` in a scratch worktree, as an attempt would. */
-async function change(artifacts: Artifacts, repository: string, baseCommit: string, files: Record<string, string>): Promise<string> {
+async function change(artifacts: Artifacts, repository: string, baseCommit: string, files: Record<string, string | null>): Promise<string> {
   const work = mkdtempSync(join(root, 'wt-'))
   rmSync(work, { recursive: true })
   execFileSync('git', ['-C', repository, 'worktree', 'add', '--detach', '--quiet', work, baseCommit])
   for (const [path, text] of Object.entries(files)) {
+    if (text === null) {
+      rmSync(join(work, path), { force: true })
+      continue
+    }
     mkdirSync(join(work, path, '..'), { recursive: true })
     writeFileSync(join(work, path), text)
   }
@@ -608,6 +612,51 @@ test('a check with paths runs only when the change touches one of them, and the 
   assert.match(code.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
   assert.equal(code.evidence.length, 2)
   await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: (await taskOn(artifacts, repo('checks:\n  - name: a\n    run: "true"\n    paths: []\n'))).task, operatorId: 't' }), /is invalid/)
+})
+
+test('a reopened step\'s change is checked by the files that differ from the Task\'s base, not from the previous attempt\'s change', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: always\n    run: "true"\n  - name: packages\n    run: "true"\n    paths: ["packages/**"]\n')
+  const { task, tree } = await taskOn(artifacts, repository)
+  const first = await change(artifacts, repository, tree.commit, { 'packages/a/index.ts': 'export {}\n' })
+  const firstRead = artifacts.get(first)
+  assert.ok(firstRead.state === 'stored')
+  const firstCommit = (firstRead.envelope.content as GitTreeContent).commit
+  const second = await change(artifacts, repository, firstCommit, { 'docs/note.md': 'n\n' })
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: second, criteria })
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /run: always [\d.]+ s, packages [\d.]+ s$/)
+})
+
+test('a check that failed earlier in the Work runs again whatever the diff selects', async () => {
+  const artifacts = store()
+  const repository = repo('checks:\n  - name: always\n    run: "true"\n  - name: gate\n    run: test -f ok.txt\n    paths: ["src/**"]\n')
+  writeFileSync(join(repository, 'ok.txt'), 'ok\n')
+  execFileSync('git', ['-C', repository, 'add', 'ok.txt'])
+  execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'add gate fixture'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const bad = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject: await change(artifacts, repository, tree.commit, { 'src/a.ts': 'x\n', 'ok.txt': null }), criteria })
+  assert.equal(bad.verdict, 'fail')
+  assert.match(bad.reason, /gate/)
+  const docsOnly = await change(artifacts, repository, tree.commit, { 'docs/n.md': 'n\n', 'ok.txt': 'ok\n' })
+  const withoutEarlier = await verifier.verify({ workId: 'w', attemptId: 'b', stepId: 'checks', capability: 'code.required-checks', subject: docsOnly, criteria })
+  assert.equal(withoutEarlier.verdict, 'pass', withoutEarlier.reason)
+  assert.match(withoutEarlier.reason, /run: always [\d.]+ s; skipped: gate$/)
+
+  const retryRequest = { workId: 'w', attemptId: 'c', stepId: 'checks', capability: 'code.required-checks', subject: docsOnly, criteria, earlier: bad.evidence }
+  const withEarlier = await verifier.verify(retryRequest)
+  assert.equal(withEarlier.verdict, 'pass', withEarlier.reason)
+  assert.match(withEarlier.reason, /run: always [\d.]+ s, gate [\d.]+ s \(failed earlier\)$/)
+  assert.equal(withEarlier.evidence.length, 2)
+
+  const passingEvidence = await verifier.verify({ workId: 'w', attemptId: 'd', stepId: 'checks', capability: 'code.required-checks', subject: docsOnly, criteria })
+  const passEarlierRequest = { workId: 'w', attemptId: 'e', stepId: 'checks', capability: 'code.required-checks', subject: docsOnly, criteria, earlier: passingEvidence.evidence }
+  const passEarlier = await verifier.verify(passEarlierRequest)
+  assert.match(passEarlier.reason, /run: always [\d.]+ s; skipped: gate$/)
 })
 
 test('System\'s own checks: a change to docs alone runs only docs; code, tests or the Charter run the main checks; the web Runtime adds web', async () => {

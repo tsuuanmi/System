@@ -776,7 +776,15 @@ test('when no candidate has budget left, the Work does not succeed', async () =>
 
 test('a failing verdict named in retry.onFail reopens the step once, automatically, with the verdict and the change as input', async () => {
   const specs = memorySpecs()
-  const h = harness({ specs, verifier: scripted(specs, ['fail', 'pass']) })
+  const requests: Array<{ stepId: string; earlier?: string[] }> = []
+  const scriptedVerifier = scripted(specs, ['fail', 'pass'])
+  const h = harness({ specs, verifier: {
+    ...scriptedVerifier,
+    async verify(request) {
+      requests.push({ stepId: request.stepId, ...('earlier' in request && Array.isArray(request.earlier) ? { earlier: request.earlier } : {}) })
+      return scriptedVerifier.verify!(request)
+    },
+  } })
   const done = await runRetrying(h)
   assert.equal(done.state.status, 'succeeded')
   assert.equal(h.calls.length, 2)
@@ -787,6 +795,8 @@ test('a failing verdict named in retry.onFail reopens the step once, automatical
   assert.equal(reopened[0].caller, undefined)
   const failing = done.events.find((e) => e.type === 'verified')
   assert.ok(failing?.type === 'verified')
+  assert.equal(requests[0]!.earlier, undefined)
+  assert.deepEqual(requests[1]!.earlier, failing.evidence)
   assert.equal(h.calls[1]!.inputs.failure, failing.verdictId)
   const first = done.events.find((e) => e.type === 'observed')
   assert.ok(first?.type === 'observed')
