@@ -20,6 +20,20 @@ function gone(pid: number): boolean {
   try { process.kill(pid, 0); return false } catch (error) { return object(error).code === 'ESRCH' }
 }
 
+test('readClaudeQuota names a missing home', async (t) => {
+  const dir = tempDir('quota-read-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const fake = fakeQuotaCli(join(dir, 'cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  // An existing home and a genuinely missing executable still blame the CLI.
+  unreadable(await readClaudeQuota({ command: join(dir, 'no-such-cli'), home: dir, token: 't', now: () => OBS }), /could not run/)
+  const home = join(dir, 'nope')
+  const report = await readClaudeQuota({ command: fake.command, home, token: 't', now: () => OBS })
+  unreadable(report, /claudeHome .*nope does not exist/)
+  assert.ok(String(object(report).unreadable).includes(home))
+  // readLog requires a log file; no launch means the file does not exist.
+  assert.deepEqual(existsSync(fake.log) ? fake.readLog() : [], [])
+})
+
 test('Claude quota uses one get_usage control request, the account HOME/token, and a minimal environment', async (t) => {
   const dir = tempDir('quota-read-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
