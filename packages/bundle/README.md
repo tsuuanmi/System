@@ -80,11 +80,14 @@ the runtime. Install scripts of DSH dependencies are denied in
   (`dsh-base`, web, headless, tools); those packages are installed but **not
   mounted**.
 
+## Durability
+
+DSH's SQLite backend sets `journal_mode` (WAL) but not `synchronous`. The
+effective level on a booted profile's `state.sqlite` is FULL (2), the default
+of the bundled SQLite (`DEFAULT_WAL_SYNCHRONOUS=2`); `tests/work.test.ts`
+reads it from that file.
+
 ## Known limitations
 
-- DSH's SQLite backend sets `journal_mode` but not `synchronous`; the M2 crash
-  tests must measure the effective level.
 - pnpm reports unmet `@opentelemetry/api` peer ranges inside DSH's own
   dependencies; System code does not use OpenTelemetry.
-- The profile links this checkout (`link:`), so it is a development install,
-  not a release.
