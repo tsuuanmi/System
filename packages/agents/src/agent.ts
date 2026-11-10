@@ -11,6 +11,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync }
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
+import { quotaFromRateLimitEvent, type QuotaEvent, type QuotaReport } from './quota.ts'
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
 
@@ -70,6 +71,28 @@ export interface Account {
   attemptBudget?: AttemptBudget
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
+  /** `primary` is preferred while its quota is under the ceiling (routing by headroom). */
+  priority?: 'primary' | 'secondary'
+  /** From this share of a quota window used the account is not chosen (the row's `quotaCeilingPercent`; routing's default is 80). */
+  quotaCeilingPercent?: number
+  /** The account's cached quota reading; routing reads it and records it with the choice. */
+  quota?: () => Promise<QuotaReport>
+  /** claude-code: told the quota windows an attempt's `rate_limit_event`s reported (the last of each window); a throwing hook never fails the attempt. */
+  onRateLimit?: (events: ReadonlyArray<QuotaEvent>) => void
+}
+
+/** The last quota event of each window in a Claude Code stream. */
+function rateLimitEvents(stdout: string): QuotaEvent[] {
+  const last = new Map<string, QuotaEvent>()
+  const observedAt = Date.now()
+  for (const line of stdout.split('\n')) {
+    if (!line.includes('rate_limit_event')) continue
+    try {
+      const event = quotaFromRateLimitEvent(JSON.parse(line) as unknown, observedAt)
+      if (event) last.set(event.window, event)
+    } catch { /* not JSON: not an event */ }
+  }
+  return [...last.values()]
 }
 
 /** Input tokens (cache reads included) and minutes; either may be absent. */
@@ -99,6 +122,9 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
+    priority: account.priority,
+    quotaCeilingPercent: account.quotaCeilingPercent,
+    quota: account.quota,
     run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs),
     async gone(attemptId) {
       const file = pidFile(attemptsDir, attemptId)
@@ -174,6 +200,11 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
     })
     const stdout = spawned.stdout()
+    // Even a rejected or stopped attempt tells the truth about quota.
+    if (account.runtime === 'claude-code' && account.onRateLimit) {
+      const events = rateLimitEvents(stdout)
+      if (events.length) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
+    }
     const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
     if (codexAuth) keepRefreshedAuth(codexAuth)
     if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels

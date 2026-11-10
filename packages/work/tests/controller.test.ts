@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { memoryWorkTable } from '../../../test-support/memory.ts'
 import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
 import { WorkError } from '../src/errors.ts'
-import { fold, type WorkRecord } from '../src/record.ts'
+import { fold, type WorkRecord, type Caller } from '../src/record.ts'
 import type { Verdict } from '../src/kinds.ts'
 import { Capabilities, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest, type WorkerResult } from '../src/registry.ts'
 import { WorkflowError, directTask, parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
@@ -17,7 +17,13 @@ const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'u
 const caller = { type: 'human', operatorId: 'tan' } as const
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 
-function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string> } {
+interface FrozenSpecs {
+  restoreCalls: { changeId: string; frozenId: string; caller: Caller }[]
+  restoreFrozen(changeId: string, frozenId: string, caller: Caller): Promise<{ id: string; restored: string[] }>
+}
+
+function memorySpecs(): SpecStore & FrozenSpecs & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string> } {
+  const restoreCalls: FrozenSpecs['restoreCalls'] = []
   const unchanged = new Map<string, string>()
   const specs = new Map<string, ResolvedSpec>()
   const stored = new Set<string>()
@@ -26,6 +32,13 @@ function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string,
     stored,
     verdicts,
     unchanged,
+    restoreCalls,
+    async restoreFrozen(changeId, frozenId, caller) {
+      restoreCalls.push({ changeId, frozenId, caller })
+      const restoredId = id('restored-1')
+      stored.add(restoredId)
+      return { id: restoredId, restored: ['tests/a.test'] }
+    },
     unchangedBase: (artifactId) => unchanged.get(artifactId),
     kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) {
@@ -175,6 +188,56 @@ test('a changed tree still passes, and a read-only scout with an unchanged check
   const admitted = await scouts.controller.admit({ spec, input: await input(scouts), caller, source: { kind: 'workflow-file', path: 'hygiene.yaml' } })
   const done = await scouts.controller.run(admitted.id)
   for (const s of scouting) assert.equal(done.state.steps[s.id]!.state, 'succeeded', s.id)
+})
+
+/** Supply a resolved spec directly so these exercise observation independently of the YAML parser. */
+async function runFrozen(h: Harness) {
+  const implement = { id: 'implement', dependsOn: ['tests'], capabilities: ['code-write'], inputs: { tests: '$steps.tests.change' }, outputs: ['change'], freeze: '$steps.tests.change' }
+  const spec: ResolvedSpec = {
+    workflow: { id: 'frozen', version: 1 },
+    steps: [
+      { id: 'tests', capabilities: ['code-write'], outputs: ['change'] },
+      implement,
+      // An output is subject to the existing no-change rule only when judged.
+      { id: 'checks', dependsOn: ['implement'], verify: { capability: 'code.required-checks', subject: '$steps.implement.change', criteria: 'c1' } },
+    ],
+  }
+  const admitted = await h.controller.admit({ spec, caller, source: { kind: 'workflow-file', path: 'frozen.yaml' } })
+  return h.controller.run(admitted.id)
+}
+
+test('a step with freeze records the change with the frozen files restored', async () => {
+  const h = harness()
+  const record = await runFrozen(h)
+  assert.equal(record.state.steps.implement!.outputs.change, id('restored-1'))
+  const reported = id(`${h.calls.find((c) => c.stepId === 'implement')!.attemptId}/change`)
+  assert.deepEqual(h.specs.restoreCalls.map(({ changeId, frozenId }) => ({ changeId, frozenId })), [
+    { changeId: reported, frozenId: record.state.steps.tests!.outputs.change },
+  ])
+  assert.equal(record.state.status, 'succeeded')
+  assert.deepEqual(h.verdicts, [`checks:${id('restored-1')}`])
+})
+
+test('a failure to restore frozen files fails the step', async () => {
+  const h = harness()
+  h.specs.restoreFrozen = async () => { throw new Error('cannot read frozen tree') }
+  const record = await runFrozen(h)
+  assert.equal(record.state.steps.implement!.state, 'failed')
+  const observed = record.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
+  assert.ok(observed?.type === 'observed')
+  assert.match(observed.reason ?? '', /could not restore the frozen files.*cannot read frozen tree/)
+  assert.equal(h.verdicts.length, 0)
+})
+
+test('a change that is unchanged after restoring frozen files fails with no change', async () => {
+  const h = harness()
+  h.specs.unchanged.set(id('restored-1'), 'abcdef0123456789')
+  const record = await runFrozen(h)
+  assert.equal(record.state.steps.implement!.state, 'failed')
+  const observed = record.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
+  assert.ok(observed?.type === 'observed')
+  assert.match(observed.reason ?? '', /no change:.*abcdef0/)
+  assert.equal(h.verdicts.length, 0)
 })
 
 test('a direct Task with no Workflow file runs one attempt to a result', async () => {
@@ -410,7 +473,7 @@ test('routing records every candidate and why it was or was not chosen', async (
   const done = await runFixture(h, 'research.yaml')
   const dispatched = done.events.find((e) => e.type === 'dispatched')
   assert.deepEqual(dispatched && 'candidates' in dispatched && dispatched.candidates, [
-    { ref: 'fake', selected: true, reason: 'provides research, web-search, tier.standard' },
+    { ref: 'fake', selected: true, reason: 'no quota reader' },
     { ref: 'coder-only', selected: false, reason: 'lacks research, web-search, tier.standard' },
   ])
 })

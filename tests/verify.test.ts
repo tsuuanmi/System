@@ -169,6 +169,19 @@ test('Research: cited quotes found at their URLs pass, through the same controll
   assert.deepEqual((evidence.envelope.content.results as { found: boolean }[]).map((r) => r.found), [true])
 })
 
+test('Research: a Task with a repository base passes citations with report bytes', () => {
+  const ran = system(['work', 'submit', '--workflow', RESEARCH, '--input', task(`FAKE:outputs FAKE:cite=${site}/article`, gitRepo())])
+  const record = show(ran.stdout.trim())
+  const verified = record.events.find((e) => e.type === 'verified' && e.stepId === 'citations')
+  assert.equal(record.state.status, 'succeeded', JSON.stringify(record))
+  assert.equal(ran.status, 0, ran.stderr)
+  assert.equal(verified?.verdict, 'pass')
+  assert.equal(artifact(record.state.steps.investigate!.outputs.report!).envelope.kind, 'file')
+  assert.equal(verified.subject, record.state.steps.investigate!.outputs.sources)
+  const evidence = artifact(verified.evidence![0]!)
+  assert.deepEqual((evidence.envelope.content.results as { found: boolean }[]).map((r) => r.found), [true])
+})
+
 test('Research: a quote that cannot be confirmed now holds the Work for the operator', () => {
   const ran = system(['work', 'submit', '--workflow', RESEARCH, '--input', task(`FAKE:outputs FAKE:cite=${site}/gone`)])
   assert.equal(ran.status, 3)

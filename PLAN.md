@@ -128,8 +128,10 @@ Decisions (operator, 2026-11-10; Items sc-1 to sc-6 in STATUS.md):
   (`runtime-codex-sdk/src/rate-limits.ts`): the 5-hour and weekly windows,
   as a share used and a reset time. Not its ledger, pools or reservations.
   System 1 verified Claude Code 2.1.308–310 and Codex 0.164.0; this machine
-  runs 2.1.319 and 0.166.0, so the shapes are checked again. Each reading is
-  an observation in the record, so replay stays deterministic.
+  runs 2.1.322 and 0.166.0, so the shapes are checked again. The row returns
+  each reading (`quota(ref)`, cached 10 minutes); recording it as an
+  observation in the record, so replay stays deterministic, is left to sc-4,
+  because sc-3 may not change `packages/work/src`.
 - **Routing by headroom (sc-4, after sc-1 and sc-3).** Among capable
   Accounts with a free slot, the primary takes the step while both of its
   windows are under 80% used; otherwise the free secondary with the most
@@ -154,7 +156,9 @@ Decisions (operator, 2026-11-10; Items sc-1 to sc-6 in STATUS.md):
   ready run at once); `feature.yaml` stays a chain, since each stage works on
   the previous change. Parallelism comes from more Items at once.
 - **Budget:** sc-4 grows the active core (routing); the growth is recorded
-  here at SC's close against DG's 3,636 lines.
+  here at SC's close against DG's 3,636 lines. sc-4 itself: 3,636 → 3,776
+  (+140: the pure ranking `headroom.ts` 72, the controller's wait and reading
+  50, registry 31, live and status 6, and the verifier/effect `route` shrank).
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 

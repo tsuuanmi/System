@@ -122,6 +122,22 @@ test('a reference must name an output of a step this step depends on', () => {
   assert.ok(problems(two('steps.a.x')).length, 'a reference starts with $')
 })
 
+test('freeze must name an output of a step this one depends on', () => {
+  const workflow = (freeze: string, dependsOn = '[tests]') => `${base}  - id: tests
+    capabilities: [research]
+    outputs: [change]
+  - id: implement
+    dependsOn: ${dependsOn}
+    capabilities: [research]
+    outputs: [change]
+    freeze: ${freeze}
+`
+  assert.doesNotThrow(() => resolve(parseWorkflow(workflow('$steps.tests.change')), available))
+  assert.throws(() => resolve(parseWorkflow(workflow('$steps.nope.change')), available), (error: unknown) => error instanceof WorkflowError && /freezes .*nope/.test(error.message))
+  assert.match(problems(workflow('$steps.tests.missing')).join(';'), /freezes .*has no output missing/)
+  assert.match(problems(workflow('$steps.tests.change', '[]')).join(';'), /freezes .*does not depend on tests/)
+})
+
 test('capabilities no enabled Worker or verifier provides are refused before any Worker runs', () => {
   const none: AvailableCapabilities = { workers: new Set(), verifiers: new Set(), effects: new Set() }
   const found = problems(fixture('software-engineering.yaml'), none)
@@ -330,8 +346,9 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     assert.deepEqual(step('tests').outputs, ['change'])
     assert.deepEqual(step('tests').retry, { onFail: ['red', 'checks-code.checks', 'implement'], max: 1 })
     assert.match(step('implement').instructions, /frozen/)
+    assert.equal(step('implement').freeze, '$steps.tests.change')
     assert.match(step('tests').instructions, /typecheck/)
-    assert.deepEqual(step('tests').capabilities, ['code.tests', 'tier.standard'])
+    assert.deepEqual(step('tests').capabilities, ['code-write', 'code.tests', 'tier.standard'])
     assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1', holdInconclusive: true })
     assert.deepEqual(step('implement').dependsOn, ['red'])
     assert.equal(step('implement').inputs.red, undefined)

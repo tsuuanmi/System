@@ -1,0 +1,155 @@
+/** Quota on the agents row: registration stays lazy; each account owns its read/cache. */
+import assert from 'node:assert/strict'
+import { existsSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { test } from 'node:test'
+import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
+import { claudeUsage, codexRateLimits, fakeQuotaCli, object } from '../../../test-support/quota.ts'
+import { apply, type AccountConfig, type AgentsService, type Config } from '../src/index.ts'
+import type { WorkerPort } from '../../work/src/registry.ts'
+import { memoryArtifacts } from '../../../test-support/memory.ts'
+import { webDefaults, webWorker } from '../../web-worker/src/chatgpt.ts'
+
+async function mount(dir: string, accounts: AccountConfig[], now: () => number, options: { ports?: WorkerPort[]; quotaCeilingPercent?: unknown } = {}) {
+  const services: Record<string, unknown> = {
+    artifacts: {},
+    subprocess: { resolveExecutable: async (c: string): Promise<string> => c, spawn: (): never => { throw new Error('registration must not spawn') } },
+    credentials: { describe: async (): Promise<{ configured: boolean }> => ({ configured: true }), resolve: async (): Promise<{ value: string }> => ({ value: 'tok-1' }) },
+    capabilities: { registerWorker: (worker: WorkerPort): (() => void) => { options.ports?.push(worker); return () => {} } },
+  }
+  let agents: unknown
+  const ctx = { baseDir: dir, get: (key: string): unknown => services[key], effect: (_fn: () => () => void): void => {}, provide: (key: string, value: unknown): void => { if (key === 'agents') agents = value } }
+  // The optional quota clock is the plan's test seam, added by implement.
+  // Unknown allows deliberately invalid configuration values at this boundary.
+  const config = { accounts, quota: { now }, ...(options.quotaCeilingPercent === undefined ? {} : { quotaCeilingPercent: options.quotaCeilingPercent }) }
+  await apply(ctx as never, config as Config)
+  const row = object(agents)
+  assert.equal(typeof row.quota, 'function', 'AgentsService.quota must be exposed')
+  return agents as AgentsService & { quota(ref: string): Promise<unknown> }
+}
+function claude(dir: string, version = '2.1.322') {
+  const home = fakeClaudeHome(join(dir, 'claude-home'), { accountUuid: 'claude-account' })
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version, answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command, claudeHome: home }
+  return { home, fake, spec }
+}
+function codex(dir: string) {
+  const home = fakeCodexHome(join(dir, 'codex-home'), 'codex-account')
+  const fake = fakeQuotaCli(join(dir, 'codex-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: null } }) })
+  const spec: AccountConfig = { ref: 'codex/x1', runtime: 'codex', capabilities: ['research'], command: fake.command, codexHome: home }
+  return { home, fake, spec }
+}
+test('the agents row caches a Claude reading for ten minutes then rereads', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { spec, fake } = claude(dir)
+  let now = Date.parse('2026-11-10T12:00:00.000Z')
+  const row = await mount(dir, [spec], () => now)
+  assert.equal(existsSync(fake.log), false)
+  const first = await row.quota(spec.ref)
+  assert.deepEqual(first, { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42 } } })
+  const firstLog = fake.readLog()
+  assert.deepEqual(firstLog[0]?.argv, ['--version'])
+  assert.equal(firstLog.filter((entry) => entry.stdin !== undefined).length, 1)
+  assert.deepEqual(await row.quota(spec.ref), first)
+  assert.deepEqual(fake.readLog(), firstLog)
+  now += 600_001
+  assert.deepEqual(await row.quota(spec.ref), { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42 } } })
+  assert.equal(fake.readLog().filter((entry) => entry.stdin !== undefined).length, 2)
+})
+test('two accounts read independently from their own homes and logs', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const c = claude(dir)
+  const x = codex(dir)
+  const row = await mount(dir, [c.spec, x.spec], () => Date.parse('2026-11-10T12:00:00Z'))
+  assert.deepEqual(object(await row.quota(c.spec.ref)).windows, { five_hour: { percentUsed: 42 } })
+  assert.equal(existsSync(x.fake.log), false)
+  assert.deepEqual(object(await row.quota(x.spec.ref)).windows, { five_hour: { percentUsed: 17 } })
+  for (const account of [c, x]) {
+    const launches = account.fake.readLog().filter((entry) => entry.home !== undefined)
+    assert.equal(launches.length, 1)
+    assert.equal(launches[0]?.home, account.home)
+  }
+  assert.equal(x.fake.readLog().find((entry) => entry.codexHome !== undefined)?.codexHome, x.home)
+  assert.equal(c.fake.readLog().filter((entry) => entry.stdin !== undefined).length, 1)
+  assert.deepEqual(x.fake.readLog().filter((entry) => entry.stdin !== undefined).map((entry) => object(entry.stdin).method), ['initialize', 'initialized', 'account/rateLimits/read'])
+})
+test('listing accounts spawns no quota reader; web and unknown refs are unreadable', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const c = claude(dir)
+  const x = codex(dir)
+  const web: AccountConfig = { ref: 'web/chatgpt/x', runtime: 'web', site: 'chatgpt', capabilities: ['research'] }
+  const row = await mount(dir, [c.spec, x.spec, web], () => 0)
+  const statuses = await row.accounts()
+  assert.deepEqual(statuses, [
+    { ref: c.spec.ref, runtime: 'claude-code', capabilities: ['research'], models: {}, priority: 'secondary', available: true, reason: 'registered', command: c.fake.command, providerAccount: 'claude-account', version: '' },
+    { ref: x.spec.ref, runtime: 'codex', capabilities: ['research'], models: {}, priority: 'secondary', available: true, reason: 'registered', command: x.fake.command, providerAccount: 'codex-account', version: '' },
+    { ref: web.ref, runtime: 'web', capabilities: ['research'], models: {}, priority: 'secondary', available: false, reason: 'the web-worker row is disabled' },
+  ])
+  for (const ref of [web.ref, 'unknown']) assert.deepEqual(await row.quota(ref), { unreadable: `no quota reader for ${ref}` })
+  assert.equal(existsSync(c.fake.log), false)
+  assert.equal(existsSync(x.fake.log), false)
+})
+test('an unknown version on the row only runs --version', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { spec, fake } = claude(dir, '2.1.999')
+  const row = await mount(dir, [spec], () => 0)
+  const report = object(await row.quota(spec.ref))
+  assert.deepEqual(Object.keys(report), ['unreadable'])
+  assert.ok(typeof report.unreadable === 'string')
+  assert.match(report.unreadable, /2\.1\.999.*not verified/)
+  assert.deepEqual(fake.readLog(), [{ argv: ['--version'] }])
+})
+
+for (const priority of ['primary', 'secondary'] as const) {
+  test(`registered CLI Worker exposes ${priority} priority and the row's quota reading`, async (t) => {
+    const dir = tempDir('quota-routing-port-')
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+    const c = claude(dir)
+    const ports: WorkerPort[] = []
+    const row = await mount(dir, [{ ...c.spec, ...(priority === 'primary' ? { priority } : {}) }], () => Date.parse('2026-11-10T12:00:00Z'), { ports })
+    assert.equal(ports.length, 1)
+    const port = ports[0]!
+    assert.equal(Reflect.get(port, 'priority'), priority)
+    const quota = Reflect.get(port, 'quota') as (() => Promise<unknown>) | undefined
+    assert.equal(typeof quota, 'function', 'registered CLI port exposes quota()')
+    assert.deepEqual(await quota!(), await row.quota(c.spec.ref))
+    assert.equal(c.fake.readLog().filter((entry) => entry.stdin !== undefined).length, 1, 'port and row share the same cache')
+  })
+}
+for (const value of [0, 101, NaN, '80']) {
+  test(`quotaCeilingPercent rejects ${String(value)} (${typeof value}) before registering accounts`, async (t) => {
+    const dir = tempDir('quota-ceiling-invalid-')
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+    const c = claude(dir)
+    const ports: WorkerPort[] = []
+    await assert.rejects(mount(dir, [c.spec], () => 0, { ports, quotaCeilingPercent: value }), /quotaCeilingPercent/)
+    assert.deepEqual(ports, [], 'invalid row configuration registers no account')
+  })
+}
+for (const value of [1, 80, 100]) {
+  test(`quotaCeilingPercent accepts ${value} and reaches the Worker port`, async (t) => {
+    const dir = tempDir('quota-ceiling-valid-')
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+    const c = claude(dir)
+    const ports: WorkerPort[] = []
+    await mount(dir, [c.spec], () => 0, { ports, quotaCeilingPercent: value })
+    assert.equal(ports.length, 1)
+    assert.equal(Reflect.get(ports[0]!, 'quotaCeilingPercent'), value)
+  })
+}
+test('web port has no quota; CLI default ceiling is unset and omitted priority becomes secondary', async (t) => {
+  const dir = tempDir('quota-ceiling-default-')
+  const web = webWorker({ ref: 'web/chatgpt/test', capabilities: ['research'], command: 'fake-chrome', version: async () => 'fake', web: webDefaults(join(dir, 'profile')) }, memoryArtifacts().artifacts, join(dir, 'attempts'))
+  assert.equal(Reflect.get(web, 'quota'), undefined, 'web Accounts have no quota reader')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const c = claude(dir)
+  const ports: WorkerPort[] = []
+  await mount(dir, [c.spec], () => 0, { ports })
+  assert.equal(ports.length, 1)
+  assert.equal(Reflect.get(ports[0]!, 'quotaCeilingPercent'), undefined)
+  assert.equal(Reflect.get(ports[0]!, 'priority'), 'secondary')
+})

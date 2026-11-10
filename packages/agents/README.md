@@ -7,10 +7,10 @@ the optional web-worker row) becomes a System Worker
 
 - **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH), `credentials` (DSH). Reads
   `webWorker` if the web-worker row provides it.
-  **Provides:** `ctx.agents` (`system workers`).
+  **Provides:** `ctx.agents` (`system workers`; `quota(ref)`).
 - **Accounts:** one config entry per account; an account whose CLI or
-  credential is missing is skipped with its reason. Routing takes the first
-  capable registered account; `system work retry --worker <ref>` names one.
+  credential is missing is skipped with its reason. Routing is by headroom (see
+  Routing by headroom); `system work retry --worker <ref>` names one.
   An account may set `label` (free text for people, e.g. an email) and
   `priority: primary` (omitted is secondary). At most one account per Runtime
   may be primary: a later one is not registered and says so. Refs are stable
@@ -23,6 +23,7 @@ the optional web-worker row) becomes a System Worker
     attemptTimeoutMinutes: 60           # row-wide default; an account may set its own
     maxConcurrentAttempts: 1            # row-wide default (1); an account may set its own
     attemptBudget: {inputTokens: 30000000, minutes: 45}  # row-wide default (none); an account may set its own
+    quotaCeilingPercent: 80             # 1-100; a window at or above this share used is over (see Routing by headroom)
     accounts:
       - ref: claude-code/default        # <runtime>/<account>
         runtime: claude-code
@@ -54,6 +55,77 @@ already registered as <first ref>; two refs on one account would count its
 quota twice`. An ID that cannot be read leaves the account registered with
 `providerAccount` unknown. The operator puts the `.claude.json` of a Claude
 account in its `claudeHome`.
+
+## Quota
+
+`quota(ref)` says how much of an account's 5-hour and weekly window is used and
+when each resets, without a model turn. It spawns only when asked, never at
+registration or in `accounts()`.
+
+- **Claude Code:** `claude -p --input-format stream-json --output-format stream-json
+  --verbose --no-session-persistence --strict-mcp-config` with no prompt and no model,
+  started with only `HOME` (the account's `claudeHome`), `TMPDIR`, the account's
+  `CLAUDE_CODE_OAUTH_TOKEN`, `PATH`, `LANG`, `LC_ALL` and `TZ`. One stdin line, the
+  control request `get_usage` (`skip_behaviors: true`); the `control_response` with that
+  `request_id` is the answer. Then stdin is closed and the process group ended.
+- **Codex:** `codex app-server` with the account's `CODEX_HOME`: `initialize` (with
+  `capabilities: null`), `initialized`, `account/rateLimits/read`. Windows are named by
+  length (300 minutes is `five_hour`, 10080 is `seven_day`), never by `primary`/`secondary`.
+  The app server may refresh `auth.json` in that `CODEX_HOME`; attempts copy a fresh
+  `CODEX_HOME`, so a refresh by the reader can race the copy-back's digest check
+  (not changed here).
+- **Output:** `{ observedAt, windows: { five_hour?, seven_day? } }`, each window
+  `{ percentUsed (0-100), resetsAt? }`, or `{ unreadable: <reason> }`. An answer is readable
+  or unreadable as a whole: one malformed entry (a share below 0 or above 100, a window that
+  is not an object, a reset in the wrong unit or not a time) makes it unreadable. Only
+  `five_hour` and `seven_day` are read: Claude Code's other entries are ignored unvalidated,
+  and a Codex window of another length is validated, then ignored. A `web` or unknown ref
+  is unreadable.
+- **Reset rule:** a reset is dropped (keeping `percentUsed`) only when it is already past
+  while the share is 100%, or more than 400 days from the reading (System 1's `PLAUSIBLE_MS`).
+  A future reset at 100% is kept.
+- **Version gate:** only Claude Code 2.1.322 and Codex 0.166.0 are read; `--version` is
+  asked first and nothing else is spawned for another version, which is `unreadable`
+  and names it. Checked on 2026-11-10 from the installed binaries and
+  `codex app-server generate-ts`, **not on a live account**: Claude's `get_usage` and
+  `control_response` envelopes, its `{ utilization, resets_at }` windows, and the
+  `rate_limit_event` fields; Codex's `RateLimitWindow`, `GetAccountRateLimitsResponse` and
+  the nullable `InitializeParams.capabilities`. Not checked: that a live account answers,
+  and that 2.1.322 starts with no user message (a release check for the operator).
+- **Cache:** each reading, readable or `unreadable`, is kept 10 minutes (`quota.ttlMs` in
+  the row's config is a test hook); simultaneous asks share one read. The cache does not
+  check for an aborted read, and the row passes no abort signal, so an aborted read is kept
+  too. Claude Code's `rate_limit_event` in an attempt's output (`utilization` is a fraction,
+  `resetsAt` Unix seconds; a share outside 0 to 1 is ignored, not clamped; `status: rejected`
+  with no utilization is 100%) replaces that window in the cached reading and sets
+  `observedAt`, without extending the expiry. With no reading cached, the event makes a
+  reading of that one window, which expires 10 minutes later.
+- **Source:** System 1, `/home/tan/workspaces/system-agents` commit `15e2bd5`:
+  `packages/plugins/runtime-claude-agent-sdk/src/limits.ts` and
+  `packages/plugins/runtime-codex-sdk/src/rate-limits.ts`; not its ledger, pools,
+  reservations or per-model windows. Code: [quota.ts](src/quota.ts). The reading is
+  returned here; routing records the readings it used (below).
+
+## Routing by headroom
+
+Among the accounts that have every capability of a step and a free slot (the rule is
+`rankByHeadroom` in [headroom.ts](../work/src/headroom.ts); the controller reads `quota()` of
+each, once per choice):
+
+1. The `priority: primary` account takes the step while both its windows are under the ceiling.
+2. Otherwise the free account with the most headroom (100 minus its fuller window; ties by
+   registration order). An account at or over the ceiling in either window is not chosen.
+3. An account whose quota is `unreadable`, and every `web` account, ranks after all readable
+   accounts under the ceiling, in registration order, but stays usable.
+4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
+   shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
+   that reset, or every 5 minutes, whichever comes first.
+
+The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; another value
+refuses every account). The `dispatched` event records each candidate's reason
+(`primary under 80% (5h 43%, 7d 31%)`, `headroom 57% (...)`, `over 80% (5h 91%)`,
+`quota unreadable: ...`), so replay reads the record and never asks a provider. The 10-minute
+cache means a reset is seen at the next reading after it.
 
 ## Software Engineering policy and the attempt budget
 
@@ -116,10 +188,12 @@ model is recorded for it.
    While it runs, its stdout is read every 0.5 s; when it grew, the attempt
    reports its progress (`progressReader`: turns, the last tool, tokens so
    far) to the Host, which keeps it in memory only.
-4. **Capture**, the same rule for every domain: in a git workspace the first
-   output slot is the working tree, committed on the base with a private index
-   as `git-tree@1` and pinned at `refs/system/artifacts/<commit>`; every other
-   slot is the file `out/<slot>` as `file@1`. A missing output fails the attempt.
+4. **Capture**, the same rule for every domain: for a step with `code-write`
+   in a git workspace the first output slot is the working tree, committed on
+   the base with a private index as `git-tree@1` and pinned at
+   `refs/system/artifacts/<commit>`; every other slot, and every slot of a step
+   without `code-write`, is the file `out/<slot>` as `file@1`. A change such a
+   step makes to the checkout is not an output. A missing output fails the attempt.
    A change equal to its base (the tree is the base commit's own) is still
    captured, and the Worker reports its final message beside the outputs; the
    controller then fails the step with "no change: the working tree is the same
@@ -182,7 +256,7 @@ pid keeps it held.
 
 Linux 5.4 (no Landlock), Claude Code 2.1.311 with a `setup-token` token,
 Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
-`HOME`; Codex's `workspace-write` sandbox works; both report token usage.
+`HOME`; Codex's `workspace-write` sandbox works; both report token usage. The quota shapes were checked on 2026-11-10 from the installed binary and `generate-ts`, not on a live account (see Quota).
 
 ## The `web` Runtime
 

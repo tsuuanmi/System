@@ -6,7 +6,8 @@ changes future admissions only.
 
 The code Workflows use two roles: `code.develop` (the plan, implement and docs
 steps; in `hygiene.yaml`, the plan and implement steps) and `code.tests` (the
-tests step). `code-write` is the permission to write the checkout, not a role.
+tests step). `code-write` is the permission to write the checkout, not a role; it is also what makes the working tree a step's output, so a
+step without it outputs only files (the `tests` and `docs` steps declare it).
 See [GLOSSARY.md](../GLOSSARY.md) for the term.
 
 - [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, `code.develop`, read-only: what to
@@ -14,9 +15,9 @@ See [GLOSSARY.md](../GLOSSARY.md) for the term.
   `tier.standard`: the plan's tests, failing, before any code; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
   `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
   and a `red: fail` one fails on the tests' change; an `inconclusive` verdict holds the Work before `implement`: approve continues, deny fails) → `implement`
-  (`code-write`, `code.develop`: make them pass; one `retry` per `tests-frozen` and `checks-code`; a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
+  (`code-write`, `code.develop`: make them pass; `freeze`s the tests step's files: an edit to one is undone when its change is recorded (dg-10); one `retry` per `tests-frozen` and `checks-code`; a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
   `tests-frozen` (`code.required-checks`, criteria `tests-frozen-v1`: no file the
-  tests step wrote changed) → `checks-code` → `docs` (`code.develop`, `code.docs`,
+  tests step wrote changed; the backstop of `freeze`) → `checks-code` → `docs` (`code.develop`, `code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
   Artifacts it is given; the profile decides which Account takes each role.
   The default for a code change (df-27, concluded in df-20).

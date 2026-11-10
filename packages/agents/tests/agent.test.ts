@@ -106,6 +106,71 @@ test('without a repository every output is a file the agent wrote; a missing one
   assert.match(missing.reason!, /wrote no output file for report/)
 })
 
+test('a step without code-write stores its outputs as bytes, whatever the Task\'s base', async () => {
+  const { artifacts } = memory()
+  const repository = repo()
+  const attempts = join(root, 'attempts-research-base')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
+  const result = await worker.run({
+    ...request({ task: await task(artifacts, 'FAKE:outputs', repository) }, ['report', 'sources']),
+    capabilities: ['research', 'web-search'], stepId: 'investigate',
+  })
+  assert.equal(result.status, 'succeeded', result.reason)
+  for (const [slot, expected] of [['report', '# report [s1]\n'], ['sources', '{"sources":[]}\n']]) {
+    const id = result.outputs[slot!]!
+    const stored = artifacts.get(id)
+    assert.equal(stored.state, 'stored')
+    assert.ok(stored.state === 'stored')
+    assert.equal(stored.envelope.kind, 'file', `${slot} must be bytes even on a repository Task`)
+    assert.ok(stored.envelope.blob)
+    assert.equal(Buffer.from(await artifacts.readBytes(id)).toString(), expected)
+  }
+  assert.equal(execFileSync('git', ['-C', repository, 'status', '--porcelain'], { encoding: 'utf8' }), '')
+  assert.deepEqual(readdirSync(attempts), [])
+})
+
+test('a step without code-write that changes the checkout does not output the change', async () => {
+  const { artifacts, records } = memory()
+  const repository = repo()
+  const input = await task(artifacts, 'FAKE:edit FAKE:outputs', repository)
+  // The Task's base is a tree; only trees created by this attempt are forbidden.
+  const before = new Set(records.rows.keys())
+  const attempts = join(root, 'attempts-research-edit')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
+  const result = await worker.run({
+    ...request({ task: input }, ['report', 'sources']),
+    capabilities: ['research', 'web-search'], stepId: 'investigate',
+  })
+  assert.equal(result.status, 'succeeded', result.reason)
+  for (const id of Object.values(result.outputs)) {
+    const stored = artifacts.get(id)
+    assert.ok(stored.state === 'stored')
+    assert.equal(stored.envelope.kind, 'file')
+    assert.ok(stored.envelope.blob)
+    assert.doesNotMatch(Buffer.from(await artifacts.readBytes(id)).toString(), /NOTE\.md|edited by claude/)
+  }
+  assert.deepEqual([...records.rows.values()].filter((r) => !before.has(r.envelope.id) && r.envelope.kind === 'git-tree'), [])
+  assert.equal(existsSync(join(repository, 'NOTE.md')), false)
+  assert.equal(execFileSync('git', ['-C', repository, 'status', '--porcelain'], { encoding: 'utf8' }), '')
+  assert.deepEqual(readdirSync(attempts), [])
+})
+
+test('a step without code-write on a repository base is prompted to write report as a file', async () => {
+  const req = {
+    ...request({}, ['report', 'sources']),
+    capabilities: ['research', 'web-search'], stepId: 'investigate',
+  }
+  const dir = join(root, 'ws-research-files')
+  const ws = {
+    root: dir, home: join(dir, 'home'), inputs: join(dir, 'in'), outputs: join(dir, 'out'), work: join(dir, 'work'),
+    listed: [], context: [], instructions: 'investigate',
+    base: { repository: join(root, 'repository'), commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
+  }
+  const text = prompt(ws, req)
+  assert.ok(text.includes(`Write each of these outputs as a file in ${ws.outputs}:\n- report (the file ${join(ws.outputs, 'report')})`))
+  assert.doesNotMatch(text, /they are captured as the output/)
+})
+
 test('a Task\'s context reaches the agent read-only, as files under a notice that it is operator-supplied data', async () => {
   const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema }, { ...CONVERSATION_KIND, content: conversationSchema })
   const producer = { type: 'operator' as const, ref: 'tester' }
@@ -473,3 +538,37 @@ test('lazyVersion spawns `<command> --version` once, on first use', async () => 
   assert.deepEqual(await Promise.all([version(), version()]), ['1.2.3 (Fake)', '1.2.3 (Fake)'])
   assert.deepEqual(spawned, [['/bin/fake', '--version']])
 })
+
+
+// sc-3: an attempt's quota observations reach its account hook.
+for (const mode of ['event', 'none', 'throwing'] as const) {
+  test(`Claude attempt rate-limit hook: ${mode}`, async (t) => {
+    const ownRoot = mkdtempSync(join(tmpdir(), 'agent-ratelimit-'))
+    t.after(() => rmSync(ownRoot, { recursive: true, force: true }))
+    const { artifacts } = memory()
+    type Event = { window: 'five_hour' | 'seven_day'; percentUsed: number; resetsAt?: string }
+    const seen: Event[][] = []
+    // Intersection lets the red tests compile before Account gains this optional hook.
+    const ownAccount: Account & { onRateLimit: (events: ReadonlyArray<Event>) => void } = {
+      ...account('claude-code'),
+      onRateLimit: (events: ReadonlyArray<Event>) => {
+        seen.push([...events])
+        if (mode === 'throwing') throw new Error('bad hook')
+      },
+    }
+    const worker = agentWorker(ownAccount, artifacts, processSpawner, join(ownRoot, 'attempts'))
+    const instructions = `FAKE:outputs${mode === 'none' ? '' : ' FAKE:ratelimit=five_hour:0.9'}`
+    const result = await worker.run(request({ question: await task(artifacts, instructions) }, ['report']))
+    assert.equal(result.status, 'succeeded', result.reason)
+    if (mode === 'none') assert.deepEqual(seen, [])
+    else {
+      assert.equal(seen.length, 1)
+      const events = seen[0]!
+      assert.equal(events.length, 1)
+      const event = events[0]!
+      assert.ok(typeof event.resetsAt === 'string')
+      assert.ok(Number.isFinite(Date.parse(event.resetsAt)))
+      assert.deepEqual(events, [{ window: 'five_hour', percentUsed: 90, resetsAt: event.resetsAt }])
+    }
+  })
+}
