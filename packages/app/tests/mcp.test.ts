@@ -217,35 +217,47 @@ test('an MCP server of older code than the Host recovers on the code under SYSTE
   rmSync(dir, { recursive: true, force: true })
 })
 
-test('an MCP server that recovers on newer code lists that code\'s tools and sends tools/list_changed', { timeout: 60_000 }, async () => {
-  const dir = mkdtempSync('/tmp/sm-new-')
+test('an MCP session refreshes its tools and notifies after recovering on newer Host code', { timeout: 60_000 }, async () => {
+  const dir = mkdtempSync('/tmp/sm-refresh-')
   const lib = join(dir, 'packages', 'host', 'lib')
   mkdirSync(lib, { recursive: true })
-  const real = new URL('../../host/lib/index.js', import.meta.url).href
-  const realOps = new URL('../../host/lib/operations.js', import.meta.url).href
-  writeFileSync(join(lib, 'index.js'), `export * from '${real}'\nexport const VERSION = 'newer-code'\n`)
-  writeFileSync(join(lib, 'operations.js'), `import { operations as real } from '${realOps}'\nexport const operations = (s) => ({ ...real(s), 'test.ping': { agent: true, summary: 'ping', handler: () => 'pong' } })\n`)
+  const realIndex = new URL('../../host/lib/index.js', import.meta.url).href
+  const realOperations = new URL('../../host/lib/operations.js', import.meta.url).href
+  const extra = "'test.ping': { agent: true, summary: 'ping', params: undefined, handler: () => 'pong' }"
+  writeFileSync(join(lib, 'index.js'), `export * from '${realIndex}'\nexport const VERSION = 'newer-code'\n`)
+  writeFileSync(join(lib, 'operations.js'), `import { operations as real } from '${realOperations}'\nexport const operations = (s) => ({ ...real(s), ${extra} })\n`)
   mkdirSync(join(dir, 'system'))
   const f = fixture()
   mkdirSync(join(dir, 'data'))
   const host = await f.startHost(join(dir, 'data'))
-  const methods = { ...operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services), 'test.ping': { agent: true, summary: 'ping', handler: () => 'pong' } }
-  const server = await serve(host, { path: join(dir, 'system', 'host.sock'), methods, version: 'newer-code', onDisk: () => 'newer-code' })
+  const methods = operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services)
+  const server = await serve(host, {
+    path: join(dir, 'system', 'host.sock'),
+    methods: { ...methods, 'test.ping': { agent: true, summary: 'ping', params: undefined, handler: () => 'pong' } },
+    version: 'newer-code',
+    onDisk: () => 'newer-code',
+  })
   const transport = new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp'], env: { ...process.env, DSH_HOME: dir, SYSTEM_CODE: dir, SYSTEM_OPERATOR_ID: 'o1' } as Record<string, string> })
   const client = new Client({ name: 'test', version: '0' })
   clients.push(client)
-  let changed = 0
-  client.setNotificationHandler(ToolListChangedNotificationSchema, () => { changed++ })
-  await client.connect(transport)
-  assert.equal(client.getServerCapabilities()?.tools?.listChanged, true)
-  assert.ok(!(await client.listTools()).tools.some((tool) => tool.name === 'test.ping'))
-  assert.equal((await call(client, 'work.list')).error, undefined)
-  await until('the tools/list_changed notification', async () => changed > 0)
-  assert.ok((await client.listTools()).tools.some((tool) => tool.name === 'test.ping'))
-  assert.equal((await call(client, 'test.ping')).value, 'pong')
-  assert.ok((await call(client, 'test.nope')).error)
-  await client.close()
-  await server.close()
-  await host.close()
-  rmSync(dir, { recursive: true, force: true })
+  const changed: unknown[] = []
+  client.setNotificationHandler(ToolListChangedNotificationSchema, (notice) => { changed.push(notice) })
+  try {
+    await client.connect(transport)
+    assert.equal(client.getServerCapabilities()?.tools?.listChanged, true)
+    const initial = await client.listTools()
+    assert.ok(!initial.tools.some((tool) => tool.name === 'test.ping'))
+    const listed = await call(client, 'work.list')
+    assert.equal(listed.error, undefined, listed.error)
+    await until('tools/list_changed', async () => changed.length > 0)
+    const refreshed = await client.listTools()
+    assert.ok(refreshed.tools.some((tool) => tool.name === 'test.ping'))
+    assert.deepEqual(await call(client, 'test.ping'), { value: 'pong' })
+    assert.match((await call(client, 'not.a.tool')).error!, /unknown tool/)
+  } finally {
+    await client.close()
+    await server.close()
+    await host.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
