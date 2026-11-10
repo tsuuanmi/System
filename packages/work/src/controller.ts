@@ -94,6 +94,9 @@ export interface Command {
   args: string
 }
 
+/** A line of a Worker's final message that objects to an earlier step's output. */
+const OBJECTION = /^OBJECTION:[ \t]*(.+(?:\n(?!\n).*)*)/m
+
 /** What `retry` is told: which step and Worker take over, by whom and why. */
 export interface RetryOptions {
   worker?: string
@@ -739,6 +742,7 @@ export class WorkController {
     }
     const autoReopens = (stepId: string, source: string): number => record.events.filter((e) => {
       if (e.type !== 'reopened' || !e.automatic || e.stepId !== stepId) return false
+      if (e.objectedBy) return e.objectedBy === source
       if (source === stepId) return !e.failure
       return record.events.some((v) => v.type === 'verified' && v.stepId === source && v.verdictId === e.failure)
     }).length
@@ -748,6 +752,16 @@ export class WorkController {
       if (verified?.type !== 'verified') continue
       const nearest = workers.findLast((s) => s.retry?.onFail.includes(v.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, v.id) < s.retry.max)
       if (nearest) return reopen(nearest, `${v.id} failed: ${verified.reason}`, verified.verdictId)
+    }
+    // A later Worker step that objects to this step's output (a frozen test it says is wrong) reopens this step with the objection as `failure`.
+    for (const o of workers) {
+      const observed = record.events.findLast((e) => e.type === 'observed' && e.stepId === o.id)
+      if (record.state.steps[o.id]!.state !== 'failed' || observed?.type !== 'observed' || !observed.objection) continue
+      const target = workers.findLast((s) => s.retry?.onFail.includes(o.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, o.id) < s.retry.max)
+      const subject = target && record.state.steps[target.id]!.outputs[target.outputs[0]!]
+      if (!target || !subject) continue
+      const failure = await this.specs.putVerdict({ subject, criteria: subject, capability: 'objection', verifier: { ref: `step:${o.id}`, version: '1' }, verdict: 'fail', reason: observed.objection, evidence: [] })
+      return this.append(record, { type: 'reopened', automatic: true, objectedBy: o.id, stepId: target.id, reason: `${o.id} objects: ${observed.objection}`, failure, reset: [target.id, ...dependentsOf(spec, target.id)] })
     }
     for (const s of workers) {
       if (!s.retry?.onFail.includes(s.id) || record.state.steps[s.id]!.state !== 'failed' || autoReopens(s.id, s.id) >= s.retry.max) continue
@@ -833,7 +847,10 @@ export class WorkController {
     let { status, reason } = result
     if (aborted) status = 'cancelled'
     const outputs = status === 'succeeded' ? result.outputs : {}
-    if (status === 'succeeded') {
+    // A Worker that calls an earlier step's output wrong fails its own step; only a step another step lists in `retry.onFail` may.
+    const objection = status === 'succeeded' && spec.steps.some((o) => isWorkerStep(o) && o.retry?.onFail.includes(s.id) && o.id !== s.id) ? OBJECTION.exec(result.message ?? '')?.[1]?.trim() : undefined
+    if (objection) [status, reason] = ['failed', `objection: ${objection}`]
+    if (status === 'succeeded' && !objection) {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot]))
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
@@ -856,6 +873,7 @@ export class WorkController {
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
       ...(status === 'failed' && RATE_LIMITED.test(reason ?? '') ? { rateLimited: true as const } : {}),
+      ...(objection ? { objection } : {}),
       ...(status === 'failed' && result.retryable && !aborted ? { retryable: true as const } : {}),
     })
   }

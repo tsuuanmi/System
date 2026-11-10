@@ -132,7 +132,11 @@ reopens the one latest in dependency order that has budget left; its
 downstream steps run again. After a failing verdict the new
 attempt gets the verdict Artifact as input `failure` (its reason and evidence
 IDs) and the change as `previous`; after a Worker failure it starts fresh with
-neither. Anything else, and every later failure, is the operator's `work retry`.
+neither. A later Worker step may also be in `onFail`: when its final message has a line
+`OBJECTION: <what and why>`, that step fails with the text as its reason, and this step is
+reopened (budget counted per objecting step) with a `fail` verdict Artifact holding the text as
+input `failure`; a step no other step lists cannot object. Anything else, and every later
+failure, is the operator's `work retry`.
 It is no operator touch in `work report`.
 
 **Effects** (ADR-0004 decision 10): an effect step's provider validates its

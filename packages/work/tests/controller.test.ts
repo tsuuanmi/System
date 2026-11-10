@@ -864,3 +864,45 @@ test('a step with no retry declared is never tried again by itself', async () =>
   await h.controller.run(admitted.id)
   assert.equal(h.calls.length, 1)
 })
+
+test('a later step whose message objects to an earlier output reopens that step once, with the objection as its failure input (dg-8)', async () => {
+  const yaml = RETRY_TWO.replace('onFail: [red, checks]', 'onFail: [red, checks, implement]')
+  let n = 0
+  const h: Harness = harness({ worker: { async run(r) {
+    h.calls.push(r)
+    const outputs = Object.fromEntries(r.outputs.map((slot) => [slot, id(`${r.attemptId}/${slot}`)]))
+    for (const out of Object.values(outputs)) h.specs.stored.add(out)
+    const objects = r.stepId === 'implement' && n++ === 0
+    return { status: 'succeeded', outputs, ...(objects ? { message: 'Nothing done.\nOBJECTION: test a.test.ts asserts 2, the rule says 3' } : {}) }
+  } } })
+  const done = await runWith(yaml, h)
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(h.calls.map((c) => c.stepId), ['tests', 'implement', 'tests', 'implement'])
+  const observed = done.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
+  assert.ok(observed?.type === 'observed')
+  assert.equal(observed.status, 'failed')
+  assert.match(observed.objection ?? '', /^test a\.test\.ts asserts 2/)
+  const reopened = done.events.filter((e) => e.type === 'reopened')
+  assert.equal(reopened.length, 1)
+  assert.ok(reopened[0]?.type === 'reopened')
+  assert.equal(reopened[0].stepId, 'tests')
+  assert.equal(reopened[0].objectedBy, 'implement')
+  assert.ok(h.calls[2]!.inputs.failure)
+  assert.equal(h.controller.replay(done.id).matches, true)
+})
+
+test('an objection past the retry budget fails the Work; a step no one lists in onFail cannot object', async () => {
+  const worker = (h: () => Harness): Partial<WorkerPort> => ({ async run(r) {
+    const outputs = Object.fromEntries(r.outputs.map((slot) => [slot, id(`${r.attemptId}/${slot}`)]))
+    for (const out of Object.values(outputs)) h().specs.stored.add(out)
+    return { status: 'succeeded', outputs, message: 'OBJECTION: wrong' }
+  } })
+  const listed: Harness = harness({ worker: worker(() => listed) })
+  const done = await runWith(RETRY_TWO.replace('onFail: [red, checks]', 'onFail: [red, checks, implement]'), listed)
+  assert.equal(done.state.status, 'failed')
+  assert.equal(done.events.filter((e) => e.type === 'reopened').length, 1)
+  const unlisted: Harness = harness({ worker: worker(() => unlisted) })
+  const plain = await runWith(RETRY_TWO, unlisted)
+  assert.equal(plain.state.status, 'succeeded')
+  assert.equal(plain.events.filter((e) => e.type === 'reopened').length, 0)
+})

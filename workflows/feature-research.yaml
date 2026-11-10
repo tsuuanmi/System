@@ -58,7 +58,7 @@ steps:
     inputs:
       task: $work.input
       plan: $steps.plan.plan
-    retry: { onFail: [red, checks-code.checks], max: 1 }
+    retry: { onFail: [red, checks-code.checks, implement], max: 1 }
     outputs: [change]
     instructions: |
       Write the tests listed under "Tests" in the plan, and only those: no
@@ -96,8 +96,10 @@ steps:
     instructions: |
       The files the tests step wrote are frozen. A change to any of them
       (edit, rename, delete) is rejected by tests-frozen. Do not edit them
-      even to fix a typo or a broken import; say what is wrong in your final
-      message and leave it.
+      even to fix a typo or a broken import. If a frozen test is wrong (it
+      contradicts an existing rule, or cannot pass as written), change nothing
+      and end your final message with a line "OBJECTION: <test file and name>:
+      <why it is wrong>"; that reopens the tests step with your reason.
       The checkout holds the tests from the plan, which fail now (the red
       check ran them). Make the changes in the plan so that they pass. You may add new test files, and update tests that already
       existed and assert the behaviour the plan changes. Run the repository's
