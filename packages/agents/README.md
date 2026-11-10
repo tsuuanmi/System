@@ -9,8 +9,8 @@ the optional web-worker row) becomes a System Worker
   `webWorker` if the web-worker row provides it.
   **Provides:** `ctx.agents` (`system workers`; `quota(ref)`).
 - **Accounts:** one config entry per account; an account whose CLI or
-  credential is missing is skipped with its reason. Routing takes the first
-  capable registered account; `system work retry --worker <ref>` names one.
+  credential is missing is skipped with its reason. Routing is by headroom (see
+  Routing by headroom); `system work retry --worker <ref>` names one.
   An account may set `label` (free text for people, e.g. an email) and
   `priority: primary` (omitted is secondary). At most one account per Runtime
   may be primary: a later one is not registered and says so. Refs are stable
@@ -103,7 +103,28 @@ registration or in `accounts()`.
   `packages/plugins/runtime-claude-agent-sdk/src/limits.ts` and
   `packages/plugins/runtime-codex-sdk/src/rate-limits.ts`; not its ledger, pools,
   reservations or per-model windows. Code: [quota.ts](src/quota.ts). The reading is
-  returned, not recorded; recording it is sc-4's.
+  returned here; routing records the readings it used (below).
+
+## Routing by headroom
+
+Among the accounts that have every capability of a step and a free slot (the rule is
+`rankByHeadroom` in [headroom.ts](../work/src/headroom.ts); the controller reads `quota()` of
+each, once per choice):
+
+1. The `priority: primary` account takes the step while both its windows are under the ceiling.
+2. Otherwise the free account with the most headroom (100 minus its fuller window; ties by
+   registration order). An account at or over the ceiling in either window is not chosen.
+3. An account whose quota is `unreadable`, and every `web` account, ranks after all readable
+   accounts under the ceiling, in registration order, but stays usable.
+4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
+   shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
+   that reset, or every 5 minutes.
+
+The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; another value
+refuses every account). The `dispatched` event records each candidate's reason
+(`primary under 80% (5h 43%, 7d 31%)`, `headroom 57% (...)`, `over 80% (5h 91%)`,
+`quota unreadable: ...`), so replay reads the record and never asks a provider. The 10-minute
+cache means a reset is seen at the next reading after it.
 
 ## Software Engineering policy and the attempt budget
 

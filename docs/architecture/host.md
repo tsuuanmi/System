@@ -163,9 +163,13 @@ A ready step (pending, every `dependsOn` succeeded) becomes an attempt once its
 Account has a free slot. The slot is reserved in the lane before `dispatched`
 is appended, and released when `observed` or `attempt-lost` is.
 
-Routing takes the first capable Account **with a free slot**: a capable Account
-that is full is passed over (its candidate reason is `capable; no free slot`),
-and the step waits only when every capable Account is full. `dispatched` then
+Routing takes, among the capable Accounts **with a free slot**, the one with
+the most quota headroom (the primary while under the ceiling; rules in the
+[agents README](../../packages/agents/README.md#routing-by-headroom)); a full
+Account is passed over (its candidate reason is `capable; no free slot`). The
+step waits when every capable Account is full, or over the quota ceiling
+(`waiting: quota`, no attempt spent), and each candidate's reason records the
+reading used. `dispatched` then
 carries `waitedMs`, the time the step waited (for an Account slot or a check
 slot), and `observed` carries `rateLimited` when the attempt failed on a rate
 limit; `system work report` sums them as `waitedForSlotMs` and

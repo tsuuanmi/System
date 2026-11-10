@@ -138,7 +138,7 @@ export function whoHas(record: WorkRecord): { step?: string; account?: string } 
 }
 
 const progressText = (attempt: LiveAttempt | undefined): string => {
-  if (attempt?.waiting) return `waiting for ${attempt.waiting}`
+  if (attempt?.waiting) return `waiting for ${attempt.waiting}${attempt.resetsAt ? ` (resets ${attempt.resetsAt})` : ''}`
   const p = attempt?.progress
   const parts = [
     p?.turns !== undefined ? `turns ${p.turns}` : '', p?.lastTool ? `last tool ${p.lastTool}` : '',
