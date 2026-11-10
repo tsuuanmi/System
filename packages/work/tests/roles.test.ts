@@ -51,7 +51,7 @@ test('code-write stays on the steps that write the checkout', () => {
 test('the tests step keeps code.tests and never asks for code.develop', () => {
   for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
-    assert.deepEqual(caps(spec, 'tests'), ['code.tests', 'tier.standard'])
+    assert.deepEqual(caps(spec, 'tests'), ['code-write', 'code.tests', 'tier.standard'])
   }
 })
 

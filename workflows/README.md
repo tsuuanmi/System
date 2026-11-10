@@ -6,7 +6,8 @@ changes future admissions only.
 
 The code Workflows use two roles: `code.develop` (the plan, implement and docs
 steps; in `hygiene.yaml`, the plan and implement steps) and `code.tests` (the
-tests step). `code-write` is the permission to write the checkout, not a role.
+tests step). `code-write` is the permission to write the checkout, not a role; it is also what makes the working tree a step's output, so a
+step without it outputs only files (the `tests` and `docs` steps declare it).
 See [GLOSSARY.md](../GLOSSARY.md) for the term.
 
 - [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, `code.develop`, read-only: what to
