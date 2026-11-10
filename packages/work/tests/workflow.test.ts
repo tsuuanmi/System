@@ -316,6 +316,35 @@ test('retry names steps that fail and are tried again: the step itself or later 
   assert.match(problems(w('retry: { onFail: [], max: 1 }')).join(), /onFail/)
 })
 
+test('retry.rerunUnchanged accepts true and preserves it in the resolved spec', () => {
+  const yaml = `${base}  - id: implement
+    capabilities: [code-write]
+    outputs: [change]
+    retry: { onFail: [checks], max: 1, rerunUnchanged: true }
+  - id: checks
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: c }
+`
+  assert.doesNotThrow(() => resolve(parseWorkflow(yaml), available))
+  const spec = resolve(parseWorkflow(yaml), available)
+  const implement = spec.steps[0]!
+  assert.deepEqual('retry' in implement && implement.retry, { onFail: ['checks'], max: 1, rerunUnchanged: true })
+})
+
+for (const flag of ['false', '1', '"true"']) {
+  test(`retry.rerunUnchanged rejects ${flag}`, () => {
+    const yaml = `${base}  - id: implement
+    capabilities: [code-write]
+    outputs: [change]
+    retry: { onFail: [checks], max: 1, rerunUnchanged: ${flag} }
+  - id: checks
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: c }
+`
+    assert.throws(() => parseWorkflow(yaml), WorkflowError)
+  })
+}
+
 test('software-engineering.yaml declares the retry on the checks of its Sub-workflow', () => {
   const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
   const implement = spec.steps.find((s) => s.id === 'implement')
@@ -354,7 +383,7 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     assert.equal(step('implement').inputs.red, undefined)
     // Tests frozen: judged on implement's change against the tests step's commit, before the checks run.
     assert.deepEqual(step('tests-frozen').verify, { capability: 'code.required-checks', subject: '$steps.implement.change', criteria: 'tests-frozen-v1', inputs: { tests: '$steps.tests.change' } })
-    assert.deepEqual(step('implement').retry, { onFail: ['tests-frozen', 'checks-code.checks'], max: 1 })
+    assert.deepEqual(step('implement').retry, { onFail: ['tests-frozen', 'checks-code.checks'], max: 1, ...(file === 'feature.yaml' ? { rerunUnchanged: true } : {}) })
     assert.deepEqual(step('checks-code.checks').dependsOn, ['tests-frozen'])
   })
 }

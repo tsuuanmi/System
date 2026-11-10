@@ -79,6 +79,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     retryable: z.literal(true).optional(),
     /** The Worker's final message objects to an earlier step's output (`OBJECTION: <what and why>`); the step failed, and the earlier step that lists it in `retry.onFail` is reopened with this text. */
     objection: z.string().optional(),
+    /** A no-change attempt on a step reopened by this failing verdict, passed on as the same change (`retry.rerunUnchanged`): the check runs again on it. */
+    unchangedAfter: contentIdSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,
@@ -87,6 +89,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     verdictId: contentIdSchema.optional(),
     evidence: z.array(contentIdSchema).optional(),
     verifier: z.object({ ref: z.string(), version: z.string() }).strict().optional(),
+    /** The second run of the check on the same change; the id is the first run's verdict. */
+    rerunOf: contentIdSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('attempt-lost'), seq: z.number().int(), at,

@@ -812,6 +812,143 @@ function scripted(specs: ReturnType<typeof memorySpecs>, verdicts: VerifyResult[
   } }
 }
 
+/** The nth and later calls leave the tree unchanged; keep the harness's call history. */
+function nthUnchanged(h: () => Harness, n: number): Partial<WorkerPort> {
+  let calls = 0
+  return { async run(request) {
+    h().calls.push(request)
+    calls++
+    return treeWorker(h, () => calls >= n).run!(request)
+  } }
+}
+
+/** Exercise the controller with a declared pinned spec; YAML admission is tested separately. */
+async function runRerunUnchanged(h: Harness) {
+  const spec = resolve(parseWorkflow(RETRY), h.capabilities.available())
+  spec.steps = spec.steps.map((s) => 'retry' in s && s.retry
+    ? { ...s, retry: { ...s.retry, rerunUnchanged: true as const } }
+    : s)
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'retrying.yaml' } })
+  return h.controller.run(admitted.id)
+}
+
+test('a check that fails, then implement changing nothing, runs the check again on the same change; a pass goes on and is noted as flaky', async () => {
+  const specs = memorySpecs()
+  const verifier = scripted(specs, ['fail', 'pass'])
+  const h: Harness = harness({ specs, worker: nthUnchanged(() => h, 2), verifier: { async verify(request) {
+    h.verdicts.push(request.subject)
+    return verifier.verify!(request)
+  } } })
+  const done = await runRerunUnchanged(h)
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(h.calls.length, 2)
+  assert.equal(h.verdicts.length, 2)
+  const observed = done.events.filter((e) => e.type === 'observed')
+  const verified = done.events.filter((e) => e.type === 'verified')
+  assert.equal(observed.length, 2)
+  assert.equal(verified.length, 2)
+  const first = verified[0]!
+  const last = verified[1]!
+  assert.ok(first.verdictId)
+  assert.equal(first.verdict, 'fail')
+  assert.equal(observed[1]!.status, 'succeeded')
+  assert.equal('unchangedAfter' in observed[1]! && observed[1]!.unchangedAfter, first.verdictId)
+  assert.equal(observed[1]!.outputs.change, observed[0]!.outputs.change)
+  assert.equal(h.verdicts[1], h.verdicts[0], 'the verifier receives the exact same Artifact ID')
+  assert.equal(last.subject, first.subject)
+  assert.equal(last.verdict, 'pass')
+  assert.equal('rerunOf' in last && last.rerunOf, first.verdictId)
+  assert.match(last.reason, /flaky/)
+  assert.equal(h.controller.replay(done.id).matches, true)
+})
+
+for (const decision of ['approved', 'denied'] as const) {
+  test(`a check that fails twice on the same change holds the Work with both runs as evidence; ${decision}`, async () => {
+    const specs = memorySpecs()
+    const verifier = scripted(specs, ['fail'])
+    const evidence: string[][] = []
+    const h: Harness = harness({ specs, worker: nthUnchanged(() => h, 2), verifier: { async verify(request) {
+      h.verdicts.push(request.subject)
+      const result = await verifier.verify!(request)
+      evidence.push(result.evidence ?? [])
+      return result
+    } } })
+    const held = await runRerunUnchanged(h)
+    assert.equal(held.state.status, 'held')
+    assert.equal(held.state.awaiting, 'accept')
+    assert.equal(h.calls.length, 2)
+    assert.equal(h.verdicts.length, 2)
+    assert.equal(h.verdicts[1], h.verdicts[0])
+    const verified = held.events.filter((e) => e.type === 'verified')
+    assert.equal(verified.length, 2)
+    const first = verified[0]!
+    const last = verified[1]!
+    assert.ok(first.verdictId)
+    assert.equal(first.verdict, 'fail')
+    assert.equal(last.verdict, 'inconclusive')
+    assert.equal('rerunOf' in last && last.rerunOf, first.verdictId)
+    assert.equal(evidence[0]!.length, 1)
+    assert.equal(evidence[1]!.length, 1)
+    assert.notEqual(evidence[0]![0], evidence[1]![0])
+    assert.deepEqual(first.evidence, evidence[0])
+    assert.deepEqual(last.evidence, [...evidence[0]!, ...evidence[1]!])
+    assert.equal(specs.verdicts.get(last.verdictId!)?.verdict, 'inconclusive')
+    assert.equal(held.events.filter((e) => e.type === 'reopened').length, 1)
+    assert.equal(h.controller.replay(held.id).matches, true)
+    const done = await h.controller.decide(held.id, { decision, caller, reason: 'operator assessed both check runs' })
+    assert.equal(done.state.status, decision === 'approved' ? 'succeeded' : 'failed')
+    assert.equal(h.calls.length, 2)
+    assert.equal(h.verdicts.length, 2)
+    assert.equal(h.controller.replay(done.id).matches, true)
+  })
+}
+
+test('a no-change implement that no check reopened keeps failing with "no change" even when rerunUnchanged is declared', async () => {
+  const h: Harness = harness({ worker: treeWorker(() => h, () => true) })
+  const done = await runRerunUnchanged(h)
+  assert.equal(done.state.status, 'failed')
+  const observed = done.events.findLast((e) => e.type === 'observed')
+  assert.ok(observed?.type === 'observed')
+  assert.match(observed.reason ?? '', /no change:/)
+  assert.equal('unchangedAfter' in observed, false)
+  assert.equal(h.verdicts.length, 0)
+})
+
+test('a manual reopen of implement does not qualify for rerunUnchanged', async () => {
+  const h: Harness = harness({ verdict: 'inconclusive', worker: nthUnchanged(() => h, 2) })
+  const held = await runRerunUnchanged(h)
+  assert.equal(held.state.status, 'held')
+  const done = await h.controller.retry(held.id, { step: 'implement', caller, reason: 'inspect again' })
+  assert.equal(done.state.status, 'failed')
+  const reopened = done.events.findLast((e) => e.type === 'reopened')
+  assert.ok(reopened?.type === 'reopened')
+  assert.equal(reopened.automatic, undefined)
+  assert.equal(reopened.failure, undefined)
+  const observed = done.events.findLast((e) => e.type === 'observed')
+  assert.ok(observed?.type === 'observed')
+  assert.match(observed.reason ?? '', /no change:/)
+  assert.equal('unchangedAfter' in observed, false)
+  assert.equal(h.calls.length, 2)
+  assert.equal(h.verdicts.length, 1)
+})
+
+test('without rerunUnchanged a failing check followed by no change still fails the Work', async () => {
+  const specs = memorySpecs()
+  const verifier = scripted(specs, ['fail', 'pass'])
+  const h: Harness = harness({ specs, worker: nthUnchanged(() => h, 2), verifier: { async verify(request) {
+    h.verdicts.push(request.subject)
+    return verifier.verify!(request)
+  } } })
+  const done = await runRetrying(h)
+  assert.equal(done.state.status, 'failed')
+  const observed = done.events.findLast((e) => e.type === 'observed')
+  assert.ok(observed?.type === 'observed')
+  assert.match(observed.reason ?? '', /no change:/)
+  assert.equal('unchangedAfter' in observed, false)
+  assert.equal(h.calls.length, 2)
+  assert.equal(h.verdicts.length, 1)
+})
+
 function byStep(specs: ReturnType<typeof memorySpecs>, verdicts: Record<string, VerifyResult['verdict'][]>): Partial<VerifierPort> {
   const calls = new Map<string, number>()
   return { async verify(r) {

@@ -201,7 +201,9 @@ model is recorded for it.
    later verify or effect step takes that output as its subject. Read-only
    steps (the scouts of `hygiene.yaml`) name a `checkout` nothing verifies or
    publishes, so an unchanged one stays a success, as does a step declared
-   `mayBeEmpty` (the docs step of `feature.yaml`).
+   `mayBeEmpty` (the docs step of `feature.yaml`). The exception is a step with
+   `retry.rerunUnchanged` that a failing check reopened (sc-9): the check runs
+   again on the same change instead.
 5. **Record:** usage from the CLI's own output (unknown when absent), summed
    over every turn: a background command's completion notification starts a
    second turn, and Claude Code's `stream-json` prints a `result` for each,
