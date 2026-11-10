@@ -526,7 +526,7 @@ test('tests-frozen-v1: implement may add files, but not change one the tests ste
 
 test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftover is stopped', async () => {
   const artifacts = store()
-  const repository = repo('checks:\n  - name: leaky\n    run: ln -s "$(command -v sleep)" Xvfb && (setsid ./Xvfb 120 >/dev/null 2>&1 &) ; sleep 0.3\n  - name: clean\n    run: echo fine\n')
+  const repository = repo('checks:\n  - name: leaky\n    run: ln -s "$(command -v sleep)" Xvfb && setsid ./Xvfb 120 >/dev/null 2>&1 & until [ "$(cat /proc/$!/comm 2>/dev/null)" = Xvfb ]; do sleep 0.05; done\n  - name: clean\n    run: echo fine\n')
   const { task, treeId } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
