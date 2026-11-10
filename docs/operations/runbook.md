@@ -136,10 +136,11 @@ ln -sfn releases/<commit> ~/.system/current.new && mv -T ~/.system/current.new ~
 systemctl --user restart system
 ```
 
-The restart interrupts running attempts (a Worker attempt is then run again by
-the Host once its process is confirmed gone; a verifier run or an effect waits
-for `system work run`); do it when `system work list` shows none running. A release refuses a store whose records it does not know only if
-a later release changed the record schema (`git diff <commit>..<later> --
+The restart interrupts running attempts; do it when `system work list` shows
+none running. What the Host then runs again by itself, and what waits for
+`system work run`, is in [Stop, restart, status](#stop-restart-status). A
+release refuses a store whose records it does not know only if a later release
+changed the record schema (`git diff <commit>..<later> --
 packages/work/src/record.ts packages/artifacts/src` shows it).
 
 ## Changing the profile's config

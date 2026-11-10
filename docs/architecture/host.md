@@ -258,9 +258,10 @@ attempt to do it.
   re-executes the Host after 75, and a failure after an upgrade three times
   more, after 2, 4 and 8 s. The new Host recovers as on any start, and then reads and deletes the
   file: it runs those Works, except any with an attempt it just marked lost,
-  finished ones, and ones already driven. What was interrupted is not resumed here: recovery (above) runs a settled Worker attempt again, and anything else waits for an explicit run; a Work
-  that was only held at the gate has nothing in flight to interrupt. The file
-  is one use, not a queue.
+  finished ones, and ones already driven. What was interrupted is not resumed
+  here: recovery (above) runs a settled Worker attempt again, and anything else
+  waits for an explicit run; a Work that was only held at the gate has nothing
+  in flight to interrupt. The file is one use, not a queue.
 - **Clients.** The thin client retries the connection, and a hello refused as
   upgrading, for 3 s before it says "not running", and a client following a
   Work opens a closed connection again once.
