@@ -186,6 +186,8 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 
 ## Attempts at once, and held slots
 
+An `agents` account may carry `label` and `priority: primary` (at most one per Runtime); name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
+
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
 another Account offers the same capabilities and has a free slot, which takes
@@ -439,6 +441,11 @@ the base fails it too, the `checks` verdict is `inconclusive` (reason
 before `publish`, not retried. `system work show <id>` shows the reason: look
 at the base run. `system work approve <id> --reason ...` lets it publish and
 merge; `system work deny` fails it.
+
+The same applies at `red`, earlier: when every `red: fail` check that failed also
+fails on the base, the `red` verdict is `inconclusive` and the Work is held at
+`red`, before `implement` starts. `system approve` continues; `system deny`
+fails the Work.
 
 ## Following a Work, and detaching
 

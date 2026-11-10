@@ -61,7 +61,7 @@ before(async () => {
     accounts:
       - ref: claude-code/default
         runtime: claude-code
-        capabilities: [code-write, research, web-search]
+        capabilities: [code-write, code.develop, research, web-search]
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
         models: { standard: sonnet }

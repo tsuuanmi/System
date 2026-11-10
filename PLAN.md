@@ -88,6 +88,73 @@ finding the cause of a failure and submitting again. In DF's last night,
 - **Budget:** the active core does not grow (3,599 lines at DF's close). If
   a diagnose step is needed, it lives in Workflow config and Worker
   instructions, not in the controller.
+- *First measure, 2026-11-10 (14 Items, all merged; no slot wait):
+  first-Work acceptance 12/14 (86%): DNA 5/5 (software-engineering.yaml),
+  System 7/9. Human diagnosis 1 (dg-1). Both misses were System defects, not
+  the Items': a docs step with nothing to change failed the Work (dg-7), a
+  flaky leftover-process test (dg-9), a frozen test the implement step could
+  not call wrong (dg-8), and a reopened step's checks chosen against the
+  previous attempt, which let DNA gates-1 merge without its Rust gates (dg-6);
+  all four fixed in DG and released. 7 consecutive Items accepted first since.
+  In every feature.yaml Work (5 of 5 after the release) implement first edited
+  a frozen test and tests-frozen sent it back: one more implement attempt
+  each, about 15 minutes. Core: 3636 lines.*
+- *Stopped for review (operator, 2026-11-10) before 10 consecutive Items;
+  open: dg-10 and dg-11.*
+
+## 3a. SC — Scale by Accounts (decided 2026-11-10)
+
+**Aim:** more quota, so more Items run at once. Every Account is the
+operator's own; System with several users is a later milestone. This is the
+"adaptive routing on a measured need, quota exhaustion" of section 4: the
+operator gives few Items at once today because one Claude Account runs out.
+
+Decisions (operator, 2026-11-10; Items sc-1 to sc-6 in STATUS.md):
+- **Account identity (sc-1).** A `ref` is a stable handle never reused
+  (`claude-code/c1`, `codex/x1`), with a `label` for people and
+  `priority: primary` on the main Account instead of the name `default`.
+  At registration System reads the provider's own account ID (Claude Code's
+  `oauthAccount` in `.claude.json`, Codex's `account_id` in `auth.json`),
+  records it and refuses two refs on one provider account, whose quota
+  would count twice. Kubernetes' name and uid is the standard considered.
+- **Roles, not shared capabilities (sc-2).** `code-write` stays the
+  permission to write the checkout; a new role `code.develop` marks the plan,
+  implement and docs steps, given to the Claude Accounts only. Codex keeps
+  `code.tests`. Workflow config and profile only.
+- **Quota readers (sc-3).** Port from System 1 (`tsuuanmi/system`
+  `15e2bd5`) only its two readers, which spend no model turn: Claude Code's
+  `get_usage` control request (`runtime-claude-agent-sdk/src/limits.ts`) and
+  `codex app-server`'s `account/rateLimits/read`
+  (`runtime-codex-sdk/src/rate-limits.ts`): the 5-hour and weekly windows,
+  as a share used and a reset time. Not its ledger, pools or reservations.
+  System 1 verified Claude Code 2.1.308–310 and Codex 0.164.0; this machine
+  runs 2.1.319 and 0.166.0, so the shapes are checked again. Each reading is
+  an observation in the record, so replay stays deterministic.
+- **Routing by headroom (sc-4, after sc-1 and sc-3).** Among capable
+  Accounts with a free slot, the primary takes the step while both of its
+  windows are under 80% used; otherwise the free secondary with the most
+  headroom (its fuller window decides, ties by profile order). Balance is
+  of quota spent, not of steps counted. When every capable Account is over
+  80%, the step waits (`waiting: quota`, with the earliest reset) without
+  failing or spending an attempt. An Account whose usage cannot be read
+  ranks last but stays usable, so a CLI upgrade cannot stop all work.
+  Supersedes the first half of df-13.
+- **Antigravity CLI (sc-5).** A `research.yaml` Work first: a headless
+  mode, machine-readable output, usage and quota reports, and what it would
+  give that the current Workers do not. An adapter only with that reason.
+  An API Worker is an Account with an API key on an existing CLI, never a
+  model loop of System's own (ADR-0001).
+- **Measure (sc-6).** The operator signs in three more Claude Accounts and
+  configures the second Codex Account (one slot each), `maxConcurrentChecks`
+  goes to 4 (back to 2–3 if the required checks pass 10 minutes); then
+  about 6 Items at once, measuring time waited for a slot or quota, the
+  checks' time under load, rate-limited attempts, and DG's first-Work
+  acceptance.
+- **Not changed:** Workflows are already DAGs (`dependsOn`; steps that are
+  ready run at once); `feature.yaml` stays a chain, since each stage works on
+  the previous change. Parallelism comes from more Items at once.
+- **Budget:** sc-4 grows the active core (routing); the growth is recorded
+  here at SC's close against DG's 3,636 lines.
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 

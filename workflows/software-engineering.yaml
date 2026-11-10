@@ -7,7 +7,7 @@ id: software-engineering
 version: 1
 steps:
   - id: implement
-    capabilities: [code-write]
+    capabilities: [code-write, code.develop]
     inputs:
       task: $work.input
     outputs: [change]

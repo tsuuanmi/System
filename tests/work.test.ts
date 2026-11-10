@@ -21,7 +21,7 @@ const FAKES_ON = `- id: verifiers
 - id: fakes
   disabled: false
   config:
-    workers: [code-write, research, web-search, tier.standard]
+    workers: [code-write, code.develop, research, web-search, tier.standard]
     verifiers: [code.required-checks, research.citation-check]
     effects: [git.publish]
 `
@@ -97,7 +97,7 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   assert.equal(show(workId).state.status, 'running')
 
   // Edit the file mid-run: a capability no Worker has. Running Work must not notice.
-  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write]', 'capabilities: [teleport]'))
+  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write, code.develop]', 'capabilities: [teleport]'))
   const resumed = system(['work', 'run', workId])
   assert.equal(resumed.status, 0, resumed.stderr)
   const done = show(workId)
@@ -137,17 +137,26 @@ test('a held Work exits 3 and a failed verification exits 1', async () => {
   await host()
 })
 
-test('SQLite commits are durable: WAL with synchronous FULL (DSH sets neither pragma but the journal)', async () => {
+test("a booted profile's state.sqlite commits durably: WAL with synchronous FULL", async () => {
   const { DatabaseSync } = await import('node:sqlite')
-  const probe = new DatabaseSync(join(home, 'probe.sqlite'))
+  const databasePath = join(home, 'system', 'state.sqlite')
+  assert.equal(existsSync(databasePath), true, 'the booted profile created state.sqlite')
+  const database = new DatabaseSync(databasePath)
   try {
-    probe.exec('PRAGMA journal_mode = WAL')
-    assert.deepEqual({ ...probe.prepare('PRAGMA synchronous').get() }, { synchronous: 2 })
-    const options = probe.prepare('PRAGMA compile_options').all().map((row) => (row as { compile_options: string }).compile_options)
+    assert.deepEqual({ ...database.prepare('PRAGMA journal_mode').get() }, { journal_mode: 'wal' })
+    // DSH does not issue PRAGMA synchronous, so a new connection reports SQLite's compiled default.
+    assert.deepEqual({ ...database.prepare('PRAGMA synchronous').get() }, { synchronous: 2 })
+    const options = database.prepare('PRAGMA compile_options').all().map((row) => (row as { compile_options: string }).compile_options)
     assert.ok(options.includes('DEFAULT_WAL_SYNCHRONOUS=2'), options.join(','))
   } finally {
-    probe.close()
+    database.close()
   }
+
+  const bundleReadme = readFileSync(join(repo, 'packages', 'bundle', 'README.md'), 'utf8')
+  assert.match(bundleReadme, /synchronous/)
+  assert.match(bundleReadme, /FULL/)
+  assert.doesNotMatch(bundleReadme, /the M2 crash\s+tests must measure/)
+  assert.doesNotMatch(bundleReadme, /development install, not a release/)
 })
 
 test('a three-step Work record stays small', () => {

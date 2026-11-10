@@ -31,6 +31,8 @@ before(async () => {
     accounts:
       - ref: claude-code/default
         runtime: claude-code
+        label: main Claude
+        priority: primary
         capabilities: [code-write]
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
@@ -130,4 +132,35 @@ test('a retry naming an unknown Worker is refused', () => {
   const retried = system(['work', 'retry', workId, '--worker', 'nobody/default'])
   assert.equal(retried.status, 1)
   assert.match(retried.stderr, /no enabled Worker nobody\/default/)
+})
+
+test('workers lists account label, priority and provider account without credentials', () => {
+  const out = system(['workers'])
+  assert.match(out.stdout, /claude-code\/default[^\n]*main Claude/)
+  assert.match(out.stdout, /claude-code\/default[^\n]*primary/)
+  assert.match(out.stdout, /codex\/default[^\n]*provider account/i)
+  assert.doesNotMatch(out.stdout, /fake-token/)
+})
+
+test('two primary accounts in one Runtime are refused with a clear reason', async () => {
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: claude-code/c1, runtime: claude-code, capabilities: [code-write], command: ${fakeAgent}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN, priority: primary}\n      - {ref: claude-code/c2, runtime: claude-code, capabilities: [code-write], command: ${fakeAgent}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN, priority: primary}\n`)
+  await cli.start()
+  const out = system(['workers'])
+  assert.match(out.stdout, /claude-code\/c2[^\n]*(primary|priority)[^\n]*(already|more than one|only one)/i)
+})
+
+test('duplicate provider account IDs refuse the later account, while unreadable IDs remain registered', async () => {
+  const writeAccount = (name: string, accountId?: string) => {
+    const dir = join(home, 'system', 'codex', name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'auth.json'), JSON.stringify(accountId ? { tokens: { account_id: accountId } } : {}))
+  }
+  writeAccount('identity-a', 'same-provider-account')
+  writeAccount('identity-b', 'same-provider-account')
+  writeAccount('identity-unknown')
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: codex/x1, runtime: codex, capabilities: [code-write], command: ${fakeAgent}, codexHome: codex/identity-a}\n      - {ref: codex/x2, runtime: codex, capabilities: [code-write], command: ${fakeAgent}, codexHome: codex/identity-b}\n      - {ref: codex/x3, runtime: codex, capabilities: [code-write], command: ${fakeAgent}, codexHome: codex/identity-unknown}\n`)
+  await cli.start()
+  const out = system(['workers'])
+  assert.match(out.stdout, /codex\/x2[^\n]*codex\/x1[^\n]*provider account/i)
+  assert.match(out.stdout, /codex\/x3\s+available/)
 })

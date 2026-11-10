@@ -27,6 +27,9 @@ Helpers shared by the tests, so each stand-in has one implementation:
   names it for a test that kills it, and `stop()` sends SIGTERM (SIGKILL after
   10 s). Call `stop()` from `after`. For the [smoke tests](../tests/README.md).
 
+- [accounts.ts](accounts.ts) — `fakeClaudeHome` and `fakeCodexHome`: a temp
+  directory with the `.claude.json` / `auth.json` an account's provider ID is
+  read from (with secrets beside it that must never be read), `tempDir`.
 - [headed.ts](headed.ts) — `CHROME` (the Chrome the Runtime chooses; the pinned
   Chrome for Testing is installed once into `SYSTEM_TEST_BROWSERS`, default
   `<tmp>/system-test-browsers-<user>`, shared by the test processes) and

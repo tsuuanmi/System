@@ -11,6 +11,11 @@ the optional web-worker row) becomes a System Worker
 - **Accounts:** one config entry per account; an account whose CLI or
   credential is missing is skipped with its reason. Routing takes the first
   capable registered account; `system work retry --worker <ref>` names one.
+  An account may set `label` (free text for people, e.g. an email) and
+  `priority: primary` (omitted is secondary). At most one account per Runtime
+  may be primary: a later one is not registered and says so. Refs are stable
+  handles that are never reused (`claude-code/c1`, `codex/x1`); existing refs
+  such as `claude-code/default` stay valid.
 
 ```yaml
 - id: agents
@@ -21,18 +26,38 @@ the optional web-worker row) becomes a System Worker
     accounts:
       - ref: claude-code/default        # <runtime>/<account>
         runtime: claude-code
-        capabilities: [code-write, research, web-search]
+        label: me@example.com           # free text for people
+        priority: primary               # at most one per Runtime; omitted = secondary
+        claudeHome: claude/default      # holds .claude.json (provider account ID); under $DSH_HOME/system unless absolute; this is the default (claude/<name>)
+        capabilities: [code-write, code.develop, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
         maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
       - ref: codex/default
         runtime: codex
-        capabilities: [code-write]
+        capabilities: [code-write, code.tests]
         codexHome: codex/default        # under $DSH_HOME/system unless absolute
       # A second account is another entry with its own ref and credential.
 ```
 
+## Account identity
+
+At registration the row reads the provider's own account ID, without a model
+turn, from files of the account (never the real `~/.claude`): Claude Code from
+`<claudeHome>/.claude.json` `oauthAccount.accountUuid`, else `emailAddress`;
+Codex from `tokens.account_id` of `<codexHome>/auth.json`; a `web` account has
+none. It is recorded as `providerAccount` and shown by `system workers` and
+`workers.list` with `label` and `priority`; only that field is read, never a
+token. When two accounts of a Runtime resolve to the same ID, the later one in
+profile order is not registered, with the reason `provider account <id> is
+already registered as <first ref>; two refs on one account would count its
+quota twice`. An ID that cannot be read leaves the account registered with
+`providerAccount` unknown. The operator puts the `.claude.json` of a Claude
+account in its `claudeHome`.
+
 ## Software Engineering policy and the attempt budget
+
+`code.develop` is a role: the plan, implement and docs steps of the code Workflows ask for it (see the [Workflows README](../../workflows/README.md)), so the Claude Code account above takes them. `code-write` is the permission to write the checkout, not a role; in the example, Codex has `code-write` and `code.tests`, so it takes only the `tests` step.
 
 A `code-write` attempt runs every command in the foreground (PROP-0007
 decision 1): Claude Code gets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and
