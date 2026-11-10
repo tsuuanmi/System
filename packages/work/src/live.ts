@@ -21,7 +21,7 @@ export interface LiveAttempt {
   /** Set when the step has not started: what it waits for (`a check slot`, or `quota`: every capable Account is over its ceiling); `attemptId` is then empty. */
   waiting?: 'a check slot' | 'quota'
   /** With `waiting: 'quota'`: the earliest time a reading says an Account is free again, if it says. */
-  resetsAt?: string
+  until?: string
   /** What the Runtime last reported: absent until it reports. */
   progress?: Progress
 }

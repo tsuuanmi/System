@@ -1,109 +1,191 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { test } from 'node:test'
+import { test, type TestContext } from 'node:test'
 import { memoryWorkTable } from '../../../test-support/memory.ts'
+import type { QuotaReport } from '../../agents/src/quota.ts'
 import { WorkController, type SpecStore } from '../src/controller.ts'
-import type { QuotaReading } from '../src/headroom.ts'
-import { Capabilities, type WorkerPort } from '../src/registry.ts'
-import { parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
+import { Slots } from '../src/slots.ts'
+import { fold, TERMINAL, type WorkRecord } from '../src/record.ts'
+import { Capabilities, type WorkerPort, type WorkerRequest } from '../src/registry.ts'
+import { directTask, type ResolvedSpec } from '../src/workflow.ts'
 
-const caller = { type: 'human', operatorId: 'tan' } as const
-const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
-const WORKFLOW = 'schema: system.workflow/v1\nid: t\nversion: 1\nsteps:\n  - id: a\n    capabilities: [code-write]\n    outputs: [x]\n'
-const read = (five: number, seven: number, resetsAt?: string): QuotaReading => ({ windows: { five_hour: { percentUsed: five, ...(resetsAt ? { resetsAt } : {}) }, seven_day: { percentUsed: seven } } })
+const caller = { type: 'human', operatorId: 'quota-test' } as const
+const digest = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`
+const reading = (five: number, seven?: number, resetsAt?: string): QuotaReport => ({ observedAt: '2026-11-10T00:00:00Z', windows: { five_hour: { percentUsed: five, resetsAt }, ...(seven === undefined ? {} : { seven_day: { percentUsed: seven, resetsAt } }) } })
+// These structural additions are the Worker port contract in the SC plan.
+// They compile on the old port too, without changing production code.
+type Account = Pick<WorkerPort, 'ref'> & { priority?: 'primary' | 'secondary'; quota?: () => Promise<QuotaReport> }
+const turns = async () => { for (let n = 0; n < 30; n++) await new Promise<void>((resolve) => setImmediate(resolve)) }
+async function eventually(condition: () => boolean, message: string) {
+  for (let n = 0; n < 20 && !condition(); n++) await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.ok(condition(), message)
+}
+const dispatched = (record: WorkRecord) => record.events.filter((e) => e.type === 'dispatched')
 
-function setup(accounts: { ref: string; priority?: 'primary' | 'secondary'; reading?: QuotaReading }[]) {
+async function setup(t: TestContext, accounts: Account[], pinned?: string) {
+  const table = memoryWorkTable()
+  const capabilities = new Capabilities()
   const stored = new Set<string>()
   const specs = new Map<string, ResolvedSpec>()
-  const store: SpecStore = {
+  const specStore: SpecStore = {
     unchangedBase: () => undefined,
-    kindOf: (artifactId) => (specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
-    async putVerdict() { throw new Error('no verdict here') },
-    async putSpec(spec) { const specId = id(JSON.stringify(spec)); specs.set(specId, structuredClone(spec)); stored.add(specId); return specId },
-    getSpec: (specId) => structuredClone(specs.get(specId)),
-    exists: (artifactId) => stored.has(artifactId),
+    kindOf: (id) => specs.has(id) ? 'workflow-spec' : stored.has(id) ? 'output' : undefined,
+    putSpec: async (spec) => { const id = digest(JSON.stringify(spec)); specs.set(id, structuredClone(spec)); return id },
+    getSpec: (id) => structuredClone(specs.get(id)),
+    exists: (id) => stored.has(id) || specs.has(id),
+    putVerdict: async () => { throw new Error('no verifier in quota routing tests') },
     taskOf: () => undefined,
-    withNote: async () => { throw new Error('no Item in this test') },
+    withNote: async () => { throw new Error('no Item in quota routing tests') },
   }
-  const readings = new Map(accounts.map((a) => [a.ref, a.reading]))
-  const quotaCalls: string[] = []
-  const ran: string[] = []
-  const capabilities = new Capabilities()
-  for (const a of accounts) {
-    const worker: WorkerPort = {
-      ref: a.ref, capabilities: ['code-write'], priority: a.priority,
-      async quota() { quotaCalls.push(a.ref); const r = readings.get(a.ref); if (!r) throw new Error('no reader'); return r },
-      async run(request) {
-        ran.push(a.ref)
-        const out = id(`${request.attemptId}/x`)
-        stored.add(out)
-        return { status: 'succeeded', outputs: { x: out } }
-      },
-    }
-    capabilities.registerWorker(worker)
+  const ran: { worker: string; request: WorkerRequest }[] = []
+  for (const account of accounts) capabilities.registerWorker({
+    ...account, capabilities: ['research'],
+    async run(request) {
+      ran.push({ worker: account.ref, request })
+      const output = digest(request.attemptId)
+      stored.add(output)
+      return { status: 'succeeded', outputs: { result: output } }
+    },
+  })
+  const slots = new Slots(capabilities)
+  // The plan adds a trailing quotaRetryMs constructor argument. Reflect keeps
+  // this test seam compilable before that argument exists in production.
+  const newController = (): WorkController => Reflect.construct(WorkController, [table, specStore, capabilities, undefined, slots, undefined, undefined, 20])
+  let controller = newController()
+  const { id } = await controller.admit({ spec: directTask(['research'], false, capabilities.available()), caller, source: { kind: 'direct-task' }, ...(pinned ? { worker: pinned } : {}) })
+  const runs: Promise<WorkRecord>[] = []
+  t.after(async () => {
+    // cancel rejects for terminal Works; cleanup must preserve the test's
+    // assertion failure instead of introducing a hook failure.
+    const record = controller.get(id)
+    if (record && !TERMINAL.has(record.state.status)) await controller.cancel(id, { caller, reason: 'test cleanup' })
+    await Promise.allSettled(runs)
+  })
+  return {
+    id, ran, capabilities, table, slots,
+    get controller() { return controller },
+    record: () => controller.get(id)!,
+    run: () => { const run = controller.run(id); runs.push(run); return run },
+    reopen() { controller = newController(); return controller },
   }
-  const table = memoryWorkTable()
-  const controller = new WorkController(table, store, capabilities)
-  const admit = async () => {
-    const input = id('task')
-    stored.add(input)
-    return (await controller.admit({ spec: resolve(parseWorkflow(WORKFLOW), capabilities.available(), () => ''), input, caller, source: { kind: 'workflow-file' } })).id
-  }
-  return { controller, readings, quotaCalls, ran, admit, table }
 }
 
-const dispatchedOf = (record: { events: { type: string }[] }) => record.events.find((e) => e.type === 'dispatched') as Extract<WorkerEvent, { type: 'dispatched' }>
-type WorkerEvent = import('../src/record.ts').WorkEvent
-
-test('the step goes to the primary under the ceiling, and the record keeps each reading as a reason', async () => {
-  const t = setup([{ ref: 'sec', reading: read(5, 5) }, { ref: 'prim', priority: 'primary', reading: read(43, 31) }])
-  const done = await t.controller.run(await t.admit())
-  assert.deepEqual(t.ran, ['prim'])
-  assert.deepEqual(dispatchedOf(done).candidates, [
-    { ref: 'sec', selected: false, reason: 'headroom 95% (5h 5%, 7d 5%)' },
-    { ref: 'prim', selected: true, reason: 'primary under 80% (5h 43%, 7d 31%)' },
+test('dispatch chooses the headroom Account and records every candidate reading', async (t) => {
+  const f = await setup(t, [
+    { ref: 'P', priority: 'primary', quota: async () => reading(91, 31) },
+    { ref: 'S', quota: async () => reading(40) },
   ])
-})
-
-test('a primary over the ceiling gives the step to the free Account with the most headroom; an unreadable one is last', async () => {
-  const t = setup([{ ref: 'broken' }, { ref: 'prim', priority: 'primary', reading: read(91, 10) }, { ref: 'a', reading: read(40, 60) }, { ref: 'b', reading: read(30, 20) }])
-  const done = await t.controller.run(await t.admit())
-  assert.deepEqual(t.ran, ['b'])
-  const reasons = Object.fromEntries(dispatchedOf(done).candidates.map((c) => [c.ref, c.reason]))
-  assert.equal(reasons.prim, 'over 80% (5h 91%)')
-  assert.match(reasons.b!, /^headroom 70%/)
-  assert.equal(reasons.broken, 'quota unreadable: no reader')
-})
-
-test('a step with every Account over the ceiling waits and spends no attempt, then starts when a reading drops', { timeout: 10_000 }, async () => {
-  const reset = new Date(Date.now() + 150).toISOString()
-  const t = setup([{ ref: 'a', reading: read(95, 10, reset) }, { ref: 'b', reading: read(10, 90, new Date(Date.now() + 60_000).toISOString()) }])
-  const workId = await t.admit()
-  // The retry timer is unref'd (it never holds a process open); the test holds the loop open.
-  const keepAlive = setInterval(() => undefined, 1000)
-  const running = t.controller.run(workId).finally(() => clearInterval(keepAlive))
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  const waiting = t.controller.live(workId)
-  assert.equal(waiting.length, 1)
-  assert.equal(waiting[0]!.waiting, 'quota')
-  assert.equal(waiting[0]!.resetsAt, reset, 'the earliest reset')
-  assert.deepEqual(t.table.get(workId)!.events.map((e) => e.type), ['admitted'], 'no attempt is spent')
-  assert.deepEqual(t.ran, [])
-  t.readings.set('a', read(2, 10))
-  const done = await running
+  const done = await f.run()
   assert.equal(done.state.status, 'succeeded')
-  assert.deepEqual(t.ran, ['a'])
-  assert.deepEqual(t.controller.live(workId), [])
-  assert.equal(done.events.filter((e) => e.type === 'dispatched').length, 1)
+  assert.deepEqual(f.ran.map((r) => r.worker), ['S'])
+  const [event] = dispatched(done)
+  assert.equal(event?.selected, 'S')
+  assert.equal(event?.candidates.find((c) => c.ref === 'P')?.reason, 'over 80% (5h 91%)')
+  assert.match(event!.candidates.find((c) => c.ref === 'S')!.reason, /^headroom 60%(?: \(|$)/)
 })
-
-test('replay reads the recorded readings and never asks quota again', async () => {
-  const t = setup([{ ref: 'a', reading: read(10, 10) }, { ref: 'b', priority: 'primary', reading: read(95, 0) }])
-  const workId = await t.admit()
-  await t.controller.run(workId)
-  const calls = t.quotaCalls.length
-  assert.ok(calls > 0)
-  assert.equal(t.controller.replay(workId).matches, true)
-  await new WorkController(t.table, (t.controller as unknown as { specs: SpecStore }).specs, (t.controller as unknown as { capabilities: Capabilities }).capabilities).run(workId)
-  assert.equal(t.quotaCalls.length, calls)
+test('dispatch prefers a primary under the ceiling over greater secondary headroom', async (t) => {
+  const f = await setup(t, [
+    { ref: 'S', quota: async () => reading(10) },
+    { ref: 'P', priority: 'primary', quota: async () => reading(43, 31) },
+  ])
+  const [event] = dispatched(await f.run())
+  assert.equal(event?.selected, 'P')
+  assert.equal(event?.candidates.find((c) => c.ref === 'P')?.reason, 'primary under 80% (5h 43%, 7d 31%)')
+})
+for (const throws of [false, true]) {
+  test(`unreadable quota stays usable (${throws ? 'reader throws' : 'unknown version'})`, async (t) => {
+    const f = await setup(t, [{ ref: 'P', quota: async () => {
+      if (throws) throw new Error('unknown version')
+      return { unreadable: 'unknown version' }
+    } }])
+    const done = await f.run()
+    assert.equal(done.state.status, 'succeeded')
+    assert.equal(dispatched(done)[0]?.selected, 'P')
+    assert.match(dispatched(done)[0]!.candidates[0]!.reason, /quota unreadable: .*unknown version/)
+  })
+}
+for (const resetKnown of [true, false]) {
+  test(`quota wait spends no attempt and starts after a reading drops (${resetKnown ? 'earliest reset known' : 'no reset: periodic retry'})`, async (t) => {
+    const earliest = resetKnown ? new Date(Date.now() + 60_000).toISOString() : undefined
+    const later = resetKnown ? new Date(Date.now() + 120_000).toISOString() : undefined
+    let used = 91
+    const f = await setup(t, [
+      { ref: 'P', priority: 'primary', quota: async () => reading(used, 31, later) },
+      { ref: 'S', quota: async () => reading(90, undefined, earliest) },
+    ])
+    const running = f.run()
+    await turns()
+    assert.deepEqual(dispatched(f.record()), [], 'waiting must not dispatch or spend an attempt')
+    assert.equal(f.ran.length, 0)
+    assert.deepEqual(f.record().state.steps.task!.attempts, [])
+    const waiting = f.controller.live(f.id).find((entry) => String(entry.waiting) === 'quota')
+    assert.ok(waiting, 'live view shows waiting: quota')
+    assert.equal(Reflect.get(waiting, 'until'), earliest)
+    for (const ref of ['P', 'S']) assert.equal(f.slots.hasFree(f.capabilities.workerFor(ref)!), true)
+    used = 30
+    await eventually(() => TERMINAL.has(f.record().state.status), 'a changed reading wakes the quota wait without a freed slot')
+    const done = await running
+    assert.equal(done.state.status, 'succeeded')
+    assert.equal(dispatched(done).length, 1)
+    assert.equal(done.state.steps.task!.attempts.length, 1)
+    assert.deepEqual(f.ran.map((r) => r.worker), ['P'])
+    assert.deepEqual(f.controller.live(f.id), [])
+  })
+}
+test('a pinned over-ceiling Account waits rather than failing or falling back', async (t) => {
+  const f = await setup(t, [
+    { ref: 'P', quota: async () => reading(91) },
+    { ref: 'S', quota: async () => reading(10) },
+  ], 'P')
+  f.run()
+  await turns()
+  assert.deepEqual(dispatched(f.record()), [])
+  assert.equal(f.record().state.status, 'running')
+  assert.equal(String(f.controller.live(f.id)[0]?.waiting), 'quota')
+})
+test('reopening and replaying a succeeded Work use recorded reasons without calling quota', async (t) => {
+  let calls = 0
+  let used = 43
+  const f = await setup(t, [{ ref: 'P', priority: 'primary', quota: async () => { calls++; return reading(used, 31) } }])
+  const done = await f.run()
+  assert.ok(calls > 0, 'dispatch must obtain a quota reading')
+  const before = calls
+  const decisions = dispatched(done)
+  assert.equal(decisions[0]?.candidates[0]?.reason, 'primary under 80% (5h 43%, 7d 31%)')
+  used = 99
+  await f.reopen()
+  assert.equal(f.controller.replay(f.id).matches, true)
+  assert.deepEqual(dispatched(f.record()), decisions)
+  assert.equal(calls, before, 'replay must not re-read changed quota')
+})
+test('recovery marks a recorded dispatched attempt lost without re-routing or reading quota', async (t) => {
+  let calls = 0
+  const f = await setup(t, [{ ref: 'P', quota: async () => { calls++; return reading(40) } }])
+  const done = await f.run()
+  assert.ok(calls > 0, 'dispatch must obtain a quota reading')
+  const before = calls
+  // Simulate a durable crash boundary: only admitted/dispatched persisted.
+  const event = dispatched(done)[0]!
+  const events = done.events.slice(0, event.seq + 1)
+  f.table.rows.set(f.id, { ...done, events, state: fold(['task'], events) })
+  f.reopen()
+  await f.controller.interrupt(f.id)
+  assert.equal(f.record().events.at(-1)?.type, 'attempt-lost')
+  assert.deepEqual(dispatched(f.record()), [event])
+  assert.equal(f.controller.replay(f.id).matches, true)
+  assert.equal(calls, before)
+})
+test('cancelling a quota wait ends the Work and clears the live entry and retry', async (t) => {
+  let calls = 0
+  const f = await setup(t, [{ ref: 'P', quota: async () => { calls++; return reading(91) } }])
+  const running = f.run()
+  await turns()
+  assert.equal(String(f.controller.live(f.id)[0]?.waiting), 'quota')
+  await f.controller.cancel(f.id, { caller, reason: 'stop quota wait' })
+  assert.equal((await running).state.status, 'cancelled')
+  assert.deepEqual(f.controller.live(f.id), [])
+  assert.deepEqual(f.ran, [])
+  const before = calls
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  assert.equal(calls, before, 'cancelled waits leave no retry that reads quota')
 })

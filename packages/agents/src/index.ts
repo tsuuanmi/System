@@ -190,6 +190,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return { account, status }
   })
   // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
+  const ceiling = config.quotaCeilingPercent
+  if (ceiling !== undefined && !(typeof ceiling === 'number' && ceiling >= 1 && ceiling <= 100)) throw new Error(`quotaCeilingPercent is ${String(ceiling)}; it must be a number from 1 to 100`)
   const outcomes = new Map<string, { done(): void; refuse(error: Error): void }>()
   for (const { account } of entries) {
     if (account.runtime !== 'web' || webRefProblem(account) || !webWorker) continue
@@ -211,8 +213,6 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         if (held) throw new Error(`priority: primary is already held by ${held}; at most one account per Runtime may be primary`)
         primaries.set(account.runtime, account.ref)
       }
-      const ceiling = config.quotaCeilingPercent
-      if (ceiling !== undefined && !(typeof ceiling === 'number' && ceiling >= 1 && ceiling <= 100)) throw new Error(`quotaCeilingPercent is ${String(ceiling)}; it must be a number from 1 to 100`)
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
       const tiers = TIERS.filter((tier) => account.models?.[tier])

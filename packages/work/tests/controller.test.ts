@@ -410,7 +410,7 @@ test('routing records every candidate and why it was or was not chosen', async (
   const done = await runFixture(h, 'research.yaml')
   const dispatched = done.events.find((e) => e.type === 'dispatched')
   assert.deepEqual(dispatched && 'candidates' in dispatched && dispatched.candidates, [
-    { ref: 'fake', selected: true, reason: 'provides research, web-search, tier.standard' },
+    { ref: 'fake', selected: true, reason: 'no quota reader' },
     { ref: 'coder-only', selected: false, reason: 'lacks research, web-search, tier.standard' },
   ])
 })

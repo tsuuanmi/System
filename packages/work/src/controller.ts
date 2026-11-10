@@ -193,11 +193,13 @@ export class WorkController {
   /** When each Worker step (`<work>/<step>`) first found every capable Account full, in memory only. */
   private readonly waitingForSlot = new Map<string, number>()
   /** The Worker steps (`<work>/<step>`) whose capable, free Accounts are all over the quota ceiling, in memory only; `timer` tries them again. */
-  private readonly waitingForQuota = new Map<string, { workId: string; stepId: string; worker: string; since: number; resetsAt?: string; timer: NodeJS.Timeout }>()
+  private readonly waitingForQuota = new Map<string, { workId: string; stepId: string; worker: string; since: number; until?: string; timer: NodeJS.Timeout }>()
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
+  private readonly quotaRetryMs: number
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims()) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims(), quotaRetryMs = QUOTA_RETRY_MS) {
+    this.quotaRetryMs = quotaRetryMs
     this.table = table
     this.claimed = claims
     this.specs = specs
@@ -235,7 +237,7 @@ export class WorkController {
     const since = waiting ? new Date(waiting.since).toISOString() : ''
     const quota = [...this.waitingForQuota.values()].filter((w) => w.workId === workId).map((w): LiveAttempt => {
       const at = new Date(w.since).toISOString()
-      return { stepId: w.stepId, attemptId: '', worker: w.worker, startedAt: at, lastActivityAt: at, elapsedSeconds: Math.round((Date.now() - w.since) / 1000), quietSeconds: 0, stalled: false, waiting: 'quota', ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}) }
+      return { stepId: w.stepId, attemptId: '', worker: w.worker, startedAt: at, lastActivityAt: at, elapsedSeconds: Math.round((Date.now() - w.since) / 1000), quietSeconds: 0, stalled: false, waiting: 'quota', ...(w.until ? { until: w.until } : {}) }
     })
     return [
       ...this.running.of(workId),
@@ -815,13 +817,13 @@ export class WorkController {
     const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))))
     if (route.quotaWait) {
       const was = this.waitingForQuota.get(waitKey)
-      if (!was || was.resetsAt !== route.quotaWait.resetsAt) {
+      if (!was || was.until !== route.quotaWait.resetsAt) {
         if (was) clearTimeout(was.timer)
-        const delay = Math.min(QUOTA_RETRY_MS, route.quotaWait.resetsAt ? Math.max(0, Date.parse(route.quotaWait.resetsAt) - Date.now()) : QUOTA_RETRY_MS)
+        const delay = Math.min(this.quotaRetryMs, route.quotaWait.resetsAt ? Math.max(0, Date.parse(route.quotaWait.resetsAt) - Date.now()) : this.quotaRetryMs)
         const timer = setTimeout(() => { this.waitingForQuota.delete(waitKey); this.notify() }, delay)
         // A retry timer never keeps the process alive by itself.
         timer.unref()
-        this.waitingForQuota.set(waitKey, { workId: record.id, stepId: s.id, worker: route.quotaWait.ref, since: was?.since ?? Date.now(), ...(route.quotaWait.resetsAt ? { resetsAt: route.quotaWait.resetsAt } : {}), timer })
+        this.waitingForQuota.set(waitKey, { workId: record.id, stepId: s.id, worker: this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))[0]!.ref, since: was?.since ?? Date.now(), ...(route.quotaWait.resetsAt ? { until: route.quotaWait.resetsAt } : {}), timer })
       }
       return { record, blocked: true }
     }
