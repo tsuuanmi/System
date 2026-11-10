@@ -2,6 +2,7 @@
  * Capability registry: Worker and verifier rows register here; admission and
  * routing read it. Routing is by capability, never by domain or vendor.
  */
+import { DEFAULT_QUOTA_CEILING_PERCENT, rankByHeadroom, type QuotaReading } from './headroom.ts'
 import type { ExecutorRecord, UsageObserved } from './record.ts'
 import type { AvailableCapabilities } from './workflow.ts'
 
@@ -66,6 +67,12 @@ export interface WorkerPort {
   capabilities: readonly string[]
   /** How many attempts of this Account run at once; default 1. */
   maxConcurrentAttempts?: number
+  /** The Account to prefer while its quota is under the ceiling; absent is secondary. */
+  priority?: 'primary' | 'secondary'
+  /** The share of a quota window (percent used) from which the Account is not chosen; default 80. The row's `quotaCeilingPercent`. */
+  quotaCeilingPercent?: number
+  /** The Account's quota windows (a cached read, no model turn); absent for an Account with none (`web`), which ranks after every readable one. */
+  quota?(): Promise<QuotaReading>
   /** Whether the process of an attempt is confirmed gone: what settles a lost attempt, which until then keeps its Account's slot. Absent: never confirmed. */
   gone?(attemptId: string): Promise<boolean>
   run(request: WorkerRequest): Promise<WorkerResult>
@@ -176,6 +183,8 @@ export interface Route<P> {
   candidates: { ref: string; selected: boolean; reason: string }[]
   /** Some port is capable, but none has a free slot: the step waits for one instead of failing. */
   full?: boolean
+  /** Every capable Account with a free slot is over its quota ceiling: the step waits (until `resetsAt`, if known) without failing. */
+  quotaWait?: { resetsAt?: string }
 }
 
 export class Capabilities {
@@ -207,12 +216,30 @@ export class Capabilities {
   }
 
   /**
-   * The first registered Worker with every needed capability and, when `free` is given, a free slot; every candidate's reason is kept.
+   * The Worker for a step: capable (every capability needed), allowed and, when `free` is given, with a free slot; every candidate's reason is kept.
+   * Among those, `rankByHeadroom` over `readings` (the quota of each Account that has one, read by the caller): the primary under the ceiling,
+   * else the most headroom, unreadable and quota-less Accounts last, ties by registration order. Without readings that is the first registered.
    * `only`: the one Worker allowed (`system work submit --worker`, or a takeover by `system work retry --worker`).
-   * Capable Workers but none free: `selected` is absent and `full` is set.
+   * Capable Workers but none free: `selected` is absent and `full` is set. All free ones over the ceiling: `selected` is absent and `quotaWait` is set.
    */
-  routeWorker(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean): Route<WorkerPort> {
-    return route(this.workers, needs, only, free)
+  routeWorker(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean, readings: ReadonlyMap<string, QuotaReading> = new Map()): Route<WorkerPort> {
+    const rankable = this.rankable(needs, only, free)
+    const ranking = rankByHeadroom(rankable.map((w) => ({ ref: w.ref, priority: w.priority, reading: readings.get(w.ref), ceiling: w.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT })))
+    let full = false
+    const candidates = this.workers.map((w) => {
+      const missing = needs.filter((c) => !w.capabilities.includes(c))
+      if (only !== undefined && w.ref !== only) return { ref: w.ref, selected: false, reason: `only ${only} is allowed` }
+      if (missing.length) return { ref: w.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
+      if (!rankable.includes(w)) { full = true; return { ref: w.ref, selected: false, reason: 'capable; no free slot' } }
+      return { ref: w.ref, selected: ranking.selected === w.ref, reason: ranking.reasons[w.ref]! }
+    })
+    const selected = rankable.find((w) => w.ref === ranking.selected)
+    return { selected, candidates, ...(!selected && ranking.waitUntil ? { quotaWait: ranking.waitUntil } : !selected && full ? { full } : {}) }
+  }
+
+  /** The Workers `routeWorker` ranks: capable, allowed, and with a free slot when `free` is given. */
+  rankable(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean): WorkerPort[] {
+    return this.workers.filter((w) => (only === undefined || w.ref === only) && needs.every((c) => w.capabilities.includes(c)) && (!free || free(w)))
   }
 
   /** The Worker (Account) of a ref. */
@@ -237,17 +264,14 @@ export class Capabilities {
   }
 }
 
-function route<P extends { ref: string; capabilities: readonly string[] }>(ports: readonly P[], needs: readonly string[], only?: string, free?: (port: P) => boolean): Route<P> {
+function route<P extends { ref: string; capabilities: readonly string[] }>(ports: readonly P[], needs: readonly string[]): Route<P> {
   let selected: P | undefined
-  let full = false
   const candidates = ports.map((port) => {
     const missing = needs.filter((c) => !port.capabilities.includes(c))
-    if (only !== undefined && port.ref !== only) return { ref: port.ref, selected: false, reason: `only ${only} is allowed` }
     if (missing.length) return { ref: port.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
     if (selected) return { ref: port.ref, selected: false, reason: `capable; ${selected.ref} registered first` }
-    if (free && !free(port)) { full = true; return { ref: port.ref, selected: false, reason: 'capable; no free slot' } }
     selected = port
     return { ref: port.ref, selected: true, reason: `provides ${needs.join(', ')}` }
   })
-  return { selected, candidates, ...(!selected && full ? { full } : {}) }
+  return { selected, candidates }
 }

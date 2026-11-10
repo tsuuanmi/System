@@ -15,6 +15,7 @@ import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts
 import type { Task, Verdict } from './kinds.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import { activeWork, itemNote, whoHas } from './status.ts'
+import type { QuotaReading } from './headroom.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
@@ -69,6 +70,8 @@ export interface SpecStore {
 
 /** How often a running attempt checks for a cancel request. */
 const CANCEL_POLL_MS = 250
+/** A step waiting on quota is tried again at the earliest reset, or at least this often (a reading may have changed). */
+const QUOTA_RETRY_MS = 5 * 60_000
 
 export const SPEC_KIND = 'workflow-spec'
 export const SPEC_SCHEMA_VERSION = 1
@@ -191,10 +194,14 @@ export class WorkController {
   private readonly waitingForCheck = new Map<string, { stepId: string; verifier: string; since: number }>()
   /** When each Worker step (`<work>/<step>`) first found every capable Account full, in memory only. */
   private readonly waitingForSlot = new Map<string, number>()
+  /** The Worker steps (`<work>/<step>`) whose capable, free Accounts are all over the quota ceiling, in memory only; `timer` tries them again. */
+  private readonly waitingForQuota = new Map<string, { workId: string; stepId: string; worker: string; since: number; until?: string; timer: NodeJS.Timeout }>()
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
+  private readonly quotaRetryMs: number
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims()) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims(), quotaRetryMs = QUOTA_RETRY_MS) {
+    this.quotaRetryMs = quotaRetryMs
     this.table = table
     this.claimed = claims
     this.specs = specs
@@ -230,8 +237,13 @@ export class WorkController {
   live(workId: string): LiveAttempt[] {
     const waiting = this.waitingForCheck.get(workId)
     const since = waiting ? new Date(waiting.since).toISOString() : ''
+    const quota = [...this.waitingForQuota.values()].filter((w) => w.workId === workId).map((w): LiveAttempt => {
+      const at = new Date(w.since).toISOString()
+      return { stepId: w.stepId, attemptId: '', worker: w.worker, startedAt: at, lastActivityAt: at, elapsedSeconds: Math.round((Date.now() - w.since) / 1000), quietSeconds: 0, stalled: false, waiting: 'quota', ...(w.until ? { until: w.until } : {}) }
+    })
     return [
       ...this.running.of(workId),
+      ...quota,
       ...(waiting ? [{ stepId: waiting.stepId, attemptId: '', worker: waiting.verifier, startedAt: since, lastActivityAt: since, elapsedSeconds: Math.round((Date.now() - waiting.since) / 1000), quietSeconds: 0, stalled: false, waiting: 'a check slot' as const }] : []),
     ]
   }
@@ -421,6 +433,7 @@ export class WorkController {
       if (failures.length) throw failures[0]
     }
     this.waitingForCheck.delete(workId)
+    for (const key of [...this.waitingForQuota.keys()]) if (this.waitingForQuota.get(key)!.workId === workId) this.stopWaitingForQuota(key)
     // A step may fail the Work while others are in flight: they are observed, after the terminal event.
     await Promise.all(flying)
     if (failures.length) throw failures[0]
@@ -801,8 +814,21 @@ export class WorkController {
     if (takeover?.failure) inputs.failure = takeover.failure
     const admitted = record.events[0]
     const only = takeover?.worker ?? (admitted?.type === 'admitted' ? admitted.worker : undefined)
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w))
     const waitKey = `${record.id}/${s.id}`
+    // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
+    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))))
+    if (route.quotaWait) {
+      const was = this.waitingForQuota.get(waitKey)
+      if (!was || was.until !== route.quotaWait.resetsAt) {
+        if (was) clearTimeout(was.timer)
+        const delay = Math.min(this.quotaRetryMs, route.quotaWait.resetsAt ? Math.max(0, Date.parse(route.quotaWait.resetsAt) - Date.now()) : this.quotaRetryMs)
+        const timer = setTimeout(() => { this.waitingForQuota.delete(waitKey); this.notify() }, delay)
+        // A retry timer never keeps the process alive by itself.
+        timer.unref()
+        this.waitingForQuota.set(waitKey, { workId: record.id, stepId: s.id, worker: this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))[0]!.ref, since: was?.since ?? Date.now(), ...(route.quotaWait.resetsAt ? { until: route.quotaWait.resetsAt } : {}), timer })
+      }
+      return { record, blocked: true }
+    }
     if (route.full) {
       if (!this.waitingForSlot.has(waitKey)) this.waitingForSlot.set(waitKey, Date.now())
       return { record, blocked: true }
@@ -810,8 +836,9 @@ export class WorkController {
     if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled Worker ${only ? `${only} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`) }
     const attemptId = `attempt:${randomUUID()}`
     if (!this.slots.reserve(route.selected, attemptId)) return { record, blocked: true }
-    const waitedMs = this.waited(this.waitingForSlot.get(waitKey))
+    const waitedMs = this.waited(Math.min(this.waitingForSlot.get(waitKey) ?? Infinity, this.waitingForQuota.get(waitKey)?.since ?? Infinity))
     this.waitingForSlot.delete(waitKey)
+    this.stopWaitingForQuota(waitKey)
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
@@ -822,6 +849,19 @@ export class WorkController {
       throw error
     }
     return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
+  }
+
+  /** The quota of each of the Workers that has one; a reader that throws is an unreadable Account, never a failed step. */
+  private async readQuotas(workers: readonly WorkerPort[]): Promise<Map<string, QuotaReading>> {
+    const read = await Promise.all(workers.filter((w) => w.quota).map(async (w): Promise<[string, QuotaReading]> => {
+      try { return [w.ref, await w.quota!()] } catch (error) { return [w.ref, { unreadable: (error as Error).message }] }
+    }))
+    return new Map(read)
+  }
+
+  private stopWaitingForQuota(key: string): void {
+    clearTimeout(this.waitingForQuota.get(key)?.timer)
+    this.waitingForQuota.delete(key)
   }
 
   /** `waitedMs` for a dispatch of a step that waited since `since`. */
