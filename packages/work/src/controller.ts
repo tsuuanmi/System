@@ -692,7 +692,7 @@ export class WorkController {
       if (effect.state === 'absent') return this.finish(after, 'failed', `${intent.stepId} failed: ${applied.message}; the remote shows nothing published`)
       return after
     }
-    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail })
+    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail, ...(applied.rejected ? { rejected: applied.rejected } : {}) })
   }
 
   /** In the lane: dispatch every ready step that can start now, in Workflow file order. */
@@ -770,6 +770,7 @@ export class WorkController {
     }
     const autoReopens = (stepId: string, source: string): number => record.events.filter((e) => {
       if (e.type !== 'reopened' || !e.automatic || e.stepId !== stepId) return false
+      if (e.failedEffect) return e.failedEffect === source
       if (e.objectedBy) return e.objectedBy === source
       if (source === stepId) return !e.failure
       return record.events.some((v) => v.type === 'verified' && v.stepId === source && v.verdictId === e.failure)
@@ -790,6 +791,19 @@ export class WorkController {
       if (!target || !subject) continue
       const failure = await this.specs.putVerdict({ subject, criteria: subject, capability: 'objection', verifier: { ref: `step:${o.id}`, version: '1' }, verdict: 'fail', reason: observed.objection, evidence: [] })
       return this.append(record, { type: 'reopened', automatic: true, objectedBy: o.id, stepId: target.id, reason: `${o.id} objects: ${observed.objection}`, failure, reset: [target.id, ...dependentsOf(spec, target.id)] })
+    }
+    // An effect step whose outcome was observed as a conflict or a failed merge check reopens the Worker step that lists it, on the base's new tip.
+    // An unknown or reconciled outcome never carries `rejected`, so it is never retried.
+    for (const e of spec.steps.filter(isEffectStep)) {
+      if (record.state.steps[e.id]!.state !== 'failed') continue
+      const observed = record.events.findLast((x) => x.type === 'effect-observed' && x.stepId === e.id)
+      const base = observed?.type === 'effect-observed' ? observed.detail?.base : undefined
+      if (observed?.type !== 'effect-observed' || observed.state !== 'failed' || !observed.rejected || !base) continue
+      const target = workers.findLast((s) => s.retry?.onFail.includes(e.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, e.id) < s.retry.max)
+      const previous = target && record.state.steps[target.id]!.outputs[target.outputs[0]!]
+      if (!target || !previous) continue
+      const failure = await this.specs.putVerdict({ subject: previous, criteria: previous, capability: 'publish', verifier: { ref: `step:${e.id}`, version: '1' }, verdict: 'fail', reason: observed.reason, evidence: [] })
+      return this.append(record, { type: 'reopened', automatic: true, failedEffect: e.id, stepId: target.id, reason: `${e.id} failed: ${observed.reason}`, failure, previous, base, reset: [target.id, ...dependentsOf(spec, target.id)] })
     }
     for (const s of workers) {
       if (!s.retry?.onFail.includes(s.id) || record.state.steps[s.id]!.state !== 'failed' || autoReopens(s.id, s.id) >= s.retry.max) continue
@@ -820,6 +834,7 @@ export class WorkController {
     const takeover = reopened?.type === 'reopened' ? reopened : undefined
     if (takeover?.previous) inputs.previous = takeover.previous
     if (takeover?.failure) inputs.failure = takeover.failure
+    if (takeover?.base) inputs.base = takeover.base
     const admitted = record.events[0]
     const only = takeover?.worker ?? (admitted?.type === 'admitted' ? admitted.worker : undefined)
     const waitKey = `${record.id}/${s.id}`
@@ -1030,7 +1045,7 @@ export class WorkController {
   /** The verdict of a check in `retry.onFail` that automatically reopened this step, with its change to hand back (`retry.rerunUnchanged`). */
   private failingCheckOf(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): string | undefined {
     const r = this.latestReopening(record, s.id)
-    if (!r?.automatic || !r.failure || r.objectedBy || !r.previous) return undefined
+    if (!r?.automatic || !r.failure || r.objectedBy || r.failedEffect || !r.previous) return undefined
     return record.events.some((v) => v.type === 'verified' && v.verdictId === r.failure && v.verdict === 'fail' && s.retry?.onFail.includes(v.stepId)) ? r.failure : undefined
   }
 

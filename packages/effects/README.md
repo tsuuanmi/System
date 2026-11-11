@@ -56,7 +56,13 @@ The controller records `effect-intended` before `apply` and
   the operator approved (df-25: the base fails the check too), which counts as a
   pass. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
   exactly that commit by a push with a lease on the checked tip; if the base
-  moved, the change is merged and checked again (three rounds at most). The
+  moved, the change is merged and checked again (three rounds at most). A
+  conflict and a failing check on the merge return `rejected: 'conflict' |
+  'merge-check'` and `detail.base`, the `git-tree@1` Artifact of the tip (sc-7):
+  a Worker step that lists the publish step in `retry.onFail` is reopened on that
+  tip with its previous change and the reason as input
+  ([workflow composition](../../docs/architecture/workflow-composition.md)). No
+  other failure sets `rejected`, and an unknown outcome is never retried. The
   outcome detail adds `merged: "true"`, `mergeCommit` and, after a merge,
   `checkedOn` (the tip it was checked with). GitHub's merge endpoint is not
   used. A branch protection requiring pull requests refuses the push, which

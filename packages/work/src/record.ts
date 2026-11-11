@@ -106,6 +106,10 @@ export const eventSchema = z.discriminatedUnion('type', [
     failure: contentIdSchema.optional(),
     /** An automatic reopening after this later step's objection: the step, whose recorded objection is handed to the new attempt as input `failure`. */
     objectedBy: z.string().optional(),
+    /** An automatic reopening after this later effect step's observed conflict or failed merge check (`rejected`); `failure` is its reason as a verdict. */
+    failedEffect: z.string().optional(),
+    /** The git-tree Artifact of the base branch's current tip, handed to the new attempt as input `base`. */
+    base: contentIdSchema.optional(),
     /** Only this Worker may take the step over. */
     worker: z.string().optional(),
     /** The previous attempt's partial output, handed to the new attempt as input `previous`. */
@@ -125,6 +129,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     /** `absent` and `unknown` come from reconciliation, which only reads the remote. */
     state: z.enum(['applied', 'failed', 'absent', 'unknown']), reason: z.string(),
     detail: z.record(z.string(), z.string()).optional(),
+    /** The remote observed a conflict with the base or a failing check on the merge (`EffectOutcome.rejected`); only such an outcome may reopen a step. */
+    rejected: z.enum(['conflict', 'merge-check']).optional(),
   }).strict(),
   z.object({
     type: z.literal('decided'), seq: z.number().int(), at, caller: storedCallerSchema,

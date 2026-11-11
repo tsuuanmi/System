@@ -334,7 +334,7 @@ test('a failed, errored or missing verdict fails the Work; inconclusive is held'
 
 test('without an accept step a failed verdict still fails the Work', async () => {
   const h = harness({ verdict: 'fail' })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml').replace(/  - id: publish[\s\S]*$/, '')), h.capabilities.available(), fixture)
+  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml').replace(/  - id: publish[\s\S]*$/, '').replace('checks.checks, publish', 'checks.checks')), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.status, 'failed')

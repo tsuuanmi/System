@@ -572,3 +572,32 @@ for (const mode of ['event', 'none', 'throwing'] as const) {
     }
   })
 }
+
+
+for (const withBase of [true, false]) {
+  test(`publish reopening workspace: ${withBase ? 'base wins over previous' : 'takeover still starts at previous'}`, async () => {
+    const { artifacts } = memory()
+    const repository = repo()
+    const input = await task(artifacts, 'reapply the previous change', repository)
+    const putTree = async () => (await artifacts.put({ ...GIT_TREE_KIND, content: await snapshot(repository), classification: 'local-private', producer: { type: 'system', ref: 'test' } })).id
+    const previous = await putTree()
+    writeFileSync(join(repository, 'TIP.md'), 'new base tip\n')
+    execFileSync('git', ['-C', repository, 'add', '.'])
+    execFileSync('git', ['-C', repository, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'new tip'])
+    const base = await putTree()
+    const failure = (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from('merge conflict'), mediaType: 'text/plain', classification: 'local-private', producer: { type: 'system', ref: 'test' } })).id
+    const req = request({ task: input, previous, ...(withBase ? { base, failure } : {}) }, ['change'])
+    const ws = await prepare(artifacts, req, join(root, `ws-publish-${withBase}`))
+    try {
+      const commit = treeOf(artifacts, withBase ? base : previous).commit
+      assert.equal(ws.base?.commit, commit)
+      assert.equal(execFileSync('git', ['-C', ws.work, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), commit)
+      const text = prompt(ws, req)
+      if (withBase) {
+        assert.ok(text.includes(`- base: the working directory starts from commit ${commit}`))
+        assert.match(text, /- previous: .*not the starting point/)
+        assert.doesNotMatch(text, /- previous: the working directory starts/)
+      } else assert.ok(text.includes(`- previous: the working directory starts from commit ${commit}`))
+    } finally { await cleanup(ws) }
+  })
+}

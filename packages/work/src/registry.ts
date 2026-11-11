@@ -154,6 +154,8 @@ export interface EffectIntent {
 
 export interface EffectOutcome {
   state: 'applied' | 'failed'
+  /** Set only on a `failed` outcome the remote observed as a refusal that a new change on a newer base can fix; `detail.base` is then the git-tree Artifact of the base tip. Never set for an unknown outcome or other failures. */
+  rejected?: 'conflict' | 'merge-check'
   reason: string
   /** What the remote side now holds, such as a branch, commit and pull request. */
   detail: Record<string, string>

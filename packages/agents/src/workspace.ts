@@ -53,13 +53,16 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
   rmSync(root, { recursive: true, force: true })
   const ws: Workspace = { root, home: join(root, 'home'), inputs: join(root, 'in'), outputs: join(root, 'out'), work: join(root, 'work'), listed: [], context: [] }
   for (const dir of [ws.home, ws.inputs, ws.outputs]) mkdirSync(dir, { recursive: true, mode: 0o700 })
-  // `previous` (a takeover's partial output) wins as the starting tree; then inputs in name order.
-  const names = Object.keys(request.inputs).sort((a, b) => (a === 'previous' ? -1 : b === 'previous' ? 1 : a < b ? -1 : 1))
+  // `base` (the base branch's new tip after a refused publish) wins as the starting tree, then `previous` (a takeover's partial output); then inputs in name order.
+  const rank = (name: string) => (name === 'base' ? 0 : name === 'previous' ? 1 : 2)
+  const names = Object.keys(request.inputs).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1))
   for (const name of names) {
     const envelope = envelopeOf(artifacts, request.inputs[name]!)
     if (envelope.kind === GIT_TREE_KIND.kind) {
-      if (!ws.base) ws.base = envelope.content as GitTreeContent
-      ws.listed.push({ name, where: `the working directory starts from commit ${(envelope.content as GitTreeContent).commit}` })
+      const start = !ws.base
+      if (start) ws.base = envelope.content as GitTreeContent
+      const commit = (envelope.content as GitTreeContent).commit
+      ws.listed.push({ name, where: start ? `the working directory starts from commit ${commit}` : `commit ${commit} of the repository of the working directory (git show or cherry-pick it); not the starting point` })
     } else if (envelope.kind === TASK_KIND.kind) {
       const task = envelope.content as Task
       ws.instructions = task.instructions
