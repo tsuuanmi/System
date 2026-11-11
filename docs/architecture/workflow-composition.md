@@ -136,8 +136,17 @@ neither. A later Worker step may also be in `onFail`: when its final message has
 `OBJECTION: <what and why>`, that step fails with the text as its reason, and this step is
 reopened (budget counted per objecting step) with a `fail` verdict Artifact holding the text as
 input `failure`; a step no other step lists cannot object.
-A later effect step may also be in `onFail` (sc-7): when its outcome was observed as a conflict with the base or a failing check on the merge (`rejected` on `effect-observed`; see the [effects README](../../packages/effects/README.md)), this step is reopened (budget counted per effect step) with the reason as a `fail` verdict Artifact in input `failure`, its previous change as `previous`, and the base's current tip as `base`, which is the Worker's starting tree; the steps after it, publish included, run again. An unknown or reconciled outcome never carries `rejected`, so it is never retried (authority and effects invariant). Anything else, and every later
-failure, is the operator's `work retry`.
+A later effect step may also be in `onFail` (sc-7): when its outcome was observed as
+a conflict with the base or a failing check on the merge (`rejected` on
+`effect-observed`; see the [effects README](../../packages/effects/README.md)), this
+step is reopened (budget counted per effect step) with the reason as a `fail` verdict
+Artifact in input `failure`, its previous change as `previous`, and the base's current
+tip as `base`, which is the Worker's starting tree. The steps after it, publish
+included, run again. A `freeze`d change is restored over the new one as before, so a
+test file that the base changed since is put back as the tests step wrote it. An
+unknown or reconciled outcome never carries `rejected`, so it is never retried
+(authority and effects invariant). Anything else, and every later failure, is the
+operator's `work retry`.
 With `rerunUnchanged: true` in `retry` (sc-9), a step reopened by a failing check that then
 changes nothing does not fail with "no change": the check runs again once on the same change
 (the `observed` event names the first verdict as `unchangedAfter`). A pass goes on and its
@@ -154,6 +163,10 @@ after it, `effect-observed`. A lost host or a failed `apply` leads to
 `reconcile`, which only reads the remote: `applied` is recorded, `absent` is
 applied again, `unknown` holds the Work until a later run reads a definite
 outcome. An effect is never retried blindly, and runs only on a `pass`.
+A publish refused for a conflict or a failing merge check is observed as such, and
+its Worker step is reopened on the base's new tip (`retry`, above); the effect then
+runs again on the new change, a new subject with a new operation. Nothing else is
+retried.
 
 **Operator decisions:** Work held for an inconclusive verdict, an effect that
 needs approval, or `approval: operator` records the step it awaits.

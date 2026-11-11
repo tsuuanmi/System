@@ -61,8 +61,8 @@ The controller records `effect-intended` before `apply` and
   'merge-check'` and `detail.base`, the `git-tree@1` Artifact of the tip (sc-7):
   a Worker step that lists the publish step in `retry.onFail` is reopened on that
   tip with its previous change and the reason as input
-  ([workflow composition](../../docs/architecture/workflow-composition.md)). No other failure sets `rejected`, and an unknown
-  outcome is never retried. The
+  ([workflow composition](../../docs/architecture/workflow-composition.md)). No
+  other failure sets `rejected`, and an unknown outcome is never retried. The
   outcome detail adds `merged: "true"`, `mergeCommit` and, after a merge,
   `checkedOn` (the tip it was checked with). GitHub's merge endpoint is not
   used. A branch protection requiring pull requests refuses the push, which

@@ -182,7 +182,9 @@ model is recorded for it.
    listed in the prompt as operator-supplied data, not instructions), `out/`
    (output files), `work/`. `work/` is a detached `git worktree` of the exact
    commit an input names (`base` first, then `previous`, then a `git-tree@1` input or a
-   task's `base`; a git-tree input that is not the starting point is listed in the prompt as a commit of the same repository, to show or cherry-pick), or an empty directory.
+   task's `base`; a git-tree input that is not the starting point is listed in the
+   prompt as a commit of the same repository, to show or cherry-pick), or an empty
+   directory.
 2. **Environment:** every host variable is removed except `PATH`, `LANG`,
    `LC_ALL` and `TZ`. The agent gets `HOME`, `TMPDIR` and its account's
    credential only: `CLAUDE_CODE_OAUTH_TOKEN`, or a fresh `CODEX_HOME` holding
