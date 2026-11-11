@@ -135,7 +135,7 @@ each, once per choice):
    that reset, or every 5 minutes, whichever comes first.
 5. An attempt that fails because its account is out of quota or credits (sc-14) is recorded as
    `limited`, not failed. The account's reading is read again at once (`quota(ref, { fresh })`
-   drops the cache) and the account is passed over for that step for 5 minutes. The step is
+   drops the cache) and the account is passed over for every step for 5 minutes. The step is
    routed again: another account under the ceiling takes it, or with none it waits as in rule 4.
    It spends no attempt or retry.
 
