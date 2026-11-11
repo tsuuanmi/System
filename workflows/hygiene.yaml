@@ -7,7 +7,7 @@
 # scouts and the plan leave it unchanged and write their report as a file.
 schema: system.workflow/v1
 id: hygiene
-version: 2
+version: 3
 steps:
   - id: scout-docs
     capabilities: [code-write, tier.economy]
@@ -74,12 +74,17 @@ steps:
       task: $work.input
       plan: $steps.plan.plan
     outputs: [change]
-    # One further attempt on the same change when the checks fail.
-    retry: { onFail: [checks.checks], max: 1 }
+    # One further attempt on the same change when the checks fail, and one on the base's new tip when the publish is refused for a conflict or a failing check on the merge (sc-7).
+    retry: { onFail: [checks.checks, publish], max: 1 }
     instructions: |
       Make the changes in the plan, and nothing else. Behaviour must stay the
       same: where you remove code, the tests that remain must still pass.
       Update the docs a change makes stale, in the same change.
+      If your input has a base, your working directory is the base branch's
+      current tip, because the publish of your previous change was refused (a
+      conflict or failing checks on the merge): re-apply your previous change on it (git
+      cherry-pick or git diff, then apply), resolve the conflicts, read the
+      failure for what failed, and never give up the intent of the change.
   - id: checks
     dependsOn: [implement]
     uses: code-checks.yaml

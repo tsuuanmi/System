@@ -4,15 +4,22 @@
 # accepted on the verdict.
 schema: system.workflow/v1
 id: software-engineering
-version: 1
+version: 2
 steps:
   - id: implement
     capabilities: [code-write, code.develop]
     inputs:
       task: $work.input
     outputs: [change]
-    # One automatic further attempt on the same change when the checks fail.
-    retry: { onFail: [checks.checks], max: 1 }
+    # One automatic further attempt on the same change when the checks fail, and one on the base's new tip when the publish is refused for a conflict or a failing check on the merge (sc-7).
+    retry: { onFail: [checks.checks, publish], max: 1 }
+    instructions: |
+      If your input has a base, your working directory is the base branch's
+      current tip, because the publish of your previous change was refused (a
+      conflict or failing checks on the merge): re-apply your previous change on it (git
+      cherry-pick or git diff, then apply), resolve the conflicts, read the
+      failure for what failed, and never give up the intent of the change.
+
   - id: checks
     dependsOn: [implement]
     uses: code-checks.yaml

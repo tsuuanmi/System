@@ -15,7 +15,7 @@ See [GLOSSARY.md](../GLOSSARY.md) for the term.
   `tier.standard`: the plan's tests, failing, before any code; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
   `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
   and a `red: fail` one fails on the tests' change; an `inconclusive` verdict holds the Work before `implement`: approve continues, deny fails) → `implement`
-  (`code-write`, `code.develop`: make them pass; `freeze`s the tests step's files: an edit to one is undone when its change is recorded (dg-10); one `retry` per `tests-frozen` and `checks-code`, and a no-change result after a failing `checks-code` runs that check again once on the same change (`rerunUnchanged`, sc-9); a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
+  (`code-write`, `code.develop`: make them pass; `freeze`s the tests step's files: an edit to one is undone when its change is recorded (dg-10); one `retry` per `tests-frozen`, `checks-code` and `publish` (a publish refused for a conflict with the base or a failing check on the merge reopens `implement` on the base's new tip, sc-7; version 4), and a no-change result after a failing `checks-code` runs that check again once on the same change (`rerunUnchanged`, sc-9); a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
   `tests-frozen` (`code.required-checks`, criteria `tests-frozen-v1`: no file the
   tests step wrote changed; the backstop of `freeze`) → `checks-code` → `docs` (`code.develop`, `code.docs`,
   `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
@@ -24,7 +24,7 @@ See [GLOSSARY.md](../GLOSSARY.md) for the term.
 - [software-engineering.yaml](software-engineering.yaml) — `implement`
   (`code-write`, `code.develop`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
   (`git.publish`: the checked commit to `system/<work>`, one draft pull
-  request) → `accept`. Still fits a change too small for a plan, a change
+  request) → `accept`. `implement`'s `retry` also names `publish` (sc-7: a conflict or a failing check on the merge reopens it on the base's new tip; version 2). Still fits a change too small for a plan, a change
   that keeps behaviour (a cleanup, a refactor, a docs-only change), and a
   repository with no `red:` in its `.system/checks.yaml` (feature.yaml's red
   check would refuse it).
@@ -37,7 +37,7 @@ See [GLOSSARY.md](../GLOSSARY.md) for the term.
   the plan reads.
 - [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
   (`code-write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
-  is worth doing) → `implement` → `checks` → `publish` → `accept`: one pull
+  is worth doing) → `implement` (`retry` on `checks.checks` and `publish`, sc-7; version 3) → `checks` → `publish` → `accept`: one pull
   request of cleanup for any repository that has `.system/checks.yaml`. Like
   software-engineering.yaml it fits a change that keeps behaviour: feature.yaml's
   red check needs a new failing test, so such a change cannot pass it.

@@ -135,7 +135,8 @@ IDs) and the change as `previous`; after a Worker failure it starts fresh with
 neither. A later Worker step may also be in `onFail`: when its final message has a line
 `OBJECTION: <what and why>`, that step fails with the text as its reason, and this step is
 reopened (budget counted per objecting step) with a `fail` verdict Artifact holding the text as
-input `failure`; a step no other step lists cannot object. Anything else, and every later
+input `failure`; a step no other step lists cannot object.
+A later effect step may also be in `onFail` (sc-7): when its outcome was observed as a conflict with the base or a failing check on the merge (`rejected` on `effect-observed`; see the [effects README](../../packages/effects/README.md)), this step is reopened (budget counted per effect step) with the reason as a `fail` verdict Artifact in input `failure`, its previous change as `previous`, and the base's current tip as `base`, which is the Worker's starting tree; the steps after it, publish included, run again. An unknown or reconciled outcome never carries `rejected`, so it is never retried (authority and effects invariant). Anything else, and every later
 failure, is the operator's `work retry`.
 With `rerunUnchanged: true` in `retry` (sc-9), a step reopened by a failing check that then
 changes nothing does not fail with "no change": the check runs again once on the same change

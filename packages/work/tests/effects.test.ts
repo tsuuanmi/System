@@ -14,7 +14,7 @@ import { memoryWorkTable, until } from '../../../test-support/memory.ts'
 import { WorkController, type SpecStore } from '../src/controller.ts'
 import type { Verdict } from '../src/kinds.ts'
 import type { Caller, WorkRecord } from '../src/record.ts'
-import { Capabilities, type EffectIntent, type EffectPort, type Reconciled, type VerifyResult } from '../src/registry.ts'
+import { Capabilities, type EffectIntent, type EffectOutcome, type EffectPort, type Reconciled, type VerifyResult } from '../src/registry.ts'
 import { parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -28,10 +28,12 @@ interface Remote {
   applies: number
 }
 
+type ScriptedOutcome = EffectOutcome & { rejected?: 'conflict' | 'merge-check' }
+
 interface Options {
   verdict?: VerifyResult['verdict']
   approval?: (intent: EffectIntent) => string | undefined
-  apply?: (intent: EffectIntent, remote: Remote) => Promise<{ state: 'applied' | 'failed'; reason: string; detail: Record<string, string> }>
+  apply?: (intent: EffectIntent, remote: Remote) => Promise<ScriptedOutcome>
   reconcile?: (intent: EffectIntent, remote: Remote) => Promise<Reconciled>
   validate?: EffectPort['validate']
 }
@@ -40,7 +42,9 @@ function world(rows = new Map<string, WorkRecord>(), remote: Remote = { publishe
   const stored = new Set<string>()
   const kinds = new Map<string, string>()
   const specs = new Map<string, ResolvedSpec>()
-  const store = (text: string, kind: string) => { const artifactId = id(text); stored.add(artifactId); kinds.set(artifactId, kind); return artifactId }
+  const calls: Array<{ stepId: string; inputs: Record<string, string> }> = []
+  const contents = new Map<string, string>()
+  const store = (text: string, kind: string) => { const artifactId = id(text); stored.add(artifactId); kinds.set(artifactId, kind); contents.set(artifactId, text); return artifactId }
   const table = memoryWorkTable(rows)
   const specStore: SpecStore = {
     async putSpec(spec) { const specId = store(JSON.stringify(spec), 'workflow-spec'); specs.set(specId, spec); return specId },
@@ -52,14 +56,14 @@ function world(rows = new Map<string, WorkRecord>(), remote: Remote = { publishe
     kindOf: (artifactId) => kinds.get(artifactId),
     async putVerdict(verdict: Verdict) { return store(JSON.stringify(verdict), 'verdict') },
   }
-  return { rows, remote, table, specStore, store, kinds }
+  return { rows, remote, table, specStore, store, kinds, calls, contents }
 }
 
 function controller(w: ReturnType<typeof world>, options: Options = {}) {
   const capabilities = new Capabilities()
   capabilities.registerWorker({
     ref: 'coder', capabilities: ['code-write', 'code.develop'],
-    async run(request) { return { status: 'succeeded', outputs: { change: w.store(`change/${request.attemptId}`, 'git-tree') } } },
+    async run(request) { w.calls.push({ stepId: request.stepId, inputs: { ...request.inputs } }); return { status: 'succeeded', outputs: { change: w.store(`change/${request.attemptId}`, 'git-tree') } } },
   })
   capabilities.registerVerifier({
     ref: 'checks', version: '1', capabilities: ['code.required-checks'], accepts: ['git-tree'],
@@ -241,7 +245,7 @@ test('an effect needing approval holds the Work; only a human approves; a denial
 })
 
 test('an inconclusive verdict is accepted only by a human decision', async () => {
-  const yaml = SE.replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]')
+  const yaml = SE.replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]').replace('checks.checks, publish', 'checks.checks')
   const w = world()
   const c = controller(w, { verdict: 'inconclusive' })
   const held = await c.run((await admit(c, w, yaml)).id)
@@ -313,4 +317,112 @@ test('an effect is told the checks it requires, with their pinned criteria, also
   const done = await controller(w, { apply: async (intent, remote) => { told.push(intent); remote.applies++; remote.published.set(intent.operationId, { branch: 'b', commit: intent.subject }); return { state: 'applied', reason: 'done', detail: {} } } }).run(admitted.id)
   assert.equal(done.state.status, 'succeeded', done.state.reason)
   assert.deepEqual(told.at(-1)!.required, required, 'rebuilt from the record after the host was lost')
+})
+
+// sc-7: only an observed, typed refusal may reopen the producing step.
+for (const [rejected, reason] of [
+  ['conflict', 'merge conflict with dev at abc123def456: packages/agents/README.md'],
+  ['merge-check', 'checks on the merge with dev at abc123def456: fail: unit: x'],
+] as const) {
+  test(`a publish ${rejected} reopens implement on the new base tip and succeeds`, async () => {
+    const w = world()
+    const base = w.store('tip-1', 'git-tree')
+    const c = controller(w, { apply: async (intent, remote): Promise<ScriptedOutcome> => {
+      remote.applies++
+      if (remote.applies === 1) return { state: 'failed', rejected, reason, detail: { base } }
+      remote.published.set(intent.operationId, { commit: intent.subject })
+      return { state: 'applied', reason: 'merged', detail: { commit: intent.subject } }
+    } })
+    const done = await c.run((await admit(c, w)).id)
+    assert.equal(done.state.status, 'succeeded', done.state.reason)
+    const reopenings = done.events.filter((e) => e.type === 'reopened')
+    assert.equal(reopenings.length, 1)
+    // Optional future metadata, kept structural so the red tests typecheck.
+    const reopened = reopenings[0] as (typeof reopenings)[number] & { base?: string; failedEffect?: string }
+    const changes = done.events.filter((e) => e.type === 'observed').filter((e) => e.stepId === 'implement')
+    assert.equal(changes.length, 2)
+    const previous = changes[0]!.outputs.change
+    assert.equal(reopened.automatic, true)
+    assert.equal(reopened.stepId, 'implement')
+    assert.equal(reopened.failedEffect, 'publish')
+    assert.equal(reopened.base, base)
+    assert.equal(reopened.previous, previous)
+    assert.ok(reopened.reason.includes(reason))
+    assert.equal(w.calls.length, 2)
+    assert.equal(w.calls[1]!.inputs.base, base)
+    assert.equal(w.calls[1]!.inputs.previous, previous)
+    const failure = w.calls[1]!.inputs.failure!
+    assert.equal(w.kinds.get(failure), 'verdict')
+    const verdict = JSON.parse(w.contents.get(failure)!) as Verdict
+    assert.equal(verdict.subject, previous)
+    assert.equal(verdict.verdict, 'fail')
+    assert.ok(verdict.reason.includes(reason))
+    assert.equal(done.events.filter((e) => e.type === 'verified' && e.stepId === 'checks.checks').length, 2)
+    const intents = done.events.filter((e) => e.type === 'effect-intended')
+    assert.equal(intents.length, 2)
+    assert.notEqual(intents[0]!.operationId, intents[1]!.operationId)
+    assert.notEqual(intents[0]!.subject, intents[1]!.subject)
+    assert.equal(w.remote.applies, 2, 'counts both the refused and successful apply')
+    assert.equal(c.replay(done.id).matches, true)
+    assert.equal(controller(w).replay(done.id).matches, true)
+  })
+}
+
+test('a publish that fails for another reason fails the Work without reopening', async () => {
+  const w = world()
+  const c = controller(w, { apply: async () => ({ state: 'failed', reason: 'dev kept moving during 3 merges', detail: {} }) })
+  const done = await c.run((await admit(c, w)).id)
+  assert.equal(done.state.status, 'failed')
+  assert.equal(done.events.filter((e) => e.type === 'reopened').length, 0)
+  assert.equal(w.calls.length, 1)
+})
+
+for (const state of ['unknown', 'absent'] as const) {
+  test(`a thrown publish reconciled as ${state} never reopens implement`, async () => {
+    const w = world()
+    const c = controller(w, {
+      apply: async (_intent, remote) => { remote.applies++; throw new Error('connection reset') },
+      reconcile: async () => ({ state, reason: 'read-only reconciliation' }),
+    })
+    const done = await c.run((await admit(c, w)).id)
+    assert.equal(done.state.status, state === 'unknown' ? 'held' : 'failed')
+    assert.equal(done.events.filter((e) => e.type === 'reopened').length, 0)
+    assert.equal(w.calls.length, 1)
+    assert.equal(w.remote.applies, 1)
+    assert.equal(c.replay(done.id).matches, true)
+  })
+}
+
+test('publish retry is bounded: a second conflict fails the Work', async () => {
+  const w = world()
+  const base = w.store('tip-1', 'git-tree')
+  const c = controller(w, { apply: async () => ({ state: 'failed', rejected: 'conflict', reason: 'merge conflict with dev at abc123def456: README.md', detail: { base } }) })
+  const done = await c.run((await admit(c, w)).id)
+  assert.equal(done.state.status, 'failed')
+  assert.equal(done.events.filter((e) => e.type === 'reopened').length, 1)
+  assert.equal(w.calls.length, 2)
+  assert.equal(done.events.filter((e) => e.type === 'effect-intended').length, 2)
+})
+
+test('restart after an observed publish conflict reuses the recorded base deterministically', async () => {
+  const w = world()
+  const base = w.store('tip-before-restart', 'git-tree')
+  const first = controller(w, { apply: async () => ({ state: 'failed', rejected: 'conflict', reason: 'merge conflict with dev at abc123def456: README.md', detail: { base } }) })
+  // Restore the durable snapshot at the crash boundary, before the next scheduler turn.
+  const crash: { snapshot?: WorkRecord } = {}
+  first.onChange((change) => { if (change.type === 'effect-observed' && !crash.snapshot) crash.snapshot = structuredClone(w.rows.get(change.workId)!) })
+  await first.run((await admit(first, w)).id)
+  assert.ok(crash.snapshot, 'the failed effect was observed')
+  const paused = crash.snapshot
+  w.rows.set(paused.id, paused)
+  w.calls.splice(1)
+  assert.equal(paused.events.filter((e) => e.type === 'reopened').length, 0)
+  const recovered = controller(w, { reconcile: async () => { assert.fail('a recorded refusal must not read the remote again') } })
+  assert.equal(recovered.replay(paused.id).matches, true)
+  const done = await recovered.run(paused.id)
+  assert.equal(done.state.status, 'succeeded', done.state.reason)
+  const reopened = done.events.find((e) => e.type === 'reopened') as { base?: string } | undefined
+  assert.equal(reopened?.base, base)
+  assert.equal(w.calls[1]!.inputs.base, base)
+  assert.equal(recovered.replay(done.id).matches, true)
 })

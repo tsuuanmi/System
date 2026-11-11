@@ -30,7 +30,8 @@ const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<
  * One automatic further attempt after a failure that can be fixed (Item df-7):
  * `rerunUnchanged`: when a failing check reopened the step and it changes nothing, the check runs again on the same change once (sc-9).
  * `onFail` names the verify steps that judge, or come after, this step and whose
- * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh, and a later Worker step whose final message objects (`OBJECTION:`) to this step's output.
+ * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh, and a later Worker step whose final message objects (`OBJECTION:`) to this step's output,
+ * and a later effect step whose outcome was observed as a conflict with the base or a failed merge check (sc-7): this step is reopened on the base's new tip. An unknown outcome is never retried.
  */
 const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3), rerunUnchanged: z.literal(true).optional() }).strict()
 
@@ -221,7 +222,7 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
       for (const failing of s.retry?.onFail ?? []) {
         const target = byId.get(failing)
         if (!target) problems.push(`step ${s.id} retry.onFail names ${failing}, which is not a step`)
-        else if (failing !== s.id && !(isWorkerStep(target) && before.get(failing)!.has(s.id)) && !(isVerifyStep(target) && (s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`) || before.get(failing)!.has(s.id)))) problems.push(`step ${s.id} retry.onFail names ${failing}, which neither judges nor follows ${s.id}`)
+        else if (failing !== s.id && !((isWorkerStep(target) || isEffectStep(target)) && before.get(failing)!.has(s.id)) && !(isVerifyStep(target) && (s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`) || before.get(failing)!.has(s.id)))) problems.push(`step ${s.id} retry.onFail names ${failing}, which neither judges nor follows ${s.id}`)
       }
     } else if (isVerifyStep(s)) {
       checkRef(s, s.verify.subject, 'verifies')
