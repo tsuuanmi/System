@@ -1,7 +1,7 @@
 # PLAN.md — System next implementation: first-attempt acceptance
 
-> **Status:** execution handoff, updated 2026-11-10. The next milestone is
-> **DG, first-attempt acceptance** (below). The checklists and evidence of the finished
+> **Status:** execution handoff, updated 2026-11-11. The next milestone is
+> **RO, robust to outside failures** (section 3b; DG and SC below). The checklists and evidence of the finished
 > milestones are in [PLAN.md at `aaa38f6`](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md); this file keeps one line
 > each. This checklist is not an ADR or an alternate source of product
 > requirements.
@@ -32,6 +32,7 @@
 | After CQ | Profile patches merge by `ref`, fflate 0.8.3, the Host-exit backstop, reads while the Host waits to upgrade | PRs #45, #46, #59, #62 |
 | WW | Website Workers: Runtime `web`, generic Procedures on a UI map, Power by tier, the canary, `citations-v2`, `research-fanout`; built by System Works on branch `web-workers` | [WW](#ww--website-workers-that-work-built-with-website-workers-branch-web-workers) |
 | DF | System develops System: Items in `STATUS.md` and `system status`, claims, tests first (`feature.yaml`: red check, tests frozen), a check the base fails too is held, one retry per failing check, `work wait` and `system mcp` across Host restarts and updates; 11 System Items merged by System Works in its last two days with no operator touch; DNA (Rust) the second repository; DF3 passed on the session takeover of 2026-11-09, whose questions became df-24, df-28 and df-31 (operator, 2026-11-10: no second run) | [DF at `ea71d80`](https://github.com/tsuuanmi/System/blob/ea71d80/PLAN.md#3-df--dogfood-decided-2026-11-08) |
+| SC | Several Accounts per Runtime: Account identity and the provider's account ID (sc-1), roles `code.develop` and `code.tests` (sc-2), quota readers (sc-3), routing by Headroom under a Ceiling (sc-4), and the first remedies for outside failures (sc-7 to sc-13) | [SC](#3a-sc--scale-by-accounts-decided-2026-11-10), PRs #160 to #186 |
 
 Who built them: PRs #5–#36 were System Works, apart from #34 and #35 (the
 operator's sessions); OC, CQ and the PRs after CQ were built by the
@@ -58,13 +59,13 @@ columns are history, and the reasoning behind each is in [PLAN.md at
 | Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured | not measured | not measured |
 | Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured | not measured | not measured |
 
-| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) | DF9, hygiene pass (`f752e79` → change) | DF, before df-28 (`1029250`) |
-|---|---|---|---|---|
-| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); accepted at DF's close (operator, 2026-11-10) as DG's baseline. df-29: 3,606 → 3,599. The gap to DF9's 3,255 stays: those mechanisms are behaviour the tests pin, and a helper extracted from the verdict and dispatch code added more lines than it saved. Closing it means dropping one (operator decision: the `claim` command, about 60 lines, or the staleness note, per-source retry or slot wait in `live()`) |
-| All package source, lines | 11,062 | 11,366 | not measured | 11,191 |
-| Tests, lines | 9,540 | 9,712 | not measured | 13,136 |
-| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) |
-| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) |
+| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) | DF9, hygiene pass (`f752e79` → change) | DF, before df-28 (`1029250`) | SC close (`3af21cf`, 2026-11-11) |
+|---|---|---|---|---|---|
+| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); accepted at DF's close (operator, 2026-11-10) as DG's baseline. df-29: 3,606 → 3,599. The gap to DF9's 3,255 stays: those mechanisms are behaviour the tests pin, and a helper extracted from the verdict and dispatch code added more lines than it saved. Closing it means dropping one (operator decision: the `claim` command, about 60 lines, or the staleness note, per-source retry or slot wait in `live()`) | 3,882 (+6.8% on DG's 3,636, within +10%): routing by headroom (sc-4, +140), publish retry (sc-7), resume after restart (sc-8), re-runs (sc-9, sc-13); dg-11 gave back 36 |
+| All package source, lines | 11,062 | 11,366 | not measured | 11,191 | 12,191 |
+| Tests, lines | 9,540 | 9,712 | not measured | 13,136 | 16,435 |
+| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) | 4,350 (39): over the 4,285 limit by 65; SC's decisions live in this PLAN, not a PROP |
+| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) | about 2 min 30 s on a quiet machine (docs 1 s, install 10 s, build 30 s, typecheck 10 s, unit 27 s, smoke 71 s); timeouts and flakes at loads of 200-460 |
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -159,6 +160,43 @@ Decisions (operator, 2026-11-10; Items sc-1 to sc-6 in STATUS.md):
   here at SC's close against DG's 3,636 lines. sc-4 itself: 3,636 → 3,776
   (+140: the pure ranking `headroom.ts` 72, the controller's wait and reading
   50, registry 31, live and status 6, and the verifier/effect `route` shrank).
+- *Measure (sc-6), 2026-11-10 20:39 to 2026-11-11 10:48: 8 Items at once
+  (sc-7 to sc-13, dg-11) on 4 Claude and 2 Codex Accounts, Claude primary at
+  2 slots, `maxConcurrentChecks` 4. All 8 merged. First-Work acceptance 3/8
+  (sc-9, sc-10, sc-11); 2 more after an operator retry (dg-11, sc-13); 3
+  merged by hand after their own checks passed (sc-7, sc-12: a publish
+  conflict or an inconclusive merge check; sc-8: an existing smoke test the
+  plan missed, the one defect of an Item's own making). About 11 outside
+  failures, none caused by a change: 6 checks failing or inconclusive at
+  machine loads of 200-460 (the machine is shared by about 90 users), 3
+  attempts on codex/default after its 5-hour window reached 100% ("out of
+  credits": not matched as a limit, and a 10-minute-old reading chose it;
+  sc-14), 1 publish conflict, and `system work wait` exiting 0 when the Host
+  answered slowly. Routing worked: steps spilled to c2, c3 and c4, and Codex
+  moved to x2 at its primary's 100%. sc-1 caught the second Codex login on
+  the same account at its first registration. Claude quota stays unreadable
+  with `setup-token` tokens (no profile scope).*
+- **Closed 2026-11-11** (operator). What SC did not settle goes to RO.
+
+## 3b. RO — Robust to outside failures (decided 2026-11-11)
+
+**Aim:** a Work never fails, and is never held, for a reason outside its
+change. SC's measure found the code of the Items sound and about 11 outside
+failures in 8 Items; a scheduled session (section 4) is worth having only
+after this.
+
+Decisions (operator, 2026-11-11):
+- **Measure:** each failed or held Work, and each operator touch, is an
+  *Outside failure* (load, quota, restart, conflict, a slow Host) or a
+  failure of the change. Target: no Outside failure over 10 consecutive Items.
+- **Tests stand load first** (Charter 12): no short timeouts, waits on a
+  condition, never on time. A load gate on the checks comes only if the
+  measure shows that is not enough.
+- **Only a human verifies again, approves or denies.** Operator touches go
+  down through bounded, declared automatic re-runs (sc-9, sc-13, sc-14), not
+  through giving an agent that authority, even when asked in chat.
+- **Budget:** the active core stays within +10% of SC's 3,882 lines; a new
+  mechanism replaces a step a person does today.
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
