@@ -438,10 +438,13 @@ once more with the same `commandId`, so the Host does it once: look at
 ## A check the base fails too
 
 A required check that fails on a change is run again on its base commit. When
-the base fails it too, the `checks` verdict is `inconclusive` (reason
-`<check>: the base fails it too`, evidence of both runs) and the Work is **held**
+the base fails it too, the failing checks are run once more on the change and on the
+base (sc-13), because a loaded machine fails checks the change did not break: a pass on the
+change's re-run gives `pass`, a pass on the base's gives `fail` (the step reopens as for any
+failure). Only when the checks still fail on both is the `checks` verdict `inconclusive` (reason
+`<check>: the base fails it too`, `also on a re-run once`, evidence of all the runs) and the Work is **held**
 before `publish`, not retried. `system work show <id>` shows the reason: look
-at the base run. `system work approve <id> --reason ...` lets it publish and
+at the base runs (`system work show` lists all of them). `system work approve <id> --reason ...` lets it publish and
 merge; `system work deny` fails it.
 
 The same applies at `red`, earlier: when every `red: fail` check that failed also

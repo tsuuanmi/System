@@ -45,7 +45,7 @@ See [GLOSSARY.md](../GLOSSARY.md) for the term.
   on the input change, criteria pinned from its base). A Sub-workflow of
   `software-engineering.yaml` and `feature.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
-  A check that fails on the change and on its base is `inconclusive` (df-25): the Work is held for approval, not retried (at `red` before `implement`, else before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
+  A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (at `red` before `implement`, else before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`.
