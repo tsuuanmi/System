@@ -443,15 +443,18 @@ once more with the same `commandId`, so the Host does it once: look at
 ## A check the base fails too
 
 A required check that fails on a change is run again on its base commit. When
-the base fails it too, the `checks` verdict is `inconclusive` (reason
-`<check>: the base fails it too`, evidence of both runs) and the Work is **held**
+the base fails it too, the failing checks are run once more on the change and on the
+base (sc-13), because a loaded machine fails checks the change did not break: a pass on the
+change's re-run gives `pass`, a pass on the base's gives `fail` (the step reopens as for any
+failure). Only when the checks still fail on both is the `checks` verdict `inconclusive` (reason
+`<check>: the base fails it too`, `also on a re-run once`, evidence of all the runs) and the Work is **held**
 before `publish`, not retried. `system work show <id>` shows the reason: look
-at the base run. `system work approve <id> --reason ...` lets it publish and
+at the base runs (`system work show` lists all of them). `system work approve <id> --reason ...` lets it publish and
 merge; `system work deny` fails it.
 
 The same applies at `red`, earlier: when every `red: fail` check that failed also
-fails on the base, the `red` verdict is `inconclusive` and the Work is held at
-`red`, before `implement` starts. `system approve` continues; `system deny`
+fails on the base, and still does after the one re-run on the change and the base (sc-13), the `red`
+verdict is `inconclusive` and the Work is held at `red`, before `implement` starts. `system approve` continues; `system deny`
 fails the Work.
 
 ## A check that fails again on the same change
@@ -463,7 +466,8 @@ If the second run passes, the Work goes on and `system work show <id>` notes
 the check as flaky. If it fails again, the verdict is `inconclusive` with both
 runs as evidence and the Work is **held**: `system work approve <id>` lets it
 go on, `system work deny` fails it, and `system work retry <id> --step <verify
-step>` asks the check again.
+step>` asks the check again. This re-run (sc-9) is separate from the verifier's own one re-run of an
+inconclusive verdict (sc-13, [above](#a-check-the-base-fails-too)).
 
 ## Following a Work, and detaching
 

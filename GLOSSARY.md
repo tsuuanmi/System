@@ -127,7 +127,7 @@ _Avoid_: reviewer, judge, validator
 What a Verifier concludes about one Artifact: pass; fail, when the Artifact
 itself is wrong (such as malformed); or inconclusive, when the check could
 not confirm it against the world (a page that changed or refused the fetch,
-or a check that the base fails too, so the change cannot be to blame; or a check that fails twice on the same change after `implement` changed nothing, sc-9).
+or a check that the base fails too, after one re-run on the change and the base, so the change cannot be to blame; or a check that fails twice on the same change after `implement` changed nothing, sc-9).
 Only a check of the Artifact's own form may fail it.
 _Avoid_: score, review, result
 

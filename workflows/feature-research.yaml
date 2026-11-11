@@ -84,7 +84,7 @@ steps:
       capability: code.required-checks
       subject: $steps.tests.change
       criteria: red-v1
-      # An inconclusive verdict (every failing check fails on the base too) holds the Work here, before implement (dg-2).
+      # An inconclusive verdict (every failing check fails on the base too, after one re-run) holds the Work here, before implement (dg-2).
       holdInconclusive: true
   - id: implement
     dependsOn: [red]

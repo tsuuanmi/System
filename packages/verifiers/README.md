@@ -59,6 +59,13 @@ checks:
   fails on the base, the verdict is `inconclusive`, the reason says `<check>: the
   base fails it too (base <commit>)`, and the evidence holds the `check-run@1` of
   both runs (the change's first). A check that passes on the base keeps `fail`.
+  **One re-run first** (sc-13): before that verdict, the failing checks run once more,
+  on the change and then on the base (the base again with its prerequisites), because
+  load, not the change, often fails a check. The change passing now gives `pass`
+  (the reason says `re-run once ... (flaky)` and names the first failure); the base
+  passing now while the change still fails gives `fail`; only a check still failing
+  on both is `inconclusive` (`also on a re-run once`). The evidence holds every run in
+  order: change, base, change, base. The bound is one re-run per verdict.
   A subject that is the base itself is not run twice. A check that fails twice on the same change (`retry.rerunUnchanged`, sc-9) is also recorded `inconclusive`, with both runs' evidence. An `inconclusive` verdict
   does not reopen `implement` (retry `onFail` fires on `fail` only): the Work is
   held for an operator Approval before `publish`; approve lets it publish and merge,
@@ -101,8 +108,9 @@ checks:
     the new tests: ...`; not run on the base), when no `red: fail` check
     failed (the tests prove nothing), when the change is the base itself, or
     when a check left a process running; `inconclusive` when every `red: fail`
-    check that failed fails on the base too (the Work is held at `red` for the
-    operator); `error` when the base cannot be
+    check that failed fails on the base too, also after one re-run on the change
+    and the base (sc-13; a pass on the change's re-run is a `fail`, a pass on the
+    base's a red; the Work is held at `red` for the operator); `error` when the base cannot be
     checked out.
   - **`tests-frozen-v1`**, on the implement step's change with the tests
     step's change as the verify step's input `tests`: `fail` when the change,
