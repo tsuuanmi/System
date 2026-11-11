@@ -448,8 +448,8 @@ at the base runs (`system work show` lists all of them). `system work approve <i
 merge; `system work deny` fails it.
 
 The same applies at `red`, earlier: when every `red: fail` check that failed also
-fails on the base, the `red` verdict is `inconclusive` and the Work is held at
-`red`, before `implement` starts. `system approve` continues; `system deny`
+fails on the base, and still does after the one re-run on the change and the base (sc-13), the `red`
+verdict is `inconclusive` and the Work is held at `red`, before `implement` starts. `system approve` continues; `system deny`
 fails the Work.
 
 ## A check that fails again on the same change
@@ -461,7 +461,8 @@ If the second run passes, the Work goes on and `system work show <id>` notes
 the check as flaky. If it fails again, the verdict is `inconclusive` with both
 runs as evidence and the Work is **held**: `system work approve <id>` lets it
 go on, `system work deny` fails it, and `system work retry <id> --step <verify
-step>` asks the check again.
+step>` asks the check again. This re-run (sc-9) is separate from the verifier's own one re-run of an
+inconclusive verdict (sc-13, [above](#a-check-the-base-fails-too)).
 
 ## Following a Work, and detaching
 
