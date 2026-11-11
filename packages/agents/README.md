@@ -54,7 +54,10 @@ profile order is not registered, with the reason `provider account <id> is
 already registered as <first ref>; two refs on one account would count its
 quota twice`. An ID that cannot be read leaves the account registered with
 `providerAccount` unknown. The operator puts the `.claude.json` of a Claude
-account in its `claudeHome`.
+account in its `claudeHome`. Registering a Claude Code account creates a missing
+`claudeHome` (mode 700), as the row owns it; if it cannot be created the account
+stays registered and its quota reason names the directory. A `codexHome` is not
+created: Codex needs a signed-in home.
 
 ## Quota
 
@@ -111,7 +114,9 @@ through `quota(ref)` and its cache (never a model turn, never a token): under th
 line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or `quota: unreadable - <reason>`.
 The reasons: `a web account has no quota reader`; `the usage report of <label> <v> is not
 verified (verified: …)` (the CLI version is not one checked); `its token is not configured`;
-`not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
+`its claudeHome <path> does not exist and could not be created` (the home is missing at
+read time, so the CLI is never spawned; the row creates it at registration, see Account
+identity); `not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
 asks `quota(ref)` for each account.
 
 ## Routing by headroom

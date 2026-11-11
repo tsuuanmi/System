@@ -4,7 +4,7 @@
  * `ctx.agents` (`system workers`). Spawns through the DSH subprocess service. A `web` account is served by
  * the optional `web-worker` row (see web.ts), or reported unavailable when it is off.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
@@ -261,6 +261,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         if (account.runtime === 'claude-code') {
           const h = account.claudeHome ?? `claude/${account.ref.split('/')[1] ?? 'default'}`
           const claudeHome = isAbsolute(h) ? h : systemPath(ctx, h)
+          // The row owns this home: create it (mode 700) so the quota reader's cwd exists. A failure leaves the account registered; the quota reason names the directory.
+          try { mkdirSync(claudeHome, { recursive: true, mode: 0o700 }) } catch { /* reported by the quota read */ }
           id = readClaudeAccountId(claudeHome)
           const cache = createQuotaCache({
             ...quotaOptions,

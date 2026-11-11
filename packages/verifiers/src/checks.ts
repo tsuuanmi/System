@@ -9,7 +9,9 @@
  * The change is what differs from the task's base (and from the subject's parent); a check that failed in an earlier verdict of the same step in the Work runs again.
  * Verdict: `pass` when every check exits 0 and leaves no Xvfb or Chrome running (it is named and killed), `fail` when any does not (a
  * timeout is a failure), `inconclusive` when every failing check fails on the base commit too (run again by name, up to the
- * last failed check; the evidence holds both runs; not for a subject that is the base itself), `error` when the checks could not be run at all.
+ * last failed check; not for a subject that is the base itself) and still does when the failing checks are run once more, on the change and then on the base
+ * (sc-13: load, not the change, often fails a check; the re-run is one, never more, and the evidence holds all runs in order: change, base, change, base). If the change then passes, the
+ * verdict follows it (`pass`; `red-v1` its usual rules); if the base now passes and the change still fails, the change's failure counts (`fail`); `error` when the checks could not be run at all.
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -201,6 +203,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const failed: string[] = []
       const ran: string[] = []
       const skipped: string[] = []
+      let flaky = ''
       try {
         // The repository's Node first on PATH, whatever the Host's PATH has (PROP-0007 decision 3).
         let bin: string | undefined
@@ -296,6 +299,16 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             await removeWorktree(tree.repository, baseTree)
           }
         }
+        /** The one re-run (sc-13): the named checks again on the change, in file order; each one's failure, undefined when it passes. */
+        const rerunOnChange = async (names: string[]): Promise<Map<string, string | undefined>> => {
+          const again = new Map<string, string | undefined>()
+          for (const check of chosen.filter((c) => names.includes(c.name))) {
+            const result = await runCheck(check, worktree, tree.commit)
+            evidence.push(result.id)
+            again.set(check.name, result.failed)
+          }
+          return again
+        }
         if (checks.name === RED) {
           // The tests step's change, before any code: what must still pass does, and the new tests fail somewhere the base does not.
           // A check that leaves a process running is broken whatever its `red`.
@@ -308,15 +321,40 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           // Only a check that passes on the base is red because of the new tests (df-25's rule, applied to red-v1).
           const onBase = await failingOnBase(candidates.map((r) => r.name))
           if (!onBase) return verdict('error', `could not check out the base ${base} to tell the new tests' failures from the base's`, evidence)
-          const red = candidates.filter((r) => !onBase.has(r.name)).map((r) => r.failure!)
+          let red = candidates.filter((r) => !onBase.has(r.name)).map((r) => r.failure!)
+          let first = ''
+          if (!red.length) {
+            // Inconclusive: run the candidates once more, on the change and then on the base, before the verdict holds the Work (sc-13).
+            const again = await rerunOnChange(candidates.map((r) => r.name))
+            const still = candidates.filter((r) => again.get(r.name))
+            first = `first run: ${candidates.map((r) => r.failure!).join('; ')}`
+            if (!still.length) return verdict('fail', `failed: no check with red: fail failed on ${tree.commit} on a re-run once (${first}), so the new tests prove nothing; run: ${ran.join(', ')}${skips}`, evidence)
+            const onBaseAgain = await failingOnBase(still.map((r) => r.name))
+            if (!onBaseAgain) return verdict('error', `could not check out the base ${base} to tell the new tests' failures from the base's, on a re-run once`, evidence)
+            red = still.filter((r) => !onBaseAgain.has(r.name)).map((r) => again.get(r.name)!)
+            if (!red.length) return verdict('inconclusive', `every check that failed fails on the base ${base} too, also on a re-run once, so the new tests' failures cannot be told apart: ${still.map((r) => again.get(r.name)!).join('; ')} (${first})${skips}`, evidence)
+          }
           const passed = results.filter((r) => !r.failure).map((r) => r.name)
           if (!red.length) return verdict('inconclusive', `every check that failed fails on the base ${base} too, so the new tests' failures cannot be told apart: ${candidates.map((r) => r.failure!).join('; ')}${skips}`, evidence)
-          return verdict('pass', `red on ${tree.commit}: failed as it should, and passes on the base: ${red.join('; ')}; passed: ${passed.join(', ') || 'none'}${skips}`, evidence)
+          return verdict('pass', `red on ${tree.commit}: failed as it should, and passes on the base: ${red.join('; ')}${first ? ` (after a re-run once; ${first})` : ''}; passed: ${passed.join(', ') || 'none'}${skips}`, evidence)
         }
         if (failedNames.length && !asItIs && base !== tree.commit) {
           const baseFailed = await failingOnBase(failedNames)
           if (baseFailed && failedNames.every((name) => baseFailed.has(name))) {
-            return verdict('inconclusive', `${failedNames.map((name) => `${name}: the base fails it too (base ${base})`).join('; ')}; failed on the change: ${failed.join('; ')}`, evidence)
+            // Inconclusive: run the failing checks once more, on the change and then on the base, before the verdict holds the Work (sc-13).
+            const firstFailed = failed.join('; ')
+            const again = await rerunOnChange(failedNames)
+            const still = failedNames.filter((name) => again.get(name))
+            failed.splice(0, failed.length, ...still.map((name) => again.get(name)!))
+            if (!still.length) {
+              flaky = `re-run once: ${failedNames.join(', ')} failed, then passed on the change (flaky); first run: ${firstFailed}; `
+            } else {
+              const baseAgain = await failingOnBase(still)
+              if (!baseAgain || still.every((name) => baseAgain.has(name))) {
+                return verdict('inconclusive', `${still.map((name) => `${name}: the base fails it too (base ${base})`).join('; ')}, also on a re-run once; failed on the change: ${firstFailed}; and again: ${failed.join('; ')}`, evidence)
+              }
+              return verdict('fail', `failed: ${failed.join('; ')} (the base passed on re-run once; the first run failed on both: ${firstFailed})`, evidence)
+            }
           }
         }
       } finally {
@@ -326,7 +364,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const which = `run: ${ran.join(', ')}${skipped.length ? `; skipped: ${skipped.join(', ')}` : ''}`
       return failed.length
         ? verdict('fail', `failed: ${failed.join('; ')}${skipped.length ? ` (skipped: ${skipped.join(', ')})` : ''}`, evidence)
-        : verdict('pass', `all ${ran.length} check(s) run passed on ${tree.commit}; ${which}`, evidence)
+        : verdict('pass', `${flaky}all ${ran.length} check(s) run passed on ${tree.commit}; ${which}`, evidence)
     },
   }
 }

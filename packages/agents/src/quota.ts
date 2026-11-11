@@ -22,6 +22,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 
 export interface QuotaWindow {
   /** 0 to 100. */
@@ -274,6 +275,8 @@ export interface ClaudeQuotaOptions extends ReadOptions {
 /** Claude Code's `get_usage` control request over stream-json, with the account's own token and HOME, and no model turn. */
 export async function readClaudeQuota(options: ClaudeQuotaOptions): Promise<QuotaReport> {
   try {
+    // A missing cwd makes spawn fail with the CLI's own ENOENT; name the directory instead of blaming the CLI.
+    if (!existsSync(options.home)) return { unreadable: `its claudeHome ${options.home} does not exist and could not be created` }
     const refused = await gate('Claude Code', options.command, options.home, /^(\d+\.\d+\.\d+) \(Claude Code\)$/, VERIFIED_CLAUDE_VERSIONS, options.signal)
     if (refused) return { unreadable: refused }
     const id = randomUUID()

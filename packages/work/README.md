@@ -77,7 +77,7 @@ criteria; `reopened` clears the step's verdict in the state, and the earlier
 `verified` event stays. Only a human caller does this: an agent could keep
 asking until a run passes. A Worker step's `retry` in the Workflow reopens it
 automatically, at most `max` times, after a failing verdict, a failure its
-Worker marked `retryable`, or an `OBJECTION:` line in the final message of a later step that lists it, or a later effect step whose outcome was observed as a conflict with the base or a failing check on the merge (sc-7: it restarts on the base's new tip, with `base`, `previous` and `failure` as input; an unknown outcome is never retried); with `rerunUnchanged` a step that a failing check reopened and that changes nothing runs the check again once on the same change (a pass is noted flaky, a second fail holds the Work as `inconclusive`); see [the vocabulary](../../docs/architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1). `retry` and `decide` hold
+Worker marked `retryable`, or an `OBJECTION:` line in the final message of a later step that lists it, or a later effect step whose outcome was observed as a conflict with the base or a failing check on the merge (sc-7: it restarts on the base's new tip, with `base`, `previous` and `failure` as input; an unknown outcome is never retried); with `rerunUnchanged` a step that a failing check reopened and that changes nothing runs the check again once on the same change (a pass is noted flaky, a second fail holds the Work as `inconclusive`; the verifier's own one re-run of an inconclusive verdict, sc-13, is separate); see [the vocabulary](../../docs/architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1). `retry` and `decide` hold
 the Work's lock from their check to the end of the run.
 
 ## Under the Host
@@ -93,9 +93,12 @@ and the steps of one Work overlap in their execute phases (below).
 A command with a `commandId` leaves a receipt in the optional `receipts` of
 its Work record, in the update of the event it caused; a submitted Work's ID
 derives from the `commandId` (UUIDv5-style). On start the Host marks every
-unreported attempt `attempt-lost`, reconciles effects without applying, and
-runs nothing: unlike `WorkController.run` on its own, which dispatches a lost
-attempt again at once, only an explicit `run` or `retry` continues.
+unreported attempt `attempt-lost` and reconciles effects without applying. It
+runs again by itself only a Work whose lost attempts are all Worker attempts
+confirmed gone by `settle()`, with no effect left unresolved (see
+[the Host](../../docs/architecture/host.md#start-stop-and-recovery)); any other
+waits for an explicit `run` or `retry`. Unlike `WorkController.run` on its own,
+which dispatches a lost attempt again at once.
 
 ## Scheduling and slots
 
@@ -150,7 +153,7 @@ The `admitted` event's optional `goal` and the `orchestrator` caller type are re
 | Crash after | Left behind | On `system work run` |
 |---|---|---|
 | spec Artifact stored, before the Work record | an unreferenced spec Artifact | nothing: no Work exists |
-| `dispatched` persisted, during the attempt | a running step; maybe orphan output Artifacts | `attempt-lost`, then a new attempt with the same inputs |
+| `dispatched` persisted, during the attempt | a running step; maybe orphan output Artifacts | `attempt-lost`, then a new attempt with the same inputs (a Host on start runs a settled Worker attempt again by itself) |
 | `observed` persisted | a completed step | not re-run |
 
 A Worker attempt is not an external effect; external effects are M5 and are
