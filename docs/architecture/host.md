@@ -181,7 +181,10 @@ spending an attempt or retry, or waits (`waiting: quota`) when none is left.
 Old records carry `rateLimited` on a failed step, which stays failed.
 `system work report` sums the waits and limits as `waitedForSlotMs` and
 `rateLimitedAttempts`. The wait is measured in the Host's memory, so a Host
-restart starts it again.
+restart starts it again. The report also classes each failure as an Outside
+failure or a failure of the change, from the recorded reason
+([GLOSSARY](../../GLOSSARY.md); patterns in
+`packages/work/src/outside.ts`).
 
 Brainstorm's two proposals use different Accounts, so they run at the same
 time. Steps after them in the same Work wait, as their `dependsOn` already

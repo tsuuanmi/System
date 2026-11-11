@@ -8,6 +8,7 @@ import { git, snapshot } from './git.ts'
 import { ITEM_ID } from './kinds.ts'
 import type { LiveAttempt } from './live.ts'
 import type { Claim, WorkEvent, WorkRecord } from './record.ts'
+import { summarize } from './summary.ts'
 
 export interface Item {
   id: string
@@ -196,8 +197,9 @@ export function itemLines(
     const state = item.done || merged.length ? 'done' : active.length || claim ? 'doing' : 'todo'
     if (filter.state && filter.state !== state) continue
     const last = merged.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
+    const outside = works.reduce((n, r) => n + summarize(r).outsideFailures, 0)
     const text = state === 'done'
-      ? `done${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}`
+      ? `done${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
       : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}` : 'todo: nobody'
     lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }
