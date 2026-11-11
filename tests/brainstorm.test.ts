@@ -154,7 +154,7 @@ test('a stop after the first proposal reuses it: the retry runs only the second 
   assert.equal(system(['work', 'replay', workId]).status, 0)
 })
 
-test('after the Host is killed mid-step, four runs asked for at once dispatch the lost step once, losing no event', { timeout: 120_000 }, async () => {
+test('after the Host is killed mid-step, the restarted Host dispatches the lost step again by itself, once, losing no event', { timeout: 120_000 }, async () => {
   const marker = join(home, `hang-kill-${Date.now()}`)
   const input = brief(`FAKE:outputs FAKE:sign FAKE:hang=idea-b:${marker}`)
   const { workId, submit } = await submitting(input)
@@ -171,10 +171,8 @@ test('after the Host is killed mid-step, four runs asked for at once dispatch th
   for (const file of readdirSync(attempts).filter((f) => f.endsWith('.pid'))) process.kill(Number(readFileSync(join(attempts, file), 'utf8')), 'SIGKILL')
   await cli.start()
 
-  const runs = await Promise.all([0, 1, 2, 3].map(() => cli.runAsync(['work', 'run', workId]).done))
-  const winners = runs.filter((r) => r.status === 0)
-  assert.equal(winners.length, 1, JSON.stringify(runs))
-  for (const loser of runs.filter((r) => r.status !== 0)) assert.match(loser.stderr, /is already being run/)
+  // The lost attempt's process is gone, so the Host runs the Work again without `work run`.
+  for (let i = 0; i < 300 && show(workId).state.status !== 'succeeded'; i++) await new Promise((r) => setTimeout(r, 100))
   const done = show(workId)
   assert.equal(done.state.status, 'succeeded')
   assert.deepEqual(dispatched(done).map((e) => e.stepId), ['idea-a', 'idea-b', 'idea-b', 'synthesis'])

@@ -4,7 +4,7 @@
  * `ctx.agents` (`system workers`). Spawns through the DSH subprocess service. A `web` account is served by
  * the optional `web-worker` row (see web.ts), or reported unavailable when it is off.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
@@ -179,7 +179,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
   const quotas = new Map<string, QuotaCache>()
-  const quota = async (ref: string): Promise<QuotaReport> => quotas.get(ref)?.get() ?? { unreadable: `no quota reader for ${ref}` }
+  const quota = async (ref: string): Promise<QuotaReport> => {
+    const cache = quotas.get(ref)
+    if (cache) return cache.get()
+    const status = statuses.find((s) => s.ref === ref)
+    if (!status) return { unreadable: `no quota reader for ${ref}` }
+    if (status.runtime === 'web') return { unreadable: 'a web account has no quota reader' }
+    if (status.reason === REGISTERING) return { unreadable: 'still registering' }
+    return { unreadable: status.available ? `no quota reader for ${ref}` : `not registered: ${status.reason}` }
+  }
   // Provided before the loop: `system workers` shows the accounts still registering.
   ctx.provide('agents', { accounts, quota } satisfies AgentsService)
   const dispose: (() => void)[] = []
@@ -253,6 +261,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         if (account.runtime === 'claude-code') {
           const h = account.claudeHome ?? `claude/${account.ref.split('/')[1] ?? 'default'}`
           const claudeHome = isAbsolute(h) ? h : systemPath(ctx, h)
+          // The row owns this home: create it (mode 700) so the quota reader's cwd exists. A failure leaves the account registered; the quota reason names the directory.
+          try { mkdirSync(claudeHome, { recursive: true, mode: 0o700 }) } catch { /* reported by the quota read */ }
           id = readClaudeAccountId(claudeHome)
           const cache = createQuotaCache({
             ...quotaOptions,

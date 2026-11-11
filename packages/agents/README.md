@@ -54,7 +54,10 @@ profile order is not registered, with the reason `provider account <id> is
 already registered as <first ref>; two refs on one account would count its
 quota twice`. An ID that cannot be read leaves the account registered with
 `providerAccount` unknown. The operator puts the `.claude.json` of a Claude
-account in its `claudeHome`.
+account in its `claudeHome`. Registering a Claude Code account creates a missing
+`claudeHome` (mode 700), as the row owns it; if it cannot be created the account
+stays registered and its quota reason names the directory. A `codexHome` is not
+created: Codex needs a signed-in home.
 
 ## Quota
 
@@ -105,6 +108,16 @@ registration or in `accounts()`.
   `packages/plugins/runtime-codex-sdk/src/rate-limits.ts`; not its ledger, pools,
   reservations or per-model windows. Code: [quota.ts](src/quota.ts). The reading is
   returned here; routing records the readings it used (below).
+
+`system workers` and the MCP tool `workers.list` show each account's last reading, read
+through `quota(ref)` and its cache (never a model turn, never a token): under the account's
+line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or `quota: unreadable - <reason>`.
+The reasons: `a web account has no quota reader`; `the usage report of <label> <v> is not
+verified (verified: …)` (the CLI version is not one checked); `its token is not configured`;
+`its claudeHome <path> does not exist and could not be created` (the home is missing at
+read time, so the CLI is never spawned; the row creates it at registration, see Account
+identity); `not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
+asks `quota(ref)` for each account.
 
 ## Routing by headroom
 
@@ -173,8 +186,10 @@ model is recorded for it.
    `context` under `in/context/`, a conversation as its manifest and parts,
    listed in the prompt as operator-supplied data, not instructions), `out/`
    (output files), `work/`. `work/` is a detached `git worktree` of the exact
-   commit an input names (`previous` first, then a `git-tree@1` input or a
-   task's `base`), or an empty directory.
+   commit an input names (`base` first, then `previous`, then a `git-tree@1` input or a
+   task's `base`; a git-tree input that is not the starting point is listed in the
+   prompt as a commit of the same repository, to show or cherry-pick), or an empty
+   directory.
 2. **Environment:** every host variable is removed except `PATH`, `LANG`,
    `LC_ALL` and `TZ`. The agent gets `HOME`, `TMPDIR` and its account's
    credential only: `CLAUDE_CODE_OAUTH_TOKEN`, or a fresh `CODEX_HOME` holding
@@ -201,7 +216,9 @@ model is recorded for it.
    later verify or effect step takes that output as its subject. Read-only
    steps (the scouts of `hygiene.yaml`) name a `checkout` nothing verifies or
    publishes, so an unchanged one stays a success, as does a step declared
-   `mayBeEmpty` (the docs step of `feature.yaml`).
+   `mayBeEmpty` (the docs step of `feature.yaml`). The exception is a step with
+   `retry.rerunUnchanged` that a failing check reopened (sc-9): the check runs
+   again on the same change instead.
 5. **Record:** usage from the CLI's own output (unknown when absent), summed
    over every turn: a background command's completion notification starts a
    second turn, and Claude Code's `stream-json` prints a `result` for each,

@@ -195,6 +195,12 @@ test('a malformed or unknown param is refused with -32602 before the handler', a
   }
 })
 
+test('work.submit rejects scalar Workflow contents with a clear path-or-contents message', async () => {
+  const { open } = await started()
+  const client = await open()
+  await assert.rejects(client.call('work.submit', { workflow: 'hello', run: false }), /neither the path of a readable \.yaml file nor the contents of a Workflow/)
+})
+
 test('the same work.submit with the same commandId gives one Work, and another body is refused', async () => {
   const { f, open } = await started()
   const client = await open()

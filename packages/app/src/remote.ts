@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
 import { TERMINAL, parseWorkflow, type Caller, type WorkRecord, type WorkState } from '@system/work'
@@ -71,6 +72,13 @@ export function usedFiles(text: string, dir: string, found: Record<string, strin
     usedFiles(content, dir, found)
   }
   return found
+}
+
+/** The Workflow file at `path` (`~` expanded) as the CLI sends it: its contents and the Sub-workflow files beside it. */
+export function readWorkflowFile(path: string): { workflow: string; uses: Record<string, string> } {
+  const expanded = path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(1)) : path
+  const workflow = readFileSync(expanded, 'utf8')
+  return { workflow, uses: usedFiles(workflow, dirname(expanded)) }
 }
 
 export function remoteHost(remote: Remote): ClientHost {
@@ -158,8 +166,8 @@ export function remoteHost(remote: Remote): ClientHost {
 
   const work: WorkCommands = {
     admitFile(path, input, worker, force) {
-      const workflow = readFileSync(path, 'utf8')
-      return change('work.submit', { workflow, uses: usedFiles(workflow, dirname(path)), input, worker, force, run: false })
+      const { workflow, uses } = readWorkflowFile(path)
+      return change('work.submit', { workflow, uses, input, worker, force, run: false })
     },
     admitTask: (capabilities, input, worker, force) => change('work.submit', { capabilities, input, worker, force, run: false }),
     async run(workId, options) {

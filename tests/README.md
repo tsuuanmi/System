@@ -29,7 +29,8 @@ nothing else.
   the pinned spec across a file edit and a SIGKILLed host, SQLite durability.
 - [agents.test.ts](agents.test.ts) — M3 on the real profile with the `agents`
   row pointed at a fake CLI: worktree capture, cross-process cancel, Codex
-  takeover, `retry` refusals.
+  takeover, `retry` refusals, and the `quota:` line `system workers` prints per account
+  (a readable one from a fake Codex CLI, unreadable where the CLI version is unverified).
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
   through the operator's Host when one answers, or one the test starts.
@@ -52,8 +53,8 @@ nothing else.
   accounts (CLI pointed at the fake): two proposals by different providers
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal
   without Codex, a stop after the first proposal reusing it, a host killed
-  mid-step then four `work run`s at once against the restarted Host (one wins;
-  the lost step is dispatched once more; no event lost), a pinned spec, and
+  mid-step, then the restarted Host dispatches the lost step again by itself,
+  once, with no `work run` (no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
 - [debate.test.ts](debate.test.ts) — WW2b: the Debate Workflow on the fake CLI: dispatch

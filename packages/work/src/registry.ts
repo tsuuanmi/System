@@ -154,6 +154,8 @@ export interface EffectIntent {
 
 export interface EffectOutcome {
   state: 'applied' | 'failed'
+  /** Set only on a `failed` outcome the remote observed as a refusal that a new change on a newer base can fix; `detail.base` is then the git-tree Artifact of the base tip. Never set for an unknown outcome or other failures. */
+  rejected?: 'conflict' | 'merge-check'
   reason: string
   /** What the remote side now holds, such as a branch, commit and pull request. */
   detail: Record<string, string>
@@ -187,24 +189,26 @@ export interface Route<P> {
   quotaWait?: { resetsAt?: string }
 }
 
+const add = <P>(list: P[], port: P): (() => void) => {
+  list.push(port)
+  return () => { list.splice(list.indexOf(port), 1) }
+}
+
 export class Capabilities {
   private readonly workers: WorkerPort[] = []
   private readonly verifiers: VerifierPort[] = []
   private readonly effects: EffectPort[] = []
 
   registerWorker(port: WorkerPort): () => void {
-    this.workers.push(port)
-    return () => { this.workers.splice(this.workers.indexOf(port), 1) }
+    return add(this.workers, port)
   }
 
   registerVerifier(port: VerifierPort): () => void {
-    this.verifiers.push(port)
-    return () => { this.verifiers.splice(this.verifiers.indexOf(port), 1) }
+    return add(this.verifiers, port)
   }
 
   registerEffect(port: EffectPort): () => void {
-    this.effects.push(port)
-    return () => { this.effects.splice(this.effects.indexOf(port), 1) }
+    return add(this.effects, port)
   }
 
   available(): AvailableCapabilities {

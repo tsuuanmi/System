@@ -150,30 +150,97 @@ test('a change that breaks a check fails; a Worker editing checks.yaml cannot we
   assert.match(result.reason, /value-is-good \(exit 1\)/)
 })
 
-async function verifyChange(yaml: string, files: Record<string, string>, subjectIsBase = false) {
+async function verifyChange(yaml: string, files: Record<string, string>, subjectIsBase = false, criteriaName = 'repo-checks-v1') {
   const artifacts = store()
   const repository = repo(yaml)
   const { task, tree, treeId } = await taskOn(artifacts, repository)
   const verifier = requiredChecks(artifacts, processSpawner)
-  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: criteriaName, input: task, operatorId: 't' })
   const subject = subjectIsBase ? treeId : await change(artifacts, repository, tree.commit, files)
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'checks', capability: 'code.required-checks', subject, criteria })
-  const commits = result.evidence.map((id) => {
+  const runs = result.evidence.map((id) => {
     const read = artifacts.get(id)
-    return read.state === 'stored' ? (read.envelope.content as { commit: string }).commit : ''
+    assert.equal(read.state, 'stored')
+    assert.ok(read.state === 'stored' && read.envelope.kind === CHECK_RUN_KIND.kind)
+    return checkRunSchema.parse(read.envelope.content)
   })
-  return { result, commits, base: tree.commit, repository }
+  return { result, runs, commits: runs.map((run) => run.commit), base: tree.commit, repository }
 }
+
+/** One shared counter in the verifier's throwaway HOME: fail the first N runs, then pass. */
+const failFirst = (count: number) => `n=$(cat "$HOME/n" 2>/dev/null || echo 0); echo $((n+1)) > "$HOME/n"; [ "$n" -ge ${count} ]`
+const flakyChecks = (count: number, red = false) => `checks:
+  - name: transient
+    run: '${failFirst(count)}'
+${red ? '    red: fail\n' : ''}`
+
+test('an inconclusive verdict follows the change when it passes on re-run', async () => {
+  const { result, runs, commits, base, repository } = await verifyChange(flakyChecks(2), { 'NOTES.md': 'x\n' })
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /re-run/)
+  assert.match(result.reason, /flaky/)
+  assert.equal(result.evidence.length, 3, 'a recovered change does not run the base twice')
+  assert.notEqual(commits[0], base)
+  assert.deepEqual(commits, [commits[0], base, commits[0]])
+  assert.deepEqual(runs.map((run) => run.exitCode), [1, 1, 0])
+  assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1, 'all worktrees are removed')
+})
+
+test("a base that passes on re-run makes the change's failure count", async () => {
+  const { result, runs, commits, base } = await verifyChange(flakyChecks(3), { 'NOTES.md': 'x\n' })
+  assert.equal(result.verdict, 'fail', result.reason)
+  assert.match(result.reason, /failed:/)
+  assert.match(result.reason, /re-run/)
+  assert.notEqual(commits[0], base)
+  assert.deepEqual(commits, [commits[0], base, commits[0], base])
+  assert.deepEqual(runs.map((run) => run.exitCode), [1, 1, 1, 0])
+})
+
+test('still inconclusive after the re-run is held with all four runs as evidence', async () => {
+  const { result, runs, commits, base } = await verifyChange('checks:\n  - name: ok\n    run: "true"\n  - name: broken\n    run: "false"\n', { 'NOTES.md': 'x\n' })
+  assert.equal(result.verdict, 'inconclusive', result.reason)
+  assert.match(result.reason, /also on a re-run/)
+  assert.equal(result.evidence.length, 7)
+  assert.notEqual(commits[0], base)
+  assert.deepEqual(commits, [commits[0], commits[0], base, base, commits[0], base, base])
+  assert.deepEqual(runs.map((run) => run.name), ['ok', 'broken', 'ok', 'broken', 'broken', 'ok', 'broken'])
+  assert.deepEqual(runs.map((run) => run.exitCode), [0, 1, 0, 1, 1, 0, 1])
+})
+
+test('the re-run is bounded to one', async () => {
+  const { result, runs, commits, base } = await verifyChange('checks:\n  - name: broken\n    run: "false"\n', { 'NOTES.md': 'x\n' })
+  assert.equal(result.verdict, 'inconclusive', result.reason)
+  assert.equal(runs.filter((run) => run.name === 'broken').length, 4, 'exactly two runs on the change and two on the base')
+  assert.deepEqual(commits, [commits[0], base, commits[0], base])
+})
+
+test('red-v1: an inconclusive red follows the change on re-run', async () => {
+  const { result, runs, commits, base } = await verifyChange(flakyChecks(2, true), { 'NOTES.md': 'x\n' }, false, 'red-v1')
+  assert.equal(result.verdict, 'fail', result.reason)
+  assert.match(result.reason, /no check with red: fail failed/)
+  assert.match(result.reason, /re-run/)
+  assert.deepEqual(commits, [commits[0], base, commits[0]])
+  assert.deepEqual(runs.map((run) => run.exitCode), [1, 1, 0])
+})
+
+test('red-v1: red when the base passes on re-run', async () => {
+  const { result, runs, commits, base } = await verifyChange(flakyChecks(3, true), { 'NOTES.md': 'x\n' }, false, 'red-v1')
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /failed as it should, and passes on the base/)
+  assert.match(result.reason, /re-run/)
+  assert.deepEqual(commits, [commits[0], base, commits[0], base])
+  assert.deepEqual(runs.map((run) => run.exitCode), [1, 1, 1, 0])
+})
 
 test('a check the base fails too is inconclusive, with the evidence of both runs', async () => {
   const { result, commits, base, repository } = await verifyChange('checks:\n  - name: ok\n    run: "true"\n  - name: broken\n    run: "false"\n', { 'NOTES.md': 'x\n' })
   assert.equal(result.verdict, 'inconclusive')
   assert.match(result.reason, /broken/)
   assert.match(result.reason, /the base fails it too/)
-  assert.equal(result.evidence.length, 4)
+  assert.match(result.reason, /also on a re-run/)
+  assert.equal(result.evidence.length, 7)
   assert.notEqual(commits[0], base)
-  assert.equal(commits[0], commits[1])
-  assert.deepEqual(commits.slice(2), [base, base])
+  assert.deepEqual(commits, [commits[0], commits[0], base, base, commits[0], base, base])
   assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1, 'both worktrees are removed')
 })
 
@@ -198,7 +265,7 @@ test('nothing runs on the base when the subject is the base itself', async () =>
 test('the base run runs the checks before the failed one first', async () => {
   const { result } = await verifyChange('checks:\n  - name: setup\n    run: touch ready\n  - name: needs-ready\n    run: test -f ready && exit 1\n  - name: after\n    run: "true"\n', { 'NOTES.md': 'x\n' })
   assert.equal(result.verdict, 'inconclusive')
-  assert.equal(result.evidence.length, 5, 'three on the change, two on the base: nothing after the last failed check')
+  assert.equal(result.evidence.length, 8, 'three on the change, two on the base, then one on the change and two on the base: nothing after the last failed check')
 })
 
 test('a check over its timeout fails', async () => {
@@ -496,7 +563,7 @@ test('red-v1: a red: fail check that fails on the base too is not red: alone, th
   const result = await verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'red', capability: 'code.required-checks', subject: await change(artifacts, repository, tree.commit, { 'tests/new.sh': 'false\n' }), criteria })
   assert.equal(result.verdict, 'inconclusive', result.reason)
   assert.match(result.reason, /fails on the base .* too/)
-  assert.equal(result.evidence.length, 4, 'build and unit on the change, then on the base')
+  assert.equal(result.evidence.length, 7, 'build and unit on the change and base, then unit on the change and build and unit on the base')
 })
 
 test('tests-frozen-v1: implement may add files, but not change one the tests step changed', async () => {

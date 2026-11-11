@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { GIT_TREE_KIND, gitTreeSchema, pin, snapshot, type EffectIntent } from '@system/work'
+import { GIT_TREE_KIND, gitTreeSchema, pin, snapshot, type EffectIntent, type EffectOutcome } from '@system/work'
 import { githubPublisher, type PublishConfig } from '../src/github.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'system-effects-'))
@@ -321,7 +321,7 @@ test('merge: two changes on the same tip; the second is merged only after its ch
   assert.equal(after.detail.checkedOn, ahead.detail.mergeCommit)
 })
 
-test('merge: a conflict with the tip fails naming the files; a failed check on the merge fails; main does not move', async () => {
+test('merge: a conflict with the tip fails naming the files; a failed check on the merge fails; main does not move', async (t) => {
   fresh()
   const artifacts = store()
   const { work, run, remoteRef } = setup()
@@ -339,14 +339,30 @@ test('merge: a conflict with the tip fails naming the files; a failed check on t
   const { publisher } = queue(artifacts, [{ verdict: 'fail', reason: 'failed: unit: a.test.ts "x": 1 !== 2' }])
   const merged = await publisher.apply(intent(first, merging, 'work:1111-aaaa'))
   const tip = remoteRef('main')
-  const conflict = await publisher.apply(intent(conflicting, merging, 'work:2222-bbbb'))
+  const conflict: EffectOutcome & { rejected?: string } = await publisher.apply(intent(conflicting, merging, 'work:2222-bbbb'))
   assert.equal(conflict.state, 'failed')
   assert.match(conflict.reason, /merge conflict with main at [0-9a-f]{12}: CHANGE\.md/)
-  const failed = await publisher.apply(intent(third, merging, 'work:3333-cccc'))
+  const failed: EffectOutcome & { rejected?: string } = await publisher.apply(intent(third, merging, 'work:3333-cccc'))
   assert.equal(failed.state, 'failed')
   assert.match(failed.reason, /checks on the merge with main at [0-9a-f]{12}: fail: failed: unit: a\.test\.ts "x": 1 !== 2/)
   assert.equal(remoteRef('main'), tip)
   assert.equal(merged.detail.mergeCommit, tip)
+  for (const [outcome, rejected] of [[conflict, 'conflict'], [failed, 'merge-check']] as const) {
+    await t.test(`observed ${rejected} carries the pinned base tip`, () => {
+      assert.equal(outcome.rejected, rejected)
+      assert.equal(outcome.detail.baseCommit, tip)
+      assert.ok(outcome.detail.base)
+      const base = artifacts.get(outcome.detail.base)
+      assert.ok(base.state === 'stored')
+      assert.equal(base.envelope.kind, 'git-tree')
+      assert.deepEqual(base.envelope.content, { repository: work, commit: tip, tree: run('rev-parse', `${tip}^{tree}`), parent: tip })
+      assert.equal(run('rev-parse', `refs/system/artifacts/${tip}`), tip)
+    })
+  }
+  const unchecked: EffectOutcome & { rejected?: string } = await githubPublisher(artifacts, { token: async () => undefined }, mergeConfig()).apply(intent(third, merging, 'work:4444-dddd'))
+  assert.equal(unchecked.state, 'failed')
+  assert.match(unchecked.reason, /no checks to run/)
+  assert.equal(unchecked.rejected, undefined)
 })
 
 test('merge: main moving while the merge is checked is caught by the lease; the change is merged and checked again on the new tip', async () => {

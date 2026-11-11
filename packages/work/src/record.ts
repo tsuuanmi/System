@@ -79,6 +79,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     retryable: z.literal(true).optional(),
     /** The Worker's final message objects to an earlier step's output (`OBJECTION: <what and why>`); the step failed, and the earlier step that lists it in `retry.onFail` is reopened with this text. */
     objection: z.string().optional(),
+    /** A no-change attempt on a step reopened by this failing verdict, passed on as the same change (`retry.rerunUnchanged`): the check runs again on it. */
+    unchangedAfter: contentIdSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,
@@ -87,6 +89,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     verdictId: contentIdSchema.optional(),
     evidence: z.array(contentIdSchema).optional(),
     verifier: z.object({ ref: z.string(), version: z.string() }).strict().optional(),
+    /** The second run of the check on the same change; the id is the first run's verdict. */
+    rerunOf: contentIdSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('attempt-lost'), seq: z.number().int(), at,
@@ -102,6 +106,10 @@ export const eventSchema = z.discriminatedUnion('type', [
     failure: contentIdSchema.optional(),
     /** An automatic reopening after this later step's objection: the step, whose recorded objection is handed to the new attempt as input `failure`. */
     objectedBy: z.string().optional(),
+    /** An automatic reopening after this later effect step's observed conflict or failed merge check (`rejected`); `failure` is its reason as a verdict. */
+    failedEffect: z.string().optional(),
+    /** The git-tree Artifact of the base branch's current tip, handed to the new attempt as input `base`. */
+    base: contentIdSchema.optional(),
     /** Only this Worker may take the step over. */
     worker: z.string().optional(),
     /** The previous attempt's partial output, handed to the new attempt as input `previous`. */
@@ -121,6 +129,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     /** `absent` and `unknown` come from reconciliation, which only reads the remote. */
     state: z.enum(['applied', 'failed', 'absent', 'unknown']), reason: z.string(),
     detail: z.record(z.string(), z.string()).optional(),
+    /** The remote observed a conflict with the base or a failing check on the merge (`EffectOutcome.rejected`); only such an outcome may reopen a step. */
+    rejected: z.enum(['conflict', 'merge-check']).optional(),
   }).strict(),
   z.object({
     type: z.literal('decided'), seq: z.number().int(), at, caller: storedCallerSchema,

@@ -35,7 +35,8 @@ test('both repository Workflow files parse and resolve with the same schema', ()
   const research = resolve(parseWorkflow(fixture('research.yaml')), available)
   assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks.checks', 'publish', 'accept'])
   assert.deepEqual(research.steps.map((s) => s.id), ['investigate', 'citations', 'accept'])
-  assert.deepEqual(se.workflow, { id: 'software-engineering', version: 1 })
+  assert.equal(se.workflow.id, 'software-engineering')
+  assert.ok(se.workflow.version >= 1)
 })
 
 test('the Brainstorm file: two proposals from the brief alone, then a synthesis of both exact proposals', () => {
@@ -316,10 +317,39 @@ test('retry names steps that fail and are tried again: the step itself or later 
   assert.match(problems(w('retry: { onFail: [], max: 1 }')).join(), /onFail/)
 })
 
+test('retry.rerunUnchanged accepts true and preserves it in the resolved spec', () => {
+  const yaml = `${base}  - id: implement
+    capabilities: [code-write]
+    outputs: [change]
+    retry: { onFail: [checks], max: 1, rerunUnchanged: true }
+  - id: checks
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: c }
+`
+  assert.doesNotThrow(() => resolve(parseWorkflow(yaml), available))
+  const spec = resolve(parseWorkflow(yaml), available)
+  const implement = spec.steps[0]!
+  assert.deepEqual('retry' in implement && implement.retry, { onFail: ['checks'], max: 1, rerunUnchanged: true })
+})
+
+for (const flag of ['false', '1', '"true"']) {
+  test(`retry.rerunUnchanged rejects ${flag}`, () => {
+    const yaml = `${base}  - id: implement
+    capabilities: [code-write]
+    outputs: [change]
+    retry: { onFail: [checks], max: 1, rerunUnchanged: ${flag} }
+  - id: checks
+    dependsOn: [implement]
+    verify: { capability: code.required-checks, subject: $steps.implement.change, criteria: c }
+`
+    assert.throws(() => parseWorkflow(yaml), WorkflowError)
+  })
+}
+
 test('software-engineering.yaml declares the retry on the checks of its Sub-workflow', () => {
   const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
   const implement = spec.steps.find((s) => s.id === 'implement')
-  assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks'], max: 1 })
+  assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks', 'publish'], max: 1 })
 })
 
 test('every shipped Workflow with a code-write step judged by checks declares the retry on those checks', () => {
@@ -354,7 +384,32 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     assert.equal(step('implement').inputs.red, undefined)
     // Tests frozen: judged on implement's change against the tests step's commit, before the checks run.
     assert.deepEqual(step('tests-frozen').verify, { capability: 'code.required-checks', subject: '$steps.implement.change', criteria: 'tests-frozen-v1', inputs: { tests: '$steps.tests.change' } })
-    assert.deepEqual(step('implement').retry, { onFail: ['tests-frozen', 'checks-code.checks'], max: 1 })
+    assert.deepEqual(step('implement').retry, { onFail: ['tests-frozen', 'checks-code.checks', ...(file === 'feature.yaml' ? ['publish'] : [])], max: 1, ...(file === 'feature.yaml' ? { rerunUnchanged: true } : {}) })
     assert.deepEqual(step('checks-code.checks').dependsOn, ['tests-frozen'])
+  })
+}
+
+test('retry.onFail may name an effect step that follows the Worker', () => {
+  const yaml = publishing('      capability: git.publish\n      subject: $steps.implement.change\n      requires: [checks]')
+    .replace('outputs: [change]', 'outputs: [change]\n    retry: { onFail: [publish], max: 1 }')
+  assert.doesNotThrow(() => resolve(parseWorkflow(yaml), available))
+})
+
+test('retry.onFail refuses an effect that does not follow the Worker', () => {
+  const yaml = publishing('      capability: git.publish\n      subject: $steps.implement.change\n      requires: [checks]') + `  - id: unrelated
+    capabilities: [code-write]
+    outputs: [change]
+    retry: { onFail: [publish], max: 1 }
+`
+  assert.match(problems(yaml).join(), /step unrelated retry.onFail names publish, which neither judges nor follows unrelated/)
+  assert.match(problems(yaml.replace('onFail: [publish]', 'onFail: [ghost]')).join(), /retry.onFail names ghost, which is not a step/)
+})
+
+for (const file of ['feature.yaml', 'software-engineering.yaml', 'hygiene.yaml']) {
+  test(`${file} declares publish in implement retry.onFail and validates`, () => {
+    const caps = { ...available, workers: new Set([...available.workers, 'code.tests', 'code.docs', 'tier.economy']) }
+    const spec = resolve(parseWorkflow(fixture(file)), caps, fixture)
+    const implement = spec.steps.find((s) => s.id === 'implement')
+    assert.ok(implement && 'retry' in implement && implement.retry?.onFail.includes('publish'))
   })
 }

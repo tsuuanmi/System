@@ -15,6 +15,9 @@
  *   base. A change that holds the base's tip goes in as it is; any other is
  *   merged with the tip (`git merge-tree`; a conflict fails, naming the files)
  *   and the merge commit is checked with the required checks' pinned criteria.
+ *   A conflict or a failing check returns `rejected: 'conflict' | 'merge-check'` and
+ *   `detail.base`, the git-tree Artifact of the tip, so a Workflow's `retry.onFail`
+ *   can reopen the change on it (sc-7); no other failure sets `rejected`.
  *   The base then moves to exactly that commit with a lease on the tip it was
  *   checked on (bors' "not rocket science" rule); if the base moved meanwhile,
  *   the change is merged and checked again on the new tip. The pull request is
@@ -185,6 +188,16 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
   async function mergeIn(t: Awaited<ReturnType<typeof target>>, intent: EffectIntent, open: Pull | undefined): Promise<EffectOutcome> {
     const change = t.tree.commit
     const failed = (reason: string): EffectOutcome => ({ state: 'failed', reason, detail: { repository: t.slug, branch: t.branch, commit: change } })
+    /** A refusal a new change on the newer base can fix: `detail.base` is the Artifact of the tip, handed to the Worker as its starting point (sc-7). */
+    const rejected = async (kind: 'conflict' | 'merge-check', tip: string, reason: string): Promise<EffectOutcome> => {
+      const tree = (await git(t.tree.repository, ['rev-parse', `${tip}^{tree}`])).trim()
+      await pin(t.tree.repository, tip)
+      const base = (await artifacts.put({
+        ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit: tip, tree, parent: tip }, subject: { type: 'git-commit', ref: tip },
+        classification: 'local-private', producer: { type: 'system', ref: 'git.publish' },
+      })).id
+      return { state: 'failed', rejected: kind, reason, detail: { repository: t.slug, branch: t.branch, commit: change, baseCommit: tip, base } }
+    }
     for (let round = 0; round < MERGE_ROUNDS; round++) {
       const tip = await baseTip(t)
       if (!tip) return failed(`${config.base} does not exist on ${config.remote}`)
@@ -193,7 +206,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       let checkedOn: string | undefined
       if (!(await holds(t, tip, change))) {
         const merged = await mergeTree(t.tree.repository, tip, change)
-        if ('conflicts' in merged) return failed(`merge conflict with ${config.base} at ${tip.slice(0, 12)}: ${merged.conflicts.join(', ')}`)
+        if ('conflicts' in merged) return rejected('conflict', tip, `merge conflict with ${config.base} at ${tip.slice(0, 12)}: ${merged.conflicts.join(', ')}`)
         commit = (await git(t.tree.repository, ['commit-tree', merged.tree, '-p', tip, '-p', change, '-m', `Merge ${t.branch} into ${config.base}`])).trim()
         await pin(t.tree.repository, commit)
         const subject = (await artifacts.put({
@@ -202,7 +215,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         })).id
         if (!deps.check) return failed('the merge queue has no checks to run on the merge')
         const checked = await deps.check(subject, intent)
-        if (checked.verdict !== 'pass') return failed(`checks on the merge with ${config.base} at ${tip.slice(0, 12)}: ${checked.verdict}: ${checked.reason}`)
+        if (checked.verdict !== 'pass') return rejected('merge-check', tip, `checks on the merge with ${config.base} at ${tip.slice(0, 12)}: ${checked.verdict}: ${checked.reason}`)
         checkedOn = tip
       }
       const { pull } = await publishBranch(t, intent, commit, open, true)

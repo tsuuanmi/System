@@ -9,7 +9,6 @@ import {
   MAX_INLINE_BYTES,
   artifactId,
   idSet,
-  isStricter,
   stricter,
   type ArtifactRecord,
   type BlobRef,
@@ -196,7 +195,7 @@ export class Artifacts {
       const existing = this.records.get(id)
       if (existing) {
         // Deduplication never relabels stored content: a stricter request is refused, a laxer one keeps the stored label.
-        if (isStricter(classification, existing.envelope.classification)) {
+        if (stricter(classification, existing.envelope.classification) !== existing.envelope.classification) {
           throw new ArtifactError('stricter-on-dedup', `Artifact ${id} is stored as ${existing.envelope.classification}; refusing ${classification} on deduplication`)
         }
         await this.records.update(id, (current) => ({ ...current, occurrences: [...current.occurrences, occurrence] }))

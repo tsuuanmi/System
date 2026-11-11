@@ -9,12 +9,12 @@
 # Stages run one after the other, each on the previous change. The code is
 # checked before the docs, so a failure goes back to the step that can fix it,
 # with the failure as input (retry); a failing code check reopens tests when
-# implement is out of budget, and so does implement saying a frozen test is wrong (dg-8); the second check, after docs, runs what
+# implement is out of budget, and so does implement saying a frozen test is wrong (dg-8); implement changing nothing after a failing check runs that check again once (sc-9); a publish refused for a conflict with the base or a failing check on the merge reopens implement on the base's new tip, and the checks, docs and publish run again (sc-7); the second check, after docs, runs what
 # the docs change touches. The default Workflow for a code change (df-27);
 # software-engineering.yaml remains for a change too small for a plan.
 schema: system.workflow/v1
 id: feature
-version: 3
+version: 4
 steps:
   - id: plan
     capabilities: [code-write, code.develop]
@@ -66,12 +66,12 @@ steps:
       capability: code.required-checks
       subject: $steps.tests.change
       criteria: red-v1
-      # An inconclusive verdict (every failing check fails on the base too) holds the Work here, before implement (dg-2).
+      # An inconclusive verdict (every failing check fails on the base too, after one re-run) holds the Work here, before implement (dg-2).
       holdInconclusive: true
   - id: implement
     dependsOn: [red]
     capabilities: [code-write, code.develop]
-    retry: { onFail: [tests-frozen, checks-code.checks], max: 1 }
+    retry: { onFail: [tests-frozen, checks-code.checks, publish], max: 1, rerunUnchanged: true }
     freeze: $steps.tests.change
     inputs:
       task: $work.input
@@ -90,6 +90,11 @@ steps:
       existed and assert the behaviour the plan changes. Run the repository's
       checks that your change touches. On a second attempt, the failed check
       is in your input: fix what it names.
+      If your input has a base, your working directory is the base branch's
+      current tip, because the publish of your previous change was refused (a
+      conflict or failing checks on the merge): re-apply your previous change on it (git
+      cherry-pick or git diff, then apply), resolve the conflicts, read the
+      failure for what failed, and never give up the intent of the change.
   # Tests frozen: implement's change against the tests step's commit.
   - id: tests-frozen
     dependsOn: [implement]

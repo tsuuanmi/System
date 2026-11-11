@@ -53,7 +53,7 @@ one form:
 
 | Form | Fields | Meaning |
 |---|---|---|
-| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry`, optional `freeze` (a `$steps.<step>.<slot>` change whose files are put back, as it left them, into this step's first output when it is recorded; dg-10), optional `mayBeEmpty` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
+| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry` (with `rerunUnchanged`, sc-9), optional `freeze` (a `$steps.<step>.<slot>` change whose files are put back, as it left them, into this step's first output when it is recorded; dg-10), optional `mayBeEmpty` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
 | verify step | `verify: {capability, subject, criteria, inputs?, holdInconclusive?}` | one verifier call on the exact Artifact the `subject` reference resolves to; `inputs` (as a Worker step's) hands it further exact Artifacts, such as the report beside the sources; `holdInconclusive: true` holds the Work at this step for the operator on an `inconclusive` verdict (see Operator decisions) |
 | effect step | `effect: {capability, subject, requires: [verify steps], params?}` | one external effect of the exact subject, only after every required verdict on that subject is `pass`; recorded as intent, then outcome |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
@@ -118,7 +118,7 @@ check failed for a reason outside the change; only a human asks it, so no
 agent keeps the luckiest of several runs; the earlier verdict stays in
 the record and no longer counts.
 
-**`retry: { onFail: [<step>...], max: n }`** on a Worker step (Item df-7) is
+**`retry: { onFail: [<step>...], max: n, rerunUnchanged?: true }`** on a Worker step (Item df-7) is
 the one automatic further attempt, declared in the Workflow and the same for
 every domain. `onFail` names the verify steps that judge the step's output or come after it
 and depend on it (a `fail` verdict qualifies; `error` and `inconclusive` do not) and the step
@@ -135,8 +135,25 @@ IDs) and the change as `previous`; after a Worker failure it starts fresh with
 neither. A later Worker step may also be in `onFail`: when its final message has a line
 `OBJECTION: <what and why>`, that step fails with the text as its reason, and this step is
 reopened (budget counted per objecting step) with a `fail` verdict Artifact holding the text as
-input `failure`; a step no other step lists cannot object. Anything else, and every later
-failure, is the operator's `work retry`.
+input `failure`; a step no other step lists cannot object.
+A later effect step may also be in `onFail` (sc-7): when its outcome was observed as
+a conflict with the base or a failing check on the merge (`rejected` on
+`effect-observed`; see the [effects README](../../packages/effects/README.md)), this
+step is reopened (budget counted per effect step) with the reason as a `fail` verdict
+Artifact in input `failure`, its previous change as `previous`, and the base's current
+tip as `base`, which is the Worker's starting tree. The steps after it, publish
+included, run again. A `freeze`d change is restored over the new one as before, so a
+test file that the base changed since is put back as the tests step wrote it. An
+unknown or reconciled outcome never carries `rejected`, so it is never retried
+(authority and effects invariant). Anything else, and every later failure, is the
+operator's `work retry`.
+With `rerunUnchanged: true` in `retry` (sc-9), a step reopened by a failing check that then
+changes nothing does not fail with "no change": the check runs again once on the same change
+(the `observed` event names the first verdict as `unchangedAfter`). A pass goes on and its
+reason says it is flaky (`rerunOf` names the first run); a second `fail` is recorded
+`inconclusive` with both runs' evidence, so the Work is held for the operator to approve,
+deny or retry, as for any `inconclusive` verdict. Without a failing check behind the
+reopening, no change still fails the step.
 It is no operator touch in `work report`.
 
 **Effects** (ADR-0004 decision 10): an effect step's provider validates its
@@ -146,6 +163,10 @@ after it, `effect-observed`. A lost host or a failed `apply` leads to
 `reconcile`, which only reads the remote: `applied` is recorded, `absent` is
 applied again, `unknown` holds the Work until a later run reads a definite
 outcome. An effect is never retried blindly, and runs only on a `pass`.
+A publish refused for a conflict or a failing merge check is observed as such, and
+its Worker step is reopened on the base's new tip (`retry`, above); the effect then
+runs again on the new change, a new subject with a new operation. Nothing else is
+retried.
 
 **Operator decisions:** Work held for an inconclusive verdict, an effect that
 needs approval, or `approval: operator` records the step it awaits.
@@ -183,8 +204,10 @@ structure alone cannot guarantee exactly-once effects.
 (`admitted`, `dispatched`, `observed`, `verified`, `attempt-lost`, `terminal`)
 and the state they fold to; every change is one atomic update. A step whose
 last attempt was dispatched but never observed is recorded `attempt-lost` and
-dispatched again as a new attempt with the same recorded inputs; completed
-steps are never re-run. `system work replay` folds the events again and
+dispatched again as a new attempt with the same recorded inputs (a Worker
+attempt by the Host on start, once its process is confirmed gone; otherwise on
+`system work run`, see [Start, stop and recovery](host.md#start-stop-and-recovery));
+completed steps are never re-run. `system work replay` folds the events again and
 compares the result with the stored state.
 
 DAG support should emerge from `dependsOn` only. Do not require a

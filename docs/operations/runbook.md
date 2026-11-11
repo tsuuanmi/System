@@ -64,8 +64,10 @@ Clients still connected do not delay the stop: the Host lets admitted calls
 finish for 2 s, then closes every connection, and the CLI says the Host is not
 running.
 
-Whatever was running when the Host stopped is lost at the next start and is
-left interrupted; nothing runs again until `system work run` or `retry`. (A
+Whatever was running when the Host stopped is lost at the next start. A Worker
+attempt cut short is dispatched again by the Host once its process is confirmed
+gone; a lost attempt not confirmed gone, a verifier run or a publish or merge
+effect waits for `system work run` or `retry`. (A
 Host that stopped itself for new code waits for its attempts first; see
 [Upgrading](#upgrading).)
 
@@ -109,8 +111,8 @@ The Host's side of an upgrade:
    A process still alive 10 s after it stopped is made to exit, and logs
    `still running ... open: <resources>`: what held it, to report.
 3. The new Host recovers as on any start and logs `continuing N Works held for
-   the upgrade`: the Works whose runs waited at the gate go on, and nothing
-   that was interrupted does.
+   the upgrade`: the Works whose runs waited at the gate go on; what was
+   interrupted is left to recovery (see [Stop, restart, status](#stop-restart-status)).
 
 A command run meanwhile waits up to 3 s for the swap before it says the Host
 is not running. While the Host waits on a long attempt, a CLI of the new code
@@ -135,8 +137,10 @@ systemctl --user restart system
 ```
 
 The restart interrupts running attempts; do it when `system work list` shows
-none running. A release refuses a store whose records it does not know only if
-a later release changed the record schema (`git diff <commit>..<later> --
+none running. What the Host then runs again by itself, and what waits for
+`system work run`, is in [Stop, restart, status](#stop-restart-status). A
+release refuses a store whose records it does not know only if a later release
+changed the record schema (`git diff <commit>..<later> --
 packages/work/src/record.ts packages/artifacts/src` shows it).
 
 ## Changing the profile's config
@@ -187,6 +191,8 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 ## Attempts at once, and held slots
 
 An `agents` account may carry `label` and `priority: primary` (at most one per Runtime); name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
+
+`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. A reading is at most 10 minutes old (cached; an attempt's rate-limit events refresh it), and reading never spends a model turn. When it cannot be read the line says why (`quota: unreadable - ...`): a web account, an unverified CLI version, no token, not registered. See the [agents README](../../packages/agents/README.md#quota).
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
@@ -431,21 +437,37 @@ once more with the same `commandId`, so the Host does it once: look at
    the Host alive, and busy or stuck?
 2. `system doctor` boots DSH beside the Host and says whether it answers.
 3. If it is stuck, `systemctl --user restart system`. Whatever was running is
-   left interrupted; nothing runs again until `system work run` or `retry`.
+   lost; a Worker attempt is dispatched again by the Host once its process is
+   confirmed gone, and anything else waits for `system work run` or `retry`.
 
 ## A check the base fails too
 
 A required check that fails on a change is run again on its base commit. When
-the base fails it too, the `checks` verdict is `inconclusive` (reason
-`<check>: the base fails it too`, evidence of both runs) and the Work is **held**
+the base fails it too, the failing checks are run once more on the change and on the
+base (sc-13), because a loaded machine fails checks the change did not break: a pass on the
+change's re-run gives `pass`, a pass on the base's gives `fail` (the step reopens as for any
+failure). Only when the checks still fail on both is the `checks` verdict `inconclusive` (reason
+`<check>: the base fails it too`, `also on a re-run once`, evidence of all the runs) and the Work is **held**
 before `publish`, not retried. `system work show <id>` shows the reason: look
-at the base run. `system work approve <id> --reason ...` lets it publish and
+at the base runs (`system work show` lists all of them). `system work approve <id> --reason ...` lets it publish and
 merge; `system work deny` fails it.
 
 The same applies at `red`, earlier: when every `red: fail` check that failed also
-fails on the base, the `red` verdict is `inconclusive` and the Work is held at
-`red`, before `implement` starts. `system approve` continues; `system deny`
+fails on the base, and still does after the one re-run on the change and the base (sc-13), the `red`
+verdict is `inconclusive` and the Work is held at `red`, before `implement` starts. `system approve` continues; `system deny`
 fails the Work.
+
+## A check that fails again on the same change
+
+When a failing check reopens `implement` and `implement` changes nothing, the
+check runs once more on that same change (`retry.rerunUnchanged`, sc-9;
+[the vocabulary](../architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1)).
+If the second run passes, the Work goes on and `system work show <id>` notes
+the check as flaky. If it fails again, the verdict is `inconclusive` with both
+runs as evidence and the Work is **held**: `system work approve <id>` lets it
+go on, `system work deny` fails it, and `system work retry <id> --step <verify
+step>` asks the check again. This re-run (sc-9) is separate from the verifier's own one re-run of an
+inconclusive verdict (sc-13, [above](#a-check-the-base-fails-too)).
 
 ## Following a Work, and detaching
 

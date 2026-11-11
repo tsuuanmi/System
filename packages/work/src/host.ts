@@ -4,18 +4,19 @@
  * each Work-changing operation through one commit lane. A command's
  * `commandId` receipt is written with the event it caused, so a repeat is
  * answered from the record, also after a restart. On start, a Work with an
- * attempt that never reported has it marked `attempt-lost` and stays
- * interrupted until an explicit `run` or `retry`.
+ * attempt that never reported has it marked `attempt-lost`. A Work whose lost
+ * attempts are all Worker attempts confirmed gone (and with no effect left
+ * unresolved) is run again by the Host itself; any other stays interrupted
+ * until an explicit `run` or `retry`.
  */
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
-import type { CancelRequest } from './control.ts'
-import { WorkController, type Admission, type ClaimTable, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type CancelRequest, type ClaimTable, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
 import type { Capabilities } from './registry.ts'
-import { Slots } from './slots.ts'
+import { Slots, type LostAttempt } from './slots.ts'
 import { TERMINAL, type Caller, type Claim, type WorkRecord } from './record.ts'
 
 export interface HostOptions {
@@ -61,7 +62,7 @@ export class Host {
   readonly slots: Slots
   private readonly commands = new Map<string, Seen>()
   private closed = false
-  /** The Works that had an attempt marked lost when this Host started: nothing resumes them. */
+  /** The Works that had an attempt marked lost when this Host started: `resume` leaves them alone; the settled ones are run by `recover`. */
   private readonly lostAtStart = new Set<string>()
 
   private constructor(lock: HostLock, options: HostOptions) {
@@ -82,7 +83,9 @@ export class Host {
     const lock = await acquireHostLock(options.home)
     try {
       const host = new Host(lock, options)
-      await host.recover()
+      const again = await host.recover()
+      // Fire and forget, like `resume`: start does not wait for the Works.
+      for (const id of again) if (!host.controller.runningElsewhere(id)) host.run(id).catch(() => {})
       return host
     } catch (error) {
       await lock.release()
@@ -90,16 +93,35 @@ export class Host {
     }
   }
 
-  private async recover(): Promise<void> {
+  /** Mark what the restart cut short, and return the Works to run again: all lost attempts are Worker attempts confirmed gone, no effect is unresolved. */
+  private async recover(): Promise<string[]> {
+    const lost = new Map<string, LostAttempt[]>()
+    const effectsSettled = new Set<string>()
     for (const record of this.controller.list()) {
       for (const receipt of record.receipts ?? []) {
         this.commands.set(receipt.commandId, { args: receipt.args, result: async () => this.controller.get(record.id), begun: Promise.resolve() })
       }
       if (TERMINAL.has(record.state.status)) continue
-      if ((await this.lane(() => this.controller.interrupt(record.id))).length) this.lostAtStart.add(record.id)
+      const attempts = await this.lane(() => this.controller.interrupt(record.id))
+      if (!attempts.length) continue
+      this.lostAtStart.add(record.id)
+      lost.set(record.id, attempts)
+      const after = this.controller.get(record.id)
+      if (after && Object.values(after.state.effects).every((e) => e.state === 'applied' || e.state === 'failed')) effectsSettled.add(record.id)
     }
     // Those whose process is already gone free their slot now; the rest stay held.
-    await this.slots.settle()
+    const gone = new Set((await this.slots.settle()).map((a) => a.attemptId))
+    const again: string[] = []
+    for (const [id, attempts] of lost) {
+      const record = this.controller.get(id)
+      if (!record || TERMINAL.has(record.state.status) || !effectsSettled.has(id)) continue
+      const workers = attempts.every((a) => {
+        const d = record.events.findLast((e) => e.type === 'dispatched' && e.attemptId === a.attemptId)
+        return d?.type === 'dispatched' && d.executor === 'worker' && gone.has(a.attemptId)
+      })
+      if (workers) again.push(id)
+    }
+    return again
   }
 
   /** Stop: refuse every further operation and free the home. Whatever was cut short is the next start's recovery. */
