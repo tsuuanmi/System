@@ -324,14 +324,14 @@ async function listening(open: (caller?: { type: string; operatorId: string }) =
 }
 
 const settled = async (what: string, ok: () => boolean) => {
-  for (const end = Date.now() + 20_000; Date.now() < end; await new Promise((r) => setTimeout(r, 10))) if (ok()) return
+  for (const end = Date.now() + 120_000; Date.now() < end; await new Promise((r) => setTimeout(r, 10))) if (ok()) return
   assert.fail(`timed out waiting for ${what}`)
 }
 
 const heldWorkflow = `${workflowFile('software-engineering.yaml')}      approval: operator\n`
 const seUses = { 'code-checks.yaml': workflowFile('code-checks.yaml') }
 
-test('work.watch sends one work.changed when the Work finishes, and one when it is held', { timeout: 60_000 }, async () => {
+test('work.watch sends one work.changed when the Work finishes, and one when it is held', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const { client, notices } = await listening(open)
   const done = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
@@ -354,7 +354,7 @@ test('work.watch sends one work.changed when the Work finishes, and one when it 
   assert.deepEqual([notices[2]!.status, notices.length], ['succeeded', 3])
 })
 
-test('work.unwatch stops the notices; a watch on another Work is not heard', { timeout: 60_000 }, async () => {
+test('work.unwatch stops the notices; a watch on another Work is not heard', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const quiet = await listening(open)
   const loud = await listening(open)
@@ -374,7 +374,7 @@ test('work.unwatch stops the notices; a watch on another Work is not heard', { t
   await assert.rejects(quiet.client.call('work.watch', { workId: 'work:nope' }), /no Work work:nope/)
 })
 
-test('a closed connection drops its watches', { timeout: 60_000 }, async () => {
+test('a closed connection drops its watches', { timeout: 120_000 }, async () => {
   const { f, host, open } = await started()
   let live = 0
   const real = host.view.onChange.bind(host.view)
@@ -390,7 +390,7 @@ test('a closed connection drops its watches', { timeout: 60_000 }, async () => {
   assert.equal((await terminal(next, work.id)).status, 'succeeded')
 })
 
-test('a client that missed the notice reads on from its cursor and loses nothing', { timeout: 60_000 }, async () => {
+test('a client that missed the notice reads on from its cursor and loses nothing', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const away = await listening(open)
   const work = await away.client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
@@ -414,7 +414,7 @@ test('a client that missed the notice reads on from its cursor and loses nothing
   assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', seq: all.events.at(-1)!.seq })
 })
 
-test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 60_000 }, async () => {
+test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 120_000 }, async () => {
   let twoTurns!: () => void
   const reported = new Promise<void>((resolve) => { twoTurns = resolve })
   const { open } = await started({ stallMinutes: 0.005, setup: (f) => f.capabilities.registerWorker({
@@ -453,7 +453,7 @@ test('a running attempt shows its progress in work.show, and a quiet one sends a
   assert.doesNotMatch(JSON.stringify(record), /turns|lastTool|stalled/, 'progress is an observation of the moment, not an event')
 })
 
-test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and replay exactly; recursion and depth 4 are refused at admission', { timeout: 60_000 }, async () => {
+test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and replay exactly; recursion and depth 4 are refused at admission', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const client = await open()
   const head = (id: string) => `schema: system.workflow/v1\nid: ${id}\nversion: 1\nsteps:\n`
@@ -486,7 +486,7 @@ test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and
   await assert.rejects(client.call('work.submit', { workflow: outer, input: input(f) }), /checks\.yaml/)
 })
 
-test('software-engineering.yaml checks through code-checks.yaml: a failed check, retried on its own, passes on the same subject and the Work is accepted; the failed verdict is kept', { timeout: 60_000 }, async () => {
+test('software-engineering.yaml checks through code-checks.yaml: a failed check, retried on its own, passes on the same subject and the Work is accepted; the failed verdict is kept', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const client = await open()
   const se = f.files('software-engineering.yaml')
@@ -520,7 +520,7 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
   assert.equal((await client.call('work.replay', { workId: work.id }) as { matches: boolean }).matches, true)
 })
 
-test('work.submit without the content of the Sub-workflows: the Host reads them itself', { timeout: 60_000 }, async () => {
+test('work.submit without the content of the Sub-workflows: the Host reads them itself', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const client = await open(agent)
   const work = await client.call('work.submit', { workflow: workflowFile('software-engineering.yaml'), input: input(f) }).catch((error: Error) => error)

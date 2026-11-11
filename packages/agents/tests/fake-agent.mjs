@@ -9,6 +9,7 @@
 //   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below, and every other output ends with the citation [s1]
 //   FAKE:sleep    unless PARTIAL.md exists: wait; on SIGTERM write PARTIAL.md and exit 143
 //   FAKE:stubborn ignore SIGTERM (the grace then ends in SIGKILL)
+//   FAKE:ready=FILE  with FAKE:sleep or FAKE:stubborn, create FILE once the SIGTERM handler is in place, so a test stops the agent on that, not after a delay
 //   FAKE:grandchild=FILE  start a process in the agent's own group that waits, and write its pid to FILE
 //   FAKE:escaped=FILE     the same, but in a session of its own (setsid), as a `system host` a test started might be
 //   FAKE:holdstdout=FILE  with FAKE:outputs, leave a process in the agent's group that holds stdout open (as a leaked Xvfb does) and write its pid to FILE
@@ -116,6 +117,8 @@ if (hang && prompt.includes(`Step: ${hang[1]}\n`) && !existsSync(hang[2])) {
     process.exit(143)
   })
   setInterval(() => {}, 1000)
+  const ready = /FAKE:ready=(\S+)/.exec(prompt)?.[1]
+  if (ready) writeFileSync(ready, '')
 } else {
   const delay = Number(/FAKE:delay=(\d+)/.exec(prompt)?.[1] ?? 0)
   setTimeout(() => finish(true, 'done'), delay)

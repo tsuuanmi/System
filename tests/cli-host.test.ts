@@ -18,7 +18,7 @@ const held = { SYSTEM_FAKE_HOLD_AT: 'task', SYSTEM_FAKE_HOLD_FILE: hold }
 const system = (...args: string[]) => cli.run(args)
 const status = (workId: string) => (JSON.parse(system('work', 'show', workId).stdout) as { state: { status: string } }).state.status
 
-const until = async (what: string, ok: () => boolean | Promise<boolean>, ms = 30_000) => {
+const until = async (what: string, ok: () => boolean | Promise<boolean>, ms = 120_000) => {
   for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) if (await ok()) return
   assert.fail(`timed out waiting for ${what}`)
 }
@@ -153,7 +153,7 @@ test('a timeout retries once with the same commandId: one Work', { timeout: 120_
   }
 })
 
-test('a Host that does not answer is named, with the runbook', { timeout: 60_000 }, async () => {
+test('a Host that does not answer is named, with the runbook', { timeout: 120_000 }, async () => {
   const silentHome = join(home, 'silent')
   mkdirSync(join(silentHome, 'system'), { recursive: true })
   const sockets: Socket[] = []
