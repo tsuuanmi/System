@@ -53,7 +53,7 @@ const store = () => memoryArtifacts(
 ).artifacts
 const producer = { type: 'operator' as const, ref: 'tester' }
 
-function repo(checksYaml?: string): string {
+function repo(checksYaml?: string, extra: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(root, 'repo-'))
   const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   git('init', '--quiet')
@@ -61,6 +61,10 @@ function repo(checksYaml?: string): string {
   if (checksYaml) {
     mkdirSync(join(dir, '.system'))
     writeFileSync(join(dir, '.system', 'checks.yaml'), checksYaml)
+  }
+  for (const [path, text] of Object.entries(extra)) {
+    mkdirSync(join(dir, path, '..'), { recursive: true })
+    writeFileSync(join(dir, path), text)
   }
   git('add', '.')
   git('commit', '--quiet', '-m', 'base')
@@ -564,6 +568,72 @@ test('red-v1: a red: fail check that fails on the base too is not red: alone, th
   assert.equal(result.verdict, 'inconclusive', result.reason)
   assert.match(result.reason, /fails on the base .* too/)
   assert.equal(result.evidence.length, 7, 'build and unit on the change and base, then unit on the change and build and unit on the base')
+})
+
+/** Run red-v1 with a passing build and a unit check against a real tests-step change. */
+async function redFailure(run: string, files: Record<string, string>, timeoutSeconds = 10, extra: Record<string, string> = {}) {
+  const artifacts = store()
+  const repository = repo(`checks:
+  - name: build
+    run: "true"
+    red: pass
+  - name: unit
+    run: ${JSON.stringify(run)}
+    red: fail
+    timeoutSeconds: ${timeoutSeconds}
+`, extra)
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'red-v1', input: task, operatorId: 't' })
+  const subject = await change(artifacts, repository, tree.commit, files)
+  return verifier.verify({ workId: 'w', attemptId: 'a', stepId: 'red', capability: 'code.required-checks', subject, criteria })
+}
+
+test('red-v1: a timeout without named new tests is not red', { timeout: 60_000 }, async () => {
+  const result = await redFailure('! test -f tests/new.sh || sh tests/new.sh', { 'tests/new.sh': 'sleep 30\n' }, 1)
+  assert.equal(result.verdict, 'fail', result.reason)
+  assert.match(result.reason, /timed out after 1 s/)
+  assert.match(result.reason, /not a red failure/)
+  assert.equal(result.evidence.length, 2, 'reject before running the base: only build and unit on the change')
+})
+
+test('red-v1: a killed check without named new tests is not red', async () => {
+  const result = await redFailure('! test -f tests/new.sh || sh tests/new.sh', { 'tests/new.sh': 'kill -9 $$\n' })
+  assert.equal(result.verdict, 'fail', result.reason)
+  assert.match(result.reason, /not a red failure/)
+})
+
+test('red-v1: a timeout naming only new test files is red', { timeout: 60_000 }, async () => {
+  const hanging = "import { test } from 'node:test'\ntest('first', () => {})\ntest('waits forever', () => new Promise(() => { setInterval(() => {}, 1000) }))\n"
+  const result = await redFailure('test ! -f hangs.test.mjs || node --test hangs.test.mjs', { 'hangs.test.mjs': hanging }, 3)
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /hangs\.test\.mjs/)
+})
+
+test('red-v1: failing tests in new test files are red', async () => {
+  const failing = "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\ntest('adds', () => { assert.equal(1 + 1, 3) })\n"
+  const result = await redFailure('test ! -f new.test.mjs || node --test', { 'new.test.mjs': failing })
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.match(result.reason, /new\.test\.mjs/)
+})
+
+test('red-v1: failures only in files the tests step did not write are not red', async () => {
+  const old = "import { test } from 'node:test'\nimport { existsSync } from 'node:fs'\ntest('old', () => { if (existsSync('flag.txt')) throw new Error('boom') })\n"
+  const passing = "import { test } from 'node:test'\ntest('new', () => {})\n"
+  const result = await redFailure('node --test', { 'flag.txt': 'trigger\n', 'new.test.mjs': passing }, 10, { 'old.test.mjs': old })
+  assert.equal(result.verdict, 'fail', result.reason)
+  assert.match(result.reason, /old\.test\.mjs/)
+  assert.match(result.reason, /not a red failure/)
+})
+
+test('red-v1: an inconclusive check that times out on the change re-run is not red', { timeout: 60_000 }, async () => {
+  // The first change and base runs fail normally. Only the change's re-run hangs.
+  const run = 'n=$(cat "$HOME/n" 2>/dev/null || echo 0); echo $((n+1)) > "$HOME/n"; if [ "$n" -eq 2 ]; then sleep 30; fi; exit 1'
+  const result = await redFailure(run, { 'tests/new.sh': 'false\n' }, 1)
+  assert.equal(result.verdict, 'fail', result.reason)
+  assert.match(result.reason, /timed out after 1 s/)
+  assert.match(result.reason, /not a red failure/)
+  assert.equal(result.evidence.length, 5, 'change, base with prerequisites, then unit on the change; no second base run')
 })
 
 test('tests-frozen-v1: implement may add files, but not change one the tests step changed', async () => {

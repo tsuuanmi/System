@@ -102,7 +102,16 @@ checks:
   - **`red-v1`**, the red check of `feature.yaml`, on the tests step's change
     before any code: the selected checks run as above. A `red: fail` check
     that failed counts as red only when it passes on the base (run again
-    there as df-25 does, up to the last such check). `pass` when every check
+    there as df-25 does, up to the last such check), and only when the
+    failure is the new tests' own (ro-3): a check that timed out, was killed
+    or crashed counts only if the failing tests it names (the test files
+    Node's runner reports failing or, on a timeout, running) are all among the
+    files the tests step added or changed; one that names none, or names
+    others, is `fail`ed (`failed: not a red failure: ...`, the base is not run;
+    the tests step is reopened as for any red failure). A check that finished
+    with failing tests needs at least one in a file the tests step added or
+    changed; a plain failure naming no test file is as before. The re-run
+    (sc-13) applies the same rule to its own failure. `pass` when every check
     with `red: pass` passed (such as build, docs) and at least one check is
     red; `fail` when a `red: pass` check failed (`failed: must pass with only
     the new tests: ...`; not run on the base), when no `red: fail` check

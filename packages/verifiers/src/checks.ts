@@ -15,12 +15,12 @@
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, matchesGlob } from 'node:path'
+import { basename, join, matchesGlob } from 'node:path'
 import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult } from '@system/work'
 import { parse } from 'yaml'
-import { firstFailure, interrupted, nodeBin } from './reasons.ts'
+import { failingFiles, firstFailure, interrupted, interruptedFiles, nodeBin } from './reasons.ts'
 import { z } from 'zod'
 
 export const CHECKS_FILE = '.system/checks.yaml'
@@ -228,7 +228,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           if (run.exitCode !== 0 || run.timedOut || run.leftovers?.length) failedBefore.add(run.name)
         }
         /** One check on one commit's worktree: the change and the base run it the same way, so "fails" means the same on both. */
-        const runCheck = async (check: Checks['checks'][number], cwd: string, commit: string): Promise<{ id: string; failed?: string; leftover: boolean; ms: number }> => {
+        const runCheck = async (check: Checks['checks'][number], cwd: string, commit: string): Promise<{ id: string; failed?: string; leftover: boolean; ms: number; files: string[]; interruptedRun: boolean }> => {
           const started = now()
           // `timeout` interrupts the whole group first, so a test runner says what it was running; the abort is the backstop.
           const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
@@ -247,6 +247,8 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           const id = (await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id
           let failure: string | undefined
           let leftover = false
+          // The test files the output names as failing (a timeout: as running), for red-v1.
+          const files = run.timedOut ? interruptedFiles(output) : failingFiles(output)
           if (run.timedOut) {
             const running = interrupted(output)
             failure = running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`
@@ -257,18 +259,18 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             failure = `${check.name} (left running: ${leftovers.join(', ')})`
             leftover = true
           }
-          return { id, ...(failure ? { failed: failure } : {}), leftover, ms: run.durationMs }
+          return { id, ...(failure ? { failed: failure } : {}), leftover, ms: run.durationMs, files, interruptedRun: run.timedOut || outcome.signal != null || (outcome.exitCode ?? 0) > 128 }
         }
         const failedNames: string[] = []
         /** Each check run and why it failed, if it did; `leftover` when only what it left running failed it. */
-        const results: { name: string; red?: 'pass' | 'fail'; failure?: string; leftover: boolean }[] = []
+        const results: { name: string; red?: 'pass' | 'fail'; failure?: string; leftover: boolean; files: string[]; interruptedRun: boolean }[] = []
         const chosen = checks.checks.filter((check) => asItIs || selected(check, touched) || failedBefore.has(check.name))
         for (const check of checks.checks) if (!chosen.includes(check)) skipped.push(check.name)
         for (const check of chosen) {
           const result = await runCheck(check, worktree, tree.commit)
           evidence.push(result.id)
           ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s${!asItIs && !selected(check, touched) ? ' (failed earlier)' : ''}`)
-          results.push({ name: check.name, red: check.red, failure: result.failed, leftover: result.leftover })
+          results.push({ name: check.name, red: check.red, failure: result.failed, leftover: result.leftover, files: result.files, interruptedRun: result.interruptedRun })
           if (result.failed) {
             failed.push(result.failed)
             failedNames.push(check.name)
@@ -300,12 +302,12 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           }
         }
         /** The one re-run (sc-13): the named checks again on the change, in file order; each one's failure, undefined when it passes. */
-        const rerunOnChange = async (names: string[]): Promise<Map<string, string | undefined>> => {
-          const again = new Map<string, string | undefined>()
+        const rerunOnChange = async (names: string[]): Promise<Map<string, { failure?: string; files: string[]; interruptedRun: boolean }>> => {
+          const again = new Map<string, { failure?: string; files: string[]; interruptedRun: boolean }>()
           for (const check of chosen.filter((c) => names.includes(c.name))) {
             const result = await runCheck(check, worktree, tree.commit)
             evidence.push(result.id)
-            again.set(check.name, result.failed)
+            again.set(check.name, { failure: result.failed, files: result.files, interruptedRun: result.interruptedRun })
           }
           return again
         }
@@ -315,9 +317,24 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           const skips = skipped.length ? `; skipped: ${skipped.join(', ')}` : ''
           const broke = results.filter((r) => r.failure && (r.red === 'pass' || r.leftover)).map((r) => r.failure!)
           if (broke.length) return verdict('fail', `failed: must pass with only the new tests: ${broke.join('; ')}${skips}`, evidence)
-          const candidates = results.filter((r) => r.failure && r.red !== 'pass')
+          let candidates = results.filter((r) => r.failure && r.red !== 'pass')
           if (!candidates.length) return verdict('fail', `failed: no check with red: fail failed on ${tree.commit}, so the new tests prove nothing; run: ${ran.join(', ')}${skips}`, evidence)
           if (base === tree.commit) return verdict('fail', `failed: the change is the base ${base}: there are no new tests`, evidence)
+          // A failure counts only when the tests it names are the new tests' own (ro-3): a check that timed out, was killed or crashed
+          // without naming a test file of the tests step's change is not a red failure, and the tests step is reopened.
+          const written = new Set((await diffNames(tree.repository, base, tree.commit)).map((f) => basename(f)))
+          const notRed = (r: { failure?: string; files: string[]; interruptedRun: boolean }): string | undefined => {
+            const named = r.files
+            const inNew = named.filter((f) => written.has(f))
+            // Interrupted (timed out, killed, crashed): red only when it names tests and all of them are new.
+            // Completed with a plain failure: red unless it names failing tests and none is new (a check that names none, such as a script, is as before).
+            if (r.interruptedRun ? named.length > 0 && inNew.length === named.length : !named.length || inNew.length > 0) return undefined
+            const why = named.length ? `its ${r.interruptedRun ? 'running' : 'failing'} tests are in ${named.join(', ')}, not (only) in the files the tests step added or changed` : 'it named no test of its own'
+            return `${r.failure}: not a red failure (${why})`
+          }
+          const rejected = candidates.map((r) => ({ r, why: notRed(r) })).filter((x) => x.why)
+          if (rejected.length === candidates.length) return verdict('fail', `failed: not a red failure: ${rejected.map((x) => x.why).join('; ')}; the new tests prove nothing${skips}`, evidence)
+          candidates = candidates.filter((r) => !rejected.some((x) => x.r === r))
           // Only a check that passes on the base is red because of the new tests (df-25's rule, applied to red-v1).
           const onBase = await failingOnBase(candidates.map((r) => r.name))
           if (!onBase) return verdict('error', `could not check out the base ${base} to tell the new tests' failures from the base's`, evidence)
@@ -326,13 +343,15 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           if (!red.length) {
             // Inconclusive: run the candidates once more, on the change and then on the base, before the verdict holds the Work (sc-13).
             const again = await rerunOnChange(candidates.map((r) => r.name))
-            const still = candidates.filter((r) => again.get(r.name))
+            const still = candidates.filter((r) => again.get(r.name)?.failure)
             first = `first run: ${candidates.map((r) => r.failure!).join('; ')}`
+            const rerunRejected = still.map((r) => ({ r, why: notRed({ ...again.get(r.name)! }) })).filter((x) => x.why)
+            if (rerunRejected.length === still.length && still.length) return verdict('fail', `failed: not a red failure, on a re-run once: ${rerunRejected.map((x) => x.why).join('; ')} (${first}); the new tests prove nothing${skips}`, evidence)
             if (!still.length) return verdict('fail', `failed: no check with red: fail failed on ${tree.commit} on a re-run once (${first}), so the new tests prove nothing; run: ${ran.join(', ')}${skips}`, evidence)
             const onBaseAgain = await failingOnBase(still.map((r) => r.name))
             if (!onBaseAgain) return verdict('error', `could not check out the base ${base} to tell the new tests' failures from the base's, on a re-run once`, evidence)
-            red = still.filter((r) => !onBaseAgain.has(r.name)).map((r) => again.get(r.name)!)
-            if (!red.length) return verdict('inconclusive', `every check that failed fails on the base ${base} too, also on a re-run once, so the new tests' failures cannot be told apart: ${still.map((r) => again.get(r.name)!).join('; ')} (${first})${skips}`, evidence)
+            red = still.filter((r) => !onBaseAgain.has(r.name)).map((r) => again.get(r.name)!.failure!)
+            if (!red.length) return verdict('inconclusive', `every check that failed fails on the base ${base} too, also on a re-run once, so the new tests' failures cannot be told apart: ${still.map((r) => again.get(r.name)!.failure!).join('; ')} (${first})${skips}`, evidence)
           }
           const passed = results.filter((r) => !r.failure).map((r) => r.name)
           if (!red.length) return verdict('inconclusive', `every check that failed fails on the base ${base} too, so the new tests' failures cannot be told apart: ${candidates.map((r) => r.failure!).join('; ')}${skips}`, evidence)
@@ -344,8 +363,8 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             // Inconclusive: run the failing checks once more, on the change and then on the base, before the verdict holds the Work (sc-13).
             const firstFailed = failed.join('; ')
             const again = await rerunOnChange(failedNames)
-            const still = failedNames.filter((name) => again.get(name))
-            failed.splice(0, failed.length, ...still.map((name) => again.get(name)!))
+            const still = failedNames.filter((name) => again.get(name)?.failure)
+            failed.splice(0, failed.length, ...still.map((name) => again.get(name)!.failure!))
             if (!still.length) {
               flaky = `re-run once: ${failedNames.join(', ')} failed, then passed on the change (flaky); first run: ${firstFailed}; `
             } else {
