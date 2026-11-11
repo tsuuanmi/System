@@ -77,9 +77,10 @@ test('rate-limited attempts and the time waited for a slot are counted', () => {
   const dispatched = (n: number, waitedMs?: number): Unnumbered => ({ type: 'dispatched', at: '2026-11-06T00:00:01.000Z', stepId: 'task', attemptId: `attempt:${n}`, executor: 'worker', capability: 'code-write', selected: 'w', candidates: [], inputs: {}, ...(waitedMs === undefined ? {} : { waitedMs }) })
   const observed = (n: number, rateLimited?: boolean): Unnumbered => ({ type: 'observed', at: '2026-11-06T00:00:02.000Z', stepId: 'task', attemptId: `attempt:${n}`, status: 'failed', outputs: {}, usage: { state: 'unknown' }, ...(rateLimited ? { rateLimited } : {}) })
   const admitted: Unnumbered = { type: 'admitted', at: '2026-11-06T00:00:00.000Z', caller: agent, specId: id('a'), source: { kind: 'direct-task' } }
-  const summary = summarize(record([admitted, dispatched(1, 1500), observed(1, true), dispatched(2, 500), observed(2, true), dispatched(3), observed(3)]))
+  const limited = { ...observed(4), limited: true as const }
+  const summary = summarize(record([admitted, dispatched(1, 1500), observed(1, true), dispatched(2, 500), observed(2, true), dispatched(3), observed(3), dispatched(4), limited]))
   assert.equal(summary.waitedForSlotMs, 2000)
-  assert.equal(summary.rateLimitedAttempts, 2)
+  assert.equal(summary.rateLimitedAttempts, 3)
   const none = summarize(record([admitted, dispatched(1), observed(1)]))
   assert.deepEqual([none.waitedForSlotMs, none.rateLimitedAttempts], [0, 0])
 })

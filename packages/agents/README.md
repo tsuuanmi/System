@@ -133,6 +133,11 @@ each, once per choice):
 4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
    shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
    that reset, or every 5 minutes, whichever comes first.
+5. An attempt that fails because its account is out of quota or credits (sc-14) is recorded as
+   `limited`, not failed. The account's reading is read again at once (`quota(ref, { fresh })`
+   drops the cache) and the account is passed over for that step for 5 minutes. The step is
+   routed again: another account under the ceiling takes it, or with none it waits as in rule 4.
+   It spends no attempt or retry.
 
 The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; another value
 refuses every account). The `dispatched` event records each candidate's reason

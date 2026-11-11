@@ -192,7 +192,7 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 
 An `agents` account may carry `label` and `priority: primary` (at most one per Runtime); name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
 
-`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. A reading is at most 10 minutes old (cached; an attempt's rate-limit events refresh it), and reading never spends a model turn. When it cannot be read the line says why (`quota: unreadable - ...`): a web account, an unverified CLI version, no token, not registered. See the [agents README](../../packages/agents/README.md#quota).
+`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. A reading is at most 10 minutes old (cached; an attempt's rate-limit events refresh it, and an attempt that failed out of quota or credits reads it again at once), and reading never spends a model turn. When it cannot be read the line says why (`quota: unreadable - ...`): a web account, an unverified CLI version, no token, not registered. See the [agents README](../../packages/agents/README.md#quota).
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless

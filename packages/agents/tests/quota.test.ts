@@ -138,3 +138,16 @@ test('an aborted read is not cached', async () => {
   assert.deepEqual(await cache.get(), expected())
   assert.equal(reads, 2)
 })
+
+test('invalidating a cached quota reading reads again inside the TTL', async () => {
+  let reads = 0
+  const cache = createQuotaCache({ now: () => OBS, read: async () => { reads++; return expected() } })
+  await cache.get()
+  await cache.get()
+  assert.equal(reads, 1)
+  const invalidate = Reflect.get(cache, 'invalidate')
+  assert.equal(typeof invalidate, 'function', 'QuotaCache must expose invalidate()')
+  invalidate.call(cache)
+  assert.deepEqual(await cache.get(), expected())
+  assert.equal(reads, 2)
+})

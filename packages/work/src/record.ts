@@ -73,8 +73,10 @@ export const eventSchema = z.discriminatedUnion('type', [
     /** The bounded agent output, for audit only; never handed to another Worker. */
     log: contentIdSchema.optional(),
     worker: executorSchema.optional(),
-    /** The attempt failed on a rate limit of its Account. */
+    /** Old records only: the attempt failed on a rate limit of its Account (the step stayed failed). */
     rateLimited: z.literal(true).optional(),
+    /** The attempt failed because its Account is out of quota or credits: not a step failure; the step is dispatched again by routing. */
+    limited: z.literal(true).optional(),
     /** The Worker says this failure may be tried afresh (`retry.onFail` names the step itself). */
     retryable: z.literal(true).optional(),
     /** The Worker's final message objects to an earlier step's output (`OBJECTION: <what and why>`); the step failed, and the earlier step that lists it in `retry.onFail` is reopened with this text. */
@@ -229,6 +231,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
       }
       case 'observed': {
         const s = steps[event.stepId]!
+        if (event.limited) { s.state = 'pending'; break }
         s.state = event.status
         if (event.status === 'succeeded') s.outputs = { ...event.outputs }
         if (event.partial) s.partial = { ...event.partial }

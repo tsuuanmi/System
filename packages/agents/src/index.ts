@@ -112,8 +112,8 @@ export interface AccountStatus {
 export interface AgentsService {
   /** Every configured account; the CLI version of each available one is asked here, once. */
   accounts(): Promise<AccountStatus[]>
-  /** The account's 5-hour and weekly quota, read without a model turn and cached for 10 minutes; `unreadable` for a `web` or unknown ref. */
-  quota(ref: string): Promise<QuotaReport>
+  /** The account's 5-hour and weekly quota, read without a model turn and cached for 10 minutes (`fresh` drops the cache and reads again); `unreadable` for a `web` or unknown ref. */
+  quota(ref: string, options?: { fresh?: boolean }): Promise<QuotaReport>
 }
 
 /** A `Spawner` over the DSH subprocess service, which owns each process range. */
@@ -179,9 +179,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
   const quotas = new Map<string, QuotaCache>()
-  const quota = async (ref: string): Promise<QuotaReport> => {
+  const quota = async (ref: string, options?: { fresh?: boolean }): Promise<QuotaReport> => {
     const cache = quotas.get(ref)
-    if (cache) return cache.get()
+    if (cache) {
+      if (options?.fresh) cache.invalidate()
+      return cache.get()
+    }
     const status = statuses.find((s) => s.ref === ref)
     if (!status) return { unreadable: `no quota reader for ${ref}` }
     if (status.runtime === 'web') return { unreadable: 'a web account has no quota reader' }
@@ -245,7 +248,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
         status.command = command
         askVersion = lazyVersion(subprocess, command)
-        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, priority: account.priority ?? 'secondary', quotaCeilingPercent: ceiling, quota: () => quota(account.ref) }
+        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, priority: account.priority ?? 'secondary', quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
         if (account.runtime === 'claude-code') {
           const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
           if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)

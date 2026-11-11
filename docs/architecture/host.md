@@ -172,8 +172,14 @@ step waits when every capable Account is full, or over the quota ceiling
 (`waiting: quota`, no attempt spent), and each candidate's reason records the
 reading used. `dispatched` then
 carries `waitedMs`, the time the step waited (for an Account slot or a check
-slot), and `observed` carries `rateLimited` when the attempt failed on a rate
-limit; `system work report` sums them as `waitedForSlotMs` and
+slot), and `observed` carries `limited` when the attempt failed because its Account
+is out of quota or credits (the reasons are listed in
+[limits.ts](../../packages/work/src/limits.ts)). That is not a step failure:
+the Account's quota reading is read again at once, the step goes back to
+pending and is dispatched again by routing on another Account, without
+spending an attempt or retry, or waits (`waiting: quota`) when none is left.
+Old records carry `rateLimited` on a failed step, which stays failed.
+`system work report` sums the waits and limits as `waitedForSlotMs` and
 `rateLimitedAttempts`. The wait is measured in the Host's memory, so a Host
 restart starts it again.
 

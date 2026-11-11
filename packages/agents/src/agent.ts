@@ -76,7 +76,7 @@ export interface Account {
   /** From this share of a quota window used the account is not chosen (the row's `quotaCeilingPercent`; routing's default is 80). */
   quotaCeilingPercent?: number
   /** The account's cached quota reading; routing reads it and records it with the choice. */
-  quota?: () => Promise<QuotaReport>
+  quota?: (fresh?: boolean) => Promise<QuotaReport>
   /** claude-code: told the quota windows an attempt's `rate_limit_event`s reported (the last of each window); a throwing hook never fails the attempt. */
   onRateLimit?: (events: ReadonlyArray<QuotaEvent>) => void
 }

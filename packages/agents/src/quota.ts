@@ -346,6 +346,8 @@ export async function readCodexQuota(options: CodexQuotaOptions): Promise<QuotaR
 
 export interface QuotaCache {
   get(): Promise<QuotaReport>
+  /** Drop the cached reading; the next `get` reads again. A read in flight still resolves. */
+  invalidate(): void
   /** Merge the windows an attempt's `rate_limit_event`s told; the expiry is not extended. */
   observe(events: ReadonlyArray<QuotaEvent>): void
 }
@@ -362,6 +364,7 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now }: { re
       }).finally(() => { pending = undefined })
       return pending
     },
+    invalidate() { cached = undefined },
     observe(events) {
       if (events.length === 0) return
       const current = cached && 'windows' in cached.report ? cached.report.windows : {}

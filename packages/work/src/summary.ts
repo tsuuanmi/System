@@ -13,7 +13,7 @@ export interface WorkSummary {
   attempts: number
   /** Time steps waited for a free Account or check slot, summed. */
   waitedForSlotMs: number
-  /** Worker attempts that failed on a rate limit. */
+  /** Worker attempts that failed because their Account was out of quota (`limited`, or the old `rateLimited`). */
   rateLimitedAttempts: number
   operatorTouches: number
   touches: string[]
@@ -37,7 +37,7 @@ export function summarize(record: WorkRecord): WorkSummary {
       if (event.executor === 'worker') attempts += 1
       waitedForSlotMs += event.waitedMs ?? 0
     }
-    if (event.type === 'observed' && event.rateLimited) rateLimitedAttempts += 1
+    if (event.type === 'observed' && (event.rateLimited || event.limited)) rateLimitedAttempts += 1
     if (event.type === 'observed') {
       if (event.usage.state === 'observed') {
         usage.inputTokens += event.usage.inputTokens

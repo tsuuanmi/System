@@ -45,7 +45,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
   operator touches, time waited for a slot (`waitedForSlotMs`, from
   `dispatched.waitedMs`), rate-limited attempts (`rateLimitedAttempts`, from
-  `observed.rateLimited`) and usage from a Work's events (`system work report`):
+  `observed.limited` and the old `observed.rateLimited`) and usage from a Work's events (`system work report`):
   total, cache read, cache write and fresh input tokens, with attempts that
   did not split their cache use counted in `unsplitAttempts`, never as zero;
   `costUsdEstimate` totals the CLI's API-equivalent cost estimate (not what the

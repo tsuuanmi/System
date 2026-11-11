@@ -6,7 +6,7 @@ import type { QuotaReport } from '../../agents/src/quota.ts'
 import { WorkController, type SpecStore } from '../src/controller.ts'
 import { Slots } from '../src/slots.ts'
 import { fold, TERMINAL, type WorkRecord } from '../src/record.ts'
-import { Capabilities, type WorkerPort, type WorkerRequest } from '../src/registry.ts'
+import { Capabilities, type WorkerPort, type WorkerRequest, type WorkerResult } from '../src/registry.ts'
 import { directTask, type ResolvedSpec } from '../src/workflow.ts'
 
 const caller = { type: 'human', operatorId: 'quota-test' } as const
@@ -14,7 +14,7 @@ const digest = (value: string) => `sha256:${createHash('sha256').update(value).d
 const reading = (five: number, seven?: number, resetsAt?: string): QuotaReport => ({ observedAt: '2026-11-10T00:00:00Z', windows: { five_hour: { percentUsed: five, resetsAt }, ...(seven === undefined ? {} : { seven_day: { percentUsed: seven, resetsAt } }) } })
 // These structural additions are the Worker port contract in the SC plan.
 // They compile on the old port too, without changing production code.
-type Account = Pick<WorkerPort, 'ref'> & { priority?: 'primary' | 'secondary'; quota?: () => Promise<QuotaReport> }
+type Account = Pick<WorkerPort, 'ref'> & { priority?: 'primary' | 'secondary'; quota?: (fresh?: boolean) => Promise<QuotaReport>; run?: (request: WorkerRequest) => Promise<WorkerResult | undefined> }
 const turns = async () => { for (let n = 0; n < 30; n++) await new Promise<void>((resolve) => setImmediate(resolve)) }
 async function eventually(condition: () => boolean, message: string) {
   for (let n = 0; n < 20 && !condition(); n++) await new Promise((resolve) => setTimeout(resolve, 5))
@@ -22,7 +22,7 @@ async function eventually(condition: () => boolean, message: string) {
 }
 const dispatched = (record: WorkRecord) => record.events.filter((e) => e.type === 'dispatched')
 
-async function setup(t: TestContext, accounts: Account[], pinned?: string) {
+async function setup(t: TestContext, accounts: Account[], pinned?: string, retry = false) {
   const table = memoryWorkTable()
   const capabilities = new Capabilities()
   const stored = new Set<string>()
@@ -42,6 +42,8 @@ async function setup(t: TestContext, accounts: Account[], pinned?: string) {
     ...account, capabilities: ['research'],
     async run(request) {
       ran.push({ worker: account.ref, request })
+      const result = await account.run?.(request)
+      if (result) return result
       const output = digest(request.attemptId)
       stored.add(output)
       return { status: 'succeeded', outputs: { result: output } }
@@ -52,7 +54,9 @@ async function setup(t: TestContext, accounts: Account[], pinned?: string) {
   // this test seam compilable before that argument exists in production.
   const newController = (): WorkController => Reflect.construct(WorkController, [table, specStore, capabilities, undefined, slots, undefined, undefined, 20])
   let controller = newController()
-  const { id } = await controller.admit({ spec: directTask(['research'], false, capabilities.available()), caller, source: { kind: 'direct-task' }, ...(pinned ? { worker: pinned } : {}) })
+  const spec = directTask(['research'], false, capabilities.available())
+  if (retry) Object.assign(spec.steps[0]!, { retry: { onFail: ['task'], max: 1 } })
+  const { id } = await controller.admit({ spec, caller, source: { kind: 'direct-task' }, ...(pinned ? { worker: pinned } : {}) })
   const runs: Promise<WorkRecord>[] = []
   t.after(async () => {
     // cancel rejects for terminal Works; cleanup must preserve the test's
@@ -188,4 +192,115 @@ test('cancelling a quota wait ends the Work and clears the live entry and retry'
   const before = calls
   await new Promise((resolve) => setTimeout(resolve, 60))
   assert.equal(calls, before, 'cancelled waits leave no retry that reads quota')
+})
+
+const outOfCredits = 'codex/default exit 1: Your workspace is out of credits. Add credits to continue.'
+const observations = (record: WorkRecord) => record.events.filter((event) => event.type === 'observed')
+
+test('a limited attempt moves the step to the other Account and the Work succeeds', async (t) => {
+  let limited = false
+  const f = await setup(t, [
+    { ref: 'P', priority: 'primary', quota: async () => reading(limited ? 100 : 30), run: async () => {
+      if (!limited) { limited = true; return { status: 'failed', outputs: {}, reason: outOfCredits } }
+    } },
+    { ref: 'S', quota: async () => reading(10) },
+  ])
+  const done = await f.run()
+  assert.equal(done.state.status, 'succeeded')
+  const events = done.events.filter((event) => event.type === 'dispatched' || event.type === 'observed')
+  assert.deepEqual(events.map((event) => event.type === 'dispatched'
+    ? ['dispatched', event.selected]
+    : ['observed', event.status, Reflect.get(event, 'limited')]), [
+    ['dispatched', 'P'], ['observed', 'failed', true], ['dispatched', 'S'], ['observed', 'succeeded', undefined],
+  ])
+  assert.equal(observations(done)[0]?.reason, outOfCredits)
+  assert.deepEqual(f.ran.map((r) => r.worker), ['P', 'S'])
+  assert.equal(done.state.steps.task!.state, 'succeeded')
+  assert.equal(done.state.steps.task!.attempts.length, 2, 'both attempts remain in the record')
+  assert.equal(dispatched(done)[1]?.candidates.find((c) => c.ref === 'P')?.selected, false)
+})
+
+test('with one Account a limited step waits on quota', async (t) => {
+  let used = 30
+  let first = true
+  const f = await setup(t, [{ ref: 'P', quota: async () => reading(used), run: async () => {
+    if (first) { first = false; used = 100; return { status: 'failed', outputs: {}, reason: outOfCredits } }
+  } }])
+  const running = f.run()
+  await eventually(() => f.controller.live(f.id).some((entry) => String(entry.waiting) === 'quota'), 'limited step must wait on quota')
+  assert.equal(TERMINAL.has(f.record().state.status), false)
+  assert.equal(f.record().state.steps.task!.state, 'pending')
+  assert.equal(dispatched(f.record()).length, 1)
+  assert.equal(observations(f.record()).length, 1)
+  assert.equal(Reflect.get(observations(f.record())[0]!, 'limited'), true)
+  used = 10
+  await eventually(() => TERMINAL.has(f.record().state.status), 'quota retry must wake the pending step')
+  assert.equal((await running).state.status, 'succeeded')
+  assert.deepEqual(dispatched(f.record()).map((event) => event.selected), ['P', 'P'])
+})
+
+test('a limited attempt drops the cached quota reading', async (t) => {
+  let attempted = false
+  let cached = reading(30)
+  const calls: { ref: string; fresh?: boolean; attempted: boolean }[] = []
+  const f = await setup(t, [
+    { ref: 'P', priority: 'primary', quota: async (fresh) => {
+      calls.push({ ref: 'P', fresh, attempted })
+      if (fresh) cached = reading(100)
+      return cached
+    }, run: async () => { attempted = true; return { status: 'failed', outputs: {}, reason: outOfCredits } } },
+    { ref: 'S', quota: async (fresh) => { calls.push({ ref: 'S', fresh, attempted }); return reading(10) } },
+  ])
+  // Inspect after observation even if a broken controller keeps routing to P.
+  f.run()
+  await eventually(() => observations(f.record()).length > 0, 'the first attempt must be observed')
+  assert.equal(calls.filter((call) => call.ref === 'P' && call.fresh === true && call.attempted).length, 1)
+  assert.equal(calls.some((call) => call.ref === 'S' && call.fresh === true), false)
+  await eventually(() => TERMINAL.has(f.record().state.status), 'fresh quota routes to S')
+  assert.equal(f.record().state.status, 'succeeded')
+})
+
+test('a limited attempt spends no retry', async (t) => {
+  for (const genuineFailure of [false, true]) {
+    let limited = false
+    let failed = false
+    const f = await setup(t, [
+      { ref: 'P', priority: 'primary', quota: async () => reading(limited ? 100 : 30), run: async () => {
+        limited = true
+        return { status: 'failed', outputs: {}, reason: outOfCredits }
+      } },
+      { ref: 'S', quota: async () => reading(10), run: async () => {
+        if (genuineFailure && !failed) { failed = true; return { status: 'failed', outputs: {}, reason: 'temporary failure before sending', retryable: true } }
+      } },
+    ], undefined, true)
+    const done = await f.run()
+    assert.equal(done.state.status, 'succeeded', `genuine failure: ${genuineFailure}`)
+    const reopens = done.events.filter((event) => event.type === 'reopened')
+    assert.equal(reopens.length, genuineFailure ? 1 : 0)
+    assert.ok(reopens.every((event) => event.automatic === true))
+    assert.equal(observations(done).filter((event) => Reflect.get(event, 'limited') === true).length, 1)
+    assert.deepEqual(f.ran.map((r) => r.worker), genuineFailure ? ['P', 'S', 'S'] : ['P', 'S'])
+  }
+})
+
+test('replaying a Work with a limited attempt reads the record, not the provider', async (t) => {
+  let limited = false
+  let calls = 0
+  const f = await setup(t, [
+    { ref: 'P', priority: 'primary', quota: async () => { calls++; return reading(limited ? 100 : 30) }, run: async () => {
+      limited = true
+      return { status: 'failed', outputs: {}, reason: outOfCredits }
+    } },
+    { ref: 'S', quota: async () => { calls++; return reading(10) } },
+  ])
+  const done = await f.run()
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(Reflect.get(observations(done)[0]!, 'limited'), true)
+  const before = calls
+  f.reopen()
+  assert.equal(f.controller.replay(f.id).matches, true)
+  assert.deepEqual(f.record().state.steps, done.state.steps)
+  assert.deepEqual(fold(['task'], f.record().events), done.state)
+  assert.deepEqual(f.record().events, done.events)
+  assert.equal(calls, before)
 })

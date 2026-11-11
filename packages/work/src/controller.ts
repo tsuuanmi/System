@@ -5,6 +5,7 @@
  * observe run in the commit lane and read the latest committed record;
  * execute runs outside it and touches no Work state.
  */
+import { isQuotaLimited } from './limits.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
@@ -20,7 +21,6 @@ import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEven
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** What a failed attempt's reason says when its Account was rate-limited. */
-const RATE_LIMITED = /rate.?limit|too many requests|\b429\b|usage limit/i
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
 export interface WorkTable {
@@ -205,6 +205,8 @@ export class WorkController {
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
   private readonly quotaRetryMs: number
+  /** Accounts that just limited an attempt (ref -> passed over until). In memory only: after a restart the quota is read fresh and routing is as usual. */
+  private readonly limitedAccounts = new Map<string, number>()
 
   constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims(), quotaRetryMs = QUOTA_RETRY_MS) {
     this.quotaRetryMs = quotaRetryMs
@@ -840,7 +842,7 @@ export class WorkController {
     const waitKey = `${record.id}/${s.id}`
     // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
     const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable))
+    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable), this.activeLimited())
     if (route.quotaWait) {
       const was = this.waitingForQuota.get(waitKey)
       if (!was || was.until !== route.quotaWait.resetsAt) {
@@ -876,6 +878,12 @@ export class WorkController {
   }
 
   /** The quota of each of the Workers that has one; a reader that throws is an unreadable Account, never a failed step. */
+  private activeLimited(): ReadonlySet<string> {
+    const now = Date.now()
+    for (const [ref, until] of this.limitedAccounts) if (until <= now) this.limitedAccounts.delete(ref)
+    return new Set(this.limitedAccounts.keys())
+  }
+
   private async readQuotas(workers: readonly WorkerPort[]): Promise<Map<string, QuotaReading>> {
     const read = await Promise.all(workers.filter((w) => w.quota).map(async (w): Promise<[string, QuotaReading]> => {
       try { return [w.ref, await w.quota!()] } catch (error) { return [w.ref, { unreadable: (error as Error).message }] }
@@ -954,13 +962,19 @@ export class WorkController {
     }
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
     // A cancel request is recorded by the drive, once every attempt of the Work has reported.
+    const limited = status === 'failed' && !aborted && isQuotaLimited(reason)
+    if (limited) {
+      this.limitedAccounts.set(attempt.worker.ref, Date.now() + this.quotaRetryMs)
+      // Drop the cached reading and read it again now; an unreadable Account is never a failure.
+      try { await attempt.worker.quota?.(true) } catch { /* routing reads it again */ }
+    }
     return this.append(this.require(workId), {
       type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason: reason ?? (restored.length ? `restored frozen files: ${restored.join(', ')}` : undefined),
       usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
-      ...(status === 'failed' && RATE_LIMITED.test(reason ?? '') ? { rateLimited: true as const } : {}),
+      ...(limited ? { limited: true as const } : {}),
       ...(objection ? { objection } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),
       ...(status === 'failed' && result.retryable && !aborted ? { retryable: true as const } : {}),
