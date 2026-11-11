@@ -33,6 +33,10 @@ _Avoid_: capacity, remaining
 The share of a quota window above which an Account takes no new step.
 _Avoid_: limit, threshold
 
+**Outside failure**:
+A failure, hold or operator touch of a Work caused by its surroundings (machine load, an Account's quota, a Host restart, a conflict with other work, a slow Host), not by its change.
+_Avoid_: infra error, flake (a flake is one kind)
+
 **Worker**:
 An Account registered with System to run steps. A Worker is never a model.
 _Avoid_: agent, model, bot
