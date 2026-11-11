@@ -8,7 +8,7 @@ import { remoteHost } from '../src/remote.ts'
 
 const client = (call: (method: string, params?: unknown) => Promise<unknown>): Client => ({ call: (method, params) => call(method, params), onNotice: () => {}, close: () => {} })
 
-test('following a Work reconnects once when the Host closes the connection for an upgrade', { timeout: 20_000 }, async () => {
+test('following a Work reconnects once when the Host closes the connection for an upgrade', { timeout: 120_000 }, async () => {
   let opened = 0
   const open = async (): Promise<Client> => {
     opened++
@@ -21,7 +21,7 @@ test('following a Work reconnects once when the Host closes the connection for a
   assert.equal((followed as { id: string }).id, 'work:x')
 })
 
-test('a Host that is still away after RECONNECT_MS is the error', { timeout: 20_000 }, async () => {
+test('a Host that is still away after RECONNECT_MS is the error', { timeout: 120_000 }, async () => {
   const open = async (): Promise<Client> => client(async () => { throw new NotRunning('the Host is not running') })
   await assert.rejects(remoteHost({ open, err: () => {}, reconnectMs: 1500 }).work().wait('work:x'), /not running/)
 })

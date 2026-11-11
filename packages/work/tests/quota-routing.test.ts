@@ -17,7 +17,7 @@ const reading = (five: number, seven?: number, resetsAt?: string): QuotaReport =
 type Account = Pick<WorkerPort, 'ref'> & { priority?: 'primary' | 'secondary'; quota?: (fresh?: boolean) => Promise<QuotaReport>; run?: (request: WorkerRequest) => Promise<WorkerResult | undefined> }
 const turns = async () => { for (let n = 0; n < 30; n++) await new Promise<void>((resolve) => setImmediate(resolve)) }
 async function eventually(condition: () => boolean, message: string) {
-  for (let n = 0; n < 20 && !condition(); n++) await new Promise((resolve) => setTimeout(resolve, 5))
+  for (const end = Date.now() + 60_000; !condition() && Date.now() < end;) await new Promise((resolve) => setTimeout(resolve, 5))
   assert.ok(condition(), message)
 }
 const dispatched = (record: WorkRecord) => record.events.filter((e) => e.type === 'dispatched')

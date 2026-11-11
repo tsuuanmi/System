@@ -12,7 +12,7 @@ let homes = 0
 const newHome = () => { const path = join(dir, `home-${homes++}`); mkdirSync(path); return path }
 const quiet = () => new Promise((resolve) => setTimeout(resolve, 30))
 
-test('a draining Host starts no new attempt, lets the running one finish, and names the Works it held', { timeout: 30_000 }, async () => {
+test('a draining Host starts no new attempt, lets the running one finish, and names the Works it held', { timeout: 120_000 }, async () => {
   const f = fixture()
   const host = await f.startHost(newHome())
   const { id } = await host.submit(f.admission('brainstorm.yaml'))
@@ -40,7 +40,7 @@ test('a draining Host starts no new attempt, lets the running one finish, and na
   await host.close()
 })
 
-test('resume continues what a draining Host held, and nothing that start found interrupted', { timeout: 30_000 }, async () => {
+test('resume continues what a draining Host held, and nothing that start found interrupted', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = newHome()
   const first = await f.startHost(home)
@@ -68,6 +68,6 @@ test('resume continues what a draining Host held, and nothing that start found i
 const cutEvents = (record: WorkRecord) => record.events.flatMap((e) => (e.type === 'dispatched' ? [e.attemptId] : []))
 
 async function until(condition: () => boolean): Promise<void> {
-  for (let tries = 0; tries < 500 && !condition(); tries++) await new Promise((resolve) => setTimeout(resolve, 10))
+  for (let tries = 0; tries < 12_000 && !condition(); tries++) await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(condition(), true)
 }

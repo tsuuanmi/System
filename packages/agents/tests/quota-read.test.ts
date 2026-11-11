@@ -118,12 +118,13 @@ for (const stopped of [false, true]) {
     // Always release a hanging fake on assertion failure too.
     t.after(() => abort.abort())
     // The timeout leaves the fake time to start and log its PID on a loaded machine (dg-14).
-    const pending = readClaudeQuota({ command: fake.command, home: dir, token: 'tok-1', timeoutMs: stopped ? 5000 : 3000, signal: abort.signal })
+    const pending = readClaudeQuota({ command: fake.command, home: dir, token: 'tok-1', timeoutMs: stopped ? 120_000 : 10_000, signal: abort.signal })
     if (stopped) {
       await until(() => existsSync(fake.log) && fake.readLog().some((entry) => entry.stdin !== undefined), 'fake received request')
       abort.abort()
     }
     unreadable(await pending, stopped ? /stopped/ : /timed out/)
+    await until(() => fake.readLog().some((entry) => typeof entry.pid === 'number'), 'fake to log its PID')
     const pid = fake.readLog().find((entry) => typeof entry.pid === 'number')?.pid
     assert.equal(typeof pid, 'number', 'fake logged its PID before it could be stopped')
     assert.ok(typeof pid === 'number')

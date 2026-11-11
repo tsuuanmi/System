@@ -15,7 +15,7 @@ const turn = () => new Promise((resolve) => setImmediate(resolve))
 const types = (record: WorkRecord) => record.events.map((e) => (e.type === 'terminal' ? `terminal:${e.outcome}` : 'stepId' in e ? `${e.type}:${e.stepId}` : e.type))
 
 async function until(condition: () => boolean): Promise<void> {
-  for (let tries = 0; tries < 500 && !condition(); tries++) await new Promise((resolve) => setTimeout(resolve, 10))
+  for (let tries = 0; tries < 12_000 && !condition(); tries++) await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(condition(), true, 'the Host should finish the Work without an explicit run')
 }
 

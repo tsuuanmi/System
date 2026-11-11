@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fakeCodexHome } from '../test-support/accounts.ts'
@@ -87,16 +87,20 @@ test('a direct Task runs Claude Code in its own worktree and records the exact r
 })
 
 test('cancel from another process stops the attempt, keeps its partial tree, and Codex takes over', { timeout: 120_000 }, async () => {
-  const input = newTask('FAKE:sleep FAKE:edit')
+  const ready = join(cli.home, 'agent-ready')
+  const input = newTask(`FAKE:sleep FAKE:edit FAKE:ready=${ready}`)
   const submit = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', input])
   // Wait for the Work to be admitted and dispatched.
   let workId = ''
-  for (let i = 0; i < 200 && !workId; i++) {
+  for (let i = 0; i < 1200 && !workId; i++) {
     await new Promise((r) => setTimeout(r, 100))
     if (submit.stdout().trim()) workId = submit.stdout().trim().split('\n')[0]!
   }
   assert.ok(workId, 'the submit printed its Work ID')
-  for (let i = 0; i < 100 && !show(workId).events.some((e) => e.type === 'dispatched'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1200 && !show(workId).events.some((e) => e.type === 'dispatched'); i++) await new Promise((r) => setTimeout(r, 100))
+  // The agent has its SIGTERM handler in place: a cancel before that would leave no partial output.
+  for (let i = 0; i < 1200 && !existsSync(ready); i++) await new Promise((r) => setTimeout(r, 100))
+  assert.ok(existsSync(ready), 'the agent is running')
 
   // A second `work run` is refused while the Host runs the Work.
   const contested = system(['work', 'run', workId])

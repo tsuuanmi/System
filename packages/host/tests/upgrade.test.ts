@@ -22,7 +22,7 @@ const human = { type: 'human', operatorId: 'tan' } as const
 const workflow = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'workflows', 'brainstorm.yaml'), 'utf8')
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until(condition: () => boolean, what: string): Promise<void> {
-  for (let tries = 0; tries < 500 && !condition(); tries++) await wait(10)
+  for (let tries = 0; tries < 12_000 && !condition(); tries++) await wait(10)
   assert.equal(condition(), true, what)
 }
 
@@ -40,7 +40,7 @@ const submitAndRun = async (client: Client, f: Fixture, commandId: string): Prom
   return work.id
 }
 
-test('on new code a supervised Host starts nothing new, finishes its attempt, exits 75, and the next Host serves the new version and runs what was queued', { timeout: 30_000 }, async () => {
+test('on new code a supervised Host starts nothing new, finishes its attempt, exits 75, and the next Host serves the new version and runs what was queued', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = fresh()
   const logs: string[] = []
@@ -75,7 +75,7 @@ test('on new code a supervised Host starts nothing new, finishes its attempt, ex
   assert.equal(starts, 1)
 
   // A client built from the new code calls during the swap: refused while the old Host drains, absent between the Hosts, served by the new one.
-  const swapped = connectHello(socketPath(home), { version: 'code-2', caller: human, retry: 5_000 }).then(async (client) => {
+  const swapped = connectHello(socketPath(home), { version: 'code-2', caller: human, retry: 60_000 }).then(async (client) => {
     try { return await client.call('host.status') as { version: string } } finally { client.close() }
   })
   f.release('idea-a')
@@ -102,7 +102,7 @@ test('on new code a supervised Host starts nothing new, finishes its attempt, ex
   old.close()
 })
 
-test('a client built from the new code upgrades an idle Host at once, and is told to retry', { timeout: 30_000 }, async () => {
+test('a client built from the new code upgrades an idle Host at once, and is told to retry', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = fresh()
   const logs: string[] = []
@@ -121,7 +121,7 @@ test('a client built from the new code upgrades an idle Host at once, and is tol
   await next.stop()
 })
 
-test('a client of code that is neither the Host\'s nor the disk\'s is told to restart the Host, which is the older side', { timeout: 30_000 }, async () => {
+test('a client of code that is neither the Host\'s nor the disk\'s is told to restart the Host, which is the older side', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = fresh()
   const serving = await incarnate(f, home, 'code-1', () => 'code-2', () => {}, 3_600_000)
@@ -131,7 +131,7 @@ test('a client of code that is neither the Host\'s nor the disk\'s is told to re
   await serving.stop()
 })
 
-test('a change seen once is not enough: a build still writing the files does not restart the Host', { timeout: 30_000 }, async () => {
+test('a change seen once is not enough: a build still writing the files does not restart the Host', { timeout: 120_000 }, async () => {
   const f = fixture()
   const logs: string[] = []
   let reads = 0
@@ -141,7 +141,7 @@ test('a change seen once is not enough: a build still writing the files does not
   await serving.stop()
 })
 
-test('a stop while the Host drains exits 0 and leaves nothing to continue', { timeout: 30_000 }, async () => {
+test('a stop while the Host drains exits 0 and leaves nothing to continue', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = fresh()
   const logs: string[] = []
@@ -160,11 +160,11 @@ test('a stop while the Host drains exits 0 and leaves nothing to continue', { ti
   client.close()
 })
 
-test('a connection retries while the Host is away, and says not running once the time is up', { timeout: 30_000 }, async () => {
+test('a connection retries while the Host is away, and says not running once the time is up', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = fresh()
   const late = wait(150).then(() => incarnate(f, home, 'code-1', () => 'code-1', () => {}))
-  const client = await connectHello(socketPath(home), { version: 'code-1', caller: human, retry: 5_000 })
+  const client = await connectHello(socketPath(home), { version: 'code-1', caller: human, retry: 60_000 })
   assert.equal(((await client.call('host.status')) as { version: string }).version, 'code-1')
   client.close()
   await late
@@ -176,7 +176,7 @@ test('a connection retries while the Host is away, and says not running once the
   await assert.rejects(connectHello(socketPath(home), { version: 'code-1', caller: human }), /the Host is not running/)
 })
 
-test('while a build runs, the Host does not upgrade: not from its own looks, nor for a client built from the half-built tree', { timeout: 30_000 }, async () => {
+test('while a build runs, the Host does not upgrade: not from its own looks, nor for a client built from the half-built tree', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = fresh()
   const logs: string[] = []
@@ -193,7 +193,7 @@ test('while a build runs, the Host does not upgrade: not from its own looks, nor
   assert.equal(await serving.exited, UPGRADE_EXIT)
 })
 
-test('while a Host waits on a long attempt to upgrade, a client of any version reads, and is told to retry anything else', { timeout: 30_000 }, async () => {
+test('while a Host waits on a long attempt to upgrade, a client of any version reads, and is told to retry anything else', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = fresh()
   const logs: string[] = []

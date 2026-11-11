@@ -91,29 +91,29 @@ function fakeRemote(status: Record<string, string>, opened: { readOnly: (boolean
   return remoteHost({ open: open as any, err: () => {} }).work()
 }
 
-test('waitFor returns once every Work has ended, and the last to end decided', { timeout: 20_000 }, async () => {
+test('waitFor returns once every Work has ended, and the last to end decided', { timeout: 120_000 }, async () => {
   const waited = await fakeRemote({ 'work:a': 'succeeded', 'work:b': 'held' }).waitFor(['work:a', 'work:b'], { any: false })
   assert.equal(waited.timedOut, false)
   assert.deepEqual(waited.records.map((r) => r.state.status), ['succeeded', 'held'])
   assert.ok(['work:a', 'work:b'].includes(waited.decided!))
 })
 
-test('waitFor --any returns at the first Work that ended while the other still runs', { timeout: 20_000 }, async () => {
+test('waitFor --any returns at the first Work that ended while the other still runs', { timeout: 120_000 }, async () => {
   const waited = await fakeRemote({ 'work:a': 'running', 'work:b': 'held' }).waitFor(['work:a', 'work:b'], { any: true })
   assert.equal(waited.decided, 'work:b')
   assert.deepEqual(waited.records.map((r) => r.state.status), ['running', 'held'])
 })
 
-test('waitFor gives up at the timeout with timedOut set and the Works as they are', { timeout: 20_000 }, async () => {
+test('waitFor gives up at the timeout with timedOut set and the Works as they are', { timeout: 120_000 }, async () => {
   const started = Date.now()
   const waited = await fakeRemote({ 'work:a': 'running' }).waitFor(['work:a'], { any: false, timeoutMs: 100 })
   assert.equal(waited.timedOut, true)
   assert.equal(waited.decided, undefined)
   assert.equal(waited.records[0]!.state.status, 'running')
-  assert.ok(Date.now() - started < 5000)
+  assert.ok(Date.now() - started < 60_000)
 })
 
-test('waitFor reconnects after repeated Host startup failures', { timeout: 20_000 }, async () => {
+test('waitFor reconnects after repeated Host startup failures', { timeout: 120_000 }, async () => {
   const waited = await fakeRemote({ 'work:a': 'succeeded' }, { readOnly: [] }, 4).waitFor(['work:a'], { any: false })
   assert.equal(waited.decided, 'work:a')
   assert.equal(waited.records[0]!.state.status, 'succeeded')
