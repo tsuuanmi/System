@@ -35,7 +35,8 @@
 - `conversation.test.ts` — `conversation@1`: a manifest over stored parts,
   stable IDs, corrections, and a task's
   context.
-- `summary.test.ts` — operator touches and usage from a Work's events.
+- `summary.test.ts` — operator touches, usage, classified failures and counts from a Work's events.
+- `outside.test.ts` — classification of the recorded failure reasons of 2026-11-10/11.
 
 Shared stand-ins come from [test-support](../../../test-support/README.md).
 

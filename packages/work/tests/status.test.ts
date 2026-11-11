@@ -205,6 +205,26 @@ test('each state: done from dev, doing from a running Work with its live progres
   assert.equal(itemLines(merged, dir, [mergedRecord], () => [], { item: 'df-3' }, [], () => undefined)[0], `[x] df-3 The status of a project - done; last ${work.id}, ${Object.values(done.state.results).join(', ')}`)
 })
 
+test('a done Item reports the Outside failures recorded by its merged Work', () => {
+  const dir = '/project'
+  const at = '2026-11-11T00:00:00.000Z'
+  const mergedRecord: WorkRecord = {
+    id: 'work:merged',
+    events: [
+      { type: 'admitted', seq: 0, at, caller, specId: id('spec'), source: { kind: 'direct-task' }, item: { id: 'df-3', repository: dir } },
+      { type: 'observed', seq: 1, at, stepId: 'task', attemptId: 'attempt:earlier', status: 'failed', outputs: {}, usage: { state: 'unknown' }, reason: 'Your workspace is out of credits' },
+      { type: 'terminal', seq: 2, at, outcome: 'succeeded', reason: 'ok', results: {} },
+    ],
+    state: {
+      status: 'succeeded', specId: id('spec'), criteria: {}, steps: {}, results: {},
+      effects: { publish: { stepId: 'publish', state: 'applied', detail: { merged: 'true', mergeCommit: 'd'.repeat(40) } } },
+    },
+  }
+  const lines = itemLines(parseStatus(TICKED), dir, [mergedRecord], () => [], { state: 'done' })
+  assert.match(lines.find((line) => line.startsWith('[x] df-3 '))!, /; outside failures: 1/)
+  assert.equal(lines[0], '[x] df-1 Drop Goals - done')
+})
+
 test('a held Work is doing, with why it is held, and its Account', async () => {
   const dir = repository(STATUS)
   const { controller, table, task, admit } = setup()
