@@ -436,12 +436,14 @@ that changes something (`submit`, `run`, `retry`, `cancel`, `approve`) is sent
 once more with the same `commandId`, so the Host does it once: look at
 `system work list` before sending it again yourself.
 
-`system work wait` treats this as transient: it sends the same read again with
-a backoff (1 s, doubling to 10 s) and keeps waiting, as across a Host restart.
-Only a Host that stays unreachable for 10 minutes (or the `--timeout` given,
-if shorter) ends it, with exit **6** and "the System Host did not answer"; the
-Works were not read and may still be running, so run `system work wait` again
-or `system work list`. Exit 6 is never a success. (Test-only:
+Every command but `system work wait` fails at once with this. `system work wait`
+treats it as transient: it sends the same read again with a backoff (1 s,
+doubling to 10 s) and keeps waiting, as across a Host restart. Only a Host that
+stays unreachable for 10 minutes (or the `--timeout` given, if shorter) ends
+it, with exit **6** and "the System Host did not answer"; the Works were not
+read and may still be running, so run `system work wait` again or
+`system work list`. Exit 6 is never a success; the other exits of `wait` are
+listed with its row in the [app README](../../packages/app/README.md). (Test-only:
 `SYSTEM_WAIT_RECONNECT_MS` and `SYSTEM_WAIT_RETRY_MS` replace the bound and the
 first backoff.)
 
