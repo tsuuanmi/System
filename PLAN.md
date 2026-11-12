@@ -223,6 +223,24 @@ defects since fixed, 2 of the change, 2 denied on a stale base):
   (research 197 of 224 web attempts succeeded; none since 2026-11-08), and its
   headed-browser tests run only when its paths change (ro-9).
 
+RO measure, first Items (overnight session of 2026-11-12/13, operator away;
+releases `8cc1e2c` and `430ae55`): **0 Outside failures in 6 Items.**
+- ro-7 merged with 2 change failures: the plan missed the old tests that
+  pinned `priority: primary`; implement objected (dg-8) and tests was
+  reopened once. The first tests/implement mismatch since dg-13; a plan
+  that lists the existing tests to change would have caught it.
+- ro-8 changed nothing: sc-13 already re-runs red (the Item was written
+  without reading the code; ticked by hand, PR #200).
+- ro-9 (narrowed, PR #201: `web` was already selected by `paths`, and every
+  smoke test boots a Host), ro-10, ro-11 and ro-12 merged at the first
+  attempt.
+- After ro-7, steps spread over the Claude Accounts (ro-8's plan went to
+  `claude-code/c2`). `research.web` is given to both web Accounts in the
+  operator's profile (backup `profile.yml.bak-before-research-web`).
+- Open: 4 more Items for the 10; core 3,982 lines (within +10% of 3,882);
+  docs 4,296 lines, 11 over 4,285 after ro-11's rename procedure; the
+  `claim` command decision (ro-6) is the operator's.
+
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
