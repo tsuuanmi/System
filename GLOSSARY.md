@@ -19,14 +19,10 @@ capabilities the profile gives it. Each Account is a distinct account of its
 Provider, so two Accounts never share one quota.
 _Avoid_: login, user, key
 
-**Primary Account**:
-The Account of a Runtime that takes a step first while it is under the
-Ceiling; the other Accounts of the Runtime are secondary.
-_Avoid_: main account, default account
-
 **Headroom**:
 The share of an Account's quota left in its fuller window (5-hour or
-weekly); work goes to the Account with the most Headroom.
+weekly); work goes to the Account with the most Headroom, and no Account
+of a Runtime is preferred by name.
 _Avoid_: capacity, remaining
 
 **Ceiling**:
@@ -60,8 +56,9 @@ _Avoid_: persona, agent type
 
 **Item**:
 A planned piece of a project's work, with a stable ID in the project's
-status list; Works carry it out, and the change that finishes it marks it
-done.
+status list. An Item can get several Tasks over time (a request rewritten
+after a failure); Works carry them out, and the change that finishes it
+marks it done.
 _Avoid_: task, ticket, issue, todo
 
 **Claim**:
