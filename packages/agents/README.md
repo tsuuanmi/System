@@ -13,9 +13,8 @@ the optional web-worker row) becomes a System Worker
   Routing by headroom); `system work retry --worker <ref>` names one.
   An account may set `label` (free text for people, e.g. an email). A profile
   that still sets `priority` loads: the field is ignored and `system workers`
-  says so. Refs are stable
-  handles that are never reused (`claude-code/c1`, `codex/x1`); existing refs
-  such as `claude-code/default` stay valid.
+  says so. Refs are stable handles that are never reused (`claude-code/c1`,
+  `codex/x1`); existing refs such as `claude-code/default` stay valid.
 
 ```yaml
 - id: agents
@@ -105,6 +104,9 @@ registration or in `accounts()`.
   window only where `unifiedWindows` has no entry for it); `utilization` is a fraction,
   `resetsAt` Unix seconds; a share outside 0 to 1 is ignored, not clamped; `status: rejected`
   with no utilization is 100%. The last event of each window in an attempt is passed on.
+  Each such reading is also saved in the Host's store (domain `system_agents`, table `quota`,
+  keyed by ref) and read back after a Host restart; a saved window whose reset has passed is
+  dropped, and no window left means no reading.
   A readable cached reading takes an event's window and sets `observedAt`, without extending
   the expiry. When `get_usage` answers no plan limits (a `setup-token` token without the
   profile scope, reason `no plan limits: …`), the Account's reading is the windows of its
@@ -157,9 +159,8 @@ The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; 
 refuses every account). The `dispatched` event records each candidate's reason
 (`headroom 57% (5h 43%, 7d 31%)`, `over 80% (5h 91%)`,
 `quota unreadable: ...`), so replay reads the record and never asks a provider. The 10-minute
-cache means a reset is seen at the next reading after it. A Claude reading taken from an
-attempt's `rate_limit_event` is also saved in the Host's store (domain `system_agents`) and read
-back after a restart, unless its window has reset.
+cache means a reset is seen at the next reading after it. Claude readings from attempts'
+events survive a Host restart (see Cache under [Quota](#quota)).
 
 ## Software Engineering policy and the attempt budget
 
