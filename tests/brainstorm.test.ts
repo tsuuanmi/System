@@ -168,7 +168,13 @@ test('after the Host is killed mid-step, the restarted Host dispatches the lost 
   assert.notEqual((await submit.done).status, 0, 'the killed Host did not finish the Work')
   // The hanging agent outlived the Host, so its attempt keeps the Account's slot: stop it, as an operator would.
   const attempts = join(home, 'system', 'attempts')
-  for (const file of readdirSync(attempts).filter((f) => f.endsWith('.pid'))) process.kill(Number(readFileSync(join(attempts, file), 'utf8')), 'SIGKILL')
+  const agents = readdirSync(attempts).filter((f) => f.endsWith('.pid')).map((f) => Number(readFileSync(join(attempts, f), 'utf8')))
+  assert.ok(agents.length > 0, 'the hanging agent left its process ID')
+  for (const pid of agents) process.kill(pid, 'SIGKILL')
+  // The Host reads a process that still exists as running: wait until the kill has taken effect, however long a loaded machine takes.
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+  for (let waited = 0; waited < 120_000 && agents.some(alive); waited += 50) await new Promise((r) => setTimeout(r, 50))
+  assert.deepEqual(agents.filter(alive), [], 'the killed agents are gone')
   await cli.start()
 
   // The lost attempt's process is gone, so the Host runs the Work again without `work run`.
