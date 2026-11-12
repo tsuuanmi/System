@@ -164,7 +164,7 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 
 ## Attempts at once, and held slots
 
-An `agents` account may carry `label` and `priority: primary` (at most one per Runtime); name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
+An `agents` account may carry `label`; name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
 
 `system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. Reading never spends a model turn, and when it cannot be read the line says why (`quota: unreadable - ...`). See the [agents README](../../packages/agents/README.md#quota).
 

@@ -209,3 +209,46 @@ test('workers shows a readable quota from the real Host and one quota line per a
   for (const block of blocks) assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
   assert.match(out.stdout, /quota: unreadable - a web account has no quota reader/)
 })
+
+
+test('a profile with priority: primary loads, and workers notes that it is ignored', async () => {
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  config:
+    $patch: replace
+    accounts:
+      - {ref: claude-code/legacy, runtime: claude-code, capabilities: [code-write], command: ${fakeAgent}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN, priority: primary}
+`)
+  await cli.start()
+  const out = system(['workers'])
+  assert.equal(out.status, 0, out.stderr)
+  assert.match(out.stdout, /claude-code\/legacy\s+available/)
+  const account = out.stdout.split('\n').find((line) => line.startsWith('claude-code/legacy'))!
+  assert.match(account, /priority is ignored/)
+  assert.doesNotMatch(account, /\[[^\]]*\bprimary\b[^\]]*\]/)
+})
+
+test('quota readings survive a Host restart', async () => {
+  // This wrapper serves the existing fake usage protocol and attempt CLI.
+  const fake = fakeQuotaCli(join(home, 'durable-quota-cli'), { kind: 'claude', version: '2.1.322', answer: { rate_limits_available: false } })
+  const command = join(home, 'durable-claude')
+  writeFileSync(command, `#!/bin/sh
+case " $* " in
+  *" --input-format "*|*" --version "*) exec '${fake.command}' "$@" ;;
+  *) exec '${fakeAgent}' "$@" ;;
+esac
+`, { mode: 0o700 })
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  config:
+    $patch: replace
+    accounts:
+      - {ref: claude-code/durable, runtime: claude-code, capabilities: [code-write], command: ${command}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN}
+`)
+  await cli.start()
+  const ran = system(['work', 'submit', '--capability', 'code-write', '--input', newTask('FAKE:edit FAKE:ratelimit=seven_day:0.77')])
+  assert.equal(ran.status, 0, ran.stderr)
+  assert.match(system(['workers']).stdout, /quota: 7d 77%.*\(from the last attempt\)/)
+  await cli.start()
+  const out = system(['workers'])
+  assert.equal(out.status, 0, out.stderr)
+  assert.match(out.stdout, /quota: 7d 77%.*\(from the last attempt\)/)
+})

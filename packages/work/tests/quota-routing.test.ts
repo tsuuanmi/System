@@ -304,3 +304,35 @@ test('replaying a Work with a limited attempt reads the record, not the provider
   assert.deepEqual(f.record().events, done.events)
   assert.equal(calls, before)
 })
+
+// ro-7: completed Works in the same durable table contribute to routing.
+async function nextWork(f: Awaited<ReturnType<typeof setup>>, worker?: string) {
+  const spec = directTask(['research'], false, f.capabilities.available())
+  const { id } = await f.controller.admit({ spec, caller, source: { kind: 'direct-task' }, ...(worker ? { worker } : {}) })
+  return f.controller.run(id)
+}
+
+test('dispatch breaks a tie among unreadable Accounts by attempts that UTC day', async (t) => {
+  const f = await setup(t, ['D', 'c2'].map((ref) => ({ ref, quota: async () => ({ unreadable: 'setup-token' }) })))
+  assert.equal(dispatched(await f.run())[0]?.selected, 'D')
+  const done = await nextWork(f)
+  assert.equal(dispatched(done)[0]?.selected, 'c2')
+})
+
+test('attempts of earlier UTC days are not counted', async (t) => {
+  const f = await setup(t, ['D', 'c2'].map((ref) => ({ ref, quota: async () => ({ unreadable: 'setup-token' }) })))
+  await f.run()
+  const yesterday = new Date(Date.now())
+  yesterday.setUTCHours(0, 0, 0, 0)
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+  // c2 has more lifetime attempts, but none today. A lifetime counter would
+  // choose D; ignoring counts altogether also chooses D.
+  for (let n = 0; n < 2; n++) {
+    const old = await nextWork(f, 'c2')
+    const events = old.events.map((event) => ({ ...event, at: yesterday.toISOString() }))
+    await f.table.put(old.id, { ...old, events, state: fold(['task'], events) })
+  }
+  f.reopen()
+  const done = await nextWork(f)
+  assert.equal(dispatched(done)[0]?.selected, 'c2')
+})

@@ -7,10 +7,11 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
-import { TIERS, systemPath, tierCapability, type Capabilities, type Tier } from '@system/work'
+import { TIERS, systemPath, z, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
 import { readClaudeAccountId, readCodexAccountId } from './identity.ts'
 import { createQuotaCache, readClaudeQuota, readCodexQuota, type QuotaCache, type QuotaReport } from './quota.ts'
@@ -25,7 +26,15 @@ export * from './web.ts'
 export * from './workspace.ts'
 
 export const name = 'system-agents'
-export const inject = ['capabilities', 'artifacts', 'subprocess', 'credentials']
+export const inject = ['capabilities', 'artifacts', 'subprocess', 'credentials', 'storageDomain']
+
+const windowSchema = z.object({ percentUsed: z.number(), resetsAt: z.string().optional() })
+/** The last quota reading an attempt's `rate_limit_event`s gave, by account ref: read back after a Host restart (ro-7). */
+export const agentsDomain = defineDomain({
+  name: 'system_agents',
+  version: 1,
+  tables: { quota: domainTable(z.object({ observedAt: z.number(), windows: z.object({ five_hour: windowSchema.optional(), seven_day: windowSchema.optional() }) })) },
+})
 
 /** `web` is the web Runtime, served by the `web-worker` row; its Site is the account's `site`. */
 export type AccountRuntime = Runtime | 'web'
@@ -54,8 +63,8 @@ export interface AccountConfig extends WebAccountSettings {
   tokenRef?: string
   /** Free text for people (an email, a name); shown in `system workers`. */
   label?: string
-  /** `primary` marks the account to prefer; at most one account per Runtime. Omitted is secondary. */
-  priority?: 'primary'
+  /** Ignored since ro-7 (routing goes by quota headroom); `system workers` notes it. */
+  priority?: unknown
   /** claude-code: the directory holding the account's `.claude.json` (its provider account ID), relative to $DSH_HOME/system unless absolute; default `claude/<name>`. */
   claudeHome?: string
   /** codex: CODEX_HOME, relative to $DSH_HOME/system unless absolute. */
@@ -100,7 +109,8 @@ export interface AccountStatus {
   models: Partial<Record<Tier, string>>
   /** What people call the account (free text). */
   label?: string
-  priority: 'primary' | 'secondary'
+  /** Set when the profile still carries a field that is ignored. */
+  note?: string
   /** The provider's own account ID (never a token); absent while unknown, and for a web account. */
   providerAccount?: string
   available: boolean
@@ -166,9 +176,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const webWorker = ctx.get('webWorker') as WebWorkerService | undefined
   const attempts = systemPath(ctx, 'attempts')
   const statuses: AccountStatus[] = []
-  // The first registered ref of each provider account (runtime:id), and the ref holding each Runtime's primary.
+  // The first registered ref of each provider account (runtime:id).
   const seen = new Map<string, string>()
-  const primaries = new Map<string, string>()
   const versions = new Map<string, () => Promise<string>>()
   // An account the web-worker row quarantines or cools down is unavailable, with what to do, until it is ready again.
   const unavailable = new Map<string, () => string | undefined>()
@@ -196,7 +205,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const dispose: (() => void)[] = []
   // Every account is listed from the start, as registering: the Host serves while this loop is still going (WW6e).
   const entries = (config.accounts ?? []).map((account) => {
-    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, models: modelsOf(account.models), ...(account.label ? { label: account.label } : {}), priority: account.priority === 'primary' ? 'primary' : 'secondary', available: false, reason: REGISTERING }
+    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, models: modelsOf(account.models), ...(account.label ? { label: account.label } : {}), ...(account.priority !== undefined ? { note: 'priority is ignored: routing goes by quota headroom' } : {}), available: false, reason: REGISTERING }
     statuses.push(status)
     return { account, status }
   })
@@ -210,6 +219,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     done.catch(() => {})
     webWorker.expect(account.ref, done)
   }
+  // After the accounts are listed (as registering), which `system workers` serves while this awaits. Optional like `webWorker`: a bare context (a test's) keeps no readings across a restart.
+  const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain)
+  if (domain) ctx.effect(() => () => { void domain.close() }, 'system_agents domain')
+  const observations = domain?.table('quota')
   for (const { account, status } of entries) {
     try {
       if (account.runtime === 'chatgpt-web') throw new Error(CHATGPT_WEB_RENAMED)
@@ -217,12 +230,6 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const problem = webRefProblem(account)
         if (problem) throw new Error(problem)
         if (!webWorker) throw new Error(WEB_WORKER_DISABLED)
-      }
-      if (account.priority !== undefined && (account.priority as string) !== 'primary') throw new Error('priority must be primary or omitted')
-      if (account.priority === 'primary') {
-        const held = primaries.get(account.runtime)
-        if (held) throw new Error(`priority: primary is already held by ${held}; at most one account per Runtime may be primary`)
-        primaries.set(account.runtime, account.ref)
       }
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
@@ -248,7 +255,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
         status.command = command
         askVersion = lazyVersion(subprocess, command)
-        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, priority: account.priority ?? 'secondary', quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
+        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
         if (account.runtime === 'claude-code') {
           const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
           if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)
@@ -269,6 +276,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           id = readClaudeAccountId(claudeHome)
           const cache = createQuotaCache({
             ...quotaOptions,
+            seed: observations?.get(account.ref),
+            // A failed write never fails an attempt.
+            persist: (observed) => { observations?.put(account.ref, observed).catch(() => {}) },
             read: async () => {
               const token = await resolved.token?.()
               return token ? readClaudeQuota({ command, home: claudeHome, token, now: quotaOptions.now }) : { unreadable: 'its token is not configured' }

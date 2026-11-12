@@ -241,7 +241,7 @@ export function operations(services: Services): Methods {
     'workers.list': {
       read: true,
       agent: true,
-      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, priority and provider account ID (never a token), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable.',
+      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable.',
       params: z.object({}).strict(),
       handler: () => services.workers(),
     },

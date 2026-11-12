@@ -369,12 +369,20 @@ export interface QuotaCache {
   observe(events: ReadonlyArray<QuotaEvent>): void
 }
 
-export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now }: { read: () => Promise<QuotaReport>; ttlMs?: number; now?: () => number }): QuotaCache {
+type Observed = { observedAt: number; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } }
+
+/** `seed` is a saved event reading (after a restart); `persist` is handed each new one. */
+export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, persist }: { read: () => Promise<QuotaReport>; ttlMs?: number; now?: () => number; seed?: Observed; persist?: (observed: Observed) => void }): QuotaCache {
   let cached: { report: QuotaReport; expiresAt: number } | undefined
   let pending: Promise<QuotaReport> | undefined
   /** What the attempts' events told last, kept apart from the cached report so it outlives the TTL. */
-  let fromEvents: { observedAt: number; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } } | undefined
-  const eventReading = (from: NonNullable<typeof fromEvents>): QuotaReport => ({ observedAt: new Date(from.observedAt).toISOString(), windows: { ...from.windows }, source: 'rate_limit_event' })
+  let fromEvents: Observed | undefined
+  // A saved window whose reset has passed is no longer true (it would keep the account over the ceiling); none left is no reading.
+  if (seed) {
+    const windows = Object.fromEntries(Object.entries(seed.windows).filter(([, w]) => !w.resetsAt || !(Date.parse(w.resetsAt) <= now())))
+    if (Object.keys(windows).length) fromEvents = { observedAt: seed.observedAt, windows }
+  }
+  const eventReading = (from: Observed): QuotaReport => ({ observedAt: new Date(from.observedAt).toISOString(), windows: { ...from.windows }, source: 'rate_limit_event' })
   const noPlanLimits = (report: QuotaReport) => 'unreadable' in report && report.unreadable === NO_PLAN_LIMITS
   return {
     get() {
@@ -393,6 +401,7 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now }: { re
       const own: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...fromEvents?.windows }
       for (const { window, percentUsed, resetsAt } of events) own[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
       fromEvents = { observedAt: at, windows: own }
+      persist?.(fromEvents)
       if (!cached) return
       if ('windows' in cached.report) {
         const windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...cached.report.windows }

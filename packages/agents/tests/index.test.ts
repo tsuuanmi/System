@@ -5,6 +5,16 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { memoryArtifacts } from '../../../test-support/memory.ts'
+import { processSpawner } from '../../../test-support/process.ts'
+import { fakeQuotaCli } from '../../../test-support/quota.ts'
+import { TASK_KIND, taskSchema } from '@system/work'
+import type { WorkerPort } from '../../work/src/registry.ts'
+import type { SpawnSpec } from '../src/agent.ts'
+import type { AgentsService } from '../src/index.ts'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
 import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '../src/index.ts'
 
@@ -194,4 +204,67 @@ test('a ref without a rename stays valid, and a web account has no provider acco
   assert.deepEqual([accounts[0].available, accounts[0].priority], [true, 'secondary'])
   const web = await mount({ expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined }) }, false, [{ label: 'w', priority: 'primary' }])
   assert.deepEqual([web.accounts[0]!.available, web.accounts[0]!.providerAccount, web.accounts[0]!.priority], [true, undefined, 'primary'])
+})
+
+
+test('a Claude account reads the last rate_limit_event after the Host restarts', async (t) => {
+  const dir = tempDir('agents-durable-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema })
+  const fake = fakeQuotaCli(join(dir, 'cli'), { kind: 'claude', version: '2.1.322', answer: { rate_limits_available: false } })
+  const agent = fileURLToPath(new URL('./fake-agent.mjs', import.meta.url))
+  // No shared storage-domain fake exists in Work tests. This stand-in keeps
+  // only committed values across mounts, never the previous row's cache.
+  const tables = new Map<string, Map<string, unknown>>()
+  const storageDomain = { open: async (definition: { name: string }) => ({
+    table(name: string) {
+      const key = `${definition.name}/${name}`
+      if (!tables.has(key)) tables.set(key, new Map())
+      const rows = tables.get(key)!
+      return {
+        get: (ref: string) => structuredClone(rows.get(ref)),
+        put: async (ref: string, value: unknown) => { rows.set(ref, structuredClone(value)) },
+        keys: () => rows.keys(),
+      }
+    },
+    close: async () => {},
+  }) }
+  async function boot() {
+    let row!: AgentsService
+    let port!: WorkerPort
+    const effects: (() => () => void)[] = []
+    const services: Record<string, unknown> = {
+      storageDomain, artifacts, dshHomePath: (...parts: string[]) => join(dir, ...parts),
+      capabilities: { registerWorker: (worker: WorkerPort) => { port = worker; return () => {} } },
+      credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'synthetic-token' }) },
+      subprocess: {
+        resolveExecutable: async () => fake.command,
+        spawn(spec: SpawnSpec) {
+          const spawned = processSpawner.spawn({ ...spec, env: spec.env ?? process.env, signal: spec.signal ?? new AbortController().signal, graceMs: spec.graceMs ?? 100, argv: spec.argv.includes('--version') ? spec.argv : spec.argv.map((arg) => arg === fake.command ? agent : arg) })
+          return {
+            done: spawned.done, waitForExit: async () => true, terminate: () => {},
+            collected: { stdout: { readFrom: () => ({ text: spawned.stdout() }) }, stderr: { readFrom: () => ({ text: spawned.stderr() }) } },
+          }
+        },
+      },
+    }
+    await apply({ get: (key: string) => services[key], provide: (_key: string, value: AgentsService) => { row = value }, effect: (fn: () => () => void) => { effects.push(fn) } } as never, {
+      accounts: [claude('claude-code/durable', { command: fake.command, claudeHome: join(dir, 'claude-home') })] as never,
+    })
+    return { row, port, unload: () => effects.forEach((fn) => fn()()) }
+  }
+  const input = await artifacts.put({ ...TASK_KIND, content: { instructions: 'FAKE:outputs FAKE:ratelimit=seven_day:0.77' }, classification: 'local-private', producer: { type: 'operator', ref: 'test' } })
+  const first = await boot()
+  assert.ok(first.port, 'the account registered')
+  const result = await first.port.run({ workId: 'work:durable', attemptId: 'attempt:durable', stepId: 'research', capabilities: ['code-write'], inputs: { task: input.id }, outputs: ['report'], signal: new AbortController().signal })
+  assert.equal(result.status, 'succeeded', result.reason)
+  const before = await first.row.quota('claude-code/durable')
+  assert.ok('windows' in before, 'the running Host received the attempt event')
+  assert.equal(before.source, 'rate_limit_event')
+  assert.equal(before.windows.seven_day?.percentUsed, 77)
+  first.unload()
+  const second = await boot()
+  t.after(() => second.unload())
+  const after = await second.row.quota('claude-code/durable')
+  assert.deepEqual(after, before, 'a fresh row reads the observation from the shared Host store')
 })

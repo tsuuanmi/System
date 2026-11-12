@@ -840,7 +840,7 @@ export class WorkController {
     const waitKey = `${record.id}/${s.id}`
     // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
     const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable), this.activeLimited())
+    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable), this.activeLimited(), this.attemptsToday())
     if (route.quotaWait) {
       const was = this.waitingForQuota.get(waitKey)
       if (!was || was.until !== route.quotaWait.resetsAt) {
@@ -880,6 +880,20 @@ export class WorkController {
     const now = Date.now()
     for (const [ref, until] of this.limitedAccounts) if (until <= now) this.limitedAccounts.delete(ref)
     return new Set(this.limitedAccounts.keys())
+  }
+
+  /** Worker attempts dispatched since 00:00 UTC, by Account (limited ones included); read from the table, never recorded. */
+  private attemptsToday(): Map<string, number> {
+    const start = new Date().setUTCHours(0, 0, 0, 0)
+    const counts = new Map<string, number>()
+    for (const record of this.list()) {
+      for (let i = record.events.length - 1; i >= 0; i--) {
+        const e = record.events[i]!
+        if (Date.parse(e.at) < start) break
+        if (e.type === 'dispatched' && e.executor === 'worker') counts.set(e.selected, (counts.get(e.selected) ?? 0) + 1)
+      }
+    }
+    return counts
   }
 
   private async readQuotas(workers: readonly WorkerPort[]): Promise<Map<string, QuotaReading>> {

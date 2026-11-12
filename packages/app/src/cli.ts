@@ -122,9 +122,9 @@ export interface RemoteLoginView {
   expiresAt: number
 }
 
-/** An account's priority, label and provider account ID (never a credential), for the end of its line; a web account has no provider account. */
+/** An account's note, label and provider account ID (never a credential), for the end of its line; a web account has no provider account. */
 function identityOf(a: WorkersView['accounts'][number]): string {
-  const parts = [...(a.priority === 'primary' ? ['primary'] : []), ...(a.label ? [`label: ${a.label}`] : []), ...(a.runtime === 'web' ? [] : [`provider account: ${a.providerAccount ?? 'unknown'}`])]
+  const parts = [...(a.note ? [a.note] : []), ...(a.label ? [`label: ${a.label}`] : []), ...(a.runtime === 'web' ? [] : [`provider account: ${a.providerAccount ?? 'unknown'}`])]
   return parts.length ? ` [${parts.join(', ')}]` : ''
 }
 
@@ -148,7 +148,7 @@ export function quotaLine(quota: QuotaReport, now: number): string {
 
 export interface WorkersView {
   registered: string[]
-  accounts: { ref: string; runtime: string; label?: string; priority?: string; providerAccount?: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
+  accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
 /** What the thin client's commands run against: the Host, over its socket. */
