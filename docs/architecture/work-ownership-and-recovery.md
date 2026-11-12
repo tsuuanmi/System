@@ -6,15 +6,10 @@ reviewed: 2026-11-07
 
 # Runtime integrity: Work ownership, storage and recovery
 
-**Status: the old mechanisms are gone (R1).** Until checkpoint R1 every `system`
-command booted its own DSH host, and the hosts coordinated through files: a
-per-Work lock with a takeover mutex, and a write fence against stale store
-snapshots. Five defects came from that model on 2026-11-06 (an empty lock,
-stale-lock removal moving a live lock, a stale snapshot overwriting events, a
-SQLite store-creation race and a profile config rewritten under a reader).
-One Host per home now owns every Work, so those files, their tests and their
-residual race windows are removed. How the Host does it, and the test that
-holds each guarantee, are in [the Host](host.md#guarantees-and-the-tests-that-hold-them);
+**Status: the old mechanisms are gone (R1).** The per-Work lock, its takeover
+mutex and the write fence that coordinated hosts through files are removed, with
+their tests; the defects behind them are in [ADR-0007](../decisions/ADR-0007-one-long-lived-host.md).
+How the Host holds each guarantee is in [the Host](host.md#guarantees-and-the-tests-that-hold-them);
 how recovery works is in [Start, stop and recovery](host.md#start-stop-and-recovery).
 
 The accepted Work and effect semantics remain in

@@ -44,7 +44,4 @@ actual content**, and update the areas and ID prefixes in the target's profile.
 
 ## Standalone adoption
 
-If copying only one file, use
-[documentation-architecture.md](documentation-architecture.md) as the complete
-normative specification. Its section 9 includes the profile and agent contract,
-and section 10 specifies what a new repository must create.
+Copying one file: [documentation-architecture.md](documentation-architecture.md) (sections 9 and 10).

@@ -5,12 +5,12 @@
  * observe run in the commit lane and read the latest committed record;
  * execute runs outside it and touches no Work state.
  */
-import { isQuotaLimited } from './limits.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
+import { isQuotaLimited } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
@@ -19,8 +19,6 @@ import type { QuotaReading } from './headroom.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
-
-/** What a failed attempt's reason says when its Account was rate-limited. */
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
 export interface WorkTable {

@@ -281,13 +281,9 @@ PLAN's growth budget.
 
 ### Running it
 
-`system init` installs `system.service`, a plain user unit with
-`Restart=on-failure` and `RestartForceExitStatus=75`, the PATH captured at
-init, and lingering enabled. `system host` builds the Host core in the DSH
-composition (`WorkService.startHost`) and serves the operation table on
-`$DSH_HOME/system/host.sock`; SIGTERM or SIGINT closes the server, then the
-core, and exits 0. Starting, stopping, other homes and the "not running" and
-"not answering" cases are in the [operations runbook](../operations/runbook.md).
+`system init` installs the unit ([bin/README.md](../../bin/README.md));
+`system host` serves the operation table on `$DSH_HOME/system/host.sock`.
+Starting, stopping and diagnosis: the [operations runbook](../operations/runbook.md).
 
 ## Guarantees and the tests that hold them
 
@@ -305,11 +301,3 @@ before the code (Charter 12, fixture first).
 | New code replaces the Host without interrupting an attempt | Held (D): `a draining Host starts no new attempt, lets the running one finish, and names the Works it held`, `resume continues what a draining Host held, and nothing that start found interrupted` (packages/work/tests/upgrade.test.ts); `on new code a supervised Host starts nothing new, finishes its attempt, exits 75, and the next Host serves the new version and runs what was queued` (which includes a client call during the swap), `a client built from the new code upgrades an idle Host at once, and is told to retry`, `a change seen once is not enough...`, `a stop while the Host drains exits 0 and leaves nothing to continue`, `a connection retries while the Host is away...` (packages/host/tests/upgrade.test.ts); `the supervisor runs the Host again after exit 75 and after nothing else` (packages/app/tests/service.test.ts). |
 | Version skew is caught | Held (H3a): `a Host of another version refuses the hello and names the fix` (packages/host/tests/transport.test.ts). |
 | Slots hold (R2) | Held (H5), in packages/work/tests/slots.test.ts: `Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once`, `a synthesis step waits for both proposals`, `two Works on one Account never run two attempts at once with a limit of 1`, `two Works on one Account run two attempts at once with a limit of 2`, `a waiting step goes in Work admission order when its slot frees`, `a step whose first capable Account is full goes to the next capable Account with a free slot, and the record says why`, `a step waits when every capable Account is full; the time it waited is recorded and summed by the report`, `a cancel while two attempts run records both, then one terminal event`, and `seed 1` to `seed 50: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event` (also never above the limit). Through the process: `the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both` (tests/brainstorm.test.ts). The agent side: `the account's slots are the Host's: the worker offers its limit and never queues attempts itself` and `a lost attempt is gone when its pid file is absent or names no process, and not while the process runs` (packages/agents/tests/agent.test.ts). |
-
-## Not here
-
-Socket activation; an offline doctor (until a wedged Host needs one); TCP or
-remote access; auto-resume; priorities, fairness tuning and a persisted queue;
-live profile and plugin reload; sandboxing; idle shutdown; compaction (until
-the memory report exceeds its budget). Subscriptions exist only as O3's
-notices above.
