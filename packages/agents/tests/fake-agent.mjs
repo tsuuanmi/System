@@ -21,6 +21,7 @@
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
 //   FAKE:noise    with FAKE:followup, print 300 KB of other events between the results
 //   FAKE:ratelimit=<five_hour|seven_day>:<fraction> (claude, stream-json) emit a quota event before the result
+//   FAKE:unified=<five>,<seven> (claude, stream-json) emit both fractional unified quota windows
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
 // The model given with --model / -m is written into ENV.json and reported as served.
 import { spawn } from 'node:child_process'
@@ -61,6 +62,16 @@ function finish(ok, message) {
     if (stream) console.log(JSON.stringify({ type: 'system', subtype: 'init' }))
     const rate = /FAKE:ratelimit=(five_hour|seven_day):([0-9.]+)/.exec(prompt)
     if (stream && rate) console.log(JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: rate[1], utilization: Number(rate[2]), resetsAt: Math.floor(Date.now() / 1000) + 3600 } }))
+    const unified = /FAKE:unified=([0-9.]+),([0-9.]+)/.exec(prompt)
+    if (stream && unified) {
+      const resetsAt = Math.floor(Date.now() / 1000) + 3600
+      console.log(JSON.stringify({ type: 'rate_limit_event', rate_limit_info: {
+        status: 'allowed', resetsAt, rateLimitType: 'five_hour', unifiedWindows: {
+          five_hour: { utilization: Number(unified[1]), resetsAt, status: 'allowed' },
+          seven_day: { utilization: Number(unified[2]), resetsAt: resetsAt + 6 * 86400, status: 'allowed' },
+        },
+      } }))
+    }
     if (has('followup')) {
       const first = result({ input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, 0.5)
       if (stream) console.log(first)

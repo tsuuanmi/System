@@ -17,4 +17,5 @@ and the real CLIs by the credential-gated `tests/real-agents.test.ts`.
 [quota-row.test.ts](quota-row.test.ts) checks per-account reads on the agents row.
 The synthetic fixtures and CLIs live in [test-support](../../../test-support/README.md).
 `FAKE:ratelimit=<five_hour|seven_day>:<fraction>` emits an attempt quota event
-for the hook tests in `agent.test.ts`. These tests use no real CLI or account.
+for the hook tests in `agent.test.ts`; `FAKE:unified=<five>,<seven>` emits both
+fractional windows in `unifiedWindows` for the ro-2 hook test. These tests use no real CLI or account.

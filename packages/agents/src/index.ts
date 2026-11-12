@@ -112,7 +112,7 @@ export interface AccountStatus {
 export interface AgentsService {
   /** Every configured account; the CLI version of each available one is asked here, once. */
   accounts(): Promise<AccountStatus[]>
-  /** The account's 5-hour and weekly quota, read without a model turn and cached for 10 minutes (`fresh` drops the cache and reads again); `unreadable` for a `web` or unknown ref. */
+  /** The account's 5-hour and weekly quota, read without a model turn and cached for 10 minutes (`fresh` drops the cache and reads again); a Claude reading may come from the last attempt's rate-limit event when `get_usage` has no plan limits (`source`); `unreadable` for a `web` or unknown ref. */
   quota(ref: string, options?: { fresh?: boolean }): Promise<QuotaReport>
 }
 

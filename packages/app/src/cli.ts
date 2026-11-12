@@ -128,7 +128,7 @@ function identityOf(a: WorkersView['accounts'][number]): string {
   return parts.length ? ` [${parts.join(', ')}]` : ''
 }
 
-/** `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or why it is unreadable. Reset times are local. */
+/** `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, ending ` (from the last attempt)` for a reading told by an attempt's rate-limit event, or why it is unreadable. Reset times are local. */
 export function quotaLine(quota: QuotaReport, now: number): string {
   if ('unreadable' in quota) return `quota: unreadable - ${quota.unreadable}`
   const at = (iso: string): string => {
@@ -143,7 +143,7 @@ export function quotaLine(quota: QuotaReport, now: number): string {
   }
   const minutes = Math.max(0, Math.floor((now - Date.parse(quota.observedAt)) / 60_000))
   parts.push(`read ${minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : `${Math.floor(minutes / 60)} h ago`}`)
-  return `quota: ${parts.join(', ')}`
+  return `quota: ${parts.join(', ')}${quota.source === 'rate_limit_event' ? ' (from the last attempt)' : ''}`
 }
 
 export interface WorkersView {
