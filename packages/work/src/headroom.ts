@@ -21,7 +21,8 @@ export const DEFAULT_QUOTA_CEILING_PERCENT = 80
 /** A free, capable Account, in profile (registration) order. */
 export interface Candidate {
   ref: string
-  priority?: 'primary' | 'secondary'
+  /** Attempts the Account took this UTC day: the tie-break after equal headroom. */
+  attempts: number
   /** Absent for an Account that has no quota reader (a `web` Account): it ranks as unreadable. */
   reading: QuotaReading | undefined
   /** The share of a window (percent used) from which the Account is over. */
@@ -44,14 +45,14 @@ type Window = [keyof typeof NAMES, QuotaWindowReading]
 /** A window at the ceiling is over it. */
 export function rankByHeadroom(candidates: readonly Candidate[]): Ranking {
   const reasons: Record<string, string> = {}
-  const blind: string[] = []
-  const under: { ref: string; headroom: number; primary: boolean }[] = []
+  const blind: { ref: string; attempts: number }[] = []
+  const under: { ref: string; headroom: number; attempts: number }[] = []
   const waits: { resetsAt?: string; at?: number }[] = []
-  for (const { ref, priority, reading, ceiling } of candidates) {
+  for (const { ref, attempts, reading, ceiling } of candidates) {
     const windows = reading && 'windows' in reading ? (Object.entries(reading.windows) as [keyof typeof NAMES, QuotaWindowReading | undefined][]).filter((w): w is Window => !!w[1]) : []
     if (!windows.length) {
       reasons[ref] = !reading ? 'no quota reader' : 'unreadable' in reading ? `quota unreadable: ${reading.unreadable}` : 'quota unreadable: no window reported'
-      blind.push(ref)
+      blind.push({ ref, attempts })
       continue
     }
     const text = (list: Window[]) => list.map(([name, w]) => `${NAMES[name]} ${shown(w.percentUsed)}`).join(', ')
@@ -65,12 +66,12 @@ export function rankByHeadroom(candidates: readonly Candidate[]): Ranking {
       continue
     }
     const headroom = 100 - Math.max(...windows.map(([, w]) => w.percentUsed))
-    const primary = priority === 'primary'
-    reasons[ref] = primary ? `primary under ${ceiling}% (${text(windows)})` : `headroom ${shown(headroom)} (${text(windows)})`
-    under.push({ ref, headroom, primary })
+    reasons[ref] = `headroom ${shown(headroom)} (${text(windows)})`
+    under.push({ ref, headroom, attempts })
   }
-  const best = under.find((a) => a.primary) ?? under.reduce<(typeof under)[number] | undefined>((top, a) => (!top || a.headroom > top.headroom ? a : top), undefined)
-  const selected = best?.ref ?? blind[0]
+  // Most headroom, then fewest attempts that day, then registration order (strict comparisons keep the first).
+  const best = under.reduce<(typeof under)[number] | undefined>((top, a) => (!top || a.headroom > top.headroom || (a.headroom === top.headroom && a.attempts < top.attempts) ? a : top), undefined)
+  const selected = best?.ref ?? blind.reduce<(typeof blind)[number] | undefined>((top, a) => (!top || a.attempts < top.attempts ? a : top), undefined)?.ref
   if (selected) return { selected, reasons }
   if (!waits.length) return { reasons }
   const known = waits.filter((w): w is { resetsAt: string; at: number } => w.at !== undefined)

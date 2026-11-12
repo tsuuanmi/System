@@ -67,8 +67,6 @@ export interface WorkerPort {
   capabilities: readonly string[]
   /** How many attempts of this Account run at once; default 1. */
   maxConcurrentAttempts?: number
-  /** The Account to prefer while its quota is under the ceiling; absent is secondary. */
-  priority?: 'primary' | 'secondary'
   /** The share of a quota window (percent used) from which the Account is not chosen; default 80. The row's `quotaCeilingPercent`. */
   quotaCeilingPercent?: number
   /** The Account's quota windows (a cached read, no model turn); absent for an Account with none (`web`), which ranks after every readable one. */
@@ -221,16 +219,16 @@ export class Capabilities {
 
   /**
    * The Worker for a step: capable (every capability needed), allowed and, when `free` is given, with a free slot; every candidate's reason is kept.
-   * Among those, `rankByHeadroom` over `readings` (the quota of each Account that has one, read by the caller): the primary under the ceiling,
-   * else the most headroom, unreadable and quota-less Accounts last, ties by registration order. Without readings that is the first registered.
+   * Among those, `rankByHeadroom` over `readings` (the quota of each Account that has one, read by the caller): the most headroom, unreadable and quota-less Accounts last;
+   * ties, those Accounts included, go to the fewest `attempts` that UTC day, then registration order. Without readings that is the first registered.
    * `only`: the one Worker allowed (`system work submit --worker`, or a takeover by `system work retry --worker`).
    * `limited`: Accounts that just failed an attempt on quota or credits are passed over (reason `limited: ...`), and the step waits when no other is left.
    * Capable Workers but none free: `selected` is absent and `full` is set. All free ones over the ceiling: `selected` is absent and `quotaWait` is set.
    */
-  routeWorker(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean, readings: ReadonlyMap<string, QuotaReading> = new Map(), limited: ReadonlySet<string> = new Set()): Route<WorkerPort> {
+  routeWorker(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean, readings: ReadonlyMap<string, QuotaReading> = new Map(), limited: ReadonlySet<string> = new Set(), attempts: ReadonlyMap<string, number> = new Map()): Route<WorkerPort> {
     const rankable = this.rankable(needs, only, free)
     const passedOver = rankable.filter((w) => limited.has(w.ref))
-    const ranking = rankByHeadroom(rankable.filter((w) => !limited.has(w.ref)).map((w) => ({ ref: w.ref, priority: w.priority, reading: readings.get(w.ref), ceiling: w.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT })))
+    const ranking = rankByHeadroom(rankable.filter((w) => !limited.has(w.ref)).map((w) => ({ ref: w.ref, attempts: attempts.get(w.ref) ?? 0, reading: readings.get(w.ref), ceiling: w.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT })))
     let full = false
     const candidates = this.workers.map((w) => {
       const missing = needs.filter((c) => !w.capabilities.includes(c))

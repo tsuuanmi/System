@@ -59,13 +59,13 @@ columns are history, and the reasoning behind each is in [PLAN.md at
 | Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured | not measured | not measured |
 | Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured | not measured | not measured |
 
-| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) | DF9, hygiene pass (`f752e79` → change) | DF, before df-28 (`1029250`) | SC close (`3af21cf`, 2026-11-11) |
-|---|---|---|---|---|---|
-| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); accepted at DF's close (operator, 2026-11-10) as DG's baseline. df-29: 3,606 → 3,599. The gap to DF9's 3,255 stays: those mechanisms are behaviour the tests pin, and a helper extracted from the verdict and dispatch code added more lines than it saved. Closing it means dropping one (operator decision: the `claim` command, about 60 lines, or the staleness note, per-source retry or slot wait in `live()`) | 3,882 (+6.8% on DG's 3,636, within +10%): routing by headroom (sc-4, +140), publish retry (sc-7), resume after restart (sc-8), re-runs (sc-9, sc-13); dg-11 gave back 36 |
-| All package source, lines | 11,062 | 11,366 | not measured | 11,191 | 12,191 |
-| Tests, lines | 9,540 | 9,712 | not measured | 13,136 | 16,435 |
-| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) | 4,350 (39): over the 4,285 limit by 65; SC's decisions live in this PLAN, not a PROP |
-| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) | about 2 min 30 s on a quiet machine (docs 1 s, install 10 s, build 30 s, typecheck 10 s, unit 27 s, smoke 71 s); timeouts and flakes at loads of 200-460 |
+| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) | DF9, hygiene pass (`f752e79` → change) | DF, before df-28 (`1029250`) | SC close (`3af21cf`, 2026-11-11) | RO, hygiene ro-6 (`6a68258` → change) |
+|---|---|---|---|---|---|---|
+| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); accepted at DF's close (operator, 2026-11-10) as DG's baseline. df-29: 3,606 → 3,599. The gap to DF9's 3,255 stays: those mechanisms are behaviour the tests pin, and a helper extracted from the verdict and dispatch code added more lines than it saved. Closing it means dropping one (operator decision: the `claim` command, about 60 lines, or the staleness note, per-source retry or slot wait in `live()`) | 3,882 (+6.8% on DG's 3,636, within +10%): routing by headroom (sc-4, +140), publish retry (sc-7), resume after restart (sc-8), re-runs (sc-9, sc-13); dg-11 gave back 36 | 3,953 → 3,941: dead `Artifacts.ofKind` and an orphan comment deleted. 59 above SC's 3,882: the rest is behaviour the tests pin; closing it needs the operator decision on the `claim` command (about 60 lines) |
+| All package source, lines | 11,062 | 11,366 | not measured | 11,191 | 12,191 | not measured |
+| Tests, lines | 9,540 | 9,712 | not measured | 13,136 | 16,435 | not measured |
+| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) | 4,350 (39): over the 4,285 limit by 65; SC's decisions live in this PLAN, not a PROP | 4,373 → 4,283 (39), under the 4,285 limit: restated procedure left to its one home (host.md, bin/README, web-worker README, ADR-0007) |
+| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) | about 2 min 30 s on a quiet machine (docs 1 s, install 10 s, build 30 s, typecheck 10 s, unit 27 s, smoke 71 s); timeouts and flakes at loads of 200-460 | not measured |
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -197,6 +197,31 @@ Decisions (operator, 2026-11-11):
   through giving an agent that authority, even when asked in chat.
 - **Budget:** the active core stays within +10% of SC's 3,882 lines; a new
   mechanism replaces a step a person does today.
+
+Review of 2026-11-12 (operator; read-only counts from the Host's store: 471
+Works since 2026-11-05; feature.yaml 21 of 41 succeeded, of the 20 failures
+8 Outside, 5 tests and implement out of sync, all before dg-13, 3 System
+defects since fixed, 2 of the change, 2 denied on a stale base):
+- **Measure first.** At ro-5's merge the active core is 3,953 lines (+1.8%
+  on SC, not recorded before) and docs 4,373 lines (over 4,285). ro-6, a
+  hygiene pass, comes before the RO measure; ro-7 to ro-12 count toward its
+  10 Items. A load gate waits for the measure, as decided on 2026-11-11.
+- **No preferred Account by name** (ro-7). `claude-code/default` took 344
+  attempts and c2, c3 and c4 together 12: with every Claude Account
+  unreadable, the tie went to registration order. Headroom decides; a tie
+  goes to the Account with the fewest attempts that day; a reading from
+  `rate_limit_event` survives a Host restart. `priority: primary` goes; no
+  profile weights until an Account is paid by the API.
+- **Refs `<runtime>/<n>`** (ro-11), replacing sc-1's `c1`/`x1` advice; `label`
+  is for people; old refs are retired, never reused, and old records keep them.
+- **Red re-runs once** (ro-8) before it holds, as sc-13 does for checks: red
+  never failed and its 8 inconclusive verdicts all waited on the operator.
+- **Tests and implement stay on different Providers.** A contract of
+  interfaces in the plan waits until a Work in the measure is out of sync.
+- **Artifacts stay as they are;** `system status` shows the final one (ro-10).
+- **The web Runtime is used** (ro-12): research's investigate step prefers it
+  (research 197 of 224 web attempts succeeded; none since 2026-11-08), and its
+  headed-browser tests run only when its paths change (ro-9).
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 

@@ -139,16 +139,6 @@ export class Artifacts {
     return found
   }
 
-  /** Every stored Artifact of `kind`, found by reading every record. */
-  ofKind(kind: string): Envelope[] {
-    const found: Envelope[] = []
-    for (const key of this.records.keys()) {
-      const envelope = this.records.get(key)?.envelope
-      if (envelope?.kind === kind) found.push(structuredClone(envelope))
-    }
-    return found
-  }
-
   /** The bytes of a blob Artifact; `unavailable` when the record outlived them. */
   async readBytes(id: string): Promise<Uint8Array> {
     const read = this.get(id)

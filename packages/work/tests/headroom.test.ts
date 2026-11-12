@@ -6,7 +6,7 @@ import type { QuotaReport } from '../../agents/src/quota.ts'
 // before headroom.ts exists; each case still fails on that missing module.
 interface Candidate {
   ref: string
-  priority?: 'primary' | 'secondary'
+  attempts: number
   reading: QuotaReport | undefined
   ceiling: number
 }
@@ -17,24 +17,24 @@ async function rank(candidates: Candidate[]): Promise<Ranked> {
   return rankByHeadroom(candidates)
 }
 const reading = (five: number, seven?: number): QuotaReport => ({ observedAt: '2026-11-10T00:00:00Z', windows: { five_hour: { percentUsed: five }, ...(seven === undefined ? {} : { seven_day: { percentUsed: seven } }) } })
-const candidate = (ref: string, quota: QuotaReport | undefined, priority: Candidate['priority'] = 'secondary', ceiling = 80): Candidate => ({ ref, reading: quota, priority, ceiling })
+const candidate = (ref: string, quota: QuotaReport | undefined, attempts = 0, ceiling = 80): Candidate => ({ ref, reading: quota, attempts, ceiling })
 
-test('primary under the ceiling wins even with less headroom', async () => {
-  const result = await rank([candidate('S', reading(10)), candidate('P', reading(43, 31), 'primary')])
-  assert.equal(result.selected, 'P')
-  assert.equal(result.reasons.P, 'primary under 80% (5h 43%, 7d 31%)')
+test('most headroom wins; no Account is preferred', async () => {
+  const result = await rank([candidate('A', reading(10)), Object.assign(candidate('B', reading(43, 31)), { priority: 'primary' })])
+  assert.equal(result.selected, 'A')
+  assert.equal(result.reasons.B, 'headroom 57% (5h 43%, 7d 31%)')
 })
 for (const [window, quota] of [['5h', reading(91, 31)], ['7d', reading(31, 91)]] as const) {
-  test(`primary over only in ${window} yields to secondary`, async () => {
-    const result = await rank([candidate('P', quota, 'primary'), candidate('S', reading(43))])
+  test(`over only in ${window} yields to another Account`, async () => {
+    const result = await rank([candidate('P', quota), candidate('S', reading(43))])
     assert.equal(result.selected, 'S')
     assert.equal(result.reasons.P, `over 80% (${window} 91%)`)
   })
 }
 test('each candidate uses its configured ceiling', async () => {
-  const result = await rank([candidate('P', reading(91, 31), 'primary', 95), candidate('S', reading(10))])
-  assert.equal(result.selected, 'P')
-  assert.equal(result.reasons.P, 'primary under 95% (5h 91%, 7d 31%)')
+  const result = await rank([candidate('P', reading(91, 31), 0, 95), candidate('S', reading(10))])
+  assert.equal(result.selected, 'S')
+  assert.equal(result.reasons.P, 'headroom 9% (5h 91%, 7d 31%)')
 })
 test('most headroom wins, using the larger window', async () => {
   const result = await rank([candidate('A', reading(10, 60)), candidate('B', reading(30, 20)), candidate('C', reading(20, 45))])
@@ -44,13 +44,13 @@ test('most headroom wins, using the larger window', async () => {
 test('headroom ties go to profile order', async () => {
   assert.equal((await rank([candidate('z-first', reading(20, 40)), candidate('a-later', reading(40, 20))])).selected, 'z-first')
 })
-test('exactly at the ceiling counts as over, including for primary', async () => {
-  const result = await rank([candidate('P', reading(80), 'primary'), candidate('S', reading(79))])
+test('exactly at the ceiling counts as over, for any Account', async () => {
+  const result = await rank([candidate('P', reading(80)), candidate('S', reading(79))])
   assert.equal(result.selected, 'S')
   assert.equal(result.reasons.P, 'over 80% (5h 80%)')
 })
-test('unreadable primary ranks after readable under-ceiling secondary', async () => {
-  assert.equal((await rank([candidate('P', { unreadable: 'unknown version' }, 'primary'), candidate('S', reading(70))])).selected, 'S')
+test('unreadable ranks after readable under-ceiling Accounts', async () => {
+  assert.equal((await rank([candidate('P', { unreadable: 'unknown version' }), candidate('S', reading(70))])).selected, 'S')
 })
 test('only unreadable accounts, including web with no reader, use profile order', async () => {
   const accounts = [candidate('A', { unreadable: 'unknown version' }), candidate('web', undefined), candidate('B', { unreadable: 'offline' })]
@@ -61,10 +61,10 @@ test('only unreadable accounts, including web with no reader, use profile order'
   assert.equal((await rank([accounts[1]!, accounts[0]!])).selected, 'web')
 })
 test('unreadable stays usable when every readable account is over', async () => {
-  assert.equal((await rank([candidate('P', reading(91), 'primary'), candidate('S', { unreadable: 'offline' })])).selected, 'S')
+  assert.equal((await rank([candidate('P', reading(91)), candidate('S', { unreadable: 'offline' })])).selected, 'S')
 })
 test('empty windows are unreadable and rank after a readable account', async () => {
-  const empty = candidate('empty', { observedAt: '2026-11-10T00:00:00Z', windows: {} }, 'primary')
+  const empty = candidate('empty', { observedAt: '2026-11-10T00:00:00Z', windows: {} })
   assert.equal((await rank([empty, candidate('S', reading(79))])).selected, 'S')
   assert.equal((await rank([empty])).selected, 'empty')
 })
@@ -86,7 +86,20 @@ test('no candidates means no selection and no quota wait', async () => {
   assert.equal(result.selected, undefined)
   assert.equal(result.waitUntil, undefined)
 })
-test('two primaries under the ceiling use profile order, even across runtimes', async () => {
-  const result = await rank([candidate('claude/P', reading(70), 'primary'), candidate('codex/P', reading(10), 'primary')])
-  assert.equal(result.selected, 'claude/P')
+test('most headroom wins across runtimes', async () => {
+  const result = await rank([candidate('claude/P', reading(70)), candidate('codex/P', reading(10))])
+  assert.equal(result.selected, 'codex/P')
+})
+
+test('equal headroom goes to the fewest attempts that day', async () => {
+  assert.equal((await rank([candidate('A', reading(40), 5), candidate('B', reading(40), 2)])).selected, 'B')
+})
+test('equal headroom and attempts go to registration order', async () => {
+  assert.equal((await rank([candidate('A', reading(40), 2), candidate('B', reading(40), 2)])).selected, 'A')
+})
+test('unreadable Accounts tie by fewest attempts, then registration order', async () => {
+  assert.equal((await rank([candidate('default', { unreadable: 'x' }, 344), candidate('c2', { unreadable: 'x' }, 4), candidate('c3', { unreadable: 'x' }, 4)])).selected, 'c2')
+})
+test('a readable Account under the ceiling still beats unreadable ones with fewer attempts', async () => {
+  assert.equal((await rank([candidate('blind', { unreadable: 'x' }, 0), candidate('readable', reading(70), 5)])).selected, 'readable')
 })

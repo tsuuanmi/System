@@ -29,19 +29,16 @@ place), apart from any checkout you develop in:
 
 The store and the secrets stay in `$DSH_HOME/system` (`~/.dsh`, DSH's).
 `system update` installs the newest commit of `main` ([Upgrading](#upgrading)).
-`system init`, run from the install, links the profile to `current`, writes
-`~/.config/systemd/user/system.service` (`ExecStart=<node>
-~/.system/current/bin/system [--patch ~/.system/profile.yml] host`), runs
-`systemctl --user daemon-reload` and `loginctl enable-linger $USER`, and never
-enables or starts it:
+`system init`, run from the install, links the profile to `current` and writes
+the user unit, which it never enables or starts
+([bin/README.md](../../bin/README.md)):
 
 ```
 systemctl --user enable --now system
 ```
 
-`system init --no-service` (or `SYSTEM_NO_SERVICE=1`) skips the unit. Run
-`system init` again after changing Node or `PATH` (the unit holds those of the
-last init) or adding `profile.yml`. A development checkout runs as itself:
+Run `system init` again after changing Node or `PATH` (the unit holds those of
+the last init) or adding `profile.yml`. A development checkout runs as itself:
 `bin/system host --supervise` with a `DSH_HOME` of its own, never the default
 home while the installed Host runs.
 
@@ -59,10 +56,6 @@ systemctl --user stop system       # SIGTERM: the Host stops and exits 0
 systemctl --user restart system
 systemctl --user status system
 ```
-
-Clients still connected do not delay the stop: the Host lets admitted calls
-finish for 2 s, then closes every connection, and the CLI says the Host is not
-running.
 
 Whatever was running when the Host stopped is lost at the next start. A Worker
 attempt cut short is dispatched again by the Host once its process is confirmed
@@ -82,13 +75,9 @@ Host that stopped itself for new code waits for its attempts first; see
 - it checks that commit by a Work, `workflows/code-checks.yaml` on a task whose
   base is the commit, and prints the Work ID: the evidence, bound to the exact
   commit. A failed build or check leaves `current` where it was. With a
-  `current`, the commit is checked as a change from the release that runs now
-  (`system task new --against`: the base's `parent`), so `paths` selects the
-  checks by the files that differ between the two releases (`web` runs only
-  when the Website Worker, its driver or its test changed), from the new
-  commit's own `.system/checks.yaml`; the first install checks the whole
-  commit. The log line names the release it compared with and the checks the
-  verifier skipped;
+  `current`, the commit is checked as a change from the release that runs now,
+  so `paths` selects the checks by the files that differ between the two
+  releases; the first install checks the whole commit;
 - it switches `current` (a new link renamed over it), then asks the Host as a
   client of the new code, which makes the Host drain and restart on it (below);
 - if the Host does not run the new code within `--wait` (default 75 minutes,
@@ -96,35 +85,20 @@ Host that stopped itself for new code waits for its attempts first; see
   unit's next start runs the code before. Releases other than the current one
   and the one before are removed.
 
-The Host's side of an upgrade:
-
-1. It logs `system host: upgrading: this Host runs <old>, the code on disk is
-   <new>; ...`, starts no new attempt, and lets the running ones finish
-   (however long they take; it never interrupts one). Works can still be
-   submitted and run: they wait.
-2. With no attempt running it logs `stopped for the upgrade ... exiting 75`
-   and exits 75. The unit restarts on that status (`RestartForceExitStatus=75`);
-   `system host --supervise` runs it again (foreground, development: nothing
-   else restarts it, and a SIGTERM ends the supervisor). A new Host that fails
-   to start after an upgrade is tried again: the supervisor waits 2, 4 and
-   8 s and logs each try; the unit every 5 s, at most 10 starts in 5 minutes.
-   A process still alive 10 s after it stopped is made to exit, and logs
-   `still running ... open: <resources>`: what held it, to report.
-3. The new Host recovers as on any start and logs `continuing N Works held for
-   the upgrade`: the Works whose runs waited at the gate go on; what was
-   interrupted is left to recovery (see [Stop, restart, status](#stop-restart-status)).
+While it upgrades the Host starts no new attempt and lets the running ones
+finish (however long they take); Works can still be submitted: they wait. Then
+it exits and restarts, and the Works held go on. The log lines, exit status,
+retries and exit grace are in [the Host](../architecture/host.md#upgrading-on-new-code-d).
 
 A command run meanwhile waits up to 3 s for the swap before it says the Host
-is not running. While the Host waits on a long attempt, a CLI of the new code
-can still read (`work show`, `work list`, `workers`); a command that changes
-something says the Host is upgrading, and to retry once it has restarted. If the Host is still draining, `system host`'s log says what it
-waits for; `systemctl --user restart system` (or SIGTERM) stops it at once and
-interrupts the attempts, as any stop does.
+is not running. A CLI of the new code can still read (`work show`, `work list`,
+`workers`); a command that changes something says to retry once the Host has
+restarted. `system host`'s log says what a draining Host waits for;
+`systemctl --user restart system` stops it at once and interrupts the attempts.
 
-A Host run from a development checkout also restarts itself on a build there:
-it looks at the code every 10 s. `corepack pnpm build` keeps a `.building`
-file at the checkout's root while it runs, and the Host does not upgrade while
-it is there; a failed build leaves it, so the Host stays on its code until a
+A Host run from a development checkout also restarts itself on a build there,
+but not while the `.building` file `corepack pnpm build` keeps at the checkout's
+root exists; a failed build leaves it, so the Host stays on its code until a
 build succeeds.
 
 ## Rollback
@@ -190,9 +164,9 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 
 ## Attempts at once, and held slots
 
-An `agents` account may carry `label` and `priority: primary` (at most one per Runtime); name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
+An `agents` account may carry `label`; name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
 
-`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. A reading is at most 10 minutes old (cached; an attempt's rate-limit events refresh it, and an attempt that failed out of quota or credits reads it again at once), and reading never spends a model turn. When it cannot be read the line says why (`quota: unreadable - ...`): a web account, an unverified CLI version, no token, not registered. See the [agents README](../../packages/agents/README.md#quota).
+`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. Reading never spends a model turn, and when it cannot be read the line says why (`quota: unreadable - ...`). See the [agents README](../../packages/agents/README.md#quota).
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
@@ -215,12 +189,10 @@ restart the Host:
         maxConcurrentAttempts: 2  # this account only
 ```
 
-A web account is one Chrome profile and always runs one attempt at a
-time: the row-wide value does not apply to it, and an own value other than 1
-makes it unavailable.
-
-Codex accounts share one `auth.json`; with several attempts at once only the
-first refresh is copied back.
+A web account always runs one attempt at a time: the row-wide value does not
+apply to it, and an own value other than 1 makes it unavailable. Codex accounts
+share one `auth.json`; with several attempts at once only the first refresh is
+copied back.
 
 A Host that stops with attempts running holds their Account slots until the
 process is gone ([host.md](../architecture/host.md)). If a
@@ -263,17 +235,14 @@ with a reason that names what is missing.
 
 **Sign in, once.** Three ways:
 - `system workers login web/chatgpt/default --cookies <file>`: a JSON export from
-  a browser extension, or a Netscape `cookies.txt`, of chatgpt.com taken from
-  your own signed-in browser. The CLI reads it once and sends it to the Host;
-  only chatgpt.com and openai.com cookies are kept, a session cookie gets a
-  30-day lifetime, and your file is left as it is: delete it yourself when done,
-  because it is as good as a password.
+  a browser extension, or a Netscape `cookies.txt`, of chatgpt.com from your
+  own signed-in browser. Delete the file yourself when done: it is as good as a
+  password. Which cookies are kept: the [web-worker README](../../packages/web-worker/README.md).
 - `system workers login web/chatgpt/default --remote`: for a server with no
   display, and for a Cloudflare challenge. See below.
 - With neither, on a machine with a display: a window opens on the **Host's**
   `DISPLAY` (a user service has none unless you run
-  `systemctl --user import-environment DISPLAY` and restart it). Sign in by hand;
-  it waits up to ten minutes.
+  `systemctl --user import-environment DISPLAY` and restart it). Sign in by hand.
 
 Each prints `signed in`, or `not signed in:` and why (exit 1), never a cookie
 value. Do not log in while an attempt of the account runs: Chrome holds the profile.
@@ -298,10 +267,8 @@ It prints three steps, for example:
 1. On **your own machine**, run the `ssh -L ...` line exactly as printed. The
    `user@host` part is the Host's user and its host name; replace the host with
    the name or address you reach the server by if they differ.
-2. Open the URL in your browser. It shows the whole screen of the browser's
-   private display (every tab, any popup), scaled to your window; click, scroll
-   and type in it as in a normal browser. Anything without the long token in
-   the address gets `404`.
+2. Open the URL in your browser. It shows the browser's private display; use
+   it as a normal browser.
 3. Sign in, and if a "verify you are human" check shows, clear it yourself.
    System never clicks it.
 4. Press **Save**. The page says `Signed in` or `Not signed in: <why>`, and the
@@ -315,8 +282,7 @@ packages into the home directory and put a wrapper script on the `PATH`.
 
 **Account states.** `system workers` shows any state but `ready` as `unavailable`
 with what to do; the states and quarantine rules are in the
-[web-worker README](../../packages/web-worker/README.md). Each change is one
-line in the Host log.
+[web-worker README](../../packages/web-worker/README.md).
 
 - `needs-sign-in`: log in again (`--remote` or `--cookies`), then
   `system workers recheck web/chatgpt/<name>`; a successful `--remote` rechecks itself.
@@ -343,10 +309,9 @@ System's own records: it stores the fixed Research question ("What is the capita
 of France? Cite the English Wikipedia article that says so
 (https://en.wikipedia.org/...).", a page the citation verifier can read, so the
 canary measures the Website Worker and not a third-party site) as a `task@1` (the
-same Artifact ID every time) and runs `workflows/research.yaml` on it, citation check included, once on
-each registered `web` Account, one after the other, with
-`system work submit --worker <ref>`. It prints one line per Work: Account, Work
-ID, status, seconds. Nothing is stored outside System's records.
+same Artifact ID every time) and runs `workflows/research.yaml` on it once on
+each registered `web` Account, with `system work submit --worker <ref>`, and
+prints one line per Work: Account, Work ID, status, seconds.
 
 ```
 tools/web-canary                              # run it now
@@ -371,12 +336,11 @@ systemctl --user daemon-reload
 systemctl --user enable --now system-web-canary.timer
 ```
 
-Read it with `systemctl --user list-timers system-web-canary`, `journalctl --user
--u system-web-canary` and `tools/web-canary --report`; start a run with
+Read it with `systemctl --user list-timers system-web-canary` and
+`journalctl --user -u system-web-canary`; start a run with
 `systemctl --user start system-web-canary`, stop the series with
-`systemctl --user disable --now system-web-canary.timer`. A failed Work stays a
-record (`system work show <id>`). Changing the question's text starts a new
-series (a new Task ID).
+`systemctl --user disable --now system-web-canary.timer`. Changing the
+question's text starts a new series (a new Task ID).
 
 ## The dev branch
 
@@ -390,19 +354,13 @@ requests in `dev`'s branch protection: the push would be refused.
 
 ## Another home
 
-Only `~/.dsh` gets the unit. For any other `DSH_HOME`, run
-`DSH_HOME=<home> system host` in a terminal; Ctrl-C stops it. A socket path is
-limited to about 100 bytes, so keep that home's path short.
+Only `~/.dsh` gets the unit. For another `DSH_HOME`, run
+`DSH_HOME=<home> system host` in a terminal (Ctrl-C stops it); keep the path
+short, a socket path is limited to about 100 bytes.
 
 ## Logs
 
-```
-journalctl --user -u system            # everything
-journalctl --user -u system -f         # follow
-```
-
-The Host writes one line to stderr at start (`system host: started for <home>,
-listening on <socket>`) and one at stop (`system host: stopped`).
+`journalctl --user -u system` (add `-f` to follow).
 
 ## Host not running
 
@@ -422,9 +380,6 @@ system: the System Host is not running for <home>: systemctl --user start system
 4. `another Host already runs for <home>`: one is running, perhaps one in a
    terminal. Stop it; there is one Host per home.
 
-A stale `host.sock` file is not a problem: the Host removes it once it holds
-the home.
-
 ## The Host is not answering
 
 ```
@@ -437,15 +392,10 @@ once more with the same `commandId`, so the Host does it once: look at
 `system work list` before sending it again yourself.
 
 Every command but `system work wait` fails at once with this. `system work wait`
-treats it as transient: it sends the same read again with a backoff (1 s,
-doubling to 10 s) and keeps waiting, as across a Host restart. Only a Host that
-stays unreachable for 10 minutes (or the `--timeout` given, if shorter) ends
-it, with exit **6** and "the System Host did not answer"; the Works were not
-read and may still be running, so run `system work wait` again or
-`system work list`. Exit 6 is never a success; the other exits of `wait` are
-listed with its row in the [app README](../../packages/app/README.md). (Test-only:
-`SYSTEM_WAIT_RECONNECT_MS` and `SYSTEM_WAIT_RETRY_MS` replace the bound and the
-first backoff.)
+keeps waiting with a backoff; after 10 minutes unreachable (or its `--timeout`)
+it exits **6**, never a success, and the Works may still be running: run it
+again or `system work list`. Its exits are in the
+[app README](../../packages/app/README.md).
 
 1. `systemctl --user status system` and `journalctl --user -u system -e`: is
    the Host alive, and busy or stuck?
@@ -466,10 +416,10 @@ before `publish`, not retried. `system work show <id>` shows the reason: look
 at the base runs (`system work show` lists all of them). `system work approve <id> --reason ...` lets it publish and
 merge; `system work deny` fails it.
 
-The same applies at `red`, earlier: when every `red: fail` check that failed also
-fails on the base, and still does after the one re-run on the change and the base (sc-13), the `red`
-verdict is `inconclusive` and the Work is held at `red`, before `implement` starts. `system approve` continues; `system deny`
-fails the Work.
+The same applies at `red`, earlier: when every failing `red: fail` check also
+fails on the base after the re-run, the `red` verdict is `inconclusive` and the
+Work is held at `red`, before `implement` starts. `system approve` continues;
+`system deny` fails the Work.
 
 ## A check that fails again on the same change
 
@@ -490,19 +440,15 @@ Host has admitted the operation, then poll `work.events` every second until the
 Work is terminal, and exit 0 (succeeded), 1 (failed), 3 (held) or 5
 (cancelled). `work cancel --wait` follows the same way.
 
-Ctrl-C **detaches**: the CLI prints `detached; <work> goes on in the Host` and
-exits 0; the Work is not touched. With `--cancel-on-interrupt` Ctrl-C sends
-`work.cancel` instead and follows the Work to its end; a second Ctrl-C then
-detaches. Closing the terminal or killing the CLI never cancels a Work: only
-`system work cancel` does. Read what happened with `system work show <id>`.
+Ctrl-C **detaches** (see the [app README](../../packages/app/README.md)); the
+Work is not touched. Closing the terminal or killing the CLI never cancels a
+Work: only `system work cancel` does. Read what happened with
+`system work show <id>`.
 
-While Worker attempts run, `work show` also prints `live`: for each attempt
-its start, last activity, elapsed and quiet seconds, and what its Runtime last
-reported (Claude Code and Codex: turns, the last tool, tokens so far). An
-attempt quiet for `stallMinutes` (10 by default; the `work` row's config) is
-`stalled: true`, and watchers get one `work.changed` with `stalled: true`. A
-stall is a notice, not a verdict: the attempt is not stopped. `live` is never
-recorded; it is gone once the attempt reports.
+While Worker attempts run, `work show` also prints `live` (start, last
+activity, what the Runtime last reported). An attempt quiet for `stallMinutes`
+(10 by default; the `work` row's config) is `stalled: true`: a notice, not a
+verdict. `live` is never recorded.
 
 ## The status of a project
 
@@ -556,13 +502,9 @@ commit, else beside its own code.
 The session is an agent: it may use every agent operation on every Work, store
 Tasks and files, and list the Workers.
 
-Each Work is also an MCP resource, `system://work/<id>`; reading it
-gives `work.show`. To be told instead of polling, subscribe to it
-(`resources/subscribe`): the server sends `notifications/resources/updated`
-when the Work becomes terminal, is held, waits for approval, or one of its
-attempts stalls. A notice only wakes the session: read the Work's events with
-`work.events` from your last `seq`. A session that was away misses no event,
-only the wake-up.
+Each Work is also an MCP resource, `system://work/<id>` (`work.show`); subscribe
+to it (`resources/subscribe`) to be woken when the Work ends, is held, waits for
+approval or stalls, then read `work.events` from your last `seq`.
 
 It cannot approve or deny, set credentials, sign an
 account in, or merge into `main`. When a check failed for a reason outside the

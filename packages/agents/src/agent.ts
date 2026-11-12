@@ -71,8 +71,6 @@ export interface Account {
   attemptBudget?: AttemptBudget
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
-  /** `primary` is preferred while its quota is under the ceiling (routing by headroom). */
-  priority?: 'primary' | 'secondary'
   /** From this share of a quota window used the account is not chosen (the row's `quotaCeilingPercent`; routing's default is 80). */
   quotaCeilingPercent?: number
   /** The account's cached quota reading; routing reads it and records it with the choice. */
@@ -121,7 +119,6 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
-    priority: account.priority,
     quotaCeilingPercent: account.quotaCeilingPercent,
     quota: account.quota,
     run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs),

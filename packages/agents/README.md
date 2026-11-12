@@ -11,11 +11,10 @@ the optional web-worker row) becomes a System Worker
 - **Accounts:** one config entry per account; an account whose CLI or
   credential is missing is skipped with its reason. Routing is by headroom (see
   Routing by headroom); `system work retry --worker <ref>` names one.
-  An account may set `label` (free text for people, e.g. an email) and
-  `priority: primary` (omitted is secondary). At most one account per Runtime
-  may be primary: a later one is not registered and says so. Refs are stable
-  handles that are never reused (`claude-code/c1`, `codex/x1`); existing refs
-  such as `claude-code/default` stay valid.
+  An account may set `label` (free text for people, e.g. an email). A profile
+  that still sets `priority` loads: the field is ignored and `system workers`
+  says so. Refs are stable handles that are never reused (`claude-code/c1`,
+  `codex/x1`); existing refs such as `claude-code/default` stay valid.
 
 ```yaml
 - id: agents
@@ -28,7 +27,6 @@ the optional web-worker row) becomes a System Worker
       - ref: claude-code/default        # <runtime>/<account>
         runtime: claude-code
         label: me@example.com           # free text for people
-        priority: primary               # at most one per Runtime; omitted = secondary
         claudeHome: claude/default      # holds .claude.json (provider account ID); under $DSH_HOME/system unless absolute; this is the default (claude/<name>)
         capabilities: [code-write, code.develop, research, web-search]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
@@ -48,7 +46,7 @@ turn, from files of the account (never the real `~/.claude`): Claude Code from
 `<claudeHome>/.claude.json` `oauthAccount.accountUuid`, else `emailAddress`;
 Codex from `tokens.account_id` of `<codexHome>/auth.json`; a `web` account has
 none. It is recorded as `providerAccount` and shown by `system workers` and
-`workers.list` with `label` and `priority`; only that field is read, never a
+`workers.list` with `label`; only that field is read, never a
 token. When two accounts of a Runtime resolve to the same ID, the later one in
 profile order is not registered, with the reason `provider account <id> is
 already registered as <first ref>; two refs on one account would count its
@@ -106,6 +104,9 @@ registration or in `accounts()`.
   window only where `unifiedWindows` has no entry for it); `utilization` is a fraction,
   `resetsAt` Unix seconds; a share outside 0 to 1 is ignored, not clamped; `status: rejected`
   with no utilization is 100%. The last event of each window in an attempt is passed on.
+  Each such reading is also saved in the Host's store (domain `system_agents`, table `quota`,
+  keyed by ref) and read back after a Host restart; a saved window whose reset has passed is
+  dropped, and no window left means no reading.
   A readable cached reading takes an event's window and sets `observedAt`, without extending
   the expiry. When `get_usage` answers no plan limits (a `setup-token` token without the
   profile scope, reason `no plan limits: …`), the Account's reading is the windows of its
@@ -140,11 +141,11 @@ Among the accounts that have every capability of a step and a free slot (the rul
 `rankByHeadroom` in [headroom.ts](../work/src/headroom.ts); the controller reads `quota()` of
 each, once per choice):
 
-1. The `priority: primary` account takes the step while both its windows are under the ceiling.
-2. Otherwise the free account with the most headroom (100 minus its fuller window; ties by
-   registration order). An account at or over the ceiling in either window is not chosen.
+1. The free account with the most headroom (100 minus its fuller window) takes the step; no
+   account is preferred by name. An account at or over the ceiling in either window is not chosen.
+2. A tie goes to the account with the fewest attempts that UTC day, then registration order.
 3. An account whose quota is `unreadable`, and every `web` account, ranks after all readable
-   accounts under the ceiling, in registration order, but stays usable.
+   accounts under the ceiling, but stays usable; ties among them follow rule 2.
 4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
    shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
    that reset, or every 5 minutes, whichever comes first.
@@ -156,9 +157,10 @@ each, once per choice):
 
 The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; another value
 refuses every account). The `dispatched` event records each candidate's reason
-(`primary under 80% (5h 43%, 7d 31%)`, `headroom 57% (...)`, `over 80% (5h 91%)`,
+(`headroom 57% (5h 43%, 7d 31%)`, `over 80% (5h 91%)`,
 `quota unreadable: ...`), so replay reads the record and never asks a provider. The 10-minute
-cache means a reset is seen at the next reading after it.
+cache means a reset is seen at the next reading after it. Claude readings from attempts'
+events survive a Host restart (see Cache under [Quota](#quota)).
 
 ## Software Engineering policy and the attempt budget
 

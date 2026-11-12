@@ -14,7 +14,7 @@ const digest = (value: string) => `sha256:${createHash('sha256').update(value).d
 const reading = (five: number, seven?: number, resetsAt?: string): QuotaReport => ({ observedAt: '2026-11-10T00:00:00Z', windows: { five_hour: { percentUsed: five, resetsAt }, ...(seven === undefined ? {} : { seven_day: { percentUsed: seven, resetsAt } }) } })
 // These structural additions are the Worker port contract in the SC plan.
 // They compile on the old port too, without changing production code.
-type Account = Pick<WorkerPort, 'ref'> & { priority?: 'primary' | 'secondary'; quota?: (fresh?: boolean) => Promise<QuotaReport>; run?: (request: WorkerRequest) => Promise<WorkerResult | undefined> }
+type Account = Pick<WorkerPort, 'ref'> & { quota?: (fresh?: boolean) => Promise<QuotaReport>; run?: (request: WorkerRequest) => Promise<WorkerResult | undefined> }
 const turns = async () => { for (let n = 0; n < 30; n++) await new Promise<void>((resolve) => setImmediate(resolve)) }
 async function eventually(condition: () => boolean, message: string) {
   for (const end = Date.now() + 60_000; !condition() && Date.now() < end;) await new Promise((resolve) => setTimeout(resolve, 5))
@@ -76,7 +76,7 @@ async function setup(t: TestContext, accounts: Account[], pinned?: string, retry
 
 test('dispatch chooses the headroom Account and records every candidate reading', async (t) => {
   const f = await setup(t, [
-    { ref: 'P', priority: 'primary', quota: async () => reading(91, 31) },
+    { ref: 'P', quota: async () => reading(91, 31) },
     { ref: 'S', quota: async () => reading(40) },
   ])
   const done = await f.run()
@@ -87,14 +87,14 @@ test('dispatch chooses the headroom Account and records every candidate reading'
   assert.equal(event?.candidates.find((c) => c.ref === 'P')?.reason, 'over 80% (5h 91%)')
   assert.match(event!.candidates.find((c) => c.ref === 'S')!.reason, /^headroom 60%(?: \(|$)/)
 })
-test('dispatch prefers a primary under the ceiling over greater secondary headroom', async (t) => {
+test('dispatch chooses the Account with more headroom', async (t) => {
   const f = await setup(t, [
     { ref: 'S', quota: async () => reading(10) },
-    { ref: 'P', priority: 'primary', quota: async () => reading(43, 31) },
+    { ref: 'P', quota: async () => reading(43, 31) },
   ])
   const [event] = dispatched(await f.run())
-  assert.equal(event?.selected, 'P')
-  assert.equal(event?.candidates.find((c) => c.ref === 'P')?.reason, 'primary under 80% (5h 43%, 7d 31%)')
+  assert.equal(event?.selected, 'S')
+  assert.equal(event?.candidates.find((c) => c.ref === 'P')?.reason, 'headroom 57% (5h 43%, 7d 31%)')
 })
 for (const throws of [false, true]) {
   test(`unreadable quota stays usable (${throws ? 'reader throws' : 'unknown version'})`, async (t) => {
@@ -114,7 +114,7 @@ for (const resetKnown of [true, false]) {
     const later = resetKnown ? new Date(Date.now() + 120_000).toISOString() : undefined
     let used = 91
     const f = await setup(t, [
-      { ref: 'P', priority: 'primary', quota: async () => reading(used, 31, later) },
+      { ref: 'P', quota: async () => reading(used, 31, later) },
       { ref: 'S', quota: async () => reading(90, undefined, earliest) },
     ])
     const running = f.run()
@@ -150,12 +150,12 @@ test('a pinned over-ceiling Account waits rather than failing or falling back', 
 test('reopening and replaying a succeeded Work use recorded reasons without calling quota', async (t) => {
   let calls = 0
   let used = 43
-  const f = await setup(t, [{ ref: 'P', priority: 'primary', quota: async () => { calls++; return reading(used, 31) } }])
+  const f = await setup(t, [{ ref: 'P', quota: async () => { calls++; return reading(used, 31) } }])
   const done = await f.run()
   assert.ok(calls > 0, 'dispatch must obtain a quota reading')
   const before = calls
   const decisions = dispatched(done)
-  assert.equal(decisions[0]?.candidates[0]?.reason, 'primary under 80% (5h 43%, 7d 31%)')
+  assert.equal(decisions[0]?.candidates[0]?.reason, 'headroom 57% (5h 43%, 7d 31%)')
   used = 99
   await f.reopen()
   assert.equal(f.controller.replay(f.id).matches, true)
@@ -200,10 +200,10 @@ const observations = (record: WorkRecord) => record.events.filter((event) => eve
 test('a limited attempt moves the step to the other Account and the Work succeeds', async (t) => {
   let limited = false
   const f = await setup(t, [
-    { ref: 'P', priority: 'primary', quota: async () => reading(limited ? 100 : 30), run: async () => {
+    { ref: 'P', quota: async () => reading(limited ? 100 : 30), run: async () => {
       if (!limited) { limited = true; return { status: 'failed', outputs: {}, reason: outOfCredits } }
     } },
-    { ref: 'S', quota: async () => reading(10) },
+    { ref: 'S', quota: async () => reading(50) },
   ])
   const done = await f.run()
   assert.equal(done.state.status, 'succeeded')
@@ -244,12 +244,12 @@ test('a limited attempt drops the cached quota reading', async (t) => {
   let cached = reading(30)
   const calls: { ref: string; fresh?: boolean; attempted: boolean }[] = []
   const f = await setup(t, [
-    { ref: 'P', priority: 'primary', quota: async (fresh) => {
+    { ref: 'P', quota: async (fresh) => {
       calls.push({ ref: 'P', fresh, attempted })
       if (fresh) cached = reading(100)
       return cached
     }, run: async () => { attempted = true; return { status: 'failed', outputs: {}, reason: outOfCredits } } },
-    { ref: 'S', quota: async (fresh) => { calls.push({ ref: 'S', fresh, attempted }); return reading(10) } },
+    { ref: 'S', quota: async (fresh) => { calls.push({ ref: 'S', fresh, attempted }); return reading(50) } },
   ])
   // Inspect after observation even if a broken controller keeps routing to P.
   f.run()
@@ -265,11 +265,11 @@ test('a limited attempt spends no retry', async (t) => {
     let limited = false
     let failed = false
     const f = await setup(t, [
-      { ref: 'P', priority: 'primary', quota: async () => reading(limited ? 100 : 30), run: async () => {
+      { ref: 'P', quota: async () => reading(limited ? 100 : 30), run: async () => {
         limited = true
         return { status: 'failed', outputs: {}, reason: outOfCredits }
       } },
-      { ref: 'S', quota: async () => reading(10), run: async () => {
+      { ref: 'S', quota: async () => reading(50), run: async () => {
         if (genuineFailure && !failed) { failed = true; return { status: 'failed', outputs: {}, reason: 'temporary failure before sending', retryable: true } }
       } },
     ], undefined, true)
@@ -287,11 +287,11 @@ test('replaying a Work with a limited attempt reads the record, not the provider
   let limited = false
   let calls = 0
   const f = await setup(t, [
-    { ref: 'P', priority: 'primary', quota: async () => { calls++; return reading(limited ? 100 : 30) }, run: async () => {
+    { ref: 'P', quota: async () => { calls++; return reading(limited ? 100 : 30) }, run: async () => {
       limited = true
       return { status: 'failed', outputs: {}, reason: outOfCredits }
     } },
-    { ref: 'S', quota: async () => { calls++; return reading(10) } },
+    { ref: 'S', quota: async () => { calls++; return reading(50) } },
   ])
   const done = await f.run()
   assert.equal(done.state.status, 'succeeded')
@@ -304,3 +304,27 @@ test('replaying a Work with a limited attempt reads the record, not the provider
   assert.deepEqual(f.record().events, done.events)
   assert.equal(calls, before)
 })
+
+for (const earlierDay of [false, true]) {
+  test(earlierDay ? 'attempts of earlier UTC days are not counted' : 'dispatch breaks a tie among unreadable Accounts by attempts that UTC day', async (t) => {
+    const f = await setup(t, ['D', 'c2'].map((ref) => ({ ref, quota: async () => ({ unreadable: 'setup-token' }) })))
+    const first = await f.run()
+    assert.equal(dispatched(first)[0]?.selected, 'D')
+    // D has one attempt today; c2's two attempts yesterday must not
+    // outweigh it, even when the controller reconstructs history from storage.
+    if (earlierDay) {
+      const yesterday = new Date(Date.now() - 86_400_000).toISOString()
+      for (let i = 0; i < 2; i++) {
+        const old = structuredClone(first)
+        old.id = `work:c2-yesterday-${i}`
+        old.events = old.events.map((event) => ({ ...event, at: yesterday, ...(event.type === 'dispatched' ? { selected: 'c2' } : {}) }))
+        f.table.rows.set(old.id, old)
+      }
+    }
+    f.reopen()
+    const spec = directTask(['research'], false, f.capabilities.available())
+    const next = await f.controller.admit({ spec, caller, source: { kind: 'direct-task' } })
+    const done = await f.controller.run(next.id)
+    assert.equal(dispatched(done)[0]?.selected, 'c2')
+  })
+}

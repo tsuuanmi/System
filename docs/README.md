@@ -23,16 +23,4 @@ source and tests are the authority for implementation behavior.
 | How is documentation organized and retired? | [Governance](governance/README.md) | Local documentation policy |
 | How can another repo bootstrap governance? | [Portable bootstrap](governance/bootstrap.md) | Reusable, product-agnostic |
 
-## Change workflow
-
-The [documentation profile](governance/documentation.md) declares the areas,
-what each owns and the conformance level; folder READMEs route rather than
-duplicate facts, and generated indexes belong to the documentation tool.
-
-## Reading rules
-
-- One authoritative home per fact; link instead of duplicating it.
-- An accepted target architecture does not imply a passing implementation.
-- Research observations from an external repository are not System results.
-- DSH is the chosen host; particular DSH services still require verification.
-- Documentation changes together with behavior once code exists.
+Rules for changing the docs: the [documentation profile](governance/documentation.md).

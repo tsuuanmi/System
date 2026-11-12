@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fakeCodexHome } from '../test-support/accounts.ts'
@@ -89,7 +89,7 @@ test('a direct Task runs Claude Code in its own worktree and records the exact r
 test('cancel from another process stops the attempt, keeps its partial tree, and Codex takes over', { timeout: 120_000 }, async () => {
   const ready = join(cli.home, 'agent-ready')
   const input = newTask(`FAKE:sleep FAKE:edit FAKE:ready=${ready}`)
-  const submit = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', input])
+  const submit = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--worker', 'claude-code/default', '--input', input])
   // Wait for the Work to be admitted and dispatched.
   let workId = ''
   for (let i = 0; i < 1200 && !workId; i++) {
@@ -140,10 +140,12 @@ test('a retry naming an unknown Worker is refused', () => {
   assert.match(retried.stderr, /no enabled Worker nobody\/default/)
 })
 
-test('workers lists account label, priority and provider account without credentials', () => {
+test('a profile with priority: primary loads, and workers notes that it is ignored', () => {
   const out = system(['workers'])
   assert.match(out.stdout, /claude-code\/default[^\n]*main Claude/)
-  assert.match(out.stdout, /claude-code\/default[^\n]*primary/)
+  assert.equal(out.status, 0, out.stderr)
+  assert.match(out.stdout, /claude-code\/default[^\n]*priority is ignored/)
+  assert.doesNotMatch(out.stdout, /\[[^\]\n]*\bprimary\b/)
   assert.match(out.stdout, /codex\/default[^\n]*provider account/i)
   assert.doesNotMatch(out.stdout, /fake-token/)
 })
@@ -159,13 +161,6 @@ test('workers shows each account quota or why its CLI version is unreadable', ()
     assert.match(block, /^  quota: unreadable - [^\n]*version/m)
     assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
   }
-})
-
-test('two primary accounts in one Runtime are refused with a clear reason', async () => {
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: claude-code/c1, runtime: claude-code, capabilities: [code-write], command: ${fakeAgent}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN, priority: primary}\n      - {ref: claude-code/c2, runtime: claude-code, capabilities: [code-write], command: ${fakeAgent}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN, priority: primary}\n`)
-  await cli.start()
-  const out = system(['workers'])
-  assert.match(out.stdout, /claude-code\/c2[^\n]*(primary|priority)[^\n]*(already|more than one|only one)/i)
 })
 
 test('duplicate provider account IDs refuse the later account, while unreadable IDs remain registered', async () => {
@@ -208,4 +203,35 @@ test('workers shows a readable quota from the real Host and one quota line per a
   assert.equal(blocks.length, 2)
   for (const block of blocks) assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
   assert.match(out.stdout, /quota: unreadable - a web account has no quota reader/)
+})
+
+test('quota readings survive a Host restart', async () => {
+  const fake = fakeQuotaCli(join(home, 'restart-quota-cli'), { kind: 'claude', version: '2.1.322', answer: { rate_limits_available: false, rate_limits: {} } })
+  const command = join(home, 'restart-claude')
+  // Usage reads use the line-protocol peer; attempts use the existing fake agent.
+  writeFileSync(command, `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "--input-format" ] || [ "$arg" = "--version" ]; then
+    exec '${fake.command}' "$@"
+  fi
+done
+exec '${fakeAgent}' "$@"
+`)
+  chmodSync(command, 0o700)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  config:
+    $patch: replace
+    accounts:
+      - {ref: claude-code/restart, runtime: claude-code, capabilities: [research], command: ${JSON.stringify(command)}, tokenRef: CLAUDE_CODE_OAUTH_TOKEN}
+`)
+  await cli.start()
+  const ran = system(['work', 'submit', '--capability', 'research', '--input', newTask('FAKE:outputs FAKE:ratelimit=seven_day:0.77')])
+  assert.equal(ran.status, 0, ran.stderr)
+  const before = system(['workers'])
+  assert.equal(before.status, 0, before.stderr)
+  assert.match(before.stdout, /quota: 7d 77%.*from the last attempt/)
+  await cli.start()
+  const restarted = system(['workers'])
+  assert.equal(restarted.status, 0, restarted.stderr)
+  assert.match(restarted.stdout, /quota: 7d 77%.*from the last attempt/)
 })
