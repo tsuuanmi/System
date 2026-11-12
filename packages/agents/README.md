@@ -13,8 +13,10 @@ the optional web-worker row) becomes a System Worker
   Routing by headroom); `system work retry --worker <ref>` names one.
   An account may set `label` (free text for people, e.g. an email). A profile
   that still sets `priority` loads: the field is ignored and `system workers`
-  says so. Refs are stable handles that are never reused (`claude-code/c1`,
-  `codex/x1`); existing refs such as `claude-code/default` stay valid.
+  says so. Name refs `<runtime>/<n>` (`claude-code/1`, `codex/1`,
+  `web/chatgpt/1`), with `label` the name for people. A retired ref is never
+  reused and records keep it; existing refs such as `claude-code/default` stay
+  valid. Renaming an Account: see the [runbook](../../docs/operations/runbook.md).
 
 ```yaml
 - id: agents
