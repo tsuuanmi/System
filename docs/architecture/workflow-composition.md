@@ -94,7 +94,7 @@ The repository's files are [`workflows/feature.yaml`](../../workflows/feature.ya
 only in capabilities, output slots, instructions and verifier; Brainstorm has
 none, and routes its two independent proposals to different providers through
 role capabilities (`brainstorm.idea-a`, `brainstorm.idea-b`) that the profile
-gives to one account each. `prefer` ranks the Accounts with a role first without requiring it (research.yaml's `investigate` prefers `research.web`, given to web accounts). Since RES-0008 the two proposals also take
+gives to one account each. Research's `investigate` uses the same kind of role in `prefer` (see [workflows/README.md](../../workflows/README.md)). Since RES-0008 the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
 the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
@@ -124,7 +124,8 @@ every domain. `onFail` names the verify steps that judge the step's output or co
 and depend on it (a `fail` verdict qualifies; `error` and `inconclusive` do not) and the step
 itself (a failure its Worker marked `retryable` in its result, which only the
 Worker can know: it happened before anything was sent that cannot be sent
-twice). The controller then appends `reopened` with `automatic: true` and no
+twice; or a failure after which its Account no longer offers the step's
+capabilities, so the retry goes to another Account, ro-12). The controller then appends `reopened` with `automatic: true` and no
 caller, at most `max` times per verify step in `onFail` (and for the step
 itself), counted from the recorded events so a restart or another Account does
 not reset it. When several steps list the failing verify step, the controller

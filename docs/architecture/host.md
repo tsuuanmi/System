@@ -165,7 +165,8 @@ Account has a free slot. The slot is reserved in the lane before `dispatched`
 is appended, and released when `observed` or `attempt-lost` is.
 
 Routing takes, among the capable Accounts **with a free slot**, the one with
-the most quota headroom (among those with the step's `prefer` capability, when any can take it; ties by attempts that UTC day; rules in the
+the most quota headroom (among those with the step's `prefer` capability, when
+any can take it; ties by attempts that UTC day; rules in the
 [agents README](../../packages/agents/README.md#routing-by-headroom)); a full
 Account is passed over (its candidate reason is `capable; no free slot`). The
 step waits when every capable Account is full, or over the quota ceiling
