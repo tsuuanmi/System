@@ -614,3 +614,29 @@ for (const withBase of [true, false]) {
     } finally { await cleanup(ws) }
   })
 }
+
+
+test('Claude attempt hook receives both unified windows', async (t) => {
+  const ownRoot = mkdtempSync(join(tmpdir(), 'agent-unified-'))
+  t.after(() => rmSync(ownRoot, { recursive: true, force: true }))
+  const { artifacts } = memory()
+  type Event = { window: 'five_hour' | 'seven_day'; percentUsed: number; resetsAt?: string }
+  const seen: Event[][] = []
+  const ownAccount: Account & { onRateLimit: (events: ReadonlyArray<Event>) => void } = {
+    ...account('claude-code'), onRateLimit: (events) => { seen.push([...events]) },
+  }
+  const worker = agentWorker(ownAccount, artifacts, processSpawner, join(ownRoot, 'attempts'))
+  const result = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs FAKE:unified=0.43,0.31') }, ['report']))
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(seen.length, 1)
+  const events = seen[0]!
+  assert.equal(events.length, 2)
+  for (const event of events) {
+    assert.equal(typeof event.resetsAt, 'string')
+    assert.ok(Number.isFinite(Date.parse(event.resetsAt!)))
+  }
+  assert.deepEqual(events, [
+    { window: 'five_hour', percentUsed: 43, resetsAt: events[0]!.resetsAt },
+    { window: 'seven_day', percentUsed: 31, resetsAt: events[1]!.resetsAt },
+  ])
+})

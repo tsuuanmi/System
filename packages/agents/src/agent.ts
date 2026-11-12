@@ -88,8 +88,7 @@ function rateLimitEvents(stdout: string): QuotaEvent[] {
   for (const line of stdout.split('\n')) {
     if (!line.includes('rate_limit_event')) continue
     try {
-      const event = quotaFromRateLimitEvent(JSON.parse(line) as unknown, observedAt)
-      if (event) last.set(event.window, event)
+      for (const event of quotaFromRateLimitEvent(JSON.parse(line) as unknown, observedAt)) last.set(event.window, event)
     } catch { /* not JSON: not an event */ }
   }
   return [...last.values()]
