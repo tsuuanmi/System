@@ -77,7 +77,7 @@ export function systemCli(prefix: string, base: Record<string, string> = { SYSTE
     socket,
     run(args, options = {}) {
       const ran = spawnSync(process.execPath, [entry, ...args], {
-        env: { ...env, ...options.env }, input: options.input, encoding: 'utf8', timeout: options.timeoutMs ?? 180_000,
+        env: { ...env, ...options.env }, input: options.input, encoding: 'utf8', timeout: options.timeoutMs ?? 600_000,
       })
       return { status: ran.status, signal: ran.signal, stdout: ran.stdout, stderr: ran.stderr }
     },

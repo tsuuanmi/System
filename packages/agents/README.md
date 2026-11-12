@@ -13,8 +13,10 @@ the optional web-worker row) becomes a System Worker
   Routing by headroom); `system work retry --worker <ref>` names one.
   An account may set `label` (free text for people, e.g. an email). A profile
   that still sets `priority` loads: the field is ignored and `system workers`
-  says so. Refs are stable handles that are never reused (`claude-code/c1`,
-  `codex/x1`); existing refs such as `claude-code/default` stay valid.
+  says so. Name refs `<runtime>/<n>` (`claude-code/1`, `codex/1`,
+  `web/chatgpt/1`), with `label` the name for people. A retired ref is never
+  reused and records keep it; existing refs such as `claude-code/default` stay
+  valid. Renaming an Account: see the [runbook](../../docs/operations/runbook.md).
 
 ```yaml
 - id: agents
@@ -141,11 +143,14 @@ Among the accounts that have every capability of a step and a free slot (the rul
 `rankByHeadroom` in [headroom.ts](../work/src/headroom.ts); the controller reads `quota()` of
 each, once per choice):
 
+0. If the step names `prefer` and any free, capable, unlimited account has that capability and
+   is not over the ceiling, only those are ranked; otherwise all are. Rules 1-5 apply within the group.
+
 1. The free account with the most headroom (100 minus its fuller window) takes the step; no
    account is preferred by name. An account at or over the ceiling in either window is not chosen.
 2. A tie goes to the account with the fewest attempts that UTC day, then registration order.
 3. An account whose quota is `unreadable`, and every `web` account, ranks after all readable
-   accounts under the ceiling, but stays usable; ties among them follow rule 2.
+   accounts of the group `prefer` selects under the ceiling, but stays usable; ties among them follow rule 2.
 4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
    shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
    that reset, or every 5 minutes, whichever comes first.

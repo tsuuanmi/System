@@ -2,12 +2,15 @@
 # sources; a citation verifier checks the exact sources Artifact.
 # Same schema and controller as software-engineering.yaml: only the
 # capabilities, outputs, step instructions and verifier differ.
+# `research.web` is a role capability the profile gives to web Accounts: investigate prefers them and falls back to any capable Account.
 schema: system.workflow/v1
 id: research
-version: 3
+version: 4
 steps:
   - id: investigate
     capabilities: [research, web-search, tier.standard]
+    prefer: research.web
+    retry: { onFail: [investigate], max: 1 }
     inputs:
       question: $work.input
     outputs: [report, sources]

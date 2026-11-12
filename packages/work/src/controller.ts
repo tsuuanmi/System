@@ -840,7 +840,7 @@ export class WorkController {
     const waitKey = `${record.id}/${s.id}`
     // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
     const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable), this.activeLimited(), this.attemptsToday())
+    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable), this.activeLimited(), this.attemptsToday(), s.prefer)
     if (route.quotaWait) {
       const was = this.waitingForQuota.get(waitKey)
       if (!was || was.until !== route.quotaWait.resetsAt) {
@@ -989,7 +989,8 @@ export class WorkController {
       ...(limited ? { limited: true as const } : {}),
       ...(objection ? { objection } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),
-      ...(status === 'failed' && result.retryable && !aborted ? { retryable: true as const } : {}),
+      // An Account that no longer offers the step's capabilities left routing because of this failure: another may take it (ro-12).
+      ...(status === 'failed' && (result.retryable || s.capabilities.some((c) => !attempt.worker.capabilities.includes(c))) && !aborted ? { retryable: true as const } : {}),
     })
   }
 

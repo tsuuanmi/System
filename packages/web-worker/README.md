@@ -44,7 +44,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
       - ref: web/chatgpt/default             # web/<site>/<name>, <site> equal to `site`
         runtime: web
         site: chatgpt                          # picks the shipped UI map and the Site's defaults; an unknown one is refused with the shipped sites
-        capabilities: [research, web-search]   # brainstorm.idea-<role> too, by role
+        capabilities: [research, web-search, research.web]   # research.web: the research Workflow prefers this account; brainstorm.idea-<role> too, by role
         # all optional, with these defaults:
         profileDir: web/chatgpt/default        # the default; under $DSH_HOME/system unless absolute; mode 0700
         temporaryChat: true                    # each attempt in a temporary chat

@@ -97,3 +97,13 @@ test('a Workflow with a code.develop step is refused when no Worker provides it'
     },
   )
 })
+
+
+test('research investigate prefers research.web, keeps required capabilities and resolves without the role', () => {
+  assert.equal(everything.workers.has('research.web'), false)
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), everything, fixture)
+  const step = spec.steps.find((s) => s.id === 'investigate')!
+  assert.equal(Reflect.get(step, 'prefer'), 'research.web')
+  assert.deepEqual(caps(spec, 'investigate'), ['research', 'web-search', 'tier.standard'])
+  assert.deepEqual(Reflect.get(step, 'retry'), { onFail: ['investigate'], max: 1 })
+})

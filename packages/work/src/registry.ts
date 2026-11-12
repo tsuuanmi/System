@@ -225,10 +225,15 @@ export class Capabilities {
    * `limited`: Accounts that just failed an attempt on quota or credits are passed over (reason `limited: ...`), and the step waits when no other is left.
    * Capable Workers but none free: `selected` is absent and `full` is set. All free ones over the ceiling: `selected` is absent and `quotaWait` is set.
    */
-  routeWorker(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean, readings: ReadonlyMap<string, QuotaReading> = new Map(), limited: ReadonlySet<string> = new Set(), attempts: ReadonlyMap<string, number> = new Map()): Route<WorkerPort> {
+  routeWorker(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean, readings: ReadonlyMap<string, QuotaReading> = new Map(), limited: ReadonlySet<string> = new Set(), attempts: ReadonlyMap<string, number> = new Map(), prefer?: string): Route<WorkerPort> {
     const rankable = this.rankable(needs, only, free)
     const passedOver = rankable.filter((w) => limited.has(w.ref))
-    const ranking = rankByHeadroom(rankable.filter((w) => !limited.has(w.ref)).map((w) => ({ ref: w.ref, attempts: attempts.get(w.ref) ?? 0, reading: readings.get(w.ref), ceiling: w.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT })))
+    const rank = (ws: WorkerPort[]) => rankByHeadroom(ws.map((w) => ({ ref: w.ref, attempts: attempts.get(w.ref) ?? 0, reading: readings.get(w.ref), ceiling: w.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT })))
+    const pool = rankable.filter((w) => !limited.has(w.ref))
+    // A preferred capability (ro-12): rank the Accounts that have it alone, if one of them can take the step now.
+    const preferred = prefer ? pool.filter((w) => w.capabilities.includes(prefer)) : []
+    const first = preferred.length ? rank(preferred) : undefined
+    const ranking = first?.selected ? first : rank(pool)
     let full = false
     const candidates = this.workers.map((w) => {
       const missing = needs.filter((c) => !w.capabilities.includes(c))
@@ -236,7 +241,8 @@ export class Capabilities {
       if (missing.length) return { ref: w.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
       if (!rankable.includes(w)) { full = true; return { ref: w.ref, selected: false, reason: 'capable; no free slot' } }
       if (limited.has(w.ref)) return { ref: w.ref, selected: false, reason: 'limited: out of credits or quota (read again later)' }
-      return { ref: w.ref, selected: ranking.selected === w.ref, reason: ranking.reasons[w.ref]! }
+      const reason = ranking.reasons[w.ref] ?? `capable; ${prefer} Account preferred`
+      return { ref: w.ref, selected: ranking.selected === w.ref, reason }
     })
     const selected = rankable.find((w) => w.ref === ranking.selected)
     return { selected, candidates, ...(!selected && ranking.waitUntil ? { quotaWait: ranking.waitUntil } : !selected && passedOver.length ? { quotaWait: {} } : !selected && full ? { full } : {}) }

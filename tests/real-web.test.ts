@@ -33,7 +33,7 @@ before(async () => {
       - ref: web/chatgpt/default
         runtime: web
         site: chatgpt
-        capabilities: [research, web-search]
+        capabilities: [research, web-search, research.web]
         profileDir: ${profile}
 `)
   await cli.start()

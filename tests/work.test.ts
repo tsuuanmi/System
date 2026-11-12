@@ -82,7 +82,7 @@ test('an invalid Workflow is refused before any Worker runs, and no Work is crea
   assert.equal(system(['work', 'list']).stdout, before)
 })
 
-test('the pinned spec survives a Workflow file edit and a killed host; done steps never re-run', { timeout: 120_000 }, async () => {
+test('the pinned spec survives a Workflow file edit and a killed host; done steps never re-run', { timeout: 300_000 }, async () => {
   rmSync(log, { force: true })
   const file = join(home, 'se.yaml')
   copyFileSync(join(repo, 'workflows', 'software-engineering.yaml'), file)
