@@ -22,7 +22,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   given), preflight, resolve, and the direct Task's implicit spec. Pure.
 - [src/record.ts](src/record.ts) — event and state schemas and the pure `fold`.
 - [src/registry.ts](src/registry.ts) — `Capabilities`: register Workers and
-  verifiers, route by capability, then by quota headroom, with a reason for
+  verifiers, route by capability, then (for a step's `prefer` capability) by preference, then by quota headroom, with a reason for
   every candidate. The ranking is [src/headroom.ts](src/headroom.ts) (pure);
   the rule is in the [agents README](../agents/README.md#routing-by-headroom).
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
@@ -81,7 +81,7 @@ criteria; `reopened` clears the step's verdict in the state, and the earlier
 `verified` event stays. Only a human caller does this: an agent could keep
 asking until a run passes. A Worker step's `retry` in the Workflow reopens it
 automatically, at most `max` times, after a failing verdict, a failure its
-Worker marked `retryable`, or an `OBJECTION:` line in the final message of a later step that lists it, or a later effect step whose outcome was observed as a conflict with the base or a failing check on the merge (sc-7: it restarts on the base's new tip, with `base`, `previous` and `failure` as input; an unknown outcome is never retried); with `rerunUnchanged` a step that a failing check reopened and that changes nothing runs the check again once on the same change (a pass is noted flaky, a second fail holds the Work as `inconclusive`; the verifier's own one re-run of an inconclusive verdict, sc-13, is separate); see [the vocabulary](../../docs/architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1). `retry` and `decide` hold
+Worker marked `retryable` (or after which its Account left routing, ro-12), or an `OBJECTION:` line in the final message of a later step that lists it, or a later effect step whose outcome was observed as a conflict with the base or a failing check on the merge (sc-7: it restarts on the base's new tip, with `base`, `previous` and `failure` as input; an unknown outcome is never retried); with `rerunUnchanged` a step that a failing check reopened and that changes nothing runs the check again once on the same change (a pass is noted flaky, a second fail holds the Work as `inconclusive`; the verifier's own one re-run of an inconclusive verdict, sc-13, is separate); see [the vocabulary](../../docs/architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1). `retry` and `decide` hold
 the Work's lock from their check to the end of the run.
 
 ## Under the Host

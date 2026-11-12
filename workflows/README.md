@@ -46,9 +46,12 @@ See [GLOSSARY.md](../GLOSSARY.md) for the term.
   `software-engineering.yaml` and `feature.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
   A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (at `red` before `implement`, else before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
-- [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`;
+- [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`, `prefer: research.web`, one `retry`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
-  `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`.
+  `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`. `investigate` goes to an Account that has the role
+  `research.web` (a `web` Account, given the role in the profile) and to any other capable Account
+  when none can take it (unavailable, signed out, limited, no free slot, or its attempt failed and it
+  left routing); `prefer` ranks without requiring, so a Host with no such Account still runs it; version 4.
 - [brainstorm.yaml](brainstorm.yaml) — `idea-a` (`brainstorm.idea-a`) and
   `idea-b` (`brainstorm.idea-b`) each write a `proposal` from the brief alone,
   with a stance each (pragmatist, skeptic);

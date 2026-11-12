@@ -39,6 +39,8 @@ const workerStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
   capabilities: z.array(capability).min(1),
+  /** A capability that ranks first: of the Accounts that can take the step now, those that also have it are chosen from alone, if any (ro-12). Not required: a Host with none still runs the step. */
+  prefer: capability.optional(),
   inputs: z.record(slot, ref).optional(),
   outputs: z.array(slot).min(1),
   /** What this step's Worker is told besides the task, such as an output format. */

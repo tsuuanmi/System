@@ -141,11 +141,14 @@ Among the accounts that have every capability of a step and a free slot (the rul
 `rankByHeadroom` in [headroom.ts](../work/src/headroom.ts); the controller reads `quota()` of
 each, once per choice):
 
+0. If the step names `prefer` and any free, capable, unlimited account has that capability and
+   is not over the ceiling, only those are ranked; otherwise all are. Rules 1-5 apply within the group.
+
 1. The free account with the most headroom (100 minus its fuller window) takes the step; no
    account is preferred by name. An account at or over the ceiling in either window is not chosen.
 2. A tie goes to the account with the fewest attempts that UTC day, then registration order.
 3. An account whose quota is `unreadable`, and every `web` account, ranks after all readable
-   accounts under the ceiling, but stays usable; ties among them follow rule 2.
+   accounts of the group `prefer` selects under the ceiling, but stays usable; ties among them follow rule 2.
 4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
    shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
    that reset, or every 5 minutes, whichever comes first.

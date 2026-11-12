@@ -413,3 +413,25 @@ for (const file of ['feature.yaml', 'software-engineering.yaml', 'hygiene.yaml']
     assert.ok(implement && 'retry' in implement && implement.retry?.onFail.includes('publish'))
   })
 }
+
+
+test('prefer rejects an invalid capability string', () => {
+  const yaml = `${base}  - id: a
+    capabilities: [research]
+    prefer: Bad_role!
+    outputs: [x]
+`
+  assert.throws(() => parseWorkflow(yaml), WorkflowError)
+})
+
+test('an unknown prefer capability is optional at resolution and carried into the pinned spec', () => {
+  const yaml = `${base}  - id: a
+    capabilities: [research]
+    prefer: research.web
+    outputs: [x]
+`
+  assert.equal(available.workers.has('research.web'), false)
+  let spec: ReturnType<typeof resolve> | undefined
+  assert.doesNotThrow(() => { spec = resolve(parseWorkflow(yaml), available) })
+  assert.equal(Reflect.get(spec!.steps[0]!, 'prefer'), 'research.web')
+})
