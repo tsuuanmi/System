@@ -198,6 +198,31 @@ Decisions (operator, 2026-11-11):
 - **Budget:** the active core stays within +10% of SC's 3,882 lines; a new
   mechanism replaces a step a person does today.
 
+Review of 2026-11-12 (operator; read-only counts from the Host's store: 471
+Works since 2026-11-05; feature.yaml 21 of 41 succeeded, of the 20 failures
+8 Outside, 5 tests and implement out of sync, all before dg-13, 3 System
+defects since fixed, 2 of the change, 2 denied on a stale base):
+- **Measure first.** At ro-5's merge the active core is 3,953 lines (+1.8%
+  on SC, not recorded before) and docs 4,373 lines (over 4,285). ro-6, a
+  hygiene pass, comes before the RO measure; ro-7 to ro-12 count toward its
+  10 Items. A load gate waits for the measure, as decided on 2026-11-11.
+- **No preferred Account by name** (ro-7). `claude-code/default` took 344
+  attempts and c2, c3 and c4 together 12: with every Claude Account
+  unreadable, the tie went to registration order. Headroom decides; a tie
+  goes to the Account with the fewest attempts that day; a reading from
+  `rate_limit_event` survives a Host restart. `priority: primary` goes; no
+  profile weights until an Account is paid by the API.
+- **Refs `<runtime>/<n>`** (ro-11), replacing sc-1's `c1`/`x1` advice; `label`
+  is for people; old refs are retired, never reused, and old records keep them.
+- **Red re-runs once** (ro-8) before it holds, as sc-13 does for checks: red
+  never failed and its 8 inconclusive verdicts all waited on the operator.
+- **Tests and implement stay on different Providers.** A contract of
+  interfaces in the plan waits until a Work in the measure is out of sync.
+- **Artifacts stay as they are;** `system status` shows the final one (ro-10).
+- **The web Runtime is used** (ro-12): research's investigate step prefers it
+  (research 197 of 224 web attempts succeeded; none since 2026-11-08), and its
+  headed-browser tests run only when its paths change (ro-9).
+
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
