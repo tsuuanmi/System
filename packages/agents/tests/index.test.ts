@@ -4,17 +4,12 @@
  * handed to its service, with the offered capabilities, when it is on.
  */
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
-import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { rmSync } from 'node:fs'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { processSpawner } from '../../../test-support/process.ts'
 import { fakeQuotaCli } from '../../../test-support/quota.ts'
-import { TASK_KIND, taskSchema } from '@system/work'
-import type { WorkerPort } from '../../work/src/registry.ts'
-import type { SpawnSpec } from '../src/agent.ts'
-import type { AgentsService } from '../src/index.ts'
+import { TASK_KIND, taskSchema, type WorkerPort } from '@system/work'
+import { test } from 'node:test'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
 import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '../src/index.ts'
 
@@ -22,7 +17,7 @@ import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '.
 async function mount(webWorker: unknown, hold = false, accounts: object[] = [{}], services_: Record<string, unknown> = {}, rowSlots = 2): Promise<any> {
   const provided: Record<string, any> = {}
   const effects: (() => () => void)[] = []
-  const services: Record<string, unknown> = { capabilities: {}, artifacts: {}, subprocess: {}, credentials: {}, webWorker, ...services_ }
+  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: {}, artifacts: {}, subprocess: {}, credentials: {}, webWorker, ...services_ }
   const ctx = { get: (key: string) => services[key], effect: (fn: () => () => void) => { effects.push(fn) }, provide: (key: string, value: unknown) => { provided[key] = value } }
   const started = apply(ctx as never, { maxConcurrentAttempts: rowSlots, accounts: accounts.map((own) => ({ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], models: { standard: 'x' }, url: 'http://localhost/', ...own })) })
   if (hold) return { before: await provided.agents.accounts() as { available: boolean; reason: string }[], started }
@@ -134,6 +129,7 @@ const cliMount = async (accounts: object[], hold = false): Promise<{ registered:
   const registered: string[] = []
   const provided: Record<string, any> = {}
   const services = {
+    storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
     capabilities: { registerWorker: (w: { ref: string }) => { registered.push(w.ref); return () => {} } },
     artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
     subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
@@ -148,18 +144,14 @@ const cliMount = async (accounts: object[], hold = false): Promise<{ registered:
 const claude = (ref: string, own: object = {}) => ({ ref, runtime: 'claude-code', capabilities: ['code-write'], ...own })
 const codex = (ref: string, home: string, own: object = {}) => ({ ref, runtime: 'codex', capabilities: ['code-write'], codexHome: home, ...own })
 
-test('a second primary of a Runtime is refused naming the first; one primary or none registers', async () => {
-  const dir = tempDir()
-  const { accounts, registered } = await cliMount([claude('claude-code/c1', { priority: 'primary', claudeHome: dir }), claude('claude-code/c2', { priority: 'primary', claudeHome: dir }), codex('codex/x1', fakeCodexHome(undefined, 'a'), { priority: 'primary' }), claude('claude-code/c3', { claudeHome: dir })])
-  assert.deepEqual(accounts.map((a) => a.available), [true, false, true, true])
-  assert.match(accounts[1].reason, /priority: primary is already held by claude-code\/c1/)
-  assert.deepEqual(registered, ['claude-code/c1', 'codex/x1', 'claude-code/c3'])
-})
-
-test('a priority other than primary is refused', async () => {
-  const { accounts } = await cliMount([claude('claude-code/c1', { priority: 'secondary' })])
-  assert.equal(accounts[0].available, false)
-  assert.match(accounts[0].reason, /priority must be primary or omitted/)
+test('any priority registers and carries a note, including multiple old primaries', async () => {
+  const { accounts, registered } = await cliMount(['primary', 'primary', 'secondary', 'anything'].map((priority, i) => claude(`claude-code/c${i}`, { priority, claudeHome: tempDir() })))
+  assert.deepEqual(accounts.map((a) => a.available), [true, true, true, true])
+  assert.deepEqual(registered, accounts.map((a) => a.ref))
+  for (const account of accounts) {
+    assert.match(account.note ?? '', /priority is ignored/)
+    assert.equal(account.priority, undefined)
+  }
 })
 
 test('a duplicate provider account is refused for the later account with the first ref in the reason', async () => {
@@ -189,82 +181,65 @@ test('an unreadable ID leaves the account registered with the ID unknown', async
   assert.equal(registered.length, 4)
 })
 
-test('the listing shows label, priority and provider account from the first moment, and no secret', async () => {
+test('the listing shows label, ignored-priority note and provider account from the first moment, and no secret', async () => {
   const specs = [claude('claude-code/c1', { label: 'me@example.com', priority: 'primary', claudeHome: fakeClaudeHome(undefined, { accountUuid: 'u-1' }) }), codex('codex/x1', fakeCodexHome(undefined, 'acct-1'))]
   const { before, started } = await cliMount(specs, true)
-  assert.deepEqual(before.map((a) => [a.label, a.priority]), [['me@example.com', 'primary'], [undefined, 'secondary']])
+  assert.deepEqual(before.map((a) => [a.label, a.note]), [['me@example.com', 'priority is ignored: routing goes by quota headroom'], [undefined, undefined]])
   await started
   const { accounts } = await cliMount(specs)
-  assert.deepEqual(accounts.map((a) => [a.label, a.priority, a.providerAccount]), [['me@example.com', 'primary', 'u-1'], [undefined, 'secondary', 'acct-1']])
+  assert.deepEqual(accounts.map((a) => [a.label, a.note, a.providerAccount]), [['me@example.com', 'priority is ignored: routing goes by quota headroom', 'u-1'], [undefined, undefined, 'acct-1']])
   assert.doesNotMatch(JSON.stringify(accounts), /SECRET-|TOKEN-VALUE/)
 })
 
 test('a ref without a rename stays valid, and a web account has no provider account', async () => {
   const { accounts } = await cliMount([claude('claude-code/default')])
-  assert.deepEqual([accounts[0].available, accounts[0].priority], [true, 'secondary'])
+  assert.deepEqual([accounts[0].available, accounts[0].priority], [true, undefined])
   const web = await mount({ expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined }) }, false, [{ label: 'w', priority: 'primary' }])
-  assert.deepEqual([web.accounts[0]!.available, web.accounts[0]!.providerAccount, web.accounts[0]!.priority], [true, undefined, 'primary'])
+  assert.deepEqual([web.accounts[0]!.available, web.accounts[0]!.providerAccount, web.accounts[0]!.note], [true, undefined, 'priority is ignored: routing goes by quota headroom'])
 })
 
-
 test('a Claude account reads the last rate_limit_event after the Host restarts', async (t) => {
-  const dir = tempDir('agents-durable-')
+  const dir = tempDir('agents-restart-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const fake = fakeQuotaCli(join(dir, 'cli'), { kind: 'claude', version: '2.1.322', answer: { rate_limits_available: false, rate_limits: {} } })
+  const rows = new Map<string, unknown>()
+  const storageDomain = { open: async () => ({ table: () => ({
+    get: (key: string) => structuredClone(rows.get(key)),
+    put: async (key: string, value: unknown) => { rows.set(key, structuredClone(value)) },
+  }), close: async () => {} }) }
   const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema })
-  const fake = fakeQuotaCli(join(dir, 'cli'), { kind: 'claude', version: '2.1.322', answer: { rate_limits_available: false } })
-  const agent = fileURLToPath(new URL('./fake-agent.mjs', import.meta.url))
-  // No shared storage-domain fake exists in Work tests. This stand-in keeps
-  // only committed values across mounts, never the previous row's cache.
-  const tables = new Map<string, Map<string, unknown>>()
-  const storageDomain = { open: async (definition: { name: string }) => ({
-    table(name: string) {
-      const key = `${definition.name}/${name}`
-      if (!tables.has(key)) tables.set(key, new Map())
-      const rows = tables.get(key)!
-      return {
-        get: (ref: string) => structuredClone(rows.get(ref)),
-        put: async (ref: string, value: unknown) => { rows.set(ref, structuredClone(value)) },
-        keys: () => rows.keys(),
-      }
-    },
-    close: async () => {},
-  }) }
-  async function boot() {
-    let row!: AgentsService
-    let port!: WorkerPort
+  const task = await artifacts.put({ ...TASK_KIND, content: { instructions: 'observe quota' }, classification: 'local-private', producer: { type: 'operator', ref: 'test' } })
+  const stream = [
+    { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'seven_day', utilization: .77, status: 'allowed' } },
+    { type: 'result', subtype: 'success', result: 'done', is_error: false },
+  ].map((event) => JSON.stringify(event)).join('\n')
+  const mountAgain = async () => {
+    let worker!: WorkerPort
+    let agents: any
     const effects: (() => () => void)[] = []
     const services: Record<string, unknown> = {
       storageDomain, artifacts, dshHomePath: (...parts: string[]) => join(dir, ...parts),
-      capabilities: { registerWorker: (worker: WorkerPort) => { port = worker; return () => {} } },
-      credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'synthetic-token' }) },
-      subprocess: {
-        resolveExecutable: async () => fake.command,
-        spawn(spec: SpawnSpec) {
-          const spawned = processSpawner.spawn({ ...spec, env: spec.env ?? process.env, signal: spec.signal ?? new AbortController().signal, graceMs: spec.graceMs ?? 100, argv: spec.argv.includes('--version') ? spec.argv : spec.argv.map((arg) => arg === fake.command ? agent : arg) })
-          return {
-            done: spawned.done, waitForExit: async () => true, terminate: () => {},
-            collected: { stdout: { readFrom: () => ({ text: spawned.stdout() }) }, stderr: { readFrom: () => ({ text: spawned.stderr() }) } },
-          }
-        },
-      },
+      credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'token' }) },
+      capabilities: { registerWorker: (port: WorkerPort) => { worker = port; return () => {} } },
+      subprocess: { resolveExecutable: async () => fake.command, spawn: (spec: { argv: string[] }) => ({
+        done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: async () => true,
+        collected: { stdout: { readFrom: () => ({ text: spec.argv.includes('--version') ? '2.1.322 (Claude Code)' : stream }) } },
+      }) },
     }
-    await apply({ get: (key: string) => services[key], provide: (_key: string, value: AgentsService) => { row = value }, effect: (fn: () => () => void) => { effects.push(fn) } } as never, {
-      accounts: [claude('claude-code/durable', { command: fake.command, claudeHome: join(dir, 'claude-home') })] as never,
-    })
-    return { row, port, unload: () => effects.forEach((fn) => fn()()) }
+    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = value }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
+      { accounts: [claude('claude-code/restart', { command: fake.command, claudeHome: join(dir, 'home') })] } as never)
+    return { worker, agents, unload: () => effects.forEach((fn) => fn()()) }
   }
-  const input = await artifacts.put({ ...TASK_KIND, content: { instructions: 'FAKE:outputs FAKE:ratelimit=seven_day:0.77' }, classification: 'local-private', producer: { type: 'operator', ref: 'test' } })
-  const first = await boot()
-  assert.ok(first.port, 'the account registered')
-  const result = await first.port.run({ workId: 'work:durable', attemptId: 'attempt:durable', stepId: 'research', capabilities: ['code-write'], inputs: { task: input.id }, outputs: ['report'], signal: new AbortController().signal })
+  const first = await mountAgain()
+  const result = await first.worker.run({ workId: 'work:restart', attemptId: 'attempt:restart', stepId: 'task', capabilities: ['research'], inputs: { task: task.id }, outputs: [], signal: new AbortController().signal })
   assert.equal(result.status, 'succeeded', result.reason)
-  const before = await first.row.quota('claude-code/durable')
-  assert.ok('windows' in before, 'the running Host received the attempt event')
-  assert.equal(before.source, 'rate_limit_event')
-  assert.equal(before.windows.seven_day?.percentUsed, 77)
+  const before = await first.agents.quota('claude-code/restart')
+  assert.equal(before.source, 'rate_limit_event', JSON.stringify(before))
+  assert.equal(before.windows.seven_day.percentUsed, 77)
+  await new Promise<void>((resolve) => setImmediate(resolve))
   first.unload()
-  const second = await boot()
-  t.after(() => second.unload())
-  const after = await second.row.quota('claude-code/durable')
-  assert.deepEqual(after, before, 'a fresh row reads the observation from the shared Host store')
+  const second = await mountAgain()
+  t.after(second.unload)
+  const after = await second.agents.quota('claude-code/restart')
+  assert.deepEqual(after, before)
 })

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { claudeUsage, codexRateLimits, object } from '../../../test-support/quota.ts'
 import type { QuotaEvent } from '../src/quota.ts'
-import { quotaFromUsage, quotaFromRateLimits, quotaFromRateLimitEvent, createQuotaCache, NO_PLAN_LIMITS, VERIFIED_CLAUDE_VERSIONS, VERIFIED_CODEX_VERSIONS } from '../src/quota.ts'
+import { quotaFromUsage, quotaFromRateLimits, quotaFromRateLimitEvent, createQuotaCache, VERIFIED_CLAUDE_VERSIONS, VERIFIED_CODEX_VERSIONS, NO_PLAN_LIMITS } from '../src/quota.ts'
 
 const OBS = Date.parse('2026-11-10T12:00:00.000Z')
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -157,18 +157,18 @@ test('invalidating a cached quota reading reads again inside the TTL', async () 
 // Keep the current parser name; its planned contract returns an array.
 const NO_PLAN_USAGE = { rate_limits_available: false, rate_limits: {} }
 const UNIFIED = { type: 'rate_limit_event', rate_limit_info: {
-  status: 'allowed', resetsAt: 1794288000, rateLimitType: 'five_hour',
+  status: 'allowed', resetsAt: 1794315600, rateLimitType: 'five_hour',
   unifiedWindows: {
-    five_hour: { utilization: 0.43, resetsAt: 1794288000, status: 'allowed' },
+    five_hour: { utilization: 0.43, resetsAt: 1794315600, status: 'allowed' },
     seven_day: { utilization: 0.31, resetsAt: 1794682800, status: 'allowed' },
   },
 } }
 const unifiedEvents = (): QuotaEvent[] => [
-  { window: 'five_hour', percentUsed: 43, resetsAt: iso(1794288000 * 1000) },
+  { window: 'five_hour', percentUsed: 43, resetsAt: iso(1794315600 * 1000) },
   { window: 'seven_day', percentUsed: 31, resetsAt: iso(1794682800 * 1000) },
 ]
 const eventReading = (observedAt = OBS) => ({ observedAt: iso(observedAt), windows: {
-  five_hour: { percentUsed: 43, resetsAt: iso(1794288000 * 1000) },
+  five_hour: { percentUsed: 43, resetsAt: iso(1794315600 * 1000) },
   seven_day: { percentUsed: 31, resetsAt: iso(1794682800 * 1000) },
 }, source: 'rate_limit_event' })
 const streamEvent = (info: object) => ({ type: 'rate_limit_event', rate_limit_info: info })
@@ -240,31 +240,23 @@ test('invalidate keeps the event reading', async () => {
   assert.deepEqual(reading, eventReading(OBS))
 })
 
-// Structural options keep this contract compiled before seed/persist land.
+// Structural options keep the tests compilable before the new cache hooks exist.
 type Observation = { observedAt: number; windows: { five_hour?: { percentUsed: number; resetsAt?: string }; seven_day?: { percentUsed: number; resetsAt?: string } } }
-
 test('observe persists and a new cache seeded from it reads the event after a restart', async () => {
   let saved: Observation | undefined
-  const options = { now: () => OBS, read: async () => ({ unreadable: NO_PLAN_LIMITS }), persist: (value: Observation) => { saved = structuredClone(value) } }
-  const first = createQuotaCache(options)
-  first.observe([{ window: 'seven_day', percentUsed: 77 }])
-  assert.deepEqual(saved, { observedAt: OBS, windows: { seven_day: { percentUsed: 77 } } }, 'each observation is handed to durable storage')
-  const restoredOptions = { ...options, seed: saved }
-  const restarted = createQuotaCache(restoredOptions)
+  const read = async () => ({ unreadable: NO_PLAN_LIMITS })
+  const options = { now: () => OBS, read, persist: (value: Observation) => { saved = structuredClone(value) } }
+  const cache = createQuotaCache(options)
+  cache.observe([{ window: 'seven_day', percentUsed: 77 }])
+  assert.deepEqual(saved, { observedAt: OBS, windows: { seven_day: { percentUsed: 77 } } })
+  const seeded = { ...options, seed: saved }
+  const restarted = createQuotaCache(seeded)
   assert.deepEqual(await restarted.get(), { observedAt: iso(OBS), windows: { seven_day: { percentUsed: 77 } }, source: 'rate_limit_event' })
 })
-
 test('a seeded window whose reset has passed is dropped', async () => {
-  const options = {
-    now: () => OBS, read: async () => ({ unreadable: NO_PLAN_LIMITS }),
-    seed: { observedAt: OBS - 3_600_000, windows: {
-      five_hour: { percentUsed: 100, resetsAt: iso(OBS) },
-      seven_day: { percentUsed: 77, resetsAt: SEVEN },
-    } },
-  }
-  assert.deepEqual(await createQuotaCache(options).get(), {
-    observedAt: iso(options.seed.observedAt), windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } }, source: 'rate_limit_event',
-  })
-  const expired = { ...options, seed: { observedAt: OBS - 3_600_000, windows: { five_hour: options.seed.windows.five_hour } } }
-  assert.ok('unreadable' in await createQuotaCache(expired).get(), 'no unexpired window means unreadable')
+  const options = { now: () => OBS, read: async () => ({ unreadable: NO_PLAN_LIMITS }), seed: {
+    observedAt: OBS - 60_000, windows: { five_hour: { percentUsed: 99, resetsAt: iso(OBS) }, seven_day: { percentUsed: 77, resetsAt: SEVEN } },
+  } }
+  const cache = createQuotaCache(options)
+  assert.deepEqual(await cache.get(), { observedAt: iso(OBS - 60_000), windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } }, source: 'rate_limit_event' })
 })

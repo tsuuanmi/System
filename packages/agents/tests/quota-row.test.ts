@@ -12,6 +12,7 @@ import { webDefaults, webWorker } from '../../web-worker/src/chatgpt.ts'
 
 async function mount(dir: string, accounts: AccountConfig[], now: () => number, options: { ports?: WorkerPort[]; quotaCeilingPercent?: unknown; configured?: boolean; token?: string } = {}) {
   const services: Record<string, unknown> = {
+    storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
     dshHomePath: (...segments: string[]) => join(dir, ...segments),
     artifacts: {},
     subprocess: { resolveExecutable: async (c: string): Promise<string> => c, spawn: (): never => { throw new Error('registration must not spawn') } },
@@ -145,7 +146,7 @@ test('an unknown version on the row only runs --version', async (t) => {
   assert.deepEqual(fake.readLog(), [{ argv: ['--version'] }])
 })
 
-test(`registered CLI Worker exposes the row's quota reading`, async (t) => {
+test('registered CLI Worker exposes the row\'s quota reading', async (t) => {
   const dir = tempDir('quota-routing-port-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const c = claude(dir)
@@ -179,7 +180,7 @@ for (const value of [1, 80, 100]) {
     assert.equal(Reflect.get(ports[0]!, 'quotaCeilingPercent'), value)
   })
 }
-test('web port has no quota; CLI default ceiling is unset and omitted priority becomes secondary', async (t) => {
+test('web port has no quota; CLI default ceiling is unset', async (t) => {
   const dir = tempDir('quota-ceiling-default-')
   const web = webWorker({ ref: 'web/chatgpt/test', capabilities: ['research'], command: 'fake-chrome', version: async () => 'fake', web: webDefaults(join(dir, 'profile')) }, memoryArtifacts().artifacts, join(dir, 'attempts'))
   assert.equal(Reflect.get(web, 'quota'), undefined, 'web Accounts have no quota reader')
