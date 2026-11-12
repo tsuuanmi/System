@@ -436,6 +436,15 @@ that changes something (`submit`, `run`, `retry`, `cancel`, `approve`) is sent
 once more with the same `commandId`, so the Host does it once: look at
 `system work list` before sending it again yourself.
 
+`system work wait` treats this as transient: it sends the same read again with
+a backoff (1 s, doubling to 10 s) and keeps waiting, as across a Host restart.
+Only a Host that stays unreachable for 10 minutes (or the `--timeout` given,
+if shorter) ends it, with exit **6** and "the System Host did not answer"; the
+Works were not read and may still be running, so run `system work wait` again
+or `system work list`. Exit 6 is never a success. (Test-only:
+`SYSTEM_WAIT_RECONNECT_MS` and `SYSTEM_WAIT_RETRY_MS` replace the bound and the
+first backoff.)
+
 1. `systemctl --user status system` and `journalctl --user -u system -e`: is
    the Host alive, and busy or stuck?
 2. `system doctor` boots DSH beside the Host and says whether it answers.

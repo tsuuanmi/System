@@ -18,8 +18,11 @@ import { caller } from './io.ts'
 /** How often `work.events` is asked while following a Work (PROP-0004 C13). */
 export const POLL_MS = 1000
 
-/** The bound on the total time `work wait` waits for a Host to return after a restart (it takes seconds; a Host really gone must not hold a session forever). */
-export const RECONNECT_MS = 5 * 60_000
+/** The bound on one outage of any kind (a restart, an upgrade, a Host too slow to answer) that `work wait` waits through; a Host really gone must not hold a session forever. */
+export const RECONNECT_MS = 10 * 60_000
+
+/** The cap of the backoff between the retries of a patient read. */
+const BACKOFF_CAP_MS = 10_000
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
 const LOGIN_TIMEOUT = 11 * 60_000
@@ -34,6 +37,8 @@ export interface Remote {
   open(caller: Caller, options?: { readOnly?: boolean }): Promise<Client>
   /** Replaces `RECONNECT_MS`; for tests. */
   reconnectMs?: number
+  /** Replaces `POLL_MS` as the first wait between retries of a patient read; for tests. */
+  retryMs?: number
   /** Notes for the operator, such as that a Work was left running. */
   err(text: string): void
 }
@@ -99,22 +104,36 @@ export function remoteHost(remote: Remote): ClientHost {
   }
   /**
    * A read that outlives a Host's swap for new code: a connection it closed is opened again (`open` waits for the next Host), once.
-   * With `patient` (`work wait`, which only watches) it outlives a Host's restart too: while the Host is not running or upgrading,
-   * connections are dropped and opened again every `POLL_MS`, for up to `RECONNECT_MS` of one outage. The followers that act
+   * With `patient` (`work wait`, which only watches) it outlives a Host's restart and a Host too slow to answer too: while the Host
+   * is not running, upgrading or not answering, connections are dropped and the same request is sent again after a backoff
+   * (from `retryMs ?? POLL_MS`, doubling up to 10 s), for up to `RECONNECT_MS` of one outage. The followers that act
    * (`run`, `retry`, `decide`) still fail at once when the Host is killed.
+   * `outage` is told when a call fails and when one answers, so the caller knows whether the Host is unreachable now.
    */
-  const reread = async (method: string, params?: object, patient = false): Promise<any> => {
+  const reread = async (method: string, params?: object, patient = false, signal?: AbortSignal, outage?: (down: boolean) => void): Promise<any> => {
     let since: number | undefined
+    let delay = remote.retryMs ?? POLL_MS
     for (let tries = 0; ; tries++) {
       try {
-        return await read(method, params)
+        const answer = await read(method, params)
+        outage?.(false)
+        return answer
       } catch (error) {
-        if (!(error instanceof NotRunning || (patient && error instanceof RpcError && error.code === UPGRADING))) throw error
+        const transient = error instanceof NotRunning || (patient && (error instanceof NotAnswering || (error instanceof RpcError && error.code === UPGRADING)))
+        if (!transient) throw error
+        outage?.(true)
         since ??= Date.now()
-        if (patient ? Date.now() - since > (remote.reconnectMs ?? RECONNECT_MS) : tries >= 1) throw error
+        if (patient ? Date.now() - since > (remote.reconnectMs ?? RECONNECT_MS) || signal?.aborted : tries >= 1) throw error
         session = undefined
         reading = undefined
-        if (patient) await new Promise((done) => setTimeout(done, POLL_MS))
+        if (patient) {
+          await new Promise<void>((done) => {
+            const timer = setTimeout(done, delay)
+            signal?.addEventListener('abort', () => { clearTimeout(timer); done() }, { once: true })
+          })
+          if (signal?.aborted) throw error
+          delay = Math.min(delay * 2, Math.max(BACKOFF_CAP_MS, remote.retryMs ?? 0))
+        }
       }
     }
   }
@@ -147,13 +166,13 @@ export function remoteHost(remote: Remote): ClientHost {
     }
     try {
       for (;;) {
-        const polled = await Promise.race([reread('work.events', { workId, after }, options.patient) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted, stopped])
+        const polled = await Promise.race([reread('work.events', { workId, after }, options.patient, options.signal, options.outage) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted, stopped])
         if (polled === 'stopped') return 'stopped'
         if (polled === 'interrupted') return detach()
         after = polled.events.at(-1)?.seq ?? after
         if (TERMINAL.has(polled.status)) {
           await cancelling
-          return reread('work.show', { workId }, options.patient)
+          return reread('work.show', { workId }, options.patient, options.signal, options.outage)
         }
         const slept = await Promise.race([new Promise<'slept'>((done) => setTimeout(() => done('slept'), POLL_MS)), interrupted, stopped])
         if (slept === 'stopped') return 'stopped'
@@ -197,23 +216,39 @@ export function remoteHost(remote: Remote): ClientHost {
     async waitFor(workIds, { any, timeoutMs }: WaitOptions): Promise<Waited> {
       const stop = new AbortController()
       let timedOut = false
+      let down = false
       let decided: string | undefined
+      const outage = (now: boolean) => { down = now }
       const timer = timeoutMs === undefined ? undefined : setTimeout(() => { timedOut = true; stop.abort() }, timeoutMs)
       // Each Work is followed as `work run` follows one; a Work that ended (held and awaiting approval included) decides.
       const ended = workIds.map(async (workId) => {
-        const followed = await follow(workId, { signal: stop.signal, patient: true })
+        const followed = await follow(workId, { signal: stop.signal, patient: true, outage })
         if (typeof followed === 'object' && !(any && decided)) decided = workId
       })
+      const unreachable = (error: unknown): string => {
+        if (error instanceof NotAnswering || error instanceof NotRunning || (error instanceof RpcError && error.code === UPGRADING)) return error.message
+        throw error
+      }
+      let gone: string | undefined
       try {
         await (any ? Promise.race(ended) : Promise.all(ended))
+      } catch (error) {
+        gone = unreachable(error)
       } finally {
         clearTimeout(timer)
         stop.abort()
         for (const one of ended) one.catch(() => {})
       }
+      // The timeout fired while a call was failing: the Host was unreachable, not merely slow to finish.
+      if (gone === undefined && timedOut && down) gone = 'the Host did not answer before the timeout'
+      if (gone !== undefined) return { records: [], timedOut: false, unreachable: gone }
       // The records as they are now, whichever ended: a read, so it works while the Host upgrades.
-      const records = await Promise.all(workIds.map((workId) => reread('work.show', { workId }) as Promise<WorkRecord>))
-      return { records, decided: timedOut ? undefined : decided, timedOut }
+      try {
+        const records = await Promise.all(workIds.map((workId) => reread('work.show', { workId }, true, undefined, outage) as Promise<WorkRecord>))
+        return { records, decided: timedOut ? undefined : decided, timedOut }
+      } catch (error) {
+        return { records: [], timedOut: false, unreachable: unreachable(error) }
+      }
     },
     async newTask(instructions, repository, ref, context, item, against) {
       return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against })

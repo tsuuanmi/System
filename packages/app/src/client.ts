@@ -49,6 +49,12 @@ export async function openCurrent(home: string, who: Caller, { onCode, ...option
   }
 }
 
+/** A test-only override in milliseconds (SYSTEM_WAIT_RECONNECT_MS, SYSTEM_WAIT_RETRY_MS: the outage bound and first retry wait of `work wait`); unset or not a positive number is none. */
+function testMs(name: string): number | undefined {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
 /** Run one command against the Host of `home`; resolves the exit code. */
 export async function main(args: string[], home: string): Promise<number> {
   const out = (text: string) => { process.stdout.write(text) }
@@ -57,7 +63,7 @@ export async function main(args: string[], home: string): Promise<number> {
   if (args[0] === 'mcp') return runMcp(args.slice(1), home, (who, onCode) => openCurrent(home, who, { onCode }))
   let selected: Run | undefined
   const io = { out, err, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
-  buildProgram(remoteHost({ open, err }), io, (run) => { selected = run }).parse(args, { from: 'user' })
+  buildProgram(remoteHost({ open, err, reconnectMs: testMs('SYSTEM_WAIT_RECONNECT_MS'), retryMs: testMs('SYSTEM_WAIT_RETRY_MS') }), io, (run) => { selected = run }).parse(args, { from: 'user' })
   if (selected === undefined) return 0
   try {
     return await selected()

@@ -169,6 +169,28 @@ test('a Host that does not answer is named, with the runbook', { timeout: 120_00
   }
 })
 
+test('work wait on a silent Host exits 6 after the bound', { timeout: 120_000 }, async () => {
+  const silentHome = join(home, 'silent-wait')
+  mkdirSync(join(silentHome, 'system'), { recursive: true })
+  const sockets: Socket[] = []
+  const silent = createServer((socket) => { sockets.push(socket) })
+  await new Promise<void>((resolve) => silent.listen(join(silentHome, 'system', 'host.sock'), resolve))
+  const waiting = cli.runAsync(['work', 'wait', 'work:x'], {
+    // Test-only outage bound; each unanswered hello still has its real 10 s timeout.
+    env: { DSH_HOME: silentHome, SYSTEM_WAIT_RECONNECT_MS: '300' },
+  })
+  try {
+    const ran = await waiting.done
+    assert.equal(ran.status, 6, ran.stderr)
+    assert.match(ran.stderr, /did not answer/)
+  } finally {
+    waiting.child.kill('SIGTERM')
+    await waiting.done
+    for (const socket of sockets) socket.destroy()
+    await new Promise<void>((resolve) => silent.close(() => resolve()))
+  }
+})
+
 test('status shows an Item as todo, then doing while its Work runs; a second Work is refused unless forced', { timeout: 120_000 }, async () => {
   const project = realpathSync(mkdtempSync(join(home, 'project-')))
   const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })

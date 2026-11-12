@@ -8,6 +8,7 @@ import type { Envelope, ReadResult } from '@system/artifacts'
 import { CONVERSATION_KIND, conversationSchema, type WorkRecord, type WorkState } from '@system/work'
 import type { QuotaReport } from '@system/agents'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
+import { RECONNECT_MS } from './remote.ts'
 
 /** A repeatable option's values, in order. */
 function collect(value: string, previous: string[]): string[] {
@@ -49,8 +50,10 @@ export interface FollowOptions {
   cancelOnInterrupt?: boolean
   /** Aborting it ends the following without a word; the result is `stopped`. */
   signal?: AbortSignal
-  /** Keep reading across a Host restart, for up to `RECONNECT_MS` (`work wait`, which only watches). */
+  /** Keep reading across a Host restart or a slow Host, for up to `RECONNECT_MS` of one outage (`work wait`, which only watches). */
   patient?: boolean
+  /** Told whether the last call failed (true) or was answered (false); for `waitFor`. */
+  outage?: (down: boolean) => void
 }
 
 /** What `work wait` accepts: with `any` it returns at the first Work that ended, otherwise when all have; after `timeoutMs` it gives up. */
@@ -64,6 +67,8 @@ export interface Waited {
   records: WorkRecord[]
   decided?: string
   timedOut: boolean
+  /** The Host did not answer for the bound; the Works were not read. */
+  unreachable?: string
 }
 
 /** A Work's record once it is terminal, or `detached` when the operator left it running in the Host. */
@@ -460,9 +465,9 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('wait <workId...>')
-    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work. Exit: with --any the code of the first Work to end; otherwise the worst among the Works (failed, cancelled, held, succeeded; 0 succeeded, 1 failed, 3 held, 5 cancelled), 4 on timeout')
+    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work. Exit: with --any the code of the first Work to end; otherwise the worst among the Works (failed, cancelled, held, succeeded; 0 succeeded, 1 failed, 3 held, 5 cancelled), 4 on timeout, 6 when the Host stayed unreachable')
     .option('--any', 'return at the first Work that ended, not when all have')
-    .option('--timeout <minutes>', 'give up after this many minutes (exit 4)')
+    .option('--timeout <minutes>', 'give up after this many minutes (exit 4; exit 6 if the Host was unreachable)')
     .action((workIds: string[], options: { any?: boolean; timeout?: string }) => {
       select(async () => {
         let timeoutMs: number | undefined
@@ -475,6 +480,10 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         for (const { id, state } of waited.records) {
           const why = state.reason ?? (state.status === 'held' && state.awaiting ? `awaiting ${state.awaiting}` : undefined)
           io.out(`${id}  ${state.status}${why ? `  ${why}` : ''}\n`)
+        }
+        if (waited.unreachable !== undefined) {
+          io.err(`system: the System Host did not answer for ${Math.round((timeoutMs === undefined ? RECONNECT_MS : Math.min(timeoutMs, RECONNECT_MS)) / 60_000 * 10) / 10} minutes; the Works were not read and may still be running (exit ${EXIT_HOST_UNREACHABLE}); see docs/operations/runbook.md, "The Host is not answering"\n`)
+          return EXIT_HOST_UNREACHABLE
         }
         if (waited.timedOut) {
           io.err(`system: timed out after ${options.timeout} minutes; the Works above had not ended (exit 4)\n`)
@@ -534,7 +543,10 @@ const worst = (statuses: string[]): string => {
   return rank.find((status) => statuses.includes(status)) ?? 'succeeded'
 }
 
-/** succeeded 0, failed 1, held for the operator 3, not terminal 4, cancelled 5. */
+/** `work wait` exit code when the Host stayed unreachable for the bound: not a Work's status, never 0. */
+const EXIT_HOST_UNREACHABLE = 6
+
+/** succeeded 0, failed 1, held for the operator 3, not terminal 4, cancelled 5 (6 is `work wait`'s, not a Work status). */
 export function exitCode(status: string): number {
   return { succeeded: 0, failed: 1, held: 3, cancelled: 5 }[status] ?? 4
 }
