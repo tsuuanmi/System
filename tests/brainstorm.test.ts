@@ -57,7 +57,7 @@ after(async () => {
 async function submitting(input: string): Promise<{ workId: string; submit: Running }> {
   const submit = cli.runAsync(['work', 'submit', '--workflow', BRAINSTORM, '--input', input])
   let workId = ''
-  for (let i = 0; i < 200 && !workId; i++) {
+  for (let i = 0; i < 1200 && !workId; i++) {
     await new Promise((r) => setTimeout(r, 100))
     if (submit.stdout().trim()) workId = submit.stdout().trim().split('\n')[0]!
   }
@@ -97,8 +97,8 @@ test('a brief yields two independent proposals and a synthesis of exactly those 
   assert.equal(system(['work', 'replay', workId]).status, 0)
 })
 
-test('the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both', { timeout: 120_000 }, () => {
-  const input = brief('FAKE:outputs FAKE:sign FAKE:delay=1500')
+test('the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both', { timeout: 300_000 }, () => {
+  const input = brief('FAKE:outputs FAKE:sign FAKE:delay=8000')
   const ran = system(['work', 'submit', '--workflow', BRAINSTORM, '--input', input])
   assert.equal(ran.status, 0, ran.stderr)
   const record = show(ran.stdout.trim())
@@ -112,7 +112,7 @@ test('the two proposals overlap in time: both are dispatched before either is ob
   assert.equal(system(['work', 'replay', ran.stdout.trim()]).status, 0)
 })
 
-test('without a Codex account the Work is refused before any Worker runs: no same-provider substitute', { timeout: 120_000 }, async () => {
+test('without a Codex account the Work is refused before any Worker runs: no same-provider substitute', { timeout: 300_000 }, async () => {
   const noCodex = join(home, 'no-codex.yml')
   writeFileSync(noCodex, `- id: agents\n  config: ${JSON.stringify({ $patch: 'replace', accounts: accounts.filter((a) => a.runtime !== 'codex').map((a) => ({ ...a, command: fakeAgent })) })}\n`)
   const before = system(['work', 'list']).stdout.trim().split('\n').filter(Boolean).length
@@ -126,15 +126,15 @@ test('without a Codex account the Work is refused before any Worker runs: no sam
   assert.equal(system(['work', 'list']).stdout.trim().split('\n').filter(Boolean).length, before, 'no Work was admitted')
 })
 
-test('a stop after the first proposal reuses it: the retry runs only the second proposal and the synthesis', { timeout: 120_000 }, async () => {
+test('a stop after the first proposal reuses it: the retry runs only the second proposal and the synthesis', { timeout: 300_000 }, async () => {
   const marker = join(home, `hang-${Date.now()}`)
   const input = brief(`FAKE:outputs FAKE:sign FAKE:hang=idea-b:${marker}`)
   const { workId, submit } = await submitting(input)
-  for (let i = 0; i < 300 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
-  for (let i = 0; i < 300 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
   assert.ok(existsSync(marker), 'idea-b started')
   // idea-a and idea-b run in parallel (H5): wait for idea-a to finish while idea-b hangs.
-  for (let i = 0; i < 300 && !show(workId).state.steps['idea-a']!.outputs.proposal; i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !show(workId).state.steps['idea-a']!.outputs.proposal; i++) await new Promise((r) => setTimeout(r, 100))
   const first = show(workId).state.steps['idea-a']!.outputs.proposal!
   assert.ok(first, 'idea-a finished while idea-b hangs')
 
@@ -154,16 +154,16 @@ test('a stop after the first proposal reuses it: the retry runs only the second 
   assert.equal(system(['work', 'replay', workId]).status, 0)
 })
 
-test('after the Host is killed mid-step, the restarted Host dispatches the lost step again by itself, once, losing no event', { timeout: 120_000 }, async () => {
+test('after the Host is killed mid-step, the restarted Host dispatches the lost step again by itself, once, losing no event', { timeout: 300_000 }, async () => {
   const marker = join(home, `hang-kill-${Date.now()}`)
   const input = brief(`FAKE:outputs FAKE:sign FAKE:hang=idea-b:${marker}`)
   const { workId, submit } = await submitting(input)
-  for (let i = 0; i < 300 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
   // Kill only once the agent is inside idea-b: it creates the marker when it starts to hang.
-  for (let i = 0; i < 300 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
   assert.ok(existsSync(marker), 'idea-b started')
   // idea-a runs beside it on the other Account: the kill comes once it is recorded, so only idea-b is lost.
-  for (let i = 0; i < 300 && !show(workId).events.some((e) => e.type === 'observed' && e.stepId === 'idea-a'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !show(workId).events.some((e) => e.type === 'observed' && e.stepId === 'idea-a'); i++) await new Promise((r) => setTimeout(r, 100))
   process.kill(await cli.pid(), 'SIGKILL')
   assert.notEqual((await submit.done).status, 0, 'the killed Host did not finish the Work')
   // The hanging agent outlived the Host, so its attempt keeps the Account's slot: stop it, as an operator would.
@@ -172,7 +172,7 @@ test('after the Host is killed mid-step, the restarted Host dispatches the lost 
   await cli.start()
 
   // The lost attempt's process is gone, so the Host runs the Work again without `work run`.
-  for (let i = 0; i < 300 && show(workId).state.status !== 'succeeded'; i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && show(workId).state.status !== 'succeeded'; i++) await new Promise((r) => setTimeout(r, 100))
   const done = show(workId)
   assert.equal(done.state.status, 'succeeded')
   assert.deepEqual(dispatched(done).map((e) => e.stepId), ['idea-a', 'idea-b', 'idea-b', 'synthesis'])

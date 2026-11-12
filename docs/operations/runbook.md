@@ -192,13 +192,16 @@ given, never the values. The same row's `maxConcurrentChecks` (default 2) is how
 
 An `agents` account may carry `label` and `priority: primary` (at most one per Runtime); name refs as stable handles never reused (`claude-code/c1`, `codex/x1`). Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
 
-`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. A reading is at most 10 minutes old (cached; an attempt's rate-limit events refresh it), and reading never spends a model turn. When it cannot be read the line says why (`quota: unreadable - ...`): a web account, an unverified CLI version, no token, not registered. See the [agents README](../../packages/agents/README.md#quota).
+`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. A reading is at most 10 minutes old (cached; an attempt's rate-limit events refresh it, and an attempt that failed out of quota or credits reads it again at once), and reading never spends a model turn. When it cannot be read the line says why (`quota: unreadable - ...`): a web account, an unverified CLI version, no token, not registered. See the [agents README](../../packages/agents/README.md#quota).
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
 another Account offers the same capabilities and has a free slot, which takes
 the step. `system work report` shows the time a Work waited for a slot
-(`waitedForSlotMs`) and its rate-limited attempts (`rateLimitedAttempts`). To allow
+(`waitedForSlotMs`) and its rate-limited attempts (`rateLimitedAttempts`). Its
+`failures` classify each failure, verdict, hold, failed publish and touch as an
+Outside failure with its cause, or a failure of the change, from the recorded
+reason ([GLOSSARY](../../GLOSSARY.md); patterns in `packages/work/src/outside.ts`). To allow
 more, set `maxConcurrentAttempts` (a whole number of at least 1, else the account
 is skipped and `system workers` says why) in the profile's `agents` row, then
 restart the Host:
@@ -432,6 +435,17 @@ The socket accepts connections but a call got no answer in 10 seconds. A call
 that changes something (`submit`, `run`, `retry`, `cancel`, `approve`) is sent
 once more with the same `commandId`, so the Host does it once: look at
 `system work list` before sending it again yourself.
+
+Every command but `system work wait` fails at once with this. `system work wait`
+treats it as transient: it sends the same read again with a backoff (1 s,
+doubling to 10 s) and keeps waiting, as across a Host restart. Only a Host that
+stays unreachable for 10 minutes (or the `--timeout` given, if shorter) ends
+it, with exit **6** and "the System Host did not answer"; the Works were not
+read and may still be running, so run `system work wait` again or
+`system work list`. Exit 6 is never a success; the other exits of `wait` are
+listed with its row in the [app README](../../packages/app/README.md). (Test-only:
+`SYSTEM_WAIT_RECONNECT_MS` and `SYSTEM_WAIT_RETRY_MS` replace the bound and the
+first backoff.)
 
 1. `systemctl --user status system` and `journalctl --user -u system -e`: is
    the Host alive, and busy or stuck?

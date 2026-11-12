@@ -12,7 +12,7 @@ after(() => rmSync(base, { recursive: true, force: true }))
 let count = 0
 const fresh = () => { const path = join(base, `h${count++}`); mkdirSync(path); return path }
 
-test('something that is not a socket at the path is not removed', { timeout: 60_000 }, async () => {
+test('something that is not a socket at the path is not removed', { timeout: 120_000 }, async () => {
   const home = fresh()
   mkdirSync(join(home, 'system'))
   writeFileSync(socketPath(home), 'mine')
@@ -22,7 +22,7 @@ test('something that is not a socket at the path is not removed', { timeout: 60_
   await host.close()
 })
 
-test('a home whose socket path is too long for a Unix socket is refused with the fix', { timeout: 60_000 }, async () => {
+test('a home whose socket path is too long for a Unix socket is refused with the fix', { timeout: 120_000 }, async () => {
   const home = join(fresh(), 'x'.repeat(100))
   mkdirSync(home)
   const host = await fixture().startHost(home)

@@ -53,3 +53,12 @@ test('workers keeps account lines and prints exactly one quota line per account'
   assert.match(blocks[0]!, /  quota: 5h 18%, read /)
   assert.match(blocks[1]!, /  quota: unreadable - a web account has no quota reader/)
 })
+
+
+test('quotaLine names an event reading', () => {
+  // Structural assignment permits the planned optional source before the type gains it.
+  const reading = { observedAt, source: 'rate_limit_event' as const, windows: {
+    five_hour: { percentUsed: 43 }, seven_day: { percentUsed: 31 },
+  } }
+  assert.equal(quotaLine(reading, now), 'quota: 5h 43%, 7d 31%, read 2 min ago (from the last attempt)')
+})

@@ -27,7 +27,8 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   the rule is in the [agents README](../agents/README.md#routing-by-headroom).
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
-- [src/status.ts](src/status.ts) — a project's status: `parseStatus` and `readStatus` (`STATUS.md` on `dev`), `itemLines` (done, doing, todo from the Work records) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/runbook.md#the-status-of-a-project).
+- [src/status.ts](src/status.ts) — a project's status: `parseStatus` and `readStatus` (`STATUS.md` on `dev`), `itemLines` (done, doing, todo from the Work records, a `done` line naming its Works' Outside failures when there are any) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/runbook.md#the-status-of-a-project).
+- [src/outside.ts](src/outside.ts) — `outsideCause`: the one place where a recorded failure reason is classed as an Outside failure ([GLOSSARY](../../GLOSSARY.md)) with its cause (`quota`, `restart`, `conflict`, `load`, `slow-host`), or, when no pattern matches, as a failure of the change.
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
 - [src/live.ts](src/live.ts) — `LiveAttempts`: each running Worker attempt's
   start, last activity and the `progress` its Worker reported (in memory
@@ -45,12 +46,15 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/summary.ts](src/summary.ts) — `summarize`: duration, attempts,
   operator touches, time waited for a slot (`waitedForSlotMs`, from
   `dispatched.waitedMs`), rate-limited attempts (`rateLimitedAttempts`, from
-  `observed.rateLimited`) and usage from a Work's events (`system work report`):
+  `observed.limited` and the old `observed.rateLimited`) and usage from a Work's events (`system work report`):
   total, cache read, cache write and fresh input tokens, with attempts that
   did not split their cache use counted in `unsplitAttempts`, never as zero;
   `costUsdEstimate` totals the CLI's API-equivalent cost estimate (not what the
   subscription is billed) over the attempts that report it, from records'
-  `costUsd`, old ones included.
+  `costUsd`, old ones included. It also lists each failed attempt, failed or
+  inconclusive verdict, hold, failed publish and operator touch as `failures`
+  (its `event`, kind and `outside` cause, or none for a failure of the change),
+  with `outsideFailures` and `changeFailures` counted.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` 
   a conversation held elsewhere as `file@1` parts under a manifest of what
   the operator asserts and a fixed notice.

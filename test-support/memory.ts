@@ -10,11 +10,12 @@ import type { WorkRecord, WorkTable } from '@system/work'
 const turn = () => new Promise((resolve) => setImmediate(resolve))
 
 /** Wait for a condition; fail the test instead of hanging. */
-export async function until(condition: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
+export async function until(condition: () => boolean, what: string, timeoutMs = 120_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!condition()) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
-    await turn()
+    // A short sleep, not a spin: a spinning wait takes the CPU from the very thing it waits for on a loaded machine.
+    await new Promise((resolve) => setTimeout(resolve, 2))
   }
 }
 

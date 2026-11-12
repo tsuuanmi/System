@@ -80,7 +80,8 @@ registration or in `accounts()`.
 - **Output:** `{ observedAt, windows: { five_hour?, seven_day? } }`, each window
   `{ percentUsed (0-100), resetsAt? }`, or `{ unreadable: <reason> }`. An answer is readable
   or unreadable as a whole: one malformed entry (a share below 0 or above 100, a window that
-  is not an object, a reset in the wrong unit or not a time) makes it unreadable. Only
+  is not an object, a reset in the wrong unit or not a time) makes it unreadable. A reading
+  told by attempts' events has `source: 'rate_limit_event'` (see Cache). Only
   `five_hour` and `seven_day` are read: Claude Code's other entries are ignored unvalidated,
   and a Codex window of another length is validated, then ignored. A `web` or unknown ref
   is unreadable.
@@ -92,17 +93,28 @@ registration or in `accounts()`.
   and names it. Checked on 2026-11-10 from the installed binaries and
   `codex app-server generate-ts`, **not on a live account**: Claude's `get_usage` and
   `control_response` envelopes, its `{ utilization, resets_at }` windows, and the
-  `rate_limit_event` fields; Codex's `RateLimitWindow`, `GetAccountRateLimitsResponse` and
-  the nullable `InitializeParams.capabilities`. Not checked: that a live account answers,
-  and that 2.1.322 starts with no user message (a release check for the operator).
+  `rate_limit_event` fields `status`, `resetsAt`, `rateLimitType` and `utilization`; Codex's
+  `RateLimitWindow`, `GetAccountRateLimitsResponse` and the nullable
+  `InitializeParams.capabilities`. Not checked: that a live account answers, that 2.1.322
+  starts with no user message (a release check for the operator), and the event's
+  `unifiedWindows`, which the Claude reading also comes from (read from a stream-json sample).
 - **Cache:** each reading, readable or `unreadable`, is kept 10 minutes (`quota.ttlMs` in
   the row's config is a test hook); simultaneous asks share one read. The cache does not
   check for an aborted read, and the row passes no abort signal, so an aborted read is kept
-  too. Claude Code's `rate_limit_event` in an attempt's output (`utilization` is a fraction,
+  too. Claude Code's `rate_limit_event` lines in an attempt's output give the windows
+  `unifiedWindows.five_hour` and `unifiedWindows.seven_day` (the top-level `rateLimitType`
+  window only where `unifiedWindows` has no entry for it); `utilization` is a fraction,
   `resetsAt` Unix seconds; a share outside 0 to 1 is ignored, not clamped; `status: rejected`
-  with no utilization is 100%) replaces that window in the cached reading and sets
-  `observedAt`, without extending the expiry. With no reading cached, the event makes a
-  reading of that one window, which expires 10 minutes later.
+  with no utilization is 100%. The last event of each window in an attempt is passed on.
+  A readable cached reading takes an event's window and sets `observedAt`, without extending
+  the expiry. When `get_usage` answers no plan limits (a `setup-token` token without the
+  profile scope, reason `no plan limits: …`), the Account's reading is the windows of its
+  latest attempt's events, with `source: 'rate_limit_event'` and `observedAt` at when the
+  attempt told them. It is kept past the 10-minute expiry and ages like any reading. An
+  Account with no attempt yet stays unreadable, and an event never replaces any other
+  unreadable reason (a network or version failure). A readable `get_usage` answer wins. The
+  event readings are in memory only, so after a Host restart an Account is unreadable until its
+  next attempt.
 - **Source:** System 1, `/home/tan/workspaces/system-agents` commit `15e2bd5`:
   `packages/plugins/runtime-claude-agent-sdk/src/limits.ts` and
   `packages/plugins/runtime-codex-sdk/src/rate-limits.ts`; not its ledger, pools,
@@ -111,8 +123,11 @@ registration or in `accounts()`.
 
 `system workers` and the MCP tool `workers.list` show each account's last reading, read
 through `quota(ref)` and its cache (never a model turn, never a token): under the account's
-line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, or `quota: unreadable - <reason>`.
-The reasons: `a web account has no quota reader`; `the usage report of <label> <v> is not
+line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, ending ` (from the last attempt)` for an
+event reading (see Cache), or `quota: unreadable - <reason>`.
+The reasons: `a web account has no quota reader`; `no plan limits: API key, third-party provider or no
+profile scope` (`get_usage` has no plan limits; a Claude Account may still have an event reading, see Cache);
+`the usage report of <label> <v> is not
 verified (verified: …)` (the CLI version is not one checked); `its token is not configured`;
 `its claudeHome <path> does not exist and could not be created` (the home is missing at
 read time, so the CLI is never spawned; the row creates it at registration, see Account
@@ -133,6 +148,11 @@ each, once per choice):
 4. All over the ceiling and none unreadable: the step does not start and spends no attempt. It
    shows `waiting: quota` with the earliest reset, and is tried again when a slot frees, at
    that reset, or every 5 minutes, whichever comes first.
+5. An attempt that fails because its account is out of quota or credits (sc-14) is recorded as
+   `limited`, not failed. The account's reading is read again at once (`quota(ref, { fresh })`
+   drops the cache) and the account is passed over for every step for 5 minutes. The step is
+   routed again: another account under the ceiling takes it, or with none it waits as in rule 4.
+   It spends no attempt or retry.
 
 The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; another value
 refuses every account). The `dispatched` event records each candidate's reason
@@ -273,7 +293,7 @@ pid keeps it held.
 
 Linux 5.4 (no Landlock), Claude Code 2.1.311 with a `setup-token` token,
 Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
-`HOME`; Codex's `workspace-write` sandbox works; both report token usage. The quota shapes were checked on 2026-11-10 from the installed binary and `generate-ts`, not on a live account (see Quota).
+`HOME`; Codex's `workspace-write` sandbox works; both report token usage. The quota shapes were checked on 2026-11-10 from the installed binary and `generate-ts`, not on a live account, and the event's `unifiedWindows` is not among them (see Quota).
 
 ## The `web` Runtime
 

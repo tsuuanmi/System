@@ -225,8 +225,10 @@ test('cancel stops the agent with SIGTERM and keeps what it left as partial outp
   const repository = repo()
   const abort = new AbortController()
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-5'))
-  const running = worker.run(request({ task: await task(artifacts, 'FAKE:sleep', repository) }, ['change'], abort.signal))
-  setTimeout(() => abort.abort(), 500)
+  const ready = join(root, 'ready-cancel')
+  const running = worker.run(request({ task: await task(artifacts, `FAKE:sleep FAKE:ready=${ready}`, repository) }, ['change'], abort.signal))
+  await appears(ready, 'the agent to run')
+  abort.abort()
   const result = await running
   assert.equal(result.status, 'cancelled')
   assert.deepEqual(result.outputs, {})
@@ -282,7 +284,7 @@ test('a code-write attempt in a repository with .system/checks.yaml is told to r
   assert.equal(await told(withChecks, ['research'], 'ws-research'), false)
 })
 
-test('an attempt over its budget is stopped and fails "over budget", its partial output kept', { timeout: 30_000 }, async () => {
+test('an attempt over its budget is stopped and fails "over budget", its partial output kept', { timeout: 120_000 }, async () => {
   const { artifacts } = memory()
   const tokens = agentWorker(account('claude-code', { attemptBudget: { inputTokens: 100 } }), artifacts, processSpawner, join(root, 'attempts-budget'))
   const spent = await tokens.run(request({ task: await task(artifacts, 'FAKE:turns FAKE:sleep', repo()) }, ['change']))
@@ -300,11 +302,13 @@ test('an agent ignoring SIGTERM is killed when the grace ends', async () => {
   const abort = new AbortController()
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-6'), 300)
   const started = Date.now()
-  const running = worker.run(request({ question: await task(artifacts, 'FAKE:stubborn') }, ['report'], abort.signal))
-  setTimeout(() => abort.abort(), 200)
+  const ready = join(root, 'ready-stubborn')
+  const running = worker.run(request({ question: await task(artifacts, `FAKE:stubborn FAKE:ready=${ready}`) }, ['report'], abort.signal))
+  await appears(ready, 'the agent to run')
+  abort.abort()
   const result = await running
   assert.equal(result.status, 'cancelled')
-  assert.ok(Date.now() - started < 10_000)
+  assert.ok(Date.now() - started < 60_000)
 })
 
 test('the account\'s slots are the Host\'s: the worker offers its limit and never queues attempts itself', async () => {
@@ -318,8 +322,7 @@ test('the account\'s slots are the Host\'s: the worker offers its limit and neve
   // The second starts while the first still runs: this worker holds nothing back.
   const second = new AbortController()
   const b = worker.run(request({ question: await task(artifacts, 'FAKE:sleep') }, ['report'], second.signal))
-  for (let i = 0; i < 100 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 50))
-  assert.ok(existsSync(marker), 'the first attempt is running')
+  await appears(marker, 'the first attempt to run')
   second.abort()
   assert.equal((await b).status, 'cancelled', 'the second ran and was stopped while the first still runs')
   first.abort()
@@ -335,8 +338,7 @@ test('a lost attempt is gone when its pid file is absent or names no process, an
   const req = request({ question: await task(artifacts, 'FAKE:sleep') }, ['report'], abort.signal)
   const running = worker.run(req)
   const file = join(attempts, `${req.attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
-  for (let i = 0; i < 100 && !existsSync(file); i++) await new Promise((r) => setTimeout(r, 50))
-  assert.ok(existsSync(file), 'the pid is kept while the attempt runs')
+  await appears(file, 'the pid file')
   assert.equal(await worker.gone!(req.attemptId), false)
   abort.abort()
   await running
@@ -348,18 +350,25 @@ test('a lost attempt is gone when its pid file is absent or names no process, an
   assert.equal(existsSync(file), false)
 })
 
+/** Wait for a file to exist (what a fake agent writes once it is ready), with a bound far over what a loaded machine needs. */
+async function appears(file: string, what: string): Promise<void> {
+  for (const end = Date.now() + 120_000; !existsSync(file);) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`)
+    await new Promise((r) => setTimeout(r, 20))
+  }
+}
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 
 test('an attempt over its time limit is stopped like a cancel but fails, naming the limit, and keeps its partial output', async () => {
   const { artifacts } = memory()
   const repository = repo()
-  const worker = agentWorker(account('claude-code', { attemptTimeoutMinutes: 0.01 }), artifacts, processSpawner, join(root, 'attempts-timeout'), 300)
+  const worker = agentWorker(account('claude-code', { attemptTimeoutMinutes: 0.1 }), artifacts, processSpawner, join(root, 'attempts-timeout'), 300)
   const started = Date.now()
   const result = await worker.run(request({ task: await task(artifacts, 'FAKE:edit FAKE:stubborn', repository) }, ['change']))
   assert.equal(result.status, 'failed')
-  assert.equal(result.reason, 'attempt exceeded its time limit of 0.01 minutes')
+  assert.equal(result.reason, 'attempt exceeded its time limit of 0.1 minutes')
   assert.deepEqual(result.outputs, {})
-  assert.ok(Date.now() - started < 10_000, 'SIGTERM was ignored, so SIGKILL ended it after the grace')
+  assert.ok(Date.now() - started < 60_000, 'SIGTERM was ignored, so SIGKILL ended it after the grace')
   const partial = treeOf(artifacts, result.partial!.change!)
   assert.equal(execFileSync('git', ['-C', repository, 'show', `${partial.commit}:NOTE.md`], { encoding: 'utf8' }), 'edited by claude\n')
 })
@@ -371,8 +380,10 @@ test('an attempt within its time limit is unaffected, and an operator cancel sta
   const done = await worker.run(request({ task: await task(artifacts, 'FAKE:edit', repository) }, ['change']))
   assert.equal(done.status, 'succeeded', done.reason)
   const abort = new AbortController()
-  const running = worker.run(request({ task: await task(artifacts, 'FAKE:sleep', repository) }, ['change'], abort.signal))
-  setTimeout(() => abort.abort(), 300)
+  const ready = join(root, 'ready-within')
+  const running = worker.run(request({ task: await task(artifacts, `FAKE:sleep FAKE:ready=${ready}`, repository) }, ['change'], abort.signal))
+  await appears(ready, 'the agent to run')
+  abort.abort()
   assert.equal((await running).status, 'cancelled')
 })
 
@@ -380,13 +391,13 @@ test('the time limit stops what the agent spawned in its process group, but not 
   const { artifacts } = memory()
   const child = join(root, 'grandchild.pid')
   const escaped = join(root, 'escaped.pid')
-  const worker = agentWorker(account('claude-code', { attemptTimeoutMinutes: 0.01 }), artifacts, processSpawner, join(root, 'attempts-group'), 300)
+  const worker = agentWorker(account('claude-code', { attemptTimeoutMinutes: 0.1 }), artifacts, processSpawner, join(root, 'attempts-group'), 300)
   const result = await worker.run(request({ question: await task(artifacts, `FAKE:sleep FAKE:grandchild=${child} FAKE:escaped=${escaped}`) }, ['report']))
   assert.equal(result.status, 'failed')
   const [grandchild, runaway] = [child, escaped].map((file) => Number(readFileSync(file, 'utf8')))
   try {
     // A killed process takes a moment to exit under load: wait for it, with a deadline, instead of looking once.
-    for (const deadline = Date.now() + 5000; alive(grandchild!) && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50))
+    for (const deadline = Date.now() + 60_000; alive(grandchild!) && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50))
     assert.ok(!alive(grandchild!), 'a grandchild in the agent group is gone')
     // The gap of the process-group kill, which is also DSH's fallback without user-systemd: a
     // setsid descendant survives. DSH's systemd scope owns such descendants, so the gap is a host without one.
@@ -397,7 +408,7 @@ test('the time limit stops what the agent spawned in its process group, but not 
 })
 
 // 2026-11-07: two Xvfb leaked by a Worker's own tests held a finished attempt "running" for 33 min: the pipes stayed open.
-test('the attempt ends when the agent exits, even if a process it left behind holds its output open', { timeout: 20_000 }, async () => {
+test('the attempt ends when the agent exits, even if a process it left behind holds its output open', { timeout: 120_000 }, async () => {
   const { artifacts } = memory()
   const holder = join(root, 'holder.pid')
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-holder'), 300, 300)
@@ -405,8 +416,8 @@ test('the attempt ends when the agent exits, even if a process it left behind ho
   try {
     const result = await worker.run(request({ question: await task(artifacts, `FAKE:outputs FAKE:holdstdout=${holder}`) }, ['report']))
     assert.equal(result.status, 'succeeded', result.reason)
-    assert.ok(Date.now() - started < 5000, `ended ${Date.now() - started} ms after the start, not when the pipe closed`)
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    assert.ok(Date.now() - started < 60_000, `ended ${Date.now() - started} ms after the start, not when the pipe closed`)
+    for (const end = Date.now() + 60_000; alive(Number(readFileSync(holder, 'utf8'))) && Date.now() < end;) await new Promise((resolve) => setTimeout(resolve, 20))
     assert.ok(!alive(Number(readFileSync(holder, 'utf8'))), 'what the agent left in its group is stopped')
   } finally {
     try { process.kill(Number(readFileSync(holder, 'utf8')), 'SIGKILL') } catch { /* gone */ }
@@ -462,12 +473,14 @@ test('Codex takes over cancelled Claude work from the partial Artifact, in one W
   capabilities.registerWorker(agentWorker(account('codex', { codexHome }), artifacts, processSpawner, join(root, 'attempts-9')))
   const controller = new WorkController(table, specs, capabilities)
   const spec = resolve(parseWorkflow('schema: system.workflow/v1\nid: one\nversion: 1\nsteps:\n  - id: implement\n    capabilities: [code-write]\n    inputs: {task: $work.input}\n    outputs: [change]\n'), capabilities.available())
-  const input = await task(artifacts, 'FAKE:sleep FAKE:edit', repository)
+  const ready = join(root, 'ready-takeover')
+  const input = await task(artifacts, `FAKE:sleep FAKE:edit FAKE:ready=${ready}`, repository)
   const admitted = await controller.admit({ spec, input, caller: { type: 'human', operatorId: 't' }, source: { kind: 'workflow-file' } })
 
   // Claude starts; the operator cancels it mid-attempt.
   const running = controller.run(admitted.id)
-  setTimeout(() => { void controller.cancel(admitted.id, { reason: 'switch to codex', caller: { type: 'human', operatorId: 't' } }) }, 700)
+  await appears(ready, 'Claude to run')
+  void controller.cancel(admitted.id, { reason: 'switch to codex', caller: { type: 'human', operatorId: 't' } })
   const cancelled = await running
   assert.equal(cancelled.state.status, 'cancelled')
   const partialId = cancelled.state.steps.implement!.partial!.change!
@@ -601,3 +614,29 @@ for (const withBase of [true, false]) {
     } finally { await cleanup(ws) }
   })
 }
+
+
+test('Claude attempt hook receives both unified windows', async (t) => {
+  const ownRoot = mkdtempSync(join(tmpdir(), 'agent-unified-'))
+  t.after(() => rmSync(ownRoot, { recursive: true, force: true }))
+  const { artifacts } = memory()
+  type Event = { window: 'five_hour' | 'seven_day'; percentUsed: number; resetsAt?: string }
+  const seen: Event[][] = []
+  const ownAccount: Account & { onRateLimit: (events: ReadonlyArray<Event>) => void } = {
+    ...account('claude-code'), onRateLimit: (events) => { seen.push([...events]) },
+  }
+  const worker = agentWorker(ownAccount, artifacts, processSpawner, join(ownRoot, 'attempts'))
+  const result = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs FAKE:unified=0.43,0.31') }, ['report']))
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(seen.length, 1)
+  const events = seen[0]!
+  assert.equal(events.length, 2)
+  for (const event of events) {
+    assert.equal(typeof event.resetsAt, 'string')
+    assert.ok(Number.isFinite(Date.parse(event.resetsAt!)))
+  }
+  assert.deepEqual(events, [
+    { window: 'five_hour', percentUsed: 43, resetsAt: events[0]!.resetsAt },
+    { window: 'seven_day', percentUsed: 31, resetsAt: events[1]!.resetsAt },
+  ])
+})

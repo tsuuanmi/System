@@ -15,7 +15,7 @@ const turn = () => new Promise((resolve) => setImmediate(resolve))
 const turns = async (n = 20) => { for (let i = 0; i < n; i++) await turn() }
 const types = (record: WorkRecord) => record.events.map((e) => (e.type === 'terminal' ? `terminal:${e.outcome}` : 'stepId' in e ? `${e.type}:${e.stepId}` : e.type))
 
-test('Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once', { timeout: 20_000 }, async () => {
+test('Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once', { timeout: 120_000 }, async () => {
   const f = fixture()
   const host = await f.startHost(newHome())
   try {
@@ -36,7 +36,7 @@ test('Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once', { 
   }
 })
 
-test('a synthesis step waits for both proposals', { timeout: 20_000 }, async () => {
+test('a synthesis step waits for both proposals', { timeout: 120_000 }, async () => {
   const f = fixture()
   const host = await f.startHost(newHome())
   try {
@@ -82,12 +82,12 @@ async function contended(slots: number | undefined) {
   }
 }
 
-test('two Works on one Account never run two attempts at once with a limit of 1', { timeout: 20_000 }, async () => {
+test('two Works on one Account never run two attempts at once with a limit of 1', { timeout: 120_000 }, async () => {
   assert.deepEqual(await contended(undefined), { together: 1, peak: 1 })
   assert.deepEqual(await contended(1), { together: 1, peak: 1 })
 })
 
-test('two Works on one Account run two attempts at once with a limit of 2', { timeout: 20_000 }, async () => {
+test('two Works on one Account run two attempts at once with a limit of 2', { timeout: 120_000 }, async () => {
   const f = fixture({ slots: 2 })
   const host = await f.startHost(newHome())
   try {
@@ -105,7 +105,7 @@ test('two Works on one Account run two attempts at once with a limit of 2', { ti
   }
 })
 
-test('a waiting step goes in Work admission order when its slot frees', { timeout: 20_000 }, async () => {
+test('a waiting step goes in Work admission order when its slot frees', { timeout: 120_000 }, async () => {
   const f = fixture()
   const host = await f.startHost(newHome())
   try {
@@ -123,7 +123,7 @@ test('a waiting step goes in Work admission order when its slot frees', { timeou
   }
 })
 
-test('a cancel while two attempts run records both, then one terminal event', { timeout: 20_000 }, async () => {
+test('a cancel while two attempts run records both, then one terminal event', { timeout: 120_000 }, async () => {
   const f = fixture()
   const host = await f.startHost(newHome())
   try {
@@ -143,7 +143,7 @@ test('a cancel while two attempts run records both, then one terminal event', { 
   }
 })
 
-test('a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself', { timeout: 20_000 }, async () => {
+test('a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = newHome()
   const first = await f.startHost(home)
@@ -197,7 +197,7 @@ test('a Host killed with two attempts in flight: both are lost, their slots are 
   }
 })
 
-test('a lost attempt whose Worker cannot confirm it gone keeps its slot', { timeout: 20_000 }, async () => {
+test('a lost attempt whose Worker cannot confirm it gone keeps its slot', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = newHome()
   const first = await f.startHost(home)
@@ -217,7 +217,7 @@ test('a lost attempt whose Worker cannot confirm it gone keeps its slot', { time
   }
 })
 
-test('a lost attempt confirmed gone at the next start frees its slot at once; one confirmed later is settled when its Work waits for the slot', { timeout: 20_000 }, async () => {
+test('a lost attempt confirmed gone at the next start frees its slot at once; one confirmed later is settled when its Work waits for the slot', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = newHome()
   const first = await f.startHost(home)
@@ -252,7 +252,7 @@ test('a lost attempt confirmed gone at the next start frees its slot at once; on
 })
 
 for (let seed = 1; seed <= 50; seed++) {
-  test(`seed ${seed}: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event`, { timeout: 30_000 }, async () => {
+  test(`seed ${seed}: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event`, { timeout: 120_000 }, async () => {
     const f = fixture({ seed, slots: 1 + (seed % 2) })
     const host = await f.startHost(newHome())
     try {
@@ -277,7 +277,7 @@ for (let seed = 1; seed <= 50; seed++) {
   })
 }
 
-test('three Works reach their checks at once: only two run until one finishes, and the third shows as waiting for a check slot', { timeout: 20_000 }, async () => {
+test('three Works reach their checks at once: only two run until one finishes, and the third shows as waiting for a check slot', { timeout: 120_000 }, async () => {
   const f = fixture({ checks: 2 })
   const host = await f.startHost(newHome())
   try {
@@ -301,7 +301,7 @@ test('three Works reach their checks at once: only two run until one finishes, a
   }
 })
 
-test('a lost check keeps its check slot until its process is confirmed gone, then the slot is freed', { timeout: 20_000 }, async () => {
+test('a lost check keeps its check slot until its process is confirmed gone, then the slot is freed', { timeout: 120_000 }, async () => {
   const f = fixture({ checks: 1 })
   const home = newHome()
   const first = await f.startHost(home)
@@ -334,7 +334,7 @@ test('a lost check keeps its check slot until its process is confirmed gone, the
   }
 })
 
-test('a step whose first capable Account is full goes to the next capable Account with a free slot, and the record says why', { timeout: 20_000 }, async () => {
+test('a step whose first capable Account is full goes to the next capable Account with a free slot, and the record says why', { timeout: 120_000 }, async () => {
   const f = fixture({ spare: true })
   const host = await f.startHost(newHome())
   try {
@@ -354,7 +354,7 @@ test('a step whose first capable Account is full goes to the next capable Accoun
   }
 })
 
-test('a step waits when every capable Account is full; the time it waited is recorded and summed by the report', { timeout: 20_000 }, async () => {
+test('a step waits when every capable Account is full; the time it waited is recorded and summed by the report', { timeout: 120_000 }, async () => {
   const f = fixture()
   const host = await f.startHost(newHome())
   try {

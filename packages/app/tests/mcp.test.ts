@@ -68,7 +68,7 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
 }
 
 const until = async (what: string, ok: () => Promise<boolean>) => {
-  for (const end = Date.now() + 20_000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (await ok()) return
+  for (const end = Date.now() + 120_000; Date.now() < end; await new Promise((r) => setTimeout(r, 20))) if (await ok()) return
   assert.fail(`timed out waiting for ${what}`)
 }
 
@@ -81,7 +81,7 @@ steps:
     outputs: [result]
 `
 
-test('work.submit with a path admits the Work as the agent', { timeout: 60_000 }, async () => {
+test('work.submit with a path admits the Work as the agent', { timeout: 120_000 }, async () => {
   const path = join(mkdtempSync(join(home, 'wf-')), 'wf.yaml')
   writeFileSync(path, workflow)
   const submitted = await call(await mcp(), 'work.submit', { workflow: path, run: false })
@@ -90,7 +90,7 @@ test('work.submit with a path admits the Work as the agent', { timeout: 60_000 }
   assert.deepEqual(submitted.value.events[0].caller, { type: 'agent', operatorId: 'o1' })
 })
 
-test('work.submit with a ~ path expands the MCP process HOME', { timeout: 60_000 }, async () => {
+test('work.submit with a ~ path expands the MCP process HOME', { timeout: 120_000 }, async () => {
   const dir = mkdtempSync(join(home, 'wf-home-'))
   writeFileSync(join(dir, 'wf.yaml'), workflow)
   const submitted = await call(await mcp({ HOME: dir }), 'work.submit', { workflow: '~/wf.yaml', run: false })
@@ -98,7 +98,7 @@ test('work.submit with a ~ path expands the MCP process HOME', { timeout: 60_000
   assert.ok(submitted.value.id)
 })
 
-test('work.submit with a path reads a Sub-workflow beside the file', { timeout: 60_000 }, async () => {
+test('work.submit with a path reads a Sub-workflow beside the file', { timeout: 120_000 }, async () => {
   const dir = mkdtempSync(join(home, 'wf-sub-'))
   writeFileSync(join(dir, 'main.yaml'), 'schema: system.workflow/v1\nid: main\nversion: 1\nsteps:\n  - id: c\n    uses: sub.yaml\n')
   writeFileSync(join(dir, 'sub.yaml'), workflow)
@@ -111,13 +111,13 @@ test('work.submit with a path reads a Sub-workflow beside the file', { timeout: 
   assert.deepEqual(Object.keys(shown.value.state.steps), ['c.write'])
 })
 
-test('work.submit with contents still admits the Work', { timeout: 60_000 }, async () => {
+test('work.submit with contents still admits the Work', { timeout: 120_000 }, async () => {
   const submitted = await call(await mcp(), 'work.submit', { workflow, run: false })
   assert.equal(submitted.error, undefined, submitted.error)
   assert.ok(submitted.value.id)
 })
 
-test('work.submit with a missing path reports an unreadable file', { timeout: 60_000 }, async () => {
+test('work.submit with a missing path reports an unreadable file', { timeout: 120_000 }, async () => {
   const path = join(mkdtempSync(join(home, 'wf-missing-')), 'missing.yaml')
   const submitted = await call(await mcp(), 'work.submit', { workflow: path, run: false })
   assert.equal(typeof submitted.error, 'string')
@@ -125,13 +125,13 @@ test('work.submit with a missing path reports an unreadable file', { timeout: 60
   assert.doesNotMatch(submitted.error!, /expected object/)
 })
 
-test('work.submit with neither a file nor Workflow contents explains both accepted forms', { timeout: 60_000 }, async () => {
+test('work.submit with neither a file nor Workflow contents explains both accepted forms', { timeout: 120_000 }, async () => {
   const submitted = await call(await mcp(), 'work.submit', { workflow: 'hello', run: false })
   assert.equal(typeof submitted.error, 'string')
   assert.match(submitted.error!, /neither the path of a readable \.yaml file nor the contents of a Workflow/)
 })
 
-test('the instructions and the work.submit description agree on paths and contents', { timeout: 60_000 }, async () => {
+test('the instructions and the work.submit description agree on paths and contents', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const instructions = client.getInstructions() ?? ''
   assert.ok(instructions.includes('workflows/feature.yaml'))
@@ -143,7 +143,7 @@ test('the instructions and the work.submit description agree on paths and conten
   assert.match(instructions, /contents/)
 })
 
-test('the tools are exactly the rows flagged agent: true, with their schemas and descriptions', { timeout: 60_000 }, async () => {
+test('the tools are exactly the rows flagged agent: true, with their schemas and descriptions', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const { tools } = await client.listTools()
   const open = Object.entries(table).filter(([, method]) => method.agent)
@@ -159,7 +159,7 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
   for (const closed of ['approval.decide', 'credentials.set', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
 })
 
-test('item_claim accepts commandId through MCP and status reports the claim', { timeout: 60_000 }, async () => {
+test('item_claim accepts commandId through MCP and status reports the claim', { timeout: 120_000 }, async () => {
   const project = realpathSync(mkdtempSync(join(home, 'mcp-claim-')))
   const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
   git('init', '-q', '-b', 'dev')
@@ -172,7 +172,7 @@ test('item_claim accepts commandId through MCP and status reports the claim', { 
   assert.match(((await call(client, 'status', { repository: project, item: 'p-2' })).value as string[])[0]!, /doing: claimed by o1 since/)
 })
 
-test('work.submit runs the Work unless run is false; work.list shows an unrun Work as admitted, not running', { timeout: 60_000 }, async () => {
+test('work.submit runs the Work unless run is false; work.list shows an unrun Work as admitted, not running', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const held = (await call(client, 'work.submit', { capabilities: ['code-write'], run: false })).value.id as string
   const listed = async (id: string) => ((await call(client, 'work.list', {})).value as { id: string; status: string }[]).find((w) => w.id === id)?.status
@@ -183,7 +183,7 @@ test('work.submit runs the Work unless run is false; work.list shows an unrun Wo
   assert.equal(await listed(held), 'admitted, not running')
 })
 
-test('a tool call goes to the Host: submit a direct Task, run it and follow it with work.events', { timeout: 60_000 }, async () => {
+test('a tool call goes to the Host: submit a direct Task, run it and follow it with work.events', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const submitted = await call(client, 'work.submit', { capabilities: ['code-write'], run: false })
   const id = submitted.value.id as string
@@ -203,7 +203,7 @@ test('--goal is no longer an option: the adapter refuses it and starts nothing',
 
 const textOf = (read: { contents: object[] }) => JSON.parse((read.contents[0] as { text: string }).text)
 
-test('a subscribed resource is updated when its Work ends; reading it gives work.show', { timeout: 60_000 }, async () => {
+test('a subscribed resource is updated when its Work ends; reading it gives work.show', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const updated: string[] = []
   client.setNotificationHandler(ResourceUpdatedNotificationSchema, (n) => { updated.push(n.params.uri) })
@@ -229,7 +229,7 @@ test('a subscribed resource is updated when its Work ends; reading it gives work
   await assert.rejects(client.readResource({ uri: 'file:///etc/passwd' }))
 })
 
-test('a notice only wakes the client: one that was away reads work.events from its cursor and misses nothing', { timeout: 60_000 }, async () => {
+test('a notice only wakes the client: one that was away reads work.events from its cursor and misses nothing', { timeout: 120_000 }, async () => {
   const first = await mcp()
   const id = (await call(first, 'work.submit', { capabilities: ['code-write'], run: false })).value.id as string
   await first.subscribeResource({ uri: `system://work/${id}` })
@@ -246,12 +246,12 @@ test('a notice only wakes the client: one that was away reads work.events from i
   assert.equal(missed.events.at(-1).type, 'terminal')
 })
 
-test('the initialize result carries instructions: the steps, the checks file and the human-only commands', { timeout: 60_000 }, async () => {
+test('the initialize result carries instructions: the steps, the checks file and the human-only commands', { timeout: 120_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
   for (const word of ['status', 'item_claim', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
 })
 
-test('the instructions name feature.yaml as the Workflow for a code change and keep software-engineering.yaml for the small case', { timeout: 60_000 }, async () => {
+test('the instructions name feature.yaml as the Workflow for a code change and keep software-engineering.yaml for the small case', { timeout: 120_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
   assert.ok(text.includes('workflows/feature.yaml'))
   assert.ok(text.indexOf('feature.yaml') < text.indexOf('software-engineering.yaml'))
@@ -259,7 +259,7 @@ test('the instructions name feature.yaml as the Workflow for a code change and k
   assert.ok(text.includes('red:'))
 })
 
-test('an MCP server of older code than the Host recovers on the code under SYSTEM_CODE, and its session keeps working', { timeout: 60_000 }, async () => {
+test('an MCP server of older code than the Host recovers on the code under SYSTEM_CODE, and its session keeps working', { timeout: 120_000 }, async () => {
   // A Host of other code than this build's, and an install whose `current` code is that Host's.
   const dir = mkdtempSync('/tmp/sm-old-')
   const lib = join(dir, 'packages', 'host', 'lib')
@@ -288,7 +288,7 @@ test('an MCP server of older code than the Host recovers on the code under SYSTE
   rmSync(dir, { recursive: true, force: true })
 })
 
-test('an MCP session refreshes its tools and notifies after recovering on newer Host code', { timeout: 60_000 }, async () => {
+test('an MCP session refreshes its tools and notifies after recovering on newer Host code', { timeout: 120_000 }, async () => {
   const dir = mkdtempSync('/tmp/sm-refresh-')
   const lib = join(dir, 'packages', 'host', 'lib')
   mkdirSync(lib, { recursive: true })

@@ -737,12 +737,21 @@ test('the verifier is pinned at admission with its version: another version at r
   assert.equal(done.state.status, 'failed')
 })
 
-test('an attempt that failed on a rate limit is recorded as rate-limited; another failure is not', async () => {
-  for (const [reason, rateLimited] of [['fake: 429 Too Many Requests', true], ['claude usage limit reached; rate limit resets at 5pm', true], ['tests red', false]] as const) {
-    const done = await runFixture(harness({ worker: { run: async () => ({ status: 'failed', outputs: {}, reason }) } }), 'research.yaml')
-    const observed = done.events.find((e) => e.type === 'observed')
+test('an attempt that failed on a quota limit is recorded as limited and leaves the step pending; another failure fails the Work', async () => {
+  for (const [reason, limited] of [['fake: 429 Too Many Requests', true], ['claude usage limit reached; rate limit resets at 5pm', true], ['tests red', false]] as const) {
+    const h = harness({ worker: { run: async () => ({ status: 'failed', outputs: {}, reason }) } })
+    const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
+    const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'research.yaml' } })
+    const running = h.controller.run(admitted.id)
+    // A limited step waits on quota with its only Account, so the run does not end by itself.
+    for (let n = 0; n < 200 && !h.table.rows.get(admitted.id)?.events.some((e) => e.type === 'observed'); n++) await new Promise((resolve) => setTimeout(resolve, 5))
+    const observed = h.table.rows.get(admitted.id)?.events.find((e) => e.type === 'observed')
     assert.ok(observed?.type === 'observed')
-    assert.equal(observed.rateLimited, rateLimited ? true : undefined, reason)
+    assert.equal(observed.limited, limited ? true : undefined, reason)
+    assert.equal(observed.rateLimited, undefined)
+    if (limited) await h.controller.cancel(admitted.id, { reason: 'test over', caller })
+    else assert.equal((await running).state.status, 'failed')
+    await running.catch(() => undefined)
   }
 })
 

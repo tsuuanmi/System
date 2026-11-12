@@ -15,7 +15,8 @@
  * - Claude Code 2.1.322: `get_usage` takes `{ subtype, skip_behaviors? }` and answers
  *   `{ rate_limits_available: boolean, rate_limits: { five_hour, seven_day, ... } }`, each window
  *   `{ utilization: number | null (0-100), resets_at: ISO 8601 | null }`; `rate_limit_event.rate_limit_info`
- *   has `status`, `resetsAt` (Unix seconds), `rateLimitType` and `utilization` (a fraction).
+ *   has `status`, `resetsAt` (Unix seconds), `rateLimitType` and `utilization` (a fraction), and
+ *   `unifiedWindows.{five_hour,seven_day}.{utilization,resetsAt,status}` (the same units), which carries both windows.
  * - Codex 0.166.0: `RateLimitWindow = { usedPercent, windowDurationMins | null, resetsAt | null }` (Unix
  *   seconds) in `GetAccountRateLimitsResponse.rateLimits.{primary, secondary}`; `InitializeParams.capabilities`
  *   is nullable.
@@ -32,8 +33,11 @@ export interface QuotaWindow {
 }
 export type QuotaWindowName = 'five_hour' | 'seven_day'
 export type QuotaReport =
-  | { observedAt: string; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } }
+  | { observedAt: string; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow }; source?: 'rate_limit_event' }
   | { unreadable: string }
+
+/** Why `get_usage` has no plan limits (a `setup-token` token without the profile scope); the cache falls back to attempt events only for it. */
+export const NO_PLAN_LIMITS = 'no plan limits: API key, third-party provider or no profile scope'
 
 /** One window as a `rate_limit_event` of an attempt tells it. */
 export interface QuotaEvent extends QuotaWindow {
@@ -76,7 +80,7 @@ const report = (windows: Partial<Record<QuotaWindowName, QuotaWindow>>, observed
 export function quotaFromUsage(answer: unknown, observedAt: number): QuotaReport {
   if (!isRecord(answer)) return { unreadable: 'its get_usage answer is not an object' }
   if (typeof answer.rate_limits_available !== 'boolean') return { unreadable: 'its get_usage answer is not in the checked shape (no rate_limits_available)' }
-  if (!answer.rate_limits_available) return { unreadable: 'no plan limits: API key, third-party provider or no profile scope' }
+  if (!answer.rate_limits_available) return { unreadable: NO_PLAN_LIMITS }
   const limits = answer.rate_limits
   if (!isRecord(limits)) return { unreadable: 'it reports plan limits, and its rate_limits is not an object' }
   const windows: Partial<Record<QuotaWindowName, QuotaWindow>> = {}
@@ -119,22 +123,35 @@ export function quotaFromRateLimits(result: unknown, observedAt: number): QuotaR
   return report(windows, observedAt)
 }
 
-/**
- * A Claude Code stream line `{ type: 'rate_limit_event', rate_limit_info }` as one window. In 2.1.322
- * `utilization` is a fraction and `resetsAt` Unix seconds; a share outside [0, 1] is never misread.
- */
-export function quotaFromRateLimitEvent(event: unknown, observedAt: number): QuotaEvent | undefined {
-  if (!isRecord(event) || event.type !== 'rate_limit_event' || !isRecord(event.rate_limit_info)) return undefined
-  const info = event.rate_limit_info
-  const window = info.rateLimitType
-  if (window !== 'five_hour' && window !== 'seven_day') return undefined
-  const { utilization, resetsAt, status } = info
+/** One window of a `rate_limit_event`: a fraction in [0, 1], or `rejected` without a share (100%); anything else is skipped. */
+function eventWindow(window: QuotaWindowName, entry: Record<string, unknown>, observedAt: number): QuotaEvent | undefined {
+  const { utilization, resetsAt, status } = entry
   let percent: number
   if (typeof utilization === 'number' && Number.isFinite(utilization) && utilization >= 0 && utilization <= 1) percent = utilization * 100
   else if (status === 'rejected' && (utilization === undefined || utilization === null)) percent = 100
   else return undefined
   const reset = typeof resetsAt === 'number' && Number.isFinite(resetsAt) && Math.abs(resetsAt) <= SECONDS_LIMIT ? resetsAt * 1000 : undefined
   return { window, ...windowOf(percent, reset, observedAt) }
+}
+
+/**
+ * A Claude Code stream line `{ type: 'rate_limit_event', rate_limit_info }` as its windows. In 2.1.322
+ * `utilization` is a fraction and `resetsAt` Unix seconds; a share outside [0, 1] is never misread.
+ * `unifiedWindows.{five_hour,seven_day}` are read first; the top-level fields tell `rateLimitType`'s
+ * window only when `unifiedWindows` has no entry for it. One bad window never drops the other.
+ */
+export function quotaFromRateLimitEvent(event: unknown, observedAt: number): QuotaEvent[] {
+  if (!isRecord(event) || event.type !== 'rate_limit_event' || !isRecord(event.rate_limit_info)) return []
+  const info = event.rate_limit_info
+  const unified = isRecord(info.unifiedWindows) ? info.unifiedWindows : {}
+  const out: QuotaEvent[] = []
+  for (const name of ['five_hour', 'seven_day'] as const) {
+    const entry = unified[name]
+    const source = isRecord(entry) ? entry : info.rateLimitType === name ? info : undefined
+    const read = source && eventWindow(name, source, observedAt)
+    if (read) out.push(read)
+  }
+  return out
 }
 
 // ---- readers ----------------------------------------------------------------------------------
@@ -346,6 +363,8 @@ export async function readCodexQuota(options: CodexQuotaOptions): Promise<QuotaR
 
 export interface QuotaCache {
   get(): Promise<QuotaReport>
+  /** Drop the cached reading; the next `get` reads again. A read in flight still resolves. */
+  invalidate(): void
   /** Merge the windows an attempt's `rate_limit_event`s told; the expiry is not extended. */
   observe(events: ReadonlyArray<QuotaEvent>): void
 }
@@ -353,21 +372,33 @@ export interface QuotaCache {
 export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now }: { read: () => Promise<QuotaReport>; ttlMs?: number; now?: () => number }): QuotaCache {
   let cached: { report: QuotaReport; expiresAt: number } | undefined
   let pending: Promise<QuotaReport> | undefined
+  /** What the attempts' events told last, kept apart from the cached report so it outlives the TTL. */
+  let fromEvents: { observedAt: number; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } } | undefined
+  const eventReading = (from: NonNullable<typeof fromEvents>): QuotaReport => ({ observedAt: new Date(from.observedAt).toISOString(), windows: { ...from.windows }, source: 'rate_limit_event' })
+  const noPlanLimits = (report: QuotaReport) => 'unreadable' in report && report.unreadable === NO_PLAN_LIMITS
   return {
     get() {
       if (cached && now() < cached.expiresAt) return Promise.resolve(cached.report)
       pending ??= read().then((report) => {
-        cached = { report, expiresAt: now() + ttlMs }
-        return report
+        const shown = fromEvents && noPlanLimits(report) ? eventReading(fromEvents) : report
+        cached = { report: shown, expiresAt: now() + ttlMs }
+        return shown
       }).finally(() => { pending = undefined })
       return pending
     },
+    invalidate() { cached = undefined },
     observe(events) {
       if (events.length === 0) return
-      const current = cached && 'windows' in cached.report ? cached.report.windows : {}
-      const windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...current }
-      for (const { window, percentUsed, resetsAt } of events) windows[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
-      cached = { report: { observedAt: new Date(now()).toISOString(), windows }, expiresAt: cached ? cached.expiresAt : now() + ttlMs }
+      const at = now()
+      const own: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...fromEvents?.windows }
+      for (const { window, percentUsed, resetsAt } of events) own[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
+      fromEvents = { observedAt: at, windows: own }
+      if (!cached) return
+      if ('windows' in cached.report) {
+        const windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...cached.report.windows }
+        for (const { window, percentUsed, resetsAt } of events) windows[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
+        cached = { report: { observedAt: new Date(at).toISOString(), windows, ...(cached.report.source ? { source: cached.report.source } : {}) }, expiresAt: cached.expiresAt }
+      } else if (noPlanLimits(cached.report)) cached = { report: eventReading(fromEvents), expiresAt: cached.expiresAt }
     },
   }
 }
