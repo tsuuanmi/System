@@ -158,8 +158,9 @@ function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | u
 }
 
 /** Whether a Work's effects merged its change into `dev`: a `git.publish` the merge queue applied (it merges only into a base in `mergeInto`). */
-const mergedEffect = (record: WorkRecord) => Object.values(record.state.effects).find((e) => e.state === 'applied' && e.detail?.merged === 'true')
-export const wasMerged = (record: WorkRecord): boolean => !!mergedEffect(record)
+const mergedEntry = (record: WorkRecord) => Object.entries(record.state.effects).find(([, e]) => e.state === 'applied' && e.detail?.merged === 'true')
+const mergedEffect = (record: WorkRecord) => mergedEntry(record)?.[1]
+export const wasMerged = (record: WorkRecord): boolean => !!mergedEntry(record)
 
 /** The commit on `dev` a merged Work made, when its merge effect recorded it. */
 export const mergeCommitOf = (record: WorkRecord): string | undefined => mergedEffect(record)?.detail?.mergeCommit
@@ -170,10 +171,28 @@ const changedNothing = (record: WorkRecord): boolean =>
 
 const artifactsOf = (record: WorkRecord): string[] => Object.values(record.state.results)
 
+/** The Artifact a Work finally published or had accepted, or undefined when its record does not say. */
+export const finalArtifactOf = (record: WorkRecord): string | undefined => {
+  const merged = mergedEntry(record)
+  if (merged) {
+    const intent = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === merged[0])
+    if (intent?.type === 'effect-intended' && intent.subject) return intent.subject
+  } else {
+    const pass = record.events.findLast((e) => e.type === 'verified' && e.verdict === 'pass')
+    if (pass?.type === 'verified') {
+      const outputs = Object.values(record.state.steps).map((s) => s.outputs).find((o) => Object.values(o).includes(pass.subject))
+      const slots = outputs ? Object.entries(outputs) : []
+      const out = (slots.find(([k]) => k === 'report') ?? slots[0])?.[1]
+      if (out) return out
+    }
+  }
+  return artifactsOf(record).at(-1)
+}
+
 /**
  * One line per Item, as `[x] <id> <title> - <state>`: `done` (ticked in
  * STATUS.md, or a Work for it was merged into `dev`; with the last merged or
- * succeeded Work and its Artifacts, when there is one), `doing` (each Work
+ * succeeded Work and its final Artifact, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
  * the Host holds for it, or why it is held; or a session's claim: who, since when) or `todo: nobody`. An Item only
  * the Works name is shown as not in STATUS.md. Without `live`, no progress. A done Item whose last merged Work's merge commit `released` says is not in the running release reads `done, not yet released`.
@@ -199,7 +218,7 @@ export function itemLines(
     const last = merged.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const outside = works.reduce((n, r) => n + summarize(r).outsideFailures, 0)
     const text = state === 'done'
-      ? `done${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, ...artifactsOf(last)].join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
+      ? `done${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, finalArtifactOf(last)].filter(Boolean).join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
       : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}` : 'todo: nobody'
     lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }

@@ -339,6 +339,62 @@ const merged = (work: WorkRecord, merge: boolean, state: 'applied' | 'failed' = 
   return { ...work, events, state: fold(['task', 'publish'], events) }
 }
 
+test('a done Item names only the Work\'s final Artifact, the merged change', () => {
+  const dir = '/project'
+  const admitted: WorkEvent[] = [{ type: 'admitted', seq: 0, at: '2026-11-09T00:00:00.000Z', caller, specId: id('spec'), source: { kind: 'workflow-file' }, item: { id: 'df-3', repository: dir } }]
+  const work: WorkRecord = { id: 'work:merged', events: admitted, state: fold(['task', 'publish'], admitted) }
+  const A = id('implementation change')
+  const V1 = id('checks verdict')
+  const events: WorkEvent[] = merged(work, true).events.map((event) => event.type === 'terminal'
+    ? { ...event, results: { 'implement.change': A, 'docs.change': CHANGE, 'checks.checks': V1, 'plan.plan': A } }
+    : event)
+  const record: WorkRecord = { ...work, events, state: fold(['task', 'publish'], events) }
+
+  assert.equal(
+    itemLines(parseStatus(STATUS), dir, [record], () => [], { item: 'df-3' })[0],
+    `[x] df-3 The status of a project - done; last ${work.id}, ${CHANGE}`,
+  )
+})
+
+test('a done Item with a report names the report', () => {
+  const dir = '/project'
+  const workId = 'work:research'
+  const R = id('research report')
+  const S = id('research sources')
+  const at = '2026-11-09T01:00:00.000Z'
+  const events: WorkEvent[] = [
+    { type: 'admitted', seq: 0, at, caller, specId: id('research spec'), source: { kind: 'workflow-file' }, item: { id: 'df-3', repository: dir } },
+    { type: 'dispatched', seq: 1, at, stepId: 'investigate', attemptId: 'a:1', executor: 'worker', capability: 'research', selected: 'fake/research', candidates: [], inputs: {} },
+    { type: 'observed', seq: 2, at, stepId: 'investigate', attemptId: 'a:1', status: 'succeeded', outputs: { report: R, sources: S }, usage: { state: 'unknown' } },
+    { type: 'dispatched', seq: 3, at, stepId: 'citations', attemptId: 'a:2', executor: 'verifier', capability: 'citations', selected: 'fake/citations', candidates: [], inputs: { subject: S } },
+    { type: 'verified', seq: 4, at, stepId: 'citations', attemptId: 'a:2', subject: S, criteria: 'citations', verdict: 'pass', reason: 'sources checked' },
+    { type: 'terminal', seq: 5, at, outcome: 'succeeded', reason: 'accepted', results: { 'investigate.report': R, 'investigate.sources': S } },
+  ]
+  const record: WorkRecord = { id: workId, events, state: fold(['investigate', 'citations', 'accept'], events) }
+  const line = itemLines(parseStatus(TICKED), dir, [record], () => [], { item: 'df-3' })[0]!
+
+  assert.equal(line, `[x] df-3 The status of a project - done; last ${workId}, ${R}`)
+  assert.ok(!line.includes(S), 'the done line omits the sources Artifact')
+})
+
+test('a done Item falls back to the last result when the merge has no intended event', () => {
+  const dir = '/project'
+  const admitted: WorkEvent[] = [{ type: 'admitted', seq: 0, at: '2026-11-09T00:00:00.000Z', caller, specId: id('spec'), source: { kind: 'workflow-file' }, item: { id: 'df-3', repository: dir } }]
+  const work: WorkRecord = { id: 'work:merged', events: admitted, state: fold(['task', 'publish'], admitted) }
+  const A = id('earlier result')
+  const B = id('last result')
+  const published = merged(work, true)
+  // Older records can retain the applied effect without its intended event.
+  const events: WorkEvent[] = published.events.filter((event) => event.type !== 'effect-intended')
+    .map((event) => event.type === 'terminal' ? { ...event, results: { 'x.change': A, 'y.change': B } } : event)
+  const record: WorkRecord = { ...published, events, state: { ...published.state, results: { 'x.change': A, 'y.change': B } } }
+
+  assert.equal(
+    itemLines(parseStatus(STATUS), dir, [record], () => [], { item: 'df-3' })[0],
+    `[x] df-3 The status of a project - done; last ${work.id}, ${B}`,
+  )
+})
+
 test('an Item is done when a Work naming it was merged into dev, though STATUS.md still says [ ]; an unmerged or failed publish does not', async () => {
   const dir = repository(STATUS)
   const { controller, table, task, admit } = setup()
