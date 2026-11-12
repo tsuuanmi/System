@@ -22,7 +22,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   given), preflight, resolve, and the direct Task's implicit spec. Pure.
 - [src/record.ts](src/record.ts) — event and state schemas and the pure `fold`.
 - [src/registry.ts](src/registry.ts) — `Capabilities`: register Workers and
-  verifiers, route by capability, then by quota headroom, with a reason for
+  verifiers, route by capability, then (for a step's `prefer` capability) by preference, then by quota headroom, with a reason for
   every candidate. The ranking is [src/headroom.ts](src/headroom.ts) (pure);
   the rule is in the [agents README](../agents/README.md#routing-by-headroom).
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,

@@ -217,8 +217,10 @@ the bundle's accounts, see above):
       - ref: web/chatgpt/default
         runtime: web
         site: chatgpt
-        capabilities: [research, web-search]
+        capabilities: [research, web-search, research.web]
 ```
+
+Give a web account `research.web` so the research Workflow prefers it; without it the account is used like any other.
 
 The ref is `web/<site>/<name>` with `<site>` equal to the entry's `site`, which picks the shipped UI map and the Site's
 defaults (an unknown site is refused with the list of shipped sites: today `chatgpt`).

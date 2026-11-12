@@ -53,7 +53,7 @@ one form:
 
 | Form | Fields | Meaning |
 |---|---|---|
-| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry` (with `rerunUnchanged`, sc-9), optional `freeze` (a `$steps.<step>.<slot>` change whose files are put back, as it left them, into this step's first output when it is recorded; dg-10), optional `mayBeEmpty` | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
+| Worker step | `capabilities`, `outputs`, optional `inputs` (`name: $work.input` or `$steps.<step>.<slot>`), optional `instructions`, optional `retry` (with `rerunUnchanged`, sc-9), optional `freeze` (a `$steps.<step>.<slot>` change whose files are put back, as it left them, into this step's first output when it is recorded; dg-10), optional `mayBeEmpty`, optional `prefer` (a capability that ranks first without being required: the Accounts that can take the step now and have it are chosen from alone, if any; ro-12) | one Worker attempt; each output slot must name a stored Artifact; `instructions` (up to 8 KiB) tell the Worker what this step needs, such as an output format |
 | verify step | `verify: {capability, subject, criteria, inputs?, holdInconclusive?}` | one verifier call on the exact Artifact the `subject` reference resolves to; `inputs` (as a Worker step's) hands it further exact Artifacts, such as the report beside the sources; `holdInconclusive: true` holds the Work at this step for the operator on an `inconclusive` verdict (see Operator decisions) |
 | effect step | `effect: {capability, subject, requires: [verify steps], params?}` | one external effect of the exact subject, only after every required verdict on that subject is `pass`; recorded as intent, then outcome |
 | accept step | `accept: {requires: [verify steps], approval?: operator}` | the terminal decision; at most one, and last |
@@ -94,7 +94,7 @@ The repository's files are [`workflows/feature.yaml`](../../workflows/feature.ya
 only in capabilities, output slots, instructions and verifier; Brainstorm has
 none, and routes its two independent proposals to different providers through
 role capabilities (`brainstorm.idea-a`, `brainstorm.idea-b`) that the profile
-gives to one account each. Since RES-0008 the two proposals also take
+gives to one account each. `prefer` ranks the Accounts with a role first without requiring it (research.yaml's `investigate` prefers `research.web`, given to web accounts). Since RES-0008 the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
 the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
