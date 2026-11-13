@@ -46,9 +46,14 @@ steps:
       1. Goal: what changes for a user, in two or three sentences.
       2. Changes: each file to change or add, what to do there, and why.
       3. Tests: each test to write first, with its file, what it calls and what
-         it asserts, so that it fails now and passes once the change is made;
-         then each existing test that asserts the behaviour you change, which
-         the implement step must update (grep the tests for it).
+         it asserts, so that it fails now and passes once the change is made.
+         Then, under the heading "Existing tests that pin the changed
+         behaviour", every existing test that asserts a name, message, field or
+         behaviour the Item changes or removes, each with its file and what to
+         do (update or delete). Find them by searching packages/*/tests, tests
+         and test-support for each name, message and field the change touches
+         (grep), and list the searches you ran. If there are none, write "none
+         found" and the searches.
       4. Docs: each doc or README whose text the change makes stale.
       5. Risks and what is out of scope.
       Name exact files, functions and commands; quote the code you refer to.
@@ -61,8 +66,11 @@ steps:
     retry: { onFail: [red, checks-code.checks, implement], max: 1 }
     outputs: [change]
     instructions: |
-      Write the tests listed under "Tests" in the plan, and only those: no
-      code under test. Run them and make sure each one fails now, for the
+      Write the tests listed under "Tests" in the plan, and update or delete
+      the existing tests listed under "Existing tests that pin the changed
+      behaviour", so that no existing test contradicts the plan (the implement
+      step cannot edit your files). Search the tests yourself for any the plan
+      missed. Write no code under test. Run them and make sure each one fails now, for the
       reason the plan gives, not because of a typo or a missing import. Leave
       them failing. The red check then runs the repository's checks on your
       change: each check marked `red: pass` in .system/checks.yaml (such as
@@ -104,8 +112,7 @@ steps:
       and end your final message with a line "OBJECTION: <test file and name>:
       <why it is wrong>"; that reopens the tests step with your reason.
       The checkout holds the tests from the plan, which fail now (the red
-      check ran them). Make the changes in the plan so that they pass. You may add new test files, and update tests that already
-      existed and assert the behaviour the plan changes. Run the repository's
+      check ran them). Make the changes in the plan so that they pass. You may add new test files. Run the repository's
       checks that your change touches. On a second attempt, the failed check
       is in your input: fix what it names.
   # Tests frozen: implement's change against the tests step's commit.

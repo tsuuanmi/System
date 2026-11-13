@@ -11,8 +11,8 @@ step without it outputs only files (the `tests` and `docs` steps declare it).
 See [GLOSSARY.md](../GLOSSARY.md) for the term.
 
 - [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, `code.develop`, read-only: what to
-  change, where, which tests prove it) → `tests` (`code.tests`,
-  `tier.standard`: the plan's tests, failing, before any code; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
+  change, where, which tests prove it, and the existing tests that pin the changed behaviour, ro-14) → `tests` (`code.tests`,
+  `tier.standard`: the plan's tests, failing, before any code, and the existing tests updated or deleted; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
   `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
   and a `red: fail` one fails on the tests' change (a timed-out, killed or crashed check, or one failing only in tests the step did not write, is not red: ro-3, [red-v1](../packages/verifiers/README.md)); an `inconclusive` verdict holds the Work before `implement`: approve continues, deny fails) → `implement`
   (`code-write`, `code.develop`: make them pass; `freeze`s the tests step's files: an edit to one is undone when its change is recorded (dg-10); one `retry` per `tests-frozen`, `checks-code` and `publish` (a publish refused for a conflict with the base or a failing check on the merge reopens `implement` on the base's new tip, sc-7; version 4), and a no-change result after a failing `checks-code` runs that check again once on the same change (`rerunUnchanged`, sc-9); a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
