@@ -241,6 +241,23 @@ releases `8cc1e2c` and `430ae55`): **0 Outside failures in 6 Items.**
   docs 4,296 lines, 11 over 4,285 after ro-11's rename procedure; the
   `claim` command decision (ro-6) is the operator's.
 
+Review of 2026-11-13 (operator), what returns most next:
+- **Return is the operator's time** (touches, hours watching); throughput
+  and quality must not drop. The bottleneck is no longer a Work but a person
+  writing Items, submitting, waiting and releasing.
+- **Next milestone: the scheduled session** of section 4, after the RO
+  measure. Its four remaining Items prepare it: ro-13 (MCP across an update),
+  ro-14 (the plan names the tests to change), ro-15 (Satisfied), ro-16 (docs
+  under budget; the real research Work work:90e7b0fc ran on
+  `web/chatgpt/default` and passed citations, so the web Runtime needs no fix).
+- **The scheduled session** drives `todo` Items into `dev` only; a Release
+  stays the operator's (ADR-0008) unless the operator hands it over for one
+  session. It takes only Items the operator wrote and proposes new ones in its
+  report.
+- **Repositories:** System and DNA only, for now.
+- **`claim` stays** (a scheduled session needs it); 3,882 stays the budget
+  baseline, with no target below it.
+
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
