@@ -218,6 +218,10 @@ defects since fixed, 2 of the change, 2 denied on a stale base):
   never failed and its 8 inconclusive verdicts all waited on the operator.
 - **Tests and implement stay on different Providers.** A contract of
   interfaces in the plan waits until a Work in the measure is out of sync.
+  *Reversed 2026-11-13 (operator):* ro-7 and both ro-15 Works failed on
+  tests and implement disagreeing, so the tests step takes `code.develop`
+  (Claude Code) like plan and implement; `code.tests` (Codex) returns once
+  feature.yaml is stable.
 - **Artifacts stay as they are;** `system status` shows the final one (ro-10).
 - **The web Runtime is used** (ro-12): research's investigate step prefers it
   (research 197 of 224 web attempts succeeded; none since 2026-11-08), and its
