@@ -20,14 +20,14 @@ function caps(spec: ReturnType<typeof resolve>, id: string): string[] {
 }
 
 const cases = [
-  { file: 'feature.yaml', with: ['plan', 'implement', 'docs'], without: ['tests'] },
-  { file: 'feature-research.yaml', with: ['plan', 'implement', 'docs'], without: ['research', 'tests'] },
+  { file: 'feature.yaml', with: ['plan', 'tests', 'implement', 'docs'], without: [] },
+  { file: 'feature-research.yaml', with: ['plan', 'tests', 'implement', 'docs'], without: ['research'] },
   { file: 'software-engineering.yaml', with: ['implement'], without: [] },
   { file: 'software-engineering-docs.yaml', with: ['implement'], without: ['docs-impact'] },
   { file: 'hygiene.yaml', with: ['plan', 'implement'], without: ['scout-docs', 'scout-code', 'scout-tree'] },
 ]
 
-test('code.develop is on the plan, implement and docs steps of the code Workflows, and on no other step', () => {
+test('code.develop is on the plan, tests, implement and docs steps of the code Workflows, and on no other step', () => {
   for (const { file, with: yes, without: no } of cases) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
     for (const id of yes) assert.ok(caps(spec, id).includes('code.develop'), `${file}:${id}`)
@@ -63,22 +63,22 @@ test('no shipped Workflow outputs a checkout without code-write', () => {
   }
 })
 
-test('the tests step keeps code.tests and never asks for code.develop', () => {
+test('the tests step asks for code.develop, as plan and implement (operator, 2026-11-13)', () => {
   for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
-    assert.deepEqual(caps(spec, 'tests'), ['code-write', 'code.tests', 'tier.standard'])
+    assert.deepEqual(caps(spec, 'tests'), ['code-write', 'code.develop', 'tier.standard'])
   }
 })
 
-test('Claude-like and Codex-like Accounts split the steps', () => {
+test('Claude-like Accounts take every Worker step and Codex-like ones none (operator, 2026-11-13)', () => {
   const claude = new Set(['code-write', 'code.develop', 'code.docs', 'research', 'web-search', 'tier.standard', 'tier.economy'])
   const codex = new Set(['code-write', 'code.tests', 'tier.standard', 'tier.economy'])
   for (const file of ['feature.yaml', 'feature-research.yaml']) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
     const workerSteps = spec.steps.filter((step) => 'capabilities' in step)
     const runnable = (step: (typeof workerSteps)[number], account: Set<string>) => step.capabilities.every((capability) => account.has(capability))
-    assert.deepEqual(workerSteps.filter((step) => runnable(step, codex)).map((step) => step.id), ['tests'])
-    assert.deepEqual(workerSteps.filter((step) => runnable(step, claude)).map((step) => step.id), workerSteps.filter((step) => step.id !== 'tests').map((step) => step.id))
+    assert.deepEqual(workerSteps.filter((step) => runnable(step, codex)).map((step) => step.id), [])
+    assert.deepEqual(workerSteps.filter((step) => runnable(step, claude)).map((step) => step.id), workerSteps.map((step) => step.id))
   }
 })
 

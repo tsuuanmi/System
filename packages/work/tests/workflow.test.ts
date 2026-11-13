@@ -378,7 +378,7 @@ for (const file of ['feature.yaml', 'feature-research.yaml']) {
     assert.match(step('implement').instructions, /frozen/)
     assert.equal(step('implement').freeze, '$steps.tests.change')
     assert.match(step('tests').instructions, /typecheck/)
-    assert.deepEqual(step('tests').capabilities, ['code-write', 'code.tests', 'tier.standard'])
+    assert.deepEqual(step('tests').capabilities, ['code-write', 'code.develop', 'tier.standard'])
     assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1', holdInconclusive: true })
     assert.deepEqual(step('implement').dependsOn, ['red'])
     assert.equal(step('implement').inputs.red, undefined)

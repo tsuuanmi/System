@@ -4,7 +4,8 @@
 # a change made in stages, each by the Worker
 # that suits it, handing over only Artifacts. plan writes what to change, where,
 # and which tests prove it; tests writes those tests from the plan alone, before
-# any code, on its own Account (the role code.tests); the red check proves they
+# any code (the role code.develop, as plan and implement: operator, 2026-11-13, until the
+# steps are stable enough to split again onto code.tests); the red check proves they
 # fail where they should and nothing else breaks; implement makes them pass
 # without changing them (the controller puts the files the tests step wrote back when it records the change, dg-10; tests-frozen is the backstop); docs brings the docs in line
 # (the role code.docs); the plan, implement and docs steps carry the role code.develop; the repository's checks verify the result and System
@@ -59,7 +60,7 @@ steps:
       Name exact files, functions and commands; quote the code you refer to.
   - id: tests
     dependsOn: [plan]
-    capabilities: [code-write, code.tests, tier.standard]
+    capabilities: [code-write, code.develop, tier.standard]
     inputs:
       task: $work.input
       plan: $steps.plan.plan
