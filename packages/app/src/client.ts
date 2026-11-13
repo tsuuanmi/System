@@ -4,6 +4,7 @@
  * and talks to the Host on `$DSH_HOME/system/host.sock`.
  */
 // By path, not by package: declaring @system/host here would change the lockfile.
+import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Caller } from '@system/work'
@@ -30,9 +31,12 @@ export async function openCurrent(home: string, who: Caller, { onCode, ...option
     return await connectHello(socketPath(home), { version: VERSION, ...hello })
   } catch (error) {
     if (!(error instanceof RpcError) || error.code !== REFUSED) throw error
-    const lib = join(codeRoot(), 'packages', 'host', 'lib')
+    // Node pins the target of a symlinked import path for the life of the process, so importing through `current`
+    // would keep loading the release the link held at the first import. Import the real path, resolved on every call.
+    let lib: string
     let current: typeof import('../../host/lib/index.js')
     try {
+      lib = join(realpathSync(codeRoot()), 'packages', 'host', 'lib')
       current = await import(pathToFileURL(join(lib, 'index.js')).href)
     } catch {
       throw error

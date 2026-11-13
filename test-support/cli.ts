@@ -61,11 +61,10 @@ export interface SystemCli {
  * A throwaway DSH home (or `home`, such as the operator's own) and a runner for it.
  * A socket path is limited to about 100 bytes, and tmpdir() may be longer.
  */
-export function systemCli(prefix: string, base: Record<string, string> = { SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human' }, home = mkdtempSync(join(existsSync('/tmp') ? '/tmp' : tmpdir(), `${prefix}-`))): SystemCli {
+export function systemCli(prefix: string, base: Record<string, string> = { SYSTEM_OPERATOR_ID: 'tester', SYSTEM_CALLER: 'human' }, home = mkdtempSync(join(existsSync('/tmp') ? '/tmp' : tmpdir(), `${prefix}-`)), entry = join(repo, 'bin', 'system')): SystemCli {
   const env = { ...process.env, DSH_HOME: home, ...base }
   const socket = join(home, 'system', 'host.sock')
   const hosts: RunningHost[] = []
-  const entry = join(repo, 'bin', 'system')
 
   async function stop(): Promise<void> {
     await Promise.all(hosts.splice(0).map((host) => host.stop()))

@@ -16,7 +16,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema, SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z, type Caller } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { RpcError, tableOf, type Client, type Methods } from '../../host/lib/index.js'
+import { NotRunning, RpcError, tableOf, type Client, type Methods } from '../../host/lib/index.js'
 import { operations, type Services } from '../../host/lib/operations.js'
 import { explain, operatorId } from './io.ts'
 import { readWorkflowFile } from './remote.ts'
@@ -153,7 +153,9 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
   const failed = (error: unknown): Error => {
     if (!(error instanceof RpcError)) session = undefined
     const failure = explain(error, home)
-    return failure instanceof Error ? failure : new Error(String(failure))
+    if (!(failure instanceof Error)) return new Error(String(failure))
+    // A lost connection says why (the Host stopped or was restarted), so a session can tell it from a Host that never ran.
+    return error instanceof NotRunning && failure !== error ? new Error(`${failure.message} [${error.message}]`, { cause: error }) : failure
   }
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: current }))
   /** Run a Host call for a request: a failure is the request's error. */
