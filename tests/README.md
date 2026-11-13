@@ -12,6 +12,8 @@ home (so its Host lock and socket), its repositories and its ports, and shares
 nothing else.
 
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
+- [mcp-update.test.ts](mcp-update.test.ts) — one running `system mcp` calls
+  tools across two atomic install-link switches and real Host upgrades.
 - [host-process.test.ts](host-process.test.ts) — H4a: `bin/system host` as a
   child process: `host.hello` and `host.status` on `host.sock`, a second Host
   refused, the Work commands reaching the running Host, SIGTERM and SIGINT
