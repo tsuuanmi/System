@@ -93,7 +93,7 @@ export function publishHarness(prefix: string) {
     writeFileSync(SE, merging.replace('      params: { merge: true }\n', ''))
     copyFileSync(join(repo, 'workflows', 'code-checks.yaml'), join(home, 'code-checks.yaml'))
     for (const [name, value] of [['CLAUDE_CODE_OAUTH_TOKEN', 'fake'], ['GITHUB_TOKEN', 'ghs_test']]) {
-      assert.equal(cli.run(['credentials', 'set', name!], { input: `${value}\n` }).status, 0)
+      assert.equal(cli.run(['credentials', 'set', name!], { input: `${value}\n`, terminal: true }).status, 0)
     }
   })
 

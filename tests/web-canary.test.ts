@@ -30,7 +30,7 @@ before(async () => {
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 `)
   await cli.start()
-  assert.equal(cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake-token\n' }).status, 0)
+  assert.equal(cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake-token\n', terminal: true }).status, 0)
   await cli.start()
 })
 after(async () => {

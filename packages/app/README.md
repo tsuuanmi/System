@@ -43,7 +43,7 @@ prints `system: the System Host is not running for <home>: ...` and exits 1.
 
 Work exit codes: `0` succeeded, `1` failed or refused, `3` held for the
 operator, `4` not terminal, `5` cancelled. Each call records its caller: `human` when stdin is
-a terminal, otherwise `agent`, unless `SYSTEM_CALLER` says `human` or `agent`.
+a terminal, otherwise `agent`; `SYSTEM_CALLER=agent` lowers a terminal to `agent`, nothing raises a pipe to `human` ([ADR-0011](../../docs/decisions/ADR-0011-human-caller-needs-a-terminal.md)).
 
 - [src/index.ts](src/index.ts) — the Cordis plugin: wiring to DSH services for
   `doctor` and `system host`, which are the only commands of its program

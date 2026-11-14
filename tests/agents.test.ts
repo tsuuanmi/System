@@ -48,7 +48,7 @@ before(async () => {
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
   // The Host reads its credentials when it starts: store the token, then start it again.
   await cli.start()
-  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
+  assert.equal(cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake-token\n', terminal: true }).status, 0)
   await cli.start()
   gitRepo = mkdtempSync(join(home, 'repo-'))
   const git = (...args: string[]) => execFileSync('git', ['-C', gitRepo, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
@@ -107,7 +107,7 @@ test('cancel from another process stops the attempt, keeps its partial tree, and
   assert.equal(contested.status, 1)
   assert.match(contested.stderr, /is already being run/)
 
-  const cancel = system(['work', 'cancel', workId, '--reason', 'switch accounts', '--wait'])
+  const cancel = cli.run(['work', 'cancel', workId, '--reason', 'switch accounts', '--wait'], { terminal: true })
   assert.equal(cancel.status, 0, cancel.stderr)
   assert.match(cancel.stdout, /cancellation requested from the running host/)
   assert.equal((await submit.done).status, 5, 'the following submit exits 5: cancelled')

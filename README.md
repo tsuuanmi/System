@@ -105,7 +105,7 @@ A step asks for a model tier with the capability `tier.economy`,
 `tier.standard` or `tier.frontier`.
 
 Environment variables: `DSH_HOME` (default `~/.dsh`), `SYSTEM_OPERATOR_ID`
-(default: the OS user), `SYSTEM_CALLER` (`human` or `agent`; labels a call,
+(default: the OS user), `SYSTEM_CALLER=agent` (lowers a call to agent; cannot make one human,
 never authorises an approval), `SYSTEM_REAL_AGENTS=1` (runs the
 credential-gated tests in `tests/real-agents.test.ts`; `SYSTEM_REAL_WEB=1`
 those in `tests/real-web.test.ts`). Launcher flags go

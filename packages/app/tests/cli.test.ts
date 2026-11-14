@@ -57,3 +57,44 @@ test('claim records a claim on an Item of the repository', async () => {
   assert.deepEqual(seen, [['/r', 'df-24', true]])
   assert.match(result.out, /df-24 claimed by tan/)
 })
+
+const specOf = (verifyId: string) => ({ state: 'stored', envelope: { content: { steps: [{ id: 'implement', worker: {} }, { id: verifyId, verify: { capability: 'checks' } }] } } })
+
+/** A fake Host for `work retry`: the spec has a verify step `checks`; `retried` collects the steps run again. */
+function retryHost(retried: string[]) {
+  return {
+    work: () => ({ get: async (id: string) => record(id, 'failed', { specId: 'sha256:spec' }), retry: async (_id: string, _w: unknown, _r: string, step: string | undefined) => { retried.push(String(step)); return 'detached' } }),
+    artifacts: () => ({ get: async () => specOf('checks') }),
+  }
+}
+
+async function retry(args: string[], terminal: boolean) {
+  const retried: string[] = []
+  let confirmed = 0
+  const io = { out() {}, err() {}, confirmHuman: async (_p: string, _e: string) => { if (!terminal) throw new Error('this decision needs a human at a terminal'); confirmed++; return 'tan' } } as any
+  let run: Run | undefined
+  const program = buildProgram(retryHost(retried) as unknown as ClientHost, io, (r) => { run = r })
+  program.exitOverride()
+  await program.parseAsync(['node', 'system', 'work', 'retry', 'work:a', ...args])
+  return { run: run!, retried, confirmed: () => confirmed }
+}
+
+test('retry of a verify step without a terminal is refused, and run nothing', async () => {
+  const { run, retried } = await retry(['--step', 'checks'], false)
+  await assert.rejects(run(), /needs a human at a terminal/)
+  assert.deepEqual(retried, [])
+})
+
+test('retry of a verify step asks the typed confirmation of a human, then retries', async () => {
+  const { run, retried, confirmed } = await retry(['--step', 'checks'], true)
+  await run()
+  assert.equal(confirmed(), 1)
+  assert.deepEqual(retried, ['checks'])
+})
+
+test('retry of a Worker step needs no confirmation', async () => {
+  const { run, retried, confirmed } = await retry(['--step', 'implement'], false)
+  await run()
+  assert.equal(confirmed(), 0)
+  assert.deepEqual(retried, ['implement'])
+})

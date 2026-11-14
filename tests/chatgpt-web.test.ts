@@ -18,6 +18,8 @@ const serve = join(repo, 'packages', 'web-driver', 'tests', 'serve-fake-chatgpt.
 const cli = systemCli('system-web')
 const { home } = cli
 const system = (args: string[], input?: string) => cli.run(args, { input })
+/** Logging in and rechecking are a human's: a pseudo-terminal, which merges stderr into stdout (ADR-0011). */
+const human = (args: string[], env?: Record<string, string>) => cli.run(args, { terminal: true, env })
 /** The fake sites run in their own processes: the CLI runner blocks this one while it waits. */
 const servers: ChildProcess[] = []
 /** A fake site with these options; its origin. */
@@ -70,7 +72,7 @@ const cookies = (dir: string) => {
 
 test('login imports a cookie file, reports the signed-in state and prints no cookie value', { skip, timeout: 120_000 }, () => {
   const dir = mkdtempSync(join(home, 'cookies-'))
-  const ran = system(['workers', 'login', 'web/chatgpt/default', '--cookies', cookies(dir)])
+  const ran = human(['workers', 'login', 'web/chatgpt/default', '--cookies', cookies(dir)])
   assert.equal(ran.status, 0, ran.stderr + ran.stdout)
   assert.match(ran.stdout, /imported 1 cookie\(s\)/)
   assert.match(ran.stdout, /web\/chatgpt\/default: signed in/)
@@ -79,13 +81,13 @@ test('login imports a cookie file, reports the signed-in state and prints no coo
 })
 
 test('login says so when the page still shows a sign-in wall, and refuses a manual sign-in without a display', { skip, timeout: 120_000 }, () => {
-  const walled = system(['workers', 'login', 'web/chatgpt/anon', '--cookies', cookies(mkdtempSync(join(home, 'cookies-')))])
+  const walled = human(['workers', 'login', 'web/chatgpt/anon', '--cookies', cookies(mkdtempSync(join(home, 'cookies-')))])
   assert.equal(walled.status, 1)
   assert.match(walled.stdout, /not signed in: .*sign-in wall/)
-  const manual = cli.run(['workers', 'login', 'web/chatgpt/default'], { env: { DISPLAY: '' } })
+  const manual = human(['workers', 'login', 'web/chatgpt/default'], { DISPLAY: '' })
   assert.equal(manual.status, 1)
-  assert.match(manual.stderr, /no display.*--cookies/)
-  assert.equal(system(['workers', 'login', 'codex/default']).status, 1)
+  assert.match(manual.stdout, /no display.*--cookies/)
+  assert.equal(human(['workers', 'login', 'codex/default']).status, 1)
 })
 
 test('a Work runs on the account: the answer fills the slot and the exchange is a conversation', { skip, timeout: 120_000 }, () => {
@@ -101,10 +103,10 @@ test('a Work runs on the account: the answer fills the slot and the exchange is 
 })
 
 test('recheck passes on the signed-in account; on the walled one it fails and `system workers` shows the quarantine and what to do', { skip, timeout: 120_000 }, () => {
-  const passed = system(['workers', 'recheck', 'web/chatgpt/default'])
+  const passed = human(['workers', 'recheck', 'web/chatgpt/default'])
   assert.equal(passed.status, 0, passed.stderr + passed.stdout)
   assert.match(passed.stdout, /web\/chatgpt\/default: ready: .*nothing was sent/)
-  const failed = system(['workers', 'recheck', 'web/chatgpt/anon'])
+  const failed = human(['workers', 'recheck', 'web/chatgpt/anon'])
   assert.equal(failed.status, 1)
   assert.match(failed.stdout, /web\/chatgpt\/anon: not ready \(needs-sign-in\)/)
   assert.match(system(['workers']).stdout, /web\/chatgpt\/anon\s+unavailable .*- needs sign-in since \d\d:\d\d: run `system workers login web\/chatgpt\/anon --remote`, then `system workers recheck web\/chatgpt\/anon`/)
@@ -114,7 +116,7 @@ test('recheck passes on the signed-in account; on the walled one it fails and `s
 // The remote login needs a VNC server (x11vnc or x0vncserver) as well.
 const skipRemote = skip || (findVnc() ? false : 'neither x11vnc nor x0vncserver is on PATH (docs/operations/runbook.md)')
 test('login --remote prints the tunnel and the address, serves noVNC behind the token, and Save reports the state', { skip: skipRemote, timeout: 120_000 }, async () => {
-  const running = cli.runAsync(['workers', 'login', 'web/chatgpt/default', '--remote'])
+  const running = cli.runAsync(['workers', 'login', 'web/chatgpt/default', '--remote'], { terminal: true })
   try {
     let url: string | undefined
     for (const end = Date.now() + 60_000; !url && Date.now() < end;) {
