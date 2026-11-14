@@ -196,7 +196,7 @@ legacy driver turn and the account option `procedures` are gone, see the
   runs it on the hostile Site ([tests/fake-other.ts](tests/fake-other.ts),
   [ui/fake-other.ui.yaml](ui/fake-other.ui.yaml)) and on ChatGPT's map and fake page. Outside the binding model today, found by the hostile Site and ChatGPT's
   map, and recorded with the verdict in
-  [RES-0009](../../docs/research/RES-0009-web-driver-inspection.md#6-result-of-the-hostile-site).
+  [RES-0009](../../docs/research/RES-0009-web-driver-inspection.md#3-result-of-the-hostile-site).
 
 ## Used by the Runtime, not in System 1
 

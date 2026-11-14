@@ -91,12 +91,10 @@ fallback.
    opens; the operator signs in, clears any check by hand and presses **Save**.
    The steps are in the [web-worker README](../../packages/web-worker/README.md).
    System never solves or clicks a challenge; the human does, in the viewer.
-   **Why VNC (reversed, W9).** W2 built a CDP screencast of one tab with
-   CDP-dispatched input. The operator's evidence of 2026-11-07 refuted it: a
-   restored tab left the screencast blank, its canvas did not fit the window,
-   and Cloudflare Turnstile looped on the dispatched clicks. `x11vnc` 0.9.16
-   has no unix-socket-only mode, so it runs once per connection with `-inetd`
-   behind a socket the Host listens on: no TCP port is opened at all.
+   **Why VNC (reversed, W9).** W2's CDP screencast of one tab was refuted on
+   2026-11-07 (blank restored tab, canvas not fitting, Turnstile looping on
+   dispatched clicks). `x11vnc` has no unix-socket-only mode, so it runs once per
+   connection with `-inetd` behind a socket the Host listens on: no TCP port opens.
 3. **One attempt.**
    1. Open a **temporary chat** (W7: System 1's driver turns the page's own
       Temporary chat control on; `?temporary-chat=true` is not used, see item
@@ -142,62 +140,32 @@ fallback.
    keeps a screenshot as partial output; it never hangs and never tries to get
    round a check. The page is System 1's: its UI map, UI engine and driver
    (item 7), not a selector table of this repository.
-6. **A genuine browser (W5, 2026-11-07).** Evidence from the real site: a
-   signed-in account was reported as challenged, and on another Cloudflare
-   Turnstile looped however often the operator ticked it, because Playwright's
-   defaults advertised automation (`--enable-automation`, `navigator.webdriver`)
-   on an old Chromium. W5 ports System 1's principle (`docs/design/browser-runtime.md`,
-   "a genuine browser, headed but invisible"): remove automation leaks only; no
-   user-agent override, no fingerprint spoofing, never solve a challenge. So
-   `patchright-core` launches Chrome headed, on the private Xvfb, with System 1's
-   `CHROME_ARGS` and `ignoreDefaultArgs`, a real 1280x900 window and the last
-   session restored. Page state follows System 1's `checkAuth` (a **visible**
-   composer is signed in; a challenge counts only while visible). Before typing,
-   **Chat** is pressed in the "Composer mode" group, and a composer whose label
-   names Work is refused: Work spends the Codex quota. Not verified against the
-   real site from here: the operator runs it.
-7. **System 1's driver, ported whole (W7, 2026-11-07; operator's decision,
-   said twice).** System 1 already works against chatgpt.com, so its logic is
-   ported, not written again. W5 and W6 re-implemented parts with a small
-   selector table and met problems System 1 had fixed: a stale send selector,
-   `?temporary-chat=true` navigation aborted by the site, and a false
-   challenge. `packages/web-driver` holds System 1's UI engine
-   (`packages/ui-ops`), its ChatGPT driver and UI map
-   (`packages/plugins/provider-chatgpt-web`) and the few parts of
-   `provider-core` and `libs` they import, each file headed with its source
-   path and commit, and the package README lists every difference. The
-   Runtime now only launches the browser, builds the prompt and records the
-   exchange; `checkAuth`, `open` (Chat mode, Temporary chat), `ask` and the
-   answer read are the driver's, and the remote login's Save check is its
-   `checkAuth`. What the driver reports goes to the attempt's log; self-heal
-   is off (no decision store exists). Not verified against the real site from
-   here: the operator's agent runs `SYSTEM_REAL_WEB=1 node --test
-   tests/real-web.test.ts` after the merge. That run (2026-11-07) worked
-   through the whole turn, but the answer was the page's rendered text, a code
-   block as its header and content with no fence, so no output block was
-   found. W8: the answer keeps its fences; where Copy does not give them, each
-   rendered code block is fenced again from the page (`pre code`, its header
-   as the info string).
-   Later findings from live runs (code fences breaking the output blocks, a
-   site-side generation error, a leaked `<escape>` token, the account circuit
-   breaker `ready | cooling | needs-sign-in | challenged` and `system workers
-   recheck`) are decided in code and described in the
+6. **A genuine browser (W5, 2026-11-07).** A signed-in account was reported as
+   challenged, and Cloudflare Turnstile looped on another, because Playwright's
+   defaults advertised automation. W5 ports System 1's principle ("a genuine
+   browser, headed but invisible"): remove automation leaks only; no user-agent
+   override, no fingerprint spoofing, never solve a challenge. Before typing,
+   **Chat** is pressed and a composer whose label names Work is refused: Work
+   spends the Codex quota. The code is in the
+   [web-worker README](../../packages/web-worker/README.md).
+7. **System 1's driver, ported whole (W7, 2026-11-07; operator's decision).**
+   System 1 already works against chatgpt.com; W5 and W6 re-implemented parts
+   with a small selector table and met problems it had fixed (a stale send
+   selector, `?temporary-chat=true` aborted by the site, a false challenge).
+   `packages/web-driver` holds its UI engine, ChatGPT driver and UI map, each
+   file headed with its source path and commit, and its README lists every
+   difference. The Runtime only launches the browser, builds the prompt and
+   records the exchange. Self-heal is off (no decision store exists). Later
+   findings from live runs are decided in code and described in the
    [web-worker README](../../packages/web-worker/README.md); git has the history.
 
 ## Tests and what is still to verify
 
-System 1's fake site (`packages/web-driver/tests/fake-chatgpt.ts`, ported with
-the driver, driven by `packages/web-worker/tests/chatgpt.test.ts` and
-`tests/chatgpt-web.test.ts`) covers send, wait and extract, a sign-in wall, a
-CAPTCHA page, the logged-out home, the site's error page, a composer on Work,
-a missing output block and cancel mid-answer, deterministically and without an
-account. The ported engine tests are in `packages/web-driver/tests`. `packages/web-worker/tests/remote-login.test.ts` covers the
-remote flow (token, frames, input, Save, Cancel, expiry, cleanup) and the
-private Xvfb. A headed Chrome that cannot start is a failure of these tests,
-not a skip (`test-support/headed.ts`; `SYSTEM_SKIP_HEADED=1` skips them on a
-host with no Xvfb): they were skipped when `dev` went red, because Chrome
-aborts with "Socket path too long" when `TMPDIR` is deep, as it is in the
-verifier's throwaway HOME, and the check passed without running them. A real run, gated by `SYSTEM_REAL_WEB=1`
+System 1's fake site (`packages/web-driver/tests/fake-chatgpt.ts`) and
+`packages/web-worker/tests` cover the exchange, the remote flow and the private
+Xvfb deterministically and without an account. A headed Chrome that cannot start
+is a failure, not a skip (`test-support/headed.ts`; `SYSTEM_SKIP_HEADED=1` skips
+them on a host with no Xvfb). A real run, gated by `SYSTEM_REAL_WEB=1`
 (`tests/real-web.test.ts`), is a Research Work on `chatgpt-web/default` whose
 sources the citation verifier checks.
 

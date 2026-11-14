@@ -497,7 +497,11 @@ work:2385b245, R4 work:8f2a0baa, R5 work:c41b7810 and the synthesis
 work:d9c19b94 (cm-8).
 
 Budget: active core at most 4,290 lines (+10% on RO's 3,900, ADR-0010); docs
-under 4,285 lines at CM's close.
+under 4,285 lines at CM's close. cm-8: 4,456 (41 files) → 4,284 (42): the new
+note RES-0012 is 61 lines, so 233 lines left that other docs say elsewhere (RES-0009's
+method tables, which git keeps; PROP-0005's history and test lists, the runbook's
+night-session, web-account, upgrade and status text, left to the prompt, the
+READMEs, host.md and the tests that pin them). No fact was lost.
 
 Order: cm-1 then cm-2; cm-3, cm-4, cm-5 and cm-6 in parallel; then cm-7 and
 cm-8.

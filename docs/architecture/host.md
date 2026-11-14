@@ -282,9 +282,8 @@ PLAN's growth budget.
 
 ### Running it
 
-`system init` installs the unit ([bin/README.md](../../bin/README.md));
-`system host` serves the operation table on `$DSH_HOME/system/host.sock`.
-Starting, stopping and diagnosis: the [operations runbook](../operations/runbook.md).
+`system init` installs the unit ([bin/README.md](../../bin/README.md)); the
+[operations runbook](../operations/runbook.md) covers starting, stopping and diagnosis.
 
 ## Guarantees and the tests that hold them
 

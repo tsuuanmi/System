@@ -43,11 +43,6 @@ contract covers effects.
 8. **Operator:** a Work status, actual effect outcome and reason remain
    explainable after recovery.
 
-Old `$DSH_HOME/system/control/*.lock`, `*.takeover` and `*.written` files are
-ignored by the Host; the [runbook](../operations/runbook.md#moving-to-the-install-df0b)
-has the operator delete them. The two SQLite and profile-config defects stay
-covered by `concurrency.test.ts`, which now runs through the Host.
-
 Current implementation is a **trusted, single-operator prototype**. This page
 addresses correctness and durability, **not** the deferred container/egress
 security program. See [Brainstorm contract](brainstorm-composition.md).
