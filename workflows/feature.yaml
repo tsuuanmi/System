@@ -79,7 +79,7 @@ steps:
       holdInconclusive: true
   - id: implement
     dependsOn: [red]
-    capabilities: [code-write, code.develop]
+    capabilities: [code-write, code.develop, tier.standard]
     retry: { onFail: [tests-frozen, checks-code.checks, publish], max: 1, rerunUnchanged: true }
     freeze: $steps.tests.change
     inputs:
