@@ -243,3 +243,45 @@ test('a Claude account reads the last rate_limit_event after the Host restarts',
   const after = await second.agents.quota('claude-code/restart')
   assert.deepEqual(after, before)
 })
+
+test('a Claude account reads the last rate_limit_event even when the CLI version is not verified', async (t) => {
+  const dir = tempDir('agents-restart-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const fake = fakeQuotaCli(join(dir, 'cli'), { kind: 'claude', version: '2.1.325', answer: { rate_limits_available: false, rate_limits: {} } })
+  const rows = new Map<string, unknown>()
+  const storageDomain = { open: async () => ({ table: () => ({
+    get: (key: string) => structuredClone(rows.get(key)),
+    put: async (key: string, value: unknown) => { rows.set(key, structuredClone(value)) },
+  }), close: async () => {} }) }
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema })
+  const task = await artifacts.put({ ...TASK_KIND, content: { instructions: 'observe quota' }, classification: 'local-private', producer: { type: 'operator', ref: 'test' } })
+  const stream = [
+    { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'seven_day', utilization: .77, status: 'allowed' } },
+    { type: 'result', subtype: 'success', result: 'done', is_error: false },
+  ].map((event) => JSON.stringify(event)).join('\n')
+  const mountAgain = async () => {
+    let worker!: WorkerPort
+    let agents: any
+    const effects: (() => () => void)[] = []
+    const services: Record<string, unknown> = {
+      storageDomain, artifacts, dshHomePath: (...parts: string[]) => join(dir, ...parts),
+      credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'token' }) },
+      capabilities: { registerWorker: (port: WorkerPort) => { worker = port; return () => {} } },
+      subprocess: { resolveExecutable: async () => fake.command, spawn: (spec: { argv: string[] }) => ({
+        done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: async () => true,
+        collected: { stdout: { readFrom: () => ({ text: spec.argv.includes('--version') ? '2.1.325 (Claude Code)' : stream }) } },
+      }) },
+    }
+    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = value }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
+      { accounts: [claude('claude-code/newer', { command: fake.command, claudeHome: join(dir, 'home') })] } as never)
+    return { worker, agents, unload: () => effects.forEach((fn) => fn()()) }
+  }
+  const first = await mountAgain()
+  const result = await first.worker.run({ workId: 'work:newer', attemptId: 'attempt:newer', stepId: 'task', capabilities: ['research'], inputs: { task: task.id }, outputs: [], signal: new AbortController().signal })
+  assert.equal(result.status, 'succeeded', result.reason)
+  const before = await first.agents.quota('claude-code/newer')
+  assert.equal(before.source, 'rate_limit_event', JSON.stringify(before))
+  assert.equal(before.windows.seven_day.percentUsed, 77)
+  assert.equal(before.unreadable, undefined)
+  first.unload()
+})

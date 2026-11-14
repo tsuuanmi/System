@@ -383,7 +383,8 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, 
     if (Object.keys(windows).length) fromEvents = { observedAt: seed.observedAt, windows }
   }
   const eventReading = (from: Observed): QuotaReport => ({ observedAt: new Date(from.observedAt).toISOString(), windows: { ...from.windows }, source: 'rate_limit_event' })
-  const noPlanLimits = (report: QuotaReport) => 'unreadable' in report && report.unreadable === NO_PLAN_LIMITS
+  // get_usage has no plan limits, or its CLI version is not verified: an attempt's events are the reading then.
+  const noPlanLimits = (report: QuotaReport) => 'unreadable' in report && (report.unreadable === NO_PLAN_LIMITS || /is not verified \(verified: /.test(report.unreadable))
   return {
     get() {
       if (cached && now() < cached.expiresAt) return Promise.resolve(cached.report)
