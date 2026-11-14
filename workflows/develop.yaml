@@ -2,15 +2,19 @@
 # required checks (the Sub-workflow code-checks.yaml) verify the exact result, System pushes that exact commit to
 # system/<work> and opens a draft pull request (never merges), and Work is
 # accepted on the verdict.
+# Satisfied (GLOSSARY, ro-15): when the Item already holds at the base, the Worker also writes the optional output `satisfied`
+# (the existing tests that show it); satisfied-check runs exactly those tests on the Task's base, the checks and the publish are
+# skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 3
+version: 4
 steps:
   - id: implement
     capabilities: [code-write, code.develop, tier.standard]
     inputs:
       task: $work.input
     outputs: [change]
+    optionalOutputs: [satisfied]
     # One automatic further attempt on the same change when the checks fail, and one on the base's new tip when the publish is refused for a conflict or a failing check on the merge (sc-7).
     retry: { onFail: [checks.checks, publish], max: 1 }
     instructions: |
@@ -26,13 +30,33 @@ steps:
       cherry-pick or git diff, then apply), resolve the conflicts, read the
       failure for what failed, and never give up the intent of the change.
 
+      Only when the Item already holds at your working directory's base, so that
+      there is nothing to change: leave the tree as it is and also write the
+      output "satisfied", a text file naming the existing tests that show it, one
+      per line as `<test file> "<test name>"` (the file relative to the
+      repository, the name as the test runner reports it). They are run on the
+      base, and a pass ends the Work Satisfied with nothing published. Write it
+      only when you have run those tests yourself and seen them pass, and never
+      when you changed anything: otherwise leave it out.
+
+  - id: satisfied-check
+    dependsOn: [implement]
+    when: $steps.implement.satisfied
+    result: satisfied
+    verify:
+      capability: code.required-checks
+      subject: $work.input
+      criteria: satisfied-tests-v1
+      inputs: { tests: $steps.implement.satisfied }
   - id: checks
     dependsOn: [implement]
+    unless: $steps.implement.satisfied
     uses: code-checks.yaml
     inputs:
       input: $steps.implement.change
   - id: publish
     dependsOn: [checks]
+    unless: $steps.implement.satisfied
     effect:
       capability: git.publish
       subject: $steps.implement.change
@@ -40,5 +64,6 @@ steps:
       params: { merge: true }
   - id: accept
     dependsOn: [publish]
+    unless: $steps.implement.satisfied
     accept:
       requires: [checks.checks]

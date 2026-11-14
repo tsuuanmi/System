@@ -551,12 +551,12 @@ export class WorkController {
     const spec = this.specOf(record)
     const step = options.step
       ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isVerifyStep(s) || isEffectStep(s)))
-      : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded'))
+      : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => settled(record, d)))
     if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker, verify or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
     // Choosing among runs of a check would let an agent keep the lucky one: verifying again is the operator's.
     if (isVerifyStep(step) && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} should tell the operator`)
     if (!isWorkerStep(step) && options.worker) throw new WorkError(`${step.id} is ${isVerifyStep(step) ? 'a verify' : 'an effect'} step; --worker names Workers only`)
-    if (!(step.dependsOn ?? []).every((d) => record.state.steps[d]!.state === 'succeeded')) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
+    if (!(step.dependsOn ?? []).every((d) => settled(record, d))) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
     const reset = [step.id, ...dependentsOf(spec, step.id)]
     this.cancels.delete(workId)
@@ -694,7 +694,7 @@ export class WorkController {
   private async step(record: WorkRecord, busy: boolean): Promise<Turn> {
     const spec = this.specOf(record)
     const epoch = this.epoch
-    const done = (stepId: string) => record.state.steps[stepId]!.state === 'succeeded'
+    const done = (stepId: string) => settled(record, stepId)
     if (!busy) record = await this.retryAutomatically(record, spec)
     const failed = spec.steps.find((s) => ['failed', 'cancelled'].includes(record.state.steps[s.id]!.state))
     // A failed step fails the Work once the attempts in flight have reported.
@@ -707,6 +707,12 @@ export class WorkController {
     if (refused && busy) return { record, settles: [], waiting: true, epoch }
     if (refused) return { record: await this.finish(record, 'failed', `verification did not pass: ${refused[0]}=${refused[1]}`), settles: [], epoch }
     const ready = spec.steps.filter((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
+    // A step whose condition on an optional output is not met does not run (ro-15); what comes after it goes on.
+    const skipped = ready.flatMap((s) => { const why = skipReason(record, s); return why ? [{ stepId: s.id, why }] : [] })
+    if (skipped.length) {
+      for (const { stepId, why } of skipped) record = await this.append(record, { type: 'skipped', stepId, reason: why })
+      return this.step(record, busy)
+    }
     if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
     if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }
     const settles: (() => Promise<WorkRecord>)[] = []
@@ -902,7 +908,7 @@ export class WorkController {
     poll.unref()
     const progress = this.running.start({ workId, stepId: s.id, attemptId, worker: attempt.worker.ref })
     try {
-      return { result: await attempt.worker.run({ workId, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, instructions: s.instructions, signal: abort.signal, progress }), aborted: abort.signal.aborted }
+      return { result: await attempt.worker.run({ workId, attemptId, stepId: s.id, capabilities: s.capabilities, inputs, outputs: s.outputs, ...(s.optionalOutputs ? { optionalOutputs: s.optionalOutputs } : {}), instructions: s.instructions, signal: abort.signal, progress }), aborted: abort.signal.aborted }
     } catch (error) {
       return { result: { status: abort.signal.aborted ? 'cancelled' : 'failed', outputs: {}, reason: `the Worker threw: ${(error as Error).message}` }, aborted: abort.signal.aborted }
     } finally {
@@ -920,11 +926,13 @@ export class WorkController {
     let unchangedAfter: string | undefined
     if (status === 'succeeded') {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
-      const missing = s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot]))
+      const missing = [...s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot])), ...(s.optionalOutputs ?? []).filter((slot) => outputs[slot] && !this.specs.exists(outputs[slot]))]
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
       // A change that is judged or published must be one: a Worker that changed nothing fails here, not three steps later.
       // Only a first output that a later verify or effect step takes as its subject, so a read-only step's `checkout` stays unchanged.
-      if (status === 'succeeded' && s.outputs[0] && !s.mayBeEmpty && isJudged(spec, s.id, s.outputs[0])) {
+      // A step that wrote its optional output has said the Item already holds: its change is meant to be the base (Satisfied, ro-15).
+      const holds = (s.optionalOutputs ?? []).some((slot) => outputs[slot])
+      if (status === 'succeeded' && s.outputs[0] && !s.mayBeEmpty && !holds && isJudged(spec, s.id, s.outputs[0])) {
         const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
         if (base) {
           const said = result.message?.replace(/\s+/g, ' ').trim()
@@ -946,7 +954,7 @@ export class WorkController {
       try { await attempt.worker.quota?.(true) } catch { /* routing reads it again */ }
     }
     return this.append(this.require(workId), {
-      type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason,
+      type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, [...s.outputs, ...(s.optionalOutputs ?? []).filter((slot) => outputs[slot])]) : {}, reason,
       usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
@@ -1091,11 +1099,18 @@ export class WorkController {
 
   /** With no accept step, every verify step still decides: missing evidence is never a pass. */
   private finishWithoutAccept(record: WorkRecord, spec: ResolvedSpec): Promise<WorkRecord> {
-    const verdicts = spec.steps.filter(isVerifyStep).map((s) => [s.id, this.verdictOf(record, spec, s.id)] as const)
+    const verifies = spec.steps.filter(isVerifyStep).filter((s) => record.state.steps[s.id]!.state !== 'skipped')
+    const verdicts = verifies.map((s) => [s.id, this.verdictOf(record, spec, s.id)] as const)
     const bad = verdicts.filter(([, verdict]) => verdict !== 'pass' && verdict !== 'inconclusive')
     if (bad.length) return this.finish(record, 'failed', `verification did not pass: ${bad.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
     const unsure = verdicts.filter(([id, verdict]) => verdict === 'inconclusive' && !this.decisionOf(record, id))
     if (unsure.length) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${unsure.map(([id]) => id).join(', ')}`)
+    // A passing verify step with `result` says the Item already holds: the Work ends Satisfied, with its verdict as the evidence.
+    const satisfying = verifies.find((s) => s.result && this.verdictOf(record, spec, s.id) === 'pass')
+    if (satisfying?.result) {
+      const verdictId = record.events.findLast((e) => e.type === 'verified' && e.stepId === satisfying.id)
+      return this.finish(record, 'succeeded', `${satisfying.result}: ${satisfying.id} passed`, undefined, { result: satisfying.result, evidence: { [`${satisfying.id}.verdict`]: verdictId?.type === 'verified' && verdictId.verdictId ? verdictId.verdictId : '' } })
+    }
     return this.finish(record, 'succeeded', 'every step succeeded')
   }
 
@@ -1199,13 +1214,31 @@ export class WorkController {
     }
   }
 
-  private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string, awaiting?: string): Promise<WorkRecord> {
+  private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string, awaiting?: string, satisfied?: { result: 'satisfied'; evidence: Record<string, string> }): Promise<WorkRecord> {
     const results: Record<string, string> = {}
     for (const [stepId, s] of Object.entries(record.state.steps)) {
       for (const [slot, id] of Object.entries(s.outputs)) results[`${stepId}.${slot}`] = id
     }
-    return this.append(record, { type: 'terminal', outcome, reason, results, ...(awaiting ? { awaiting } : {}) })
+    for (const [name, id] of Object.entries(satisfied?.evidence ?? {})) if (id) results[name] = id
+    return this.append(record, { type: 'terminal', outcome, reason, results, ...(satisfied ? { result: satisfied.result } : {}), ...(awaiting ? { awaiting } : {}) })
   }
+}
+
+/** Whether a step is done for the steps after it: it succeeded, or its condition was not met and it was skipped. */
+function settled(record: WorkRecord, stepId: string): boolean {
+  return record.state.steps[stepId]!.state === 'succeeded' || record.state.steps[stepId]!.state === 'skipped'
+}
+
+/** Why a ready step does not run: its `when` output was not written, or its `unless` output was; undefined when it runs. */
+function skipReason(record: WorkRecord, s: Step): string | undefined {
+  const { when, unless } = s as { when?: string; unless?: string }
+  const written = (ref: string): boolean => {
+    const names = ref.split('.')
+    return !!record.state.steps[names.slice(1, -1).join('.')]?.outputs[names.at(-1)!]
+  }
+  if (when && !written(when)) return `${when} was not written`
+  if (unless && written(unless)) return `${unless} was written`
+  return undefined
 }
 
 /** Every step that depends, directly or not, on `stepId`, in spec order. */

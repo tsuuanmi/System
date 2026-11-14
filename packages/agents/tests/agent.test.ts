@@ -640,3 +640,20 @@ test('Claude attempt hook receives both unified windows', async (t) => {
     { window: 'seven_day', percentUsed: 31, resetsAt: events[1]!.resetsAt },
   ])
 })
+
+test('an optional output is captured when the Worker writes it and is no failure when it does not (Satisfied, ro-15)', async () => {
+  const { artifacts } = memory()
+  const repository = repo()
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-optional'))
+  const optional = (instructions: string) => task(artifacts, instructions, repository).then((id) => ({ ...request({ task: id }, ['change']), optionalOutputs: ['satisfied'] }))
+  const wrote = await worker.run(await optional('FAKE:satisfied'))
+  assert.equal(wrote.status, 'succeeded', wrote.reason)
+  const base = (await snapshot(repository)).commit
+  assert.equal(treeOf(artifacts, wrote.outputs.change!).commit, base, 'nothing was changed')
+  const read = artifacts.get(wrote.outputs.satisfied!)
+  assert.equal(read.state === 'stored' && read.envelope.kind, 'file')
+  assert.equal(Buffer.from(await artifacts.readBytes(wrote.outputs.satisfied!)).toString(), 't/ok.test.mjs "holds"\n')
+  const left = await worker.run(await optional('FAKE:edit'))
+  assert.equal(left.status, 'succeeded', left.reason)
+  assert.deepEqual(Object.keys(left.outputs), ['change'])
+})

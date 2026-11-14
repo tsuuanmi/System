@@ -33,7 +33,7 @@ function problems(yaml: string, caps: AvailableCapabilities = available): string
 test('both repository Workflow files parse and resolve with the same schema', () => {
   const se = resolve(parseWorkflow(fixture('develop.yaml')), available, fixture)
   const research = resolve(parseWorkflow(fixture('research.yaml')), available)
-  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks.checks', 'publish', 'accept'])
+  assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'satisfied-check', 'checks.checks', 'publish', 'accept'])
   assert.deepEqual(research.steps.map((s) => s.id), ['investigate', 'citations', 'accept'])
   assert.equal(se.workflow.id, 'develop')
   assert.ok(se.workflow.version >= 1)
@@ -130,6 +130,7 @@ test('capabilities no enabled Worker or verifier provides are refused before any
     'step implement needs Worker capability code-write, which no enabled Worker provides',
     'step implement needs Worker capability code.develop, which no enabled Worker provides',
     'step implement needs Worker capability tier.standard, which no enabled Worker provides',
+    'step satisfied-check needs verifier code.required-checks, which no enabled verifier provides',
     'step checks.checks needs verifier code.required-checks, which no enabled verifier provides',
     'step publish needs effect git.publish, which no enabled effect provider offers',
   ])
@@ -383,4 +384,33 @@ test('an unknown prefer capability is optional at resolution and carried into th
   let spec: ReturnType<typeof resolve> | undefined
   assert.doesNotThrow(() => { spec = resolve(parseWorkflow(yaml), available) })
   assert.equal(Reflect.get(spec!.steps[0]!, 'prefer'), 'research.web')
+})
+
+const OPTIONAL = `${base}  - id: implement
+    capabilities: [code-write]
+    outputs: [change]
+    optionalOutputs: [satisfied]
+  - id: only
+    dependsOn: [implement]
+    when: $steps.implement.satisfied
+    verify: { capability: code.required-checks, subject: $work.input, criteria: repo-checks-v1, inputs: { tests: $steps.implement.satisfied } }
+`
+
+test('an optional output is read only by a step that runs only when it exists; `when` and `unless` name one', () => {
+  assert.deepEqual(resolve(parseWorkflow(OPTIONAL), available).steps.map((s) => s.id), ['implement', 'only'])
+  assert.deepEqual(problems(OPTIONAL.replace('    when: $steps.implement.satisfied\n', '')), ['step only input tests uses $steps.implement.satisfied: an optional output is read only by a step with `when` naming it'])
+  assert.deepEqual(problems(OPTIONAL.replace('when: $steps.implement.satisfied', 'when: $steps.implement.change')), ['step only when $steps.implement.change: step implement has no optional output change', 'step only input tests uses $steps.implement.satisfied: an optional output is read only by a step with `when` naming it'])
+  assert.deepEqual(problems(OPTIONAL.replace('    when: $steps.implement.satisfied\n', '    when: $steps.implement.satisfied\n    unless: $steps.implement.satisfied\n')), ['step only has both when and unless'])
+  assert.deepEqual(problems(OPTIONAL.replace('    dependsOn: [implement]\n', '')), ['step only when $steps.implement.satisfied, but does not depend on implement', 'step only input tests uses $steps.implement.satisfied, but does not depend on implement'])
+  assert.ok(problems(OPTIONAL.replace('optionalOutputs: [satisfied]', 'optionalOutputs: [change]')).includes('step implement names an output twice'))
+})
+
+test('a using step\'s `when` or `unless` applies to every step of its Sub-workflow; develop.yaml names satisfied once', () => {
+  const spec = resolve(parseWorkflow(fixture('develop.yaml')), available, fixture)
+  const by = (id: string) => spec.steps.find((s) => s.id === id) as { when?: string; unless?: string }
+  assert.deepEqual(['satisfied-check', 'checks.checks', 'publish', 'accept'].map((id) => [by(id).when, by(id).unless]), [
+    ['$steps.implement.satisfied', undefined], [undefined, '$steps.implement.satisfied'], [undefined, '$steps.implement.satisfied'], [undefined, '$steps.implement.satisfied'],
+  ])
+  const implement = spec.steps.find((s) => s.id === 'implement') as { outputs: string[]; optionalOutputs?: string[] }
+  assert.deepEqual([implement.outputs, implement.optionalOutputs], [['change'], ['satisfied']])
 })

@@ -14,6 +14,8 @@ export interface WorkerRequest {
   capabilities: string[]
   inputs: Record<string, string>
   outputs: string[]
+  /** Outputs the Worker may leave out: written only when they apply (the step's `optionalOutputs`). Absent when the step has none. */
+  optionalOutputs?: string[]
   /** The Workflow step's own instructions, if it has any. */
   instructions?: string
   /** Aborted when the operator cancels; the Worker stops and reports `cancelled`. */

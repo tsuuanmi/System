@@ -427,7 +427,7 @@ test('criteria a verifier cannot pin refuse admission, and no Work is created', 
   const h = harness({ verifier: { async criteria() { throw new Error('no .system/checks.yaml at the base commit') } } })
   const spec = resolve(parseWorkflow(fixture('develop.yaml')), h.capabilities.available(), fixture)
   const task = await input(h)
-  await assert.rejects(() => h.controller.admit({ spec, input: task, caller, source: { kind: 'workflow-file' } }), /cannot pin criteria repo-checks-v1: no .system\/checks.yaml/)
+  await assert.rejects(() => h.controller.admit({ spec, input: task, caller, source: { kind: 'workflow-file' } }), /cannot pin criteria satisfied-tests-v1: no .system\/checks.yaml/)
   assert.equal(h.table.rows.size, 0)
 })
 
@@ -449,7 +449,7 @@ test('retry --step after failed checks reruns the Worker and re-verifies the new
   const done = await h.controller.retry(failed.id, { step: 'implement', caller, reason: 'fix the failing checks' })
   assert.equal(done.state.status, 'succeeded')
   const reopened = done.events.findLast((e) => e.type === 'reopened')
-  assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'checks.checks', 'publish', 'accept'])
+  assert.deepEqual(reopened?.type === 'reopened' && reopened.reset, ['implement', 'satisfied-check', 'checks.checks', 'publish', 'accept'])
   assert.deepEqual(reopened?.type === 'reopened' && reopened.caller, caller)
   const verifiedSubjects = done.events.filter((e) => e.type === 'verified').map((e) => e.type === 'verified' && e.subject)
   assert.equal(verifiedSubjects.length, 3)
@@ -910,3 +910,77 @@ test('a step with no retry declared is never tried again by itself', async () =>
   assert.equal(h.calls.length, 1)
 })
 
+
+/** A Worker that writes the optional output `satisfied` (the tests already holding at the base) when the step declares it, with an unchanged tree. */
+function satisfiedWorker(h: () => Harness, write: boolean): Partial<WorkerPort> {
+  return {
+    async run(request) {
+      const outputs = Object.fromEntries([...request.outputs, ...(write ? (request.optionalOutputs ?? []) : [])].map((slot) => {
+        const out = id(`${request.attemptId}/${slot}`)
+        h().specs.stored.add(out)
+        if (slot === 'change') h().specs.unchanged.set(out, 'abcdef0123456789')
+        return [slot, out]
+      }))
+      return { status: 'succeeded', outputs }
+    },
+  }
+}
+
+test('Satisfied: an implement step that writes `satisfied` runs those tests on the base, publishes nothing and ends succeeded with the result "satisfied"', async () => {
+  const seen: { stepId: string; subject: string; inputs?: Record<string, string> }[] = []
+  const h: Harness = harness({ worker: satisfiedWorker(() => h, true), verifier: { async verify(request) {
+    seen.push({ stepId: request.stepId, subject: request.subject, inputs: request.inputs })
+    const evidence = id(`evidence/${request.attemptId}`)
+    h.specs.stored.add(evidence)
+    return { verdict: 'pass', reason: 'the named tests passed', subject: request.subject, criteria: request.criteria, evidence: [evidence] }
+  } } })
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(done.state.result, 'satisfied')
+  const written = done.state.steps.implement!.outputs.satisfied!
+  assert.ok(written)
+  // The tests run on the Task's base (the Work's input) with the named tests as a further input; the Work's own checks never run.
+  assert.deepEqual(seen, [{ stepId: 'satisfied-check', subject: done.state.input!, inputs: { tests: written } }])
+  assert.deepEqual(['checks.checks', 'publish', 'accept'].map((s) => done.state.steps[s]!.state), ['skipped', 'skipped', 'skipped'])
+  assert.equal(done.state.steps['satisfied-check']!.verdict, 'pass')
+  assert.deepEqual(done.events.filter((e) => e.type === 'effect-intended'), [], 'nothing is published')
+  const verified = done.events.findLast((e) => e.type === 'verified')
+  assert.ok(verified?.type === 'verified' && verified.verdictId)
+  assert.equal(done.state.results['satisfied-check.verdict'], verified.verdictId)
+  assert.equal(h.controller.replay(done.id).matches, true)
+})
+
+test('Satisfied: tests that do not pass on the base fail the Work, and nothing is published', async () => {
+  const h: Harness = harness({ worker: satisfiedWorker(() => h, true), verdict: 'fail' })
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.status, 'failed')
+  assert.equal(done.state.result, undefined)
+  assert.match(done.state.reason!, /satisfied-check=fail/)
+  assert.deepEqual(done.events.filter((e) => e.type === 'effect-intended'), [])
+})
+
+test('Satisfied: without the optional output the Work goes on as before: the checks and the publish run, the satisfied check is skipped', async () => {
+  const h: Harness = harness({ worker: treeWorker(() => h, () => false) })
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(done.state.result, undefined)
+  assert.deepEqual(['satisfied-check', 'checks.checks', 'publish'].map((s) => done.state.steps[s]!.state), ['skipped', 'succeeded', 'succeeded'])
+  assert.equal(done.state.reason, 'accepted on checks.checks')
+  assert.deepEqual(h.verdicts.map((v) => v.split(':')[0]), ['checks.checks'])
+  assert.equal(done.events.filter((e) => e.type === 'effect-intended').length, 1)
+  // A Worker that does not write it and changes nothing still fails with "no change".
+  const none: Harness = harness({ worker: satisfiedWorker(() => none, false) })
+  assert.equal((await runFixture(none, 'develop.yaml')).state.steps.implement!.state, 'failed')
+})
+
+test('Satisfied: the Worker is told the optional output, and one that is declared but not stored fails the step', async () => {
+  const h: Harness = harness({ worker: { async run(request) {
+    const out = id(`${request.attemptId}/change`)
+    h.specs.stored.add(out)
+    return { status: 'succeeded', outputs: { change: out, satisfied: id('never stored') } }
+  } } })
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.steps.implement!.state, 'failed')
+  const reason = done.events.findLast((e) => e.type === 'observed')
+  assert.ok(reason?.type === 'observed' && /without stored outputs satisfied/.test(reason.reason ?? ''))
+})

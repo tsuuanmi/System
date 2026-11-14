@@ -100,7 +100,7 @@ test('a verified change is published once: intent recorded before the effect, ou
   const c = controller(w)
   const done = await c.run((await admit(c, w)).id)
   assert.equal(done.state.status, 'succeeded', done.state.reason)
-  assert.deepEqual(types(done), ['admitted', 'dispatched', 'observed', 'dispatched', 'verified', 'effect-intended', 'effect-observed', 'terminal'])
+  assert.deepEqual(types(done), ['admitted', 'dispatched', 'observed', 'skipped', 'dispatched', 'verified', 'effect-intended', 'effect-observed', 'terminal'])
   assert.equal(w.remote.applies, 1)
   const intended = done.events.find((e) => e.type === 'effect-intended')
   const observed = done.events.find((e) => e.type === 'effect-observed')
@@ -311,8 +311,9 @@ test('an effect is told the checks it requires, with their pinned criteria, also
   void first.run(admitted.id)
   await until(() => told.length === 1, 'the first apply')
   const criteria = w.rows.get(admitted.id)!.state.criteria
-  const required = Object.keys(criteria).map((id) => ({ capability: 'code.required-checks', criteria: criteria[id]! }))
-  assert.ok(required.length > 0)
+  // Only the verify step the publish requires: satisfied-check has criteria of its own, and the publish does not require it.
+  const required = [{ capability: 'code.required-checks', criteria: criteria['checks.checks']! }]
+  assert.ok(criteria['checks.checks'] && criteria['satisfied-check'])
   assert.deepEqual(told[0]!.required, required)
   const done = await controller(w, { apply: async (intent, remote) => { told.push(intent); remote.applies++; remote.published.set(intent.operationId, { branch: 'b', commit: intent.subject }); return { state: 'applied', reason: 'done', detail: {} } } }).run(admitted.id)
   assert.equal(done.state.status, 'succeeded', done.state.reason)

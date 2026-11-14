@@ -494,7 +494,7 @@ test('develop.yaml checks through code-checks.yaml: a failed check, retried on i
   // The Workflow's one automatic further attempt is checked too, and fails again.
   f.verdicts.push('fail', 'fail')
   const work = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f), run: false }) as { id: string; state: { steps: Record<string, unknown> } }
-  assert.deepEqual(Object.keys(work.state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
+  assert.deepEqual(Object.keys(work.state.steps), ['implement', 'satisfied-check', 'checks.checks', 'publish', 'accept'])
   await client.call('work.run', { workId: work.id })
   assert.equal((await terminal(client, work.id)).status, 'failed')
   type Shown = { events: { type: string; stepId?: string; subject?: string; verdict?: string; reset?: string[] }[]; state: { status: string; reason?: string; steps: Record<string, { verdict?: string; state: string; attempts: string[] }> } }
@@ -525,5 +525,5 @@ test('work.submit without the content of the Sub-workflows: the Host reads them 
   const client = await open(agent)
   const work = await client.call('work.submit', { workflow: workflowFile('develop.yaml'), input: input(f) }).catch((error: Error) => error)
   assert.ok(!(work instanceof Error), String(work))
-  assert.deepEqual(Object.keys((work as { state: { steps: Record<string, unknown> } }).state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
+  assert.deepEqual(Object.keys((work as { state: { steps: Record<string, unknown> } }).state.steps), ['implement', 'satisfied-check', 'checks.checks', 'publish', 'accept'])
 })

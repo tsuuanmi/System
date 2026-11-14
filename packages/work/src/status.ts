@@ -191,7 +191,7 @@ export const finalArtifactOf = (record: WorkRecord): string | undefined => {
 
 /**
  * One line per Item, as `[x] <id> <title> - <state>`: `done` (ticked in
- * STATUS.md, or a Work for it was merged into `dev`; with the last merged or
+ * STATUS.md, or a Work for it was merged into `dev` or ended Satisfied; with the last merged or
  * succeeded Work and its final Artifact, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
  * the Host holds for it, or why it is held; or a session's claim: who, since when) or `todo: nobody`. An Item only
@@ -212,13 +212,15 @@ export function itemLines(
     const active = works.filter(isActive)
     // Done is derived: ticked by hand (done outside System) or a Work for the Item was merged into `dev`.
     const merged = works.filter(wasMerged)
+    // Or a Work for it ended Satisfied: a test showed it already holds at the base (ro-15).
+    const satisfied = works.filter((r) => r.state.result === 'satisfied')
     const claim = claims.find((c) => c.item === item.id && c.repository === repository)
-    const state = item.done || merged.length ? 'done' : active.length || claim ? 'doing' : 'todo'
+    const state = item.done || merged.length || satisfied.length ? 'done' : active.length || claim ? 'doing' : 'todo'
     if (filter.state && filter.state !== state) continue
-    const last = merged.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
+    const last = merged.at(-1) ?? satisfied.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const outside = works.reduce((n, r) => n + summarize(r).outsideFailures, 0)
     const text = state === 'done'
-      ? `done${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, finalArtifactOf(last)].filter(Boolean).join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
+      ? `done${satisfied.length && !merged.length ? ', satisfied' : ''}${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, finalArtifactOf(last)].filter(Boolean).join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
       : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}` : 'todo: nobody'
     lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }

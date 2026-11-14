@@ -13,9 +13,9 @@
  * (sc-13: load, not the change, often fails a check; the re-run is one, never more, and the evidence holds all runs in order: change, base, change, base). If the change then passes, the
  * verdict follows it (`pass`); if the base now passes and the change still fails, the change's failure counts (`fail`); `error` when the checks could not be run at all.
  */
-import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, matchesGlob } from 'node:path'
+import { isAbsolute, join, matchesGlob, normalize, sep } from 'node:path'
 import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult } from '@system/work'
@@ -26,7 +26,14 @@ import { z } from 'zod'
 export const CHECKS_FILE = '.system/checks.yaml'
 /** The criteria names, pinned in the `checks@1` Artifact, and what each verdict means; any other name refuses admission. */
 export const REPO_CHECKS = 'repo-checks-v1'
-export const CRITERIA_NAMES = [REPO_CHECKS] as const
+/**
+ * The small mode (ro-15, Satisfied): the Task's base is not judged by the repository's checks but by exactly the tests the verify step's input
+ * `tests` names (one `<test file> "<test name>"` per line), run with `node --test-name-pattern <file>` (the file itself, not `--test`, which counts the file as a test that passed) after the pinned setup checks named in `SETUP_CHECKS`.
+ * A listed test that matches nothing is a failure, so a wrong name never passes.
+ */
+export const SATISFIED_TESTS = 'satisfied-tests-v1'
+export const SETUP_CHECKS = ['install', 'build']
+export const CRITERIA_NAMES = [REPO_CHECKS, SATISFIED_TESTS] as const
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
@@ -110,6 +117,22 @@ function anyWithHome(home: string): boolean {
     }
   }
   return false
+}
+
+const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
+
+/** The tests a `satisfied-tests-v1` run names: `<test file> "<test name>"` per line, files relative to the repository and inside it. */
+export function parseTests(text: string): { file: string; name: string }[] {
+  const tests = text.split('\n').map((line) => line.trimEnd()).filter(Boolean).map((line) => {
+    const match = /^(\S+) "(.+)"$/.exec(line)
+    if (!match) throw new Error(`not a test line (<test file> "<test name>"): ${line}`)
+    const file = normalize(match[1]!)
+    if (isAbsolute(file) || file.split(sep).includes('..')) throw new Error(`the test file ${match[1]} is not inside the repository`)
+    return { file, name: match[2]! }
+  })
+  if (!tests.length) throw new Error('no test named')
+  if (tests.length > 50) throw new Error(`${tests.length} tests named; at most 50`)
+  return tests
 }
 
 const tail = (text: string) => (text.length > TAIL ? text.slice(-TAIL) : text)
@@ -232,6 +255,35 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             failure = `${check.name} (left running: ${leftovers.join(', ')})`
           }
           return { id, ...(failure ? { failed: failure } : {}), ms: run.durationMs }
+        }
+        if (checks.name === SATISFIED_TESTS) {
+          let listed: ReturnType<typeof parseTests>
+          try {
+            const named = request.inputs?.tests
+            if (!named) throw new Error('no input `tests` naming them')
+            listed = parseTests(Buffer.from(await artifacts.readBytes(named)).toString('utf8'))
+            for (const { file } of listed) if (!statSync(join(worktree, file), { throwIfNoEntry: false })?.isFile()) throw new Error(`no test file ${file} at ${tree.commit}`)
+          } catch (error) {
+            return verdict('error', `cannot run the named tests: ${(error as Error).message}`, [])
+          }
+          // The pinned setup checks, then exactly the named tests; a test counts only when it ran (`# pass` of at least one) and nothing failed.
+          const plan = [
+            ...checks.checks.filter((check) => SETUP_CHECKS.includes(check.name)),
+            ...listed.map(({ file, name }, n) => {
+              const pattern = `/(^| )${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}$/`
+              return { name: `${file} "${name}"`, timeoutSeconds: 300, run: `out="$HOME/test-${n}.out"; node --test-reporter=tap --test-name-pattern=${quote(pattern)} ${quote(file)} > "$out" 2>&1; s=$?; cat "$out"; [ "$s" -eq 0 ] && grep -Eq '^# pass [1-9]' "$out" && ! grep -Eq '^# fail [1-9]' "$out"` }
+            }),
+          ]
+          for (const check of plan) {
+            const result = await runCheck(check, worktree, tree.commit)
+            evidence.push(result.id)
+            ran.push(check.name)
+            if (result.failed) failed.push(result.failed)
+            if (result.failed && SETUP_CHECKS.includes(check.name)) break
+          }
+          return failed.length
+            ? verdict('fail', `the named tests did not all pass on ${tree.commit}: ${failed.join('; ')}`, evidence)
+            : verdict('pass', `the ${listed.length} named test(s) passed on ${tree.commit}: ${listed.map(({ file, name }) => `${file} "${name}"`).join(', ')}`, evidence)
         }
         const failedNames: string[] = []
         const chosen = checks.checks.filter((check) => asItIs || selected(check, touched) || failedBefore.has(check.name))

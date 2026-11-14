@@ -35,6 +35,12 @@ const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<
  */
 const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3), rerunUnchanged: z.literal(true).optional() }).strict()
 
+/**
+ * A step that runs only under a condition on an optional output of a step it depends on (ro-15): `when` runs it only when that output was written,
+ * `unless` only when it was not. A step whose condition fails is `skipped`, and counts as done for the steps after it.
+ */
+const condition = { when: ref.optional(), unless: ref.optional() }
+
 const workerStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
@@ -43,6 +49,8 @@ const workerStep = z.object({
   prefer: capability.optional(),
   inputs: z.record(slot, ref).optional(),
   outputs: z.array(slot).min(1),
+  /** Outputs the Worker may write or leave out; a step that reads one has `when` naming it (Satisfied, ro-15). */
+  optionalOutputs: z.array(slot).min(1).optional(),
   /** What this step's Worker is told besides the task, such as an output format. */
   instructions: z.string().min(1).max(8 * 1024).optional(),
   retry: retry.optional(),
@@ -53,6 +61,9 @@ const workerStep = z.object({
 const verifyStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
+  ...condition,
+  /** A pass of this step ends the Work succeeded with this result, and the steps after it do not matter: the Item already holds (GLOSSARY: Satisfied). */
+  result: z.literal('satisfied').optional(),
   /** `inputs` are further Artifacts the verifier is given beside the subject, such as the report a sources file belongs to. */
   verify: z.object({ capability, subject: ref, criteria: z.string().min(1), inputs: z.record(slot, ref).optional() }).strict(),
 }).strict()
@@ -60,12 +71,14 @@ const verifyStep = z.object({
 const acceptStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
+  ...condition,
   accept: z.object({ requires: z.array(id).min(1), approval: z.literal('operator').optional() }).strict(),
 }).strict()
 
 const effectStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
+  ...condition,
   effect: z.object({
     capability,
     subject: ref,
@@ -79,6 +92,7 @@ const effectStep = z.object({
 const usesStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
+  ...condition,
   uses: z.string().regex(FILE, 'uses names a Workflow file beside this one, such as code-checks.yaml'),
   /** What the Sub-workflow reads as `$work.input`; without it, this Workflow's own input. */
   inputs: z.object({ input: ref }).strict().optional(),
@@ -209,11 +223,28 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
     const producer = byId.get(from)
     if (!producer) problems.push(`step ${s.id} ${where} ${value}: no step ${from}`)
     else if (!before.get(s.id)!.has(from)) problems.push(`step ${s.id} ${where} ${value}, but does not depend on ${from}`)
-    else if (!isWorkerStep(producer) || !producer.outputs.includes(slot)) problems.push(`step ${s.id} ${where} ${value}: step ${from} has no output ${slot}`)
+    else if (isWorkerStep(producer) && producer.optionalOutputs?.includes(slot)) {
+      if ((s as { when?: string }).when !== value) problems.push(`step ${s.id} ${where} ${value}: an optional output is read only by a step with \`when\` naming it`)
+    } else if (!isWorkerStep(producer) || !producer.outputs.includes(slot)) problems.push(`step ${s.id} ${where} ${value}: step ${from} has no output ${slot}`)
+  }
+  const checkCondition = (s: Step): void => {
+    const { when, unless } = s as { when?: string; unless?: string }
+    if (when && unless) problems.push(`step ${s.id} has both when and unless`)
+    for (const [where, value] of [['when', when], ['unless', unless]] as const) {
+      if (!value) continue
+      const match = REF.exec(value)!
+      if (match[1] === 'work.input') { problems.push(`step ${s.id} ${where} ${value}: name an optional output, $steps.<step>.<slot>`); continue }
+      const [from, slot] = [match[2]!, match[3]!]
+      const producer = byId.get(from)
+      if (!producer) problems.push(`step ${s.id} ${where} ${value}: no step ${from}`)
+      else if (!before.get(s.id)!.has(from)) problems.push(`step ${s.id} ${where} ${value}, but does not depend on ${from}`)
+      else if (!isWorkerStep(producer) || !producer.optionalOutputs?.includes(slot)) problems.push(`step ${s.id} ${where} ${value}: step ${from} has no optional output ${slot}`)
+    }
   }
   for (const s of workflow.steps) {
+    if (!isWorkerStep(s)) checkCondition(s)
     if (isWorkerStep(s)) {
-      if (new Set(s.outputs).size !== s.outputs.length) problems.push(`step ${s.id} names an output twice`)
+      if (new Set([...s.outputs, ...(s.optionalOutputs ?? [])]).size !== s.outputs.length + (s.optionalOutputs ?? []).length) problems.push(`step ${s.id} names an output twice`)
       for (const [name, value] of Object.entries(s.inputs ?? {})) checkRef(s, value, `input ${name} uses`)
       for (const c of s.capabilities) if (!available.workers.has(c)) problems.push(`step ${s.id} needs Worker capability ${c}, which no enabled Worker provides`)
       for (const failing of s.retry?.onFail ?? []) {
@@ -265,6 +296,8 @@ export type WorkflowFiles = (name: string) => string
 
 /** Rename what a joined step refers to: step IDs by `id`, `$steps` references by `ref`. */
 function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {
+  const { when, unless } = s as { when?: string; unless?: string }
+  if (when || unless) s = { ...s, ...(when ? { when: ref(when) } : {}), ...(unless ? { unless: ref(unless) } : {}) } as Step
   const ids = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
   if (isWorkerStep(s)) return { ...s, ...ids, ...(s.retry ? { retry: { ...s.retry, onFail: s.retry.onFail.map(id) } } : {}), ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
   if (isVerifyStep(s)) return { ...s, ...ids, verify: { ...s.verify, subject: ref(s.verify.subject), ...(s.verify.inputs ? { inputs: Object.fromEntries(Object.entries(s.verify.inputs).map(([k, v]) => [k, ref(v)])) } : {}) } }
@@ -303,8 +336,16 @@ function join(workflow: Workflow, files: WorkflowFiles | undefined, chain: strin
       return ids.has(match[2]!) ? `$steps.${s.id}.${match[2]}.${match[3]}` : value
     }
     const names = steps.map((t) => `${s.id}.${t.id}`)
+    const conditional = s.when || s.unless ? { ...(s.when ? { when: s.when } : {}), ...(s.unless ? { unless: s.unless } : {}) } : undefined
+    if (conditional) {
+      for (const t of steps) {
+        if (isWorkerStep(t)) problems.push(`step ${s.id} uses ${s.uses} under when/unless, but its step ${t.id} is a Worker step: only a verify, effect or accept step is skipped`)
+        else if ((t as { when?: string; unless?: string }).when || (t as { unless?: string }).unless) problems.push(`step ${s.id} uses ${s.uses} under when/unless, but its step ${t.id} has a condition of its own`)
+      }
+      if (problems.length) continue
+    }
     for (const t of steps) {
-      const renamed = rename(t, under, ref)
+      const renamed = { ...rename(t, under, ref), ...conditional } as Step
       // A step with no dependency inside starts after what the using step depends on.
       joined.push(t.dependsOn?.length ? renamed : { ...renamed, ...(s.dependsOn ? { dependsOn: [...s.dependsOn] } : {}) } as Step)
     }

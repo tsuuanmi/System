@@ -117,7 +117,7 @@ test('an unknown criteria name refuses admission, naming the known ones: a typo 
   const verifier = requiredChecks(artifacts, processSpawner)
   const { task } = await taskOn(artifacts, repo(CHECKS))
   for (const name of ['v1', 'red-vl', 'repo-checks-v2', 'red-v1', 'tests-frozen-v1']) {
-    await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' }), /unknown criteria .*known: repo-checks-v1$/, name)
+    await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' }), /unknown criteria .*known: repo-checks-v1, satisfied-tests-v1$/, name)
   }
   await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
 })
@@ -738,4 +738,41 @@ test('a check run is gone when no process has its throwaway HOME; the limit is t
   assert.equal(limited.maxConcurrentChecks, 2)
   assert.equal(requiredChecks(store(), processSpawner).maxConcurrentChecks, undefined)
   assert.equal(await limited.gone!('attempt:never-ran'), true)
+})
+
+const TESTED = {
+  'tests/a.test.mjs': "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\ntest('good thing (works)', () => assert.equal(1, 1))\ntest('bad thing', () => assert.equal(1, 2))\n",
+}
+const SATISFIED_CHECKS = 'checks:\n  - name: install\n    run: echo setup > "$HOME/installed"\n  - name: unit\n    run: "false"\n'
+
+/** The `satisfied-tests-v1` mode: exactly the named tests run on the Task's base, after the setup checks, and a test that did not run is not a pass. */
+async function verifySatisfied(lines: string) {
+  const artifacts = store()
+  const repository = repo(SATISFIED_CHECKS, TESTED)
+  const { task } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'satisfied-tests-v1', input: task, operatorId: 't' })
+  const tests = (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(lines), mediaType: 'text/plain', classification: 'local-private', producer })).id
+  const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-s${Math.random().toString(36).slice(2)}`, stepId: 'satisfied-check', capability: 'code.required-checks', subject: task, criteria, inputs: { tests } })
+  return { result, task, criteria, artifacts }
+}
+
+test('satisfied-tests-v1: the named tests pass on the base; the repository\'s own checks (here a failing unit) do not run', async () => {
+  const { result, task, criteria, artifacts } = await verifySatisfied('tests/a.test.mjs "good thing (works)"\n')
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.deepEqual([result.subject, result.criteria], [task, criteria])
+  assert.equal(result.evidence.length, 2, 'the setup check and the one test')
+  const run = artifacts.get(result.evidence[1]!)
+  assert.match(run.state === 'stored' ? (run.envelope.content as { stdoutTail: string }).stdoutTail : '', /good thing/)
+})
+
+test('satisfied-tests-v1: a failing test, a test that matches nothing, and a bad line or path are not a pass', async () => {
+  assert.equal((await verifySatisfied('tests/a.test.mjs "bad thing"\n')).result.verdict, 'fail')
+  const none = (await verifySatisfied('tests/a.test.mjs "no such test"\n')).result
+  assert.equal(none.verdict, 'fail')
+  assert.match(none.reason, /no such test/)
+  for (const lines of ['', 'tests/a.test.mjs good thing\n', '../a.test.mjs "x"\n', '/etc/passwd "x"\n', 'tests/missing.test.mjs "x"\n']) {
+    const bad = (await verifySatisfied(lines)).result
+    assert.equal(bad.verdict, 'error', lines)
+  }
 })

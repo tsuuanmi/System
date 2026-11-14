@@ -452,3 +452,27 @@ test('a session can claim an Item before it submits a Work: status shows who and
   // An Item with a running Work cannot be claimed.
   await assert.rejects(controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' }), (error: Error) => error.message.includes(work.id))
 })
+
+test('an Item whose Work ended Satisfied is done, says "satisfied" and names the evidence; STATUS.md may still say [ ]', () => {
+  const dir = '/project'
+  const at = '2026-11-14T01:00:00.000Z'
+  const V = id('satisfied verdict')
+  const T = id('the tests')
+  const events: WorkEvent[] = [
+    { type: 'admitted', seq: 0, at, caller, specId: id('develop spec'), source: { kind: 'workflow-file' }, item: { id: 'df-3', repository: dir } },
+    { type: 'dispatched', seq: 1, at, stepId: 'implement', attemptId: 'a:1', executor: 'worker', capability: 'code-write', selected: 'fake/claude', candidates: [], inputs: {} },
+    { type: 'observed', seq: 2, at, stepId: 'implement', attemptId: 'a:1', status: 'succeeded', outputs: { change: CHANGE, satisfied: T }, usage: { state: 'unknown' } },
+    { type: 'skipped', seq: 3, at, stepId: 'publish', reason: 'implement wrote satisfied' },
+    { type: 'verified', seq: 4, at, stepId: 'satisfied-check', attemptId: 'a:2', subject: id('task'), criteria: 'satisfied-tests-v1', verdict: 'pass', reason: 'the tests passed', verdictId: V, evidence: [id('run')] },
+    { type: 'terminal', seq: 5, at, outcome: 'succeeded', reason: 'satisfied', result: 'satisfied', results: { 'implement.change': CHANGE, 'implement.satisfied': T, 'satisfied-check.verdict': V } },
+  ]
+  const record: WorkRecord = { id: 'work:satisfied', events, state: fold(['implement', 'satisfied-check', 'publish'], events) }
+  assert.equal(record.state.result, 'satisfied')
+  assert.equal(record.state.steps.publish!.state, 'skipped')
+  const line = (status: string) => itemLines(parseStatus(status), dir, [record], () => [], { item: 'df-3' })[0]
+  assert.equal(line(STATUS), `[x] df-3 The status of a project - done, satisfied; last work:satisfied, ${V}`)
+  assert.deepEqual(itemLines(parseStatus(STATUS), dir, [record], () => [], { state: 'done', item: 'df-3' }).length, 1)
+  // A Work that succeeded without the result is not done by itself.
+  const plain: WorkRecord = { ...record, state: { ...record.state, result: undefined } }
+  assert.match(itemLines(parseStatus(STATUS), dir, [plain], () => [], { item: 'df-3' })[0]!, /^\[ \] df-3 .* - todo: nobody$/)
+})

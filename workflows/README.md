@@ -19,7 +19,11 @@ a role; it is also what makes the working tree a step's output. See
   → `publish` (`git.publish`: the checked commit to `system/<work>`, one draft
   pull request) → `accept`. `implement`'s `retry` names `checks.checks` and
   `publish` (sc-7: a conflict or a failing check on the merge reopens it on the
-  base's new tip; version 3).
+  base's new tip). Satisfied (ro-15; version 4): `implement` may also write the optional
+  output `satisfied`, naming existing tests (`<test file> "<test name>"` per line)
+  that show the Item already holds at the base; then `satisfied-check` runs exactly
+  those tests on the Task's base, `checks`, `publish` and `accept` are skipped, and a
+  pass ends the Work succeeded with the result "satisfied", publishing nothing.
 - [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
   (`code-write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
   is worth doing) → `implement` (`retry` on `checks.checks` and `publish`, sc-7; version 3) → `checks` → `publish` → `accept`: one pull
