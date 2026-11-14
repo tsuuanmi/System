@@ -7,8 +7,8 @@
  * attempt that never reported has it marked `attempt-lost`. A Work whose lost
  * attempts are all Worker attempts confirmed gone (and with no effect left
  * unresolved) is run again by the Host itself, as is every unfinished Work that
- * lost no attempt (it was waiting); any other stays interrupted until an
- * explicit `run` or `retry`. A held Work keeps waiting for a human.
+ * lost no attempt and has no effect left unresolved (it was waiting); any other
+ * waits for an explicit `run` or `retry`. A held Work keeps waiting for a human.
  */
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
@@ -94,19 +94,21 @@ export class Host {
     }
   }
 
-  /** Mark what the restart cut short, and return the Works to run again: those that lost nothing, and those where all lost attempts are Worker attempts confirmed gone, no effect is unresolved. */
+  /** Mark what the restart cut short, and return the Works to run again: those that lost nothing and have no unresolved effect, and those where all lost attempts are Worker attempts confirmed gone, no effect is unresolved. */
   private async recover(): Promise<string[]> {
     const lost = new Map<string, LostAttempt[]>()
     const effectsSettled = new Set<string>()
-    // Admitted and not finished, with nothing lost: the Host carries it on (a held Work is terminal and waits for a human).
+    // Admitted and not finished, with nothing lost and no effect unresolved: the Host carries it on (a held Work is terminal and waits for a human).
     const carried: string[] = []
     for (const record of this.controller.list()) {
       for (const receipt of record.receipts ?? []) {
         this.commands.set(receipt.commandId, { args: receipt.args, result: async () => this.controller.get(record.id), begun: Promise.resolve() })
       }
       if (TERMINAL.has(record.state.status)) continue
+      // An effect left intended, absent or unknown is reconciled by `interrupt`; the Work still waits for the operator.
+      const resolved = Object.values(record.state.effects).every((e) => e.state === 'applied' || e.state === 'failed')
       const attempts = await this.lane(() => this.controller.interrupt(record.id))
-      if (!attempts.length) { carried.push(record.id); continue }
+      if (!attempts.length) { if (resolved) carried.push(record.id); continue }
       this.lostAtStart.add(record.id)
       lost.set(record.id, attempts)
       const after = this.controller.get(record.id)
