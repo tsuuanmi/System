@@ -22,9 +22,12 @@ jobs:
       - name: Smoke test portable bootstrap
         run: |
           tmp="$(mktemp -d)"
+          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example" --plan
           python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
           (cd "$tmp/independent" && python3 tools/docs.py check && python3 tools/docs.py sync --check)
           python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
+          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example" --plan
+          test -z "$(python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example" --plan | grep -v '^unchanged ')"
       - name: Check covered-path impact
         if: github.event_name == 'pull_request'
         env:
