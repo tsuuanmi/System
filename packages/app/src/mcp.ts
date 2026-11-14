@@ -89,8 +89,9 @@ Bootstrap of a new repository (you do this, there is no script)
 3. The first \`.system/checks.yaml\` is a direct commit on \`dev\` that the operator reviews: admission
    refuses a Work without one.
 4. Write STATUS.md (Aim and Items) and commit it on \`dev\` before the push.
-5. Run \`system bootstrap check\` until it passes. If AGENTS.md is missing, write it from section 9,
-   "Repository profile and agent contract", of ~/.system/current/docs/governance/documentation-architecture.md.
+5. Run \`system bootstrap check\` until it passes. If AGENTS.md is missing, write it from
+   section 9, "Repository profile and agent
+   contract", of ~/.system/current/docs/governance/documentation-architecture.md.
 
 Only a human approves, denies or verifies again. Never try to act as the
 human: print the exact command for the operator to run in a terminal, such as
