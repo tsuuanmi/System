@@ -95,7 +95,7 @@ export interface WorkCommands {
   waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** A Work's measurements. */
   report(workId: string): Promise<unknown>
-  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string): Promise<{ task: string; base?: string }>
+  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
   claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
@@ -331,11 +331,12 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--context <id>', 'an Artifact the Worker reads as data, such as a conversation (repeatable)', collect, [])
     .option('--item <id>', 'the Item of the repository\'s STATUS.md this task is for (see system status)')
     .option('--against <ref>', 'with --repo: the commit --ref is a change from; checks are then selected by the files that differ between the two')
-    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string; against?: string }) => {
+    .option('--force', 'store the Task although its Item is Blocked (comes after Items not done)')
+    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string; against?: string; force?: boolean }) => {
       select(async () => {
         if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
-        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against)
+        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against, options.force)
         if (created.base) io.err(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
         return 0
@@ -413,7 +414,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
     .option('--worker <ref>', 'only this Worker may take its Worker steps (see system workers)')
-    .option('--force', 'admit although the input Task\'s Item already has a running or held Work')
+    .option('--force', 'admit although the input Task\'s Item already has a running or held Work, or is Blocked')
     .option('--no-run', 'admit only')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
     .action((options: { workflow?: string; capability?: string[]; input?: string; worker?: string; force?: boolean; run: boolean; cancelOnInterrupt?: boolean }) => {

@@ -18,6 +18,12 @@ checks:
   - name: docs
     run: python3 tools/docs.py check && python3 tools/docs.py sync --check
     timeoutSeconds: 120
+  - name: statusmd
+    # Item cm-4: STATUS.md has no problem (bad line, duplicate ID, unknown `after:` ID, cycle). No install needed: it
+    # imports only the parser file, so a change to STATUS.md alone runs it.
+    run: node tools/check-status.ts STATUS.md
+    timeoutSeconds: 60
+    paths: [STATUS.md, tools/check-status.ts, packages/work/src/status-parse.ts, .system/checks.yaml]
   - name: install
     run: corepack pnpm install --frozen-lockfile
     timeoutSeconds: 300

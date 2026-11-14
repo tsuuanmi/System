@@ -7,11 +7,11 @@
  */
 import { contentIdSchema } from '@system/artifacts'
 import { z } from 'zod'
+import { ITEM_ID } from './status-parse.ts'
 
 const sha = z.string().regex(/^[0-9a-f]{40}$/)
 
-/** An Item's ID in a repository's STATUS.md, such as `df-3` or `dna-13`. */
-export const ITEM_ID = /^[a-z][a-z0-9-]*-[0-9]+$/
+export { ITEM_ID }
 
 export const TASK_KIND = { kind: 'task', schemaVersion: 1 } as const
 export const taskSchema = z.object({

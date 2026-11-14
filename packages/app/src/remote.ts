@@ -250,8 +250,8 @@ export function remoteHost(remote: Remote): ClientHost {
         return { records: [], timedOut: false, unreachable: unreachable(error) }
       }
     },
-    async newTask(instructions, repository, ref, context, item, against) {
-      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against })
+    async newTask(instructions, repository, ref, context, item, against, force) {
+      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against, force })
     },
     claim: (repository, item, force) => change('item.claim', { repository: resolve(repository), item, force }),
     status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),

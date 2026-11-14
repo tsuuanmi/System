@@ -551,7 +551,11 @@ verdict. `live` is never recorded.
 A repository lists its planned work in a `STATUS.md` at its root: one line per
 **Item**, `- [ ] <id> <title>` (`- [x]` when done), with an id such as `df-3`
 (see [GLOSSARY](../../GLOSSARY.md)). A line that does not parse is skipped and
-reported by `system status` as a `note:`.
+reported by `system status` as a `note:`. `(after: id, id)` at the end of a
+line (with the colon) makes the Item **Blocked** until each named Item is done;
+`status` then reads `todo (blocked by <ids>)`, and a cycle or an ID with no line
+is a problem (`cycle: a -> b -> a`, `unknown id`). The check `statusmd` fails a
+change whose `STATUS.md` has any problem.
 
 ```
 system task new --text "..." --repo . --ref dev --item df-3   # prints the Task ID alone
@@ -564,7 +568,8 @@ and `status` are in the [app README](../../packages/app/README.md). While a
 Work for an Item runs or is held, `work submit` for the same Item is refused,
 naming that Work; `--force` allows parallel work on purpose. A Task that names
 an Item carries the Item's line and its earlier Works' outcomes in its context.
-`task new --item` is refused when the Item has no line in `STATUS.md` on `dev`.
+`task new --item` is refused when the Item has no line in `STATUS.md` on `dev`;
+it and `work submit` are refused for a Blocked Item ("blocked by ...") unless `--force`.
 Works do not edit `STATUS.md`: done is derived.
 
 ## Using System from an agent

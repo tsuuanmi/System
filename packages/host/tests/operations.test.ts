@@ -141,13 +141,13 @@ test('every method of the table round-trips over the socket', async () => {
   const project = realpathSync(mkdtempSync(join(dir, 'project-')))
   const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
   git('init', '-q', '-b', 'dev')
-  writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [x] p-1 First\n- [ ] p-2 Second\n- broken\n')
+  writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [x] p-1 First\n- [ ] p-2 Second\n- broken\n- [ ] p-3 Third (after: p-2)\n')
   git('add', '.')
   git('commit', '-qm', 'status')
   const lines = (await call('status', { repository: project })) as string[]
-  assert.deepEqual(lines.slice(0, 2), ['[x] p-1 First - done', '[ ] p-2 Second - todo: nobody'])
-  assert.match(lines[2]!, /^note: read dev \(/)
-  assert.equal(lines[3], 'note: line 4: not an Item line (- [ ] <id> <title>)')
+  assert.deepEqual(lines.slice(0, 3), ['[x] p-1 First - done', '[ ] p-2 Second - todo: nobody', '[ ] p-3 Third - todo (blocked by p-2)'])
+  assert.match(lines[3]!, /^note: read dev \(/)
+  assert.equal(lines[4], 'note: line 4: not an Item line (- [ ] <id> <title>)')
   assert.deepEqual(((await call('status', { repository: project, state: 'todo', item: 'p-2' })) as string[]).filter((l) => !l.startsWith('note: read ')), ['[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
   // A claim before a Work: status shows who and since when; an Item that is not in STATUS.md cannot be claimed.
   const claimed = await call('item.claim', { repository: project, item: 'p-2', commandId: 'c-1' }) as { who: string; at: string }
@@ -159,6 +159,9 @@ test('every method of the table round-trips over the socket', async () => {
   // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).
   await call('work.submit', { capabilities: ['code-write'], input: input(f), force: true, run: false })
   await call('task.new', { instructions: 'x', item: 'p-2' })
+  // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
+  await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3' }), /Item p-3 is blocked by p-2/)
+  await call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3', force: true })
   const status = await call('host.status') as { works: number; recordBytes: number }
   assert.equal(status.works, 4)
   assert.ok(status.recordBytes > 0)

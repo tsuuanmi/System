@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -83,7 +83,7 @@ export function operations(services: Services): Methods {
   return {
     'work.submit': {
       agent: true,
-      summary: 'Admit a Work and run it (unless `run` is false), from the contents of a Workflow file (through MCP, `system mcp`, `workflow` may instead be the path of a Workflow .yaml file on this machine, `~` expanded, and the Sub-workflows beside it are read too; the Host\'s own call takes contents only), or a single Task by capability, and return its record; with `run` false it only admits, and `work.run` starts it later. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, it is refused, naming that Work and its Account, unless `force` is true.',
+      summary: 'Admit a Work and run it (unless `run` is false), from the contents of a Workflow file (through MCP, `system mcp`, `workflow` may instead be the path of a Workflow .yaml file on this machine, `~` expanded, and the Sub-workflows beside it are read too; the Host\'s own call takes contents only), or a single Task by capability, and return its record; with `run` false it only admits, and `work.run` starts it later. `uses` may hold the contents of the Workflow files it uses (Sub-workflows), by file name; a file not sent is read from `workflows/` at the input Task\'s base commit, else beside the Host\'s code. They are joined into the pinned spec now. With `worker`, only that Worker may take the Worker steps of the Work; it is refused when that Worker is not registered or lacks the capabilities of a step. When the input Task names an Item that already has a running or held Work, or is Blocked (it comes after Items not done: `blocked by ...`), it is refused, naming the Work and its Account or what blocks it, unless `force` is true.',
       params: z.object({ workflow: z.string().min(1).optional(), uses: z.record(z.string(), z.string()).default({}), capabilities: z.array(z.string().min(1)).min(1).optional(), input: artifactId.optional(), worker: z.string().min(1).optional(), force: z.boolean().optional(), run: z.boolean().default(true), commandId }).strict()
         .refine((p) => Boolean(p.workflow) !== Boolean(p.capabilities), 'give exactly one of workflow and capabilities'),
       handler(host, p, caller) {
@@ -187,14 +187,21 @@ export function operations(services: Services): Methods {
     },
     'task.new': {
       agent: true,
-      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s `dev` has no line for the Item.',
-      params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional() }).strict(),
-      handler: (_host, p, caller) => services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item, p.repository ? p.against : undefined),
+      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s `dev` has no line for the Item, and when the Item is Blocked (it comes after Items not done: `(after: id, id)` in its line; the refusal says "blocked by ...") unless `force` is true.',
+      params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional(), force: z.boolean().optional() }).strict(),
+      async handler(host, p, caller) {
+        if (p.item && p.repository && !p.force) {
+          const status = await readStatus(p.repository)
+          const why = itemBlockedBy(status, status.repository, host.view.list(), p.item)
+          if (why) throw new WorkError(`Item ${p.item} is ${blockedText(why)}; to store its Task on purpose, give force`)
+        }
+        return services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item, p.repository ? p.against : undefined)
+      },
     },
     status: {
       read: true,
       agent: true,
-      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: a Work for the Item was merged into `dev` (read from the Host\'s store), or `[x]` in `STATUS.md` for work done outside System (with the last merged Work and its final Artifact, the merged change or the report, when known; `work show` lists every Artifact); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody. A `done` Item whose merge commit is not in the running release says `done, not yet released`. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
+      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: a Work for the Item was merged into `dev` (read from the Host\'s store), or `[x]` in `STATUS.md` for work done outside System (with the last merged Work and its final Artifact, the merged change or the report, when known; `work show` lists every Artifact); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody, or `todo (blocked by <ids>)` / `todo (blocked: cycle)` for a Blocked Item (it comes after Items not done, by `(after: id, id)` at the end of its line; derived, never stored). A `done` Item whose merge commit is not in the running release says `done, not yet released`. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
       params: z.object({ repository: z.string().min(1), state: z.enum(['todo', 'doing', 'done']).optional(), item: z.string().regex(ITEM_ID).optional() }).strict(),
       async handler(host, p) {
         const status = await readStatus(p.repository)
