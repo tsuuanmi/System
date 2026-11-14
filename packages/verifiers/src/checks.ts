@@ -26,6 +26,8 @@ import { z } from 'zod'
 export const CHECKS_FILE = '.system/checks.yaml'
 /** The criteria names, pinned in the `checks@1` Artifact, and what each verdict means; any other name refuses admission. */
 export const REPO_CHECKS = 'repo-checks-v1'
+/** `repo-checks-v1` with one difference: a run where no check ran (every one filtered out by `paths`) is `inconclusive`, not `pass`. */
+export const REPO_CHECKS_V2 = 'repo-checks-v2'
 /**
  * The small mode (ro-15, Satisfied): the Task's base is not judged by the repository's checks but by exactly the tests the verify step's input
  * `tests` names (one `<test file> "<test name>"` per line), run with `node --test-name-pattern <file>` (the file itself, not `--test`, which counts the file as a test that passed) after the pinned setup checks named in `SETUP_CHECKS`.
@@ -33,7 +35,7 @@ export const REPO_CHECKS = 'repo-checks-v1'
  */
 export const SATISFIED_TESTS = 'satisfied-tests-v1'
 export const SETUP_CHECKS = ['install', 'build']
-export const CRITERIA_NAMES = [REPO_CHECKS, SATISFIED_TESTS] as const
+export const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, SATISFIED_TESTS] as const
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
@@ -354,6 +356,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       } finally {
         await removeWorktree(tree.repository, worktree)
         rmSync(scratch, { recursive: true, force: true })
+      }
+      if (checks.name === REPO_CHECKS_V2 && !ran.length) {
+        return verdict('inconclusive', `no check ran: every check in ${CHECKS_FILE} is limited by paths the change does not touch`, evidence)
       }
       const which = `run: ${ran.join(', ')}${skipped.length ? `; skipped: ${skipped.join(', ')}` : ''}`
       return failed.length
