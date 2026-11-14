@@ -105,15 +105,50 @@ system work show <work>
 
 ## The night report
 
-End with the report, always, even when you did nothing or stopped early. For
-now **print it** as your final message (ss-3 will say where it goes instead).
-Plain sentences and a list, with IDs, nothing invented:
+End with the report, always, even when you did nothing or stopped early. It is
+**one Artifact**: write it as Markdown, store it, and keep its ID. Plain
+sentences and a list, with IDs, nothing invented. For each Work you submitted
+read its Account and cost:
 
-- **Works:** each Work ID, its Item, its Workflow, how it ended.
+```
+system work report <work>
+system work list
+```
+
+The report has these parts, in this order:
+
+- **Works:** each Work ID, its Item, its Workflow, how it ended, the Account that
+  ran it and its cost (the attempts and usage `work report` gives).
 - **Items done:** Work merged or left as a draft pull request, with the link.
 - **Items skipped, and why:** held (which Work, awaiting what), failed twice (the
   reason of each), claimed by someone else, anything else.
+- **Works with no Item:** read `system work list`; any Work on the Host this night
+  that names no Item (not one you submitted) goes here with its Account and
+  cost, so the operator sees where quota went.
 - **Why the night ended:** 6 Items, no `todo` left, or a Host that did not answer.
 - **Items you propose:** one line each, for the operator to write if they agree.
-- **For the operator:** the commands only they run, such as
-  `system work approve <work>` for each held Work and the release.
+- **For the operator:** the commands only they run, exactly:
+  `system work approve <work>` for each held Work, and the release.
+
+Store it and print the ID, alone on a line, as the last thing you print:
+
+```
+cat > /tmp/night-report.md <<'REPORT'
+<the report>
+REPORT
+system artifact put /tmp/night-report.md --media-type text/markdown
+```
+
+Then tell the operator, if a notifier is configured. The operator's environment
+sets at most one of two variables (never write their value anywhere):
+
+```
+[ -n "${SYSTEM_NIGHT_NOTIFY_URL:-}" ] && curl -fsS -d "<report id>" "$SYSTEM_NIGHT_NOTIFY_URL"
+[ -n "${SYSTEM_NIGHT_NOTIFY_COMMAND:-}" ] && sh -c "$SYSTEM_NIGHT_NOTIFY_COMMAND" -- "<report id>"
+```
+
+`SYSTEM_NIGHT_NOTIFY_URL` is an ntfy-style URL (the ID is the POST body);
+`SYSTEM_NIGHT_NOTIFY_COMMAND` is a command that gets the ID as `$1`. When neither
+is set there is no notifier: the ID only goes to your output, which the timer
+sends to the journal. A notifier that fails is not a failure of the night:
+say so in your output and stop.

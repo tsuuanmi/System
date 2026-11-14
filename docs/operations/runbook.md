@@ -364,10 +364,57 @@ repository's `workflows/develop.yaml` (`hygiene.yaml` when the Item says
 behaviour is unchanged) and `system work wait`. It stops after 6 Items in a
 night (no money cap for now), skips an Item whose Work is held or whose Works
 failed twice and says why, never writes Items, never approves, denies, retries
-a held step or releases, and prints the night report. Try it by hand with
+a held step or releases, and stores the night report (below). Try it by hand with
 `claude -p "$(cat tools/night-session.md)" ` in a checkout after the Host
 answers; `packages/app/tests/night-session.test.ts` checks that every
 `system` command and option it names exists.
+
+### The night report and its notifier
+
+The session ends by storing one Markdown Artifact with `system artifact put`
+and printing its ID: the Works of the night (outcome, Account and cost from
+`system work report`), Items done, Items skipped and why, Works on the Host that
+name no Item (where quota went), Items it proposes, and the exact release
+commands for you. Read it with `system artifact cat <id>`.
+
+To get the ID on your phone, set one of these in the session's environment
+(for the timer, an `Environment=` or `EnvironmentFile=` line of the user unit,
+kept outside the repository; they are the only place a secret may live):
+
+- `SYSTEM_NIGHT_NOTIFY_URL`: an ntfy-style URL; the ID is POSTed to it.
+- `SYSTEM_NIGHT_NOTIFY_COMMAND`: a shell command run with the ID as `$1`.
+
+Neither is required: without one the ID only goes to the session's output, which
+the timer sends to the journal (`journalctl --user -u <the session's unit>`).
+
+### Running it every night
+
+`packages/bundle/system-night-session.service` and `.timer` are templates (like
+the web canary's; `system init` does not install them) that run
+`claude -p` with that prompt in this checkout, once a night at 01:00. The
+service first waits up to 5 minutes for the Host (`bin/system doctor` exits 0);
+the session's output, the night report, goes to the journal. `Persistent=false`:
+a night missed while the machine was off is not run late. Nothing runs until
+you enable the timer. `claude` must be on the `PATH` the install records and
+signed in.
+
+```
+mkdir -p ~/.config/systemd/user
+for u in service timer; do
+  sed -e "s|@REPO@|$PWD|g" -e "s|@PATH@|$PATH|" \
+    packages/bundle/system-night-session.$u > ~/.config/systemd/user/system-night-session.$u
+done
+systemctl --user daemon-reload
+systemctl --user enable --now system-night-session.timer
+```
+
+Read it with `systemctl --user list-timers system-night-session` and
+`journalctl --user -u system-night-session`; run one now with
+`systemctl --user start system-night-session`; stop the series with
+`systemctl --user disable --now system-night-session.timer` (and a night
+already running with `systemctl --user stop system-night-session`). To change
+the time, edit `OnCalendar=` in `~/.config/systemd/user/system-night-session.timer`,
+then `systemctl --user daemon-reload` and `systemctl --user restart system-night-session.timer`.
 
 ## The dev branch
 
