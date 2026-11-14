@@ -530,6 +530,8 @@ Order: tr-1, tr-2 and tr-3 in parallel, then tr-4, then tr-5 before tr-6; one re
 
 tr-5 (2026-11-14): `docs.py check` fails a prose line over 120 characters under docs/ (`DOC-LEN-001`; tables, fenced code, front matter, headings and URL-or-link-only lines excepted); the 42 documents were wrapped without changing words, and `docs.py sync` now wraps the generated index entries at 120. Docs lines before 4,270 (42 files), after 4,376 (42 files): over the 4,285 budget by 91, the true count, left to a hygiene pass. `tools/bootstrap_docs.py` copies `tools/docs.py`, so the portable checker is the same file.
 
+Escaped defects: 1 — tr-4 (work:c6bd714c) committed tools/__pycache__/docs.cpython-38.pyc; fixed by this Work's change (.gitignore).
+
 Close: all six merged, and the next 10 Items on the released code each have the changed-tests list, no Escaped defect, and no research Work failing on citation format.
 
 ## 4. Future, not current gates
