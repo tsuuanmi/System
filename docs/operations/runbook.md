@@ -355,19 +355,48 @@ question's text starts a new series (a new Task ID).
 
 ## The scheduled session's prompt
 
-`tools/night-session.md` is the prompt of the scheduled session (PLAN 3c, ss-1).
+`tools/night-session.md` is the prompt of the scheduled session (PLAN 3c, ss-1, ss-8).
 The session is a Claude Code caller of System, not part of it: for each
-repository it is given (System by default) it reads `system status`, takes the
-`todo` Items in STATUS order, and for each runs `system claim`,
-`system task new --repo ... --item ...`, `system work submit` with the
+repository it is given (System by default) it reads `status`, takes the
+`todo` Items in STATUS order, and for each calls `item_claim`, `task_new`
+(with `repository`, `ref` `dev` and `item`), `work_submit` with the
 repository's `workflows/develop.yaml` (`hygiene.yaml` when the Item says
-behaviour is unchanged) and `system work wait`. It stops after 6 Items in a
-night (no money cap for now), skips an Item whose Work is held or whose Works
-failed twice and says why, never writes Items, never approves, denies, retries
-a held step or releases, and stores the night report (below). Try it by hand with
-`claude -p "$(cat tools/night-session.md)" ` in a checkout after the Host
-answers; `packages/app/tests/night-session.test.ts` checks that every
-`system` command and option it names exists.
+behaviour is unchanged) and waits with `system work wait <work> --timeout 1.5`
+in Bash, again on exit 4. It stops after 6 Items in a night (no money cap for
+now), skips an Item whose Work is held or whose Works failed twice and says why,
+never writes Items, never approves, denies, retries a held step or releases, and
+stores the night report (below).
+
+It uses the `system` MCP server's tools (shown to Claude Code as
+`mcp__system__<tool>`, such as `mcp__system__work_submit`: `status`, `item_claim`, `task_new`, `work_submit`,
+`work_show`, `work_report`, `work_list`, `artifact_put`, `artifact_show`,
+`artifact_cat`), not `system work submit --no-run` (which only admits a Work, so
+nothing would run) and not a followed `system work submit` (which outlives a
+Bash call). `work_submit` runs the Work and returns its record at once. Task text
+and the report go as tool arguments (the report as base64 to `artifact_put`),
+never through a shell string. `--timeout` of `work wait` is in minutes: 1.5 is 90
+seconds, inside a Bash call.
+
+`packages/bundle/system-night-session.sh` (what the service starts) runs
+`claude -p` with `--allowedTools` naming exactly those tools, `Bash(system work wait:*)`,
+the two `[ -n ... ]` guards of the notifier, and the notifier's `curl` or
+`sh -c` line only when `SYSTEM_NIGHT_NOTIFY_URL` or `SYSTEM_NIGHT_NOTIFY_COMMAND`
+is set. Nothing there approves, denies, cancels, retries or releases, so a session
+that tried would be refused by permission as well as by the prompt, and it
+writes no file. Anything else is refused, because `claude -p` has no one to ask.
+`packages/app/tests/night-session.test.ts` checks that every `system` command and
+option and every MCP tool the prompt names exists, and
+`packages/bundle/tests/night-session-units.test.ts` that the allowlist is exactly
+what the prompt uses; `tests/night-session.test.ts` follows the prompt's sequence
+(claim, task_new, work_submit, work wait, work_report, artifact_put) for one Item
+against a real Host with fake Workers. What the tests cannot show is that your
+`claude` accepts these rules, so do one real run once before enabling the timer,
+with no `todo` Item (or only an Item you are happy to have worked):
+`packages/bundle/system-night-session.sh` in a checkout after the Host answers
+(`systemctl --user start system-night-session` does the same under the unit), and
+read the journal or output: it should find no `todo` Item, store a report and
+print its ID, and `system artifact cat <id>` should read it. A "permission"
+refusal in the output names a rule to fix in the script.
 
 ### The night report and its notifier
 
@@ -391,7 +420,7 @@ the timer sends to the journal (`journalctl --user -u <the session's unit>`).
 
 `packages/bundle/system-night-session.service` and `.timer` are templates (like
 the web canary's; `system init` does not install them) that run
-`claude -p` with that prompt in this checkout, once a night at 01:00. The
+`claude -p` with that prompt (through `system-night-session.sh`) in this checkout, once a night at 01:00. The
 service first waits up to 5 minutes for the Host (`bin/system doctor` exits 0);
 the session's output, the night report, goes to the journal. `Persistent=false`:
 a night missed while the machine was off is not run late. Nothing runs until
