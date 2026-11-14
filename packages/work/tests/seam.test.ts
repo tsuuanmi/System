@@ -24,7 +24,7 @@ test('Software Engineering records Worker, verifier and effect events in order',
   const done = await f.controller.run((await f.admit('develop.yaml')).id)
   assert.deepEqual(shape(done), [
     'admitted',
-    'dispatched:implement', 'observed:implement',
+    'dispatched:implement', 'observed:implement', 'skipped:satisfied-check',
     'dispatched:checks.checks', 'verified:checks.checks',
     'effect-intended:publish', 'effect-observed:publish',
     'terminal:succeeded',
@@ -54,7 +54,7 @@ for (let seed = 1; seed <= 50; seed++) {
     const [a, b] = await Promise.all([f.controller.run(se.id), f.controller.run(brainstorm.id)])
     assert.equal(a.state.status, 'succeeded')
     assert.equal(b.state.status, 'succeeded')
-    assert.equal(a.events.length, 8)
+    assert.equal(a.events.length, 9)
     assert.equal(b.events.length, 8)
     assertConsistent(f, a.id)
     assertConsistent(f, b.id)

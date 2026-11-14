@@ -95,8 +95,12 @@ checks:
   `check-run@1`. The verdict's reason lists what ran, with its time, and what
   was skipped: `run: docs 0.4 s, unit 38.0 s; skipped: smoke`.
 - **Criteria names** (df-26): the name a verify step gives is pinned in
-  `checks@1`. `repo-checks-v1` (the rule above, `code-checks.yaml`) is the
-  only one; any other name refuses the Work at admission, naming it. A `red:`
+  `checks@1`. `repo-checks-v1` (the rule above, `code-checks.yaml`) and
+  `satisfied-tests-v1` (ro-15, `develop.yaml`'s `satisfied-check`: the same pinned file, but only
+  the setup checks `install` and `build`, then exactly the tests of the input `tests`, one
+  `<test file> "<test name>"` per line, each run as `node <file>` with that name; a test that
+  matches nothing fails) are the
+  only ones; any other name refuses the Work at admission, naming it. A `red:`
   key in a check is ignored (old files and old `checks@1` still parse): the
   verdict's reason says `note: red: in .system/checks.yaml is ignored`.
 

@@ -95,6 +95,11 @@ export const eventSchema = z.discriminatedUnion('type', [
     rerunOf: contentIdSchema.optional(),
   }).strict(),
   z.object({
+    /** A step whose `when`/`unless` condition on an optional output was not met: it does not run, and counts as done for the steps after it. */
+    type: z.literal('skipped'), seq: z.number().int(), at,
+    stepId: z.string(), reason: z.string(),
+  }).strict(),
+  z.object({
     type: z.literal('attempt-lost'), seq: z.number().int(), at,
     stepId: z.string(), attemptId: z.string(), reason: z.string(),
   }).strict(),
@@ -142,6 +147,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     type: z.literal('terminal'), seq: z.number().int(), at,
     outcome: z.enum(TERMINAL_STATUSES), reason: z.string(),
     results: z.record(z.string(), contentIdSchema), caller: storedCallerSchema.optional(),
+    /** `satisfied`: the Item already held at the Task's base, shown by a verify step with `result` (GLOSSARY: Satisfied); nothing was published. */
+    result: z.literal('satisfied').optional(),
     /** For `held`: the step whose operator decision `system approve` records. */
     awaiting: z.string().optional(),
   }).strict(),
@@ -152,7 +159,7 @@ export type NewEvent = WorkEvent extends infer E ? (E extends { seq: number; at:
 export type Caller = z.infer<typeof callerSchema>
 
 const stepState = z.object({
-  state: z.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled']),
+  state: z.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled', 'skipped']),
   attempts: z.array(z.string()),
   outputs: z.record(z.string(), contentIdSchema),
   partial: z.record(z.string(), contentIdSchema).optional(),
@@ -180,6 +187,8 @@ export const stateSchema = z.object({
   effects: z.record(z.string(), effectState).default({}),
   reason: z.string().optional(),
   awaiting: z.string().optional(),
+  /** Added with ro-15; set by a terminal event that carries it. */
+  result: z.literal('satisfied').optional(),
   results: z.record(z.string(), contentIdSchema),
 }).strict()
 
@@ -244,6 +253,9 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         s.state = 'succeeded'
         break
       }
+      case 'skipped':
+        steps[event.stepId]!.state = 'skipped'
+        break
       case 'attempt-lost':
         steps[event.stepId]!.state = 'pending'
         break
@@ -261,6 +273,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         delete steps[event.stepId]!.decision
         state.status = 'running'
         delete state.reason
+        delete state.result
         state.results = {}
         break
       case 'effect-intended':
@@ -290,6 +303,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         state.status = event.outcome
         state.reason = event.reason
         state.results = { ...event.results }
+        if (event.result) state.result = event.result
         if (event.awaiting) state.awaiting = event.awaiting
         break
     }

@@ -129,6 +129,27 @@ test('Software Engineering: a check failed by the environment is verified again 
   assert.equal(record.state.status, 'succeeded')
 })
 
+test('Software Engineering: a Worker that writes `satisfied` on a base that already holds ends the Work Satisfied; the named tests ran on the base, and `system status` counts the Item done', () => {
+  const repository = gitRepo('checks:\n  - name: install\n    run: "true"\n  - name: unit\n    run: "false"\n', {
+    't/ok.test.mjs': "import { test } from 'node:test'\ntest('holds', () => {})\n",
+    'STATUS.md': 'Aim: a project\n- [ ] p-1 Already true\n',
+  })
+  execFileSync('git', ['-C', repository, 'branch', '-m', 'dev'])
+  const made = system(['task', 'new', '--text', 'FAKE:satisfied', '--repo', repository, '--ref', 'dev', '--item', 'p-1'])
+  assert.equal(made.status, 0, made.stderr)
+  const ran = system(['work', 'submit', '--workflow', SE, '--input', made.stdout.trim()])
+  assert.equal(ran.status, 0, ran.stderr)
+  const record = show(ran.stdout.trim())
+  assert.equal(record.state.status, 'succeeded')
+  assert.equal((record.state as { result?: string }).result, 'satisfied')
+  const verified = record.events.filter((e) => e.type === 'verified')
+  assert.deepEqual(verified.map((e) => [e.stepId, e.verdict]), [['satisfied-check', 'pass']])
+  assert.equal(artifact(verified[0]!.evidence!.at(-1)!).envelope.content.name, 't/ok.test.mjs "holds"')
+  assert.deepEqual(record.events.filter((e) => e.type === 'skipped').map((e) => e.stepId), ['checks.checks', 'accept'])
+  const line = system(['status', '--repo', repository]).stdout.split('\n')[0]
+  assert.match(line!, /^\[x\] p-1 Already true - done, satisfied; last work:/)
+})
+
 test('a Workflow file using code-checks.yaml, not beside it, gets it from workflows/ at the base commit of its input task', () => {
   const dir = mkdtempSync(join(home, 'alone-'))
   const file = join(dir, 'hygiene.yaml')
@@ -155,7 +176,7 @@ test('code-checks.yaml on its own checks the base commit of its input task, as i
 test('Software Engineering: a base commit with no .system/checks.yaml is refused at admission', () => {
   const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit', gitRepo())])
   assert.equal(ran.status, 1)
-  assert.match(ran.stderr, /cannot pin criteria repo-checks-v1: no \.system\/checks\.yaml at commit/)
+  assert.match(ran.stderr, /cannot pin criteria satisfied-tests-v1: no \.system\/checks\.yaml at commit/)
 })
 
 test('Research: cited quotes found at their URLs pass, through the same controller', () => {

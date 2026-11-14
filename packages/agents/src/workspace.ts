@@ -143,6 +143,10 @@ export function prompt(ws: Workspace, request: WorkerRequest): string {
       `Write each of these outputs as a file in ${ws.outputs}:`,
       ...files.map((slot) => `- ${slot} (the file ${join(ws.outputs, slot)})`),
     ] : []),
+    ...(request.optionalOutputs?.length ? [
+      `Optional outputs: write one as a file in ${ws.outputs} only when the instructions say it applies; otherwise leave it out:`,
+      ...request.optionalOutputs.map((slot) => `- ${slot} (optional, the file ${join(ws.outputs, slot)})`),
+    ] : []),
     '',
     'Do not read or change anything outside these directories unless the instructions require it.',
     ...(request.capabilities.includes('code-write') ? [
@@ -166,7 +170,8 @@ export async function capture(artifacts: Artifacts, ws: Workspace, request: Work
     inputs: Object.values(request.inputs), classification: 'local-private' as const,
     producer: { type: 'worker' as const, ref: producer }, workId: request.workId, attemptId: request.attemptId,
   }
-  for (const slot of request.outputs) {
+  for (const slot of [...request.outputs, ...(request.optionalOutputs ?? [])]) {
+    const optional = !request.outputs.includes(slot)
     if (slot === tree) {
       const captured = await captureTree(ws.base!.repository, ws.work, ws.base!.commit, `system: ${request.stepId} output ${slot}\n\nWork: ${request.workId}\nAttempt: ${request.attemptId}`)
       await pin(captured.repository, captured.commit)
@@ -175,7 +180,7 @@ export async function capture(artifacts: Artifacts, ws: Workspace, request: Work
     }
     const path = join(ws.outputs, slot)
     if (!existsSync(path) || !statSync(path).isFile()) {
-      missing.push(slot)
+      if (!optional) missing.push(slot)
       continue
     }
     const data = readFileSync(path)

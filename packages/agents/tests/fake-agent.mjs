@@ -4,6 +4,7 @@
 //   FAKE:edit     write NOTE.md in the working directory
 //   FAKE:append   with FAKE:edit, add to NOTE.md instead of replacing it, so an attempt on an earlier change is a change again
 //   FAKE:outputs  write every listed output file
+//   FAKE:satisfied  write the optional output listed (the one named `satisfied`) with the line `t/ok.test.mjs "holds"`, and change nothing
 //   FAKE:sign     with FAKE:outputs, each file names its runtime, repeats the prompt's Context header and quotes every input file listed
 //   FAKE:hang=STEP:FILE  at step STEP, unless FILE exists: create it and wait (until SIGTERM, then exit 143)
 //   FAKE:cite=URL with FAKE:outputs, "sources" cites URL with the quote QUOTE below, and every other output ends with the citation [s1]
@@ -106,6 +107,9 @@ if (has('outputs')) {
     const sources = { sources: cited ? [{ id: 's1', url: cited, quote: QUOTE, claims: ['System checks quotes'] }] : [] }
     writeFileSync(path, slot === 'sources' ? `${JSON.stringify(sources)}\n` : has('sign') ? `${signed(slot)}${cited ? '\n[s1]\n' : ''}` : `# ${slot} [s1]\n`)
   }
+}
+if (has('satisfied')) {
+  for (const [, , path] of prompt.matchAll(/^- (satisfied) \(optional, the file (\/[^)]+)\)$/gm)) writeFileSync(path, 't/ok.test.mjs "holds"\n')
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')
 if (has('fail')) finish(false, 'scripted failure')

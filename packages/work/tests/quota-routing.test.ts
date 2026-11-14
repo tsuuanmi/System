@@ -328,3 +328,31 @@ for (const earlierDay of [false, true]) {
     assert.equal(dispatched(done)[0]?.selected, 'c2')
   })
 }
+
+test('a limited Account takes no step before the default 5 hours are over, even when every reader fails', async (t) => {
+  let first = true
+  const f = await setup(t, [{ ref: 'P', quota: async () => { throw new Error('reader down') }, run: async () => {
+    if (first) { first = false; return { status: 'failed', outputs: {}, reason: outOfCredits } }
+  } }])
+  f.run()
+  await eventually(() => f.controller.live(f.id).some((entry) => String(entry.waiting) === 'quota'), 'limited step must wait on quota')
+  // The retry interval is 20 ms here; the Account stays passed over through many retries.
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.equal(dispatched(f.record()).length, 1)
+  assert.equal(TERMINAL.has(f.record().state.status), false)
+})
+test('a limited Account is free again at the reset its error text gives', async (t) => {
+  let first = true
+  const reset = new Date(Date.now() + 150).toISOString()
+  const f = await setup(t, [{ ref: 'P', quota: async () => ({ unreadable: 'down' }), run: async () => {
+    if (first) { first = false; return { status: 'failed', outputs: {}, reason: `usage limit reached; resets at ${reset}` } }
+  } }])
+  const running = f.run()
+  await eventually(() => f.controller.live(f.id).some((entry) => String(entry.waiting) === 'quota'), 'limited step must wait on quota')
+  assert.equal(dispatched(f.record()).length, 1)
+  // The retry timers are unref'd: poll so this test keeps the event loop alive.
+  await eventually(() => TERMINAL.has(f.record().state.status), 'the reset must free the Account')
+  assert.equal((await running).state.status, 'succeeded')
+  assert.ok(Date.now() >= Date.parse(reset), 'the second attempt starts after the reset')
+  assert.equal(dispatched(f.record()).length, 2)
+})

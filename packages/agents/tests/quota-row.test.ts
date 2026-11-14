@@ -143,7 +143,8 @@ test('an unknown version on the row only runs --version', async (t) => {
   assert.ok(typeof report.unreadable === 'string')
   assert.match(report.unreadable, /2\.1\.999.*not verified/)
   assert.doesNotMatch(JSON.stringify(report), /tok-1/)
-  assert.deepEqual(fake.readLog(), [{ argv: ['--version'] }])
+  // The read and the probe each ask the version and nothing more: neither runs a turn at an unverified version.
+  assert.ok(fake.readLog().every((entry) => JSON.stringify(entry) === JSON.stringify({ argv: ['--version'] })))
 })
 
 test('registered CLI Worker exposes the row\'s quota reading', async (t) => {
@@ -215,4 +216,18 @@ test('quota() of an account whose registration failed says it is not registered'
   assert.deepEqual(missing, { unreadable: 'its token is not configured' })
   assert.doesNotMatch(JSON.stringify(missing), /tok-1/)
   assert.equal(existsSync(fake.log), false)
+})
+test('an Account whose get_usage has no plan limits is probed with its economy model and its own home', async (t) => {
+  const dir = tempDir('quota-row-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const home = fakeClaudeHome(join(dir, 'claude-home'), { accountUuid: 'claude-account' })
+  const now = Date.parse('2026-11-14T12:00:00.000Z')
+  const event = { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: 'five_hour', utilization: 0.9, resetsAt: (now + 3_600_000) / 1000 } }
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: { rate_limits_available: false }, events: [event] })
+  const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command, claudeHome: home, models: { economy: 'cheap-model' } }
+  const row = await mount(dir, [spec], () => now)
+  assert.deepEqual(await row.quota(spec.ref), { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 90, resetsAt: new Date(now + 3_600_000).toISOString() } }, source: 'rate_limit_event' })
+  const probe = fake.readLog().find((entry) => Array.isArray(entry.argv) && entry.argv[0] === '-p' && entry.home !== undefined && !entry.argv.includes('--input-format'))!
+  assert.equal(probe.home, home)
+  assert.equal((probe.argv as string[])[(probe.argv as string[]).indexOf('--model') + 1], 'cheap-model')
 })
