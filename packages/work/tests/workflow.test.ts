@@ -39,6 +39,22 @@ test('both repository Workflow files parse and resolve with the same schema', ()
   assert.ok(se.workflow.version >= 1)
 })
 
+test('research-source.yaml compiles like research.yaml, has no prefer, and reads the repository checkout', () => {
+  const load = (file: string) => resolve(parseWorkflow(fixture(file)), available)
+  const web = load('research.yaml')
+  const source = load('research-source.yaml')
+  assert.equal(source.workflow.id, 'research-source')
+  assert.deepEqual(source.steps.map((s) => s.id), web.steps.map((s) => s.id))
+  const investigate = (spec: typeof web) => spec.steps.find((s) => s.id === 'investigate') as { prefer?: string; instructions?: string; capabilities: string[]; outputs: string[] }
+  assert.equal(investigate(web).prefer, 'research.web', 'ro-12')
+  assert.equal(investigate(source).prefer, undefined)
+  assert.ok(!/^\s*prefer:/m.test(fixture('research-source.yaml')))
+  assert.deepEqual(investigate(source).capabilities, investigate(web).capabilities)
+  assert.deepEqual(investigate(source).outputs, investigate(web).outputs)
+  assert.match(investigate(source).instructions ?? '', /raw\.githubusercontent\.com\/<owner>\/<repo>\/<commit>\/<path>/)
+  assert.deepEqual(source.steps.filter((s) => s.id !== 'investigate'), web.steps.filter((s) => s.id !== 'investigate'), 'verifier and criteria unchanged')
+})
+
 test('the Brainstorm file: two proposals from the brief alone, then a synthesis of both exact proposals', () => {
   const roles: AvailableCapabilities = { ...available, workers: new Set(['brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']) }
   const spec = resolve(parseWorkflow(fixture('brainstorm.yaml')), roles)

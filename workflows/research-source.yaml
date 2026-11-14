@@ -1,0 +1,47 @@
+# Research from a repository's source (item tr-4). Same as research.yaml except
+# that investigate has no `prefer: research.web` and reads the Task's checkout.
+# Research (MVP-0). A research Worker answers a question with a report and its
+# sources; a citation verifier checks the exact sources Artifact.
+# Same schema and controller as software-engineering.yaml: only the
+# capabilities, outputs, step instructions and verifier differ.
+schema: system.workflow/v1
+id: research-source
+version: 5
+steps:
+  - id: investigate
+    capabilities: [research, web-search, tier.standard]
+    retry: { onFail: [investigate], max: 1 }
+    inputs:
+      question: $work.input
+    outputs: [report, sources]
+    instructions: |
+      Answer the question with sources you actually read. Read the Task's
+      repository checkout as a primary source. When the repository is public,
+      cite it by public pinned URLs of the form
+      https://raw.githubusercontent.com/<owner>/<repo>/<commit>/<path>
+      (the commit is the one checked out), and use web pages only for what the
+      checkout cannot tell.
+      Write the output "report" as Markdown: the answer, with each claim
+      followed by the id of its source in brackets, such as [s1].
+      Write the output "sources" as JSON, exactly in this shape:
+      {"sources": [{"id": "s1", "url": "https://...", "quote": "...", "claims": ["..."]}]}
+      Each "quote" is a sentence copied word for word from the page at "url"
+      that supports its "claims". Use only http or https URLs that are publicly
+      readable without signing in.
+      Square brackets in the report are only for source ids such as [s1]:
+      every [id] must be in "sources" and every source must be cited at least
+      once. Write any other bracketed text (regexes, checkboxes, tags like
+      verified or unknown) without square brackets, because the citation check
+      (citations-v2) reads every bracket as a source id.
+  - id: citations
+    dependsOn: [investigate]
+    verify:
+      capability: research.citation-check
+      subject: $steps.investigate.sources
+      criteria: citations-v2
+      inputs:
+        report: $steps.investigate.report
+  - id: accept
+    dependsOn: [citations]
+    accept:
+      requires: [citations]

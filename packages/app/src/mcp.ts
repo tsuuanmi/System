@@ -75,8 +75,10 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    (the Worker writes the tests first, then the code, and runs the checks);
    \`workflow\` is that file's path on this machine (\`~\` expanded), or the
    Workflow's contents. The others there: hygiene.yaml (a cleanup that keeps
-   behaviour), research.yaml, brainstorm.yaml, and code-checks.yaml (the
-   Sub-workflow the others use to check a change).
+   behaviour), research.yaml (questions answered from the web),
+   research-source.yaml (questions about a repository's source),
+   brainstorm.yaml, and code-checks.yaml (the Sub-workflow the others use to
+   check a change).
 4. Follow it with \`work_watch\` or \`work_events\`; read details by ID
    (\`work_show\`, \`artifact_show\`). To know when a Work is done without
    asking, run \`system work wait <id>\` as a background command.
