@@ -8,14 +8,10 @@ reviewed: 2026-11-07
 
 **Status:** R2 implemented
 ([ADR-0007](../decisions/ADR-0007-one-long-lived-host.md) as amended, and
-[PROP-0004](../proposals/PROP-0004-host-design.md)). The Host lock, the commit
-lane, receipts and recovery on start are in `packages/work` (`host-lock.ts`,
-`lane.ts`, `host.ts`; H2), the socket with its operation table in
-`packages/host` (H3), and the Host as a process with the thin CLI in
-`packages/app` (H4). The old per-command mode, where every `system` command
+[PROP-0004](../proposals/PROP-0004-host-design.md)): the Host in `packages/work` and `packages/host`, the thin CLI in
+`packages/app` (their READMEs say what each file holds). The old per-command mode, where every `system` command
 booted its own host and coordinated through files, is gone; what it did is in
-[Work ownership and recovery](work-ownership-and-recovery.md). Parallel steps
-and Account slots (H5) are in `controller.ts` and `slots.ts`.
+[Work ownership and recovery](work-ownership-and-recovery.md).
 
 ## Why
 
@@ -62,16 +58,10 @@ before it opens storage. The kernel releases the binding when the process
 dies. A second Host for the same home therefore fails at once, and no lock
 file can be left behind.
 
-**Implemented (H2):** `acquireHostLock` in `host-lock.ts`; `Host.start`
-takes it first and gives it back if recovery fails. Off Linux it refuses and
-says so. A Host keeps its Works' locks and cancel requests in memory
-(in the controller).
+`acquireHostLock` is in `host-lock.ts`; off Linux the Host refuses to start.
 
-The old per-Work lock files, takeover mutex and write marks
-(`$DSH_HOME/system/control/*.lock`, `*.takeover`, `*.written`) are gone from
-the code (H4b-2). The Host ignores any left over and deletes none; the
-[move to the install](../operations/runbook.md#moving-to-the-install-df0b) deletes
-them by hand.
+The old per-Work lock files (`control/*.lock`, `*.takeover`, `*.written`) are gone; the Host ignores any left over
+and deletes none ([work README](../../packages/work/README.md)).
 
 ### The commit lane
 
@@ -84,11 +74,8 @@ never a copy taken before an `await`.
   the Work record.
 - **What stays outside.** Runtimes, verifiers and effects run outside the
   lane. Their results re-enter it as events.
-- **Implemented (H2):** `commitLane` (`lane.ts`) is a promise chain the Host
-  hands to the controller. Each decision (taking a Work's lock, a dispatch,
-  an observe, a cancel, a decision, an admission) is one section of it. A
-  closed Host's lane refuses, so a late attempt writes nothing. Sections do
-  not enter the lane again.
+- **In code:** `commitLane` (`lane.ts`); the sections and what they cover are in the
+  [work README](../../packages/work/README.md).
 - **Why a single lane is enough.** DSH's storage domain already serializes
   writes, so one lane matches what lies beneath it.
 
@@ -108,19 +95,10 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   client `commandId`. A repeated `commandId` returns the stored result. The
   same `commandId` with different arguments is refused. A submitted Work's
   ID derives from its `commandId`.
-- **Implemented (H2), in process:** each of `submit`, `run`, `retry`, `cancel`
-  and `decide` takes an optional `commandId`.
-  - The receipt (commandId, a hash of the canonical arguments, the Work ID and
-    final status) is the optional `receipts` field of the Work record,
-    written in the update of the `terminal` event (of `admitted` for a
-    submit), so records written before it stay valid. A cancel that only asks
-    a running Work to stop is receipted with that run's `terminal` event.
-  - A repeat is answered from an index built from the records at start, so it
-    survives a restart; one still running is joined.
-  - A refusal has no event to travel with: it is remembered only while the
-    Host runs.
-  - A `run` cut short has no receipt, so after a restart the same `commandId`
-    runs the Work on.
+- **Receipts in code (H2):** the receipt is the optional `receipts` field of the Work record, written
+  with the event it caused ([work README](../../packages/work/README.md)). A repeat is answered from an index built
+  at start, so it survives a restart; a refusal is remembered only while the Host runs; a `run` cut short has no
+  receipt.
 - **Implemented (H3), the socket and the operation table:** `packages/host`.
   Its README is the protocol (hello, 1 MiB frames, table rows, long calls) and the API reference, the latter generated
   from the
@@ -193,26 +171,10 @@ Brainstorm's two proposals use different Accounts, so they run at the same
 time. Steps after them in the same Work wait, as their `dependsOn` already
 says.
 
-**Implemented (H5, R2):**
-- **Drive.** A Work's `drive` (`controller.ts`) dispatches every ready step
-  whose Account has a free slot, in Workflow file order, then waits for an
-  attempt to report or a slot to be freed. Works are separate drives. Each
-  decision is still one lane section over the latest committed record.
-- **Account.** A Worker's `ref`. Its limit is `maxConcurrentAttempts` in the
-  `agents` row config (per Account, or one default for all; default 1).
-  Verifier and effect steps take no slot.
-- **Waiting.** Ready steps without a slot wait in memory. A freed slot wakes the
-  waiting Works in admission order. No priorities, fairness tuning or queue on
-  disk.
-- **Stopping.** A cancel, a failed step or an unknown effect stops new
-  dispatches; attempts in flight are aborted (a cancel) or finish and are
-  recorded, then the terminal event follows.
-- **Uncertain attempts.** On start each lost Worker attempt keeps its slot, over
-  the limit if need be (`host.slots.uncertain()`). `settle()` asks the Account's Worker
-  `gone(attemptId)` and frees the slot if it is true. Start calls it, and so does
-  a waiting Work with nothing of its own running. An agent attempt is gone when
-  its pid file is absent or names no live process; a Worker without `gone` is
-  never confirmed.
+**Implemented (H5, R2):** a Work's `drive`, the Account slots (`maxConcurrentAttempts`), waiting in admission
+order, stopping and uncertain attempts are in the [work README](../../packages/work/README.md#scheduling-and-slots)
+and `controller.ts`, `slots.ts`. There are no priorities, fairness tuning or queue on disk. An agent attempt is gone
+when its pid file is absent or names no live process.
 
 ### Start, stop and recovery
 
@@ -235,11 +197,6 @@ holds the Work instead of dispatching again (cm-2); only a human's Approval or r
 **Implemented (sc-8):** after recovery `Host.start` runs again, without waiting, each Work whose lost attempts are all
 Worker attempts confirmed gone by `slots.settle()` and whose effects are all `applied` or `failed` (the Work is not
 terminal, so a held one stays held).
-
-**Implemented (H2):** `Host.start` marks each unfinished Work's unreported
-attempts `attempt-lost` and reconciles effects left `intended` or `unknown`
-by reading the remote, applying nothing. `slots.uncertain()` lists the lost Worker attempts that keep
-their Account slot (H5). `close()` refuses new operations and frees the home.
 
 On stop, the Host refuses new runs and exits. Whatever was cut short is the
 next start's recovery. It stops accepting, lets admitted calls finish for a

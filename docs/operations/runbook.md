@@ -120,10 +120,8 @@ packages/work/src/record.ts packages/artifacts/src` shows it).
 
 An entry of the profile's own patch (`$DSH_HOME/profiles/system/cordis.patch.yml`,
 or a `--patch` file) changes the bundle's `config` of that row instead of
-replacing it (milestone B; [patches](../../patches/README.md)): objects merge
-as JSON Merge Patch (RFC 7386, `null` removes a key), and a list of objects
-with a `ref` (or `id`) merges item by item on it, as Kubernetes' strategic
-merge patch does. So one account is changed, added or removed alone:
+replacing it; the merge rules are in the [patches README](../../patches/README.md).
+So one account is changed, added or removed alone:
 
 ```yaml
 - id: agents
@@ -157,18 +155,15 @@ home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
       CARGO_TARGET_DIR: /home/tan/.cache/system-cargo-target
 ```
 
-Names match `^[A-Z_][A-Z0-9_]*$`; `HOME`, `PATH` and `CI` cannot be set, and
-the profile is refused if it tries. A `check-run@1` records the names it was
-given, never the values. The same row's `maxConcurrentChecks` (default 2) is how many `code.required-checks` runs go at
-once on the machine; the others show as waiting for a check slot in `work show` and `system status`, and a lost run
-keeps its slot until its processes are gone.
+The names allowed, what a `check-run@1` records and `maxConcurrentChecks` (how many
+`code.required-checks` runs go at once on the machine) are in the
+[verifiers README](../../packages/verifiers/README.md); the others show as waiting for a check slot in `work show`
+and `system status`.
 
 ## Attempts at once, and held slots
 
-An `agents` account may carry `label`; name refs `<runtime>/<n>` (`claude-code/1`, `codex/1`, `web/chatgpt/1`), with
-`label` the name for people. A retired ref is never reused, and records keep it. Two accounts on one provider account
-are refused for the later one (`system workers` gives the reason); see the [agents
-README](../../packages/agents/README.md#account-identity).
+Account refs and labels, and the refusal of two accounts on one provider account, are in the
+[agents README](../../packages/agents/README.md#account-identity).
 
 **Renaming an Account.** Wait until no Work runs (nothing is stopped for it), then:
 
@@ -181,10 +176,8 @@ README](../../packages/agents/README.md#account-identity).
 
 The old ref is retired: do not give it to another Account. Records keep it.
 
-`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2
-min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. Reading
-never spends a model turn, and when it cannot be read the line says why (`quota: unreadable - ...`). See the [agents
-README](../../packages/agents/README.md#quota).
+`system workers` also prints a `quota:` line under each account; see the
+[agents README](../../packages/agents/README.md#quota).
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
@@ -277,19 +270,13 @@ in: <why>` (exit 0 or 1). **Cancel**, Ctrl-C or 15 minutes end the session
 without saving.
 
 `--remote` needs a VNC server on the Host's `PATH`: `x11vnc` (`apt install
-x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`);
-without one the command fails at once, naming both. Without root, unpack the
-packages into the home directory and put a wrapper script on the `PATH`.
+x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`).
+Without root, unpack the packages into the home directory and put a wrapper script on the `PATH`.
 
-**Account states.** `system workers` shows any state but `ready` as
-`unavailable` with what to do (states and quarantine rules: the
-[web-worker README](../../packages/web-worker/README.md)). After
-`needs-sign-in` or `challenged`, log in again with `--remote` (clear a
-challenge in the viewer yourself; System never solves one), then
-`system workers recheck web/chatgpt/<name>` and retry the Work; `cooling` ends
-at the time shown or early with `recheck`. A failure of the Host's (Chrome did
-not start, a page timeout) never changes the state. No prompt is resent
-automatically: a retry is `work retry`.
+**Account states.** `system workers` shows any state but `ready` as `unavailable` with what to do (states,
+quarantine and recheck: the [web-worker README](../../packages/web-worker/README.md#account-health-ww6d)). After
+`needs-sign-in` or `challenged`, log in again with `--remote`, then `system workers recheck web/chatgpt/<name>` and
+retry the Work with `work retry`: no prompt is resent automatically.
 
 The attempt's `screenshot` partial output shows the page:
 `system work show <id>`, then `system artifact cat <id> > shot.png`.
@@ -448,9 +435,8 @@ again or `system work list`. Its exits are in the
 1. `systemctl --user status system` and `journalctl --user -u system -e`: is
    the Host alive, and busy or stuck?
 2. `system doctor` boots DSH beside the Host and says whether it answers.
-3. If it is stuck, `systemctl --user restart system`. Whatever was running is
-   lost; a Worker attempt is dispatched again by the Host once its process is
-   confirmed gone, and anything else waits for `system work run` or `retry`.
+3. If it is stuck, `systemctl --user restart system`; what that loses and what runs again is in
+   [Stop, restart, status](#stop-restart-status).
 
 ## A check the base fails too
 
