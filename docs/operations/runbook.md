@@ -353,6 +353,22 @@ Read it with `systemctl --user list-timers system-web-canary` and
 `systemctl --user disable --now system-web-canary.timer`. Changing the
 question's text starts a new series (a new Task ID).
 
+## The scheduled session's prompt
+
+`tools/night-session.md` is the prompt of the scheduled session (PLAN 3c, ss-1).
+The session is a Claude Code caller of System, not part of it: for each
+repository it is given (System by default) it reads `system status`, takes the
+`todo` Items in STATUS order, and for each runs `system claim`,
+`system task new --repo ... --item ...`, `system work submit` with the
+repository's `workflows/develop.yaml` (`hygiene.yaml` when the Item says
+behaviour is unchanged) and `system work wait`. It stops after 6 Items in a
+night (no money cap for now), skips an Item whose Work is held or whose Works
+failed twice and says why, never writes Items, never approves, denies, retries
+a held step or releases, and prints the night report. Try it by hand with
+`claude -p "$(cat tools/night-session.md)" ` in a checkout after the Host
+answers; `packages/app/tests/night-session.test.ts` checks that every
+`system` command and option it names exists.
+
 ## The dev branch
 
 System merges a Work's change into `dev` only through its merge queue
