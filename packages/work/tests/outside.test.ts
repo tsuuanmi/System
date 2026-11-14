@@ -37,3 +37,26 @@ test('the reason of a hold by the count is an Outside failure of its last cause'
   assert.equal(outsideCause('step task held after 3 Outside failures in a row (last cause: restart): the host stopped before the attempt reported'), 'restart')
   assert.equal(outsideCause('step task held after 3 Outside failures in a row (last cause: quota): out of credits'), 'quota')
 })
+
+const ATTACH = 'chatgpt: attach text failed: neither the text nor one named attachment was found after 1500 ms (x)'
+const STILL = 'chatgpt: attach text failed: the attachment was still being added after 1500 ms (x)'
+
+test('a web attempt that failed attaching its input is an Outside failure', () => {
+  assert.equal(outsideCause(ATTACH), 'attach')
+  assert.equal(outsideCause(STILL), 'attach')
+  assert.equal(outsideCause('Your workspace is out of credits; attach text failed'), 'quota', 'quota stays first')
+})
+
+test('a check timeout is a failure of the change, unless the base fails it too', () => {
+  const timeout = 'failed: smoke: timed out after 120000ms while running restart'
+  assert.equal(outsideCause(timeout, 'verdict'), undefined)
+  assert.equal(outsideCause('failed: smoke (timed out after 600 s)', 'verdict'), undefined)
+  assert.equal(outsideCause(`smoke: the base fails it too (base abc), also on a re-run once; failed on the change: ${timeout}`, 'verdict'), 'load')
+  assert.equal(outsideCause('timed out after 300 s'), 'slow-host', 'an attempt that timed out is still slow-host')
+})
+
+test('outsideRun counts a failed attach attempt, and a failure of another reason resets', () => {
+  const failedWith = (reason: string) => ({ type: 'observed', stepId: 'task', attemptId: 'attempt:x', status: 'failed', outputs: {}, reason, usage: { state: 'unknown' } }) as never
+  assert.deepEqual(outsideRun(seq([failedWith(ATTACH), failedWith(ATTACH)]), 'task'), { count: 2, cause: 'attach', reason: ATTACH })
+  assert.equal(outsideRun(seq([failedWith(ATTACH), failedWith('tests failed')]), 'task').count, 0)
+})
