@@ -1,6 +1,6 @@
 /**
  * The thin client entry of `bin/system` (PROP-0004 C6): every command but
- * `init`, `update`, `host` and `doctor` runs here, in a process that does not boot DSH
+ * `init`, `update`, `host` and `doctor` runs here (`bootstrap check` reads git alone and never connects), in a process that does not boot DSH
  * and talks to the Host on `$DSH_HOME/system/host.sock`.
  */
 // By path, not by package: declaring @system/host here would change the lockfile.
@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url'
 import type { Caller } from '@system/work'
 import { REFUSED, RpcError, VERSION, codeRoot, connectHello, type Client } from '../../host/lib/index.js'
 import { socketPath } from '../../host/lib/process.js'
+import { bootstrapMain } from './bootstrap.ts'
 import { buildProgram, type Run } from './cli.ts'
 import { confirmHuman, errorLine, explain, readSecret } from './io.ts'
 import { runMcp, type Code } from './mcp.ts'
@@ -64,6 +65,14 @@ export async function main(args: string[], home: string): Promise<number> {
   const out = (text: string) => { process.stdout.write(text) }
   const err = (text: string) => { process.stderr.write(text) }
   const open = (who: Caller, options: { readOnly?: boolean } = {}): Promise<Client> => connectHello(socketPath(home), { version: VERSION, caller: who, retry: CONNECT_RETRY, ...options })
+  if (args[0] === 'bootstrap') {
+    try {
+      return await bootstrapMain(args, out)
+    } catch (error) {
+      err(errorLine(error))
+      return 1
+    }
+  }
   if (args[0] === 'mcp') return runMcp(args.slice(1), home, (who, onCode) => openCurrent(home, who, { onCode }))
   let selected: Run | undefined
   const io = { out, err, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }

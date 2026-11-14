@@ -12,6 +12,8 @@ home (so its Host lock and socket), its repositories and its ports, and shares
 nothing else.
 
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
+- [bootstrap-check.test.ts](bootstrap-check.test.ts) — bs-2: `system bootstrap check`
+  through `bin/system` against a temporary git repository (no Host).
 - [night-session.test.ts](night-session.test.ts) — ss-8: the scheduled session's
   sequence (claim, task_new, work_submit, `work wait`, work_report)
   through `system mcp` against a real Host with fake Workers.

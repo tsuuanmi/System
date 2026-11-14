@@ -50,6 +50,11 @@ export const checksFileSchema = z.object({
     red: z.enum(['pass', 'fail']).optional(),
   }).strict()).min(1).max(20),
 }).strict()
+/** The checks of a `.system/checks.yaml` text, or why the schema refuses it (`checks.yaml` as `bootstrap check` and admission both read it). */
+export function parseChecksFile(text: string): { checks: Checks['checks'] } | { problem: string } {
+  const parsed = checksFileSchema.safeParse(parse(text))
+  return parsed.success ? { checks: parsed.data.checks } : { problem: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }
+}
 export const checksSchema = z.object({
   name: z.string(),
   source: z.object({ repository: z.string(), commit: z.string(), path: z.literal(CHECKS_FILE) }).strict(),
@@ -178,9 +183,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       } catch {
         throw new Error(`no ${CHECKS_FILE} at commit ${base.commit} of ${base.repository}`)
       }
-      const parsed = checksFileSchema.safeParse(parse(text))
-      if (!parsed.success) throw new Error(`${CHECKS_FILE} at ${base.commit} is invalid: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
-      const content: Checks = { name, source: { repository: base.repository, commit: base.commit, path: CHECKS_FILE }, checks: parsed.data.checks }
+      const parsed = parseChecksFile(text)
+      if ('problem' in parsed) throw new Error(`${CHECKS_FILE} at ${base.commit} is invalid: ${parsed.problem}`)
+      const content: Checks = { name, source: { repository: base.repository, commit: base.commit, path: CHECKS_FILE }, checks: parsed.checks }
       return (await artifacts.put({ ...CHECKS_KIND, content, inputs: [task.base], classification: 'operator-shared', producer })).id
     },
     async verify(request): Promise<VerifyResult> {
