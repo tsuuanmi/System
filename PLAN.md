@@ -33,6 +33,7 @@
 | WW | Website Workers: Runtime `web`, generic Procedures on a UI map, Power by tier, the canary, `citations-v2`, `research-fanout`; built by System Works on branch `web-workers` | [WW](#ww--website-workers-that-work-built-with-website-workers-branch-web-workers) |
 | DF | System develops System: Items in `STATUS.md` and `system status`, claims, tests first (`feature.yaml`: red check, tests frozen), a check the base fails too is held, one retry per failing check, `work wait` and `system mcp` across Host restarts and updates; 11 System Items merged by System Works in its last two days with no operator touch; DNA (Rust) the second repository; DF3 passed on the session takeover of 2026-11-09, whose questions became df-24, df-28 and df-31 (operator, 2026-11-10: no second run) | [DF at `ea71d80`](https://github.com/tsuuanmi/System/blob/ea71d80/PLAN.md#3-df--dogfood-decided-2026-11-08) |
 | SC | Several Accounts per Runtime: Account identity and the provider's account ID (sc-1), roles `code.develop` and `code.tests` (sc-2), quota readers (sc-3), routing by Headroom under a Ceiling (sc-4), and the first remedies for outside failures (sc-7 to sc-13) | [SC](#3a-sc--scale-by-accounts-decided-2026-11-10), PRs #160 to #186 |
+| RO | Robust to outside failures: 10 Items in a row (ro-7 to ro-16) with no Outside failure, measured from `work report` (ro-5); routing by Headroom with no preferred Account (ro-7), `status` shows the final Artifact (ro-10), research prefers the web Runtime (ro-12), MCP across an update (ro-13); the tests step moved to Claude Code (operator, 2026-11-13). Core 3,982 lines, docs 4,283. ro-15 failed on its change and moves to SS | [RO](#3b-ro--robust-to-outside-failures-decided-2026-11-11), PRs #196 to #212 |
 
 Who built them: PRs #5–#36 were System Works, apart from #34 and #35 (the
 operator's sessions); OC, CQ and the PRs after CQ were built by the
@@ -262,6 +263,28 @@ Review of 2026-11-13 (operator), what returns most next:
 - **`claim` stays** (a scheduled session needs it); 3,882 stays the budget
   baseline, with no target below it.
 
+## 3c. SS — The scheduled session (decided 2026-11-14)
+
+**Aim:** the operator writes Items and releases; a session started on a
+schedule drives the `todo` Items into `dev` overnight and leaves a report.
+RO closed with 10 Items in a row without an Outside failure.
+
+Decisions (operator, 2026-11-14):
+- **A caller outside System.** df-1 removed the Orchestrator that System
+  started itself (ADR-0009); the scheduled session is a Claude Code session
+  run as `claude -p` by a systemd user timer (the standard the web canary's
+  timer already uses), reading its prompt from a file in this repository, so
+  any session can replace it. System gains no model loop (ADR-0001).
+- **One night:** the `todo` Items in STATUS order, one at a time; at most 6
+  Items or about $15 (API-equivalent) a night; an Item whose Work is held or
+  that failed twice is skipped and reported; no `todo` left ends the night.
+  It writes no Items and never releases (ADR-0008), unless the operator hands
+  a Release over for that night.
+- **The report is an Artifact** (Works, Items done, Items skipped and why,
+  Items it proposes, the release commands for the operator), its ID sent to
+  the operator's phone.
+- Items: ro-15 (Satisfied, redesigned), ss-1 to ss-4 in STATUS.md.
+
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
@@ -428,7 +451,7 @@ removed), Power by tier, a circuit breaker per Account, the canary, the
 
 ## 4. Future, not current gates
 
-- [ ] A session that System starts on a schedule, to drive Items unattended.
+- [ ] A session that System starts on a schedule, to drive Items unattended: now milestone SS (section 3c).
 - [ ] Research quality capabilities (source snapshots, citation consistency,
   claim-to-evidence checking) as separately selected verifiers. *Trigger: a
   Research Work whose accepted report the operator finds wrong because a
