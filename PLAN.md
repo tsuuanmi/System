@@ -534,6 +534,24 @@ Escaped defects: 1 — tr-4 (work:c6bd714c) committed tools/__pycache__/docs.cpy
 
 Close: all six merged, and the next 10 Items on the released code each have the changed-tests list, no Escaped defect, and no research Work failing on citation format.
 
+## 3f. BS — Bootstrap (decided 2026-11-15 by the overnight session)
+
+**Aim:** another repository can adopt System from a read-only plan and check, without a false green.
+
+How decided: by the overnight session of 2026-11-14/15 under the operator's standing order to continue from PLAN, taking the recommended answers of the proposal Artifact sha256:1e69a03b41a5fab080f45f552cddd3f848b838da80fd9afb87a8b9ed036de05a; the operator reviews them in the morning and may change them.
+
+Decisions:
+- Read-only first: `plan` and `check`; `apply`, which writes into another repository, waits.
+- The false green is stopped twice, by `bootstrap check` (bs-2) and by the verifier (bs-4).
+- The first checks file is only a draft System prints, committed by a human, because admission refuses a Work without one (research work:4806e133).
+- Several repositories on one Host are accepted under today's limits (GitHub `origin`, `dev`, one token).
+
+Left to the operator:
+- The role `research.source` in the profile so that research-source.yaml excludes web Accounts (tr-4 did not: work:9a798245 ran on web/chatgpt/second).
+- The first real repository for a trial (bs-6, not registered).
+
+Order: tr-7 and bs-1 in parallel, then bs-2, bs-4 beside it, then bs-3, then bs-5; these Items count toward TR's close (PLAN 3e).
+
 ## 4. Future, not current gates
 
 - [ ] A session that System starts on a schedule, to drive Items unattended: now milestone SS (section 3c).
