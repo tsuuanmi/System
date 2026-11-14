@@ -557,7 +557,8 @@ State at the end of the overnight session (2026-11-15):
 - Tried by the operator's session on real repositories: `bootstrap check` passes on System itself and fails a repository whose checks are all limited to documentation paths ("guard: fail"); `bootstrap plan` writes nothing and drafts checks from plain `run:` steps.
 - Not released: dev is ahead of main by BS, tr-7 and the tr-1 fix (work:717ec1a2); the night session does not release.
 - TR's close (3e) is not met: the window after TR's release found an Escaped defect (tr-1's changed-tests list against the attempt's start), so counting the next 10 Items starts again after the next release.
-- Still the operator's: the role `research.source` in the profile; a first real repository for bs-6.
+- Still the operator's: the role `research.source` in the profile.
+- bs-6 tried on DNA (read-only): check passes, plan's draft matches DNA's gates but includes setup steps as checks (a candidate Item: skip install and toolchain steps). Before releasing bs-4 the session checked every repository enrolled on this machine (DNA, System, system-dogfood): each has a `docs` check with no `paths`, so no Work there can reach the zero-checks case.
 - Measures: active core 4,285 lines; docs 4,283 (42).
 
 ## 4. Future, not current gates
