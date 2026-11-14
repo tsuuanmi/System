@@ -89,13 +89,15 @@ output that step does not declare, an accept step on a non-verify step, more
 than one accept step, and any Worker or verifier capability the **effective**
 composition does not provide.
 
-The repository's canonical files are [`workflows/develop.yaml`](../../workflows/develop.yaml) (the default for any change to a repository), [`workflows/hygiene.yaml`](../../workflows/hygiene.yaml),
+The repository's canonical files are [`workflows/develop.yaml`](../../workflows/develop.yaml) (the default for any
+change to a repository), [`workflows/hygiene.yaml`](../../workflows/hygiene.yaml),
 [`workflows/research.yaml`](../../workflows/research.yaml) and
 [`workflows/brainstorm.yaml`](../../workflows/brainstorm.yaml). They differ
 only in capabilities, output slots, instructions and verifier; Brainstorm has
 none, and routes its two independent proposals to different providers through
 role capabilities (`brainstorm.idea-a`, `brainstorm.idea-b`) that the profile
-gives to one account each. Research's `investigate` uses the same kind of role in `prefer` (see [workflows/README.md](../../workflows/README.md)). Since RES-0008 the two proposals also take
+gives to one account each. Research's `investigate` uses the same kind of role in `prefer` (see
+[workflows/README.md](../../workflows/README.md)). Since RES-0008 the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
 the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
@@ -126,7 +128,8 @@ and depend on it (a `fail` verdict qualifies; `error` and `inconclusive` do not)
 itself (a failure its Worker marked `retryable` in its result, which only the
 Worker can know: it happened before anything was sent that cannot be sent
 twice; or a failure after which its Account no longer offers the step's
-capabilities, so the retry goes to another Account, ro-12). The controller then appends `reopened` with `automatic: true` and no
+capabilities, so the retry goes to another Account, ro-12). The controller then appends `reopened` with `automatic:
+true` and no
 caller, at most `max` times per verify step in `onFail` (and for the step
 itself), counted from the recorded events so a restart or another Account does
 not reset it. When several steps list the failing verify step, the controller

@@ -153,22 +153,32 @@ home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
 
 Names match `^[A-Z_][A-Z0-9_]*$`; `HOME`, `PATH` and `CI` cannot be set, and
 the profile is refused if it tries. A `check-run@1` records the names it was
-given, never the values. The same row's `maxConcurrentChecks` (default 2) is how many `code.required-checks` runs go at once on the machine; the others show as waiting for a check slot in `work show` and `system status`, and a lost run keeps its slot until its processes are gone.
+given, never the values. The same row's `maxConcurrentChecks` (default 2) is how many `code.required-checks` runs go at
+once on the machine; the others show as waiting for a check slot in `work show` and `system status`, and a lost run
+keeps its slot until its processes are gone.
 
 ## Attempts at once, and held slots
 
-An `agents` account may carry `label`; name refs `<runtime>/<n>` (`claude-code/1`, `codex/1`, `web/chatgpt/1`), with `label` the name for people. A retired ref is never reused, and records keep it. Two accounts on one provider account are refused for the later one (`system workers` gives the reason); see the [agents README](../../packages/agents/README.md#account-identity).
+An `agents` account may carry `label`; name refs `<runtime>/<n>` (`claude-code/1`, `codex/1`, `web/chatgpt/1`), with
+`label` the name for people. A retired ref is never reused, and records keep it. Two accounts on one provider account
+are refused for the later one (`system workers` gives the reason); see the [agents
+README](../../packages/agents/README.md#account-identity).
 
 **Renaming an Account.** Wait until no Work runs (nothing is stopped for it), then:
 
 1. Edit the `ref` in `~/.system/profile.yml`.
-2. Move the Account's directory under `~/.dsh/system` to the new name: `claude/<name>` (Claude Code's `claudeHome`), `codex/<name>` (Codex's `codexHome`), or `web/<site>/<name>` (the browser profile of a web Account). An Account that sets `claudeHome`, `codexHome` or `profileDir` itself keeps that path; move it only if you want it renamed.
+2. Move the Account's directory under `~/.dsh/system` to the new name: `claude/<name>` (Claude Code's `claudeHome`),
+   `codex/<name>` (Codex's `codexHome`), or `web/<site>/<name>` (the browser profile of a web Account). An Account that
+   sets `claudeHome`, `codexHome` or `profileDir` itself keeps that path; move it only if you want it renamed.
 3. Keep the credential names (`tokenRef`) as they are.
 4. Restart the Host and check `system workers`: the new ref is `available`.
 
 The old ref is retired: do not give it to another Account. Records keep it.
 
-`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. Reading never spends a model turn, and when it cannot be read the line says why (`quota: unreadable - ...`). See the [agents README](../../packages/agents/README.md#quota).
+`system workers` also prints one `quota:` line under each account, e.g. `quota: 5h 18% (resets 23:03), 7d 10%, read 2
+min ago`: the share used of the 5-hour and weekly windows, when they reset (local time) and when it was read. Reading
+never spends a model turn, and when it cannot be read the line says why (`quota: unreadable - ...`). See the [agents
+README](../../packages/agents/README.md#quota).
 
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
