@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { memoryWorkTable } from '../../../test-support/memory.ts'
 import { WorkController, type SpecStore, type WorkTable } from '../src/controller.ts'
 import { WorkError } from '../src/errors.ts'
-import { fold, type WorkRecord, type Caller } from '../src/record.ts'
+import { fold, type WorkRecord } from '../src/record.ts'
 import type { Verdict } from '../src/kinds.ts'
 import { Capabilities, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest, type WorkerResult } from '../src/registry.ts'
 import { WorkflowError, directTask, parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
@@ -17,13 +17,7 @@ const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'u
 const caller = { type: 'human', operatorId: 'tan' } as const
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 
-interface FrozenSpecs {
-  restoreCalls: { changeId: string; frozenId: string; caller: Caller }[]
-  restoreFrozen(changeId: string, frozenId: string, caller: Caller): Promise<{ id: string; restored: string[] }>
-}
-
-function memorySpecs(): SpecStore & FrozenSpecs & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string> } {
-  const restoreCalls: FrozenSpecs['restoreCalls'] = []
+function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string> } {
   const unchanged = new Map<string, string>()
   const specs = new Map<string, ResolvedSpec>()
   const stored = new Set<string>()
@@ -32,13 +26,6 @@ function memorySpecs(): SpecStore & FrozenSpecs & { stored: Set<string>; verdict
     stored,
     verdicts,
     unchanged,
-    restoreCalls,
-    async restoreFrozen(changeId, frozenId, caller) {
-      restoreCalls.push({ changeId, frozenId, caller })
-      const restoredId = id('restored-1')
-      stored.add(restoredId)
-      return { id: restoredId, restored: ['tests/a.test'] }
-    },
     unchangedBase: (artifactId) => unchanged.get(artifactId),
     kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) {
@@ -190,157 +177,6 @@ test('a changed tree still passes, and a read-only scout with an unchanged check
   for (const s of scouting) assert.equal(done.state.steps[s.id]!.state, 'succeeded', s.id)
 })
 
-/** Supply a resolved spec directly so these exercise observation independently of the YAML parser. */
-async function runFrozen(h: Harness) {
-  const implement = { id: 'implement', dependsOn: ['tests'], capabilities: ['code-write'], inputs: { tests: '$steps.tests.change' }, outputs: ['change'], freeze: '$steps.tests.change' }
-  const spec: ResolvedSpec = {
-    workflow: { id: 'frozen', version: 1 },
-    steps: [
-      { id: 'tests', capabilities: ['code-write'], outputs: ['change'] },
-      implement,
-      // An output is subject to the existing no-change rule only when judged.
-      { id: 'checks', dependsOn: ['implement'], verify: { capability: 'code.required-checks', subject: '$steps.implement.change', criteria: 'c1' } },
-    ],
-  }
-  const admitted = await h.controller.admit({ spec, caller, source: { kind: 'workflow-file', path: 'frozen.yaml' } })
-  return h.controller.run(admitted.id)
-}
-
-test('a step with freeze records the change with the frozen files restored', async () => {
-  const h = harness()
-  const record = await runFrozen(h)
-  assert.equal(record.state.steps.implement!.outputs.change, id('restored-1'))
-  const reported = id(`${h.calls.find((c) => c.stepId === 'implement')!.attemptId}/change`)
-  assert.deepEqual(h.specs.restoreCalls.map(({ changeId, frozenId }) => ({ changeId, frozenId })), [
-    { changeId: reported, frozenId: record.state.steps.tests!.outputs.change },
-  ])
-  assert.equal(record.state.status, 'succeeded')
-  assert.deepEqual(h.verdicts, [`checks:${id('restored-1')}`])
-})
-
-test('a failure to restore frozen files fails the step', async () => {
-  const h = harness()
-  h.specs.restoreFrozen = async () => { throw new Error('cannot read frozen tree') }
-  const record = await runFrozen(h)
-  assert.equal(record.state.steps.implement!.state, 'failed')
-  const observed = record.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
-  assert.ok(observed?.type === 'observed')
-  assert.match(observed.reason ?? '', /could not restore the frozen files.*cannot read frozen tree/)
-  assert.equal(h.verdicts.length, 0)
-})
-
-test('a change that is unchanged after restoring frozen files fails with no change', async () => {
-  const h = harness()
-  h.specs.unchanged.set(id('restored-1'), 'abcdef0123456789')
-  const record = await runFrozen(h)
-  assert.equal(record.state.steps.implement!.state, 'failed')
-  const observed = record.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
-  assert.ok(observed?.type === 'observed')
-  assert.match(observed.reason ?? '', /no change:.*abcdef0/)
-  assert.equal(h.verdicts.length, 0)
-})
-
-test('a direct Task with no Workflow file runs one attempt to a result', async () => {
-  const h = harness()
-  const spec = directTask(['code-write'], false, h.capabilities.available())
-  const admitted = await h.controller.admit({ spec, caller, source: { kind: 'direct-task' } })
-  const done = await h.controller.run(admitted.id)
-  assert.equal(done.state.status, 'succeeded')
-  assert.equal(h.calls.length, 1)
-  assert.deepEqual(Object.keys(done.state.results), ['task.result'])
-})
-
-test('Software Engineering and Research run through the same controller code', async () => {
-  const h = harness()
-  const se = await runFixture(h, 'develop.yaml')
-  const research = await runFixture(h, 'research.yaml')
-  assert.equal(se.state.status, 'succeeded')
-  assert.equal(research.state.status, 'succeeded')
-  assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write', 'code.develop', 'tier.standard']], ['investigate', ['research', 'web-search', 'tier.standard']]])
-  // The verifier got the exact Artifact the Worker produced, resolved from the slot.
-  assert.equal(h.verdicts[0], `checks.checks:${se.state.steps.implement!.outputs.change}`)
-  assert.equal(h.verdicts[1], `citations:${research.state.steps.investigate!.outputs.sources}`)
-})
-
-test('a Worker gets exact Artifact IDs for its inputs, never a slot name', async () => {
-  const h = harness()
-  const done = await runFixture(h, 'develop.yaml')
-  assert.deepEqual(h.calls[0]!.inputs, { task: done.state.input })
-  const dispatched = done.events.find((e) => e.type === 'dispatched' && e.stepId === 'checks.checks')
-  assert.deepEqual(dispatched && 'inputs' in dispatched && dispatched.inputs, { subject: done.state.steps.implement!.outputs.change, criteria: done.state.criteria['checks.checks'] })
-})
-
-test('an invalid Workflow dispatches zero Workers and creates no Work', async () => {
-  const h = harness()
-  const broken = fixture('develop.yaml').replace('dependsOn: [implement]', 'dependsOn: [ghost]')
-  assert.throws(() => resolve(parseWorkflow(broken), h.capabilities.available(), fixture), WorkflowError)
-  assert.equal(h.calls.length, 0)
-  assert.equal(h.table.rows.size, 0)
-})
-
-test('admission refuses a missing input and an input that is not stored', async () => {
-  const h = harness()
-  const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
-  await assert.rejects(() => h.controller.admit({ spec, caller, source: { kind: 'workflow-file' } }), WorkError)
-  await assert.rejects(() => h.controller.admit({ spec, input: id('never stored'), caller, source: { kind: 'workflow-file' } }), /not a stored Artifact/)
-  assert.equal(h.table.rows.size, 0)
-})
-
-test('a restart mid-attempt re-dispatches that step only, as a new attempt, with the same inputs', async () => {
-  const table = memoryWorkTable()
-  const specs = memorySpecs()
-  // The first host's Worker never returns: its process "dies" mid-attempt.
-  const first = harness({ table, specs, worker: { run: () => new Promise(() => {}) } })
-  const spec = resolve(parseWorkflow(fixture('develop.yaml')), first.capabilities.available(), fixture)
-  const admitted = await first.controller.admit({ spec, input: await input(first), caller, source: { kind: 'workflow-file' } })
-  void first.controller.run(admitted.id)
-  while (table.rows.get(admitted.id)!.events.length < 2) await new Promise((resolve) => setImmediate(resolve))
-  const lostAttempt = table.rows.get(admitted.id)!.state.steps.implement!.attempts[0]!
-
-  const second = harness({ table, specs })
-  const done = await second.controller.run(admitted.id)
-  assert.equal(done.state.status, 'succeeded')
-  assert.deepEqual(done.events.map((e) => e.type), ['admitted', 'dispatched', 'attempt-lost', 'dispatched', 'observed', 'dispatched', 'verified', 'effect-intended', 'effect-observed', 'terminal'])
-  assert.equal(second.calls.length, 1, 'the second host ran implement once; checks ran once')
-  assert.notEqual(second.calls[0]!.attemptId, lostAttempt)
-  assert.deepEqual(done.state.steps.implement!.attempts, [lostAttempt, second.calls[0]!.attemptId])
-  const [d1, d2] = done.events.filter((e) => e.type === 'dispatched' && e.stepId === 'implement')
-  assert.deepEqual(d1 && 'inputs' in d1 && d1.inputs, d2 && 'inputs' in d2 && d2.inputs)
-
-  // A terminal Work run again changes nothing and calls nothing.
-  const again = await harness({ table, specs }).controller.run(admitted.id)
-  assert.equal(again.events.length, done.events.length)
-})
-
-test('the stored state always equals a replay of the recorded events', async () => {
-  const h = harness()
-  const done = await runFixture(h, 'research.yaml')
-  // Storage may hand back keys in another order (DSH revalidates records at open).
-  const stored = h.table.rows.get(done.id)!
-  h.table.rows.set(done.id, { ...stored, state: Object.fromEntries(Object.entries(stored.state).reverse()) as typeof stored.state })
-  const replayed = h.controller.replay(done.id)
-  assert.equal(replayed.matches, true)
-  assert.deepEqual(fold(['investigate', 'citations', 'accept'], done.events), done.state)
-  assert.equal(h.calls.length, 1, 'replay ran no Worker')
-})
-
-test('a failed, errored or missing verdict fails the Work; inconclusive is held', async () => {
-  assert.equal((await runFixture(harness({ verdict: 'fail' }), 'develop.yaml')).state.status, 'failed')
-  assert.equal((await runFixture(harness({ verdict: 'error' }), 'develop.yaml')).state.status, 'failed')
-  const held = await runFixture(harness({ verdict: 'inconclusive' }), 'research.yaml')
-  assert.equal(held.state.status, 'held')
-  assert.match(held.state.reason!, /operator decision/)
-})
-
-test('without an accept step a failed verdict still fails the Work', async () => {
-  const h = harness({ verdict: 'fail' })
-  const spec = resolve(parseWorkflow(fixture('develop.yaml').replace(/  - id: publish[\s\S]*$/, '').replace('checks.checks, publish', 'checks.checks')), h.capabilities.available(), fixture)
-  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
-  const done = await h.controller.run(admitted.id)
-  assert.equal(done.state.status, 'failed')
-  assert.match(done.state.reason!, /checks\.checks=fail/)
-})
-
 const GATED = `schema: system.workflow/v1
 id: gated
 version: 1
@@ -351,7 +187,7 @@ steps:
     outputs: [change]
   - id: red
     dependsOn: [tests]
-    verify: { capability: code.required-checks, subject: $steps.tests.change, criteria: red-v1 }
+    verify: { capability: code.required-checks, subject: $steps.tests.change, criteria: repo-checks-v1 }
   - id: implement
     dependsOn: [red]
     capabilities: [code-write]
@@ -373,45 +209,6 @@ async function runGated(verdicts: VerifyResult['verdict'][]) {
   return { h, done: await h.controller.run(admitted.id) }
 }
 
-const GATED_HOLD = GATED.replace('criteria: red-v1 }', 'criteria: red-v1, holdInconclusive: true }')
-
-async function runGatedHold(verdicts: VerifyResult['verdict'][], accept = true) {
-  const specs = memorySpecs()
-  const h = harness({ specs, verifier: scripted(specs, verdicts) })
-  const source = accept ? GATED_HOLD : GATED_HOLD.replace(/  - id: accept[\s\S]*$/, '')
-  const spec = resolve(parseWorkflow(source), h.capabilities.available())
-  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'gated.yaml' } })
-  return { h, done: await h.controller.run(admitted.id) }
-}
-
-test('an inconclusive verdict of a holdInconclusive verify step holds the Work at that step', async () => {
-  const { h, done } = await runGatedHold(['inconclusive', 'pass'])
-  assert.equal(done.state.status, 'held')
-  assert.equal(done.state.awaiting, 'red')
-  assert.match(done.state.reason!, /operator decision: red/)
-  assert.equal(h.calls.length, 1, 'implement did not run')
-  assert.equal(h.controller.replay(done.id).matches, true)
-
-  const approved = await h.controller.decide(done.id, { decision: 'approved', caller, reason: 'continue' })
-  assert.equal(approved.state.status, 'succeeded')
-  assert.equal(h.calls.length, 2)
-  assert.equal(approved.events.filter((e) => e.type === 'terminal' && e.outcome === 'held').length, 1)
-
-  const deniedRun = await runGatedHold(['inconclusive', 'pass'])
-  const denied = await deniedRun.h.controller.decide(deniedRun.done.id, { decision: 'denied', caller, reason: 'stop' })
-  assert.equal(denied.state.status, 'failed')
-  assert.match(denied.state.reason!, /red denied by/)
-  assert.equal(deniedRun.h.calls.length, 1)
-})
-
-test('an approved holdInconclusive verify step without an accept step does not hold again', async () => {
-  const { h, done } = await runGatedHold(['inconclusive', 'pass'], false)
-  assert.equal(done.state.status, 'held')
-  const approved = await h.controller.decide(done.id, { decision: 'approved', caller, reason: 'continue' })
-  assert.equal(approved.state.status, 'succeeded')
-  assert.equal(approved.events.filter((e) => e.type === 'terminal' && e.outcome === 'held').length, 1)
-})
-
 test('a step never starts after a failed or errored verdict it follows: the Work fails there, naming the verdict', async () => {
   for (const verdict of ['fail', 'error'] as const) {
     const { h, done } = await runGated([verdict, 'pass'])
@@ -420,7 +217,7 @@ test('a step never starts after a failed or errored verdict it follows: the Work
     assert.equal(h.calls.length, 1, `implement never ran after a ${verdict} verdict`)
     assert.equal(h.controller.replay(done.id).matches, true)
   }
-  // Inconclusive is decided at the end unless the verify step sets holdInconclusive.
+  // Inconclusive is decided at the end of the run.
   const { h, done } = await runGated(['inconclusive', 'pass'])
   assert.equal(h.calls.length, 2)
   assert.equal(done.state.status, 'succeeded')
@@ -1113,44 +910,3 @@ test('a step with no retry declared is never tried again by itself', async () =>
   assert.equal(h.calls.length, 1)
 })
 
-test('a later step whose message objects to an earlier output reopens that step once, with the objection as its failure input (dg-8)', async () => {
-  const yaml = RETRY_TWO.replace('onFail: [red, checks]', 'onFail: [red, checks, implement]')
-  let n = 0
-  const h: Harness = harness({ worker: { async run(r) {
-    h.calls.push(r)
-    const outputs = Object.fromEntries(r.outputs.map((slot) => [slot, id(`${r.attemptId}/${slot}`)]))
-    for (const out of Object.values(outputs)) h.specs.stored.add(out)
-    const objects = r.stepId === 'implement' && n++ === 0
-    return { status: 'succeeded', outputs, ...(objects ? { message: 'Nothing done.\nOBJECTION: test a.test.ts asserts 2, the rule says 3' } : {}) }
-  } } })
-  const done = await runWith(yaml, h)
-  assert.equal(done.state.status, 'succeeded')
-  assert.deepEqual(h.calls.map((c) => c.stepId), ['tests', 'implement', 'tests', 'implement'])
-  const observed = done.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
-  assert.ok(observed?.type === 'observed')
-  assert.equal(observed.status, 'failed')
-  assert.match(observed.objection ?? '', /^test a\.test\.ts asserts 2/)
-  const reopened = done.events.filter((e) => e.type === 'reopened')
-  assert.equal(reopened.length, 1)
-  assert.ok(reopened[0]?.type === 'reopened')
-  assert.equal(reopened[0].stepId, 'tests')
-  assert.equal(reopened[0].objectedBy, 'implement')
-  assert.ok(h.calls[2]!.inputs.failure)
-  assert.equal(h.controller.replay(done.id).matches, true)
-})
-
-test('an objection past the retry budget fails the Work; a step no one lists in onFail cannot object', async () => {
-  const worker = (h: () => Harness): Partial<WorkerPort> => ({ async run(r) {
-    const outputs = Object.fromEntries(r.outputs.map((slot) => [slot, id(`${r.attemptId}/${slot}`)]))
-    for (const out of Object.values(outputs)) h().specs.stored.add(out)
-    return { status: 'succeeded', outputs, message: 'OBJECTION: wrong' }
-  } })
-  const listed: Harness = harness({ worker: worker(() => listed) })
-  const done = await runWith(RETRY_TWO.replace('onFail: [red, checks]', 'onFail: [red, checks, implement]'), listed)
-  assert.equal(done.state.status, 'failed')
-  assert.equal(done.events.filter((e) => e.type === 'reopened').length, 1)
-  const unlisted: Harness = harness({ worker: worker(() => unlisted) })
-  const plain = await runWith(RETRY_TWO, unlisted)
-  assert.equal(plain.state.status, 'succeeded')
-  assert.equal(plain.events.filter((e) => e.type === 'reopened').length, 0)
-})

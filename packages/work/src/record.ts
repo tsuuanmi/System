@@ -79,7 +79,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     limited: z.literal(true).optional(),
     /** The Worker says this failure may be tried afresh (`retry.onFail` names the step itself). */
     retryable: z.literal(true).optional(),
-    /** The Worker's final message objects to an earlier step's output (`OBJECTION: <what and why>`); the step failed, and the earlier step that lists it in `retry.onFail` is reopened with this text. */
+    /** Old records only: never written (a later step's final message objected to an earlier step's output). */
     objection: z.string().optional(),
     /** A no-change attempt on a step reopened by this failing verdict, passed on as the same change (`retry.rerunUnchanged`): the check runs again on it. */
     unchangedAfter: contentIdSchema.optional(),
@@ -106,7 +106,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), reason: z.string(),
     /** An automatic retry after a failing verdict: that verdict Artifact, handed to the new attempt as input `failure`. */
     failure: contentIdSchema.optional(),
-    /** An automatic reopening after this later step's objection: the step, whose recorded objection is handed to the new attempt as input `failure`. */
+    /** Old records only: never written (an automatic reopening after this later step's objection). */
     objectedBy: z.string().optional(),
     /** An automatic reopening after this later effect step's observed conflict or failed merge check (`rejected`); `failure` is its reason as a verdict. */
     failedEffect: z.string().optional(),

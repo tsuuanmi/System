@@ -14,24 +14,15 @@
 # `docs`. How the verifier selects checks: packages/verifiers/README.md.
 # One list for all of them, so `install` and `build` run whenever a later
 # check needs them.
-#
-# `red` (df-26): the red check of feature.yaml runs these checks on the tests
-# step's change, before any code. `red: pass` checks must still pass with only
-# the new tests in place (the code builds and the docs are clean); at
-# least one other check (`red: fail`, the default) must fail. typecheck stays
-# `fail`: it covers the tests, and new tests name code not written yet.
 checks:
   - name: docs
-    red: pass
     run: python3 tools/docs.py check && python3 tools/docs.py sync --check
     timeoutSeconds: 120
   - name: install
-    red: pass
     run: corepack pnpm install --frozen-lockfile
     timeoutSeconds: 300
     paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, docs/requirements/purpose.md]
   - name: build
-    red: pass
     run: corepack pnpm build
     timeoutSeconds: 300
     paths: *code
