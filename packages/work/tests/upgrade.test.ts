@@ -40,28 +40,41 @@ test('a draining Host starts no new attempt, lets the running one finish, and na
   await host.close()
 })
 
-test('resume continues what a draining Host held, and nothing that start found interrupted', { timeout: 120_000 }, async () => {
+test('a Host that starts after a crash runs on the Work that was waiting, and not the one whose attempt was lost', { timeout: 120_000 }, async () => {
   const f = fixture()
   const home = newHome()
   const first = await f.startHost(home)
-  const held = await first.submit(f.admission('brainstorm.yaml'))
+  const waiting = await first.submit(f.admission('brainstorm.yaml'))
   const cut = await first.submit(f.admission('brainstorm.yaml'))
   f.hold('idea-b')
   void first.run(cut.id).catch(() => {})
   await f.arrived('idea-b')
-  // A Host killed mid-attempt: `cut` has an attempt that never reported.
+  // A Host killed mid-attempt: `cut` has an attempt that never reported; `waiting` was never dispatched.
   await first.close()
   f.release('idea-b')
 
   const next = await f.startHost(home)
-  assert.deepEqual(unfinished(next).sort(), [held.id, cut.id].sort())
-  // The lost attempt's process is confirmed gone, so its Account's slot is free for the Work that resumes.
+  // The lost attempt's process is confirmed gone only after start, so `cut` stays interrupted.
   for (const event of cutEvents(next.view.get(cut.id)!)) f.gone(event)
-  const attempts = f.attempts.length
-  assert.deepEqual(next.resume([held.id, cut.id]), [held.id], 'the interrupted Work is not resumed; the one never dispatched is')
-  await until(() => next.view.get(held.id)!.state.status === 'succeeded')
-  assert.equal(f.attempts.length > attempts, true)
+  await until(() => next.view.get(waiting.id)!.state.status === 'succeeded')
+  assert.deepEqual(next.resume([waiting.id, cut.id]), [], 'one finished, one interrupted: nothing to resume')
   assert.notEqual(next.view.get(cut.id)!.state.status, 'succeeded')
+  await next.close()
+})
+
+test('a Work already driven when the Host starts is not run twice, and a held Work stays held', { timeout: 120_000 }, async () => {
+  const f = fixture()
+  const home = newHome()
+  const first = await f.startHost(home)
+  const waiting = await first.submit(f.admission('brainstorm.yaml'))
+  await first.close()
+
+  const next = await f.startHost(home)
+  await until(() => next.view.get(waiting.id)!.state.status === 'succeeded')
+  const attempts = f.attempts.length
+  assert.deepEqual(next.resume([waiting.id]), [], 'finished Work is not started again')
+  await quiet()
+  assert.equal(f.attempts.length, attempts)
   await next.close()
 })
 

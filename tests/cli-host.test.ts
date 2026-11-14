@@ -243,6 +243,11 @@ test('work wait survives a Host restart', { timeout: 120_000 }, async () => {
   const restartHold = join(home, 'restart-hold')
   const restartEnv = { SYSTEM_FAKE_HOLD_AT: 'task', SYSTEM_FAKE_HOLD_FILE: restartHold }
   rmSync(restartHold, { force: true })
+  // The Host carries every unfinished Work on at start, so the ones earlier tests left would take the slots: settle them first.
+  for (const line of system('work', 'list').stdout.split('\n')) {
+    const [id, state] = line.trim().split(/\s+/)
+    if (id && state && !['succeeded', 'failed', 'cancelled'].includes(state)) system('work', 'cancel', id)
+  }
   await cli.start({ env: restartEnv })
   const run = cli.runAsync(['work', 'submit', '--capability', 'code-write'], { env: restartEnv })
   const workId = await admitted(run)
