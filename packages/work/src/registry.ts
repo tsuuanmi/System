@@ -150,6 +150,8 @@ export interface EffectIntent {
   required?: { capability: string; criteria: string; verifier?: { ref: string; version: string } }[]
   /** The merge commit (a git-tree Artifact) an operator approved after the provider held it (`EffectOutcome.held`): that commit goes in without a re-check. An approval of another commit is none. */
   approvedMerge?: string
+  /** tr-1: the existing tests the published change modified or deleted, from the Work record (not part of the recorded intent); a provider that writes a description lists them. Absent when the record holds no list for the subject, empty when the change touched no test. */
+  changedTests?: { path: string; change: 'modified' | 'deleted'; reason: string }[]
 }
 
 export interface EffectOutcome {

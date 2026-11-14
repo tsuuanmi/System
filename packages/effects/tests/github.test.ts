@@ -465,3 +465,20 @@ test('an open pull request for the branch that targets another base fails, namin
     assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0)
   }
 })
+
+test('the pull request body lists the changed tests with the Worker\'s reasons, and says none when there are none', async () => {
+  fresh()
+  const artifacts = store()
+  const { work } = setup()
+  const publisher = githubPublisher(artifacts, { token: async () => undefined }, config())
+  const subject = await subjectOf(artifacts, work)
+  await publisher.apply({ ...intent(subject), changedTests: [{ path: 'tests/a.test.ts', change: 'modified', reason: 'the message changed' }, { path: 'tests/b.test.ts', change: 'deleted', reason: 'no reason given' }] })
+  const body = (pulls[0] as unknown as { body: string }).body
+  assert.match(body, /Changed tests/)
+  assert.match(body, /- `tests\/a\.test\.ts` \(modified\): the message changed/)
+  assert.match(body, /- `tests\/b\.test\.ts` \(deleted\): no reason given/)
+  fresh()
+  const other = setup('other\n')
+  await publisher.apply({ ...intent(await subjectOf(artifacts, other.work)), changedTests: [] })
+  assert.match((pulls[0] as unknown as { body: string }).body, /Changed tests: none/)
+})

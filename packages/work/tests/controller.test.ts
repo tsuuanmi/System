@@ -9,7 +9,7 @@ import { WorkController, type SpecStore, type WorkTable } from '../src/controlle
 import { WorkError } from '../src/errors.ts'
 import { fold, type WorkRecord } from '../src/record.ts'
 import type { Verdict } from '../src/kinds.ts'
-import { Capabilities, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest, type WorkerResult } from '../src/registry.ts'
+import { Capabilities, type EffectIntent, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerRequest, type WorkerResult } from '../src/registry.ts'
 import { WorkflowError, directTask, parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -17,8 +17,9 @@ const fixture = (name: string) => readFileSync(join(repo, 'workflows', name), 'u
 const caller = { type: 'human', operatorId: 'tan' } as const
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 
-function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string> } {
+function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string, Verdict>; unchanged: Map<string, string>; tests: Map<string, { path: string; change: 'modified' | 'deleted' }[]> } {
   const unchanged = new Map<string, string>()
+  const tests = new Map<string, { path: string; change: 'modified' | 'deleted' }[]>()
   const specs = new Map<string, ResolvedSpec>()
   const stored = new Set<string>()
   const verdicts = new Map<string, Verdict>()
@@ -26,6 +27,8 @@ function memorySpecs(): SpecStore & { stored: Set<string>; verdicts: Map<string,
     stored,
     verdicts,
     unchanged,
+    tests,
+    async changedTests(artifactId) { return tests.get(artifactId) },
     unchangedBase: (artifactId) => unchanged.get(artifactId),
     kindOf: (artifactId) => (verdicts.has(artifactId) ? 'verdict' : specs.has(artifactId) ? 'workflow-spec' : stored.has(artifactId) ? 'output' : undefined),
     async putVerdict(verdict) {
@@ -983,4 +986,45 @@ test('Satisfied: the Worker is told the optional output, and one that is declare
   assert.equal(done.state.steps.implement!.state, 'failed')
   const reason = done.events.findLast((e) => e.type === 'observed')
   assert.ok(reason?.type === 'observed' && /without stored outputs satisfied/.test(reason.reason ?? ''))
+})
+
+/** tr-1: a Worker whose change edits the tests in `list`, and says why in its final message. */
+function testEditor(h: () => Harness, list: { path: string; change: 'modified' | 'deleted' }[], message: string): Partial<WorkerPort> {
+  return {
+    async run(request) {
+      const outputs = Object.fromEntries(request.outputs.map((slot) => {
+        const out = id(`${request.attemptId}/${slot}`)
+        h().specs.stored.add(out)
+        if (slot === 'change') h().specs.tests.set(out, list)
+        return [slot, out]
+      }))
+      return { status: 'succeeded', outputs, message }
+    },
+  }
+}
+
+test('the tests a change modified or deleted are recorded with the Worker\'s reasons, or "no reason given"', async () => {
+  const list = [{ path: 'tests/a.test.ts', change: 'modified' as const }, { path: 'tests/b.test.ts', change: 'deleted' as const }]
+  const h: Harness = harness({ worker: testEditor(() => h, list, 'Done.\n- tests/a.test.ts: the message changed') })
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.status, 'succeeded', 'a changed test never holds, fails or blocks the Work')
+  const observed = done.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
+  assert.deepEqual(observed?.type === 'observed' && observed.changedTests, [
+    { path: 'tests/a.test.ts', change: 'modified', reason: 'the message changed' },
+    { path: 'tests/b.test.ts', change: 'deleted', reason: 'no reason given' },
+  ])
+})
+
+test('a change that touches no test records no list, and the publish intent carries the list of the change it publishes', async () => {
+  const intents: (EffectIntent | undefined)[] = []
+  const none: Harness = harness({ worker: treeWorker(() => none, () => false) })
+  const noneDone = await runFixture(none, 'develop.yaml')
+  assert.equal(noneDone.events.some((e) => e.type === 'observed' && 'changedTests' in e), false)
+  const list = [{ path: 'tests/a.test.ts', change: 'modified' as const }]
+  const h: Harness = harness({ worker: testEditor(() => h, list, 'tests/a.test.ts: pinned the old text') })
+  const publisher = h.capabilities.routeEffect('git.publish').selected!
+  publisher.apply = async (intent) => { intents.push(intent); return { state: 'applied', reason: 'published', detail: {} } }
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.deepEqual(intents.map((i) => i?.changedTests), [[{ path: 'tests/a.test.ts', change: 'modified', reason: 'pinned the old text' }]])
 })

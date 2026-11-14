@@ -17,6 +17,7 @@ import type { Task, Verdict } from './kinds.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import { activeWork, blockedText, itemBlockedBy, itemNote, readStatus, whoHas } from './status.ts'
 import type { QuotaReading } from './headroom.ts'
+import { withReasons, type ChangedTest } from './changed-tests.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
@@ -54,6 +55,8 @@ export interface SpecStore {
   kindOf(id: string): string | undefined
   /** The base commit of a stored `git-tree@1` Artifact whose tree is its base's own tree (a change that changes nothing); undefined otherwise. */
   unchangedBase(id: string): string | undefined
+  /** tr-1: the existing tests a stored `git-tree@1` change modified or deleted, computed from git against its base (parent); undefined for any other Artifact or a change without a base. */
+  changedTests?(id: string): Promise<ChangedTest[] | undefined>
   /** The commit of a stored `git-tree@1` Artifact (a change); undefined for any other Artifact. */
   commitOf?(id: string): string | undefined
   /** Store a `verdict@1` Artifact; returns its ID. */
@@ -657,8 +660,16 @@ export class WorkController {
     const held = record.events.findLast((e) => e.type === 'effect-observed' && e.operationId === operationId && e.held)
     const decided = held?.type === 'effect-observed' ? record.events.findLast((e) => e.type === 'decided' && e.stepId === event.stepId) : undefined
     const approvedMerge = held?.type === 'effect-observed' && decided?.type === 'decided' && decided.decision === 'approved' && decided.seq > held.seq ? held.held : undefined
+    const changedTests = this.changedTestsOf(record, event.subject)
     return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [],
-      ...(approvedMerge ? { approvedMerge } : {}) }
+      ...(approvedMerge ? { approvedMerge } : {}), ...(changedTests ? { changedTests } : {}) }
+  }
+
+  /** tr-1: the changed tests recorded for change `subject` (the latest attempt that produced it); undefined when no attempt of the record produced it, empty when it touched no test. */
+  private changedTestsOf(record: WorkRecord, subject: string): EffectIntent['changedTests'] {
+    const observed = record.events.findLast((e) => e.type === 'observed' && e.status === 'succeeded' && Object.values(e.outputs).includes(subject) && e.changedTests)
+      ?? record.events.findLast((e) => e.type === 'observed' && e.status === 'succeeded' && Object.values(e.outputs).includes(subject))
+    return observed?.type === 'observed' ? observed.changedTests ?? [] : undefined
   }
 
   /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
@@ -984,6 +995,15 @@ export class WorkController {
         }
       }
     }
+    // tr-1: disclosure only; a change that edits or deletes an existing test is listed with the Worker's reason, and nothing here holds the step.
+    let changedTests: ReturnType<typeof withReasons> | undefined
+    const changeId = status === 'succeeded' ? outputs[s.outputs[0] ?? ''] : undefined
+    if (changeId && this.specs.changedTests) {
+      try {
+        const files = await this.specs.changedTests(changeId)
+        if (files?.length) changedTests = unchangedAfter ? this.changedTestsOf(this.require(workId), changeId) : withReasons(files, result.message)
+      } catch { /* a list that cannot be read is never a failure of the step */ }
+    }
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
     // A cancel request is recorded by the drive, once every attempt of the Work has reported.
     const limited = status === 'failed' && !aborted && isQuotaLimited(reason)
@@ -1001,6 +1021,7 @@ export class WorkController {
       ...(result.executor ? { worker: result.executor } : {}),
       ...(limited ? { limited: true as const } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),
+      ...(changedTests?.length ? { changedTests } : {}),
       // An Account that no longer offers the step's capabilities left routing because of this failure: another may take it (ro-12).
       ...(status === 'failed' && (result.retryable || s.capabilities.some((c) => !attempt.worker.capabilities.includes(c))) && !aborted ? { retryable: true as const } : {}),
     })
@@ -1209,9 +1230,11 @@ export class WorkController {
     if (!provider) return { record: await this.finish(record, 'failed', `no enabled provider offers ${s.effect.capability} for step ${s.id}`) }
     const kind = this.specs.kindOf(subject)
     if (!kind || !provider.accepts.includes(kind)) return { record: await this.finish(record, 'failed', `${provider.ref} publishes ${provider.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`) }
+    const changedTests = this.changedTestsOf(record, subject)
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
       workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params }, required: this.requiredOf(record, s),
+      ...(changedTests ? { changedTests } : {}),
     }
     const why = provider.approval(intent)
     if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id) }
