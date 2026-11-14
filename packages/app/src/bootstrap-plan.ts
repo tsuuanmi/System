@@ -35,7 +35,7 @@ export async function bootstrapPlan(path: string): Promise<BootstrapPlan> {
 
   const repo = shell(top)
   const draftText = draft.draft ?? `(no draft: ${draft.note ?? 'nothing to translate'})\n`
-  const skipped = draft.notTranslated.length ? draft.notTranslated.join('\n') + '\n' : ''
+  const skipped = [...draft.setup, ...draft.notTranslated].map((l) => l + '\n').join('')
   const commands = [
     '# 1. Create dev from main (ask the owner first; skip if dev already exists):',
     `git -C ${repo} branch dev main`,

@@ -11,6 +11,8 @@ export interface DraftChecks {
   draft?: string
   /** `not translated: <workflow>/<job>/<step>: <why>`, in file order. */
   notTranslated: string[]
+  /** `setup, not a check: <workflow>/<job>/<step>: <command>`: plain steps that only install or set up a tool, in file order. */
+  setup: string[]
   /** Why there is no draft, or what is wrong with it. */
   note?: string
 }
@@ -32,8 +34,20 @@ function why(job: Obj, step: Obj): string | undefined {
   return undefined
 }
 
+const SETUP = [
+  /^cargo install(\s|$)/, /^rustup (toolchain install|target add|component add)(\s|$)/,
+  /^(python3? -m )?pip3? install(\s|$)/, /^pipx install(\s|$)/, /^apt(-get)? install(\s|$)/,
+  /^npm (ci|install)(\s|$)/, /^pnpm install(\s|$)/, /^yarn install(\s|$)/, /^corepack enable(\s|$)/,
+]
+/** True when every command of the step (one per line or `&&` part) only installs or sets up a tool. */
+function isSetup(run: string): boolean {
+  const parts = run.split(/\r?\n|&&/).map((p) => p.trim().replace(/^sudo\s+/, '')).filter(Boolean)
+  return parts.length > 0 && parts.every((p) => SETUP.some((re) => re.test(p)))
+}
+
 export function draftChecks(files: WorkflowFile[]): DraftChecks {
   const notTranslated: string[] = []
+  const setup: string[] = []
   const checks: { name: string; run: string }[] = []
   const taken = new Set<string>()
   for (const file of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -51,6 +65,10 @@ export function draftChecks(files: WorkflowFile[]): DraftChecks {
         const label = typeof step.name === 'string' ? step.name : typeof step.uses === 'string' ? step.uses : `step-${index + 1}`
         const reason = why(job, step)
         if (reason) { notTranslated.push(`not translated: ${workflow}/${jobId}/${label}: ${reason}`); return }
+        if (isSetup(step.run as string)) {
+          setup.push(`setup, not a check: ${workflow}/${jobId}/${label}: ${(step.run as string).trim().split(/\s*\r?\n\s*/).join('; ')}`)
+          return
+        }
         const base = slug(`${workflow}-${jobId}-${typeof step.name === 'string' ? step.name : `step-${index + 1}`}`).replace(/^[^a-z]+/, '') || 'check'
         let name = base
         for (let n = 2; taken.has(name); n++) name = `${base}-${n}`
@@ -59,9 +77,9 @@ export function draftChecks(files: WorkflowFile[]): DraftChecks {
       })
     }
   }
-  if (checks.length === 0) return { notTranslated, note: 'no plain run steps to translate: write .system/checks.yaml by hand' }
+  if (checks.length === 0) return { notTranslated, setup, note: 'no plain run steps to translate: write .system/checks.yaml by hand' }
   const draft = stringify({ checks })
   const parsed = parseChecksFile(draft)
-  if ('problem' in parsed) return { notTranslated, note: `the draft does not pass the checks schema (${CHECKS_FILE}): ${parsed.problem}` }
-  return { draft, notTranslated }
+  if ('problem' in parsed) return { notTranslated, setup, note: `the draft does not pass the checks schema (${CHECKS_FILE}): ${parsed.problem}` }
+  return { draft, notTranslated, setup }
 }

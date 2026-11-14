@@ -28,6 +28,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install deps
         run: npm ci
+      - name: Build
+        run: npm run build
       - name: Run tests
         run: |
           npm test
@@ -66,9 +68,72 @@ test('plain run steps are translated into a draft that passes the checks schema'
   const parsed = parseChecksFile(plan.draft!)
   assert.ok(!('problem' in parsed), JSON.stringify(parsed))
   const checks = (parsed as { checks: { name: string; run: string }[] }).checks
-  assert.deepEqual(checks.map((c) => c.run), ['npm ci', 'npm test\nnpm run lint\n'])
+  assert.deepEqual(checks.map((c) => c.run), ['npm run build', 'npm test\nnpm run lint\n'])
   assert.equal(new Set(checks.map((c) => c.name)).size, 2)
   assert.ok(plan.notTranslated.some((l) => l.startsWith('not translated: ci/test/') && /uses/.test(l)))
+})
+
+const DNA = `name: CI
+on: [push]
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install tool
+        run: cargo install cargo-nextest
+      - name: Toolchain
+        run: rustup toolchain install stable
+      - name: Target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Test
+        run: tools/gates.sh rust-test
+`
+const NPM = `name: Node
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+`
+
+test('install and setup steps are listed as setup, not a check, and left out of the draft', async () => {
+  const plan = await bootstrapPlan(repository({ 'ci.yml': DNA }))
+  const checks = (parseChecksFile(plan.draft!) as { checks: { run: string }[] }).checks
+  assert.deepEqual(checks.map((c) => c.run), ['tools/gates.sh rust-test'])
+  assert.deepEqual(plan.setup, [
+    'setup, not a check: ci/rust/Install tool: cargo install cargo-nextest',
+    'setup, not a check: ci/rust/Toolchain: rustup toolchain install stable',
+    'setup, not a check: ci/rust/Target: rustup target add wasm32-unknown-unknown',
+  ])
+  assert.deepEqual(plan.notTranslated, [])
+  for (const line of plan.setup) assert.ok(plan.text.includes(line + '\n'), line)
+})
+
+test('an npm job drafts npm test only', async () => {
+  const plan = await bootstrapPlan(repository({ 'node.yml': NPM }))
+  const checks = (parseChecksFile(plan.draft!) as { checks: { run: string }[] }).checks
+  assert.deepEqual(checks.map((c) => c.run), ['npm test'])
+  assert.deepEqual(plan.setup, ['setup, not a check: node/test/Install: npm ci'])
+})
+
+test('a job of setup steps only gives no draft', async () => {
+  const text = 'name: S\non: [push]\njobs:\n  j:\n    runs-on: x\n    steps:\n      - run: corepack enable\n      - run: pip install -r requirements.txt\n'
+  const plan = await bootstrapPlan(repository({ 's.yml': text }))
+  assert.equal(plan.draft, undefined)
+  assert.equal(plan.setup.length, 2)
+  assert.match(plan.text, /no plain run steps/)
+})
+
+test('setup commands mixed with a real command stay a check; templated installs stay not translated', async () => {
+  const text = 'name: M\non: [push]\njobs:\n  j:\n    runs-on: x\n    steps:\n      - run: |\n          npm ci\n          npm test\n      - run: npm ci ${{ matrix.x }}\n'
+  const plan = await bootstrapPlan(repository({ 'm.yml': text }))
+  assert.deepEqual(plan.setup, [])
+  assert.equal(plan.notTranslated.length, 1)
+  assert.match(plan.draft!, /npm test/)
 })
 
 test('a matrix with secrets is listed as not translated, step by step', async () => {
