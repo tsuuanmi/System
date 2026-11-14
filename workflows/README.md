@@ -38,7 +38,7 @@ a role; it is also what makes the working tree a step's output. See
   `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`. `investigate` goes to an Account that has the role
   `research.web` (a `web` Account, given the role in the profile) and to any other capable Account
   when none can take it (unavailable, signed out, limited, no free slot, or its attempt failed and it
-  left routing); `prefer` ranks without requiring, so a Host with no such Account still runs it; version 4.
+  left routing); `prefer` ranks without requiring, so a Host with no such Account still runs it; version 5.
 - [brainstorm.yaml](brainstorm.yaml) — `idea-a` (`brainstorm.idea-a`) and
   `idea-b` (`brainstorm.idea-b`) each write a `proposal` from the brief alone,
   with a stance each (pragmatist, skeptic);
