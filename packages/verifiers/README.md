@@ -99,7 +99,7 @@ checks:
   `checks@1` and chooses what the verdict means: `repo-checks-v1` (the rule
   above, `code-checks.yaml`) or one of the two below. Any other name refuses
   the Work at admission, naming the known ones.
-  - **`red-v1`**, the red check of `feature.yaml`, on the tests step's change
+  - **`red-v1`**, the red check of the former `feature.yaml` (deleted, ss-6; this code goes in ss-7), on the tests step's change
     before any code: the selected checks run as above. A `red: fail` check
     that failed counts as red only when it passes on the base (run again
     there as df-25 does, up to the last such check), and only when the

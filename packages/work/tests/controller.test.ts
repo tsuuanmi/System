@@ -159,7 +159,7 @@ function treeWorker(h: () => Harness, same: (slot: string) => boolean, message?:
 
 test('a code-write step whose change is its base tree fails with "no change", quoting the Worker\'s message', async () => {
   const h: Harness = harness({ worker: treeWorker(() => h, () => true, `I looked\nand found  nothing to do ${'x'.repeat(400)}`) })
-  const done = await runFixture(h, 'software-engineering.yaml')
+  const done = await runFixture(h, 'develop.yaml')
   assert.equal(done.state.status, 'failed')
   assert.equal(done.state.steps.implement!.state, 'failed')
   const reason = done.events.findLast((e) => e.type === 'observed')
@@ -170,17 +170,17 @@ test('a code-write step whose change is its base tree fails with "no change", qu
 
 test('a step declared mayBeEmpty passes an unchanged tree on instead of failing', async () => {
   const h: Harness = harness({ worker: treeWorker(() => h, () => true) })
-  const text = fixture('software-engineering.yaml').replace('    outputs: [change]\n', '    outputs: [change]\n    mayBeEmpty: true\n')
-  assert.notEqual(text, fixture('software-engineering.yaml'))
+  const text = fixture('develop.yaml').replace('    outputs: [change]\n', '    outputs: [change]\n    mayBeEmpty: true\n')
+  assert.notEqual(text, fixture('develop.yaml'))
   const spec = resolve(parseWorkflow(text), h.capabilities.available(), fixture)
-  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'software-engineering.yaml' } })
+  const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file', path: 'develop.yaml' } })
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.steps.implement!.state, 'succeeded')
 })
 
 test('a changed tree still passes, and a read-only scout with an unchanged checkout still succeeds', async () => {
   const changed: Harness = harness({ worker: treeWorker(() => changed, () => false) })
-  assert.equal((await runFixture(changed, 'software-engineering.yaml')).state.status, 'succeeded')
+  assert.equal((await runFixture(changed, 'develop.yaml')).state.status, 'succeeded')
   const scouts: Harness = harness({ worker: treeWorker(() => scouts, (slot) => slot === 'checkout') })
   const spec = resolve(parseWorkflow(fixture('hygiene.yaml')), scouts.capabilities.available(), fixture)
   const scouting = spec.steps.filter((s) => 'outputs' in s && s.outputs[0] === 'checkout')
@@ -252,11 +252,11 @@ test('a direct Task with no Workflow file runs one attempt to a result', async (
 
 test('Software Engineering and Research run through the same controller code', async () => {
   const h = harness()
-  const se = await runFixture(h, 'software-engineering.yaml')
+  const se = await runFixture(h, 'develop.yaml')
   const research = await runFixture(h, 'research.yaml')
   assert.equal(se.state.status, 'succeeded')
   assert.equal(research.state.status, 'succeeded')
-  assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write', 'code.develop']], ['investigate', ['research', 'web-search', 'tier.standard']]])
+  assert.deepEqual(h.calls.map((c) => [c.stepId, c.capabilities]), [['implement', ['code-write', 'code.develop', 'tier.standard']], ['investigate', ['research', 'web-search', 'tier.standard']]])
   // The verifier got the exact Artifact the Worker produced, resolved from the slot.
   assert.equal(h.verdicts[0], `checks.checks:${se.state.steps.implement!.outputs.change}`)
   assert.equal(h.verdicts[1], `citations:${research.state.steps.investigate!.outputs.sources}`)
@@ -264,7 +264,7 @@ test('Software Engineering and Research run through the same controller code', a
 
 test('a Worker gets exact Artifact IDs for its inputs, never a slot name', async () => {
   const h = harness()
-  const done = await runFixture(h, 'software-engineering.yaml')
+  const done = await runFixture(h, 'develop.yaml')
   assert.deepEqual(h.calls[0]!.inputs, { task: done.state.input })
   const dispatched = done.events.find((e) => e.type === 'dispatched' && e.stepId === 'checks.checks')
   assert.deepEqual(dispatched && 'inputs' in dispatched && dispatched.inputs, { subject: done.state.steps.implement!.outputs.change, criteria: done.state.criteria['checks.checks'] })
@@ -272,7 +272,7 @@ test('a Worker gets exact Artifact IDs for its inputs, never a slot name', async
 
 test('an invalid Workflow dispatches zero Workers and creates no Work', async () => {
   const h = harness()
-  const broken = fixture('software-engineering.yaml').replace('dependsOn: [implement]', 'dependsOn: [ghost]')
+  const broken = fixture('develop.yaml').replace('dependsOn: [implement]', 'dependsOn: [ghost]')
   assert.throws(() => resolve(parseWorkflow(broken), h.capabilities.available(), fixture), WorkflowError)
   assert.equal(h.calls.length, 0)
   assert.equal(h.table.rows.size, 0)
@@ -291,7 +291,7 @@ test('a restart mid-attempt re-dispatches that step only, as a new attempt, with
   const specs = memorySpecs()
   // The first host's Worker never returns: its process "dies" mid-attempt.
   const first = harness({ table, specs, worker: { run: () => new Promise(() => {}) } })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), first.capabilities.available(), fixture)
+  const spec = resolve(parseWorkflow(fixture('develop.yaml')), first.capabilities.available(), fixture)
   const admitted = await first.controller.admit({ spec, input: await input(first), caller, source: { kind: 'workflow-file' } })
   void first.controller.run(admitted.id)
   while (table.rows.get(admitted.id)!.events.length < 2) await new Promise((resolve) => setImmediate(resolve))
@@ -325,8 +325,8 @@ test('the stored state always equals a replay of the recorded events', async () 
 })
 
 test('a failed, errored or missing verdict fails the Work; inconclusive is held', async () => {
-  assert.equal((await runFixture(harness({ verdict: 'fail' }), 'software-engineering.yaml')).state.status, 'failed')
-  assert.equal((await runFixture(harness({ verdict: 'error' }), 'software-engineering.yaml')).state.status, 'failed')
+  assert.equal((await runFixture(harness({ verdict: 'fail' }), 'develop.yaml')).state.status, 'failed')
+  assert.equal((await runFixture(harness({ verdict: 'error' }), 'develop.yaml')).state.status, 'failed')
   const held = await runFixture(harness({ verdict: 'inconclusive' }), 'research.yaml')
   assert.equal(held.state.status, 'held')
   assert.match(held.state.reason!, /operator decision/)
@@ -334,7 +334,7 @@ test('a failed, errored or missing verdict fails the Work; inconclusive is held'
 
 test('without an accept step a failed verdict still fails the Work', async () => {
   const h = harness({ verdict: 'fail' })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml').replace(/  - id: publish[\s\S]*$/, '').replace('checks.checks, publish', 'checks.checks')), h.capabilities.available(), fixture)
+  const spec = resolve(parseWorkflow(fixture('develop.yaml').replace(/  - id: publish[\s\S]*$/, '').replace('checks.checks, publish', 'checks.checks')), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.status, 'failed')
@@ -428,7 +428,7 @@ test('a step never starts after a failed or errored verdict it follows: the Work
 
 test('accept with operator approval holds the Work after verification passes', async () => {
   const h = harness()
-  const spec = resolve(parseWorkflow(`${fixture('software-engineering.yaml')}      approval: operator\n`), h.capabilities.available(), fixture)
+  const spec = resolve(parseWorkflow(`${fixture('develop.yaml')}      approval: operator\n`), h.capabilities.available(), fixture)
   const admitted = await h.controller.admit({ spec, input: await input(h), caller, source: { kind: 'workflow-file' } })
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.status, 'held')
@@ -437,7 +437,7 @@ test('accept with operator approval holds the Work after verification passes', a
 
 test("a Worker's claim of success without stored outputs fails the step", async () => {
   const h = harness({ worker: { run: async () => ({ status: 'succeeded', outputs: { change: id('never stored') } }) } })
-  const done = await runFixture(h, 'software-engineering.yaml')
+  const done = await runFixture(h, 'develop.yaml')
   assert.equal(done.state.status, 'failed')
   const observed = done.events.find((e) => e.type === 'observed')
   assert.match(observed && 'reason' in observed ? observed.reason! : '', /without stored outputs change/)
@@ -595,7 +595,7 @@ test('a tier is a capability: a step asking for a tier no Worker offers is refus
 
 async function verdictOf(h: Harness, verifier: Partial<VerifierPort>) {
   const custom = harness({ ...{ table: h.table, specs: h.specs }, verifier })
-  const done = await runFixture(custom, 'software-engineering.yaml')
+  const done = await runFixture(custom, 'develop.yaml')
   const verified = done.events.find((e) => e.type === 'verified')
   return { done, verified: verified?.type === 'verified' ? verified : undefined, specs: custom.specs }
 }
@@ -618,7 +618,7 @@ test('a verdict about another subject, other criteria, or without stored evidenc
 
 test('the controller stores the verdict Artifact bound to the exact subject and pinned criteria', async () => {
   const h = harness()
-  const done = await runFixture(h, 'software-engineering.yaml')
+  const done = await runFixture(h, 'develop.yaml')
   const verified = done.events.find((e) => e.type === 'verified')
   assert.ok(verified?.type === 'verified' && verified.verdictId)
   const stored = h.specs.verdicts.get(verified.verdictId!)!
@@ -628,7 +628,7 @@ test('the controller stores the verdict Artifact bound to the exact subject and 
 
 test('criteria a verifier cannot pin refuse admission, and no Work is created', async () => {
   const h = harness({ verifier: { async criteria() { throw new Error('no .system/checks.yaml at the base commit') } } })
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), h.capabilities.available(), fixture)
+  const spec = resolve(parseWorkflow(fixture('develop.yaml')), h.capabilities.available(), fixture)
   const task = await input(h)
   await assert.rejects(() => h.controller.admit({ spec, input: task, caller, source: { kind: 'workflow-file' } }), /cannot pin criteria repo-checks-v1: no .system\/checks.yaml/)
   assert.equal(h.table.rows.size, 0)
@@ -642,7 +642,7 @@ test('retry --step after failed checks reruns the Worker and re-verifies the new
     specs.stored.add(evidence)
     return { verdict, reason: verdict, subject: r.subject, criteria: r.criteria, evidence: [evidence] }
   } } })
-  const failed = await runFixture(h, 'software-engineering.yaml')
+  const failed = await runFixture(h, 'develop.yaml')
   assert.equal(failed.state.status, 'failed')
   // The Workflow's one automatic further attempt failed too: the operator's retry is a third.
   assert.equal(failed.events.filter((e) => e.type === 'reopened' && e.automatic).length, 1)

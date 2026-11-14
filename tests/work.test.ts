@@ -58,7 +58,7 @@ test('a direct Task, Software Engineering and Research all succeed through one c
   rmSync(log, { force: true })
   const task = system(['work', 'submit', '--capability', 'code-write', '--input', input])
   assert.equal(task.status, 0, task.stderr)
-  const se = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'software-engineering.yaml'), '--input', input])
+  const se = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'develop.yaml'), '--input', input])
   assert.equal(se.status, 0, se.stderr)
   const research = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'research.yaml'), '--input', input])
   assert.equal(research.status, 0, research.stderr)
@@ -85,7 +85,7 @@ test('an invalid Workflow is refused before any Worker runs, and no Work is crea
 test('the pinned spec survives a Workflow file edit and a killed host; done steps never re-run', { timeout: 300_000 }, async () => {
   rmSync(log, { force: true })
   const file = join(home, 'se.yaml')
-  copyFileSync(join(repo, 'workflows', 'software-engineering.yaml'), file)
+  copyFileSync(join(repo, 'workflows', 'develop.yaml'), file)
   copyFileSync(join(repo, 'workflows', 'code-checks.yaml'), join(home, 'code-checks.yaml'))
   await host({ SYSTEM_FAKE_CRASH_AT: 'implement' })
   const crashed = system(['work', 'submit', '--workflow', file, '--input', input])
@@ -94,7 +94,7 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   const workId = crashed.stdout.trim()
 
   // Edit the file mid-run: a capability no Worker has. Running Work must not notice.
-  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write, code.develop]', 'capabilities: [teleport]'))
+  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write, code.develop, tier.standard]', 'capabilities: [teleport]'))
   // The new Host settles the lost attempt and dispatches it again by itself (sc-8): no `work run`.
   await host()
   const resumed = system(['work', 'wait', workId])
@@ -159,7 +159,7 @@ test("a booted profile's state.sqlite commits durably: WAL with synchronous FULL
 })
 
 test('a three-step Work record stays small', () => {
-  const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'software-engineering.yaml'), '--input', input])
+  const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'develop.yaml'), '--input', input])
   const bytes = Buffer.byteLength(system(['work', 'show', ran.stdout.trim()]).stdout)
   assert.ok(bytes < 16 * 1024, `record is ${bytes} bytes`)
 })

@@ -4,49 +4,31 @@ Workflow definitions are **data** (ADR-0002): `system.workflow/v1` YAML files
 read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
-The code Workflows use the role `code.develop` on the plan, tests, implement and docs
-steps (in `hygiene.yaml`, the plan and implement steps): the tests step moved from
-`code.tests` to it on 2026-11-13 (operator), because tests and implement on
-different Runtimes kept disagreeing; `code.tests` returns when they are stable. `code-write` is the permission to write the checkout, not a role; it is also what makes the working tree a step's output, so a
-step without it outputs only files (the `tests` and `docs` steps declare it).
-See [GLOSSARY.md](../GLOSSARY.md) for the term.
+The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml` and
+`brainstorm.yaml`, and the Sub-workflow `code-checks.yaml`. The code Workflows
+use the role `code.develop` on their Worker steps (in `hygiene.yaml`, the plan
+and implement steps). `code-write` is the permission to write the checkout, not
+a role; it is also what makes the working tree a step's output. See
+[GLOSSARY.md](../GLOSSARY.md) for the term.
 
-- [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, `code.develop`, read-only: what to
-  change, where, which tests prove it, and the existing tests that pin the changed behaviour, ro-14) → `tests` (`code.develop`,
-  `tier.standard`: the plan's tests, failing, before any code, and the existing tests updated or deleted; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
-  `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
-  and a `red: fail` one fails on the tests' change (a timed-out, killed or crashed check, or one failing only in tests the step did not write, is not red: ro-3, [red-v1](../packages/verifiers/README.md)); an `inconclusive` verdict holds the Work before `implement`: approve continues, deny fails) → `implement`
-  (`code-write`, `code.develop`: make them pass; `freeze`s the tests step's files: an edit to one is undone when its change is recorded (dg-10); one `retry` per `tests-frozen`, `checks-code` and `publish` (a publish refused for a conflict with the base or a failing check on the merge reopens `implement` on the base's new tip, sc-7; version 4), and a no-change result after a failing `checks-code` runs that check again once on the same change (`rerunUnchanged`, sc-9); a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →
-  `tests-frozen` (`code.required-checks`, criteria `tests-frozen-v1`: no file the
-  tests step wrote changed; the backstop of `freeze`) → `checks-code` → `docs` (`code.develop`, `code.docs`,
-  `tier.economy`) → `checks` → `publish` → `accept`. Each stage reads only the
-  Artifacts it is given; the profile decides which Account takes each role.
-  The default for a code change (df-27, concluded in df-20).
-- [software-engineering.yaml](software-engineering.yaml) — `implement`
-  (`code-write`, `code.develop`) → `checks` (uses `code-checks.yaml`: step `checks.checks`) → `publish`
-  (`git.publish`: the checked commit to `system/<work>`, one draft pull
-  request) → `accept`. `implement`'s `retry` also names `publish` (sc-7: a conflict or a failing check on the merge reopens it on the base's new tip; version 2). Still fits a change too small for a plan, a change
-  that keeps behaviour (a cleanup, a refactor, a docs-only change), and a
-  repository with no `red:` in its `.system/checks.yaml` (feature.yaml's red
-  check would refuse it).
-- [software-engineering-docs.yaml](software-engineering-docs.yaml) — the same,
-  plus `docs-impact` (`code-write`, `tier.economy`), which reads the change
-  while the checks run and lists the docs it makes stale: advice, never a
-  verdict. It becomes the default only if it often finds stale docs.
-- [feature-research.yaml](feature-research.yaml) — the same, with `research`
-  (`research`, `web-search`, `tier.standard`) first, whose report and sources
-  the plan reads.
+- [develop.yaml](develop.yaml) — the default for any change to a repository:
+  `implement` (`code-write`, `code.develop`, `tier.standard`; works test-first:
+  the tests for the new behaviour fail for the right reason, then the code, the
+  existing tests that pin changed behaviour updated, the repository's checks run
+  before it finishes) → `checks` (uses `code-checks.yaml`: step `checks.checks`)
+  → `publish` (`git.publish`: the checked commit to `system/<work>`, one draft
+  pull request) → `accept`. `implement`'s `retry` names `checks.checks` and
+  `publish` (sc-7: a conflict or a failing check on the merge reopens it on the
+  base's new tip; version 3).
 - [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
   (`code-write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
   is worth doing) → `implement` (`retry` on `checks.checks` and `publish`, sc-7; version 3) → `checks` → `publish` → `accept`: one pull
-  request of cleanup for any repository that has `.system/checks.yaml`. Like
-  software-engineering.yaml it fits a change that keeps behaviour: feature.yaml's
-  red check needs a new failing test, so such a change cannot pass it.
+  request of cleanup for any repository that has `.system/checks.yaml`. It fits a change that keeps behaviour.
 - [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
   on the input change, criteria pinned from its base). A Sub-workflow of
-  `software-engineering.yaml` and `feature.yaml`; on its own, on a task with a base, it checks that commit as it is.
+  `develop.yaml` and `hygiene.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
-  A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (at `red` before `implement`, else before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
+  A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`, `prefer: research.web`, one `retry`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`. `investigate` goes to an Account that has the role
@@ -59,21 +41,10 @@ See [GLOSSARY.md](../GLOSSARY.md) for the term.
   `synthesis` (`brainstorm.synthesis`) reads both exact proposals and writes a
   `summary`. No verifier: success means the three outputs exist. The bundle
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
-- [debate.yaml](debate.yaml) — a Debate of two Rounds: `a1` and `b1` write a
-  `proposal` each from the brief alone (the Brainstorm stances); in Round 2 `a2`
-  and `b2` read both proposals and write a `rebuttal` with a revised proposal,
-  on the same capabilities, so each side keeps its Account; `synthesis` reads
-  all four Artifacts and writes a `summary`. No verifier.
-- [research-fanout.yaml](research-fanout.yaml) — `plan` (`research.plan`) splits the
-  question into `question-a` and `question-b`; two Lanes, `investigate-a`
-  (`research.lane-a`) and `investigate-b` (`research.lane-b`), each run the
-  `research.yaml` investigation (shared by a YAML anchor) and have their `sources`
-  checked; `synthesis` (`research.synthesis`) merges both into one `report` and
-  `sources`, checked again. A profile gives each Lane to a different Account. Each Lane
-  asks `tier.standard`, like `research.yaml`.
 
-Comparison configurations for the Brainstorm evaluation are in
-[experiments](experiments/README.md).
+Comparison configurations for the Brainstorm evaluation, and the Workflows that
+are not canonical (`second-opinion.yaml`, `debate.yaml`, `research-fanout.yaml`),
+are in [experiments](experiments/README.md).
 
 ```sh
 bin/system work submit --workflow workflows/research.yaml --input <artifactId>

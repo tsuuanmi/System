@@ -13,7 +13,7 @@ import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
 const cli = systemCli('system-debate')
 const { home } = cli
-const DEBATE = join(repo, 'workflows', 'debate.yaml')
+const DEBATE = join(repo, 'workflows', 'experiments', 'debate.yaml')
 const system = (args: string[], input?: string) => cli.run(args, { input })
 
 type Account = { ref: string; runtime: string; capabilities: string[]; command?: string }

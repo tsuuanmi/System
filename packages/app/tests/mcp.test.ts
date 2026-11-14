@@ -134,7 +134,7 @@ test('work.submit with neither a file nor Workflow contents explains both accept
 test('the instructions and the work.submit description agree on paths and contents', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const instructions = client.getInstructions() ?? ''
-  assert.ok(instructions.includes('workflows/feature.yaml'))
+  assert.ok(instructions.includes('workflows/develop.yaml'))
   const { tools } = await client.listTools()
   const submit = tools.find((tool) => tool.name === 'work.submit')
   assert.ok(submit)
@@ -251,12 +251,11 @@ test('the initialize result carries instructions: the steps, the checks file and
   for (const word of ['status', 'item_claim', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
 })
 
-test('the instructions name feature.yaml as the Workflow for a code change and keep software-engineering.yaml for the small case', { timeout: 120_000 }, async () => {
+test('the instructions name develop.yaml as the Workflow for any change and only the canonical others', { timeout: 120_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
-  assert.ok(text.includes('workflows/feature.yaml'))
-  assert.ok(text.indexOf('feature.yaml') < text.indexOf('software-engineering.yaml'))
-  assert.ok(text.includes('software-engineering.yaml'))
-  assert.ok(text.includes('red:'))
+  assert.ok(text.includes('workflows/develop.yaml'))
+  for (const name of ['hygiene', 'research', 'brainstorm', 'code-checks']) assert.ok(text.includes(`${name}.yaml`), name)
+  for (const gone of ['feature', 'software-engineering', 'debate', 'second-opinion', 'research-fanout', 'red:']) assert.ok(!text.includes(gone), gone)
 })
 
 test('an MCP server of older code than the Host recovers on the code under SYSTEM_CODE, and its session keeps working', { timeout: 120_000 }, async () => {

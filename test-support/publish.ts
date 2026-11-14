@@ -15,7 +15,7 @@ export function publishHarness(prefix: string) {
   const { home, env } = cli
   /** The process ID of the running Host, for a fake remote or a hook to kill. */
   const hostPid = join(home, 'host.pid')
-  const SE_MERGE = join(repo, 'workflows', 'software-engineering.yaml')
+  const SE_MERGE = join(repo, 'workflows', 'develop.yaml')
   /** The Software Engineering Workflow publishing a draft pull request: its `merge: true` removed. */
   const SE = join(home, 'software-engineering-draft.yaml')
   const servers: ChildProcess[] = []
@@ -44,7 +44,7 @@ export function publishHarness(prefix: string) {
     accounts:
       - ref: claude-code/default
         runtime: claude-code
-        capabilities: [code-write, code.develop]
+        capabilities: [code-write, code.develop, tier.standard]
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
 - id: effects

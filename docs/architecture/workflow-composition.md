@@ -88,7 +88,7 @@ output that step does not declare, an accept step on a non-verify step, more
 than one accept step, and any Worker or verifier capability the **effective**
 composition does not provide.
 
-The repository's files are [`workflows/feature.yaml`](../../workflows/feature.yaml) (the default for a code change), [`workflows/software-engineering.yaml`](../../workflows/software-engineering.yaml),
+The repository's canonical files are [`workflows/develop.yaml`](../../workflows/develop.yaml) (the default for any change to a repository), [`workflows/hygiene.yaml`](../../workflows/hygiene.yaml),
 [`workflows/research.yaml`](../../workflows/research.yaml) and
 [`workflows/brainstorm.yaml`](../../workflows/brainstorm.yaml). They differ
 only in capabilities, output slots, instructions and verifier; Brainstorm has
@@ -143,8 +143,7 @@ a conflict with the base or a failing check on the merge (`rejected` on
 step is reopened (budget counted per effect step) with the reason as a `fail` verdict
 Artifact in input `failure`, its previous change as `previous`, and the base's current
 tip as `base`, which is the Worker's starting tree. The steps after it, publish
-included, run again. A `freeze`d change is restored over the new one as before, so a
-test file that the base changed since is put back as the tests step wrote it. An
+included, run again. An
 unknown or reconciled outcome never carries `rejected`, so it is never retried
 (authority and effects invariant). Anything else, and every later failure, is the
 operator's `work retry`.

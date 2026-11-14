@@ -18,7 +18,7 @@ import { Capabilities, type EffectIntent, type EffectOutcome, type EffectPort, t
 import { parseWorkflow, resolve, type ResolvedSpec } from '../src/workflow.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const SE = readFileSync(join(repo, 'workflows', 'software-engineering.yaml'), 'utf8')
+const SE = readFileSync(join(repo, 'workflows', 'develop.yaml'), 'utf8')
 const human: Caller = { type: 'human', operatorId: 'tan' }
 const agent: Caller = { type: 'agent', operatorId: 'tan' }
 const id = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
@@ -62,7 +62,7 @@ function world(rows = new Map<string, WorkRecord>(), remote: Remote = { publishe
 function controller(w: ReturnType<typeof world>, options: Options = {}) {
   const capabilities = new Capabilities()
   capabilities.registerWorker({
-    ref: 'coder', capabilities: ['code-write', 'code.develop'],
+    ref: 'coder', capabilities: ['code-write', 'code.develop', 'tier.standard'],
     async run(request) { w.calls.push({ stepId: request.stepId, inputs: { ...request.inputs } }); return { status: 'succeeded', outputs: { change: w.store(`change/${request.attemptId}`, 'git-tree') } } },
   })
   capabilities.registerVerifier({

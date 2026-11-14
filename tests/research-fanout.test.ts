@@ -15,7 +15,7 @@ import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
 const cli = systemCli('system-fanout')
 const { home } = cli
-const FANOUT = join(repo, 'workflows', 'research-fanout.yaml')
+const FANOUT = join(repo, 'workflows', 'experiments', 'research-fanout.yaml')
 const system = (args: string[], input?: string) => cli.run(args, { input })
 let server: ChildProcess
 let site = ''

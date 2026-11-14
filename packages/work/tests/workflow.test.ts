@@ -31,11 +31,11 @@ function problems(yaml: string, caps: AvailableCapabilities = available): string
 }
 
 test('both repository Workflow files parse and resolve with the same schema', () => {
-  const se = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
+  const se = resolve(parseWorkflow(fixture('develop.yaml')), available, fixture)
   const research = resolve(parseWorkflow(fixture('research.yaml')), available)
   assert.deepEqual(se.steps.map((s) => s.id), ['implement', 'checks.checks', 'publish', 'accept'])
   assert.deepEqual(research.steps.map((s) => s.id), ['investigate', 'citations', 'accept'])
-  assert.equal(se.workflow.id, 'software-engineering')
+  assert.equal(se.workflow.id, 'develop')
   assert.ok(se.workflow.version >= 1)
 })
 
@@ -141,10 +141,11 @@ test('freeze must name an output of a step this one depends on', () => {
 
 test('capabilities no enabled Worker or verifier provides are refused before any Worker runs', () => {
   const none: AvailableCapabilities = { workers: new Set(), verifiers: new Set(), effects: new Set() }
-  const found = problems(fixture('software-engineering.yaml'), none)
+  const found = problems(fixture('develop.yaml'), none)
   assert.deepEqual(found, [
     'step implement needs Worker capability code-write, which no enabled Worker provides',
     'step implement needs Worker capability code.develop, which no enabled Worker provides',
+    'step implement needs Worker capability tier.standard, which no enabled Worker provides',
     'step checks.checks needs verifier code.required-checks, which no enabled verifier provides',
     'step publish needs effect git.publish, which no enabled effect provider offers',
   ])
@@ -346,8 +347,8 @@ for (const flag of ['false', '1', '"true"']) {
   })
 }
 
-test('software-engineering.yaml declares the retry on the checks of its Sub-workflow', () => {
-  const spec = resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture)
+test('develop.yaml declares the retry on the checks of its Sub-workflow', () => {
+  const spec = resolve(parseWorkflow(fixture('develop.yaml')), available, fixture)
   const implement = spec.steps.find((s) => s.id === 'implement')
   assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks', 'publish'], max: 1 })
 })
@@ -364,30 +365,8 @@ test('every shipped Workflow with a code-write step judged by checks declares th
       for (const id of checks) assert.ok(step.retry?.onFail.includes(id), `${file}: ${step.id} must retry on ${id}`)
     }
   }
-  assert.ok(judged >= 3, String(judged))
+  assert.ok(judged >= 2, String(judged))
 })
-
-for (const file of ['feature.yaml', 'feature-research.yaml']) {
-  test(`${file} enforces tests first: a red check reopens tests, and implement may not change the tests step's files`, () => {
-    const caps = { ...available, workers: new Set([...available.workers, 'code.tests', 'code.docs', 'tier.economy']) }
-    const spec = resolve(parseWorkflow(fixture(file)), caps, fixture)
-    const step = (id: string) => spec.steps.find((s) => s.id === id) as Record<string, any>
-    // The red check judges the tests step's change, not a Worker's report of it.
-    assert.deepEqual(step('tests').outputs, ['change'])
-    assert.deepEqual(step('tests').retry, { onFail: ['red', 'checks-code.checks', 'implement'], max: 1 })
-    assert.match(step('implement').instructions, /frozen/)
-    assert.equal(step('implement').freeze, '$steps.tests.change')
-    assert.match(step('tests').instructions, /typecheck/)
-    assert.deepEqual(step('tests').capabilities, ['code-write', 'code.develop', 'tier.standard'])
-    assert.deepEqual(step('red').verify, { capability: 'code.required-checks', subject: '$steps.tests.change', criteria: 'red-v1', holdInconclusive: true })
-    assert.deepEqual(step('implement').dependsOn, ['red'])
-    assert.equal(step('implement').inputs.red, undefined)
-    // Tests frozen: judged on implement's change against the tests step's commit, before the checks run.
-    assert.deepEqual(step('tests-frozen').verify, { capability: 'code.required-checks', subject: '$steps.implement.change', criteria: 'tests-frozen-v1', inputs: { tests: '$steps.tests.change' } })
-    assert.deepEqual(step('implement').retry, { onFail: ['tests-frozen', 'checks-code.checks', ...(file === 'feature.yaml' ? ['publish'] : [])], max: 1, ...(file === 'feature.yaml' ? { rerunUnchanged: true } : {}) })
-    assert.deepEqual(step('checks-code.checks').dependsOn, ['tests-frozen'])
-  })
-}
 
 test('retry.onFail may name an effect step that follows the Worker', () => {
   const yaml = publishing('      capability: git.publish\n      subject: $steps.implement.change\n      requires: [checks]')
@@ -405,7 +384,7 @@ test('retry.onFail refuses an effect that does not follow the Worker', () => {
   assert.match(problems(yaml.replace('onFail: [publish]', 'onFail: [ghost]')).join(), /retry.onFail names ghost, which is not a step/)
 })
 
-for (const file of ['feature.yaml', 'software-engineering.yaml', 'hygiene.yaml']) {
+for (const file of ['develop.yaml', 'hygiene.yaml']) {
   test(`${file} declares publish in implement retry.onFail and validates`, () => {
     const caps = { ...available, workers: new Set([...available.workers, 'code.tests', 'code.docs', 'tier.economy']) }
     const spec = resolve(parseWorkflow(fixture(file)), caps, fixture)

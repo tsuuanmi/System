@@ -63,9 +63,6 @@ What a repository needs
 - It is on GitHub, has a \`dev\` branch, and a committed \`.system/checks.yaml\`.
 - System merges a change into \`dev\` when its checks pass. The operator
   merges \`dev\` into \`main\`.
-- For feature.yaml, its \`.system/checks.yaml\` marks the checks that must pass
-  with only the new tests (build, install, docs) \`red: pass\`; the others
-  keep the default \`red: fail\`, and at least one must fail on new tests.
 
 Steps (the tools may be shown as status, item_claim, task_new, work_submit, with _ for .)
 1. \`status\` with the repository: what is done, in progress (by whom) and to do.
@@ -74,15 +71,12 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
 2. \`task_new\` with the repository, the ref and the \`item\`; its result is
    \`{ task, base }\`: pass \`task\` alone as the input.
 3. \`work_submit\` with the Workflow file
-   ~/.system/current/workflows/feature.yaml for a code change (a plan, then
-   tests that fail first, then the code, then the docs); \`workflow\` is that
-   file's path on this machine (\`~\` expanded), or the Workflow's contents. Use
-   \`software-engineering.yaml\` there instead for a change too small for a
-   plan, for a change that keeps behaviour (a cleanup, a refactor; hygiene.yaml
-   fits too), or in a repository whose \`.system/checks.yaml\` has no \`red:\`
-   declaration (feature.yaml's red check needs at least one \`red: pass\` and
-   one failing check). The others there: code-checks, feature-research,
-   hygiene, research, research-fanout, brainstorm, debate, second-opinion.
+   ~/.system/current/workflows/develop.yaml for any change to a repository
+   (the Worker writes the tests first, then the code, and runs the checks);
+   \`workflow\` is that file's path on this machine (\`~\` expanded), or the
+   Workflow's contents. The others there: hygiene.yaml (a cleanup that keeps
+   behaviour), research.yaml, brainstorm.yaml, and code-checks.yaml (the
+   Sub-workflow the others use to check a change).
 4. Follow it with \`work_watch\` or \`work_events\`; read details by ID
    (\`work_show\`, \`artifact_show\`). To know when a Work is done without
    asking, run \`system work wait <id>\` as a background command.
@@ -93,8 +87,7 @@ Bootstrap of a new repository (you do this, there is no script)
    ~/.system/current/docs/governance/documentation-architecture.md.
 3. Ask the operator before creating \`dev\` from \`main\`.
 4. Write \`.system/checks.yaml\` from the repository's CI and commit it on
-   \`dev\`. Mark the checks that must pass before any code (build, install,
-   docs) \`red: pass\`. This is the one direct commit, since there are no checks to pin yet.
+   \`dev\`. This is the one direct commit, since there are no checks to pin yet.
 5. Create STATUS.md, with Aim and Items.
 
 Only a human approves, denies or verifies again. Never try to act as the
