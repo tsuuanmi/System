@@ -364,10 +364,28 @@ repository's `workflows/develop.yaml` (`hygiene.yaml` when the Item says
 behaviour is unchanged) and `system work wait`. It stops after 6 Items in a
 night (no money cap for now), skips an Item whose Work is held or whose Works
 failed twice and says why, never writes Items, never approves, denies, retries
-a held step or releases, and prints the night report. Try it by hand with
+a held step or releases, and stores the night report (below). Try it by hand with
 `claude -p "$(cat tools/night-session.md)" ` in a checkout after the Host
 answers; `packages/app/tests/night-session.test.ts` checks that every
 `system` command and option it names exists.
+
+### The night report and its notifier
+
+The session ends by storing one Markdown Artifact with `system artifact put`
+and printing its ID: the Works of the night (outcome, Account and cost from
+`system work report`), Items done, Items skipped and why, Works on the Host that
+name no Item (where quota went), Items it proposes, and the exact release
+commands for you. Read it with `system artifact cat <id>`.
+
+To get the ID on your phone, set one of these in the session's environment
+(for the timer, an `Environment=` or `EnvironmentFile=` line of the user unit,
+kept outside the repository; they are the only place a secret may live):
+
+- `SYSTEM_NIGHT_NOTIFY_URL`: an ntfy-style URL; the ID is POSTed to it.
+- `SYSTEM_NIGHT_NOTIFY_COMMAND`: a shell command run with the ID as `$1`.
+
+Neither is required: without one the ID only goes to the session's output, which
+the timer sends to the journal (`journalctl --user -u <the session's unit>`).
 
 ## The dev branch
 

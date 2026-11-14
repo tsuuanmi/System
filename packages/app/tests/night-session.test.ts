@@ -51,3 +51,26 @@ test('the night session prompt never uses the operator-only commands', () => {
     assert.doesNotMatch(line, /^system\s+(approve|deny|work\s+(approve|deny|retry|cancel)|release|update)\b/, line)
   }
 })
+
+/** The text from the `## The night report` heading to the end of the file. */
+const reportSection = file.slice(file.indexOf('## The night report'))
+
+test('the night report is one Artifact with the required parts, read from work report', () => {
+  const lines = systemLines(file)
+  assert.ok(lines.some((l) => l.startsWith('system work report')), 'reads Account and cost from work report')
+  assert.ok(lines.some((l) => /^system artifact put\s+\S+.*--media-type text\/markdown/.test(l)), 'stores the report as Markdown')
+  for (const part of ['Works', 'Items done', 'Items skipped', 'no Item', 'Items you propose', 'For the operator', 'Account', 'cost'])
+    assert.ok(reportSection.includes(part), `the report names: ${part}`)
+  assert.match(reportSection, /system work approve <work>/)
+  assert.doesNotMatch(reportSection, /ss-3 will say/)
+})
+
+test('the notifier is optional and comes from the environment, never a secret in the file', () => {
+  assert.match(reportSection, /SYSTEM_NIGHT_NOTIFY_URL/)
+  assert.match(reportSection, /SYSTEM_NIGHT_NOTIFY_COMMAND/)
+  assert.match(reportSection, /(none|neither|not set|unset)[^.]*(journal|output)/i)
+  assert.doesNotMatch(file, /https?:\/\/(?!claude\.com)\S*(ntfy\.sh|hooks\.)\S+/)
+  // every notifier line is guarded: it runs only when its variable is set
+  for (const line of file.split('\n').filter((l) => /curl .*NOTIFY|\$SYSTEM_NIGHT_NOTIFY_COMMAND/.test(l)))
+    assert.match(line, /\[ -n "\$\{?SYSTEM_NIGHT_NOTIFY_\w+(:-)?\}?" \]|\$\{SYSTEM_NIGHT_NOTIFY_\w+:\+/, line)
+})
