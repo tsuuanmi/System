@@ -3,7 +3,7 @@ id: PROP-0008
 type: proposal
 status: proposed
 created: 2026-11-14
-summary: Explore project bootstrap, durable multi-project Goals, adaptive independent and team execution, feedback control and replaceable session callers without adding a second Work engine.
+summary: Explore project bootstrap, durable markdown-first plans decomposed into small Works, cross-project workers, remote agent runtimes and bounded feedback without a second Work engine.
 related: [ADR-0001, ADR-0002, ADR-0003, ADR-0007, ADR-0008, ADR-0009]
 evidence: [RES-0012]
 ---
@@ -51,10 +51,10 @@ attention**, not number of active agents, tokens spent or apparent activity.
   repository onboarding, configure checks, or activate a project.
 - **Brain distinction:** System already has a deterministic execution/control
   brain (dispatch, retry, recovery, evidence and effect decisions), and human
-  or Claude/Codex sessions can perform planning. It does **not** have a
-  permanently running, provider-independent strategic planning brain that
-  autonomously decomposes, re-plans and budgets long-horizon multi-project
-  Goals. Treat that as a proposed optional coordinator, not a shipped feature.
+  or Claude/Codex sessions can perform planning. It does **not** yet guarantee unattended long-horizon *item decomposition,
+  ready-item pickup and forward progress* across interrupted agent sessions.
+  This is primarily a scheduling/handoff problem, not proof that System needs
+  a new strategic LLM brain or Goal state machine.
 - [ADR-0009](../decisions/ADR-0009-goals-and-orchestrators.md) explicitly
   superseded the former Goal/Orchestrator machinery in DF2. Do not revive
   that old goal@1 and its controller branches merely by renaming them.
@@ -125,48 +125,140 @@ priority, quota, dependency and load. **20 is a concurrency evaluation target,
 not a required per-project allocation.** Fairness, per-project limits and
 integration contention matter as much as raw throughput.
 
-## 3. Long-running Goal composed of multiple short Works
+## 3. Long-term delivery through Markdown-first decomposition
 
-**Proposal only:** a Goal (or Program) is a durable high-level intent spanning
-days/weeks, optionally several Projects, with purpose, constraints, budgets,
-success tests, pause/review rules and history of evidence-backed iterations.
-It **contains/references multiple Works**. A Work remains the bounded,
-verifiable execution unit; no Agent session must live for days.
+**Operator clarification (2026-11-14):** a Goal, ROADMAP, PLAN or TODO **does
+not require a new first-class System runtime primitive**. A Markdown file in
+the target repository is sufficient initially; a small database or derived
+index is an optional implementation choice only if Markdown causes proven
+coordination or query problems. Avoid double-maintaining mutable truth in both
+files and the Host. Existing \`STATUS.md\` already supplies Item intake and
+derived done/doing/todo using Work records; extend that contract as narrowly
+as measurements require.
 
-Illustrative loop: research -> hypothesis -> implement -> independent test ->
-compare with baseline -> decide continue/stop/re-plan -> next Work.
-Every iteration records its Task, inputs, code/change, criteria, verdict,
-benchmarks and decision evidence by Artifact ID. Stop on success, bounded
-failure, no meaningful progress, budget exhaustion or a human gate.
+**The hard problem is decomposition and sustained delivery**: use the agents
+already available to turn high-level human requests into *small, testable,
+independently executable* Items, then run them as ordinary Works, with evidence
+and continuation after a caller session ends. An Agent may research, draft
+and revise ROADMAP/PLAN/TODO files using a normal reviewed Work. System should
+not implement a special long-horizon planner model or an alternate Work
+orchestrator by default.
 
-The proposed Goal/Program coordinator stays **above** the existing Host;
-it submits ordinary Works and reads existing events. It must not own a
-second mutable Work state, a second effect engine or private model loop.
-First prove that a replaceable Claude/Codex caller plus persisted program
-records can meet the requirement; only add a durable coordinator plugin
-when measurements show the caller-driven approach is insufficient.
+Suggested hierarchy is **a documentation convention, not a database schema**:
 
-## 4. Background service and the right kind of brain
+    GOAL.md / ROADMAP.md / PLAN.md / TODO.md (optional; repo-local)
+      -> ready actionable Items (STATUS.md or linked tracker)
+         -> Work (pinned Task + Workflow)
+            -> Attempt / Artifact / Verdict / Effect
 
-- **Execution brain (shipped):** deterministic Host scheduler, policy
-  enforcement, retries, reconciliation, Artifact-based evidence and effects.
-- **Planning brain (proposed):** a replaceable caller/coordinator that picks
-  work, tracks program progress, chooses execution strategy and requests
-  specialized reasoning through Workers. Planning is a capability, not
-  authority to approve, self-modify policies or promote a release.
+### How to decompose into good Items
+
+Each Item should have: a clear expected outcome, known repository, small
+owned scope, testable acceptance criteria, required inputs/dependencies,
+link to parent plan or research, expected output Artifact, and a stop/hold
+condition. Prefer a change that can be reviewed and verified in one Work.
+Do **not** prescribe a token-based size threshold as proof of atomicity.
+If an Item is uncertain, create a bounded research/prototype Item first.
+
+A replaceable Claude Code/Codex session may decompose and revise a plan. Its
+outputs are *proposals* until recorded and accepted under repository policy.
+Do not let an agent mark its own Work done; verification and integration
+remain authoritative. For dependency tracking, prefer references in Markdown
+or existing GitHub Issues, and derive readiness from completed Work evidence;
+introduce a DB only when dependency scans, concurrent planning or reliable
+queries justify it.
+
+### Long-term mechanism: dispatch + resume, not one long Agent session
+
+A small **background dispatcher** (proposed) periodically or event-driven:
+1. Reads project Item/plan state and existing Host Work outcomes.
+2. Finds eligible Items with satisfied dependencies, no active Work, known
+   checks and allowed budget/concurrency.
+3. Dispatches one bounded Work (or asks a replaceable caller to decompose an
+   oversize/ambiguous Item); records linkage to its origin.
+4. Reacts to completion/hold/failure; runs bounded retry only under existing
+   Workflow policy; prepares the next ready Item.
+5. Reports unresolved questions to the human, rather than fabricating the
+   next objective or changing the success criterion.
+
+The dispatcher must be **idempotent** across crash/restart, use existing Item
+claims and Host receipts, and never duplicate a running Work. A failed
+decomposition should produce a question or a bounded research Work, not an
+infinite self-replanning loop. With independent tasks, a Work queue can
+progress across several repositories; each Project retains its own policy.
+
+**Success demonstration:** hand System a documented multi-day target and a
+finite Item backlog; shut down the initiating Claude/Codex session; restart
+the Host once; run independent Items across two repositories; verify that
+ready Work continues without duplicate effects and no extra Goal engine,
+and that blocked decisions reach a user-facing report.
+
+## 4. Background service, agents and the real coordination need
+
+- **Existing execution brain:** Host is already deterministic and durable,
+  with scheduling, retries, verification, event/Artifact ownership, and
+  one source of truth for Work. Do not replace it with another agent.
+- **Agent intelligence is sufficient as a starting assumption:** leverage
+  Claude Code and Codex to inspect Plans, decompose Items, investigate
+  failures and revise task descriptions. Avoid an additional resident
+  "planning brain" until controlled experiments show it is necessary.
+- **Missing glue:** ready-item eligibility, safe autonomous **dispatch**,
+  cross-Project priority/fairness, linkage from plans to Items to Work,
+  concise state handoff, and notifications when attention is required.
 - Keep System as a systemd-supervised background service, with scheduled or
-  event-driven **callers**, not twenty always-running LLM loops. Waiting
-  should not consume model tokens. Recovery and notifications must survive
-  caller/session replacement.
-- Detect stalls, outside failures, quota gaps and lost/unknown effects,
-  classify cause, apply bounded prescribed remedies, expose when work is
-  held and why. Never silently claim success or retry an unknown effect.
+  event-driven lightweight dispatch, not twenty always-running LLM loops.
+  Waiting should not consume model tokens. Sessions remain replaceable callers.
+- Detect stalls, outside failures, quota gaps and unknown effects, classify
+  causes and apply bounded prescribed remedies. Unknown external effects
+  cannot be blindly replayed.
 - **Self-update is separate from self-healing:** System may propose a tested
-  update/rollback with exact release evidence; unattended system update is
-  opt-in policy requiring provenance, verification, rollout/rollback gates,
-  and an authority boundary. Default remains operator-controlled promotion
-  to main and release. Do not let a failing Worker rewrite its own verifier
-  or install arbitrary code to clear a failure.
+  update/rollback; promotion is operator-governed by default. Unattended
+  update requires explicit opt-in authority, evidence, rollout and rollback
+  gates. Do not let a failing Worker rewrite its own verifier.
+
+### Remote agent supervision: learn from Herdr, preserve System contracts
+
+[Herdr](https://github.com/herdrdev/herdr) owns durable terminal panes,
+workspace/tab layout, agent-status visibility and remote SSH machines;
+[herdr-core](https://github.com/herdrdev/herdr-core) offers a headless
+terminal/agent execution API, templates, child-agent lifecycle, parent
+notifications, read/send/wait operations and remote machines.
+See [RES-0012](../research/RES-0012-autonomous-work-platform-patterns.md).
+
+Potential optional adapter: System dispatches an already-admitted
+Worker Attempt to an isolated Herdr/core-managed local or remote process,
+then receives lifecycle observations and exact Artifact outputs through the
+existing WorkerPort/ACP boundary. **Herdr terminal idle/done is not a
+System verified Work outcome**; only System Verifiers may establish that.
+Keep remote credentials and access scope independent; loss of SSH/terminal
+status must be distinguishable from the remote attempt's actual result.
+Do not introduce two competing process supervisors for the same Attempt.
+
+### Parallel read-only component audit (proposed experiment)
+
+Use the **Specialist Review Team** strategy from section 2 to spawn several
+*bounded subagent review attempts* from an existing Claude/Codex caller or
+System Work, each with disjoint scope and minimum context. No code writes,
+no dependency installs, no credentials, no push, no automatic patch/merge.
+
+| Audit track | Owner/source to inspect | Questions and deliverable |
+|---|---|---|
+| A. Work lifecycle | \`packages/work\` | Ready-step routing, Item decomposition and claims, replay/recovery, deduplication, retry storm risk; cite source lines and tests |
+| B. Host and security | \`packages/host\`, \`packages/app\` | Caller privilege provenance, \`force\`, approval boundary, MCP from different repos, Host restart/update safety |
+| C. Worker runtime | \`packages/agents\`, optional ACP branches | Local launch/isolation, model/account routing, subagents, quota, cancellation, remote-runtime/Herdr adapter seam |
+| D. Verifiers/effects | \`packages/verifiers\`, \`packages/effects\`, \`packages/artifacts\` | Independent evidence, ambiguous external effects, publish queue, Artifact trust and integration safety |
+| E. Operator experience | \`tools\`, \`packages/app\`, \`docs/operations\`, \`workflows\` | Bootstrap, status, unattended dispatch, reporting, CI quality, minimal UX |
+
+Audit orchestration: separate read-only workspaces/contexts; each reviewer
+returns a structured **Audit Artifact** listing [component, finding, severity,
+reproduction or source evidence, owner, suggested minimal fix, existing
+coverage, confidence]. A separate synthesis subagent deduplicates claims
+and cross-checks contradictions against code/tests. A verification step
+tests the proposed assertions, prioritizes P0/P1/P2 and converts accepted
+findings into small independent Items, **never bypassing human authority**.
+Report both defects and "no change needed" components to avoid inventing
+work. This PR defines the audit protocol; it does **not** assert that
+subagents were spawned or the audit was performed.
 
 ## 5. Feedback Loop, borrowing from engineering/mechatronics
 
@@ -215,9 +307,9 @@ lose against a simpler strategy.
 ## 7. Research, boundaries and proposed delivery
 
 [RES-0012](../research/RES-0012-autonomous-work-platform-patterns.md)
-records source-level research on Symphony, Gas City (successor to retired
-Gas Town), Beads, Magentic-One, Temporal, Anthropic's research agents and
-ACP. Reuse only the useful invariant or pattern at an existing System seam.
+records source-level research on Symphony, Herdr/Herdr Core, Gas City
+(successor to retired Gas Town), Beads, Magentic-One, Temporal,
+Anthropic's research agents and ACP. Reuse only the useful invariant or pattern at an existing System seam.
 Do not vendor an orchestration framework, duplicate DSH, add model-specific
 branches to Work or assume multi-agent beats single-agent.
 
@@ -227,11 +319,15 @@ Possible **sequenced experiments**, not authorized implementation Items:
    on three target repository shapes and through other project sessions.
 2. **Multi-project visibility:** status of several repositories from one
    CLI/MCP caller, bounded priorities/quotas; no new Work state.
-3. **Long-horizon proof:** one multi-day research/implement/test Program
-   through replaceable sessions, with explicit stop and restart tests.
-4. **Adaptive teams:** compare the three modes and the one-Worker baseline
+3. **Long-term delivery:** decompose a Markdown ROADMAP/PLAN/TODO into
+   actionable Items and verified Works, then demonstrate unattended dispatch
+   across session/Host restarts without a new Goal engine.
+4. **Independent component audit:** read-only subagent tracks across five
+   System boundaries, separate verified synthesis and minimal accepted Items;
+   evaluate Herdr-managed remote attempt lifecycle as an optional adapter.
+5. **Adaptive teams:** compare the three modes and the one-Worker baseline
    under shared load; observe merge conflicts, tokens and outcomes.
-5. **Feedback and capability evolution:** failure taxonomy, remediation
+6. **Feedback and capability evolution:** failure taxonomy, remediation
    outcomes, regression candidate, candidate Worker/SDK benchmark and
    operator-gated promotion/rollback.
 
