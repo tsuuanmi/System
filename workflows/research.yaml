@@ -5,7 +5,7 @@
 # `research.web` is a role capability the profile gives to web Accounts: investigate prefers them and falls back to any capable Account.
 schema: system.workflow/v1
 id: research
-version: 4
+version: 5
 steps:
   - id: investigate
     capabilities: [research, web-search, tier.standard]
@@ -23,6 +23,11 @@ steps:
       Each "quote" is a sentence copied word for word from the page at "url"
       that supports its "claims". Use only http or https URLs that are publicly
       readable without signing in.
+      Square brackets in the report are only for source ids such as [s1]:
+      every [id] must be in "sources" and every source must be cited at least
+      once. Write any other bracketed text (regexes, checkboxes, tags like
+      verified or unknown) without square brackets, because the citation check
+      (citations-v2) reads every bracket as a source id.
   - id: citations
     dependsOn: [investigate]
     verify:
