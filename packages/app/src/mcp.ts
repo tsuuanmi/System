@@ -83,8 +83,8 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
 
 Bootstrap of a new repository (you do this, there is no script)
 1. Check the GitHub remote.
-2. If AGENTS.md is missing, write it from the agent contract (Appendix B) of
-   ~/.system/current/docs/governance/documentation-architecture.md.
+2. If AGENTS.md is missing, write it from section 9, "Repository profile and agent
+   contract", of ~/.system/current/docs/governance/documentation-architecture.md.
 3. Ask the operator before creating \`dev\` from \`main\`.
 4. Write \`.system/checks.yaml\` from the repository's CI and commit it on
    \`dev\`. This is the one direct commit, since there are no checks to pin yet.

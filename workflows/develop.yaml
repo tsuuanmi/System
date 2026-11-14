@@ -1,6 +1,6 @@
 # Develop: the default for any change to a repository. A coding Worker, test-first, changes the repository, the
 # required checks (the Sub-workflow code-checks.yaml) verify the exact result, System pushes that exact commit to
-# system/<work> and opens a draft pull request (never merges), and Work is
+# system/<work> and opens a draft pull request, System merges the exact checked commit into `dev` (ADR-0008), and Work is
 # accepted on the verdict.
 # Satisfied (GLOSSARY, ro-15): when the Item already holds at the base, the Worker also writes the optional output `satisfied`
 # (the existing tests that show it); satisfied-check runs exactly those tests on the Task's base, the checks and the publish are

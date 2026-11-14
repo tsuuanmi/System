@@ -378,3 +378,9 @@ test('an MCP session refreshes its tools and notifies after recovering on newer 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('the bootstrap steps cite a section that exists in documentation-architecture.md', async () => {
+  const { INSTRUCTIONS } = await import('../src/mcp.ts')
+  assert.doesNotMatch(INSTRUCTIONS, /Appendix B/)
+  assert.match(INSTRUCTIONS, /section 9, "Repository profile and agent\s+contract"/)
+})
