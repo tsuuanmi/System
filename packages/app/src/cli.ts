@@ -445,6 +445,14 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  /** Whether `step` of the Work's pinned spec is a verify step. */
+  const isVerifyStep = async (workId: string, step: string): Promise<boolean> => {
+    const record = await host.work().get(workId)
+    if (!record) throw new Error(`no Work ${workId}`)
+    const read = await host.artifacts().get(record.state.specId)
+    const steps = read.state === 'stored' ? (read.envelope.content as { steps?: object[] }).steps ?? [] : []
+    return steps.some((s) => (s as { id?: string }).id === step && 'verify' in s)
+  }
   work.command('retry <workId>')
     .description('run a step of failed, cancelled or held Work again as a new attempt; the steps after it are reset. A verify step is asked again on the same subject and criteria')
     .option('--step <id>', 'the Worker, verify or effect step to run again (default: the first Worker step that did not succeed)')
@@ -453,6 +461,8 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')
     .action((workId: string, options: { step?: string; worker?: string; reason: string; cancelOnInterrupt?: boolean }) => {
       select(async () => {
+        // Choosing among runs of a check is the operator's (ADR-0011): the same typed confirmation as `system approve`.
+        if (options.step && await isVerifyStep(workId, options.step)) await io.confirmHuman(`Verifying again is a human's decision. Type exactly ${shortCode(workId)} to run ${options.step} again\n> `, shortCode(workId))
         return exitOf(await host.work().retry(workId, options.worker, options.reason, options.step, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })

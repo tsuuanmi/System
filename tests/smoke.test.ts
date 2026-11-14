@@ -16,7 +16,6 @@ const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'web-worker', 'agents', 'credentials', 'system-app']
 
 const system = (...args: string[]) => cli.run(args)
-const human = { SYSTEM_CALLER: 'human' }
 
 function doctor() {
   const ran = system('doctor', '--json')
@@ -152,11 +151,11 @@ test('an Artifact whose bytes were deleted reads as unavailable', () => {
 test('credentials set stores a piped value without printing it and keeps other entries', () => {
   const file = join(home, '.credentials.yaml')
   writeFileSync(file, 'version: 1\nrefs:\n  OTHER_KEY: keep-me\n', { mode: 0o600 })
-  // The Host takes credentials only from a human, which a pipe is not unless it says so.
-  const set = cli.run(['credentials', 'set', 'SMOKE_TOKEN'], { input: 'secret-value-123\n', env: human })
+  // The Host takes credentials only from a human: a terminal, which echoes what is typed once and System never prints (ADR-0011).
+  const set = cli.run(['credentials', 'set', 'SMOKE_TOKEN'], { input: 'secret-value-123\n', terminal: true })
   assert.equal(set.status, 0, set.stderr)
-  assert.doesNotMatch(set.stdout + set.stderr, /secret-value-123/)
-  const status = cli.run(['credentials', 'status', 'SMOKE_TOKEN', 'OTHER_KEY', 'ABSENT_TOKEN'], { env: human })
+  assert.equal((set.stdout + set.stderr).split('secret-value-123').length - 1, 1, 'only the terminal echo of the typed line')
+  const status = cli.run(['credentials', 'status', 'SMOKE_TOKEN', 'OTHER_KEY', 'ABSENT_TOKEN'], { terminal: true })
   assert.equal(status.status, 1, 'one name is not configured')
   assert.match(status.stdout, /SMOKE_TOKEN {2}configured \(file\)/)
   assert.match(status.stdout, /OTHER_KEY {2}configured/)

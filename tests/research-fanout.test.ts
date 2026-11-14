@@ -74,7 +74,7 @@ before(async () => {
   assert.equal(system(['init']).status, 0)
   patch([claude])
   await cli.start()
-  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
+  assert.equal(cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake-token\n', terminal: true }).status, 0)
   await cli.start()
 })
 

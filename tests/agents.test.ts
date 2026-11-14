@@ -48,7 +48,7 @@ before(async () => {
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
   // The Host reads its credentials when it starts: store the token, then start it again.
   await cli.start()
-  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
+  assert.equal(cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake-token\n', terminal: true }).status, 0)
   await cli.start()
   gitRepo = mkdtempSync(join(home, 'repo-'))
   const git = (...args: string[]) => execFileSync('git', ['-C', gitRepo, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })

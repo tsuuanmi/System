@@ -68,7 +68,7 @@ before(async () => {
 `)
   // The Host reads its credentials when it starts: store the token, then start it again.
   await cli.start()
-  const set = cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake\n' })
+  const set = cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake\n', terminal: true })
   assert.equal(set.status, 0, set.stderr)
   await cli.start()
 })
@@ -118,7 +118,7 @@ test('Software Engineering: a check failed by the environment is verified again 
   assert.equal(ran.status, 1)
   const workId = ran.stdout.trim()
   writeFileSync(marker, '')
-  const again = system(['work', 'retry', workId, '--step', 'checks.checks', '--reason', 'the environment is fixed'])
+  const again = cli.run(['work', 'retry', workId, '--step', 'checks.checks', '--reason', 'the environment is fixed'], { input: `${workId.replace(/^\w+:/, "").slice(0, 8)}\n`, terminal: true })
   assert.equal(again.status, 0, again.stderr)
   const record = show(workId)
   const verified = record.events.filter((e) => e.type === 'verified')
