@@ -131,6 +131,15 @@ test('failed attempts classify quota reasons, recorded rate limits and unknown r
   ], 2, 1)
 })
 
+test('an attach failure is Outside; a check timeout verdict is a failure of the change unless the base fails it too', () => {
+  const attach = 'chatgpt: attach text failed: the attachment was still being added after 1500 ms (x)'
+  const timeout = 'failed: smoke: timed out after 120000ms while running restart'
+  failures([failedAttempt(attach), verdict('fail', timeout)], [
+    { event: 'observed#0', kind: 'attempt', reason: attach, outside: 'attach' },
+    { event: 'verified#1', kind: 'verdict', reason: timeout },
+  ], 1, 1)
+})
+
 test('a lost attempt is an Outside restart failure tied to its event', () => {
   const reason = 'the host stopped before the attempt reported'
   failures([{ type: 'attempt-lost', at, stepId: 'task', attemptId: 'attempt:1', reason }], [

@@ -10,6 +10,7 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import type { Artifacts, Envelope } from '@system/artifacts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type ClaimTable, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
+import { changedTests } from './changed-tests.ts'
 import { git, pin, snapshot } from './git.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
@@ -24,6 +25,7 @@ export * from './controller.ts'
 export * from './conversation.ts'
 export * from './errors.ts'
 export * from './git.ts'
+export * from './changed-tests.ts'
 export * from './host.ts'
 export * from './host-lock.ts'
 export * from './kinds.ts'
@@ -134,6 +136,10 @@ function specStore(artifacts: Artifacts): SpecStore {
     unchangedBase(id) {
       const tree = stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined
       return tree && tree.commit === tree.parent ? tree.commit : undefined
+    },
+    async changedTests(id) {
+      const tree = stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined
+      return tree?.parent ? changedTests(tree.repository, tree.parent, tree.commit) : undefined
     },
     commitOf: (id) => (stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined)?.commit,
     taskOf(id) {

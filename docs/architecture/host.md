@@ -122,7 +122,8 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   - A `run` cut short has no receipt, so after a restart the same `commandId`
     runs the Work on.
 - **Implemented (H3), the socket and the operation table:** `packages/host`.
-  Its README is the protocol (hello, 1 MiB frames, table rows, long calls) and the API reference, the latter generated from the
+  Its README is the protocol (hello, 1 MiB frames, table rows, long calls) and the API reference, the latter generated
+  from the
   table and checked by a test. `work.submit` takes the Workflow file's
   contents, never a path (`system mcp` reads a path and sends its contents;
   see [the app README](../../packages/app/README.md)), and `work.run`, `work.retry` and `approval.decide`
@@ -135,7 +136,8 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   - **Implemented (H4b-1):** the CLI is a thin client (`packages/app`:
     `remote.ts` is a `ClientHost` over the socket, `client.ts` its entry, run by
     `bin/system` for every command but `init`, `host` and `doctor`, without
-    booting DSH). `buildProgram` is its commands; `doctor` and `host` are a program of their own (`buildHostProgram`), run in the DSH process.
+    booting DSH). `buildProgram` is its commands; `doctor` and `host` are a program of their own (`buildHostProgram`),
+    run in the DSH process.
   - It reads the Workflow file and sends its contents. A call that changes
     something carries a fresh `commandId`, sent once more with the same one
     after a timeout (10 s: "not answering").
@@ -221,9 +223,18 @@ On start, before taking any command, the Host recovers:
    `settle()` confirms its process gone.
 3. Effects are reconciled as they are today, by reading the remote.
 
-**A Worker attempt cut short is dispatched again by the Host once `settle()` confirms its process gone.** A Worker attempt runs in its own worktree with no external effect, so running it again repeats no unknown side effect. The lost attempt stays recorded and the new one is a new attempt. Every other interrupted Work waits for the operator, or an agent session, to run it: one with a verifier run lost, an effect left `intended`, `absent` or `unknown`, or a lost attempt whose process is not confirmed gone. At start the Host also carries on a Work that was only waiting (a slot, a quota, a step pending: no lost attempt, no unresolved effect). A held Work stays held. The third Outside failure in a row on a step (`attempt-lost` or `limited`, counted from the Work's events, reset when an attempt of the step finishes) holds the Work instead of dispatching again (cm-2); only a human's Approval or retry goes on.
+**A Worker attempt cut short is dispatched again by the Host once `settle()` confirms its process gone.** A Worker
+attempt runs in its own worktree with no external effect, so running it again repeats no unknown side effect. The lost
+attempt stays recorded and the new one is a new attempt. Every other interrupted Work waits for the operator, or an
+agent session, to run it: one with a verifier run lost, an effect left `intended`, `absent` or `unknown`, or a lost
+attempt whose process is not confirmed gone. At start the Host also carries on a Work that was only waiting (a slot, a
+quota, a step pending: no lost attempt, no unresolved effect). A held Work stays held. The third Outside failure in a
+row on a step (`attempt-lost` or `limited`, counted from the Work's events, reset when an attempt of the step finishes)
+holds the Work instead of dispatching again (cm-2); only a human's Approval or retry goes on.
 
-**Implemented (sc-8):** after recovery `Host.start` runs again, without waiting, each Work whose lost attempts are all Worker attempts confirmed gone by `slots.settle()` and whose effects are all `applied` or `failed` (the Work is not terminal, so a held one stays held).
+**Implemented (sc-8):** after recovery `Host.start` runs again, without waiting, each Work whose lost attempts are all
+Worker attempts confirmed gone by `slots.settle()` and whose effects are all `applied` or `failed` (the Work is not
+terminal, so a held one stays held).
 
 **Implemented (H2):** `Host.start` marks each unfinished Work's unreported
 attempts `attempt-lost` and reconciles effects left `intended` or `unknown`

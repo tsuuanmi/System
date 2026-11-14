@@ -7,13 +7,14 @@
  */
 import type { WorkEvent } from './record.ts'
 
-export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host'
+export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach'
 
 const PATTERNS: [OutsideCause, RegExp][] = [
   ['quota', /out of credits|rate[- ]limit|quota|usage limit|too many requests/i],
   ['restart', /host stopped before the attempt reported|host restart/i],
   ['conflict', /merge conflict with /i],
   ['load', /the base fails it too/i],
+  ['attach', /attach text failed/i],
   ['slow-host', /timed out after|timeout/i],
 ]
 
@@ -33,15 +34,19 @@ export function outsideRun(events: readonly WorkEvent[], stepId: string): { coun
   let run: { count: number; cause?: OutsideCause; reason?: string } = { count: 0 }
   for (const event of events) {
     if (event.type === 'attempt-lost' && event.stepId === stepId) run = { count: run.count + 1, cause: 'restart', reason: event.reason }
-    else if (event.type === 'observed' && event.stepId === stepId) run = event.limited ? { count: run.count + 1, cause: 'quota', reason: event.reason ?? '' } : { count: 0 }
+    else if (event.type === 'observed' && event.stepId === stepId) run = event.limited ? { count: run.count + 1, cause: 'quota', reason: event.reason ?? '' } : event.status === 'failed' && outsideCause(event.reason ?? '') === 'attach' ? { count: run.count + 1, cause: 'attach', reason: event.reason ?? '' } : { count: 0 }
     else if (event.type === 'verified' || event.type === 'skipped' || event.type === 'decided') { if (event.stepId === stepId) run = { count: 0 } }
     else if (event.type === 'reopened' && (event.stepId === stepId || event.reset?.includes(stepId))) run = { count: 0 }
   }
   return run
 }
 
-export function outsideCause(reason: string): OutsideCause | undefined {
+/**
+ * `from: 'verdict'` is a verifier's reason: a check that timed out is a failure of the change, not a slow Host, unless the
+ * base fails it too (the base re-run says so in the reason: `load`). Read at report time, so old records classify by the same rule.
+ */
+export function outsideCause(reason: string, from?: 'verdict'): OutsideCause | undefined {
   const held = /^step \S+ held after \d+ Outside failures in a row \(last cause: (\w+)\)/.exec(reason)
   if (held) return held[1] as OutsideCause
-  return PATTERNS.find(([, pattern]) => pattern.test(reason))?.[0]
+  return PATTERNS.find(([cause, pattern]) => !(from === 'verdict' && cause === 'slow-host') && pattern.test(reason))?.[0]
 }

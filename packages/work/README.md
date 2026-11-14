@@ -28,7 +28,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
 - [src/status.ts](src/status.ts) — a project's status: `parseStatus` (in [src/status-parse.ts](src/status-parse.ts), import-free; `strict` throws on any problem; `(after: id, id)` makes an Item Blocked) and `readStatus` (`STATUS.md` on `dev`), `itemLines` (done, doing, todo from the Work records, a `done` line naming its Works' Outside failures when there are any) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/runbook.md#the-status-of-a-project).
-- [src/outside.ts](src/outside.ts) — `outsideCause`: the one place where a recorded failure reason is classed as an Outside failure ([GLOSSARY](../../GLOSSARY.md)) with its cause (`quota`, `restart`, `conflict`, `load`, `slow-host`), or, when no pattern matches, as a failure of the change.
+- [src/outside.ts](src/outside.ts) — `outsideCause`: the one place where a recorded failure reason is classed as an Outside failure ([GLOSSARY](../../GLOSSARY.md)) with its cause (`quota`, `restart`, `conflict`, `load`, `slow-host`, `attach`; a check timeout in a verdict is a change failure unless the base fails it too), or, when no pattern matches, as a failure of the change.
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
 - [src/live.ts](src/live.ts) — `LiveAttempts`: each running Worker attempt's
   start, last activity and the `progress` its Worker reported (in memory

@@ -7,7 +7,7 @@
 # skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 4
+version: 5
 steps:
   - id: implement
     capabilities: [code-write, code.develop, tier.standard]
@@ -23,6 +23,13 @@ steps:
       every existing test that pins behaviour the change alters (search the
       tests for the names, messages and fields it changes). Run the
       repository's checks before you finish.
+
+      When the Task names invariants to keep, do not edit or delete the tests
+      that pin them. For every existing test file you modify or delete, give
+      one line of reason in your result, as `<path>: <reason>`. System lists
+      those files itself from the git diff and records them with your reasons
+      (or "no reason given") in the Work and the pull request; a changed test
+      is disclosed, it does not stop the Work.
 
       If your input has a base, your working directory is the base branch's
       current tip, because the publish of your previous change was refused (a

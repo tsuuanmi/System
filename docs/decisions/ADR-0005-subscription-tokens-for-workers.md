@@ -77,5 +77,6 @@ there, so a shared directory carries state between attempts. A second probe
 with a fresh `CODEX_HOME` holding only a copy of `auth.json` ran normally.
 Each attempt therefore gets a fresh `CODEX_HOME` with only `auth.json`; a
 refreshed `auth.json` is copied back to the account directory unless that file
-changed meanwhile, and by default attempts of one account run one at a time (a per-Account limit is in the [runbook](../operations/runbook.md#attempts-at-once-and-held-slots)). See
+changed meanwhile, and by default attempts of one account run one at a time (a per-Account limit is in the
+[runbook](../operations/runbook.md#attempts-at-once-and-held-slots)). See
 [`@system/agents`](../../packages/agents/README.md).

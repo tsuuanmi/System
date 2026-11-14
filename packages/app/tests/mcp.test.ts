@@ -254,7 +254,7 @@ test('the initialize result carries instructions: the steps, the checks file and
 test('the instructions name develop.yaml as the Workflow for any change and only the canonical others', { timeout: 120_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
   assert.ok(text.includes('workflows/develop.yaml'))
-  for (const name of ['hygiene', 'research', 'brainstorm', 'code-checks']) assert.ok(text.includes(`${name}.yaml`), name)
+  for (const name of ['hygiene', 'research', 'research-source', 'brainstorm', 'code-checks']) assert.ok(text.includes(`${name}.yaml`), name)
   for (const gone of ['feature', 'software-engineering', 'debate', 'second-opinion', 'research-fanout', 'red:']) assert.ok(!text.includes(gone), gone)
 })
 

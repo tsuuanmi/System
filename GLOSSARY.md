@@ -148,6 +148,11 @@ A Work's outcome when its Item already holds at the Task's base, shown by a
 test that a Verifier ran there; nothing is merged and the Item counts as done.
 _Avoid_: no-op, skipped, already done
 
+**Escaped defect**:
+A defect in a change that passed its checks and was accepted, found later by
+review or use.
+_Avoid_: false positive, regression
+
 ### Outside material
 
 **Conversation**:

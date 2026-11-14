@@ -101,6 +101,14 @@ class GitHubError extends Error {
   }
 }
 
+/** tr-1: the existing tests the change modified or deleted, each with the Worker's reason; nothing when the Work record holds no list for the subject. */
+function changedTestsSection(intent: EffectIntent): string[] {
+  const tests = intent.changedTests
+  if (!tests) return []
+  if (!tests.length) return ['Changed tests: none.', '']
+  return ['Changed tests (existing test files this change modified or deleted):', ...tests.map((t) => `- \`${t.path}\` (${t.change}): ${t.reason}`), '']
+}
+
 const READY = 'marking the pull request ready for review'
 
 export const branchOf = (workId: string) => `system/${workId.replace(/^work:/, '')}`
@@ -180,7 +188,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
     pull ??= await api<Pull>(t, 'POST', `/repos/${t.slug}/pulls`, {
       title: `System ${t.branch.slice('system/'.length, 'system/'.length + 8)}: ${t.tree.commit.slice(0, 12)}`,
       head: t.branch, base: config.base, draft: !merge,
-      body: [`Opened by System for Work \`${intent.workId}\`.`, '', `- commit: \`${t.tree.commit}\``, `- operation: \`${intent.operationId}\``, '', merge ? `System merges this change into ${config.base} through its merge queue once the checks have passed on the merge with ${config.base}.` : 'System does not merge this pull request; review and merge by hand.'].join('\n'),
+      body: [`Opened by System for Work \`${intent.workId}\`.`, '', `- commit: \`${t.tree.commit}\``, `- operation: \`${intent.operationId}\``, '', ...changedTestsSection(intent), merge ? `System merges this change into ${config.base} through its merge queue once the checks have passed on the merge with ${config.base}.` : 'System does not merge this pull request; review and merge by hand.'].join('\n'),
     })
     if (ready && pull.draft) {
       await api(t, 'POST', '/graphql', {

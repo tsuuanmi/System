@@ -20,10 +20,12 @@ Official DeepSeek Harness sources:
 - [Architecture and profiles](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md):
   Cordis services/plugins, reversible registration effects, ordered profile
   and bundle layers, SDK-minimal exception.
-- [Plugin packaging and install](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md):
+- [Plugin packaging and
+  install](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md):
   out-of-tree packages, bundle manifests, DSH-version requirements, patch
   precedence and whole-config replacement.
-- [Composition/HMR tutorial](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-tutorial/06-composition-and-hmr.md):
+- [Composition/HMR
+  tutorial](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-tutorial/06-composition-and-hmr.md):
   per-entry disabled configuration retains entries without mounting.
 - [Plugin manager](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/boot/plugin-manager/README.md):
   installed-but-disabled plugins, changed profile state and HMR/restart

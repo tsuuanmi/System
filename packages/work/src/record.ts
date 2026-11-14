@@ -83,6 +83,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     objection: z.string().optional(),
     /** A no-change attempt on a step reopened by this failing verdict, passed on as the same change (`retry.rerunUnchanged`): the check runs again on it. */
     unchangedAfter: contentIdSchema.optional(),
+    /** tr-1: the existing tests the change modified or deleted (computed by System from git), each with the Worker's reason or "no reason given"; absent when none. */
+    changedTests: z.array(z.object({ path: z.string(), change: z.enum(['modified', 'deleted']), reason: z.string() }).strict()).optional(),
   }).strict(),
   z.object({
     type: z.literal('verified'), seq: z.number().int(), at,
