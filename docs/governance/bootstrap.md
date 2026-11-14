@@ -12,20 +12,18 @@ With Python 3.8+ and a checkout of System available:
     python3 <system-checkout>/tools/bootstrap_docs.py \
       --out <target-repository> --name "My Project"
 
-Add `--plan` to write nothing and print `create`, `unchanged` or `conflict` for each file.
 Existing files are not overwritten. Review printed skipped files and add the
 docs router link to an existing root README. The bootstrap copies the portable
 standard and checker, writes a **target-local** governance profile, a docs
 router, AGENTS.md, a retirement ledger and an initial docs CI workflow.
 
-Then from the target repository run:
+## Make it ready for System
 
-    python3 tools/docs.py check
-    python3 tools/docs.py sync --check
-
-Only governance/ is created by default. Add requirements/, architecture/,
-research/, proposals/, decisions/, engineering/ or other areas **when there is
-actual content**, and update the areas and ID prefixes in the target's profile.
+Run `system bootstrap plan --repo <path>` (it lists each file as `create`, `unchanged` or `conflict`) and do the human
+steps it prints. Ask the operator before creating `dev`. The first `.system/checks.yaml` is a direct commit on `dev`
+the operator reviews, since admission refuses a Work without one. Write STATUS.md (an `Aim:` line and Items
+`- [ ] <id> <title>`) and commit it on `dev` before the push. Run `system bootstrap check` until it passes. Only a
+human approves, denies or verifies again: a session never acts as the human and prints the command instead.
 
 ## Adaptation rules
 

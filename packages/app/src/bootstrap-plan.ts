@@ -43,9 +43,12 @@ export async function bootstrapPlan(path: string): Promise<BootstrapPlan> {
     `# 2. Review the draft above, save it as ${CHECKS_FILE}, and commit it directly on dev:`,
     `git -C ${repo} add ${CHECKS_FILE}`,
     `git -C ${repo} commit -m ${shell('Add System checks')}`,
-    '# 3. Push:',
+    '# 3. Write STATUS.md (an `Aim:` line, then Items as `- [ ] <id> <title>`) and commit it on dev:',
+    `git -C ${repo} add STATUS.md`,
+    `git -C ${repo} commit -m ${shell('Add STATUS.md')}`,
+    '# 4. Push:',
     `git -C ${repo} push -u origin dev`,
-    '# 4. Check the result:',
+    '# 5. Check the result:',
     `system bootstrap check --repo ${repo}`,
   ].join('\n') + '\n'
   const text = `== files ==\n${files}\n== checks ==\n${results}\n== draft ${CHECKS_FILE} ==\n${draftText}${skipped}\n== commands ==\n${commands}`
