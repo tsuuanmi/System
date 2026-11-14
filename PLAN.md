@@ -555,10 +555,11 @@ Order: tr-7 and bs-1 in parallel, then bs-2, bs-4 beside it, then bs-3, then bs-
 State at the end of the overnight session (2026-11-15):
 - Items: tr-7, bs-1, bs-2, bs-3, bs-4 and bs-5 merged into dev, each on its first Work (bs-1 and bs-5 had one reopened implement step each); 0 operator touches; API-equivalent cost about $2.2 for the six.
 - Tried by the operator's session on real repositories: `bootstrap check` passes on System itself and fails a repository whose checks are all limited to documentation paths ("guard: fail"); `bootstrap plan` writes nothing and drafts checks from plain `run:` steps.
-- Not released: dev is ahead of main by BS, tr-7 and the tr-1 fix (work:717ec1a2); the night session does not release.
+- BS release pull request #272 is green and waits for the operator to merge it (the session's merge was refused by its permission policy).
 - TR's close (3e) is not met: the window after TR's release found an Escaped defect (tr-1's changed-tests list against the attempt's start), so counting the next 10 Items starts again after the next release.
 - Still the operator's: the role `research.source` in the profile.
 - bs-6 tried on DNA (read-only): check passes, plan's draft matches DNA's gates but includes setup steps as checks (a candidate Item: skip install and toolchain steps). Before releasing bs-4 the session checked every repository enrolled on this machine (DNA, System, system-dogfood): each has a `docs` check with no `paths`, so no Work there can reach the zero-checks case.
+- Next milestone (unattended scale, PLAN 3e order) prepared, not decided: research work:e7246c75 (citations passed; report sha256:86dec262949d25179b26b60b4089ee33057b946649e1be1c620e359fd5ccc8f4) finds Workers run as the Host's OS user with no user or sandbox field in DSH's spawn path, favours a launcher around the existing argv (a dedicated Unix account through sudo or systemd-run, with systemd or bubblewrap hardening) over a new runtime, and lists nine decisions for the operator (git store, token delivery, network, scope, evidence).
 - Measures: active core 4,285 lines; docs 4,283 (42).
 
 ## 4. Future, not current gates
