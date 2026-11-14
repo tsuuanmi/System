@@ -203,6 +203,22 @@ test("cache falls back to the last attempt's event when get_usage has no plan li
   cache.observe(unifiedEvents())
   assert.deepEqual(await cache.get(), eventReading())
 })
+const REFUSED = { unreadable: 'the usage report of Claude Code 2.1.325 is not verified (verified: 2.1.322)' }
+test("cache falls back to the attempt's event when the CLI version is not verified", async () => {
+  let now = OBS
+  let reads = 0
+  const cache = createQuotaCache({ ttlMs: 600_000, now: () => now, read: async () => { reads++; return REFUSED } })
+  assert.deepEqual(await cache.get(), REFUSED)
+  cache.observe(unifiedEvents())
+  assert.deepEqual(await cache.get(), eventReading())
+  now += 600_001
+  assert.deepEqual(await cache.get(), eventReading(OBS))
+  assert.equal(reads, 2)
+})
+test('a seeded event reading is used while the version is not verified', async () => {
+  const cache = createQuotaCache({ now: () => OBS, read: async () => REFUSED, seed: { observedAt: OBS - 60_000, windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } } } })
+  assert.deepEqual(await cache.get(), { observedAt: iso(OBS - 60_000), windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } }, source: 'rate_limit_event' })
+})
 test('the event reading survives the TTL and ages', async () => {
   let now = OBS
   let reads = 0
