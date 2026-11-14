@@ -47,7 +47,8 @@ const mcpAllowed = allowed.filter((r) => r.startsWith('mcp__')).sort()
 
 test('the service starts the script that runs claude -p with --allowedTools and the prompt file', () => {
   assert.match(service, /^ExecStart=@REPO@\/packages\/bundle\/system-night-session\.sh$/m)
-  assert.match(script, /exec claude -p "\$\(cat "\$repo\/tools\/night-session\.md"\)" --allowedTools "\$@"/)
+  assert.match(script, /claude -p "\$prompt" --output-format text --allowedTools "\$@"/)
+  assert.match(script, /prompt=\$\(cat "\$repo\/tools\/night-session\.md"\)/)
 })
 
 test('the allowlist holds exactly the MCP tools the prompt names, and the wait', () => {
@@ -59,25 +60,15 @@ test('nothing in the allowlist approves, denies, cancels, retries or releases, o
   for (const rule of allowed) {
     assert.doesNotMatch(rule, /approv|deny|decide|cancel|retry|release|update|credentials|login|work_run|replay/, rule)
     assert.doesNotMatch(rule, /^(Write|Edit|Bash\((bash|git|rm|cat)\b)/, rule)
-    if (/^Bash\(sh\b/.test(rule)) assert.match(rule, /^Bash\(sh -c "\$SYSTEM_NIGHT_NOTIFY_COMMAND" -- \*\)$/, 'a shell only for the configured notifier')
+    assert.doesNotMatch(rule, /^Bash\(sh\b/, 'no shell')
   }
   assert.ok(!allowed.includes('Bash'), 'no bare Bash')
 })
 
-test('the notifier rules exist only under their variable and match the prompt\'s own notifier lines', () => {
-  const notifier = allowed.filter((r) => /curl|sh -c/.test(r))
-  assert.equal(notifier.length, 2)
-  for (const rule of notifier) {
-    const variable = /SYSTEM_NIGHT_NOTIFY_\w+/.exec(rule)![0]
-    const quoted = rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    assert.match(script, new RegExp(`if \\[ -n "\\$\\{${variable}:-\\}" \\]; then\\n\\s*set -- "\\$@" '${quoted}'\\nfi`), `${rule} is added only when ${variable} is set`)
-    const body = rule.slice('Bash('.length, -1)
-    const pattern = new RegExp(`^${body.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
-    const line = prompt.split('\n').map((l) => l.replace(/^.*?&& /, '')).find((l) => pattern.test(l.trim()))
-    assert.ok(line, `no prompt line is allowed by ${rule}`)
-  }
-  for (const guard of ['SYSTEM_NIGHT_NOTIFY_URL', 'SYSTEM_NIGHT_NOTIFY_COMMAND'])
-    assert.ok(allowed.includes(`Bash([ -n "\${${guard}:-}" ])`), `${guard} guard`)
+test('the allowlist has no artifact_put and no notifier: the launcher stores and sends the report', () => {
+  assert.equal(allowed.filter((r) => /artifact_put|curl|sh -c|NOTIFY/.test(r)).length, 0)
+  assert.doesNotMatch(prompt, /artifact_put|curl -|sh -c/)
+  assert.match(script, /system artifact put "\$dir\/report\.md" --media-type text\/markdown/)
 })
 
 test('the runbook names the allowlist, the script and the real run to do once', () => {

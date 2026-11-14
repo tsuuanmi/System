@@ -9,7 +9,7 @@ WorkingDirectory=@REPO@
 Environment=PATH=@PATH@
 # Wait for the Host: `system doctor` exits 1 until it answers; try for up to 5 minutes.
 ExecStartPre=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do @REPO@/bin/system doctor >/dev/null 2>&1 && exit 0; sleep 30; done; echo "the Host does not answer" >&2; exit 1'
-# The script runs `claude -p` with --allowedTools: the System MCP tools the prompt uses, `system work wait`, the notifier when configured.
-# Output (the night report) goes to the journal. The session follows the prompt's own limits.
+# The script runs `claude -p` with --allowedTools (the System MCP tools the prompt uses, `system work wait`), stores the answer (the night report) and sends its ID to the notifier when configured.
+# The Artifact ID goes to the journal. The session follows the prompt's own limits.
 ExecStart=@REPO@/packages/bundle/system-night-session.sh
 TimeoutStartSec=6h

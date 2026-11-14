@@ -13,7 +13,7 @@ nothing else.
 
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
 - [night-session.test.ts](night-session.test.ts) — ss-8: the scheduled session's
-  sequence (claim, task_new, work_submit, `work wait`, work_report, artifact_put)
+  sequence (claim, task_new, work_submit, `work wait`, work_report)
   through `system mcp` against a real Host with fake Workers.
 - [mcp-update.test.ts](mcp-update.test.ts) — one running `system mcp` calls
   tools across two atomic install-link switches and real Host upgrades.
