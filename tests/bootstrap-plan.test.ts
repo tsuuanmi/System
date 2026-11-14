@@ -20,7 +20,7 @@ function plan(out: string): Map<string, string> {
   for (const line of lines) {
     const m = /^(create|unchanged|conflict) (.+)$/.exec(line)
     assert.ok(m, `unexpected plan line: ${line}`)
-    map.set(m[2], m[1])
+    map.set(m[2]!, m[1]!)
   }
   return map
 }
