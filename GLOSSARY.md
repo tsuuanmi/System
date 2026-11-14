@@ -132,6 +132,11 @@ or a check that the base fails too, after one re-run on the change and the base,
 Only a check of the Artifact's own form may fail it.
 _Avoid_: score, review, result
 
+**Satisfied**:
+A Work's outcome when its Item already holds at the Task's base, shown by a
+test that a Verifier ran there; nothing is merged and the Item counts as done.
+_Avoid_: no-op, skipped, already done
+
 ### Outside material
 
 **Conversation**:

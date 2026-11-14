@@ -355,13 +355,11 @@ question's text starts a new series (a new Task ID).
 
 ## The dev branch
 
-Parallel Works each pass their own checks; their merges no longer break `dev`
-together, because System merges a Work's change into an allowlisted base
-(`mergeInto`) only through its merge queue: `dev` moves to exactly a commit whose required checks
-passed, the change's merge with the current tip when `dev` has moved, by a
-push with a lease. A conflict fails the publish step naming the files; a
-check that fails on the merge names it in the reason. Do not require pull
-requests in `dev`'s branch protection: the push would be refused.
+System merges a Work's change into `dev` only through its merge queue
+([effects README](../../packages/effects/README.md), [ADR-0008](../decisions/ADR-0008-dev-integration-branch.md)).
+A conflict fails the publish step naming the files; a check that fails on the
+merge names it in the reason. Do not require pull requests in `dev`'s branch
+protection: the push would be refused.
 
 ## Another home
 
@@ -446,14 +444,9 @@ inconclusive verdict (sc-13, [above](#a-check-the-base-fails-too)).
 
 ## Following a Work, and detaching
 
-`work submit`, `work run`, `work retry`, `approve` and `deny` return once the
-Host has admitted the operation, then poll `work.events` every second until the
-Work is terminal, and exit 0 (succeeded), 1 (failed), 3 (held) or 5
-(cancelled). `work cancel --wait` follows the same way.
-
-Ctrl-C **detaches** (see the [app README](../../packages/app/README.md)); the
-Work is not touched. Closing the terminal or killing the CLI never cancels a
-Work: only `system work cancel` does. Read what happened with
+Commands that wait follow the Work, and Ctrl-C detaches without touching it;
+only `system work cancel` cancels a Work. Exit codes and polling are in the
+[app README](../../packages/app/README.md). Read what happened with
 `system work show <id>`.
 
 While Worker attempts run, `work show` also prints `live` (start, last
@@ -474,16 +467,10 @@ system claim df-3 [--repo .] [--force]   # before a Work exists: shown as doing
 system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
-`status` prints one line per Item, read from git (the tip of `origin/dev`, else
-`dev`; the `note:` line names the ref and its age) and the Work records: `done`
-is a Work whose Task names the Item merged into `dev`, or an `[x]` line;
-`doing` is a running or held Work for the Item, or a session's claim (kept in
-the Host's store until a Work for the Item is submitted, which takes it over);
-`todo` is `nobody`. The MCP tool `status` answers the same.
-
-While a Work for an Item runs or is held, `work submit` for the same Item is
-refused, naming that Work; `--force` (`force: true`) allows parallel work on
-purpose, and another session's claim is refused without it. A Task that names
+`status` derives each Item's state from git and the Work records; `claim`
+and `status` are in the [app README](../../packages/app/README.md). While a
+Work for an Item runs or is held, `work submit` for the same Item is refused,
+naming that Work; `--force` allows parallel work on purpose. A Task that names
 an Item carries the Item's line and its earlier Works' outcomes in its context.
 `task new --item` is refused when the Item has no line in `STATUS.md` on `dev`.
 Works do not edit `STATUS.md`: done is derived.

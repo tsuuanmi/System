@@ -4,15 +4,16 @@ Workflow definitions are **data** (ADR-0002): `system.workflow/v1` YAML files
 read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
-The code Workflows use two roles: `code.develop` (the plan, implement and docs
-steps; in `hygiene.yaml`, the plan and implement steps) and `code.tests` (the
-tests step). `code-write` is the permission to write the checkout, not a role; it is also what makes the working tree a step's output, so a
+The code Workflows use the role `code.develop` on the plan, tests, implement and docs
+steps (in `hygiene.yaml`, the plan and implement steps): the tests step moved from
+`code.tests` to it on 2026-11-13 (operator), because tests and implement on
+different Runtimes kept disagreeing; `code.tests` returns when they are stable. `code-write` is the permission to write the checkout, not a role; it is also what makes the working tree a step's output, so a
 step without it outputs only files (the `tests` and `docs` steps declare it).
 See [GLOSSARY.md](../GLOSSARY.md) for the term.
 
 - [feature.yaml](feature.yaml) — the default for a code change: `plan` (`code-write`, `code.develop`, read-only: what to
-  change, where, which tests prove it) → `tests` (`code.tests`,
-  `tier.standard`: the plan's tests, failing, before any code; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
+  change, where, which tests prove it, and the existing tests that pin the changed behaviour, ro-14) → `tests` (`code.develop`,
+  `tier.standard`: the plan's tests, failing, before any code, and the existing tests updated or deleted; `retry` on `red`, `checks-code` and an `OBJECTION:` of `implement`) →
   `red` (`code.required-checks`, criteria `red-v1`: the `red: pass` checks pass
   and a `red: fail` one fails on the tests' change (a timed-out, killed or crashed check, or one failing only in tests the step did not write, is not red: ro-3, [red-v1](../packages/verifiers/README.md)); an `inconclusive` verdict holds the Work before `implement`: approve continues, deny fails) → `implement`
   (`code-write`, `code.develop`: make them pass; `freeze`s the tests step's files: an edit to one is undone when its change is recorded (dg-10); one `retry` per `tests-frozen`, `checks-code` and `publish` (a publish refused for a conflict with the base or a failing check on the merge reopens `implement` on the base's new tip, sc-7; version 4), and a no-change result after a failing `checks-code` runs that check again once on the same change (`rerunUnchanged`, sc-9); a frozen test it says is wrong ends its message with `OBJECTION: <test>: <why>`) →

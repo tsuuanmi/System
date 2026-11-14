@@ -33,6 +33,7 @@
 | WW | Website Workers: Runtime `web`, generic Procedures on a UI map, Power by tier, the canary, `citations-v2`, `research-fanout`; built by System Works on branch `web-workers` | [WW](#ww--website-workers-that-work-built-with-website-workers-branch-web-workers) |
 | DF | System develops System: Items in `STATUS.md` and `system status`, claims, tests first (`feature.yaml`: red check, tests frozen), a check the base fails too is held, one retry per failing check, `work wait` and `system mcp` across Host restarts and updates; 11 System Items merged by System Works in its last two days with no operator touch; DNA (Rust) the second repository; DF3 passed on the session takeover of 2026-11-09, whose questions became df-24, df-28 and df-31 (operator, 2026-11-10: no second run) | [DF at `ea71d80`](https://github.com/tsuuanmi/System/blob/ea71d80/PLAN.md#3-df--dogfood-decided-2026-11-08) |
 | SC | Several Accounts per Runtime: Account identity and the provider's account ID (sc-1), roles `code.develop` and `code.tests` (sc-2), quota readers (sc-3), routing by Headroom under a Ceiling (sc-4), and the first remedies for outside failures (sc-7 to sc-13) | [SC](#3a-sc--scale-by-accounts-decided-2026-11-10), PRs #160 to #186 |
+| RO | Robust to outside failures: 10 Items in a row (ro-7 to ro-16) with no Outside failure, measured from `work report` (ro-5); routing by Headroom with no preferred Account (ro-7), `status` shows the final Artifact (ro-10), research prefers the web Runtime (ro-12), MCP across an update (ro-13); the tests step moved to Claude Code (operator, 2026-11-13). Core 3,982 lines, docs 4,283. ro-15 failed on its change and moves to SS | [RO](#3b-ro--robust-to-outside-failures-decided-2026-11-11), PRs #196 to #212 |
 
 Who built them: PRs #5–#36 were System Works, apart from #34 and #35 (the
 operator's sessions); OC, CQ and the PRs after CQ were built by the
@@ -64,7 +65,7 @@ columns are history, and the reasoning behind each is in [PLAN.md at
 | Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); accepted at DF's close (operator, 2026-11-10) as DG's baseline. df-29: 3,606 → 3,599. The gap to DF9's 3,255 stays: those mechanisms are behaviour the tests pin, and a helper extracted from the verdict and dispatch code added more lines than it saved. Closing it means dropping one (operator decision: the `claim` command, about 60 lines, or the staleness note, per-source retry or slot wait in `live()`) | 3,882 (+6.8% on DG's 3,636, within +10%): routing by headroom (sc-4, +140), publish retry (sc-7), resume after restart (sc-8), re-runs (sc-9, sc-13); dg-11 gave back 36 | 3,953 → 3,941: dead `Artifacts.ofKind` and an orphan comment deleted. 59 above SC's 3,882: the rest is behaviour the tests pin; closing it needs the operator decision on the `claim` command (about 60 lines) |
 | All package source, lines | 11,062 | 11,366 | not measured | 11,191 | 12,191 | not measured |
 | Tests, lines | 9,540 | 9,712 | not measured | 13,136 | 16,435 | not measured |
-| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) | 4,350 (39): over the 4,285 limit by 65; SC's decisions live in this PLAN, not a PROP | 4,373 → 4,283 (39), under the 4,285 limit: restated procedure left to its one home (host.md, bin/README, web-worker README, ADR-0007) |
+| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) | 4,350 (39): over the 4,285 limit by 65; SC's decisions live in this PLAN, not a PROP | 4,373 → 4,283 (39), under the 4,285 limit: restated procedure left to its one home (host.md, bin/README, web-worker README, ADR-0007). ro-16: 4,296 → 4,283 (39), under the limit again: the runbook's following-a-Work, dev-branch and status text left to its homes (app README, effects README, ADR-0008) |
 | Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) | about 2 min 30 s on a quiet machine (docs 1 s, install 10 s, build 30 s, typecheck 10 s, unit 27 s, smoke 71 s); timeouts and flakes at loads of 200-460 | not measured |
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
@@ -218,10 +219,71 @@ defects since fixed, 2 of the change, 2 denied on a stale base):
   never failed and its 8 inconclusive verdicts all waited on the operator.
 - **Tests and implement stay on different Providers.** A contract of
   interfaces in the plan waits until a Work in the measure is out of sync.
+  *Reversed 2026-11-13 (operator):* ro-7 and both ro-15 Works failed on
+  tests and implement disagreeing, so the tests step takes `code.develop`
+  (Claude Code) like plan and implement; `code.tests` (Codex) returns once
+  feature.yaml is stable.
 - **Artifacts stay as they are;** `system status` shows the final one (ro-10).
 - **The web Runtime is used** (ro-12): research's investigate step prefers it
   (research 197 of 224 web attempts succeeded; none since 2026-11-08), and its
   headed-browser tests run only when its paths change (ro-9).
+
+RO measure, first Items (overnight session of 2026-11-12/13, operator away;
+releases `8cc1e2c` and `430ae55`): **0 Outside failures in 6 Items.**
+- ro-7 merged with 2 change failures: the plan missed the old tests that
+  pinned `priority: primary`; implement objected (dg-8) and tests was
+  reopened once. The first tests/implement mismatch since dg-13; a plan
+  that lists the existing tests to change would have caught it.
+- ro-8 changed nothing: sc-13 already re-runs red (the Item was written
+  without reading the code; ticked by hand, PR #200).
+- ro-9 (narrowed, PR #201: `web` was already selected by `paths`, and every
+  smoke test boots a Host), ro-10, ro-11 and ro-12 merged at the first
+  attempt.
+- After ro-7, steps spread over the Claude Accounts (ro-8's plan went to
+  `claude-code/c2`). `research.web` is given to both web Accounts in the
+  operator's profile (backup `profile.yml.bak-before-research-web`).
+- Open: 4 more Items for the 10; core 3,982 lines (within +10% of 3,882);
+  docs 4,296 lines, 11 over 4,285 after ro-11's rename procedure; the
+  `claim` command decision (ro-6) is the operator's.
+
+Review of 2026-11-13 (operator), what returns most next:
+- **Return is the operator's time** (touches, hours watching); throughput
+  and quality must not drop. The bottleneck is no longer a Work but a person
+  writing Items, submitting, waiting and releasing.
+- **Next milestone: the scheduled session** of section 4, after the RO
+  measure. Its four remaining Items prepare it: ro-13 (MCP across an update),
+  ro-14 (the plan names the tests to change), ro-15 (Satisfied), ro-16 (docs
+  under budget; the real research Work work:90e7b0fc ran on
+  `web/chatgpt/default` and passed citations, so the web Runtime needs no fix).
+- **The scheduled session** drives `todo` Items into `dev` only; a Release
+  stays the operator's (ADR-0008) unless the operator hands it over for one
+  session. It takes only Items the operator wrote and proposes new ones in its
+  report.
+- **Repositories:** System and DNA only, for now.
+- **`claim` stays** (a scheduled session needs it); 3,882 stays the budget
+  baseline, with no target below it.
+
+## 3c. SS — The scheduled session (decided 2026-11-14)
+
+**Aim:** the operator writes Items and releases; a session started on a
+schedule drives the `todo` Items into `dev` overnight and leaves a report.
+RO closed with 10 Items in a row without an Outside failure.
+
+Decisions (operator, 2026-11-14):
+- **A caller outside System.** df-1 removed the Orchestrator that System
+  started itself (ADR-0009); the scheduled session is a Claude Code session
+  run as `claude -p` by a systemd user timer (the standard the web canary's
+  timer already uses), reading its prompt from a file in this repository, so
+  any session can replace it. System gains no model loop (ADR-0001).
+- **One night:** the `todo` Items in STATUS order, one at a time; at most 6
+  Items or about $15 (API-equivalent) a night; an Item whose Work is held or
+  that failed twice is skipped and reported; no `todo` left ends the night.
+  It writes no Items and never releases (ADR-0008), unless the operator hands
+  a Release over for that night.
+- **The report is an Artifact** (Works, Items done, Items skipped and why,
+  Items it proposes, the release commands for the operator), its ID sent to
+  the operator's phone.
+- Items: ro-15 (Satisfied, redesigned), ss-1 to ss-4 in STATUS.md.
 
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
@@ -389,7 +451,7 @@ removed), Power by tier, a circuit breaker per Account, the canary, the
 
 ## 4. Future, not current gates
 
-- [ ] A session that System starts on a schedule, to drive Items unattended.
+- [ ] A session that System starts on a schedule, to drive Items unattended: now milestone SS (section 3c).
 - [ ] Research quality capabilities (source snapshots, citation consistency,
   claim-to-evidence checking) as separately selected verifiers. *Trigger: a
   Research Work whose accepted report the operator finds wrong because a

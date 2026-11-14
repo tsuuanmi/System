@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -286,6 +286,53 @@ test('an MCP server of older code than the Host recovers on the code under SYSTE
   await server.close()
   await host.close()
   rmSync(dir, { recursive: true, force: true })
+})
+
+test("an MCP server recovers on every update: the install's current link moves twice under one running server", { timeout: 120_000 }, async () => {
+  const dir = mkdtempSync('/tmp/sm-link-')
+  const realIndex = new URL('../../host/lib/index.js', import.meta.url).href
+  const realOperations = new URL('../../host/lib/operations.js', import.meta.url).href
+  for (const n of [1, 2, 3]) {
+    const lib = join(dir, 'releases', `r${n}`, 'packages', 'host', 'lib')
+    mkdirSync(lib, { recursive: true })
+    writeFileSync(join(lib, 'index.js'), `export * from '${realIndex}'\nexport const VERSION = 'code-${n}'\n`)
+    writeFileSync(join(lib, 'operations.js'), `export { operations } from '${realOperations}'\n`)
+  }
+  const move = (n: number) => {
+    symlinkSync(`releases/r${n}`, join(dir, 'current.tmp'))
+    renameSync(join(dir, 'current.tmp'), join(dir, 'current'))
+  }
+  move(1)
+  mkdirSync(join(dir, 'system'))
+  mkdirSync(join(dir, 'data'))
+  const f = fixture()
+  const host = await f.startHost(join(dir, 'data'))
+  const methods = operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services)
+  const listen = (n: number) => serve(host, { path: join(dir, 'system', 'host.sock'), methods, version: `code-${n}`, onDisk: () => `code-${n}` })
+  let server = await listen(1)
+  const client = new Client({ name: 'test', version: '0' })
+  const transport = new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp'], env: { ...process.env, DSH_HOME: dir, SYSTEM_CODE: join(dir, 'current'), SYSTEM_OPERATOR_ID: 'o1' } as Record<string, string> })
+  try {
+    await client.connect(transport)
+    for (const n of [1, 2, 3]) {
+      if (n > 1) {
+        move(n)
+        await server.close()
+        // Consume the old connection's EOF through a resource request, so the tool
+        // below tests release selection rather than the separate dropped-socket error.
+        await assert.rejects(client.listResources(), /the Host closed the connection/)
+        server = await listen(n)
+      }
+      const listed = await call(client, 'work.list')
+      assert.equal(listed.error, undefined, `release r${n}: ${listed.error}`)
+      assert.deepEqual(listed.value, [])
+    }
+  } finally {
+    await client.close()
+    await server.close()
+    await host.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('an MCP session refreshes its tools and notifies after recovering on newer Host code', { timeout: 120_000 }, async () => {
