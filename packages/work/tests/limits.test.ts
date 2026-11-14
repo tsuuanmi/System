@@ -21,3 +21,21 @@ for (const [reason, expected] of [
     assert.equal(isQuotaLimited(reason), expected)
   })
 }
+
+const NOW = Date.parse('2026-11-14T12:00:00Z')
+for (const [reason, expected] of [
+  ['usage limit reached; resets at 2026-11-14T15:30:00Z', '2026-11-14T15:30:00.000Z'],
+  ['Claude AI usage limit reached|1794672000', new Date(1794672000 * 1000).toISOString()],
+  ['rate limit: try again in 2 hours', '2026-11-14T14:00:00.000Z'],
+  ['rate limit: try again in 45 minutes', '2026-11-14T12:45:00.000Z'],
+  ["You've hit your limit · resets 3pm (UTC)", '2026-11-14T15:00:00.000Z'],
+  ["You've hit your limit · resets 11:30am (UTC)", '2026-11-15T11:30:00.000Z'],
+  ['usage limit reached', undefined],
+  ['usage limit reached; resets at 2026-11-14T10:00:00Z', undefined],
+  ['usage limit reached; resets at 2027-11-14T10:00:00Z', undefined],
+] as const) {
+  test(`quota reset from the error text: ${reason}`, async () => {
+    const { quotaResetFrom } = await import(limitsPath)
+    assert.equal(quotaResetFrom(reason, NOW), expected === undefined ? undefined : Date.parse(expected))
+  })
+}

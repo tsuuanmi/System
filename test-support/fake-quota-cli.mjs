@@ -14,8 +14,16 @@ if (argv.includes('--version')) {
   log({ argv })
   console.log(version === 'garbage' ? version : kind === 'claude' ? `${version} (Claude Code)` : `codex-cli ${version}`)
 } else {
-  log({ argv, home: process.env.HOME, token: process.env.CLAUDE_CODE_OAUTH_TOKEN, codexHome: process.env.CODEX_HOME, envKeys: Object.keys(process.env), pid: process.pid })
+  log({ argv, cwd: process.cwd(), home: process.env.HOME, token: process.env.CLAUDE_CODE_OAUTH_TOKEN, codexHome: process.env.CODEX_HOME, envKeys: Object.keys(process.env), pid: process.pid })
   const answer = JSON.parse(readFileSync(option('answer'), 'utf8'))
+  // A probe is a plain `claude -p <prompt>` turn: it prints the scripted stream lines (a `rate_limit_event` among them) and ends.
+  if (kind === 'claude' && !argv.includes('--input-format')) {
+    if (mode === 'exit') process.exit(1)
+    const events = option('events')
+    for (const entry of events ? JSON.parse(readFileSync(events, 'utf8')) : []) send(entry)
+    send({ type: 'result', subtype: 'success', is_error: false, result: 'ok' })
+    process.exit(0)
+  }
   const lines = createInterface({ input: process.stdin })
   for await (const line of lines) {
     const message = JSON.parse(line)

@@ -23,7 +23,9 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 export interface QuotaWindow {
   /** 0 to 100. */
@@ -320,6 +322,51 @@ export async function readClaudeQuota(options: ClaudeQuotaOptions): Promise<Quot
   }
 }
 
+export interface ClaudeProbeOptions extends ReadOptions {
+  home: string
+  token: string
+  /** The account's economy-tier model; without one the CLI's default. */
+  model?: string
+}
+
+/** A probe is a real model turn, so it is given longer than a read. */
+const PROBE_TIMEOUT_MS = 60_000
+
+/**
+ * The smallest attempt that yields a reading (ss-5): `claude -p` with a one-word prompt at the economy tier, in an
+ * empty directory, with the account's own token and HOME. Ends at the first `rate_limit_event` that tells a window.
+ * Never throws: a probe that fails or tells nothing is an empty list.
+ */
+export async function probeClaudeQuota(options: ClaudeProbeOptions): Promise<QuotaEvent[]> {
+  let cwd: string | undefined
+  try {
+    if (!existsSync(options.home)) return []
+    // The event's shape is checked for the verified versions only.
+    if (await gate('Claude Code', options.command, options.home, /^(\d+\.\d+\.\d+) \(Claude Code\)$/, VERIFIED_CLAUDE_VERSIONS, options.signal)) return []
+    cwd = mkdtempSync(join(tmpdir(), 'system-probe-'))
+    const now = options.now ?? Date.now
+    const outcome = await exchange({
+      command: options.command,
+      args: ['-p', 'hi', '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--strict-mcp-config', ...(options.model ? ['--model', options.model] : [])],
+      env: env({ HOME: options.home, TMPDIR: options.home, CLAUDE_CODE_OAUTH_TOKEN: options.token }),
+      cwd,
+      start: [],
+      signal: options.signal,
+      timeoutMs: options.timeoutMs ?? PROBE_TIMEOUT_MS,
+      onMessage(message) {
+        if (message.type !== 'rate_limit_event') return undefined
+        const events = quotaFromRateLimitEvent(message, now())
+        return events.length ? { value: events } : undefined
+      },
+    })
+    return 'value' in outcome ? outcome.value as QuotaEvent[] : []
+  } catch {
+    return []
+  } finally {
+    if (cwd) rmSync(cwd, { recursive: true, force: true })
+  }
+}
+
 export interface CodexQuotaOptions extends ReadOptions {
   /** The account's CODEX_HOME. */
   codexHome: string
@@ -372,9 +419,14 @@ export interface QuotaCache {
 type Observed = { observedAt: number; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } }
 
 /** `seed` is a saved event reading (after a restart); `persist` is handed each new one. */
-export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, persist }: { read: () => Promise<QuotaReport>; ttlMs?: number; now?: () => number; seed?: Observed; persist?: (observed: Observed) => void }): QuotaCache {
+/** A reading older than this, or none, is probed before a step is dispatched (ss-5). */
+export const PROBE_STALE_MS = 30 * 60_000
+
+/** `probe` (claude-code) is the smallest attempt that yields a reading; it runs at most once per 30 minutes, and its events are observed like an attempt's. */
+export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, persist, probe }: { read: () => Promise<QuotaReport>; ttlMs?: number; now?: () => number; seed?: Observed; persist?: (observed: Observed) => void; probe?: () => Promise<QuotaEvent[]> }): QuotaCache {
   let cached: { report: QuotaReport; expiresAt: number } | undefined
   let pending: Promise<QuotaReport> | undefined
+  let probedAt: number | undefined
   /** What the attempts' events told last, kept apart from the cached report so it outlives the TTL. */
   let fromEvents: Observed | undefined
   // A saved window whose reset has passed is no longer true (it would keep the account over the ceiling); none left is no reading.
@@ -385,11 +437,32 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, 
   const eventReading = (from: Observed): QuotaReport => ({ observedAt: new Date(from.observedAt).toISOString(), windows: { ...from.windows }, source: 'rate_limit_event' })
   // get_usage has no plan limits, or its CLI version is not verified: an attempt's events are the reading then.
   const noPlanLimits = (report: QuotaReport) => 'unreadable' in report && (report.unreadable === NO_PLAN_LIMITS || /is not verified \(verified: /.test(report.unreadable))
+  /** Fold events into what the attempts told last, and persist it; returns the time. */
+  const merge = (events: ReadonlyArray<QuotaEvent>): number => {
+    const at = now()
+    const own: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...fromEvents?.windows }
+    for (const { window, percentUsed, resetsAt } of events) own[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
+    fromEvents = { observedAt: at, windows: own }
+    persist?.(fromEvents)
+    return at
+  }
   return {
     get() {
       if (cached && now() < cached.expiresAt) return Promise.resolve(cached.report)
-      pending ??= read().then((report) => {
-        const shown = fromEvents && noPlanLimits(report) ? eventReading(fromEvents) : report
+      pending ??= read().then(async (report) => {
+        let shown = fromEvents && noPlanLimits(report) ? eventReading(fromEvents) : report
+        const missing = 'unreadable' in shown
+        const old = 'windows' in shown && shown.source === 'rate_limit_event' && now() - Date.parse(shown.observedAt) > PROBE_STALE_MS
+        if (probe && (missing || old) && (probedAt === undefined || now() - probedAt >= PROBE_STALE_MS)) {
+          probedAt = now()
+          try {
+            const events = await probe()
+            if (events.length) {
+              merge(events)
+              shown = eventReading(fromEvents!)
+            }
+          } catch { /* the Account stays as unreadable as before; a probe never fails a step */ }
+        }
         cached = { report: shown, expiresAt: now() + ttlMs }
         return shown
       }).finally(() => { pending = undefined })
@@ -398,17 +471,13 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, 
     invalidate() { cached = undefined },
     observe(events) {
       if (events.length === 0) return
-      const at = now()
-      const own: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...fromEvents?.windows }
-      for (const { window, percentUsed, resetsAt } of events) own[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
-      fromEvents = { observedAt: at, windows: own }
-      persist?.(fromEvents)
+      const at = merge(events)
       if (!cached) return
       if ('windows' in cached.report) {
         const windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...cached.report.windows }
         for (const { window, percentUsed, resetsAt } of events) windows[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
         cached = { report: { observedAt: new Date(at).toISOString(), windows, ...(cached.report.source ? { source: cached.report.source } : {}) }, expiresAt: cached.expiresAt }
-      } else if (noPlanLimits(cached.report)) cached = { report: eventReading(fromEvents), expiresAt: cached.expiresAt }
+      } else if (noPlanLimits(cached.report)) cached = { report: eventReading(fromEvents!), expiresAt: cached.expiresAt }
     },
   }
 }

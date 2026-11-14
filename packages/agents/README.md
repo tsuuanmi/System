@@ -119,6 +119,13 @@ registration or in `accounts()`.
   network failure, a missing token). A readable `get_usage` answer wins. The
   event readings are in memory only, so after a Host restart an Account is unreadable until its
   next attempt.
+  **Probe (ss-5):** a Claude Account whose reading is missing (unreadable) or an event reading
+  older than 30 minutes is probed when read: `claude -p` with a one-word prompt at its
+  `economy` model, in an empty temporary directory, with the Account's own token and HOME, only
+  at a verified CLI version. Its first `rate_limit_event` that tells a window is recorded like
+  an attempt's (merged, persisted, `source: 'rate_limit_event'`). A probe that fails or tells
+  nothing leaves the Account unreadable and never fails a step; at most one probe per 30
+  minutes per Account. Codex's own read is already its rate-limit read.
 - **Source:** System 1, `/home/tan/workspaces/system-agents` commit `15e2bd5`:
   `packages/plugins/runtime-claude-agent-sdk/src/limits.ts` and
   `packages/plugins/runtime-codex-sdk/src/rate-limits.ts`; not its ledger, pools,
@@ -157,7 +164,10 @@ each, once per choice):
    that reset, or every 5 minutes, whichever comes first.
 5. An attempt that fails because its account is out of quota or credits (sc-14) is recorded as
    `limited`, not failed. The account's reading is read again at once (`quota(ref, { fresh })`
-   drops the cache) and the account is passed over for every step for 5 minutes. The step is
+   drops the cache) and the account is passed over for every step until its reset, taken from the
+   error text when it says (an ISO time, `|<unix seconds>`, "in 2 hours", "resets 3pm"), else for
+   5 hours, even when every reader fails; a readable fresh reading of the account is believed
+   over this record (in memory; after a restart quota is read fresh). The step is
    routed again: another account under the ceiling takes it, or with none it waits as in rule 4.
    It spends no attempt or retry.
 
