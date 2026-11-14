@@ -9,7 +9,8 @@ covers: [packages/bundle/cordis.patch.yml]
 
 **Status: selected architecture; MVP-0, three-attempt Brainstorm and the B4
 concurrency fixes are implemented** (see [packages](../../packages/README.md),
-the evidence in the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)
+the evidence in the [MVP-0
+plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)
 and [PLAN.md](../../PLAN.md)). Source and tests are the authority for exact
 implementation behavior.
 System is a durable AI work **control plane** hosted on **DSH/Cordis**.

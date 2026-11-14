@@ -10,7 +10,8 @@ related: [PROP-0004, ADR-0004, ADR-0005, ADR-0007]
 
 # Proposal: the ChatGPT Website Worker
 
-**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1 and the review of WW1 in WW1c; moved to its own optional row `web-worker` in WW2a, 2026-11-07).
+**Status:** accepted and built (milestone W, steps W1, W2, W5, W7, W8 and W9, 2026-11-07; known defects fixed in WW1 and
+the review of WW1 in WW1c; moved to its own optional row `web-worker` in WW2a, 2026-11-07).
 
 ## Decision context
 

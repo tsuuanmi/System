@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import date
@@ -51,6 +52,33 @@ def prose_only(text: str) -> str:
     text = re.sub(r"(?ms)^[ \t]*(```|~~~).*?^[ \t]*\1[ \t]*$", "", text)
     text = re.sub(r"(?m)^(?: {4}|\t).*?$", "", text)
     return re.sub(r"`[^`\n]*`", "", text)
+
+
+MAX_PROSE = 120
+LINK_ONLY = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:<?https?://\S+>?|!?\[[^\]]*\]\([^)\s]*\))[.,;:]?\s*$")
+
+
+def long_prose_lines(text: str) -> list[int]:
+    """Numbers of prose lines over MAX_PROSE characters; tables, fenced code, front matter,
+    headings and a line that is only a URL or a link are excepted."""
+    lines = text.split("\n")
+    start = 0
+    if lines[0] == "---":
+        start = next((i + 1 for i in range(1, len(lines)) if lines[i] == "---"), 0)
+    found, fence = [], ""
+    for index in range(start, len(lines)):
+        line = lines[index]
+        marker = re.match(r"^[ \t]*(```|~~~)", line)
+        if fence:
+            if marker and marker.group(1) == fence:
+                fence = ""
+            continue
+        if marker:
+            fence = marker.group(1)
+        elif (len(line) > MAX_PROSE and not re.match(r"^\s*(\||#)", line)
+              and not LINK_ONLY.match(line)):
+            found.append(index + 1)
+    return found
 
 
 def front_matter(text: str, path: str, errors: list[str]) -> tuple[dict[str, list[str]], str]:
@@ -223,6 +251,11 @@ class Graph:
             if not file.exists():
                 continue
             text = file.read_text(encoding="utf-8")
+            if DOCS in file.parents:
+                for number in long_prose_lines(text):
+                    self.errors.append(
+                        f"DOC-LEN-001 {file.relative_to(ROOT)}:{number}: prose line over {MAX_PROSE} characters"
+                    )
             for raw in MARKDOWN_LINK.findall(prose_only(text)):
                 target = unquote(raw.split("#", 1)[0].strip().strip("<>").split(" ", 1)[0])
                 if not target or re.match(r"^[A-Za-z]+:", target):
@@ -309,8 +342,10 @@ class Graph:
             title = title_match.group(1) if title_match else entry.doc_id
             summary = first(entry.meta, "summary")
             target = os.path.relpath(entry.path, doc.path.parent).replace(os.sep, "/")
-            rows.append(f"- [{entry.doc_id} — {title}]({target}) — "
-                        f"{first(entry.meta, 'status', 'active')} — {summary}")
+            row = (f"- [{entry.doc_id} — {title}]({target}) — "
+                   f"{first(entry.meta, 'status', 'active')} — {summary}")
+            rows.append(textwrap.fill(row, MAX_PROSE, subsequent_indent="  ",
+                                      break_long_words=False, break_on_hyphens=False))
         return "\n".join(rows) + ("\n" if rows else "")
 
     def sync(self, check: bool) -> int:
