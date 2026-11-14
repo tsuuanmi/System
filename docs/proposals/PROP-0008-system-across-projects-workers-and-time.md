@@ -304,6 +304,22 @@ per completed outcome. Benchmark single/4/8/20 Workers **across Projects**,
 including sequential and parallel workloads; more agents must be allowed to
 lose against a simpler strategy.
 
+## Reuse-first implementation contract
+
+**No component should be rebuilt just because a new capability is desired.**
+Before assigning an implementation Work, audit System's current owner, its
+upstream DSH/Cordis/ACP/Herdr or other maintained alternatives, existing open
+PRs, and the exact contract gap. Prefer configuration, an adapter, or the
+smallest fix to the existing component. A new implementation needs measured
+proof that those options fail and a plan to retire duplication.
+
+[RES-0013 — component reuse audit](../research/RES-0013-system-component-reuse-audit.md)
+is the source-grounded inventory and acceptance checklist. **Existing Work,
+Artifact, Verifier, Effect, Host and WorkerPort authority remains unique.**
+A reported terminal/agent success is never a System verification verdict.
+Do not start the documented five-track subagent audit without a genuinely
+read-only, enforced execution boundary; a prompt is not a permission boundary.
+
 ## 7. Research, boundaries and proposed delivery
 
 [RES-0012](../research/RES-0012-autonomous-work-platform-patterns.md)
