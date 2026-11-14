@@ -10,7 +10,7 @@ import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
-import { isQuotaLimited } from './limits.ts'
+import { DEFAULT_LIMIT_MS, isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
@@ -198,7 +198,7 @@ export class WorkController {
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
   private readonly quotaRetryMs: number
-  /** Accounts that just limited an attempt (ref -> passed over until). In memory only: after a restart the quota is read fresh and routing is as usual. */
+  /** Accounts that limited an attempt (ref -> passed over until their reset, ss-5). In memory only: after a restart the quota is read fresh and routing is as usual. */
   private readonly limitedAccounts = new Map<string, number>()
 
   constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims(), quotaRetryMs = QUOTA_RETRY_MS) {
@@ -825,7 +825,8 @@ export class WorkController {
     const waitKey = `${record.id}/${s.id}`
     // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
     const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), await this.readQuotas(capable), this.activeLimited(), this.attemptsToday(), s.prefer)
+    const readings = await this.readQuotas(capable)
+    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), readings, this.activeLimited(readings), this.attemptsToday(), s.prefer)
     if (route.quotaWait) {
       const was = this.waitingForQuota.get(waitKey)
       if (!was || was.until !== route.quotaWait.resetsAt) {
@@ -860,11 +861,11 @@ export class WorkController {
     return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
   }
 
-  /** The quota of each of the Workers that has one; a reader that throws is an unreadable Account, never a failed step. */
-  private activeLimited(): ReadonlySet<string> {
+  /** The Accounts still out of quota: a fresh readable reading of an Account is believed over the record of its limit. */
+  private activeLimited(readings: ReadonlyMap<string, QuotaReading>): ReadonlySet<string> {
     const now = Date.now()
     for (const [ref, until] of this.limitedAccounts) if (until <= now) this.limitedAccounts.delete(ref)
-    return new Set(this.limitedAccounts.keys())
+    return new Set([...this.limitedAccounts.keys()].filter((ref) => !('windows' in (readings.get(ref) ?? {}))))
   }
 
   /** Worker attempts dispatched since 00:00 UTC, by Account (limited ones included); read from the table, never recorded. */
@@ -881,6 +882,7 @@ export class WorkController {
     return counts
   }
 
+  /** The quota of each of the Workers that has one; a reader that throws is an unreadable Account, never a failed step. */
   private async readQuotas(workers: readonly WorkerPort[]): Promise<Map<string, QuotaReading>> {
     const read = await Promise.all(workers.filter((w) => w.quota).map(async (w): Promise<[string, QuotaReading]> => {
       try { return [w.ref, await w.quota!()] } catch (error) { return [w.ref, { unreadable: (error as Error).message }] }
@@ -949,7 +951,8 @@ export class WorkController {
     // A cancel request is recorded by the drive, once every attempt of the Work has reported.
     const limited = status === 'failed' && !aborted && isQuotaLimited(reason)
     if (limited) {
-      this.limitedAccounts.set(attempt.worker.ref, Date.now() + this.quotaRetryMs)
+      // Out until the reset the error gives, else 5 hours: no reader failing can put it back in routing sooner.
+      this.limitedAccounts.set(attempt.worker.ref, quotaResetFrom(reason, Date.now()) ?? Date.now() + DEFAULT_LIMIT_MS)
       // Drop the cached reading and read it again now; an unreadable Account is never a failure.
       try { await attempt.worker.quota?.(true) } catch { /* routing reads it again */ }
     }

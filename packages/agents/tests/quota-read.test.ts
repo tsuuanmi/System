@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { tempDir } from '../../../test-support/accounts.ts'
 import { until } from '../../../test-support/memory.ts'
 import { claudeUsage, codexRateLimits, fakeQuotaCli, object } from '../../../test-support/quota.ts'
-import { readClaudeQuota, readCodexQuota } from '../src/quota.ts'
+import { probeClaudeQuota, readClaudeQuota, readCodexQuota } from '../src/quota.ts'
 
 const OBS = Date.parse('2026-11-10T12:00:00.000Z')
 const RESET = '2026-11-10T14:00:00.000Z'
@@ -131,3 +131,32 @@ for (const stopped of [false, true]) {
     await until(() => gone(pid), 'quota process exit')
   })
 }
+
+const RL_EVENT = { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: 'five_hour', utilization: 0.9, resetsAt: Date.parse(RESET) / 1000 } }
+test('the Claude probe is one economy-tier one-word turn in an empty directory with the account HOME and token, and tells its rate_limit_event', async (t) => {
+  const dir = tempDir('quota-probe-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const fake = fakeQuotaCli(join(dir, 'cli'), { kind: 'claude', version: '2.1.322', answer: {}, events: [{ type: 'system', subtype: 'init' }, RL_EVENT] })
+  const events = await probeClaudeQuota({ command: fake.command, home: dir, token: 'tok-9', model: 'haiku-x', now: () => OBS })
+  assert.deepEqual(events, [{ window: 'five_hour', percentUsed: 90, resetsAt: RESET }])
+  const launch = fake.readLog().find((entry) => entry.home !== undefined)!
+  assert.equal(launch.home, dir)
+  assert.equal(launch.token, 'tok-9')
+  const argv = launch.argv as string[]
+  assert.equal(argv[0], '-p')
+  assert.match(argv[1]!, /^\S+$/, 'a one-word prompt')
+  assert.equal(argv[argv.indexOf('--model') + 1], 'haiku-x')
+  assert.equal(argv.includes('--input-format'), false)
+  assert.notEqual(launch.cwd, dir)
+  assert.equal(existsSync(String(launch.cwd)), false, 'the empty directory is removed afterwards')
+  assert.ok((launch.envKeys as string[]).every((key) => ['HOME', 'TMPDIR', 'CLAUDE_CODE_OAUTH_TOKEN', 'PATH', 'LANG', 'LC_ALL', 'TZ'].includes(key)))
+})
+test('a Claude probe that fails or tells nothing is an empty reading, never a throw', async (t) => {
+  const dir = tempDir('quota-probe-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const quiet = fakeQuotaCli(join(dir, 'quiet'), { kind: 'claude', version: '2.1.322', answer: {}, events: [] })
+  assert.deepEqual(await probeClaudeQuota({ command: quiet.command, home: dir, token: 't', now: () => OBS }), [])
+  const dies = fakeQuotaCli(join(dir, 'dies'), { kind: 'claude', version: '2.1.322', answer: {}, mode: 'exit' })
+  assert.deepEqual(await probeClaudeQuota({ command: dies.command, home: dir, token: 't', now: () => OBS }), [])
+  assert.deepEqual(await probeClaudeQuota({ command: join(dir, 'missing'), home: dir, token: 't', now: () => OBS }), [])
+})

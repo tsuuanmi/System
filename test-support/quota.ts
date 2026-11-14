@@ -19,6 +19,8 @@ export interface FakeQuotaOptions {
   kind: 'claude' | 'codex'
   version: string
   answer: unknown
+  /** claude: the stream lines a probe (`claude -p <prompt>`) prints. */
+  events?: unknown[]
   mode?: 'error' | 'garbage' | 'exit' | 'hang'
 }
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`
@@ -28,7 +30,9 @@ export function fakeQuotaCli(dir: string, options: FakeQuotaOptions) {
   const log = join(dir, 'log.jsonl')
   const answer = join(dir, 'answer.json')
   writeFileSync(answer, JSON.stringify(options.answer))
-  const args = [process.execPath, fileURLToPath(new URL('./fake-quota-cli.mjs', import.meta.url)), `--fake-kind=${options.kind}`, `--fake-version=${options.version}`, `--fake-answer=${answer}`, `--fake-log=${log}`, `--fake-mode=${options.mode ?? ''}`]
+  const events = join(dir, 'events.json')
+  if (options.events) writeFileSync(events, JSON.stringify(options.events))
+  const args = [process.execPath, fileURLToPath(new URL('./fake-quota-cli.mjs', import.meta.url)), `--fake-kind=${options.kind}`, `--fake-version=${options.version}`, `--fake-answer=${answer}`, ...(options.events ? [`--fake-events=${events}`] : []), `--fake-log=${log}`, `--fake-mode=${options.mode ?? ''}`]
   writeFileSync(command, `#!/bin/sh\nunset PWD SHLVL _\nexec ${args.map(quote).join(' ')} "$@"\n`)
   chmodSync(command, 0o700)
   return { command, log, readLog: (): LogEntry[] => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => object(JSON.parse(line) as unknown)) }

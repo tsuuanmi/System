@@ -14,7 +14,7 @@ import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, z, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
 import { readClaudeAccountId, readCodexAccountId } from './identity.ts'
-import { createQuotaCache, readClaudeQuota, readCodexQuota, type QuotaCache, type QuotaReport } from './quota.ts'
+import { createQuotaCache, probeClaudeQuota, readClaudeQuota, readCodexQuota, type QuotaCache, type QuotaReport } from './quota.ts'
 import type { Runtime } from './runtimes.ts'
 import { WEB_WORKER_DISABLED, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
@@ -279,6 +279,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
             seed: observations?.get(account.ref),
             // A failed write never fails an attempt.
             persist: (observed) => { observations?.put(account.ref, observed).catch(() => {}) },
+            probe: async () => {
+              const token = await resolved.token?.()
+              return token ? probeClaudeQuota({ command, home: claudeHome, token, model: account.models?.economy, now: quotaOptions.now }) : []
+            },
             read: async () => {
               const token = await resolved.token?.()
               return token ? readClaudeQuota({ command, home: claudeHome, token, now: quotaOptions.now }) : { unreadable: 'its token is not configured' }

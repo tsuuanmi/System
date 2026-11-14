@@ -276,3 +276,46 @@ test('a seeded window whose reset has passed is dropped', async () => {
   const cache = createQuotaCache(options)
   assert.deepEqual(await cache.get(), { observedAt: iso(OBS - 60_000), windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } }, source: 'rate_limit_event' })
 })
+
+const HALF_HOUR = 30 * 60_000
+test('a probe runs when the reading is missing, and its events are the reading and are persisted', async () => {
+  const saved: unknown[] = []
+  let probes = 0
+  const cache = createQuotaCache({ now: () => OBS, read: async () => REFUSED, persist: (o) => saved.push(o), probe: async () => { probes++; return unifiedEvents() } })
+  assert.deepEqual(await cache.get(), eventReading())
+  assert.equal(probes, 1)
+  assert.equal(saved.length, 1)
+})
+test('a probe runs when the event reading is older than 30 minutes, not before', async () => {
+  let now = OBS
+  let probes = 0
+  const fresh = [{ window: 'five_hour', percentUsed: 12 }] as QuotaEvent[]
+  const cache = createQuotaCache({ ttlMs: 60_000, now: () => now, read: async () => REFUSED, seed: { observedAt: OBS - 60_000, windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } } }, probe: async () => { probes++; return fresh } })
+  assert.equal('windows' in await cache.get(), true)
+  now = OBS + HALF_HOUR - 120_000
+  await cache.get()
+  assert.equal(probes, 0, 'a reading under 30 minutes old is not probed')
+  now = OBS + HALF_HOUR + 1000
+  const reading = object(await cache.get())
+  assert.equal(probes, 1)
+  assert.deepEqual(object(reading.windows).five_hour, { percentUsed: 12 })
+  assert.equal(reading.observedAt, iso(now))
+})
+test('a readable get_usage answer is never probed', async () => {
+  let probes = 0
+  const cache = createQuotaCache({ now: () => OBS, read: async () => expected(), probe: async () => { probes++; return unifiedEvents() } })
+  assert.deepEqual(await cache.get(), expected())
+  assert.equal(probes, 0)
+})
+test('a probe that fails or tells nothing leaves the Account unreadable, and is not repeated within 30 minutes', async () => {
+  let now = OBS
+  let probes = 0
+  const cache = createQuotaCache({ ttlMs: 1000, now: () => now, read: async () => REFUSED, probe: async () => { if (++probes === 1) throw new Error('boom'); return [] } })
+  assert.deepEqual(await cache.get(), REFUSED)
+  now += 2000
+  assert.deepEqual(await cache.get(), REFUSED)
+  assert.equal(probes, 1)
+  now = OBS + HALF_HOUR + 1
+  assert.deepEqual(await cache.get(), REFUSED)
+  assert.equal(probes, 2)
+})
