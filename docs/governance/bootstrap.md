@@ -12,6 +12,7 @@ With Python 3.8+ and a checkout of System available:
     python3 <system-checkout>/tools/bootstrap_docs.py \
       --out <target-repository> --name "My Project"
 
+Add `--plan` to write nothing and print `create`, `unchanged` or `conflict` for each file.
 Existing files are not overwritten. Review printed skipped files and add the
 docs router link to an existing root README. The bootstrap copies the portable
 standard and checker, writes a **target-local** governance profile, a docs
