@@ -287,6 +287,27 @@ Decisions (operator, 2026-11-14):
   the operator's phone.
 - Items: ro-15 (Satisfied, redesigned), ss-1 to ss-4 in STATUS.md.
 
+Review of 2026-11-14 (operator), is System effective: stable (RO) but not
+lean. Since 2026-11-12, 10 of 12 System Items merged on their first Work,
+with 0 Outside failures and no approval; feature.yaml succeeded on 5 of 11
+Works ($17.89), software-engineering.yaml on 7 of 7 ($4.81). Quota ran low
+from use outside System, so no quota cap now: work well first, optimise later.
+- **Measures of effect**, per milestone in section 2: Items merged on their
+  first Work, cost per merged Item, operator touches per Item.
+- **Canonical Workflows:** `develop` (software-engineering.yaml renamed: one
+  implement step on Sonnet that works test-first, then the checks, publish,
+  accept), `hygiene` (behaviour unchanged, read-only scouts first),
+  `research`, `brainstorm`, and the Sub-workflow `code-checks`.
+  feature.yaml, feature-research.yaml and software-engineering-docs.yaml are
+  deleted (git keeps them); second-opinion, debate and research-fanout move to
+  `workflows/experiments/`. Research before code is two Works: research, then
+  develop with the report as the Task's context.
+- **Delete what nothing needs** (Charter 11): the red check, `red:` in
+  checks.yaml, frozen tests and their restore, the frozen-test objection and
+  any other code only the deleted Workflows used (ss-7). Satisfied (ro-15)
+  becomes an optional output of develop's implement step.
+- Order: ss-6, ss-7, ro-15, ss-5, then ss-1 to ss-3.
+
 ### W — ChatGPT Website Worker (PROP-0005, after H release R1)
 
 - [ ] Design: [PROP-0005](docs/proposals/PROP-0005-chatgpt-website-worker.md)
