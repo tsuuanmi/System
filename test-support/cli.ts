@@ -44,8 +44,8 @@ export interface SystemCli {
   socket: string
   /** Run `bin/system <args>`; `input` is piped to stdin, or with `terminal` typed at a pseudo-terminal (script(1)), the only way to be a human (ADR-0011). */
   run(args: string[], options?: { input?: string; env?: Record<string, string>; timeoutMs?: number; terminal?: boolean }): Ran
-  /** Run `bin/system <args>` without waiting for it. */
-  runAsync(args: string[], options?: { env?: Record<string, string> }): Running
+  /** Run `bin/system <args>` without waiting for it; with `terminal` on a pseudo-terminal, as a human (stdin stays open). */
+  runAsync(args: string[], options?: { env?: Record<string, string>; terminal?: boolean }): Running
   /**
    * Start the Host of this home, with `env` added, and wait for its socket.
    * A Host this started before is stopped first: one Host per home.
@@ -70,21 +70,24 @@ export function systemCli(prefix: string, base: Record<string, string> = { SYSTE
     await Promise.all(hosts.splice(0).map((host) => host.stop()))
   }
 
+  const launch = (args: string[], terminal?: boolean): readonly [string, string[]] => terminal
+    ? ['script', ['-qec', [process.execPath, entry, ...args].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' '), '/dev/null']]
+    : [process.execPath, [entry, ...args]]
+
   return {
     home,
     env,
     socket,
     run(args, options = {}) {
-      const [file, argv] = options.terminal
-        ? ['script', ['-qec', [process.execPath, entry, ...args].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' '), '/dev/null']] as const
-        : [process.execPath, [entry, ...args]] as const
+      const [file, argv] = launch(args, options.terminal)
       const ran = spawnSync(file, argv, {
         env: { ...env, ...options.env }, input: options.input, encoding: 'utf8', timeout: options.timeoutMs ?? 600_000,
       })
       return { status: ran.status, signal: ran.signal, stdout: ran.stdout, stderr: ran.stderr }
     },
     runAsync(args, options = {}) {
-      const child = spawn(process.execPath, [entry, ...args], { env: { ...env, ...options.env }, stdio: ['ignore', 'pipe', 'pipe'] })
+      const [file, argv] = launch(args, options.terminal)
+      const child = spawn(file, argv, { env: { ...env, ...options.env }, stdio: [options.terminal ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
       let stdout = ''
       let stderr = ''
       child.stdout!.on('data', (d) => { stdout += d })

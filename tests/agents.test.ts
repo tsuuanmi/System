@@ -107,7 +107,7 @@ test('cancel from another process stops the attempt, keeps its partial tree, and
   assert.equal(contested.status, 1)
   assert.match(contested.stderr, /is already being run/)
 
-  const cancel = system(['work', 'cancel', workId, '--reason', 'switch accounts', '--wait'])
+  const cancel = cli.run(['work', 'cancel', workId, '--reason', 'switch accounts', '--wait'], { terminal: true })
   assert.equal(cancel.status, 0, cancel.stderr)
   assert.match(cancel.stdout, /cancellation requested from the running host/)
   assert.equal((await submit.done).status, 5, 'the following submit exits 5: cancelled')
