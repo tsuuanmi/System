@@ -76,12 +76,12 @@ export function publishHarness(prefix: string) {
   }
 
   const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as { events: Event[]; state: { status: string; reason?: string; steps: Record<string, { outputs: Record<string, string> }> } }
-  /** What the Host's start does with a Work it was killed in: the effect was intended, its outcome is read from the remote, and the Host carries the Work on to its end by itself. */
-  async function assertRecovered(workId: string) {
-    for (let tries = 0; tries < 600 && show(workId).state.status !== 'succeeded'; tries++) await new Promise((resolve) => setTimeout(resolve, 100))
+  /** What the Host's start leaves of a Work it was killed in: the effect was intended, and its outcome has been read from the remote, but nothing runs on until `work run`. */
+  function assertRecovered(workId: string) {
     const record = show(workId)
-    assert.equal(record.state.status, 'succeeded', record.state.reason)
     assert.ok(record.events.some((e) => e.type === 'effect-intended'))
+    assert.equal(record.state.status, 'running')
+    assert.notEqual(record.events.at(-1)?.type, 'terminal')
   }
   const commitOf = (artifactId: string) => (JSON.parse(system(['artifact', 'show', artifactId]).stdout) as { envelope: { content: { commit: string } } }).envelope.content.commit
 

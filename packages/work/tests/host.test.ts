@@ -463,7 +463,7 @@ function intendedEffect(f: Fixture, record: WorkRecord): WorkRecord {
   return stored
 }
 
-test('an effect left intended is reconciled on start, the Work is carried on, and an applied one is not applied again', async () => {
+test('an effect left intended is reconciled on start, and an applied one is not applied again', async () => {
   const f = fixture()
   const publishes = countPublishes(f)
   const home = newHome()
@@ -475,16 +475,19 @@ test('an effect left intended is reconciled on start, the Work is carried on, an
   const second = await f.startHost(home)
   const record = second.view.get(id)!
   assert.equal(Object.values(record.state.effects)[0]!.state, 'applied')
+  assert.equal(record.state.status, 'running', 'it is not resumed by itself')
   assert.equal(record.events.at(-1)!.type, 'effect-observed')
   assert.equal(record.events.filter((e) => e.type === 'effect-intended').length, 1)
-  await until(() => second.view.get(id)!.state.status === 'succeeded')
-  const done = second.view.get(id)!
-  assert.equal(publishes(), 1, 'the Host carries the Work on without publishing again')
+  await turns()
+  assert.equal(publishes(), 1, 'start only reconciles the effect')
+  assert.deepEqual(second.view.get(id), record, 'no new dispatch or effect after recovery')
+  const done = await second.run(id)
+  assert.equal(done.state.status, 'succeeded')
   assert.equal(done.events.filter((e) => e.type === 'effect-intended').length, 1, 'the publish is not redone')
   await second.close()
 })
 
-test('an effect found absent on start is published by the Host carrying the Work on', async () => {
+test('an effect found absent on start is published only by an explicit run', async () => {
   const f = fixture()
   const publishes = countPublishes(f)
   const home = newHome()
@@ -494,10 +497,15 @@ test('an effect found absent on start is published by the Host carrying the Work
   await first.close()
   const second = await f.startHost(home)
   assert.equal(Object.values(second.view.get(id)!.state.effects)[0]!.state, 'absent')
-  await until(() => second.view.get(id)!.state.status === 'succeeded')
-  const done = second.view.get(id)!
+  assert.equal(second.view.get(id)!.state.status, 'running')
+  const recovered = second.view.get(id)!
+  await turns()
+  assert.equal(publishes(), 1, 'an absent effect is not applied automatically')
+  assert.deepEqual(second.view.get(id), recovered, 'no new dispatch or effect after recovery')
+  const done = await second.run(id)
+  assert.equal(done.state.status, 'succeeded')
   assert.equal(Object.values(done.state.effects)[0]!.state, 'applied')
-  assert.equal(publishes(), 2, 'the carried-on Work publishes once more')
+  assert.equal(publishes(), 2, 'only the explicit run publishes again')
   assert.deepEqual(done.events.filter((e) => e.type === 'attempt-lost'), [], 'an effect step has no attempt to lose')
   workRecordSchema.parse(done)
   assertConsistent(f, id)
@@ -544,7 +552,7 @@ test('a settled Worker attempt with an effect found absent at start is not dispa
   }
 })
 
-test('an effect whose outcome stays unknown holds the Work when the Host carries it on', async () => {
+test('an effect whose outcome stays unknown holds the Work when it is run', async () => {
   const f = fixture()
   const home = newHome()
   const first = await f.startHost(home)
@@ -554,6 +562,6 @@ test('an effect whose outcome stays unknown holds the Work when the Host carries
   f.remote.state = 'unknown'
   const second = await f.startHost(home)
   assert.equal(Object.values(second.view.get(id)!.state.effects)[0]!.state, 'unknown')
-  await until(() => second.view.get(id)!.state.status === 'held')
+  assert.equal((await second.run(id)).state.status, 'held')
   await second.close()
 })
