@@ -40,6 +40,15 @@ every six hours, with a random delay and a catch-up after downtime. They are not
 part of the profile and `system init` does not install them; the
 [runbook](../../docs/operations/runbook.md#the-web-canary) says how.
 
+## Night session units
+
+[`system-night-session.service`](system-night-session.service) and
+[`.timer`](system-night-session.timer) are templates (`@REPO@`, `@PATH@`) for a
+nightly user timer that runs `claude -p` with
+[`tools/night-session.md`](../../tools/night-session.md); not installed by
+`system init`, off until enabled, not run late. See the
+[runbook](../../docs/operations/runbook.md#the-scheduled-sessions-prompt).
+
 ## Changing a row's config
 
 An entry of the profile's own patch with `config` merges into this bundle's

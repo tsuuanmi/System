@@ -1,0 +1,11 @@
+# Every night at 01:00 (change OnCalendar to change it). A night missed while the
+# machine was off is not run late. Off until the operator enables it.
+[Unit]
+Description=System scheduled session, nightly
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -387,6 +387,35 @@ kept outside the repository; they are the only place a secret may live):
 Neither is required: without one the ID only goes to the session's output, which
 the timer sends to the journal (`journalctl --user -u <the session's unit>`).
 
+### Running it every night
+
+`packages/bundle/system-night-session.service` and `.timer` are templates (like
+the web canary's; `system init` does not install them) that run
+`claude -p` with that prompt in this checkout, once a night at 01:00. The
+service first waits up to 5 minutes for the Host (`bin/system doctor` exits 0);
+the session's output, the night report, goes to the journal. `Persistent=false`:
+a night missed while the machine was off is not run late. Nothing runs until
+you enable the timer. `claude` must be on the `PATH` the install records and
+signed in.
+
+```
+mkdir -p ~/.config/systemd/user
+for u in service timer; do
+  sed -e "s|@REPO@|$PWD|g" -e "s|@PATH@|$PATH|" \
+    packages/bundle/system-night-session.$u > ~/.config/systemd/user/system-night-session.$u
+done
+systemctl --user daemon-reload
+systemctl --user enable --now system-night-session.timer
+```
+
+Read it with `systemctl --user list-timers system-night-session` and
+`journalctl --user -u system-night-session`; run one now with
+`systemctl --user start system-night-session`; stop the series with
+`systemctl --user disable --now system-night-session.timer` (and a night
+already running with `systemctl --user stop system-night-session`). To change
+the time, edit `OnCalendar=` in `~/.config/systemd/user/system-night-session.timer`,
+then `systemctl --user daemon-reload` and `systemctl --user restart system-night-session.timer`.
+
 ## The dev branch
 
 System merges a Work's change into `dev` only through its merge queue
