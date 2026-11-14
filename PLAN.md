@@ -513,6 +513,23 @@ Review at CM's close (2026-11-14):
 - Three research Works failed `citations-v2` because the caller's Task asked for `[verified]` tags: the citation check reads every bracket as a source id ($1.09 lost). One web attempt failed attaching a 44 KB context and was counted as a change failure, not an Outside failure.
 - The release needed `docs-unchanged:` waivers for `impact` in the PR body, and editing a PR body does not rerun CI (closing and reopening the PR does).
 
+## 3e. TR — Trust (decided 2026-11-14)
+
+**Aim:** the loop is trusted before it is scaled: a change cannot silently
+rewrite the tests that pin an invariant, research does not fail on format,
+failures are classed right, and the docs measure is honest.
+
+Decisions (operator, 2026-11-14):
+- ROI of an Item is what it improves in later Items (Items merged on their first Work, cost per merged Item, operator minutes per Item, Escaped defects) over its own cost and operator minutes.
+- Order of milestones: TR, then bootstrap (RES-0012), then unattended scale (sandbox, ADR-0011).
+- Escaped defects are counted by hand in PLAN's measures, with the Work that caused and the Work that fixed each.
+- Invariants are prose in a Task, not a schema field; the list of changed tests is computed by System, the reasons come from the Worker.
+- Disclosure, not frozen tests and not a model review (frozen tests were deleted in ss-7 after dg-10 and df-30).
+
+Order: tr-1, tr-2 and tr-3 in parallel, then tr-4, then tr-5 before tr-6; one release when all six merged.
+
+Close: all six merged, and the next 10 Items on the released code each have the changed-tests list, no Escaped defect, and no research Work failing on citation format.
+
 ## 4. Future, not current gates
 
 - [ ] A session that System starts on a schedule, to drive Items unattended: now milestone SS (section 3c).
