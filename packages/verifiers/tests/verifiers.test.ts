@@ -322,10 +322,10 @@ test('a malformed sources file, no sources, or an empty quote fails', async () =
 })
 
 /** Like `cite`, with the `citations-v2` criteria the verifier pins itself, and the report as a second input when given. */
-async function citeV2(json: unknown, report?: string) {
+async function citeV2(json: unknown, report?: string, name = 'citations-v2') {
   const artifacts = store()
   const verifier = citationCheck(artifacts)
-  const criteria = await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
+  const criteria = await verifier.criteria({ capability: 'research.citation-check', name, operatorId: 't' })
   const subject = await sources(artifacts, json)
   const reportId = report === undefined ? undefined : (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(report), mediaType: 'text/markdown', classification: 'public', producer })).id
   const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'citations', capability: 'research.citation-check', subject, criteria, ...(reportId ? { inputs: { report: reportId } } : {}) })
@@ -779,4 +779,24 @@ test('satisfied-tests-v1: a failing test, a test that matches nothing, and a bad
     const bad = (await verifySatisfied(lines)).result
     assert.equal(bad.verdict, 'error', lines)
   }
+})
+
+const codeReport = 'Paris is the capital [s1]. Optional chaining `a?.[1]` is unrelated.\n\n```js\nconst x = a?.[1]\n```\n'
+const oneSource = () => ({ sources: [{ id: 's1', url: `${base}/france`, quote: franceQuote, claims: ['c'] }] })
+
+test('v3: brackets inside inline code and fenced blocks are not source ids; v2 still fails on them', async () => {
+  const v3 = await citeV2(oneSource(), codeReport, 'citations-v3')
+  assert.equal(v3.result.verdict, 'pass', v3.result.reason)
+  const v2 = await citeV2(oneSource(), codeReport)
+  assert.equal(v2.result.verdict, 'fail')
+  assert.match(v2.result.reason, /\[1\], not in sources/)
+})
+
+test('v3: a prose [s9] not in sources still fails, and a citation only inside code does not count', async () => {
+  const bad = await citeV2(oneSource(), `${codeReport}\nAlso [s9].`, 'citations-v3')
+  assert.equal(bad.result.verdict, 'fail')
+  assert.match(bad.result.reason, /\[s9\], not in sources/)
+  const hidden = await citeV2(oneSource(), 'See `[s1]` only.', 'citations-v3')
+  assert.equal(hidden.result.verdict, 'fail')
+  assert.match(hidden.result.reason, /sources not cited in the report: s1/)
 })

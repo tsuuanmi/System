@@ -148,6 +148,11 @@ checks:
     is not one) is in `sources`, every source is cited at least once, and
     every source has a claim. Otherwise `fail`, naming the ids.
   - **Fetch:** User-Agent `System-citation-check/1.0 (+https://github.com/tsuuanmi/System)`.
+- **`citations-v3`** (verifier version 5; v1 and v2 are unchanged; the Research
+  Workflows use v3): v2, except that completeness ignores text inside inline
+  code and fenced code blocks when it collects the report's `[id]`s (`?.[1]` in
+  backticks is not a citation). `[s1]` in prose still counts, and an id not in
+  `sources` still fails. Quote matching is unchanged.
     HTTP 4xx/5xx or a fetch error makes a source unreadable: neither
     confirmed nor wrong. The ratio is over the readable sources; with none
     readable the verdict is `inconclusive`.
