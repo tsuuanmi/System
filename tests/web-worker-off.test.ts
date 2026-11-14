@@ -22,7 +22,7 @@ const row = (id: string) => bundle[0]!.insert.find((r) => r.id === id)!
 
 /** The Software Engineering file without its publish step (tests/publish.test.ts covers the whole file). */
 const SE = join(home, 'software-engineering-checks.yaml')
-writeFileSync(SE, readFileSync(join(repo, 'workflows', 'software-engineering.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]').replace('checks.checks, publish', 'checks.checks'))
+writeFileSync(SE, readFileSync(join(repo, 'workflows', 'develop.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]').replace('checks.checks, publish', 'checks.checks'))
 writeFileSync(join(home, 'code-checks.yaml'), readFileSync(join(repo, 'workflows', 'code-checks.yaml')))
 
 before(async () => {

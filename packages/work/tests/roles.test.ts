@@ -20,10 +20,7 @@ function caps(spec: ReturnType<typeof resolve>, id: string): string[] {
 }
 
 const cases = [
-  { file: 'feature.yaml', with: ['plan', 'tests', 'implement', 'docs'], without: [] },
-  { file: 'feature-research.yaml', with: ['plan', 'tests', 'implement', 'docs'], without: ['research'] },
-  { file: 'software-engineering.yaml', with: ['implement'], without: [] },
-  { file: 'software-engineering-docs.yaml', with: ['implement'], without: ['docs-impact'] },
+  { file: 'develop.yaml', with: ['implement'], without: [] },
   { file: 'hygiene.yaml', with: ['plan', 'implement'], without: ['scout-docs', 'scout-code', 'scout-tree'] },
 ]
 
@@ -37,10 +34,7 @@ test('code.develop is on the plan, tests, implement and docs steps of the code W
 
 test('code-write stays on the steps that write the checkout', () => {
   for (const [file, ids] of [
-    ['feature.yaml', ['plan', 'tests', 'implement', 'docs']],
-    ['feature-research.yaml', ['plan', 'tests', 'implement', 'docs']],
-    ['software-engineering.yaml', ['implement']],
-    ['software-engineering-docs.yaml', ['implement']],
+    ['develop.yaml', ['implement']],
     ['hygiene.yaml', ['plan', 'implement']],
   ] as const) {
     const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
@@ -63,25 +57,6 @@ test('no shipped Workflow outputs a checkout without code-write', () => {
   }
 })
 
-test('the tests step asks for code.develop, as plan and implement (operator, 2026-11-13)', () => {
-  for (const file of ['feature.yaml', 'feature-research.yaml']) {
-    const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
-    assert.deepEqual(caps(spec, 'tests'), ['code-write', 'code.develop', 'tier.standard'])
-  }
-})
-
-test('Claude-like Accounts take every Worker step and Codex-like ones none (operator, 2026-11-13)', () => {
-  const claude = new Set(['code-write', 'code.develop', 'code.docs', 'research', 'web-search', 'tier.standard', 'tier.economy'])
-  const codex = new Set(['code-write', 'code.tests', 'tier.standard', 'tier.economy'])
-  for (const file of ['feature.yaml', 'feature-research.yaml']) {
-    const spec = resolve(parseWorkflow(fixture(file)), everything, fixture)
-    const workerSteps = spec.steps.filter((step) => 'capabilities' in step)
-    const runnable = (step: (typeof workerSteps)[number], account: Set<string>) => step.capabilities.every((capability) => account.has(capability))
-    assert.deepEqual(workerSteps.filter((step) => runnable(step, codex)).map((step) => step.id), [])
-    assert.deepEqual(workerSteps.filter((step) => runnable(step, claude)).map((step) => step.id), workerSteps.map((step) => step.id))
-  }
-})
-
 test('a Workflow with a code.develop step is refused when no Worker provides it', () => {
   const available: AvailableCapabilities = {
     workers: new Set(['code-write', 'research', 'web-search', 'tier.standard']),
@@ -89,7 +64,7 @@ test('a Workflow with a code.develop step is refused when no Worker provides it'
     effects: new Set(['git.publish']),
   }
   assert.throws(
-    () => resolve(parseWorkflow(fixture('software-engineering.yaml')), available, fixture),
+    () => resolve(parseWorkflow(fixture('develop.yaml')), available, fixture),
     (error: unknown) => {
       assert.ok(error instanceof WorkflowError)
       assert.deepEqual(error.problems, ['step implement needs Worker capability code.develop, which no enabled Worker provides'])

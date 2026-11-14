@@ -1,19 +1,25 @@
-# Software Engineering (MVP-0). A coding Worker changes the repository, the
+# Develop: the default for any change to a repository. A coding Worker, test-first, changes the repository, the
 # required checks (the Sub-workflow code-checks.yaml) verify the exact result, System pushes that exact commit to
 # system/<work> and opens a draft pull request (never merges), and Work is
 # accepted on the verdict.
 schema: system.workflow/v1
-id: software-engineering
-version: 2
+id: develop
+version: 3
 steps:
   - id: implement
-    capabilities: [code-write, code.develop]
+    capabilities: [code-write, code.develop, tier.standard]
     inputs:
       task: $work.input
     outputs: [change]
     # One automatic further attempt on the same change when the checks fail, and one on the base's new tip when the publish is refused for a conflict or a failing check on the merge (sc-7).
     retry: { onFail: [checks.checks, publish], max: 1 }
     instructions: |
+      Work test-first. Write or change the tests for the new behaviour and run
+      them to see them fail for the right reason, then write the code. Update
+      every existing test that pins behaviour the change alters (search the
+      tests for the names, messages and fields it changes). Run the
+      repository's checks before you finish.
+
       If your input has a base, your working directory is the base branch's
       current tip, because the publish of your previous change was refused (a
       conflict or failing checks on the merge): re-apply your previous change on it (git

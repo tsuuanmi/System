@@ -425,10 +425,6 @@ before `publish`, not retried. `system work show <id>` shows the reason: look
 at the base runs (`system work show` lists all of them). `system work approve <id> --reason ...` lets it publish and
 merge; `system work deny` fails it.
 
-The same applies at `red`, earlier: when every failing `red: fail` check also
-fails on the base after the re-run, the `red` verdict is `inconclusive` and the
-Work is held at `red`, before `implement` starts. `system approve` continues;
-`system deny` fails the Work.
 
 ## A check that fails again on the same change
 
@@ -488,10 +484,9 @@ claude mcp add system -- system mcp
 The server sends `instructions` in its initialize result, which the client puts
 in the session's context, so a session in any repository knows when to use
 System, what a repository needs and the steps, without reading these docs.
-The Workflow it names for a code change is `feature.yaml`; `software-engineering.yaml`
-for a change too small for a plan or a repository without `red:` checks. A change
-that keeps behaviour (a cleanup, a refactor, a docs-only change) uses `hygiene.yaml`
-or `software-engineering.yaml`: `feature.yaml`'s red check needs a new failing test.
+The Workflow it names for any change to a repository is `develop.yaml`; a cleanup
+that keeps behaviour uses `hygiene.yaml`. The others it names are `research.yaml`,
+`brainstorm.yaml` and the Sub-workflow `code-checks.yaml`.
 
 A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base

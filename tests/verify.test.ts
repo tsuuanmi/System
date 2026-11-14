@@ -61,7 +61,7 @@ before(async () => {
     accounts:
       - ref: claude-code/default
         runtime: claude-code
-        capabilities: [code-write, code.develop, research, web-search]
+        capabilities: [code-write, code.develop, tier.standard, research, web-search]
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
         models: { standard: sonnet }
@@ -82,7 +82,7 @@ after(async () => {
 const task = (text: string, repository?: string) => system(['task', 'new', '--text', text, ...(repository ? ['--repo', repository] : [])]).stdout.trim().split('\n').at(-1)!
 /** The Software Engineering file without its publish step: these tests are about verification (tests/publish.test.ts covers the whole file). */
 const SE = join(home, 'software-engineering-checks.yaml')
-writeFileSync(SE, readFileSync(join(repo, 'workflows', 'software-engineering.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]').replace('checks.checks, publish', 'checks.checks'))
+writeFileSync(SE, readFileSync(join(repo, 'workflows', 'develop.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]').replace('checks.checks, publish', 'checks.checks'))
 const RESEARCH = join(repo, 'workflows', 'research.yaml')
 
 test('Software Engineering: the exact changed commit passes the base commit\'s pinned checks', () => {

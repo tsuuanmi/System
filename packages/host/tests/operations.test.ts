@@ -328,7 +328,7 @@ const settled = async (what: string, ok: () => boolean) => {
   assert.fail(`timed out waiting for ${what}`)
 }
 
-const heldWorkflow = `${workflowFile('software-engineering.yaml')}      approval: operator\n`
+const heldWorkflow = `${workflowFile('develop.yaml')}      approval: operator\n`
 const seUses = { 'code-checks.yaml': workflowFile('code-checks.yaml') }
 
 test('work.watch sends one work.changed when the Work finishes, and one when it is held', { timeout: 120_000 }, async () => {
@@ -486,10 +486,10 @@ test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and
   await assert.rejects(client.call('work.submit', { workflow: outer, input: input(f) }), /checks\.yaml/)
 })
 
-test('software-engineering.yaml checks through code-checks.yaml: a failed check, retried on its own, passes on the same subject and the Work is accepted; the failed verdict is kept', { timeout: 120_000 }, async () => {
+test('develop.yaml checks through code-checks.yaml: a failed check, retried on its own, passes on the same subject and the Work is accepted; the failed verdict is kept', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const client = await open()
-  const se = f.files('software-engineering.yaml')
+  const se = f.files('develop.yaml')
   assert.match(se, /uses: code-checks\.yaml/)
   // The Workflow's one automatic further attempt is checked too, and fails again.
   f.verdicts.push('fail', 'fail')
@@ -523,7 +523,7 @@ test('software-engineering.yaml checks through code-checks.yaml: a failed check,
 test('work.submit without the content of the Sub-workflows: the Host reads them itself', { timeout: 120_000 }, async () => {
   const { f, open } = await started()
   const client = await open(agent)
-  const work = await client.call('work.submit', { workflow: workflowFile('software-engineering.yaml'), input: input(f) }).catch((error: Error) => error)
+  const work = await client.call('work.submit', { workflow: workflowFile('develop.yaml'), input: input(f) }).catch((error: Error) => error)
   assert.ok(!(work instanceof Error), String(work))
   assert.deepEqual(Object.keys((work as { state: { steps: Record<string, unknown> } }).state.steps), ['implement', 'checks.checks', 'publish', 'accept'])
 })

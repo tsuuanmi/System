@@ -83,31 +83,16 @@ export function firstFailure(output: string): string | undefined {
 
 /** The tests Node's test runner was running when it was interrupted (it prints them on SIGINT). */
 export function interrupted(output: string): string[] {
-  return interruptedTests(output).map((t) => t.label)
-}
-
-/** The files with a failing test in Node's `spec` output (all of them, not only the first). */
-export function failingFiles(output: string): string[] {
-  const lines = output.split('\n')
-  const start = lines.findIndex((l) => l.startsWith('✖ failing tests:'))
-  if (start < 0) return []
-  return [...new Set(lines.slice(start + 1).filter((l) => l.startsWith('test at ')).map((l) => fileOf(l.slice('test at '.length))))]
-}
-
-/** The files of the tests a runner was running when it was interrupted. */
-export const interruptedFiles = (output: string): string[] => [...new Set(interruptedTests(output).map((t) => t.file))]
-
-function interruptedTests(output: string): { file: string; label: string }[] {
   const lines = output.split('\n')
   const start = lines.findIndex((l) => l.startsWith('Interrupted while running:'))
   if (start < 0) return []
-  const running: { file: string; label: string }[] = []
+  const running: string[] = []
   for (const line of lines.slice(start + 1)) {
     if (!line.trim()) { if (running.length) break; continue }
     const m = /^\s*⚠ (.*) \((.*)\)$/.exec(line)
     if (!m) break
     const file = fileOf(m[2]!)
-    running.push({ file, label: m[1] === file ? file : `${file} "${m[1]}"` })
+    running.push(m[1] === file ? file : `${file} "${m[1]}"`)
   }
   return running
 }

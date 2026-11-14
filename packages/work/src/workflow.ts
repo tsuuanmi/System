@@ -30,7 +30,7 @@ const ref = z.string().regex(REF, 'a reference is $work.input or $steps.<step>.<
  * One automatic further attempt after a failure that can be fixed (Item df-7):
  * `rerunUnchanged`: when a failing check reopened the step and it changes nothing, the check runs again on the same change once (sc-9).
  * `onFail` names the verify steps that judge, or come after, this step and whose
- * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh, and a later Worker step whose final message objects (`OBJECTION:`) to this step's output,
+ * `fail` verdict reopens it, and this step itself for a failure its Worker says may be tried afresh,
  * and a later effect step whose outcome was observed as a conflict with the base or a failed merge check (sc-7): this step is reopened on the base's new tip. An unknown outcome is never retried.
  */
 const retry = z.object({ onFail: z.array(id).min(1), max: z.number().int().min(1).max(3), rerunUnchanged: z.literal(true).optional() }).strict()
@@ -46,8 +46,6 @@ const workerStep = z.object({
   /** What this step's Worker is told besides the task, such as an output format. */
   instructions: z.string().min(1).max(8 * 1024).optional(),
   retry: retry.optional(),
-  /** A `git-tree` Artifact (such as `$steps.tests.change`) whose changed files are put back, as it left them, into this step's first output before it is recorded; a Worker cannot change them (dg-10). */
-  freeze: ref.optional(),
   /** The step's change may equal its base (a docs step with nothing stale): passed on instead of failing with "no change". */
   mayBeEmpty: z.boolean().optional(),
 }).strict()
@@ -56,9 +54,7 @@ const verifyStep = z.object({
   id,
   dependsOn: z.array(id).optional(),
   /** `inputs` are further Artifacts the verifier is given beside the subject, such as the report a sources file belongs to. */
-  verify: z.object({ capability, subject: ref, criteria: z.string().min(1), inputs: z.record(slot, ref).optional(),
-    /** An `inconclusive` verdict holds the Work at this step for the operator (`awaiting` it) before any step after it starts (dg-2). */
-    holdInconclusive: z.literal(true).optional() }).strict(),
+  verify: z.object({ capability, subject: ref, criteria: z.string().min(1), inputs: z.record(slot, ref).optional() }).strict(),
 }).strict()
 
 const acceptStep = z.object({
@@ -219,12 +215,11 @@ export function preflight(workflow: { steps: Step[] }, available: AvailableCapab
     if (isWorkerStep(s)) {
       if (new Set(s.outputs).size !== s.outputs.length) problems.push(`step ${s.id} names an output twice`)
       for (const [name, value] of Object.entries(s.inputs ?? {})) checkRef(s, value, `input ${name} uses`)
-      if (s.freeze) checkRef(s, s.freeze, 'freezes')
       for (const c of s.capabilities) if (!available.workers.has(c)) problems.push(`step ${s.id} needs Worker capability ${c}, which no enabled Worker provides`)
       for (const failing of s.retry?.onFail ?? []) {
         const target = byId.get(failing)
         if (!target) problems.push(`step ${s.id} retry.onFail names ${failing}, which is not a step`)
-        else if (failing !== s.id && !((isWorkerStep(target) || isEffectStep(target)) && before.get(failing)!.has(s.id)) && !(isVerifyStep(target) && (s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`) || before.get(failing)!.has(s.id)))) problems.push(`step ${s.id} retry.onFail names ${failing}, which neither judges nor follows ${s.id}`)
+        else if (failing !== s.id && !(isEffectStep(target) && before.get(failing)!.has(s.id)) && !(isVerifyStep(target) && (s.outputs.some((slot) => target.verify.subject === `$steps.${s.id}.${slot}`) || before.get(failing)!.has(s.id)))) problems.push(`step ${s.id} retry.onFail names ${failing}, which neither judges nor follows ${s.id}`)
       }
     } else if (isVerifyStep(s)) {
       checkRef(s, s.verify.subject, 'verifies')
@@ -271,7 +266,7 @@ export type WorkflowFiles = (name: string) => string
 /** Rename what a joined step refers to: step IDs by `id`, `$steps` references by `ref`. */
 function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {
   const ids = { id: id(s.id), ...(s.dependsOn ? { dependsOn: s.dependsOn.map(id) } : {}) }
-  if (isWorkerStep(s)) return { ...s, ...ids, ...(s.retry ? { retry: { ...s.retry, onFail: s.retry.onFail.map(id) } } : {}), ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}), ...(s.freeze ? { freeze: ref(s.freeze) } : {}) }
+  if (isWorkerStep(s)) return { ...s, ...ids, ...(s.retry ? { retry: { ...s.retry, onFail: s.retry.onFail.map(id) } } : {}), ...(s.inputs ? { inputs: Object.fromEntries(Object.entries(s.inputs).map(([k, v]) => [k, ref(v)])) } : {}) }
   if (isVerifyStep(s)) return { ...s, ...ids, verify: { ...s.verify, subject: ref(s.verify.subject), ...(s.verify.inputs ? { inputs: Object.fromEntries(Object.entries(s.verify.inputs).map(([k, v]) => [k, ref(v)])) } : {}) } }
   if (isEffectStep(s)) return { ...s, ...ids, effect: { ...s.effect, subject: ref(s.effect.subject), requires: s.effect.requires.map(id) } }
   return { ...s, ...ids, accept: { ...s.accept, requires: s.accept.requires.map(id) } }

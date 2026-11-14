@@ -21,7 +21,7 @@ test('Brainstorm records its events in dispatch, observe order', async () => {
 
 test('Software Engineering records Worker, verifier and effect events in order', async () => {
   const f = fixture()
-  const done = await f.controller.run((await f.admit('software-engineering.yaml')).id)
+  const done = await f.controller.run((await f.admit('develop.yaml')).id)
   assert.deepEqual(shape(done), [
     'admitted',
     'dispatched:implement', 'observed:implement',
@@ -49,7 +49,7 @@ test('a cancel request while an attempt is held at a barrier is recorded after t
 for (let seed = 1; seed <= 50; seed++) {
   test(`seed ${seed}: random delays lose and repeat no event, and the record replays`, async () => {
     const f = fixture({ seed })
-    const se = await f.admit('software-engineering.yaml')
+    const se = await f.admit('develop.yaml')
     const brainstorm = await f.admit('brainstorm.yaml')
     const [a, b] = await Promise.all([f.controller.run(se.id), f.controller.run(brainstorm.id)])
     assert.equal(a.state.status, 'succeeded')

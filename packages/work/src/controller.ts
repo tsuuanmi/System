@@ -55,8 +55,6 @@ export interface SpecStore {
   unchangedBase(id: string): string | undefined
   /** The commit of a stored `git-tree@1` Artifact (a change); undefined for any other Artifact. */
   commitOf?(id: string): string | undefined
-  /** Put the files that `git-tree@1` Artifact `frozenId` changed back, as it left them, into change `changeId`; the stored result's ID (`changeId` itself when nothing differed) and the files restored. */
-  restoreFrozen?(changeId: string, frozenId: string, caller: Caller): Promise<{ id: string; restored: string[] }>
   /** Store a `verdict@1` Artifact; returns its ID. */
   putVerdict(verdict: Verdict): Promise<string>
   /** A stored Task, and the repository of its base commit; undefined when `id` is not a Task. */
@@ -95,9 +93,6 @@ export interface Command {
   id: string
   args: string
 }
-
-/** A line of a Worker's final message that objects to an earlier step's output. */
-const OBJECTION = /^OBJECTION:[ \t]*(.+(?:\n(?!\n).*)*)/m
 
 /** What `retry` is told: which step and Worker take over, by whom and why. */
 export interface RetryOptions {
@@ -711,11 +706,6 @@ export class WorkController {
     const refused = verdicts.find(([stepId, verdict]) => (verdict === 'fail' || verdict === 'error') && spec.steps.some((s) => s.dependsOn?.includes(stepId)))
     if (refused && busy) return { record, settles: [], waiting: true, epoch }
     if (refused) return { record: await this.finish(record, 'failed', `verification did not pass: ${refused[0]}=${refused[1]}`), settles: [], epoch }
-    // A verify step marked `holdInconclusive` whose verdict is inconclusive holds the Work for the operator before any step after it starts.
-    const unsure = spec.steps.find((s) => isVerifyStep(s) && s.verify.holdInconclusive && this.verdictOf(record, spec, s.id) === 'inconclusive'
-      && !this.decisionOf(record, s.id) && spec.steps.some((t) => t.dependsOn?.includes(s.id) && record.state.steps[t.id]!.state === 'pending'))
-    if (unsure && busy) return { record, settles: [], waiting: true, epoch }
-    if (unsure) return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${unsure.id}`, unsure.id), settles: [], epoch }
     const ready = spec.steps.filter((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
     if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
     if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }
@@ -771,7 +761,6 @@ export class WorkController {
     const autoReopens = (stepId: string, source: string): number => record.events.filter((e) => {
       if (e.type !== 'reopened' || !e.automatic || e.stepId !== stepId) return false
       if (e.failedEffect) return e.failedEffect === source
-      if (e.objectedBy) return e.objectedBy === source
       if (source === stepId) return !e.failure
       return record.events.some((v) => v.type === 'verified' && v.stepId === source && v.verdictId === e.failure)
     }).length
@@ -781,16 +770,6 @@ export class WorkController {
       if (verified?.type !== 'verified') continue
       const nearest = workers.findLast((s) => s.retry?.onFail.includes(v.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, v.id) < s.retry.max)
       if (nearest) return reopen(nearest, `${v.id} failed: ${verified.reason}`, verified.verdictId)
-    }
-    // A later Worker step that objects to this step's output (a frozen test it says is wrong) reopens this step with the objection as `failure`.
-    for (const o of workers) {
-      const observed = record.events.findLast((e) => e.type === 'observed' && e.stepId === o.id)
-      if (record.state.steps[o.id]!.state !== 'failed' || observed?.type !== 'observed' || !observed.objection) continue
-      const target = workers.findLast((s) => s.retry?.onFail.includes(o.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, o.id) < s.retry.max)
-      const subject = target && record.state.steps[target.id]!.outputs[target.outputs[0]!]
-      if (!target || !subject) continue
-      const failure = await this.specs.putVerdict({ subject, criteria: subject, capability: 'objection', verifier: { ref: `step:${o.id}`, version: '1' }, verdict: 'fail', reason: observed.objection, evidence: [] })
-      return this.append(record, { type: 'reopened', automatic: true, objectedBy: o.id, stepId: target.id, reason: `${o.id} objects: ${observed.objection}`, failure, reset: [target.id, ...dependentsOf(spec, target.id)] })
     }
     // An effect step whose outcome was observed as a conflict or a failed merge check reopens the Worker step that lists it, on the base's new tip.
     // An unknown or reconciled outcome never carries `rejected`, so it is never retried.
@@ -938,25 +917,11 @@ export class WorkController {
     let { status, reason } = result
     if (aborted) status = 'cancelled'
     const outputs = status === 'succeeded' ? result.outputs : {}
-    // A Worker that calls an earlier step's output wrong fails its own step; only a step another step lists in `retry.onFail` may.
-    const objection = status === 'succeeded' && spec.steps.some((o) => isWorkerStep(o) && o.retry?.onFail.includes(s.id) && o.id !== s.id) ? OBJECTION.exec(result.message ?? '')?.[1]?.trim() : undefined
-    if (objection) [status, reason] = ['failed', `objection: ${objection}`]
-    const restored: string[] = []
     let unchangedAfter: string | undefined
-    if (status === 'succeeded' && !objection) {
+    if (status === 'succeeded') {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot]))
       if (missing.length) [status, reason] = ['failed', `the Worker reported success without stored outputs ${missing.join(', ')}`]
-      // Put the frozen files back before judging whether anything is left: a Worker that only edited them changed nothing (dg-10).
-      if (status === 'succeeded' && s.freeze && s.outputs[0] && this.specs.restoreFrozen) {
-        try {
-          const done = await this.specs.restoreFrozen(outputs[s.outputs[0]]!, this.resolveRef(this.require(workId), s.freeze), { type: 'agent', operatorId: 'system' })
-          outputs[s.outputs[0]] = done.id
-          restored.push(...done.restored)
-        } catch (error) {
-          [status, reason] = ['failed', `could not restore the frozen files: ${(error as Error).message}`]
-        }
-      }
       // A change that is judged or published must be one: a Worker that changed nothing fails here, not three steps later.
       // Only a first output that a later verify or effect step takes as its subject, so a read-only step's `checkout` stays unchanged.
       if (status === 'succeeded' && s.outputs[0] && !s.mayBeEmpty && isJudged(spec, s.id, s.outputs[0])) {
@@ -981,13 +946,12 @@ export class WorkController {
       try { await attempt.worker.quota?.(true) } catch { /* routing reads it again */ }
     }
     return this.append(this.require(workId), {
-      type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason: reason ?? (restored.length ? `restored frozen files: ${restored.join(', ')}` : undefined),
+      type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, s.outputs) : {}, reason,
       usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
       ...(limited ? { limited: true as const } : {}),
-      ...(objection ? { objection } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),
       // An Account that no longer offers the step's capabilities left routing because of this failure: another may take it (ro-12).
       ...(status === 'failed' && (result.retryable || s.capabilities.some((c) => !attempt.worker.capabilities.includes(c))) && !aborted ? { retryable: true as const } : {}),
@@ -1072,7 +1036,7 @@ export class WorkController {
   /** The verdict of a check in `retry.onFail` that automatically reopened this step, with its change to hand back (`retry.rerunUnchanged`). */
   private failingCheckOf(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): string | undefined {
     const r = this.latestReopening(record, s.id)
-    if (!r?.automatic || !r.failure || r.objectedBy || r.failedEffect || !r.previous) return undefined
+    if (!r?.automatic || !r.failure || r.failedEffect || !r.previous) return undefined
     return record.events.some((v) => v.type === 'verified' && v.verdictId === r.failure && v.verdict === 'fail' && s.retry?.onFail.includes(v.stepId)) ? r.failure : undefined
   }
 
