@@ -10,6 +10,7 @@ import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
+import { OUTSIDE_HOLD, outsideHoldReason, outsideRun } from './outside.ts'
 import { DEFAULT_LIMIT_MS, isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
@@ -744,6 +745,13 @@ export class WorkController {
     }
     if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
     if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }
+    // The third Outside failure in a row on a step holds the Work instead of dispatching it again (cm-2, anti-windup).
+    for (const next of ready) {
+      if (!isWorkerStep(next) && !isVerifyStep(next)) continue
+      const run = outsideRun(record.events, next.id)
+      if (run.count >= OUTSIDE_HOLD && !busy) return { record: await this.finish(record, 'held', outsideHoldReason(next.id, { count: run.count, cause: run.cause!, reason: run.reason! }), next.id), settles: [], epoch }
+      if (run.count >= OUTSIDE_HOLD) return { record, settles: [], waiting: true, epoch }
+    }
     const settles: (() => Promise<WorkRecord>)[] = []
     let waiting = false
     for (const next of ready) {
