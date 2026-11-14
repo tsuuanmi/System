@@ -86,20 +86,13 @@ Host that stopped itself for new code waits for its attempts first; see
   and the one before are removed.
 
 While it upgrades the Host starts no new attempt and lets the running ones
-finish (however long they take); Works can still be submitted: they wait. Then
-it exits and restarts, and the Works held go on. The log lines, exit status,
+finish; Works can still be submitted and wait. The log lines, exit status,
 retries and exit grace are in [the Host](../architecture/host.md#upgrading-on-new-code-d).
-
-A command run meanwhile waits up to 3 s for the swap before it says the Host
-is not running. A CLI of the new code can still read (`work show`, `work list`,
-`workers`); a command that changes something says to retry once the Host has
-restarted. `system host`'s log says what a draining Host waits for;
-`systemctl --user restart system` stops it at once and interrupts the attempts.
-
-A Host run from a development checkout also restarts itself on a build there,
-but not while the `.building` file `corepack pnpm build` keeps at the checkout's
-root exists; a failed build leaves it, so the Host stays on its code until a
-build succeeds.
+A command run meanwhile waits up to 3 s, reads still work, and one that changes
+something says to retry once the Host has restarted.
+`systemctl --user restart system` stops the Host at once and interrupts the
+attempts. A Host run from a development checkout restarts itself on a build
+there, not while the `.building` file `corepack pnpm build` keeps exists.
 
 ## Rollback
 
@@ -259,70 +252,45 @@ Each prints `signed in`, or `not signed in:` and why (exit 1), never a cookie
 value. Do not log in while an attempt of the account runs: Chrome holds the profile.
 
 **Sign in over SSH (`--remote`).** On the server, as the user that runs the
-Host:
-
-```
-system workers login web/chatgpt/default --remote
-```
-
-It prints three steps, for example:
-
-```
-1. On your own machine, open the tunnel (keep it running):
-     ssh -L 41873:127.0.0.1:41873 me@server
-2. Open this address in your browser:
-     http://127.0.0.1:41873/<43 characters>/
-3. Sign in and clear any check by hand, then press Save. ...
-```
-
-1. On **your own machine**, run the `ssh -L ...` line exactly as printed. The
-   `user@host` part is the Host's user and its host name; replace the host with
-   the name or address you reach the server by if they differ.
-2. Open the URL in your browser. It shows the browser's private display; use
-   it as a normal browser.
-3. Sign in, and if a "verify you are human" check shows, clear it yourself.
-   System never clicks it.
-4. Press **Save**. The page says `Signed in` or `Not signed in: <why>`, and the
-   command prints the same and exits 0 or 1. **Cancel**, Ctrl-C on the server,
-   or 15 minutes end the session without saving.
+Host, `system workers login web/chatgpt/default --remote` prints three steps:
+run the `ssh -L ...` line on your own machine (replace the host with the name
+you reach the server by if it differs), open the URL in your browser, sign in
+and clear any "verify you are human" check yourself (System never clicks it),
+then press **Save**. The page and the command print `Signed in` or `Not signed
+in: <why>` (exit 0 or 1). **Cancel**, Ctrl-C or 15 minutes end the session
+without saving.
 
 `--remote` needs a VNC server on the Host's `PATH`: `x11vnc` (`apt install
 x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`);
 without one the command fails at once, naming both. Without root, unpack the
 packages into the home directory and put a wrapper script on the `PATH`.
 
-**Account states.** `system workers` shows any state but `ready` as `unavailable`
-with what to do; the states and quarantine rules are in the
-[web-worker README](../../packages/web-worker/README.md).
-
-- `needs-sign-in`: log in again (`--remote` or `--cookies`), then
-  `system workers recheck web/chatgpt/<name>`; a successful `--remote` rechecks itself.
-- `challenged`: a CAPTCHA or Cloudflare challenge showed. System never solves
-  one: run `system workers login web/chatgpt/<name> --remote`, clear it in the
-  viewer, press **Save**, `recheck`, and retry the Work.
-- `cooling`: eligible again at the time shown; `recheck` ends it early. If it keeps coming back, stop using the Account for a while.
-- A failure of the Host's (Chrome did not start, a page timeout) never changes the state; look at the Host. No prompt is resent automatically: a retry is `work retry`.
+**Account states.** `system workers` shows any state but `ready` as
+`unavailable` with what to do (states and quarantine rules: the
+[web-worker README](../../packages/web-worker/README.md)). After
+`needs-sign-in` or `challenged`, log in again with `--remote` (clear a
+challenge in the viewer yourself; System never solves one), then
+`system workers recheck web/chatgpt/<name>` and retry the Work; `cooling` ends
+at the time shown or early with `recheck`. A failure of the Host's (Chrome did
+not start, a page timeout) never changes the state. No prompt is resent
+automatically: a retry is `work retry`.
 
 The attempt's `screenshot` partial output shows the page:
 `system work show <id>`, then `system artifact cat <id> > shot.png`.
 
 **The profile** is `$DSH_HOME/system/web/<site>/<name>` (or `profileDir`), a
-Chrome user-data directory created mode 0700. It holds the live session: treat
-it as a password. Keep it out of backups, sync and version control, never copy
-it to another machine or hand it to another Worker, and delete the directory to
-sign the account out of System. An attempt that finds the page in an unknown
-state fails after the `load` timeout with that reason and a screenshot.
+Chrome user-data directory of mode 0700 that holds the live session: treat it as
+a password, keep it out of backups, sync and version control, and delete it to
+sign the account out of System.
 
 ## The web canary
 
-`tools/web-canary` is the reliability gate of the `web` Workers read from
-System's own records: it stores the fixed Research question ("What is the capital
-of France? Cite the English Wikipedia article that says so
-(https://en.wikipedia.org/...).", a page the citation verifier can read, so the
-canary measures the Website Worker and not a third-party site) as a `task@1` (the
-same Artifact ID every time) and runs `workflows/research.yaml` on it once on
-each registered `web` Account, with `system work submit --worker <ref>`, and
-prints one line per Work: Account, Work ID, status, seconds.
+`tools/web-canary` is the reliability gate of the `web` Workers, read from
+System's own records: it stores a fixed Research question (a `task@1`, the same
+Artifact ID every time; its answer cites an English Wikipedia page the citation
+verifier can read, so it measures the Website Worker and not a third-party site)
+and runs `workflows/research.yaml` on it once on each registered `web` Account,
+printing one line per Work: Account, Work ID, status, seconds.
 
 ```
 tools/web-canary                              # run it now
@@ -334,18 +302,10 @@ tools/web-canary --report [--since <ISO>]     # read the records
 (`gate: holds` or `does not hold`, exit 3). Run it after each merge into
 `web-workers`; the timer does so every six hours.
 
-Install the timer as a user unit (it needs the Host running; it is not installed
-by `system init`):
-
-```
-mkdir -p ~/.config/systemd/user
-for u in service timer; do
-  sed -e "s|@REPO@|$PWD|g" -e "s|@NODE@|$(command -v node)|" -e "s|@PATH@|$PATH|" \
-    packages/bundle/system-web-canary.$u > ~/.config/systemd/user/system-web-canary.$u
-done
-systemctl --user daemon-reload
-systemctl --user enable --now system-web-canary.timer
-```
+Install the timer as a user unit like the night session's (below), from
+`packages/bundle/system-web-canary.{service,timer}`, with `@NODE@` also
+replaced by `$(command -v node)`; it needs the Host running and `system init`
+does not install it.
 
 Read it with `systemctl --user list-timers system-web-canary` and
 `journalctl --user -u system-web-canary`; start a run with
@@ -355,58 +315,28 @@ question's text starts a new series (a new Task ID).
 
 ## The scheduled session's prompt
 
-`tools/night-session.md` is the prompt of the scheduled session (PLAN 3c, ss-1, ss-8).
-The session is a Claude Code caller of System, not part of it: for each
-repository it is given (System by default) it reads `status`, takes the
-`todo` Items in STATUS order, and for each calls `item_claim`, `task_new`
-(with `repository`, `ref` `dev` and `item`), `work_submit` with the
-repository's `workflows/develop.yaml` (`hygiene.yaml` when the Item says
-behaviour is unchanged) and waits with `system work wait <work> --timeout 1.5`
-in Bash, again on exit 4. It stops after 6 Items in a night (no money cap for
-now), skips an Item whose Work is held or whose Works failed twice and says why,
-never writes Items, never approves, denies, retries a held step or releases, and
-stores the night report (below).
-
-It uses the `system` MCP server's tools (shown to Claude Code as
-`mcp__system__<tool>`, such as `mcp__system__work_submit`: `status`, `item_claim`, `task_new`, `work_submit`,
-`work_show`, `work_report`, `work_list`, `artifact_show`,
-`artifact_cat`), not `system work submit --no-run` (which only admits a Work, so
-nothing would run) and not a followed `system work submit` (which outlives a
-Bash call). `work_submit` runs the Work and returns its record at once. Task text
-goes as a tool argument, never through a shell string. `--timeout` of `work wait` is in minutes: 1.5 is 90
-seconds, inside a Bash call.
+`tools/night-session.md` is the prompt of the scheduled session (PLAN 3c, ss-1,
+ss-8): a Claude Code caller of System, not part of it. It reads `status`, takes
+`todo` Items in STATUS order and works each through the MCP tools (`mcp__system__work_submit`
+and the others) and `system work wait` (the prompt holds the sequence and its limits). It never approves,
+denies, retries a held step or releases, and stores the night report (below).
 
 `packages/bundle/system-night-session.sh` (what the service starts) runs
-`claude -p` with `--allowedTools` naming exactly those tools, `Bash(system work wait:*)`,
-and nothing else (no `artifact_put`, no notifier: the launcher does those, below). Nothing there approves, denies, cancels, retries or releases, so a session
-that tried would be refused by permission as well as by the prompt, and it
-writes no file. Anything else is refused, because `claude -p` has no one to ask.
-`packages/app/tests/night-session.test.ts` checks that every `system` command and
-option and every MCP tool the prompt names exists, and
-`packages/bundle/tests/night-session-units.test.ts` that the allowlist is exactly
-what the prompt uses; `packages/bundle/tests/night-session-launcher.test.ts` runs the
-launcher with a fake `claude` and `system`; `tests/night-session.test.ts` follows the prompt's sequence
-(claim, task_new, work_submit, work wait, work_report) for one Item
-against a real Host with fake Workers. What the tests cannot show is that your
-`claude` accepts these rules, so do one real run once before enabling the timer,
-with no `todo` Item (or only an Item you are happy to have worked):
-`packages/bundle/system-night-session.sh` in a checkout after the Host answers
-(`systemctl --user start system-night-session` does the same under the unit), and
-read the journal or output: it should find no `todo` Item, store a report and
-print its ID, and `system artifact cat <id>` should read it. A "permission"
-refusal in the output names a rule to fix in the script.
+`claude -p` with `--allowedTools` naming exactly the tools the prompt uses, so
+anything else is refused by permission, as `claude -p` has no one to ask. The
+tests under `packages/app/tests`, `packages/bundle/tests` and `tests` check the
+prompt against the commands, the allowlist and a real Host. What they cannot
+show is that your `claude` accepts these rules, so do one real run before
+enabling the timer, with no `todo` Item: `packages/bundle/system-night-session.sh`
+in a checkout after the Host answers. It should find no `todo` Item, store a
+report and print its ID. A "permission" refusal names a rule to fix in the script.
 
 ### The night report and its notifier
 
-The session's final answer is the report, in Markdown: the Works of the night
-(outcome, Account and cost from `system work report`), Items done, Items skipped
-and why, Works on the Host that name no Item (where quota went), Items it
-proposes, and the exact release commands for you. The launcher
-(`system-night-session.sh`) runs `claude -p ... --output-format text`, writes the
-answer to a file, stores it with `system artifact put <file> --media-type
-text/markdown` and prints the Artifact ID. If `claude` fails or answers nothing,
-it still stores a short report saying so (and exits with `claude`'s status).
-Read it with `system artifact cat <id>`.
+The session's final answer is the report, in Markdown (the prompt lists its
+parts). The launcher stores it with `system artifact put` and prints the
+Artifact ID; if `claude` fails or answers nothing it stores a short report
+saying so. Read it with `system artifact cat <id>`.
 
 To get the ID on your phone, set one of these in the session's environment
 (for the timer, an `Environment=` or `EnvironmentFile=` line of the user unit,
@@ -442,12 +372,9 @@ systemctl --user enable --now system-night-session.timer
 ```
 
 Read it with `systemctl --user list-timers system-night-session` and
-`journalctl --user -u system-night-session`; run one now with
-`systemctl --user start system-night-session`; stop the series with
-`systemctl --user disable --now system-night-session.timer` (and a night
-already running with `systemctl --user stop system-night-session`). To change
-the time, edit `OnCalendar=` in `~/.config/systemd/user/system-night-session.timer`,
-then `systemctl --user daemon-reload` and `systemctl --user restart system-night-session.timer`.
+`journalctl --user -u system-night-session`; stop the series with
+`systemctl --user disable --now system-night-session.timer`. To change the time
+edit `OnCalendar=` in the installed timer, then `daemon-reload` and `restart` it.
 
 ## The dev branch
 
@@ -512,15 +439,14 @@ again or `system work list`. Its exits are in the
 ## A check the base fails too
 
 A required check that fails on a change is run again on its base commit. When
-the base fails it too, the failing checks are run once more on the change and on the
-base (sc-13), because a loaded machine fails checks the change did not break: a pass on the
-change's re-run gives `pass`, a pass on the base's gives `fail` (the step reopens as for any
-failure). Only when the checks still fail on both is the `checks` verdict `inconclusive` (reason
-`<check>: the base fails it too`, `also on a re-run once`, evidence of all the runs) and the Work is **held**
-before `publish`, not retried. `system work show <id>` shows the reason: look
-at the base runs (`system work show` lists all of them). `system work approve <id> --reason ...` lets it publish and
-merge; `system work deny` fails it.
-
+the base fails it too, the failing checks are run once more on the change and on
+the base (sc-13), because a loaded machine fails checks the change did not
+break: a pass on the change's re-run gives `pass`, a pass on the base's gives
+`fail`. Only when they still fail on both is the `checks` verdict `inconclusive`
+(`<check>: the base fails it too`, evidence of all the runs) and the Work
+**held** before `publish`. `system work show <id>` shows the base runs;
+`system work approve <id> --reason ...` lets it publish and merge, `system work
+deny` fails it.
 
 ## A check that fails again on the same change
 
@@ -536,22 +462,22 @@ inconclusive verdict (sc-13, [above](#a-check-the-base-fails-too)).
 
 ## Following a Work, and detaching
 
-Commands that wait follow the Work, and Ctrl-C detaches without touching it;
-only `system work cancel` cancels a Work. Exit codes and polling are in the
-[app README](../../packages/app/README.md). Read what happened with
-`system work show <id>`.
-
-While Worker attempts run, `work show` also prints `live` (start, last
-activity, what the Runtime last reported). An attempt quiet for `stallMinutes`
-(10 by default; the `work` row's config) is `stalled: true`: a notice, not a
-verdict. `live` is never recorded.
+Commands that wait follow the Work; Ctrl-C detaches without touching it, and
+only `system work cancel` cancels ([app README](../../packages/app/README.md)
+has the exit codes). While attempts run, `work show` prints `live`; one quiet
+for `stallMinutes` (10 by default, the `work` row's config) is `stalled: true`,
+a notice, not a verdict.
 
 ## The status of a project
 
 A repository lists its planned work in a `STATUS.md` at its root: one line per
 **Item**, `- [ ] <id> <title>` (`- [x]` when done), with an id such as `df-3`
 (see [GLOSSARY](../../GLOSSARY.md)). A line that does not parse is skipped and
-reported by `system status` as a `note:`.
+reported by `system status` as a `note:`. `(after: id, id)` at the end of a
+line (with the colon) makes the Item **Blocked** until each named Item is done;
+`status` then reads `todo (blocked by <ids>)`, and a cycle or an ID with no line
+is a problem (`cycle: a -> b -> a`, `unknown id`). The check `statusmd` fails a
+change whose `STATUS.md` has any problem.
 
 ```
 system task new --text "..." --repo . --ref dev --item df-3   # prints the Task ID alone
@@ -559,13 +485,12 @@ system claim df-3 [--repo .] [--force]   # before a Work exists: shown as doing
 system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 ```
 
-`status` derives each Item's state from git and the Work records; `claim`
-and `status` are in the [app README](../../packages/app/README.md). While a
-Work for an Item runs or is held, `work submit` for the same Item is refused,
-naming that Work; `--force` allows parallel work on purpose. A Task that names
-an Item carries the Item's line and its earlier Works' outcomes in its context.
-`task new --item` is refused when the Item has no line in `STATUS.md` on `dev`.
-Works do not edit `STATUS.md`: done is derived.
+`status` derives each Item's state from git and the Work records ([app
+README](../../packages/app/README.md)). While a Work for an Item runs or is held,
+`work submit` for it is refused, naming that Work; `--force` allows parallel
+work on purpose. `task new --item` is refused when the Item has no line in
+`STATUS.md` on `dev`; it and `work submit` are refused for a Blocked Item unless
+`--force`. Works do not edit `STATUS.md`: done is derived.
 
 ## Using System from an agent
 
@@ -577,28 +502,21 @@ start the Host first, then add the server:
 claude mcp add system -- system mcp
 ```
 
-The server sends `instructions` in its initialize result, which the client puts
-in the session's context, so a session in any repository knows when to use
-System, what a repository needs and the steps, without reading these docs.
-The Workflow it names for any change to a repository is `develop.yaml`; a cleanup
-that keeps behaviour uses `hygiene.yaml`. The others it names are `research.yaml`,
-`brainstorm.yaml` and the Sub-workflow `code-checks.yaml`.
+The server's `instructions` tell a session in any repository when to use System
+and the steps. A change uses `develop.yaml`; a cleanup that keeps behaviour uses
+`hygiene.yaml`.
 
 A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base
 commit, else beside its own code.
 
 The session is an agent: it may use every agent operation on every Work, store
-Tasks and files, and list the Workers.
-
-Each Work is also an MCP resource, `system://work/<id>` (`work.show`); subscribe
-to it (`resources/subscribe`) to be woken when the Work ends, is held, waits for
-approval or stalls, then read `work.events` from your last `seq`.
-
-It cannot approve or deny, set credentials, sign an
-account in, or merge into `main`. When a check failed for a reason outside the
-change, it tells the operator: only a human runs
-`system work retry <work> --step checks.checks`.
+Tasks and files, and list the Workers. It cannot approve or deny, set
+credentials, sign an account in, or merge into `main`; only a human runs
+`system work retry <work> --step checks.checks` for a check that failed outside
+the change. Each Work is also an MCP resource, `system://work/<id>`: subscribe
+to be woken when it ends, is held, waits for approval or stalls, then read
+`work.events` from your last `seq`.
 
 ## Errors
 

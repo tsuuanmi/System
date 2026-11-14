@@ -13,10 +13,9 @@ export function operatorId(): string {
   return process.env.SYSTEM_OPERATOR_ID || userInfo().username
 }
 
-/** Who made this CLI call (ADR-0004 decision 3): a terminal is a human unless SYSTEM_CALLER says otherwise. */
+/** Who made this CLI call (ADR-0011): a human only at a terminal; SYSTEM_CALLER=agent may lower that, nothing raises it. */
 export function caller(): Caller {
-  const declared = process.env.SYSTEM_CALLER
-  const type = declared === 'human' || declared === 'agent' ? declared : process.stdin.isTTY ? 'human' : 'agent'
+  const type = process.env.SYSTEM_CALLER === 'agent' || !process.stdin.isTTY ? 'agent' : 'human'
   return { type, operatorId: operatorId() }
 }
 

@@ -95,7 +95,7 @@ export interface WorkCommands {
   waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** A Work's measurements. */
   report(workId: string): Promise<unknown>
-  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string): Promise<{ task: string; base?: string }>
+  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
   claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
@@ -331,11 +331,12 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--context <id>', 'an Artifact the Worker reads as data, such as a conversation (repeatable)', collect, [])
     .option('--item <id>', 'the Item of the repository\'s STATUS.md this task is for (see system status)')
     .option('--against <ref>', 'with --repo: the commit --ref is a change from; checks are then selected by the files that differ between the two')
-    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string; against?: string }) => {
+    .option('--force', 'store the Task although its Item is Blocked (comes after Items not done)')
+    .action((options: { text?: string; file?: string; repo?: string; ref: string; context: string[]; item?: string; against?: string; force?: boolean }) => {
       select(async () => {
         if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
-        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against)
+        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against, options.force)
         if (created.base) io.err(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
         return 0
@@ -413,7 +414,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--capability <name...>', 'a single Task needing these Worker capabilities (no Workflow file)')
     .option('--input <artifactId>', 'the input Artifact')
     .option('--worker <ref>', 'only this Worker may take its Worker steps (see system workers)')
-    .option('--force', 'admit although the input Task\'s Item already has a running or held Work')
+    .option('--force', 'admit although the input Task\'s Item already has a running or held Work, or is Blocked')
     .option('--no-run', 'admit only')
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches and the Work goes on in the Host)')
     .action((options: { workflow?: string; capability?: string[]; input?: string; worker?: string; force?: boolean; run: boolean; cancelOnInterrupt?: boolean }) => {
@@ -445,6 +446,14 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  /** Whether `step` of the Work's pinned spec is a verify step. */
+  const isVerifyStep = async (workId: string, step: string): Promise<boolean> => {
+    const record = await host.work().get(workId)
+    if (!record) throw new Error(`no Work ${workId}`)
+    const read = await host.artifacts().get(record.state.specId)
+    const steps = read.state === 'stored' ? (read.envelope.content as { steps?: object[] }).steps ?? [] : []
+    return steps.some((s) => (s as { id?: string }).id === step && 'verify' in s)
+  }
   work.command('retry <workId>')
     .description('run a step of failed, cancelled or held Work again as a new attempt; the steps after it are reset. A verify step is asked again on the same subject and criteria')
     .option('--step <id>', 'the Worker, verify or effect step to run again (default: the first Worker step that did not succeed)')
@@ -453,6 +462,8 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')
     .action((workId: string, options: { step?: string; worker?: string; reason: string; cancelOnInterrupt?: boolean }) => {
       select(async () => {
+        // Choosing among runs of a check is the operator's (ADR-0011): the same typed confirmation as `system approve`.
+        if (options.step && await isVerifyStep(workId, options.step)) await io.confirmHuman(`Verifying again is a human's decision. Type exactly ${shortCode(workId)} to run ${options.step} again\n> `, shortCode(workId))
         return exitOf(await host.work().retry(workId, options.worker, options.reason, options.step, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })

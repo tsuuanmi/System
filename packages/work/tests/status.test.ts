@@ -476,3 +476,81 @@ test('an Item whose Work ended Satisfied is done, says "satisfied" and names the
   const plain: WorkRecord = { ...record, state: { ...record.state, result: undefined } }
   assert.match(itemLines(parseStatus(STATUS), dir, [plain], () => [], { item: 'df-3' })[0]!, /^\[ \] df-3 .* - todo: nobody$/)
 })
+
+const AFTER = (...lines: string[]) => ['Aim: x', ...lines, ''].join('\n')
+
+test('(after: id, id) at the end of an Item line is parsed and stripped from the title; prose without the colon stays title', () => {
+  const parsed = parseStatus(AFTER(
+    '- [ ] cm-1 First', '- [ ] cm-2 Second (after: cm-1)', '- [ ] cm-3 Third, with (after: cm-1) inside and more (after:cm-1,cm-2)',
+    '- [ ] cm-4 Prose (after cm-1)', '- [x] cm-5 Early (after: cm-1) text after',
+  ))
+  assert.deepEqual(parsed.items, [
+    { id: 'cm-1', title: 'First', done: false },
+    { id: 'cm-2', title: 'Second', done: false, after: ['cm-1'] },
+    { id: 'cm-3', title: 'Third, with (after: cm-1) inside and more', done: false, after: ['cm-1', 'cm-2'] },
+    { id: 'cm-4', title: 'Prose (after cm-1)', done: false },
+    { id: 'cm-5', title: 'Early (after: cm-1) text after', done: true },
+  ])
+  assert.deepEqual(parsed.problems, [])
+})
+
+test('an unknown id, a deleted id, a self-dependency and a cycle are problems naming them; strict mode throws on any problem', () => {
+  const unknown = parseStatus(AFTER('- [ ] cm-1 One (after: cm-9, cm-2)', '- [ ] cm-2 Two'))
+  assert.equal(unknown.problems.length, 1)
+  assert.match(unknown.problems[0]!, /^line 2: .*cm-1.*unknown id cm-9/)
+  const two = parseStatus(AFTER('- [ ] cm-2 Two (after: cm-3)', '- [ ] cm-3 Three (after: cm-2)'))
+  assert.deepEqual(two.problems, ['cycle: cm-2 -> cm-3 -> cm-2'])
+  const three = parseStatus(AFTER('- [ ] cm-1 A (after: cm-3)', '- [ ] cm-2 B (after: cm-1)', '- [ ] cm-3 C (after: cm-2)', '- [ ] cm-4 D (after: cm-3)'))
+  assert.deepEqual(three.problems, ['cycle: cm-1 -> cm-3 -> cm-2 -> cm-1'])
+  assert.deepEqual(parseStatus(AFTER('- [ ] cm-1 A (after: cm-1)')).problems, ['cycle: cm-1 -> cm-1'])
+  assert.deepEqual(parseStatus(AFTER('- [ ] cm-1 A (after: )')).problems.length, 1)
+
+  assert.deepEqual(parseStatus(AFTER('- [ ] cm-1 A', '- [ ] cm-2 B (after: cm-1)'), { strict: true }).items.length, 2)
+  assert.throws(() => parseStatus(AFTER('- [ ] cm-1 A (after: cm-9)'), { strict: true }), /unknown id cm-9/)
+  assert.throws(() => parseStatus(AFTER('- [ ] cm-2 B (after: cm-3)', '- [ ] cm-3 C (after: cm-2)'), { strict: true }), /cycle: cm-2 -> cm-3 -> cm-2/)
+  assert.throws(() => parseStatus(AFTER('- [ ] cm-1 A', '- bad line'), { strict: true }), /line 3/)
+  assert.throws(() => parseStatus('- [ ] cm-1 A', { strict: true }), /no Aim/)
+})
+
+test('a Blocked Item is shown as todo (blocked by ...), derived from what is done; a cycle shows blocked: cycle', () => {
+  const lines = (text: string, records: WorkRecord[] = [], filter: { state?: 'todo' | 'doing' | 'done'; item?: string } = {}) => itemLines(parseStatus(text), '/p', records, () => [], filter)
+  const text = AFTER(
+    '- [x] cm-1 Done', '- [ ] cm-2 Open', '- [ ] cm-3 Ready (after: cm-1)', '- [ ] cm-4 Blocked (after: cm-1, cm-2)', '- [ ] cm-5 Two (after: cm-2, cm-4)',
+    '- [ ] cm-6 Unknown (after: cm-99)', '- [ ] cm-7 Loop a (after: cm-8)', '- [ ] cm-8 Loop b (after: cm-7)', '- [ ] cm-9 Behind (after: cm-7)',
+  )
+  assert.deepEqual(lines(text), [
+    '[x] cm-1 Done - done',
+    '[ ] cm-2 Open - todo: nobody',
+    '[ ] cm-3 Ready - todo: nobody',
+    '[ ] cm-4 Blocked - todo (blocked by cm-2)',
+    '[ ] cm-5 Two - todo (blocked by cm-2, cm-4)',
+    '[ ] cm-6 Unknown - todo (blocked by cm-99)',
+    '[ ] cm-7 Loop a - todo (blocked: cycle)',
+    '[ ] cm-8 Loop b - todo (blocked: cycle)',
+    '[ ] cm-9 Behind - todo (blocked by cm-7)',
+  ])
+  assert.equal(lines(text, [], { state: 'todo' }).length, 8, 'no fourth state: Blocked Items are todo')
+  // Done as status defines it: a merged Work unblocks, being in the running release is not required.
+  const merged: WorkRecord = {
+    id: 'work:m', events: [{ type: 'admitted', seq: 0, at: '2026-11-11T00:00:00.000Z', caller, specId: id('s'), source: { kind: 'direct-task' }, item: { id: 'cm-2', repository: '/p' } }],
+    state: { status: 'succeeded', specId: id('s'), criteria: {}, steps: {}, results: {}, effects: { publish: { stepId: 'publish', state: 'applied', detail: { merged: 'true', mergeCommit: 'd'.repeat(40) } } } },
+  }
+  const after = lines(text, [merged])
+  assert.match(after[1]!, /^\[x\] cm-2 Open - done/)
+  assert.equal(after[3], '[ ] cm-4 Blocked - todo: nobody')
+  assert.equal(after[4], '[ ] cm-5 Two - todo (blocked by cm-4)')
+  // A deleted Item is never done: its dependants stay Blocked.
+  assert.equal(lines(AFTER('- [ ] cm-4 Blocked (after: cm-2)'))[0], '[ ] cm-4 Blocked - todo (blocked by cm-2)')
+  // Existing lines are unchanged: df-13's prose is title text.
+  assert.equal(lines(AFTER('- [ ] df-13 Routing (after df-14)'))[0], '[ ] df-13 Routing (after df-14) - todo: nobody')
+})
+
+test('admitting a Work for a Blocked Item is refused naming what blocks it, unless force; a Ready Item is not affected', async () => {
+  const dir = repository(AFTER('- [ ] cm-1 First', '- [ ] cm-2 Second (after: cm-1)', '- [ ] cm-3 Loop (after: cm-4)', '- [ ] cm-4 Loop (after: cm-3)', '- [ ] cm-5 Third (after: cm-6)'))
+  const { task, admit } = setup()
+  await assert.rejects(admit(task(dir, 'cm-2')), (error: Error) => /blocked by cm-1/.test(error.message) && error.message.includes('force') && !error.message.includes('\n'))
+  await assert.rejects(admit(task(dir, 'cm-3')), /blocked: cycle/)
+  await assert.rejects(admit(task(dir, 'cm-5')), /blocked by cm-6/)
+  assert.equal((await admit(task(dir, 'cm-2'), true)).state.status, 'running')
+  assert.equal((await admit(task(dir, 'cm-1'))).state.status, 'running')
+})

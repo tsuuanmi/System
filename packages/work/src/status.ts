@@ -5,68 +5,13 @@
  */
 import { realpathSync } from 'node:fs'
 import { git, snapshot } from './git.ts'
-import { ITEM_ID } from './kinds.ts'
+import { blockedBy, blockedText, parseStatus, type Item, type ParsedStatus } from './status-parse.ts'
 import type { LiveAttempt } from './live.ts'
 import type { Claim, WorkEvent, WorkRecord } from './record.ts'
 import { summarize } from './summary.ts'
 
-export interface Item {
-  id: string
-  title: string
-  done: boolean
-}
-
-export interface ParsedStatus {
-  aim: string[]
-  items: Item[]
-  /** One line for each malformed line: `line N: why`. */
-  problems: string[]
-}
-
-/** `STATUS.md` is about this long at most; details go elsewhere, as links. */
-const MAX_LINES = 100
-const MAX_AIM = 3
-
-/** Read a `STATUS.md` leniently: what is well-formed is used, and each line that is not gets a reason. */
-export function parseStatus(text: string): ParsedStatus {
-  const lines = text.split('\n')
-  if (lines.at(-1) === '') lines.pop()
-  const aim: string[] = []
-  const items: Item[] = []
-  const problems: string[] = []
-  let inAim = false
-  for (const [n, raw] of lines.entries()) {
-    const line = raw.trimEnd()
-    const here = `line ${n + 1}`
-    const heading = /^Aim:\s*(.*)$/.exec(line)
-    if (heading && !aim.length) {
-      inAim = true
-      if (heading[1]) aim.push(heading[1])
-      continue
-    }
-    if (inAim && line && !/^[#*-]/.test(line)) {
-      aim.push(line.trim())
-      continue
-    }
-    inAim = false
-    if (!/^[-*]\s/.test(line)) continue
-    const item = /^[-*] \[([ xX])\] (\S+)(?:\s+(.*))?$/.exec(line)
-    if (!item) {
-      problems.push(/^[-*] \[/.test(line) ? `${here}: not an Item line: the box is [ ] or [x], then an ID and a title` : `${here}: not an Item line (- [ ] <id> <title>)`)
-    } else if (!ITEM_ID.test(item[2]!)) {
-      problems.push(`${here}: ${item[2]} is not an Item ID (lower case, ending in -<number>, such as df-3)`)
-    } else if (items.some((i) => i.id === item[2])) {
-      problems.push(`${here}: Item ${item[2]} is listed already`)
-    } else {
-      items.push({ id: item[2]!, title: item[3]?.trim() ?? '', done: item[1] !== ' ' })
-      if (!item[3]?.trim()) problems.push(`${here}: Item ${item[2]} has no title`)
-    }
-  }
-  if (!aim.length) problems.push('no Aim: line')
-  if (aim.length > MAX_AIM) problems.push(`the aim has ${aim.length} lines; keep it to ${MAX_AIM}`)
-  if (lines.length > MAX_LINES) problems.push(`STATUS.md has ${lines.length} lines; keep it to about ${MAX_LINES} and link the details`)
-  return { aim, items, problems }
-}
+export { parseStatus, type Item, type ParsedStatus } from './status-parse.ts'
+export { blockedText }
 
 export interface StatusFile extends ParsedStatus {
   /** The repository's top level, as a Work's Task records it. */
@@ -189,12 +134,25 @@ export const finalArtifactOf = (record: WorkRecord): string | undefined => {
   return artifactsOf(record).at(-1)
 }
 
+/** Whether an Item is done: ticked by hand (done outside System), a Work for it was merged into `dev`, or one ended Satisfied. */
+const isDone = (item: Item, works: WorkRecord[]): boolean => item.done || works.some((r) => wasMerged(r) || r.state.result === 'satisfied')
+
+/**
+ * Why an Item of the repository's STATUS.md that is not done is Blocked (`cycle`, or the IDs it comes after that are not done), or
+ * undefined when it is Ready, done, or has no line. Derived from the records, never stored.
+ */
+export function itemBlockedBy(status: Pick<ParsedStatus, 'items'>, repository: string | undefined, records: WorkRecord[], id: string): 'cycle' | string[] | undefined {
+  const done = (other: string) => { const i = status.items.find((x) => x.id === other); return !!i && isDone(i, worksFor(records, { id: other, repository })) }
+  const item = status.items.find((i) => i.id === id)
+  return item && !done(id) ? blockedBy(status.items, item, done) : undefined
+}
+
 /**
  * One line per Item, as `[x] <id> <title> - <state>`: `done` (ticked in
  * STATUS.md, or a Work for it was merged into `dev` or ended Satisfied; with the last merged or
  * succeeded Work and its final Artifact, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
- * the Host holds for it, or why it is held; or a session's claim: who, since when) or `todo: nobody`. An Item only
+ * the Host holds for it, or why it is held; or a session's claim: who, since when) or `todo: nobody`; a `todo` Item that comes after Items not done (`(after: id, id)` in STATUS.md) reads `todo (blocked by <ids>)`, or `todo (blocked: cycle)`. An Item only
  * the Works name is shown as not in STATUS.md. Without `live`, no progress. A done Item whose last merged Work's merge commit `released` says is not in the running release reads `done, not yet released`.
  */
 export function itemLines(
@@ -215,13 +173,15 @@ export function itemLines(
     // Or a Work for it ended Satisfied: a test showed it already holds at the base (ro-15).
     const satisfied = works.filter((r) => r.state.result === 'satisfied')
     const claim = claims.find((c) => c.item === item.id && c.repository === repository)
-    const state = item.done || merged.length || satisfied.length ? 'done' : active.length || claim ? 'doing' : 'todo'
+    const state = isDone(item, works) ? 'done' : active.length || claim ? 'doing' : 'todo'
     if (filter.state && filter.state !== state) continue
+    const blocked = state === 'todo' ? itemBlockedBy(status, repository, records, item.id) : undefined
     const last = merged.at(-1) ?? satisfied.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const outside = works.reduce((n, r) => n + summarize(r).outsideFailures, 0)
     const text = state === 'done'
       ? `done${satisfied.length && !merged.length ? ', satisfied' : ''}${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, finalArtifactOf(last)].filter(Boolean).join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
-      : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}` : 'todo: nobody'
+      : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}`
+        : blocked ? `todo (${blockedText(blocked)})` : 'todo: nobody'
     lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }
   return lines

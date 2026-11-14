@@ -151,5 +151,5 @@ function continueHeld(options: ServeHostOptions): void {
     rmSync(file, { force: true })
   }
   const started = options.host.resume(works)
-  options.log(`continuing ${started.length} Works held for the upgrade${started.length < works.length ? ` (${works.length - started.length} not continued: finished or interrupted)` : ''}`)
+  options.log(`continuing ${started.length} Works held for the upgrade${started.length < works.length ? ` (${works.length - started.length} not continued: finished, interrupted or already running)` : ''}`)
 }

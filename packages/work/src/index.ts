@@ -14,7 +14,7 @@ import { git, pin, snapshot } from './git.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
-import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema, type GitTreeContent, type Task } from './kinds.ts'
+import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema, type GitTreeContent, type Task, type Verdict } from './kinds.ts'
 import type { Caller } from './record.ts'
 import { claimSchema, workRecordSchema } from './record.ts'
 import { Capabilities } from './registry.ts'
@@ -152,14 +152,17 @@ function specStore(artifacts: Artifacts): SpecStore {
         classification: 'local-private', producer,
       })).id
     },
-    async putVerdict(verdict) {
-      return (await artifacts.put({
-        ...VERDICT_KIND, content: verdict, inputs: [verdict.subject, verdict.criteria, ...verdict.evidence],
-        subject: { type: 'artifact', ref: verdict.subject },
-        classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
-      })).id
-    },
+    putVerdict: (verdict) => putVerdict(artifacts, verdict),
   }
+}
+
+/** Store a `verdict@1` Artifact bound to its subject, criteria and evidence; returns its ID. */
+export async function putVerdict(artifacts: Artifacts, verdict: Verdict): Promise<string> {
+  return (await artifacts.put({
+    ...VERDICT_KIND, content: verdict, inputs: [verdict.subject, verdict.criteria, ...verdict.evidence],
+    subject: { type: 'artifact', ref: verdict.subject },
+    classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
+  })).id
 }
 
 /** `$DSH_HOME`: the launcher's home resolver when present. */

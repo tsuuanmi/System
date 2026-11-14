@@ -32,6 +32,14 @@ import { execFile } from 'node:child_process'
 import type { Artifacts } from '@system/artifacts'
 import { GIT_TREE_KIND, git as runGit, pin, type EffectIntent, type EffectOutcome, type EffectPort, type GitTreeContent, type Reconciled } from '@system/work'
 
+/** What the merge queue's re-check says of a merge commit: `pass` merges, `hold` waits for an operator's Approval of that commit, anything else is refused. `verdicts` are the stored verdict Artifacts. */
+export interface MergeCheck {
+  verdict: 'pass' | 'hold' | 'fail' | 'error' | 'inconclusive'
+  reason: string
+  evidence: string[]
+  verdicts?: string[]
+}
+
 export interface PublishConfig {
   /** The git remote of the subject's repository to push to. */
   remote: string
@@ -49,7 +57,7 @@ export interface PublishDeps {
   token(): Promise<string | undefined>
   git?: typeof runGit
   /** Run the intent's required checks on a merge commit (a stored `git-tree@1`): needed for `merge: true`. */
-  check?(subject: string, intent: EffectIntent): Promise<{ verdict: string; reason: string; evidence: string[] }>
+  check?(subject: string, intent: EffectIntent): Promise<MergeCheck>
 }
 
 /** How many times the merge queue follows a base that keeps moving before it gives up. */
@@ -198,25 +206,47 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       })).id
       return { state: 'failed', rejected: kind, reason, detail: { repository: t.slug, branch: t.branch, commit: change, baseCommit: tip, base } }
     }
+    /** The commit of the approved merge Artifact, if it was made on `tip`. */
+    const approvedOn = (subject: string, tip: string): string | undefined => {
+      const read = artifacts.get(subject)
+      const content = read.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? read.envelope.content as { commit: string; parent?: string } : undefined
+      return content?.parent === tip ? content.commit : undefined
+    }
+    const named = (ids: string[]): Record<string, string> => (ids.length ? { verdicts: ids.join(',') } : {})
     for (let round = 0; round < MERGE_ROUNDS; round++) {
       const tip = await baseTip(t)
       if (!tip) return failed(`${config.base} does not exist on ${config.remote}`)
       if (await holds(t, change, tip)) return { state: 'applied', reason: `${config.base} already holds ${change}`, detail: { repository: t.slug, branch: t.branch, commit: change, merged: 'true', mergeCommit: tip } }
       let commit = change
       let checkedOn: string | undefined
+      let approvedMerge = false
+      let verdicts: string[] = []
       if (!(await holds(t, tip, change))) {
-        const merged = await mergeTree(t.tree.repository, tip, change)
-        if ('conflicts' in merged) return rejected('conflict', tip, `merge conflict with ${config.base} at ${tip.slice(0, 12)}: ${merged.conflicts.join(', ')}`)
-        commit = (await git(t.tree.repository, ['commit-tree', merged.tree, '-p', tip, '-p', change, '-m', `Merge ${t.branch} into ${config.base}`])).trim()
-        await pin(t.tree.repository, commit)
-        const subject = (await artifacts.put({
-          ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit, tree: merged.tree, parent: tip }, subject: { type: 'git-commit', ref: commit },
-          classification: 'local-private', producer: { type: 'system', ref: 'git.publish' },
-        })).id
-        if (!deps.check) return failed('the merge queue has no checks to run on the merge')
-        const checked = await deps.check(subject, intent)
-        if (checked.verdict !== 'pass') return rejected('merge-check', tip, `checks on the merge with ${config.base} at ${tip.slice(0, 12)}: ${checked.verdict}: ${checked.reason}`)
-        checkedOn = tip
+        // The merge commit an operator approved is pushed as it is while the base is still the tip it was made on; any other is checked.
+        const approved = intent.approvedMerge ? approvedOn(intent.approvedMerge, tip) : undefined
+        if (approved) {
+          commit = approved
+          approvedMerge = true
+        } else {
+          const merged = await mergeTree(t.tree.repository, tip, change)
+          if ('conflicts' in merged) return rejected('conflict', tip, `merge conflict with ${config.base} at ${tip.slice(0, 12)}: ${merged.conflicts.join(', ')}`)
+          commit = (await git(t.tree.repository, ['commit-tree', merged.tree, '-p', tip, '-p', change, '-m', `Merge ${t.branch} into ${config.base}`])).trim()
+          await pin(t.tree.repository, commit)
+          const subject = (await artifacts.put({
+            ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit, tree: merged.tree, parent: tip }, subject: { type: 'git-commit', ref: commit },
+            classification: 'local-private', producer: { type: 'system', ref: 'git.publish' },
+          })).id
+          if (!deps.check) return failed('the merge queue has no checks to run on the merge')
+          const checked = await deps.check(subject, intent)
+          verdicts = checked.verdicts ?? []
+          const why = `checks on the merge with ${config.base} at ${tip.slice(0, 12)}: ${checked.verdict}: ${checked.reason}`
+          if (checked.verdict === 'hold') return { ...failed(why), held: subject, detail: { ...failed(why).detail, mergeCommit: commit, ...named(verdicts) } }
+          if (checked.verdict !== 'pass') {
+            const refused = await rejected('merge-check', tip, why)
+            return { ...refused, detail: { ...refused.detail, ...named(verdicts) } }
+          }
+          checkedOn = tip
+        }
       }
       const { pull } = await publishBranch(t, intent, commit, open, true)
       open = pull
@@ -228,8 +258,8 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         continue
       }
       return {
-        state: 'applied', reason: `merged ${change} into ${config.base} as ${commit}${checkedOn ? `, checked on its merge with ${checkedOn.slice(0, 12)}` : ''}`,
-        detail: { ...detail(t, pull, false, commit), ...(checkedOn ? { checkedOn } : {}) },
+        state: 'applied', reason: `merged ${change} into ${config.base} as ${commit}${checkedOn ? `, checked on its merge with ${checkedOn.slice(0, 12)}` : ''}${approvedMerge ? ', approved by the operator' : ''}`,
+        detail: { ...detail(t, pull, false, commit), ...(checkedOn ? { checkedOn } : {}), ...named(verdicts) },
       }
     }
     return failed(`${config.base} kept moving during ${MERGE_ROUNDS} merges; run the step again`)

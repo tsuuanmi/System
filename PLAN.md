@@ -472,6 +472,40 @@ removed), Power by tier, a circuit breaker per Account, the canary, the
   the operator's open questions; a second Site; `digest`.
 
 
+## 3d. CM — Continuation and merge integrity (decided 2026-11-14)
+
+**Aim:** a Work goes on after its caller and the Host stop, re-dispatch is
+bounded, a merge is verified like any step, and Items can come after other
+Items; no new Goal engine, database, scheduler or dispatcher.
+
+Decisions (operator, 2026-11-14):
+- The Host carries Works on and never picks an Item (cm-7); STATUS.md holds
+  intent and state is derived from the Host's records.
+- Stall keeps its meaning (no timeout that aborts); a Claim never expires and
+  `force` is the only takeover.
+- Item dependencies are `(after: ...)` forming a DAG checked for cycles,
+  within one repository, ordered by line.
+- Three Outside failures in a row on a step hold the Work.
+- A changed verifier or an inconclusive verdict on the merge commit needs an
+  Approval of that commit.
+- The human/agent boundary is advisory within one OS user (cm-6); running
+  Workers as another user waits for the sandbox milestone, before unattended
+  dispatch grows.
+
+Evidence: the Research Works R1 work:dcf503df, R2 work:a79ce5e6, R3
+work:2385b245, R4 work:8f2a0baa, R5 work:c41b7810 and the synthesis
+work:d9c19b94 (cm-8).
+
+Budget: active core at most 4,290 lines (+10% on RO's 3,900, ADR-0010); docs
+under 4,285 lines at CM's close. cm-8: 4,456 (41 files) → 4,284 (42): the new
+note RES-0012 is 61 lines, so 233 lines left that other docs say elsewhere (RES-0009's
+method tables, which git keeps; PROP-0005's history and test lists, the runbook's
+night-session, web-account, upgrade and status text, left to the prompt, the
+READMEs, host.md and the tests that pin them). No fact was lost.
+
+Order: cm-1 then cm-2; cm-3, cm-4, cm-5 and cm-6 in parallel; then cm-7 and
+cm-8.
+
 ## 4. Future, not current gates
 
 - [ ] A session that System starts on a schedule, to drive Items unattended: now milestone SS (section 3c).

@@ -33,7 +33,7 @@ before(async () => {
   mkdirSync(join(home, 'system', 'codex', 'default'), { recursive: true })
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
   await cli.start()
-  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
+  assert.equal(cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake-token\n', terminal: true }).status, 0)
   await cli.start()
 })
 
@@ -66,9 +66,10 @@ test('system workers shows each account\'s capabilities and the model of each ti
 test('login, the remote viewer and recheck say the row is disabled', () => {
   writeFileSync(join(home, 'cookies.json'), '[]')
   for (const args of [['workers', 'login', 'web/chatgpt/default', '--cookies', join(home, 'cookies.json')], ['workers', 'login', 'web/chatgpt/default', '--remote'], ['workers', 'recheck', 'web/chatgpt/default']]) {
-    const ran = system(args)
+    // A human's commands: a pseudo-terminal, which merges stderr into stdout (ADR-0011).
+    const ran = cli.run(args, { terminal: true })
     assert.equal(ran.status, 1)
-    assert.match(ran.stderr, /the web-worker row is disabled/)
+    assert.match(ran.stdout, /the web-worker row is disabled/)
   }
 })
 

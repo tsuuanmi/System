@@ -258,7 +258,7 @@ test('merge needs no approval; ready still does', async () => {
 })
 
 /** A publisher whose merge queue checks a merge commit with `verdicts` in turn (pass when used up); what it checked is in `checked`. */
-function queue(artifacts: Artifacts, verdicts: { verdict: 'pass' | 'fail'; reason: string }[] = [], during?: () => void) {
+function queue(artifacts: Artifacts, verdicts: { verdict: 'pass' | 'fail' | 'hold'; reason: string; verdicts?: string[] }[] = [], during?: () => void) {
   const checked: { commit: string; parent?: string }[] = []
   const publisher = githubPublisher(artifacts, {
     token: async () => undefined,
@@ -363,6 +363,39 @@ test('merge: a conflict with the tip fails naming the files; a failed check on t
   assert.equal(unchecked.state, 'failed')
   assert.match(unchecked.reason, /no checks to run/)
   assert.equal(unchecked.rejected, undefined)
+})
+
+test('merge: a held check leaves main alone and names the merge commit; once that commit is approved it is pushed as it is, with no check again', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, remoteRef } = setup()
+  const first = await subjectOf(artifacts, work)
+  run('checkout', '--quiet', '--detach', 'HEAD~1')
+  writeFileSync(join(work, 'OTHER.md'), 'other\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'other')
+  const second = await subjectOf(artifacts, work)
+  // main moves on with the first change, so the second needs a merge.
+  const ahead = queue(artifacts)
+  assert.equal((await ahead.publisher.apply(intent(first, merging, 'work:1111-aaaa'))).state, 'applied')
+  const tip = remoteRef('main')
+  const verdict = 'sha256:' + 'b'.repeat(64)
+  const { publisher, checked } = queue(artifacts, [{ verdict: 'hold', reason: 'inconclusive: flaky', verdicts: [verdict] }])
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(second, merging))
+  assert.equal(held.state, 'failed')
+  assert.equal(held.rejected, undefined)
+  assert.ok(held.held, 'the outcome names the merge commit to approve')
+  assert.equal(held.detail.verdicts, verdict)
+  assert.equal(remoteRef('main'), tip)
+  const read = artifacts.get(held.held!)
+  assert.ok(read.state === 'stored')
+  const merge = (read.envelope.content as { commit: string }).commit
+  // Approved: the same merge commit goes in, and nothing is checked again.
+  const done = await publisher.apply({ ...intent(second, merging), approvedMerge: held.held })
+  assert.equal(done.state, 'applied', done.reason)
+  assert.equal(checked.length, 1)
+  assert.equal(remoteRef('main'), merge)
+  assert.equal(done.detail.mergeCommit, merge)
 })
 
 test('merge: main moving while the merge is checked is caught by the lease; the change is merged and checked again on the new tip', async () => {

@@ -94,7 +94,8 @@ test('on new code a supervised Host starts nothing new, finishes its attempt, ex
   } finally {
     after2.close()
   }
-  assert.match(logs.join('\n'), /continuing 2 Works held for the upgrade/)
+  // The start itself carried both on, so the drain list finds them already running.
+  assert.match(logs.join('\n'), /continuing 0 Works held for the upgrade \(2 not continued: finished, interrupted or already running\)/)
 
   await running.at(-1)!.stop()
   assert.equal(await supervised, 0, 'a stop is not restarted')

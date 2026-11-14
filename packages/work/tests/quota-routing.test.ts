@@ -356,3 +356,62 @@ test('a limited Account is free again at the reset its error text gives', async 
   assert.ok(Date.now() >= Date.parse(reset), 'the second attempt starts after the reset')
   assert.equal(dispatched(f.record()).length, 2)
 })
+
+// cm-2: the third Outside failure in a row on a step holds the Work instead of dispatching again.
+async function withLost(t: TestContext, lostAttempts: number) {
+  const f = await setup(t, [{ ref: 'P', quota: async () => reading(10) }])
+  const done = await f.run()
+  const [admitted] = done.events
+  const first = dispatched(done)[0]!
+  const events: WorkRecord['events'] = [admitted!]
+  for (let n = 0; n < lostAttempts; n++) {
+    const attemptId = `attempt:lost-${n}`
+    events.push({ ...first, seq: events.length, attemptId }, { type: 'attempt-lost', seq: events.length + 1, at: first.at, stepId: 'task', attemptId, reason: 'the host stopped before the attempt reported' })
+  }
+  f.table.rows.set(f.id, { ...done, events, state: fold(['task'], events) })
+  f.ran.length = 0
+  f.reopen()
+  return f
+}
+
+test('three attempt-lost in a row hold the Work instead of dispatching again', async (t) => {
+  const f = await withLost(t, 3)
+  const held = await f.run()
+  assert.equal(held.state.status, 'held')
+  assert.match(held.state.reason!, /^step task held after 3 Outside failures in a row \(last cause: restart\)/)
+  assert.deepEqual(f.ran, [], 'nothing was dispatched')
+  assert.equal(held.state.awaiting, 'task')
+  // Only a human goes on: an Approval runs it again.
+  const approved = await f.controller.decide(f.id, { caller, decision: 'approved', reason: 'the host is stable now' })
+  assert.equal(approved.state.status, 'succeeded')
+  assert.equal(f.ran.length, 1)
+})
+
+test('two attempt-lost do not hold: the step is dispatched again', async (t) => {
+  const f = await withLost(t, 2)
+  assert.equal((await f.run()).state.status, 'succeeded')
+  assert.equal(f.ran.length, 1)
+})
+
+test('three limited attempts in a row hold the Work', async (t) => {
+  const f = await setup(t, [{ ref: 'P', quota: async () => reading(10), run: async () => ({ status: 'failed', outputs: {}, reason: outOfCredits }) }])
+  const held = await f.run()
+  assert.equal(held.state.status, 'held')
+  assert.match(held.state.reason!, /^step task held after 3 Outside failures in a row \(last cause: quota\)/)
+  assert.equal(f.ran.length, 3)
+  assert.equal(observations(held).filter((e) => Reflect.get(e, 'limited') === true).length, 3)
+})
+
+test('two limited attempts then a finished one reset the count', async (t) => {
+  let n = 0
+  const f = await setup(t, [{ ref: 'P', quota: async () => reading(10), run: async () => (++n <= 2 ? { status: 'failed', outputs: {}, reason: outOfCredits } : undefined) }])
+  assert.equal((await f.run()).state.status, 'succeeded')
+})
+
+test('an old record with three lost attempts and no hold replays unchanged', async (t) => {
+  const f = await withLost(t, 3)
+  const before = structuredClone(f.record())
+  assert.equal(f.controller.replay(f.id).matches, true)
+  assert.deepEqual(f.record(), before)
+  assert.equal(f.record().state.status, 'running')
+})

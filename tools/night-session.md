@@ -48,8 +48,12 @@ wait, in step 6.
    That order is the order you work in. Read any `note:` lines and put them in
    the report.
 
-2. Take the first `todo` Item you have not taken or skipped this night (the
-   Item `<id>` below). Stop the repository when none is left, or the night
+2. Take the first Ready `todo` Item you have not taken or skipped this night
+   (the Item `<id>` below). A line that reads `todo (blocked by ...)` or
+   `todo (blocked: cycle)` is a Blocked Item: skip it without claiming it, say
+   in the report what blocks it, and do not `force` it. An Item that comes
+   after an Item you finish tonight is Ready only once that one is done, so
+   read the status again before taking it. Stop the repository when none is left, or the night
    when 6 Items are counted.
 
 3. Decide whether to skip it, before you claim anything:

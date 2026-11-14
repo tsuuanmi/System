@@ -44,7 +44,7 @@ before(async () => {
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
   // The Host reads its credentials when it starts: store the token, then start it again.
   await cli.start()
-  assert.equal(system(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], 'fake-token\n').status, 0)
+  assert.equal(cli.run(['credentials', 'set', 'CLAUDE_CODE_OAUTH_TOKEN'], { input: 'fake-token\n', terminal: true }).status, 0)
   await cli.start()
 })
 
