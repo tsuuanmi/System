@@ -6,8 +6,9 @@
  * answered from the record, also after a restart. On start, a Work with an
  * attempt that never reported has it marked `attempt-lost`. A Work whose lost
  * attempts are all Worker attempts confirmed gone (and with no effect left
- * unresolved) is run again by the Host itself; any other stays interrupted
- * until an explicit `run` or `retry`.
+ * unresolved) is run again by the Host itself, as is every unfinished Work that
+ * lost no attempt (it was waiting); any other stays interrupted until an
+ * explicit `run` or `retry`. A held Work keeps waiting for a human.
  */
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
@@ -93,17 +94,19 @@ export class Host {
     }
   }
 
-  /** Mark what the restart cut short, and return the Works to run again: all lost attempts are Worker attempts confirmed gone, no effect is unresolved. */
+  /** Mark what the restart cut short, and return the Works to run again: those that lost nothing, and those where all lost attempts are Worker attempts confirmed gone, no effect is unresolved. */
   private async recover(): Promise<string[]> {
     const lost = new Map<string, LostAttempt[]>()
     const effectsSettled = new Set<string>()
+    // Admitted and not finished, with nothing lost: the Host carries it on (a held Work is terminal and waits for a human).
+    const carried: string[] = []
     for (const record of this.controller.list()) {
       for (const receipt of record.receipts ?? []) {
         this.commands.set(receipt.commandId, { args: receipt.args, result: async () => this.controller.get(record.id), begun: Promise.resolve() })
       }
       if (TERMINAL.has(record.state.status)) continue
       const attempts = await this.lane(() => this.controller.interrupt(record.id))
-      if (!attempts.length) continue
+      if (!attempts.length) { carried.push(record.id); continue }
       this.lostAtStart.add(record.id)
       lost.set(record.id, attempts)
       const after = this.controller.get(record.id)
@@ -111,7 +114,7 @@ export class Host {
     }
     // Those whose process is already gone free their slot now; the rest stay held.
     const gone = new Set((await this.slots.settle()).map((a) => a.attemptId))
-    const again: string[] = []
+    const again: string[] = [...carried]
     for (const [id, attempts] of lost) {
       const record = this.controller.get(id)
       if (!record || TERMINAL.has(record.state.status) || !effectsSettled.has(id)) continue
