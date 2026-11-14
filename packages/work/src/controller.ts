@@ -63,6 +63,19 @@ export interface SpecStore {
   withNote(id: string, note: string, caller: Caller): Promise<string>
 }
 
+/** A verdict counts only for the exact subject and criteria asked about, with stored evidence; anything else is `error`. The merge queue's re-check binds with it too. */
+export function bindVerdict(result: VerifyResult, subject: string, criteria: string, exists: (id: string) => boolean): Pick<VerifyResult, 'verdict' | 'reason' | 'evidence'> {
+  const evidence = [...new Set(result.evidence ?? [])]
+  const problems: string[] = []
+  if (result.subject !== subject) problems.push(`it judged ${result.subject}, not the subject ${subject}`)
+  if (result.criteria !== criteria) problems.push(`it used criteria ${result.criteria}, not the pinned ${criteria}`)
+  const missing = evidence.filter((id) => !exists(id))
+  if (missing.length) problems.push(`its evidence ${missing.join(', ')} is not stored`)
+  if (result.verdict === 'pass' && !evidence.length) problems.push('a pass needs evidence')
+  if (problems.length) return { verdict: 'error', reason: `verdict refused: ${problems.join('; ')} (verifier said ${result.verdict}: ${result.reason})`, evidence: evidence.filter(exists) }
+  return { verdict: result.verdict, reason: result.reason, evidence }
+}
+
 /** How often a running attempt checks for a cancel request. */
 const CANCEL_POLL_MS = 250
 /** A step waiting on quota is tried again at the earliest reset, or at least this often (a reading may have changed). */
@@ -634,17 +647,23 @@ export class WorkController {
     const event = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === operationId)
     if (event?.type !== 'effect-intended') throw new WorkError(`no recorded intent for ${operationId}`)
     const step = this.specOf(record).steps.find((s) => s.id === event.stepId)
+    // The Approval of the merge commit last held counts only if given after the hold: an earlier one was for another commit.
+    const held = record.events.findLast((e) => e.type === 'effect-observed' && e.operationId === operationId && e.held)
+    const decided = held?.type === 'effect-observed' ? record.events.findLast((e) => e.type === 'decided' && e.stepId === event.stepId) : undefined
+    const approvedMerge = held?.type === 'effect-observed' && decided?.type === 'decided' && decided.decision === 'approved' && decided.seq > held.seq ? held.held : undefined
     return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [],
-      ...(step && isEffectStep(step) && step.effect.requires.some((id) => this.verdictOf(record, this.specOf(record), id) === 'inconclusive') && this.decisionOf(record, step.id) ? { acceptedInconclusive: true } : {}) }
+      ...(approvedMerge ? { approvedMerge } : {}) }
   }
 
   /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
-  private requiredOf(record: WorkRecord, s: Extract<Step, { effect: unknown }>): { capability: string; criteria: string }[] {
+  private requiredOf(record: WorkRecord, s: Extract<Step, { effect: unknown }>): NonNullable<EffectIntent['required']> {
     const spec = this.specOf(record)
+    const admitted = record.events[0]
+    const pinned = admitted?.type === 'admitted' ? admitted.verifiers : undefined
     return s.effect.requires.flatMap((id) => {
       const verify = spec.steps.find((t) => t.id === id)
       const criteria = record.state.criteria[id]
-      return verify && isVerifyStep(verify) && criteria ? [{ capability: verify.verify.capability, criteria }] : []
+      return verify && isVerifyStep(verify) && criteria ? [{ capability: verify.verify.capability, criteria, ...(pinned?.[id] ? { verifier: pinned[id] } : {}) }] : []
     })
   }
 
@@ -686,6 +705,11 @@ export class WorkController {
       const effect = after.state.effects[intent.operationId]!
       if (effect.state === 'absent') return this.finish(after, 'failed', `${intent.stepId} failed: ${applied.message}; the remote shows nothing published`)
       return after
+    }
+    if (applied.held) {
+      // Nothing was published: the merge commit awaits an operator's Approval, and the Work is held on this step.
+      const absent = await this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: 'absent', reason: applied.reason, detail: applied.detail, held: applied.held })
+      return this.finish(absent, 'held', `${intent.stepId}: merge commit ${applied.held} awaits operator approval: ${applied.reason}`, intent.stepId)
     }
     return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail, ...(applied.rejected ? { rejected: applied.rejected } : {}) })
   }
@@ -1073,17 +1097,8 @@ export class WorkController {
     })
   }
 
-  /** A verdict counts only for the exact subject and criteria asked about, with stored evidence; anything else is `error`. */
   private bind(result: VerifyResult, subject: string, criteria: string): Pick<VerifyResult, 'verdict' | 'reason' | 'evidence'> {
-    const evidence = [...new Set(result.evidence ?? [])]
-    const problems: string[] = []
-    if (result.subject !== subject) problems.push(`it judged ${result.subject}, not the subject ${subject}`)
-    if (result.criteria !== criteria) problems.push(`it used criteria ${result.criteria}, not the pinned ${criteria}`)
-    const missing = evidence.filter((id) => !this.specs.exists(id))
-    if (missing.length) problems.push(`its evidence ${missing.join(', ')} is not stored`)
-    if (result.verdict === 'pass' && !evidence.length) problems.push('a pass needs evidence')
-    if (problems.length) return { verdict: 'error', reason: `verdict refused: ${problems.join('; ')} (verifier said ${result.verdict}: ${result.reason})`, evidence: evidence.filter((id) => this.specs.exists(id)) }
-    return { verdict: result.verdict, reason: result.reason, evidence }
+    return bindVerdict(result, subject, criteria, (id) => this.specs.exists(id))
   }
 
   /** A verify step's verdict about an output that has since changed no longer counts. */
@@ -1184,7 +1199,6 @@ export class WorkController {
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
       workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params }, required: this.requiredOf(record, s),
-      ...(acceptedInconclusive ? { acceptedInconclusive: true } : {}),
     }
     const why = provider.approval(intent)
     if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id) }

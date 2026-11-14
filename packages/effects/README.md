@@ -51,10 +51,16 @@ The controller records `effect-intended` before `apply` and
   as it is. Any other is merged with the tip by `git merge-tree` (a conflict
   is `failed`, naming the files); the merge commit is pinned, stored as a
   `git-tree@1` and checked with the effect's `required` checks and their
-  pinned criteria (the `effects` row runs them through the verifier
-  registry); a verdict other than `pass` is `failed`, except an `inconclusive` one
-  the operator approved (df-25: the base fails the check too), which counts as a
-  pass. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
+  pinned criteria. The re-check is a verification like any other
+  (`mergeCheck`): it runs the verifier ref and version pinned at admission,
+  binds subject, criteria and evidence with the controller's `bindVerdict`
+  (a pass without stored evidence is refused) and stores a verdict Artifact
+  per check, named in `detail.verdicts`. A verdict other than `pass` or
+  `inconclusive` is `failed`. An `inconclusive` verdict, or a verifier version
+  that changed since admission, holds the Work (`held`: the merge commit, no
+  push) for an Approval of that commit; the approved commit is pushed as it
+  is (`approvedMerge`) while the base is still its parent, and an Approval
+  given for another commit counts for nothing. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
   exactly that commit by a push with a lease on the checked tip; if the base
   moved, the change is merged and checked again (three rounds at most). A
   conflict and a failing check on the merge return `rejected: 'conflict' |

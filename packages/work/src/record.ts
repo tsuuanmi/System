@@ -138,6 +138,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     detail: z.record(z.string(), z.string()).optional(),
     /** The remote observed a conflict with the base or a failing check on the merge (`EffectOutcome.rejected`); only such an outcome may reopen a step. */
     rejected: z.enum(['conflict', 'merge-check']).optional(),
+    /** The merge commit the provider held for an operator's Approval (`EffectOutcome.held`); recorded with state `absent`: nothing was published. */
+    held: contentIdSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('decided'), seq: z.number().int(), at, caller: storedCallerSchema,

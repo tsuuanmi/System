@@ -147,15 +147,17 @@ export interface EffectIntent {
   subject: string
   params: Record<string, string | number | boolean>
   /** The verify steps the effect requires, with their pinned criteria: what a provider runs again on a commit it makes, such as a merge. */
-  required?: { capability: string; criteria: string }[]
-  /** An operator approved an inconclusive verdict of a required check (the base fails it too): the provider's re-check accepts inconclusive. */
-  acceptedInconclusive?: boolean
+  required?: { capability: string; criteria: string; verifier?: { ref: string; version: string } }[]
+  /** The merge commit (a git-tree Artifact) an operator approved after the provider held it (`EffectOutcome.held`): that commit goes in without a re-check. An approval of another commit is none. */
+  approvedMerge?: string
 }
 
 export interface EffectOutcome {
   state: 'applied' | 'failed'
   /** Set only on a `failed` outcome the remote observed as a refusal that a new change on a newer base can fix; `detail.base` is then the git-tree Artifact of the base tip. Never set for an unknown outcome or other failures. */
   rejected?: 'conflict' | 'merge-check'
+  /** Set on a `failed` outcome that holds the Work: the merge commit (a git-tree Artifact) that needs an operator's Approval, because its re-check was inconclusive or its verifier changed since admission. Nothing was published. */
+  held?: string
   reason: string
   /** What the remote side now holds, such as a branch, commit and pull request. */
   detail: Record<string, string>

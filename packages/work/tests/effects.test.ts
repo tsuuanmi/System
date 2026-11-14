@@ -28,7 +28,7 @@ interface Remote {
   applies: number
 }
 
-type ScriptedOutcome = EffectOutcome & { rejected?: 'conflict' | 'merge-check' }
+type ScriptedOutcome = EffectOutcome
 
 interface Options {
   verdict?: VerifyResult['verdict']
@@ -138,7 +138,7 @@ test('an inconclusive verdict held before publish: approve publishes once and ac
   const done = await c.decide(held.id, { decision: 'approved', caller: human, reason: 'the base fails it too' })
   assert.equal(done.state.status, 'succeeded', done.state.reason)
   assert.equal(w.remote.applies, 1)
-  assert.equal(seen.at(-1)?.acceptedInconclusive, true)
+  assert.equal('acceptedInconclusive' in seen.at(-1)!, false, 'the re-check on a merge never inherits that approval')
   assert.match(done.state.reason!, /accepted by tan despite inconclusive checks\.checks/)
   assert.equal(c.replay(done.id).matches, true)
   const w2 = world()
@@ -148,6 +148,60 @@ test('an inconclusive verdict held before publish: approve publishes once and ac
   assert.equal(denied.state.status, 'failed')
   assert.match(denied.state.reason!, /publish denied by tan/)
   assert.equal(w2.remote.applies, 0)
+})
+
+test('a held merge check holds the Work for an Approval of that merge commit; an earlier approval does not carry over', async () => {
+  const w = world()
+  const seen: EffectIntent[] = []
+  let round = 0
+  const c = controller(w, {
+    apply: async (intent) => {
+      seen.push(intent)
+      round += 1
+      // The first two merge commits are held; an intent that carries the approval of the commit it names merges.
+      const commit = w.store(`merge/${round}`, 'git-tree')
+      if (intent.approvedMerge) { w.remote.applies += 1; return { state: 'applied', reason: `merged ${intent.approvedMerge}`, detail: { mergeCommit: intent.approvedMerge } as Record<string, string> } }
+      return { state: 'failed', reason: `checks on the merge: inconclusive: flaky`, held: commit, detail: { verdicts: id('verdict') } }
+    },
+  })
+  const first = await c.run((await admit(c, w)).id)
+  assert.equal(first.state.status, 'held')
+  assert.equal(first.state.awaiting, 'publish')
+  assert.match(first.state.reason!, /merge commit .* awaits operator approval: checks on the merge: inconclusive: flaky/)
+  const held = first.events.findLast((e) => e.type === 'effect-observed')
+  assert.ok(held?.type === 'effect-observed' && held.held)
+  assert.equal(held.state, 'absent')
+  assert.deepEqual(held.detail, { verdicts: id('verdict') })
+  assert.equal(seen[0]!.approvedMerge, undefined)
+  // Approved: the Work runs on; the commit approved is named in the next intent.
+  const done = await c.decide(first.id, { decision: 'approved', caller: human, reason: 'flaky, fine' })
+  assert.equal(done.state.status, 'succeeded', done.state.reason)
+  assert.equal(seen.at(-1)!.approvedMerge, held.held)
+  assert.equal(w.remote.applies, 1)
+  assert.equal(c.replay(done.id).matches, true)
+})
+
+test('an approval of one merge commit does not carry to the next held merge commit', async () => {
+  const w = world()
+  const seen: EffectIntent[] = []
+  let round = 0
+  const c = controller(w, {
+    apply: async (intent) => {
+      seen.push(intent)
+      round += 1
+      // Whatever was approved, the next merge commit is another one, and is held again.
+      return { state: 'failed', reason: 'inconclusive', held: w.store(`merge/${round}`, 'git-tree'), detail: {} }
+    },
+  })
+  const first = await c.run((await admit(c, w)).id)
+  const again = await c.decide(first.id, { decision: 'approved', caller: human, reason: 'first commit' })
+  assert.equal(again.state.status, 'held', again.state.reason)
+  assert.equal(again.state.awaiting, 'publish')
+  // The approval given before the second hold does not stand for it: the Work is held until a decision after it.
+  const held = again.events.findLast((e) => e.type === 'effect-observed')
+  assert.ok(held?.type === 'effect-observed' && held.held)
+  assert.notEqual(held.held, seen[0]!.approvedMerge)
+  assert.equal(seen.length, 2)
 })
 
 test('a host lost after the intent and before the effect: reconcile finds nothing, the effect is applied once', async () => {
@@ -312,7 +366,8 @@ test('an effect is told the checks it requires, with their pinned criteria, also
   await until(() => told.length === 1, 'the first apply')
   const criteria = w.rows.get(admitted.id)!.state.criteria
   // Only the verify step the publish requires: satisfied-check has criteria of its own, and the publish does not require it.
-  const required = [{ capability: 'code.required-checks', criteria: criteria['checks.checks']! }]
+  // The verifier and version pinned at admission travel with it.
+  const required = [{ capability: 'code.required-checks', criteria: criteria['checks.checks']!, verifier: { ref: 'checks', version: '1' } }]
   assert.ok(criteria['checks.checks'] && criteria['satisfied-check'])
   assert.deepEqual(told[0]!.required, required)
   const done = await controller(w, { apply: async (intent, remote) => { told.push(intent); remote.applies++; remote.published.set(intent.operationId, { branch: 'b', commit: intent.subject }); return { state: 'applied', reason: 'done', detail: {} } } }).run(admitted.id)
