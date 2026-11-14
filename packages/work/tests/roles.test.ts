@@ -83,12 +83,12 @@ test('research investigate prefers research.web, keeps required capabilities and
   assert.deepEqual(Reflect.get(step, 'retry'), { onFail: ['investigate'], max: 1 })
 })
 
-test('research investigate instructions state the bracket rule of citations-v2', () => {
+test('research investigate instructions state the bracket rule of citations-v3', () => {
   const spec = resolve(parseWorkflow(fixture('research.yaml')), everything, fixture)
   const text = String(Reflect.get(spec.steps.find((s) => s.id === 'investigate')!, 'instructions')).replace(/\s+/g, ' ')
   assert.match(text, /square brackets in the report are only for source ids such as \[s1\]/i)
   assert.match(text, /every \[id\] must be in "?sources"?/)
   assert.match(text, /every source must be cited at least once/)
   assert.match(text, /without square brackets/)
-  assert.match(text, /citations-v2/)
+  assert.match(text, /citations-v3/)
 })
