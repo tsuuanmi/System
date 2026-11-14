@@ -37,7 +37,7 @@ const named = (text: string) => [...new Set(text.match(/mcp__system__\w+/g) ?? [
 test('the night session prompt names the MCP tools of its sequence, and each exists and is open to agents', () => {
   const exists = new Set(tools.map((t) => claudeName(t.name)))
   const used = named(file)
-  for (const needed of ['item_claim', 'task_new', 'work_submit', 'work_show', 'work_report', 'work_list', 'status', 'artifact_put', 'artifact_show', 'artifact_cat'])
+  for (const needed of ['item_claim', 'task_new', 'work_submit', 'work_show', 'work_report', 'work_list', 'status', 'artifact_show', 'artifact_cat'])
     assert.ok(used.includes(`mcp__system__${needed}`), needed)
   for (const name of used) assert.ok(exists.has(name), `no such MCP tool: ${name}`)
 })
@@ -86,21 +86,16 @@ const reportSection = file.slice(file.indexOf('## The night report'))
 test('the night report is one Artifact with the required parts, read from work report', () => {
   const lines = systemLines(file)
   assert.match(reportSection, /mcp__system__work_report/)
-  assert.match(reportSection, /mcp__system__artifact_put/)
-  assert.match(reportSection, /text\/markdown/)
-  assert.match(reportSection, /base64/)
+  assert.doesNotMatch(reportSection, /artifact_put/)
+  assert.match(reportSection, /final answer/)
+  assert.match(reportSection, /Markdown/)
   for (const part of ['Works', 'Items done', 'Items skipped', 'no Item', 'Items you propose', 'For the operator', 'Account', 'cost'])
     assert.ok(reportSection.includes(part), `the report names: ${part}`)
   assert.match(reportSection, /system work approve <work>/)
   assert.doesNotMatch(reportSection, /ss-3 will say/)
 })
 
-test('the notifier is optional and comes from the environment, never a secret in the file', () => {
-  assert.match(reportSection, /SYSTEM_NIGHT_NOTIFY_URL/)
-  assert.match(reportSection, /SYSTEM_NIGHT_NOTIFY_COMMAND/)
-  assert.match(reportSection, /(none|neither|not set|unset)[^.]*(journal|output)/i)
-  assert.doesNotMatch(file, /https?:\/\/(?!claude\.com)\S*(ntfy\.sh|hooks\.)\S+/)
-  // every notifier line is guarded: it runs only when its variable is set
-  for (const line of file.split('\n').filter((l) => /curl .*NOTIFY|\$SYSTEM_NIGHT_NOTIFY_COMMAND/.test(l)))
-    assert.match(line, /\[ -n "\$\{?SYSTEM_NIGHT_NOTIFY_\w+(:-)?\}?" \]|\$\{SYSTEM_NIGHT_NOTIFY_\w+:\+/, line)
+test('the launcher, not the session, stores the report and runs the notifier', () => {
+  assert.match(reportSection, /launcher/)
+  assert.doesNotMatch(file, /NOTIFY|curl/)
 })

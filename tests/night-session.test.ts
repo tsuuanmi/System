@@ -1,7 +1,7 @@
 /**
  * ss-8: the scheduled session's sequence (tools/night-session.md) against a real Host with fake Workers:
  * claim, task_new, work_submit (which runs the Work and returns at once), `system work wait` in Bash
- * (exit 4 until the Work ends), work_report, artifact_put, for one Item. The tools are called as the
+ * (exit 4 until the Work ends), work_report, for one Item. The tools are called as the
  * prompt names them and must be in the service script's allowlist.
  */
 import assert from 'node:assert/strict'
@@ -55,7 +55,7 @@ async function tool(name: string, args: Record<string, unknown>): Promise<any> {
   return JSON.parse(text)
 }
 
-test('one Item: claim, task_new, work_submit, work wait (4 then 0), work_report, artifact_put', { timeout: 240_000 }, async () => {
+test('one Item: claim, task_new, work_submit, work wait (4 then 0), work_report', { timeout: 240_000 }, async () => {
   const project = realpathSync(mkdtempSync(join(home, 'project-')))
   const git = (...args: string[]) => execFileSync('git', ['-C', project, '-c', 'commit.gpgsign=false', '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
   git('init', '-q', '-b', 'dev')
@@ -94,11 +94,4 @@ test('one Item: claim, task_new, work_submit, work wait (4 then 0), work_report,
   const report = await tool('work_report', { workId: work })
   assert.ok(report && typeof report === 'object')
   assert.ok((await tool('work_list', {})).some((w: { id: string }) => w.id === work))
-
-  const text = `# Night report\n\n- ${work} n-1 succeeded, with \`backticks\` and $HOME\n`
-  const stored = await tool('artifact_put', { data: Buffer.from(text).toString('base64'), mediaType: 'text/markdown' })
-  assert.match(stored.id, /^sha256:/)
-  const back = await tool('artifact_cat', { id: stored.id })
-  assert.equal(Buffer.from(back.data, 'base64').toString('utf8'), text)
-  assert.equal(cli.run(['artifact', 'cat', stored.id]).stdout, text)
 })

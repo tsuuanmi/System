@@ -16,8 +16,7 @@ You call System through the **MCP tools of the `system` server**, named as
 Claude Code shows them: `mcp__system__status`, `mcp__system__item_claim`,
 `mcp__system__task_new`, `mcp__system__work_submit`, `mcp__system__work_show`,
 `mcp__system__work_report`, `mcp__system__work_list`,
-`mcp__system__artifact_put`, `mcp__system__artifact_show` and
-`mcp__system__artifact_cat`. Those are the only tools you have (besides the
+`mcp__system__artifact_show` and `mcp__system__artifact_cat`. Those are the only tools you have (besides the
 one Bash command below); a tool that is refused is not available to you, so do
 not look for another way. Text goes to a tool as its argument (the Task's
 instructions, the report), never through a shell string, so backticks and `$`
@@ -106,8 +105,10 @@ system work wait <work> --timeout 1.5
 ## The night report
 
 End with the report, always, even when you did nothing or stopped early. It is
-**one Artifact**: write it as Markdown, store it, and keep its ID. Plain
-sentences and a list, with IDs, nothing invented. For each Work you submitted
+**your final answer**, written as Markdown: the launcher that started you
+stores it as one Artifact and tells the operator, so you store and send
+nothing yourself. Plain sentences and a list, with IDs, nothing invented, and
+no text after the report. For each Work you submitted
 read its Account and cost with `mcp__system__work_report` (`workId`), and list
 the Works on the Host with `mcp__system__work_list`.
 
@@ -125,22 +126,3 @@ The report has these parts, in this order:
 - **Items you propose:** one line each, for the operator to write if they agree.
 - **For the operator:** the commands only they run, exactly:
   `system work approve <work>` for each held Work, and the release.
-
-Store it with `mcp__system__artifact_put`: `data` the report's text as base64,
-`mediaType` `text/markdown`. Its result is the envelope; print its `id`, alone
-on a line, as the last thing you print.
-
-Then tell the operator, if a notifier is configured. The operator's environment
-sets at most one of two variables (never write their value anywhere); each line
-runs only when its variable is set:
-
-```
-[ -n "${SYSTEM_NIGHT_NOTIFY_URL:-}" ] && curl -fsS -d "<report id>" "$SYSTEM_NIGHT_NOTIFY_URL"
-[ -n "${SYSTEM_NIGHT_NOTIFY_COMMAND:-}" ] && sh -c "$SYSTEM_NIGHT_NOTIFY_COMMAND" -- "<report id>"
-```
-
-`SYSTEM_NIGHT_NOTIFY_URL` is an ntfy-style URL (the ID is the POST body);
-`SYSTEM_NIGHT_NOTIFY_COMMAND` is a command that gets the ID as `$1`. When neither
-is set there is no notifier: the ID only goes to your output, which the timer
-sends to the journal. A notifier that fails, or that you are not allowed to run, is
-not a failure of the night: say so in your output and stop.
