@@ -114,8 +114,8 @@ export function formatBootstrap(results: BootstrapResult[]): string {
 export async function bootstrapMain(args: string[], out: (text: string) => void): Promise<number> {
   let run: (() => Promise<number>) | undefined
   const program = new Command('system').exitOverride()
-  program.command('bootstrap').description('check that a repository is ready for System')
-    .command('check')
+  const bootstrap = program.command('bootstrap').description('check that a repository is ready for System')
+  bootstrap.command('check')
     .description('read-only: origin on github.com, dev branch, checks file, false-green guard, STATUS.md, docs check; one line per item, non-zero exit if any fails')
     .option('--repo <path>', 'a git repository', '.')
     .action((options: { repo: string }) => {
@@ -123,6 +123,16 @@ export async function bootstrapMain(args: string[], out: (text: string) => void)
         const results = await bootstrapCheck(options.repo)
         out(formatBootstrap(results))
         return results.every((r) => r.problem === undefined) ? 0 : 1
+      }
+    })
+  bootstrap.command('plan')
+    .description('read-only: print the file plan, the check results, a draft .system/checks.yaml from the repository\'s workflows and the commands to run; writes nothing')
+    .option('--repo <path>', 'a git repository', '.')
+    .action((options: { repo: string }) => {
+      run = async () => {
+        const { bootstrapPlan } = await import('./bootstrap-plan.ts')
+        out((await bootstrapPlan(options.repo)).text)
+        return 0
       }
     })
   program.parse(args, { from: 'user' })

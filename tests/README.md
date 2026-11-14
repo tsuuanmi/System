@@ -14,6 +14,8 @@ nothing else.
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
 - [bootstrap-check.test.ts](bootstrap-check.test.ts) — bs-2: `system bootstrap check`
   through `bin/system` against a temporary git repository (no Host).
+- [bootstrap-plan-cmd.test.ts](bootstrap-plan-cmd.test.ts) — bs-3: `system bootstrap plan`
+  through `bin/system`; it prints the plan and writes nothing.
 - [night-session.test.ts](night-session.test.ts) — ss-8: the scheduled session's
   sequence (claim, task_new, work_submit, `work wait`, work_report)
   through `system mcp` against a real Host with fake Workers.
