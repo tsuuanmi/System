@@ -90,7 +90,7 @@ registration or in `accounts()`.
   A future reset at 100% is kept.
 - **Version gate:** only Claude Code 2.1.322 and Codex 0.166.0 are read; `--version` is
   asked first and nothing else is spawned for another version, which is `unreadable`
-  and names it. Checked on 2026-11-10 from the installed binaries and
+  and names it. A refused Claude version does not hide an attempt's event reading (see Cache). Checked on 2026-11-10 from the installed binaries and
   `codex app-server generate-ts`, **not on a live account**: Claude's `get_usage` and
   `control_response` envelopes, its `{ utilization, resets_at }` windows, and the
   `rate_limit_event` fields `status`, `resetsAt`, `rateLimitType` and `utilization`; Codex's
@@ -111,11 +111,12 @@ registration or in `accounts()`.
   dropped, and no window left means no reading.
   A readable cached reading takes an event's window and sets `observedAt`, without extending
   the expiry. When `get_usage` answers no plan limits (a `setup-token` token without the
-  profile scope, reason `no plan limits: …`), the Account's reading is the windows of its
-  latest attempt's events, with `source: 'rate_limit_event'` and `observedAt` at when the
-  attempt told them. It is kept past the 10-minute expiry and ages like any reading. An
-  Account with no attempt yet stays unreadable, and an event never replaces any other
-  unreadable reason (a network or version failure). A readable `get_usage` answer wins. The
+  profile scope, reason `no plan limits: …`) or its CLI version is not verified (reason
+  `… is not verified (verified: …)`), the Account's reading is the windows of its latest
+  attempt's events, with `source: 'rate_limit_event'` and `observedAt` at when the attempt told
+  them. It is kept past the 10-minute expiry and ages like any reading. An Account with no
+  attempt yet stays unreadable, and an event never replaces any other unreadable reason (a
+  network failure, a missing token). A readable `get_usage` answer wins. The
   event readings are in memory only, so after a Host restart an Account is unreadable until its
   next attempt.
 - **Source:** System 1, `/home/tan/workspaces/system-agents` commit `15e2bd5`:
@@ -131,7 +132,7 @@ event reading (see Cache), or `quota: unreadable - <reason>`.
 The reasons: `a web account has no quota reader`; `no plan limits: API key, third-party provider or no
 profile scope` (`get_usage` has no plan limits; a Claude Account may still have an event reading, see Cache);
 `the usage report of <label> <v> is not
-verified (verified: …)` (the CLI version is not one checked); `its token is not configured`;
+verified (verified: …)` (the CLI version is not one checked; a Claude Account with an event reading shows that reading instead, see Cache); `its token is not configured`;
 `its claudeHome <path> does not exist and could not be created` (the home is missing at
 read time, so the CLI is never spawned; the row creates it at registration, see Account
 identity); `not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
