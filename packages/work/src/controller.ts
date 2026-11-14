@@ -55,8 +55,8 @@ export interface SpecStore {
   kindOf(id: string): string | undefined
   /** The base commit of a stored `git-tree@1` Artifact whose tree is its base's own tree (a change that changes nothing); undefined otherwise. */
   unchangedBase(id: string): string | undefined
-  /** tr-1: the existing tests a stored `git-tree@1` change modified or deleted, computed from git against its base (parent); undefined for any other Artifact or a change without a base. */
-  changedTests?(id: string): Promise<ChangedTest[] | undefined>
+  /** tr-1: the existing tests a stored `git-tree@1` change modified or deleted, computed from git against the base of the Work's input Task `task` when it has one (whatever attempt produced the change), else against its own base (parent); undefined for any other Artifact or a change without a base. */
+  changedTests?(id: string, task?: string): Promise<ChangedTest[] | undefined>
   /** The commit of a stored `git-tree@1` Artifact (a change); undefined for any other Artifact. */
   commitOf?(id: string): string | undefined
   /** Store a `verdict@1` Artifact; returns its ID. */
@@ -1000,7 +1000,7 @@ export class WorkController {
     const changeId = status === 'succeeded' ? outputs[s.outputs[0] ?? ''] : undefined
     if (changeId && this.specs.changedTests) {
       try {
-        const files = await this.specs.changedTests(changeId)
+        const files = await this.specs.changedTests(changeId, this.require(workId).state.input)
         if (files?.length) changedTests = unchangedAfter ? this.changedTestsOf(this.require(workId), changeId) : withReasons(files, result.message)
       } catch { /* a list that cannot be read is never a failure of the step */ }
     }
