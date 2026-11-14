@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import type { Command } from 'commander'
 import { buildProgram, type ClientHost } from '../src/cli.ts'
+import { tools } from '../src/mcp.ts'
 
 const file = readFileSync(new URL('../../../tools/night-session.md', import.meta.url), 'utf8')
 const program = buildProgram({} as unknown as ClientHost, { out() {}, err() {} } as any, () => {})
@@ -20,13 +21,40 @@ function systemLines(text: string): string[] {
 
 test('the night session prompt shows the commands it drives', () => {
   const lines = systemLines(file)
-  for (const needed of ['system status', 'system claim', 'system task new', 'system work submit', 'system work wait', 'system work show', 'system artifact show'])
-    assert.ok(lines.some((l) => l.startsWith(needed)), needed)
+  // Only the wait runs in Bash: `work submit --no-run` would admit and never run, and a following `work submit` outlives a Bash call.
+  // `--timeout` is in minutes: 90 seconds, so one wait ends inside a Bash call (2 minutes by default).
+  const wait = lines.map((l) => /^system work wait \S+ --timeout (\S+)$/.exec(l)?.[1]).find(Boolean)
+  assert.ok(wait, 'waits with a timeout')
+  assert.ok(Number(wait) * 60 <= 100, `the wait of ${wait} minutes ends inside a Bash call`)
+  assert.ok(!lines.some((l) => /^system work submit\b/.test(l)), 'submits through the MCP tool')
+  assert.doesNotMatch(file, /--no-run/)
+})
+
+/** The MCP tool names as Claude Code shows them: `mcp__system__<tool with _ for .>`. */
+const claudeName = (tool: string) => `mcp__system__${tool.replace(/\./g, '_')}`
+const named = (text: string) => [...new Set(text.match(/mcp__system__\w+/g) ?? [])].sort()
+
+test('the night session prompt names the MCP tools of its sequence, and each exists and is open to agents', () => {
+  const exists = new Set(tools.map((t) => claudeName(t.name)))
+  const used = named(file)
+  for (const needed of ['item_claim', 'task_new', 'work_submit', 'work_show', 'work_report', 'work_list', 'status', 'artifact_put', 'artifact_show', 'artifact_cat'])
+    assert.ok(used.includes(`mcp__system__${needed}`), needed)
+  for (const name of used) assert.ok(exists.has(name), `no such MCP tool: ${name}`)
+})
+
+test('the night session prompt names no MCP tool that approves, denies, cancels, retries or releases', () => {
+  for (const name of named(file)) assert.doesNotMatch(name, /approv|deny|decide|cancel|retry|release|run$|replay|credentials|login/, name)
+})
+
+test('the prompt passes task text and the report as tool arguments or single-quoted files, never a backtick shell string', () => {
+  assert.doesNotMatch(file, /system task new/)
+  assert.doesNotMatch(file, /system artifact put/)
+  assert.doesNotMatch(file, /<<'?(TASK|REPORT)/)
 })
 
 test('every system command and option the night session prompt names exists in the CLI', () => {
   const lines = systemLines(file)
-  assert.ok(lines.length >= 6, 'the prompt shows its commands in code blocks')
+  assert.ok(lines.length >= 1, 'the prompt shows its commands in code blocks')
   for (const line of lines) {
     const words = line.split(/\s+/).slice(1)
     let command: Command = program
@@ -57,8 +85,10 @@ const reportSection = file.slice(file.indexOf('## The night report'))
 
 test('the night report is one Artifact with the required parts, read from work report', () => {
   const lines = systemLines(file)
-  assert.ok(lines.some((l) => l.startsWith('system work report')), 'reads Account and cost from work report')
-  assert.ok(lines.some((l) => /^system artifact put\s+\S+.*--media-type text\/markdown/.test(l)), 'stores the report as Markdown')
+  assert.match(reportSection, /mcp__system__work_report/)
+  assert.match(reportSection, /mcp__system__artifact_put/)
+  assert.match(reportSection, /text\/markdown/)
+  assert.match(reportSection, /base64/)
   for (const part of ['Works', 'Items done', 'Items skipped', 'no Item', 'Items you propose', 'For the operator', 'Account', 'cost'])
     assert.ok(reportSection.includes(part), `the report names: ${part}`)
   assert.match(reportSection, /system work approve <work>/)

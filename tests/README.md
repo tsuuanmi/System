@@ -12,6 +12,9 @@ home (so its Host lock and socket), its repositories and its ports, and shares
 nothing else.
 
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
+- [night-session.test.ts](night-session.test.ts) — ss-8: the scheduled session's
+  sequence (claim, task_new, work_submit, `work wait`, work_report, artifact_put)
+  through `system mcp` against a real Host with fake Workers.
 - [mcp-update.test.ts](mcp-update.test.ts) — one running `system mcp` calls
   tools across two atomic install-link switches and real Host upgrades.
 - [host-process.test.ts](host-process.test.ts) — H4a: `bin/system host` as a
