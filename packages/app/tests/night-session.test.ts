@@ -42,6 +42,11 @@ test('the night session prompt names the MCP tools of its sequence, and each exi
   for (const name of used) assert.ok(exists.has(name), `no such MCP tool: ${name}`)
 })
 
+test('the night session prompt skips a Blocked Item without claiming or forcing it', () => {
+  assert.match(file, /todo \(blocked by \.\.\.\)/)
+  assert.match(file, /Blocked Item: skip it without claiming it/)
+})
+
 test('the night session prompt names no MCP tool that approves, denies, cancels, retries or releases', () => {
   for (const name of named(file)) assert.doesNotMatch(name, /approv|deny|decide|cancel|retry|release|run$|replay|credentials|login/, name)
 })

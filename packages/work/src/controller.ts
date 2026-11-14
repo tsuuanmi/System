@@ -14,7 +14,7 @@ import { DEFAULT_LIMIT_MS, isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
-import { activeWork, itemNote, whoHas } from './status.ts'
+import { activeWork, blockedText, itemBlockedBy, itemNote, readStatus, whoHas } from './status.ts'
 import type { QuotaReading } from './headroom.ts'
 import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
@@ -310,6 +310,11 @@ export class WorkController {
     if (item && !admission.force) {
       const busy = activeWork(this.list(), item)
       if (busy) throw new WorkError(`Item ${item.id} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'}); to run another on purpose, give force (--force)`)
+    }
+    if (item?.repository && !admission.force) {
+      const status = await readStatus(item.repository).catch(() => undefined)
+      const why = status && itemBlockedBy(status, status.repository, this.list(), item.id)
+      if (why) throw new WorkError(`Item ${item.id} is ${blockedText(why)}; to run it on purpose, give force (--force)`)
     }
     // A Task that names an Item is read with the Item's status and its earlier Works added to its context.
     const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list(), this.specs.commitOf?.bind(this.specs)), admission.caller) : input

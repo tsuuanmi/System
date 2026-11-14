@@ -67,6 +67,16 @@ Work for the Item takes it over. It never expires: it ends only when taken
 over, by that Work or by another session that claims the Item anyway.
 _Avoid_: lock, lease, assignment
 
+**Ready**:
+An Item not yet done whose every Item it comes after is done; the Items a
+session may pick next.
+_Avoid_: available, unblocked, eligible
+
+**Blocked**:
+An Item not yet done that comes after an Item still not done. Read from the
+status list, never recorded.
+_Avoid_: waiting, held (a held Work awaits an Approval)
+
 **Task**:
 An immutable record of what to do: instructions, optionally the repository
 commit to start from, and Artifacts to read as context. A Task does not run;
