@@ -63,7 +63,8 @@ _Avoid_: task, ticket, issue, todo
 
 **Claim**:
 A session's notice that it drives an Item before any Work for it exists; a
-Work for the Item takes it over.
+Work for the Item takes it over. It never expires: it ends only when taken
+over, by that Work or by another session that claims the Item anyway.
 _Avoid_: lock, lease, assignment
 
 **Task**:
