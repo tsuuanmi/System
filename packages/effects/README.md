@@ -73,6 +73,15 @@ The controller records `effect-intended` before `apply` and
   `checkedOn` (the tip it was checked with). GitHub's merge endpoint is not
   used. A branch protection requiring pull requests refuses the push, which
   is `failed` with git's message.
+- **Build output (fl-8):** before any push, apply lists the files the change
+  adds to its base (`git diff --diff-filter=A`; the base is the change's
+  parent, else the merge base with the remote-tracking base branch). A
+  `__pycache__/` or `node_modules/` path, a `*.pyc`, a `.DS_Store`, or a path
+  that the base's own `.gitignore` files ignore (`git check-ignore --no-index`)
+  fails the change as `rejected: 'build-output'`, naming the files, with no
+  `detail.base`; nothing is pushed or opened. The step that lists the publish
+  step in `retry.onFail` is reopened with its previous change and the reason,
+  as for a failing check. This holds whatever the change's `.gitignore` says.
 - **Required checks (ADR-0008, clarified 2026-11-07):** System merges once its
   own verifier (`code.required-checks` over `.system/checks.yaml`) has passed
   on the exact commit it moves the base to. It does not wait for GitHub's CI.

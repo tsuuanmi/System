@@ -139,7 +139,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     state: z.enum(['applied', 'failed', 'absent', 'unknown']), reason: z.string(),
     detail: z.record(z.string(), z.string()).optional(),
     /** The remote observed a conflict with the base or a failing check on the merge (`EffectOutcome.rejected`); only such an outcome may reopen a step. */
-    rejected: z.enum(['conflict', 'merge-check']).optional(),
+    rejected: z.enum(['conflict', 'merge-check', 'build-output']).optional(),
     /** The merge commit the provider held for an operator's Approval (`EffectOutcome.held`); recorded with state `absent`: nothing was published. */
     held: contentIdSchema.optional(),
   }).strict(),

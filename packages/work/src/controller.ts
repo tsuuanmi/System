@@ -831,12 +831,12 @@ export class WorkController {
       if (record.state.steps[e.id]!.state !== 'failed') continue
       const observed = record.events.findLast((x) => x.type === 'effect-observed' && x.stepId === e.id)
       const base = observed?.type === 'effect-observed' ? observed.detail?.base : undefined
-      if (observed?.type !== 'effect-observed' || observed.state !== 'failed' || !observed.rejected || !base) continue
+      if (observed?.type !== 'effect-observed' || observed.state !== 'failed' || !observed.rejected || (!base && observed.rejected !== 'build-output')) continue
       const target = workers.findLast((s) => s.retry?.onFail.includes(e.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, e.id) < s.retry.max)
       const previous = target && record.state.steps[target.id]!.outputs[target.outputs[0]!]
       if (!target || !previous) continue
       const failure = await this.specs.putVerdict({ subject: previous, criteria: previous, capability: 'publish', verifier: { ref: `step:${e.id}`, version: '1' }, verdict: 'fail', reason: observed.reason, evidence: [] })
-      return this.append(record, { type: 'reopened', automatic: true, failedEffect: e.id, stepId: target.id, reason: `${e.id} failed: ${observed.reason}`, failure, previous, base, reset: [target.id, ...dependentsOf(spec, target.id)] })
+      return this.append(record, { type: 'reopened', automatic: true, failedEffect: e.id, stepId: target.id, reason: `${e.id} failed: ${observed.reason}`, failure, previous, ...(base ? { base } : {}), reset: [target.id, ...dependentsOf(spec, target.id)] })
     }
     for (const s of workers) {
       if (!s.retry?.onFail.includes(s.id) || record.state.steps[s.id]!.state !== 'failed' || autoReopens(s.id, s.id) >= s.retry.max) continue

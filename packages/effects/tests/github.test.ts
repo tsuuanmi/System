@@ -5,9 +5,9 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
@@ -481,4 +481,67 @@ test('the pull request body lists the changed tests with the Worker\'s reasons, 
   const other = setup('other\n')
   await publisher.apply({ ...intent(await subjectOf(artifacts, other.work)), changedTests: [] })
   assert.match((pulls[0] as unknown as { body: string }).body, /Changed tests: none/)
+})
+
+// fl-8: build and cache output is never published, whatever .gitignore says.
+function commitFiles(run: (...args: string[]) => string, work: string, files: Record<string, string>) {
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(work, path)), { recursive: true })
+    writeFileSync(join(work, path), text)
+  }
+  run('add', '-f', '.')
+  run('commit', '--quiet', '-m', 'more')
+}
+
+test('fl-8: a change adding tools/__pycache__/x.pyc is refused, names the file, publishes nothing and is not a rejection of the base', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, remoteRef } = setup()
+  commitFiles(run, work, { 'tools/__pycache__/docs.cpython-38.pyc': 'x', 'tools/docs.py': 'ok\n' })
+  const publisher = githubPublisher(artifacts, { token: async () => undefined }, config())
+  const outcome: EffectOutcome & { rejected?: string } = await publisher.apply(intent(await subjectOf(artifacts, work)))
+  assert.equal(outcome.state, 'failed')
+  assert.equal(outcome.rejected, 'build-output')
+  assert.match(outcome.reason, /tools\/__pycache__\/docs\.cpython-38\.pyc/)
+  assert.doesNotMatch(outcome.reason, /tools\/docs\.py/)
+  assert.equal(outcome.detail.base, undefined)
+  assert.equal(pulls.length, 0)
+  assert.throws(() => remoteRef('system/1111-aaaa'))
+})
+
+test('fl-8: other build and cache output is refused, also when merging', async () => {
+  for (const path of ['a.pyc', 'pkg/node_modules/x/index.js', 'docs/.DS_Store']) {
+    fresh()
+    const artifacts = store()
+    const { work, run } = setup()
+    commitFiles(run, work, { [path]: 'x' })
+    const publisher = githubPublisher(artifacts, { token: async () => undefined }, config({ mergeInto: ['main'] }))
+    const outcome: EffectOutcome & { rejected?: string } = await publisher.apply(intent(await subjectOf(artifacts, work), { merge: true }))
+    assert.equal(outcome.rejected, 'build-output', path)
+    assert.match(outcome.reason, new RegExp(path.replace(/\./g, '\\.')))
+  }
+})
+
+test('fl-8: a file the base\'s .gitignore ignores is refused; a file the change itself un-ignores is not trusted, a normal change publishes', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run } = setup()
+  writeFileSync(join(work, '.gitignore'), 'dist/\n*.log\n')
+  run('add', '.gitignore')
+  run('commit', '--quiet', '-m', 'ignore')
+  run('push', '--quiet', 'origin', 'main')
+  commitFiles(run, work, { 'dist/app.js': 'x', 'src/ok.ts': 'ok\n', 'build.log': 'x' })
+  const publisher = githubPublisher(artifacts, { token: async () => undefined }, config())
+  const outcome = await publisher.apply(intent(await subjectOf(artifacts, work)))
+  assert.equal(outcome.state, 'failed')
+  assert.match(outcome.reason, /dist\/app\.js/)
+  assert.match(outcome.reason, /build\.log/)
+  assert.doesNotMatch(outcome.reason, /src\/ok\.ts/)
+  // The same change without the ignored files publishes as before.
+  fresh()
+  run('reset', '--quiet', '--hard', 'HEAD~1')
+  commitFiles(run, work, { 'src/ok.ts': 'ok\n' })
+  const ok = await publisher.apply(intent(await subjectOf(artifacts, work), {}, 'work:5555-eeee'))
+  assert.equal(ok.state, 'applied', ok.reason)
+  assert.equal(pulls.length, 1)
 })

@@ -160,7 +160,7 @@ export interface EffectIntent {
 export interface EffectOutcome {
   state: 'applied' | 'failed'
   /** Set only on a `failed` outcome the remote observed as a refusal that a new change on a newer base can fix; `detail.base` is then the git-tree Artifact of the base tip. Never set for an unknown outcome or other failures. */
-  rejected?: 'conflict' | 'merge-check'
+  rejected?: 'conflict' | 'merge-check' | 'build-output'
   /** Set on a `failed` outcome that holds the Work: the merge commit (a git-tree Artifact) that needs an operator's Approval, because its re-check was inconclusive or its verifier changed since admission. Nothing was published. */
   held?: string
   reason: string
