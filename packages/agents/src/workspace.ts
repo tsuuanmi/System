@@ -20,7 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Artifacts, Envelope } from '@system/artifacts'
-import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, addWorktree, captureTree, pin, removeWorktree, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
+import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, addWorktree, captureTree, pin, removeWorktree, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
 
 export interface Workspace {
   root: string
@@ -112,7 +112,7 @@ async function writeContext(artifacts: Artifacts, ws: Workspace, name: string, e
 
 /** The slot captured from the working tree, if any. */
 function treeSlot(ws: Workspace, request: WorkerRequest): string | undefined {
-  return ws.base && request.capabilities.includes('code-write') ? request.outputs[0] : undefined
+  return ws.base && writesRepository(request.capabilities) ? request.outputs[0] : undefined
 }
 
 const CHECKS_LINE = 'Before you finish, run the checks in `.system/checks.yaml` whose `paths` match the files you changed, the way the verifier would run them, and fix your change until they pass. If a check cannot pass for a reason outside your change, say so in your final message.'
@@ -149,7 +149,7 @@ export function prompt(ws: Workspace, request: WorkerRequest): string {
     ] : []),
     '',
     'Do not read or change anything outside these directories unless the instructions require it.',
-    ...(request.capabilities.includes('code-write') ? [
+    ...(writesRepository(request.capabilities) ? [
       'Run each command in the foreground under `timeout` (for example `timeout 600 corepack pnpm test`) and wait for it; do not start background jobs or monitors.',
       ...(ws.base && existsSync(join(ws.work, '.system', 'checks.yaml')) ? [CHECKS_LINE] : []),
     ] : []),

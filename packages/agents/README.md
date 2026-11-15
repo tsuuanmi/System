@@ -41,6 +41,17 @@ the optional web-worker row) becomes a System Worker
       # A second account is another entry with its own ref and credential.
 ```
 
+### Abilities and grants
+
+A Runtime's **abilities** are declared in code (`RUNTIME_ABILITIES` in `src/runtimes.ts`), not in the profile: Claude Code `repo.read`,
+`repo.write`, `web.search`; Codex `repo.read`, `repo.write`; web `web.search`, `web.browse`. An Account's capabilities are its Runtime's
+abilities plus the Roles and Tiers its `capabilities:` and `models:` grant. `system workers` and `workers.list` show the two apart
+(`abilities:` and `capabilities:`).
+
+For one release the old names are aliases of the new, in one table (`CAPABILITY_ALIASES`, `packages/work/src/registry.ts`), read for a step's
+requirement and an Account's grant alike: `code-write` = `repo.write`, `web-search` = `web.search`, `research.web` = `web.browse`,
+`code.develop` = `develop.implement`. A Work pinned with the old names routes as before.
+
 ## Account identity
 
 At registration the row reads the provider's own account ID, without a model

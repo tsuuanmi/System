@@ -148,7 +148,7 @@ export function quotaLine(quota: QuotaReport, now: number): string {
 
 export interface WorkersView {
   registered: string[]
-  accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
+  accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
 /** What the thin client's commands run against: the Host, over its socket. */
@@ -282,6 +282,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}${identityOf(a)} (${a.runtime})\n`)
           // Their own lines, after the account's: tools/web-canary reads the line that ends in the runtime.
+          if (a.abilities?.length) io.out(`  abilities: ${a.abilities.join(', ')}\n`)
           if (a.capabilities?.length) io.out(`  capabilities: ${a.capabilities.join(', ')}\n`)
           const models = Object.entries(a.models ?? {})
           if (models.length) io.out(`  models: ${models.map(([tier, model]) => `${tier}=${model}`).join(', ')}\n`)
