@@ -96,14 +96,16 @@ export async function update({ install, cli, origin, run, write, exists, readlin
     log(`the Host runs ${commit.slice(0, 12)}`)
 
     // The `afterInstall` checks of this commit, run against the installed release (not the checkout).
+    const newCli = join(release, 'bin', 'system')
     const listed = (await git('show', `${commit}:.system/checks.yaml`)).stdout
     if (/^afterInstall:/m.test(listed)) {
       write(join(install, 'install-check.yaml'), INSTALL_CHECK_WORKFLOW)
       log(`verifying the install of ${commit.slice(0, 12)} with its afterInstall checks, as a System Work`)
-      const installed = await run(cli, ['work', 'submit', '--workflow', join(install, 'install-check.yaml'), '--input', task])
+      // The Host now runs the new release and refuses an older client, so these calls use the new release's client.
+      const installed = await run(process.execPath, [newCli, 'work', 'submit', '--workflow', join(install, 'install-check.yaml'), '--input', task])
       const installWork = installed.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
       if (installed.status !== 0) {
-        const shown = installWork.startsWith('work:') ? (await run(cli, ['work', 'show', installWork])).stdout : installed.stdout
+        const shown = installWork.startsWith('work:') ? (await run(process.execPath, [newCli, 'work', 'show', installWork])).stdout : installed.stdout
         const reason = /"reason":\s*"((?:[^"\\]|\\.)*)"/.exec(shown)?.[1] ?? lastLine(shown)
         switchLink(link, before)
         log(`the install checks of ${commit.slice(0, 12)} failed (${installWork}): ${reason}; switched back to ${before}, asking the Host to run it`)

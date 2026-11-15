@@ -6,7 +6,7 @@ const SHA = 'b'.repeat(40)
 const OLD = 'a'.repeat(40)
 
 /** A fake machine: a filesystem of paths and links, the commands run and their answers, the Host's probes. */
-function machine(options: { current?: string; checks?: number; build?: number; hostUp?: boolean; releases?: string[]; afterInstall?: boolean; installCheck?: number } = {}) {
+function machine(options: { current?: string; checks?: number; build?: number; hostUp?: boolean; releases?: string[]; afterInstall?: boolean; installCheck?: number; skew?: boolean } = {}) {
   const ran: string[] = []
   const links = new Map<string, string>(options.current ? [['/i/current', `releases/${options.current}`]] : [])
   const dirs = new Set<string>(['/i/repo', ...(options.releases ?? (options.current ? [options.current] : [])).map((r) => `/i/releases/${r}`)])
@@ -38,6 +38,11 @@ function machine(options: { current?: string; checks?: number; build?: number; h
       if (args.includes('show') && args.some((a) => a.endsWith(':checks.yaml') || a.includes('.system/checks.yaml'))) {
         return options.afterInstall ? { status: 0, stdout: 'checks:\n  - name: x\n    run: "true"\nafterInstall:\n  - name: answers\n    run: system ping\n' } : { status: 0, stdout: 'checks:\n  - name: x\n    run: "true"\n' }
       }
+      // Version skew: once the Host runs the new release, it refuses the old release's client (`cli`).
+      if (options.skew && links.get('/i/current') === `releases/${SHA}` && command === '/cli/bin/system' && args[0] === 'work') return { status: 1, stdout: 'the client is older: restart the client\n' }
+      // The first `node` on PATH is an old Node (below MIN_NODE) that fails; only process.execPath works.
+      if (command === 'node') return { status: 1, stdout: 'node: too old\n' }
+      if (command === process.execPath && args[0] === `/i/releases/${SHA}/bin/system`) { command = '/cli/bin/system'; args = args.slice(1) }
       if (args[0] === 'work' && args.some((a) => a.endsWith('install-check.yaml'))) return { status: options.installCheck ?? 0, stdout: 'work:installed\n' }
       if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:installed') return { status: 0, stdout: '{"reason": "failed: answers: no such command"}' }
       if (args[0] === 'work') return { status: options.checks ?? 0, stdout: 'work:checked\n' }
@@ -162,4 +167,20 @@ test('a failing afterInstall check switches back to the release before, names th
   assert.equal(m.links.get('/i/current'), `releases/${OLD}`)
   assert.ok(m.log.some((line) => line.includes('work:installed') && line.includes('failed: answers') && line.includes('switched back')))
   assert.ok(m.dirs.has(`/i/releases/${OLD}`))
+})
+
+test('the afterInstall Work is submitted with the new release\'s client, which the new Host accepts, and the release stays', async () => {
+  const m = machine({ current: OLD, afterInstall: true, skew: true })
+  assert.equal(await update(m.deps), 0)
+  assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
+  assert.ok(m.ran.some((line) => line.startsWith(`${process.execPath} /i/releases/${SHA}/bin/system work submit --workflow /i/install-check.yaml`)))
+  assert.ok(!m.ran.some((line) => line.startsWith('/cli/bin/system work submit --workflow /i/install-check.yaml')))
+  assert.ok(!m.ran.some((line) => line.startsWith('node ')))
+})
+
+test('a real afterInstall failure still switches back when the new release\'s client is used', async () => {
+  const m = machine({ current: OLD, afterInstall: true, skew: true, installCheck: 1 })
+  assert.equal(await update(m.deps), 1)
+  assert.equal(m.links.get('/i/current'), `releases/${OLD}`)
+  assert.ok(m.log.some((line) => line.includes('failed: answers')))
 })

@@ -108,4 +108,4 @@ test('a commit that cannot be checked out is error', async () => {
   assert.equal(result.verdict, 'error')
 })
 
-// Item fl-6b restores the test that this repository's .system/checks.yaml lists the five afterInstall checks, together with the block, after the release (Escaped defect 7).
+// Item fl-6b restores the test that this repository's .system/checks.yaml lists the five afterInstall checks, together with the block, after this release (Escaped defect 8).
