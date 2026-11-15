@@ -64,3 +64,37 @@ checks:
     run: corepack pnpm test:web
     timeoutSeconds: 600
     paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/headed.ts]
+
+# Item fl-6: what `system update` runs on the installed release (Item fl-5, `release.install-check`), one check per
+# user-visible surface that broke only on the install (2026-11-14/15). Each is read-only. The command runs in a
+# worktree of the release commit, with the install's `system` first on PATH, so `$PWD` is the release's repository
+# (a git checkout: only the install-time run has that path, never hard-code one) and `system` is the installed code.
+afterInstall:
+  - name: doctor
+    # Fact only the install has: the Host the install talks to is running the new release.
+    run: |
+      out=$(system doctor) || { printf '%s\n' "$out"; exit 1; }
+      printf '%s\n' "$out"
+      printf '%s\n' "$out" | grep -Eq '^ +host +answering:'
+    timeoutSeconds: 60
+  - name: workers
+    # At least one Worker (an account line at column 0, after the `registered:` line), and each is followed by an `abilities:` line.
+    run: |
+      out=$(system workers) || exit 1
+      printf '%s\n' "$out"
+      printf '%s\n' "$out" | awk '/^registered:/ { next } /^[^ ]/ { n++; if (n > 1 && !a) bad = 1; a = 0; next } /^  abilities:/ { a = 1 } END { if (n < 1 || bad || !a) exit 1 }'
+    timeoutSeconds: 60
+  - name: status
+    # A note about the ref read (`note: read <ref> ...`, its age) is fine; any other `note:` line reports a problem.
+    run: |
+      out=$(system status --repo "$PWD") || exit 1
+      printf '%s\n' "$out"
+      ! printf '%s\n' "$out" | grep '^note:' | grep -v '^note: read '
+    timeoutSeconds: 60
+  - name: bootstrap
+    run: system bootstrap check --repo "$PWD"
+    timeoutSeconds: 120
+  - name: mcp
+    # Starts the installed `system mcp` over stdio; tools/mcp-probe.mjs times out by itself.
+    run: node tools/mcp-probe.mjs --timeout 30 -- system mcp
+    timeoutSeconds: 60

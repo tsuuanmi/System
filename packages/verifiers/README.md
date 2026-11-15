@@ -23,7 +23,7 @@ accept. A verdict about a subject that has since been replaced counts as
 
 ## `release.install-check` (version 1)
 
-Item fl-5. Runs the `afterInstall` list of `.system/checks.yaml` at a release commit (criteria `install-check-v1`, pinned from that commit as `checks@1`) with the install's `current/bin` first on PATH, in a worktree of the commit. `pass` when every command exits 0, `fail` naming each failed check, `error` when the commit cannot be checked out; evidence is one `check-run@1` per command. Used by `system update` (bin/update.mjs), which writes the Workflow itself: no file under `workflows/` pins it (Q0).
+Item fl-5. Runs the `afterInstall` list of `.system/checks.yaml` at a release commit (criteria `install-check-v1`, pinned from that commit as `checks@1`) with the install's `current/bin` first on PATH, in a worktree of the commit. `pass` when every command exits 0, `fail` naming each failed check, `error` when the commit cannot be checked out; evidence is one `check-run@1` per command. Used by `system update` (bin/update.mjs), which writes the Workflow itself: no file under `workflows/` pins it (Q0). This repository's own list is Item fl-6 (doctor, workers, status, bootstrap, mcp; the last runs `tools/mcp-probe.mjs`).
 
 ## `code.required-checks` (version 1)
 
