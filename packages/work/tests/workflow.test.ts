@@ -430,3 +430,7 @@ test('a using step\'s `when` or `unless` applies to every step of its Sub-workfl
   const implement = spec.steps.find((s) => s.id === 'implement') as { outputs: string[]; optionalOutputs?: string[] }
   assert.deepEqual([implement.outputs, implement.optionalOutputs], [['change'], ['satisfied']])
 })
+
+test('code-checks.yaml pins repo-checks-v1: a release checked by the running Host cannot pin a criteria that release adds', () => {
+  assert.match(fixture('code-checks.yaml'), /criteria: repo-checks-v1\s*$/m)
+})
