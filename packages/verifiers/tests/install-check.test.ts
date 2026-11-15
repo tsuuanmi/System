@@ -117,4 +117,11 @@ test("this repository's own .system/checks.yaml lists the five afterInstall chec
     assert.doesNotMatch(check.run, /\/home\/|\/Users\//, `${check.name} hard-codes a path`)
   }
   assert.ok(parsed.checks.length >= 9, 'the checks list is unchanged')
+  // The install's repository fetches only main, so status and bootstrap refresh origin/dev first (Escaped defect, work:d37085f2).
+  for (const name of ['status', 'bootstrap']) {
+    const run = parsed.afterInstall?.find((c) => c.name === name)?.run ?? ''
+    const fetch = run.indexOf('git fetch -q origin dev:refs/remotes/origin/dev')
+    assert.ok(fetch >= 0, `${name} fetches dev`)
+    assert.ok(fetch < run.indexOf('system '), `${name} fetches dev before running system`)
+  }
 })

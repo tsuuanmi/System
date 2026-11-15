@@ -85,14 +85,18 @@ afterInstall:
       printf '%s\n' "$out" | awk '/^registered:/ { next } /^[^ ]/ { n++; if (n > 1 && !a) bad = 1; a = 0; next } /^  abilities:/ { a = 1 } END { if (n < 1 || bad || !a) exit 1 }'
     timeoutSeconds: 60
   - name: status
-    # A note about the ref read (`note: read <ref> ...`, its age) is fine; any other `note:` line reports a problem.
+    # The install's repository fetches only main, so refresh dev first. A note about the ref read (`note: read <ref> ...`, its age) is fine; any other `note:` line reports a problem.
     run: |
+      git fetch -q origin dev:refs/remotes/origin/dev || { echo 'cannot fetch origin dev into the install repository' >&2; exit 1; }
       out=$(system status --repo "$PWD") || exit 1
       printf '%s\n' "$out"
       ! printf '%s\n' "$out" | grep '^note:' | grep -v '^note: read '
     timeoutSeconds: 60
   - name: bootstrap
-    run: system bootstrap check --repo "$PWD"
+    # The install's repository fetches only main, so refresh dev first.
+    run: |
+      git fetch -q origin dev:refs/remotes/origin/dev || { echo 'cannot fetch origin dev into the install repository' >&2; exit 1; }
+      system bootstrap check --repo "$PWD"
     timeoutSeconds: 120
   - name: mcp
     # Starts the installed `system mcp` over stdio; tools/mcp-probe.mjs times out by itself.
