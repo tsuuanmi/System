@@ -488,9 +488,10 @@ export class Procedures {
   }
 
   /**
-   * The answer's code blocks. Labels pair with blocks by order; when their numbers differ (a snippet with no header among
-   * labelled ones) no label can be trusted, so every label is `''` and `labels` says how many the page showed: a block
-   * never fills an output by a name it was not shown with.
+   * The answer's code blocks, each with the label of its own header: the last label element before the block in the page's
+   * order with no other block between them. A snippet with no header (among labelled ones) gets `''`, and never fills an output
+   * by a name it was not shown with; the others keep their labels. `labels` (counts only) is recorded when the page showed
+   * a different number of labels than blocks.
    */
   private async blocksOf(container: Locator): Promise<{ blocks: Block[]; labels?: number }> {
     const { code, codeLabel } = this.map.answer
@@ -502,8 +503,20 @@ export class Procedures {
     })).catch(() => [] as string[]) : []
     if (!codeLabel) return { blocks: texts.map((text) => ({ label: '', code: text })) }
     const found = await this.engine.findIn(codeLabel, container).catch(() => undefined)
-    const labels = found ? await found.locator.evaluateAll((els) => els.map((el) => ((el as HTMLElement).innerText ?? '').trim().split('\n')[0]!.trim())).catch(() => [] as string[]) : []
-    if (labels.length !== texts.length) return { blocks: texts.map((text) => ({ label: '', code: text })), labels: labels.length }
-    return { blocks: texts.map((text, index) => ({ label: labels[index]!, code: text })) }
+    const labelEls = found ? await found.locator.elementHandles().catch(() => []) : []
+    const codeEls = codes ? await codes.locator.elementHandles().catch(() => []) : []
+    const labels = await container.page().evaluate(([labelNodes, codeNodes]) => {
+      const before = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+      return codeNodes.map((codeNode) => {
+        let label: Node | undefined
+        for (const node of labelNodes) if (before(node, codeNode) && (!label || before(label, node))) label = node
+        if (!label) return ''
+        const between = codeNodes.some((other) => other !== codeNode && before(label!, other) && before(other, codeNode))
+        return between ? '' : ((label as HTMLElement).innerText ?? '').trim().split('\n')[0]!.trim()
+      })
+    }, [labelEls, codeEls] as const).catch(() => texts.map(() => '')) as string[]
+    await Promise.all([...labelEls, ...codeEls].map((handle) => handle.dispose().catch(() => undefined)))
+    const same = labelEls.length === texts.length
+    return { blocks: texts.map((text, index) => ({ label: labels[index] ?? '', code: text })), ...(same ? {} : { labels: labelEls.length }) }
   }
 }

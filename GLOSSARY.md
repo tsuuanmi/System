@@ -46,8 +46,14 @@ A capability that selects how capable a model a Worker uses for a step:
 economy, standard or frontier.
 _Avoid_: model size, level
 
+**Ability**:
+A capability that says what an Account's Runtime can do, such as write to a
+repository checkout or browse a site; declared by the Runtime, not granted
+per Account.
+_Avoid_: permission, feature
+
 **Role**:
-A capability naming a step's part in a Workflow, given to one Account so
+A capability naming a step's part in a Workflow, given to one or more Accounts so
 that the step runs on that Account, such as the first Brainstorm proposal or
 the development of a code change (`code.develop`). A step's `prefer` names a role that ranks its Accounts first without requiring them, falling back to any other capable Account (ro-12).
 _Avoid_: persona, agent type

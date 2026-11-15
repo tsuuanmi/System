@@ -258,7 +258,7 @@ test('a Worker that disappears after admission fails the Work with a missing-cap
   const bare = new WorkController(h.table, h.specs, new Capabilities())
   const done = await bare.run(admitted.id)
   assert.equal(done.state.status, 'failed')
-  assert.match(done.state.reason!, /no enabled Worker provides research, web-search, tier.standard/)
+  assert.match(done.state.reason!, /no enabled Worker provides web.search, tier.standard/)
 })
 
 test('usage a Worker does not report is recorded as unknown, never zero', async () => {
@@ -274,7 +274,7 @@ test('routing records every candidate and why it was or was not chosen', async (
   const dispatched = done.events.find((e) => e.type === 'dispatched')
   assert.deepEqual(dispatched && 'candidates' in dispatched && dispatched.candidates, [
     { ref: 'fake', selected: true, reason: 'no quota reader' },
-    { ref: 'coder-only', selected: false, reason: 'lacks research, web-search, tier.standard' },
+    { ref: 'coder-only', selected: false, reason: 'lacks web.search, tier.standard' },
   ])
 })
 
@@ -317,7 +317,7 @@ test('a Work submitted for one Worker runs its Worker steps only there, and is r
   const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
   const base = { spec, input: await input(h), caller, source: { kind: 'workflow-file' as const } }
   await assert.rejects(() => h.controller.admit({ ...base, worker: 'nobody' }), /no enabled Worker nobody/)
-  await assert.rejects(() => h.controller.admit({ ...base, worker: 'plain' }), /plain does not provide research, web-search, tier.standard for step investigate/)
+  await assert.rejects(() => h.controller.admit({ ...base, worker: 'plain' }), /plain does not provide web.search, tier.standard for step investigate/)
   const admitted = await h.controller.admit({ ...base, worker: 'first' })
   assert.equal(admitted.events[0]!.type === 'admitted' && admitted.events[0]!.worker, 'first')
   const done = await h.controller.run(admitted.id)
@@ -466,6 +466,8 @@ test('the controller and Workflow compiler name no domain, Worker or verifier', 
   const src = join(repo, 'packages', 'work', 'src')
   for (const file of ['controller.ts', 'workflow.ts', 'record.ts', 'registry.ts']) {
     const code = readFileSync(join(src, file), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+      // The one table of old capability names (nm-1) is the only place they may be named.
+      .replace(/export const CAPABILITY_ALIASES[^{]*\{[^}]*\}/, '')
     assert.doesNotMatch(code, /research|software|engineering|citation|claude|codex|required-checks|code-write|git-tree/i, file)
   }
 })

@@ -285,7 +285,10 @@ export class UiEngine {
       seen = `${adding ? 'an attachment is still being added' : 'no attachment is being added'}; the composer holds ${composer.length} characters (header ${lineText(header).length}, header and body ${lineText(header + body).length}); ${added} new chip(s), ${named} named by the body's first ${start.length} characters`
       if (Date.now() >= end) break
     }
-    throw new ProviderError('ui_drift', `${this.map.provider}: attach text failed: ${/still being added/.test(seen) ? 'the attachment was still being added' : 'neither the text nor one named attachment was found'} after ${attachWaitMs} ms (${seen})`)
+    // The site's own failure (nm-4): say how much was pasted and what to change, counts only.
+    const kb = Math.max(1, Math.round(Buffer.byteLength(body) / 1024))
+    const stuck = /still being added/.test(seen)
+    throw new ProviderError('ui_drift', `${this.map.provider}: attach text failed: ${stuck ? 'the attachment was still being added' : 'neither the text nor one named attachment was found'} after ${attachWaitMs} ms (${seen}). The site did not finish taking an input of ${kb} KB as pasted text: ${stuck ? 'shorten the input, or raise timeouts.attach if the site is only slow' : 'shorten the input'}`)
   }
 
   /** Number of visible matches of a `many` element (or 0/1 for a `one` element). */

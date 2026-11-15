@@ -255,6 +255,17 @@ test('a chip that is not the body fails in the attach stage before the send, wit
   assert.ok(result.partial!.screenshot && result.partial!.snapshot)
 })
 
+// nm-4 (work:9dda9b91): the site kept "Adding pasted text" for a 44 KB input; that is the site's, and the reason says what to change.
+test('an input the site never finishes adding fails with its size and what to change, before the send', { skip, timeout: 60_000 }, async () => {
+  const big = `Notes:\n${Array.from({ length: 800 }, (_, i) => `note ${i}: the quick brown fox jumps over the lazy dog`).join('\n')}`
+  const { result, fake } = await run({ attachOver: 1000, attachAddingMs: 60_000 }, ['report'], { note: big, config: { timeouts: { load: 10, answer: 20, stable: 0.5, attach: 1.5 } } })
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /attach text failed: the attachment was still being added after 1500 ms/)
+  assert.match(result.reason!, /input of \d+ KB/)
+  assert.match(result.reason!, /shorten the input|timeouts\.attach/)
+  assert.equal(fake.sent.length, 0)
+})
+
 test('the prompt of a Task with no inputs, or small ones, stays one part', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result, fake } = await run({ attachOver: 1000 }, ['report'], { note: 'a short note' })
   assert.equal(result.status, 'succeeded', result.reason)
@@ -587,6 +598,15 @@ test('two rendered blocks with the label of an output are ambiguous: the attempt
   const { result } = await run({ answer: '```review\nfirst\n```\n\n```review\nsecond\n```', copied: () => '', codeWidget: true }, ['review'])
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /review.*ambiguous|ambiguous.*review/)
+})
+
+// nm-4: a research answer with a snippet the site shows with no header bar among its labelled blocks: the labels were dropped, so no output was found.
+test('a snippet with no header among the labelled blocks does not hide the outputs by name', { skip, timeout: 120_000 }, async () => {
+  const answer = ['Method.', '', '```', 'curl https://example.org', '```', '', '```report', 'the report', '```', '', '```sources', '[{"id":"s1"}]', '```'].join('\n')
+  const { artifacts, result } = await run({ answer, bareSnippets: true }, ['report', 'sources'])
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.equal(await text(artifacts, result.outputs.report!), 'the report')
+  assert.equal(await text(artifacts, result.outputs.sources!), '[{"id":"s1"}]')
 })
 
 // WW5c (live 2026-11-07): a tilde fence is closed only by tildes, so a review holding ```ts and ```json is one block, whole.

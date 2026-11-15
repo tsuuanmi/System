@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
-import { requestedTier, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
+import { requestedTier, writesRepository, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { quotaFromRateLimitEvent, type QuotaEvent, type QuotaReport } from './quota.ts'
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
@@ -148,7 +148,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     if (account.runtime === 'claude-code') {
       const token = await account.token?.()
       if (!token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
-      invocation = claudeInvocation(account.command, ws, text, token, model, request.capabilities.includes('code-write'))
+      invocation = claudeInvocation(account.command, ws, text, token, model, writesRepository(request.capabilities))
     } else {
       const home = join(ws.root, 'codex-home')
       mkdirSync(home, { mode: 0o700 })

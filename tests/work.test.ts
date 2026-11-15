@@ -94,7 +94,7 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   const workId = crashed.stdout.trim()
 
   // Edit the file mid-run: a capability no Worker has. Running Work must not notice.
-  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write, code.develop, tier.standard]', 'capabilities: [teleport]'))
+  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [repo.write, develop.implement, tier.standard]', 'capabilities: [teleport]'))
   // The new Host settles the lost attempt and dispatches it again by itself (sc-8): no `work run`.
   await host()
   const resumed = system(['work', 'wait', workId])
@@ -118,7 +118,7 @@ test('with the fakes row disabled by config, admission names the missing capabil
     await host()
     const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'research.yaml'), '--input', input])
     assert.equal(ran.status, 1)
-    assert.match(ran.stderr, /needs Worker capability research, which no enabled Worker provides/)
+    assert.match(ran.stderr, /needs Worker capability web.search, which no enabled Worker provides/)
     // The real `verifiers` row is on when the fakes are off, so the verifier is available.
     assert.doesNotMatch(ran.stderr, /needs verifier/)
   } finally {

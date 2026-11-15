@@ -18,7 +18,7 @@ import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import { activeWork, blockedText, itemBlockedBy, itemNote, readStatus, whoHas } from './status.ts'
 import type { QuotaReading } from './headroom.ts'
 import { withReasons, type ChangedTest } from './changed-tests.ts'
-import type { Capabilities, EffectIntent, EffectOutcome, EffectPort, Reconciled, VerifierPort, VerifyResult, WorkerPort, WorkerResult } from './registry.ts'
+import { hasCapability, type Capabilities, type EffectIntent, type EffectOutcome, type EffectPort, type Reconciled, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerResult } from './registry.ts'
 import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
@@ -282,7 +282,7 @@ export class WorkController {
     if (admission.worker) {
       if (!this.capabilities.workerRefs().includes(admission.worker)) throw new WorkError(`no enabled Worker ${admission.worker}; enabled: ${this.capabilities.workerRefs().join(', ') || 'none'}`)
       for (const s of admission.spec.steps.filter(isWorkerStep)) {
-        const missing = s.capabilities.filter((c) => !this.capabilities.workerFor(admission.worker!)!.capabilities.includes(c))
+        const missing = s.capabilities.filter((c) => !hasCapability(this.capabilities.workerFor(admission.worker!)!.capabilities, c))
         if (missing.length) throw new WorkError(`${admission.worker} does not provide ${s.capabilities.join(', ')} for step ${s.id} (lacks ${missing.join(', ')})`)
       }
     }
@@ -1023,7 +1023,7 @@ export class WorkController {
       ...(unchangedAfter ? { unchangedAfter } : {}),
       ...(changedTests?.length ? { changedTests } : {}),
       // An Account that no longer offers the step's capabilities left routing because of this failure: another may take it (ro-12).
-      ...(status === 'failed' && (result.retryable || s.capabilities.some((c) => !attempt.worker.capabilities.includes(c))) && !aborted ? { retryable: true as const } : {}),
+      ...(status === 'failed' && (result.retryable || s.capabilities.some((c) => !hasCapability(attempt.worker.capabilities, c))) && !aborted ? { retryable: true as const } : {}),
     })
   }
 

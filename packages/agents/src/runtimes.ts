@@ -7,6 +7,16 @@ import type { Workspace } from './workspace.ts'
 
 export type Runtime = 'claude-code' | 'codex'
 
+/**
+ * What each Runtime can do, declared here and not granted in the profile (nm-1): a Worker's capabilities are its Runtime's abilities plus the Roles and
+ * Tiers its profile entry grants. The `web` Runtime is the Website Worker's.
+ */
+export const RUNTIME_ABILITIES = {
+  'claude-code': ['repo.read', 'repo.write', 'web.search'],
+  codex: ['repo.read', 'repo.write'],
+  web: ['web.search', 'web.browse'],
+} as const satisfies Record<Runtime | 'web', readonly string[]>
+
 export interface Invocation {
   argv: string[]
   /** Exactly the variables the agent may see; everything else is removed. */

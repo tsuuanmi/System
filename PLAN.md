@@ -530,7 +530,7 @@ Order: tr-1, tr-2 and tr-3 in parallel, then tr-4, then tr-5 before tr-6; one re
 
 tr-5 (2026-11-14): `docs.py check` fails a prose line over 120 characters under docs/ (`DOC-LEN-001`; tables, fenced code, front matter, headings and URL-or-link-only lines excepted); the 42 documents were wrapped without changing words, and `docs.py sync` now wraps the generated index entries at 120. Docs lines before 4,270 (42 files), after 4,376 (42 files): over the 4,285 budget by 91, the true count, left to a hygiene pass. `tools/bootstrap_docs.py` copies `tools/docs.py`, so the portable checker is the same file.
 
-Escaped defects: 3 — tr-4 (work:c6bd714c) committed tools/__pycache__/docs.cpython-38.pyc; fixed by work:26223015 (.gitignore). tr-1 (work:c2c76de0) computed the changed tests against the attempt's start, not the Task's base, so reopened Works reported a wrong list (PR #268 'none', PR #264 a new file as modified); fixed by work:717ec1a2. bs-4 (work:8f0a9b94) added and pinned repo-checks-v2 in one release, so `system update` refused it (the running Host does not know v2); fixed by this change (pin v1 again, pin v2 a release later).
+Escaped defects: 4 — tr-4 (work:c6bd714c) committed tools/__pycache__/docs.cpython-38.pyc; fixed by work:26223015 (.gitignore). tr-1 (work:c2c76de0) computed the changed tests against the attempt's start, not the Task's base, so reopened Works reported a wrong list (PR #268 'none', PR #264 a new file as modified); fixed by work:717ec1a2. bs-4 (work:8f0a9b94) added and pinned repo-checks-v2 in one release, so `system update` refused it (the running Host does not know v2); fixed by this change (pin v1 again, pin v2 a release later). work:717ec1a2 added a test that removed its temporary repository before `git diff` finished (no await), failing nm-1's and nm-2's checks under load; fixed by this change.
 
 Close: all six merged, and the next 10 Items on the released code each have the changed-tests list, no Escaped defect, and no research Work failing on citation format.
 
@@ -561,6 +561,17 @@ State at the end of the overnight session (2026-11-15):
 - bs-6 tried on DNA (read-only): check passes, plan's draft matches DNA's gates but includes setup steps as checks (a candidate Item: skip install and toolchain steps). Before releasing bs-4 the session checked every repository enrolled on this machine (DNA, System, system-dogfood): each has a `docs` check with no `paths`, so no Work there can reach the zero-checks case.
 - Next milestone (unattended scale, PLAN 3e order) prepared, not decided: research work:e7246c75 (citations passed; report sha256:86dec262949d25179b26b60b4089ee33057b946649e1be1c620e359fd5ccc8f4) finds Workers run as the Host's OS user with no user or sandbox field in DSH's spawn path, favours a launcher around the existing argv (a dedicated Unix account through sudo or systemd-run, with systemd or bubblewrap hardening) over a new runtime, and lists nine decisions for the operator (git store, token delivery, network, scope, evidence).
 - Measures: active core 4,285 lines; docs 4,283 (42).
+
+## 3g. NM — Capability names (decided 2026-11-15)
+
+**Aim:** a capability's name says what kind it is, so a Workflow cannot be routed to an Account that lacks what the step needs; and the develop Worker reviews its own diff (nm-5).
+
+Decisions (operator, 2026-11-15):
+- Three kinds of capability for Workers: Ability (what a Runtime can do, declared by its adapter: `repo.read`, `repo.write`, `web.search`, `web.browse`), Role (`<workflow>.<part>`, granted in the profile) and Tier (`tier.*`, unchanged); Verifier and Effect capabilities keep their names.
+- Renames per the table of nm-1/nm-2; migration is expand then contract (aliases for one release, the operator edits the profile, a later release drops them).
+- The citation verifier stays as strict as it is: web research passed it 40 of 44 times and its failures were output plumbing, not strictness (nm-4).
+
+Order after NM: the unattended-scale spike with bubblewrap (decided 2026-11-15: same OS user because the shared server gives no root; $HOME hidden with an allow-list; a per-attempt clone with read-only alternates; network kept; CLI Workers only), then its Items; `repo-checks-v2` is pinned in a release after the one that added it (Q0).
 
 ## 4. Future, not current gates
 

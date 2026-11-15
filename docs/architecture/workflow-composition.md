@@ -92,7 +92,8 @@ change to a repository), [`workflows/hygiene.yaml`](../../workflows/hygiene.yaml
 only in capabilities, output slots, instructions and verifier; Brainstorm has
 none, and routes its two independent proposals to different providers through
 role capabilities (`brainstorm.idea-a`, `brainstorm.idea-b`) that the profile
-gives to one account each. Research's `investigate` uses the same kind of role in `prefer` (see
+gives to one account each. Research's `investigate` has `prefer: web.browse`, an
+[Ability](../../GLOSSARY.md) not a [Role](../../GLOSSARY.md) (see
 [workflows/README.md](../../workflows/README.md)). Since RES-0008 the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
 the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier

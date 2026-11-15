@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { findOldNames } from '../src/old-names.ts'
 import { ROWS, formatReport, runDoctor, type DoctorHost, type HostStatus, type StorageStatus } from '../src/doctor.ts'
 
 const okStorage: StorageStatus = { ok: true, backend: 'sqlite', detail: 'durable write and read back' }
@@ -62,4 +63,27 @@ test('the report says whether a Host answers; none answering does not fail it', 
   const down = await runDoctor(host([], okStorage, { answering: false, detail: 'the System Host is not running for /h: systemctl --user start system (or run: system host)' }))
   assert.equal(down.ok, true)
   assert.match(formatReport(down), /host\s+not answering: the System Host is not running for \/h/)
+})
+
+const profile = (text: string) => ({ ...host(), profileFiles: () => [{ file: '/home/p/profile.yml', text }] })
+
+test('a profile granting code.develop is listed with its new name and line', async () => {
+  const text = 'accounts:\n  - ref: a\n    capabilities: [code-write, code.develop, tier.standard]\n'
+  const report = await runDoctor(profile(text))
+  assert.equal(report.ok, true)
+  const out = formatReport(report)
+  assert.match(out, /code\.develop → develop\.implement/)
+  assert.match(out, /code-write → repo\.write/)
+  assert.match(out, /profile\.yml:3/)
+})
+
+test('a profile with only new names prints what it printed before', async () => {
+  const report = await runDoctor(profile('capabilities: [repo.write, develop.implement]\n'))
+  assert.equal(formatReport(report), formatReport(await runDoctor(host())))
+  assert.equal('oldCapabilities' in report, false)
+})
+
+test('findOldNames reads inline and block lists and ignores comments and other keys', () => {
+  const text = 'a:\n  capabilities:\n    - web-search\n    - repo.read # code-write\n  note: code-write\n  prefer: research.web\n'
+  assert.deepEqual(findOldNames(text, 'f').map((n) => [n.old, n.line]), [['web-search', 3], ['research.web', 6]])
 })

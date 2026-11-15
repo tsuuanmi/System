@@ -122,7 +122,7 @@ changed but the header line.
   whose label starts with the body's first characters with nothing adding; at the deadline
   anything else is `ui_drift` ("still being added", or "neither the text nor one named
   attachment"), in the stage `attach`, before the pre-send checks and the send, with counts
-  only. The Runtime records `text` or `attachment` and the chip count. Tests on the fake page: a paste
+  only and the size of the input with what to change (nm-4: the site, not System, did not finish taking it; an Outside failure). The Runtime records `text` or `attachment` and the chip count. Tests on the fake page: a paste
   over N characters becomes a chip after an adding state, or stays text; a wrong label and a chip
   still adding fail before the send (the Procedures' conformance suite and the Runtime's attempt
   tests drive Chrome, so they belong to `test:web`).

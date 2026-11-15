@@ -7,10 +7,10 @@
 # scouts and the plan leave it unchanged and write their report as a file.
 schema: system.workflow/v1
 id: hygiene
-version: 3
+version: 4
 steps:
   - id: scout-docs
-    capabilities: [code-write, tier.economy]
+    capabilities: [repo.write, tier.economy]
     inputs:
       task: $work.input
     outputs: [checkout, findings]
@@ -24,7 +24,7 @@ steps:
       lines, why, and the lines it would save. Most valuable first; at most 25.
       Say "none found" rather than invent any.
   - id: scout-code
-    capabilities: [code-write, tier.economy]
+    capabilities: [repo.write, tier.economy]
     inputs:
       task: $work.input
     outputs: [checkout, findings]
@@ -37,7 +37,7 @@ steps:
       files and lines, the proof, and the lines it would save. Most valuable
       first; at most 25. Say "none found" rather than invent any.
   - id: scout-tree
-    capabilities: [code-write, tier.economy]
+    capabilities: [repo.write, tier.economy]
     inputs:
       task: $work.input
     outputs: [checkout, findings]
@@ -52,7 +52,7 @@ steps:
       Say "none found" rather than invent any.
   - id: plan
     dependsOn: [scout-docs, scout-code, scout-tree]
-    capabilities: [code-write, code.develop]
+    capabilities: [repo.write, develop.implement]
     inputs:
       task: $work.input
       docs: $steps.scout-docs.findings
@@ -69,7 +69,7 @@ steps:
       valuable and list the rest as later.
   - id: implement
     dependsOn: [plan]
-    capabilities: [code-write, code.develop]
+    capabilities: [repo.write, develop.implement]
     inputs:
       task: $work.input
       plan: $steps.plan.plan

@@ -15,7 +15,7 @@ import { TIERS, systemPath, z, tierCapability, type Capabilities, type Tier } fr
 import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
 import { readClaudeAccountId, readCodexAccountId } from './identity.ts'
 import { createQuotaCache, probeClaudeQuota, readClaudeQuota, readCodexQuota, type QuotaCache, type QuotaReport } from './quota.ts'
-import type { Runtime } from './runtimes.ts'
+import { RUNTIME_ABILITIES, type Runtime } from './runtimes.ts'
 import { WEB_WORKER_DISABLED, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
 export * from './agent.ts'
@@ -104,6 +104,9 @@ export const REGISTERING = 'registering'
 export interface AccountStatus {
   ref: string
   runtime: AccountConfig['runtime']
+  /** What its Runtime can do (declared in code, `RUNTIME_ABILITIES`); empty for a runtime that is refused. */
+  abilities: string[]
+  /** What the profile grants it: Roles and Tiers. */
   capabilities: string[]
   /** The model of each configured tier (never a credential). */
   models: Partial<Record<Tier, string>>
@@ -205,7 +208,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const dispose: (() => void)[] = []
   // Every account is listed from the start, as registering: the Host serves while this loop is still going (WW6e).
   const entries = (config.accounts ?? []).map((account) => {
-    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, capabilities: account.capabilities, models: modelsOf(account.models), ...(account.label ? { label: account.label } : {}), ...(account.priority !== undefined ? { note: 'priority is ignored: routing goes by quota headroom' } : {}), available: false, reason: REGISTERING }
+    const status: AccountStatus = { ref: account.ref, runtime: account.runtime, abilities: [...(RUNTIME_ABILITIES as Record<string, readonly string[]>)[account.runtime] ?? []], capabilities: account.capabilities, models: modelsOf(account.models), ...(account.label ? { label: account.label } : {}), ...(account.priority !== undefined ? { note: 'priority is ignored: routing goes by quota headroom' } : {}), available: false, reason: REGISTERING }
     statuses.push(status)
     return { account, status }
   })
@@ -245,7 +248,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       let askVersion: () => Promise<string>
       if (account.runtime === 'web') {
         // The web-worker row checks the account, registers its Worker and owns its sign-in.
-        const registered = await webWorker!.register({ ...account, site: account.site!, capabilities: offered, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
+        const registered = await webWorker!.register({ ...account, site: account.site!, capabilities: offered, abilities: status.abilities, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
         status.command = registered.command
         status.capabilities = registered.capabilities ?? offered
         askVersion = registered.version
@@ -255,7 +258,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
         status.command = command
         askVersion = lazyVersion(subprocess, command)
-        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: offered, command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
+        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: [...new Set([...status.abilities, ...offered])], command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
         if (account.runtime === 'claude-code') {
           const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
           if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)

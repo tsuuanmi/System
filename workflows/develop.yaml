@@ -7,10 +7,10 @@
 # skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 5
+version: 7
 steps:
   - id: implement
-    capabilities: [code-write, code.develop, tier.standard]
+    capabilities: [repo.write, develop.implement, tier.standard]
     inputs:
       task: $work.input
     outputs: [change]
@@ -23,6 +23,16 @@ steps:
       every existing test that pins behaviour the change alters (search the
       tests for the names, messages and fields it changes). Run the
       repository's checks before you finish.
+
+      A bug fix starts with a test that reproduces the bug. Test the risky
+      cases your change touches when they apply: a reopened step, a Host
+      restart, a second repository. Refactor only code your change touches
+      (wider cleanups belong to hygiene.yaml). Add a compatibility layer only
+      when the Task asks for one, and name the Item that removes it.
+
+      Before finishing, read the whole diff: behaviour the Item did not ask to
+      change, stray files (build or cache output, such as __pycache__), and docs
+      that state a behaviour you changed (update them).
 
       When the Task names invariants to keep, do not edit or delete the tests
       that pin them. For every existing test file you modify or delete, give

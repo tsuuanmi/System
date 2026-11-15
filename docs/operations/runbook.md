@@ -128,11 +128,10 @@ So one account is changed, added or removed alone:
   config:
     accounts:
       - ref: codex/default                # change: only what is named
-        capabilities: [code-write, brainstorm.idea-b, research]
+        capabilities: [develop.implement, brainstorm.idea-b]
       - ref: web/chatgpt/second           # add
         runtime: web
         site: chatgpt
-        capabilities: [research]
       - ref: claude-code/default          # remove
         $patch: delete
 ```
@@ -228,10 +227,9 @@ the bundle's accounts, see above):
       - ref: web/chatgpt/default
         runtime: web
         site: chatgpt
-        capabilities: [research, web-search, research.web]
 ```
 
-Give a web account `research.web` so the research Workflow prefers it; without it the account is used like any other.
+The web Runtime declares `web.browse`, so the research Workflow prefers a web account over other capable accounts.
 
 The ref is `web/<site>/<name>` with `<site>` equal to the entry's `site`, which picks the shipped UI map and the Site's
 defaults (an unknown site is refused with the list of shipped sites: today `chatgpt`).

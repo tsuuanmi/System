@@ -77,7 +77,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const health = new AccountHealth(web.profileDir, account.ref, { log, settings: healthSettings })
     const version = lazyVersion(subprocess, command)
     const offered = [...new Set([...account.capabilities, ...offeredTiers(shippedMap())])]
-    const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: offered, command, version, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts))
+    const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: [...new Set([...(account.abilities ?? []), ...offered])], command, version, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts))
     const entry = { web, health }
     webs.set(account.ref, entry)
     const dispose = () => {
