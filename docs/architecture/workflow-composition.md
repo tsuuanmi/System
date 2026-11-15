@@ -72,15 +72,11 @@ becomes `checks.checks`). `inputs.input` is what the Sub-workflow reads as
 `$work.input` (default: the using Workflow's input), and `outputs` names the
 outputs the using Workflow reads as `$steps.<uses step>.<slot>`. A `dependsOn`
 on the using step means all its steps; `requires` names joined steps by their
-full ID. Refused: recursion (a Workflow ID already in the chain), more than
-three levels, a Sub-workflow with an accept step, a step ID with a `.`, more
-than 32 steps once joined. The resolved spec has no `uses` left, so the
-controller, replay, per-step retry, slots and budgets apply as written. The
-CLI sends each used file it finds beside the using file, with the Workflow; a
-file not sent (not beside it, or an MCP caller's) is read by the Host from
-`workflows/` at the input Task's base commit, else from the `workflows/` beside
-its own code. The CLI's `usedFiles` ([packages/app/src/remote.ts](../../packages/app/src/remote.ts))
-leaves the rest to the Host and does not read them itself.
+full ID. The compiler's refusals (recursion, depth, a Sub-workflow with an accept step, a `.` in a step ID, more than 32
+steps once joined) are in `workflow.ts`. The resolved spec has no `uses` left, so the
+controller, replay, per-step retry, slots and budgets apply as written. 
+The CLI sends the used files it finds beside the using file; the Host reads the rest
+([runbook](../operations/runbook.md#using-system-from-an-agent)).
 
 Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
 another schema version, duplicate steps, unknown or self dependencies, cycles

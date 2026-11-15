@@ -52,25 +52,16 @@ fallback.
    `research`, `brainstorm.idea-*` (by role) and `web-search`. It drives the
    page with `patchright-core` 1.63.0 (Apache-2.0, the version System 1 pins;
    W5 replaced `playwright-core`) on a Chrome chosen as in System 1
-   (`packages/web-worker/src/chrome.ts`): the configured `executablePath`, then
-   `CHROME_PATH`, then a system Chrome no older than the engine's Chromium,
-   then the pinned Chrome for Testing (`chrome.lock.json`), installed with
-   `@puppeteer/browsers` under `$DSH_HOME/system/browsers` the first time it is
+   (`packages/web-worker/src/chrome.ts`; the order is in the
+   [web-worker README](../../packages/web-worker/README.md)), installed under
+   `$DSH_HOME/system/browsers` the first time it is
    needed. It is launched per attempt on the persistent profile, with no
    ChatGPT-specific dependency. It runs in the Host: a
    browser is a long-lived resource the Host can keep between attempts.
    **Not enabled in the bundle**; the runbook says how to add it.
-   **Never headless** (operator, 2026-11-07). System always runs a real,
-   headed Chrome on an invisible display, a private Xvfb that it starts and
-   stops (`packages/web-worker/src/display.ts`). The option `headless` does not
-   exist, and an account that sets it is `unavailable`. The reason: a real
-   headed browser is closer to the operator's own and is challenged less. Each
-   attempt and each login uses the operator's `DISPLAY` when one is set, and
-   otherwise its own Xvfb, stopped with the attempt (on cancel and on the time
-   limit too). Other local users cannot reach it: it takes an X authority
-   cookie kept in a directory of mode 0700 and listens on no TCP port. Without
-   Xvfb on `PATH` the account is `unavailable` in `system workers`, with a
-   reason that names it.
+   **Never headless** (operator, 2026-11-07): a real, headed Chrome on the operator's `DISPLAY` or a private Xvfb
+   (`packages/web-worker/src/display.ts`), because it is closer to the operator's own and is challenged less. The option
+   `headless` does not exist, and an account that sets it is `unavailable`, as is one without Xvfb on `PATH`.
 2. **The session.** A dedicated browser profile under
    `$DSH_HOME/system/chatgpt-web/<account>/`, owner-only and outside any
    sync, is the Account's credential and, like a token, never reaches other
@@ -85,13 +76,11 @@ fallback.
    - `--remote`, for a machine with no display (the operator's, checked
      2026-11-07), which also lets the operator clear a Cloudflare challenge
      that the cookies did not carry (W2).
-   **The remote flow** (`packages/web-worker/src/remote-login.ts`, W9; a port of
-   System 1's remote login) shows the **whole screen** of a private Xvfb through
-   a VNC server and noVNC, reachable only through an owner-only unix socket and
-   a loopback listener under a random token, over an SSH tunnel the operator
-   opens; the operator signs in, clears any check by hand and presses **Save**.
-   The steps are in the [web-worker README](../../packages/web-worker/README.md).
-   System never solves or clicks a challenge; the human does, in the viewer.
+   **The remote flow** (`packages/web-worker/src/remote-login.ts`, W9; a port of System 1's remote login) shows the
+   whole screen of a private Xvfb through VNC and noVNC over an SSH tunnel the operator opens; the operator signs in,
+   clears any check by hand and presses **Save**. The steps are in the
+   [web-worker README](../../packages/web-worker/README.md).
+   System never solves or clicks a challenge.
    **Why VNC (reversed, W9).** W2's CDP screencast of one tab was refuted on
    2026-11-07 (blank restored tab, canvas not fitting, Turnstile looping on
    dispatched clicks). `x11vnc` has no unix-socket-only mode, so it runs once per
@@ -104,30 +93,12 @@ fallback.
       and the operator's history is not filled with Worker chats. System keeps
       the exchange as a `conversation@1`, whose manifest records whether the
       chat was temporary.
-   2. Send one prompt, built as for the CLI Workers: the step and Task
-      instructions, the inputs inlined as text with their names, and the
-      required outputs.
-   3. Wait for completion (the driver's): the newest turn's finished marker
-      appears and Stop is gone, then the text stays unchanged for `stable`
-      seconds.
-   4. Extract the answer as Markdown (the page's own Copy, checked against the
-      rendered words) and the cited links. Output
-      slots are filled from labelled blocks the prompt asks for (such as
-      `report` and `sources`), each as a line `~~~~<name>`, the output, a line
-      `~~~~` and nothing after the last (WW5c; a tilde fence is closed only by
-      tildes, so code fences inside never end it); a missing block fails the
-      attempt, as a missing file does today, and so does an answer that holds
-      more than `maxOutsideChars` (200) characters outside its blocks, since an
-      output may then be cut short. When the site shows the fences as paragraph
-      text and its Copy escapes the Markdown (`\~`, `https\://`; seen live
-      2026-11-08, WW5d), slots are read from the answer's rendered text by the
-      same rules; escaped Markdown never fills one.
-   5. The page logic is the Account option `procedures` (WW2-iii): `legacy`, System 1's
-      driver (default), or `generic`, the generic Procedures bound to the ChatGPT map,
-      so both can be compared on the real site before the legacy path goes. The
-      attempt around them is the same. `generic` reads no Markdown (the rendered
-      text and its labelled blocks only), reads no model, and fails a send it cannot
-      confirm as "send outcome unknown: not resent", never resending it.
+   2. Send one prompt, built as for the CLI Workers: the step and Task instructions, the inputs inlined as text with
+      their names, and the required outputs.
+   3. Wait for completion (the driver's: the finished marker, Stop gone, the text unchanged for `stable` seconds).
+   4. Extract the answer and the cited links into the output slots, filled from labelled blocks the prompt asks for; a
+      missing block fails the attempt, as a missing file does. The rules (fences, `maxOutsideChars`, rendered text)
+      are in the [web-worker README](../../packages/web-worker/README.md); its Procedures are the only page logic.
 4. **Provenance.** Each attempt also stores the exchange as a
    `conversation@1` (the contract is in [artifact verification](../architecture/artifact-verification.md)): the
    prompt and response as parts, the conversation URL, the model the driver
@@ -141,23 +112,15 @@ fallback.
    keeps a screenshot as partial output; it never hangs and never tries to get
    round a check. The page is System 1's: its UI map, UI engine and driver
    (item 7), not a selector table of this repository.
-6. **A genuine browser (W5, 2026-11-07).** A signed-in account was reported as
-   challenged, and Cloudflare Turnstile looped on another, because Playwright's
-   defaults advertised automation. W5 ports System 1's principle ("a genuine
-   browser, headed but invisible"): remove automation leaks only; no user-agent
-   override, no fingerprint spoofing, never solve a challenge. Before typing,
-   **Chat** is pressed and a composer whose label names Work is refused: Work
-   spends the Codex quota. The code is in the
-   [web-worker README](../../packages/web-worker/README.md).
-7. **System 1's driver, ported whole (W7, 2026-11-07; operator's decision).**
-   System 1 already works against chatgpt.com; W5 and W6 re-implemented parts
-   with a small selector table and met problems it had fixed (a stale send
-   selector, `?temporary-chat=true` aborted by the site, a false challenge).
-   `packages/web-driver` holds its UI engine, ChatGPT driver and UI map, each
-   file headed with its source path and commit, and its README lists every
-   difference. The Runtime only launches the browser, builds the prompt and
-   records the exchange. Self-heal is off (no decision store exists). Later
-   findings from live runs are decided in code and described in the
+6. **A genuine browser (W5, 2026-11-07).** Cloudflare challenged accounts because Playwright's defaults advertised
+   automation. W5 ports System 1's principle ("a genuine browser, headed but invisible"): remove automation leaks only,
+   no fingerprint spoofing, never solve a challenge. **Chat** is pressed before typing and a composer that names Work is
+   refused: Work spends the Codex quota. The code is in the [web-worker README](../../packages/web-worker/README.md).
+7. **System 1's driver, ported whole (W7, 2026-11-07; operator's decision).** W5 and W6 re-implemented parts with a
+   small selector table and met problems System 1 had fixed. `packages/web-driver` holds its UI engine, ChatGPT driver
+   and UI map, each file headed with its source path and commit; its README lists every difference. The Runtime only
+   launches the browser, builds the prompt and records the exchange. Self-heal is off (no decision store). Later
+   findings from live runs are in the
    [web-worker README](../../packages/web-worker/README.md); git has the history.
 
 ## Tests and what is still to verify

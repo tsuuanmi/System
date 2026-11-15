@@ -112,6 +112,8 @@ def run() -> int:
                         help="Destination repository root")
     parser.add_argument("--name", default=None,
                         help="Target project's display name")
+    parser.add_argument("--plan", action="store_true",
+                        help="Write nothing; print create/unchanged/conflict per file")
     args = parser.parse_args()
     output = args.out.expanduser().resolve()
     if output == ORIGIN:
@@ -131,6 +133,18 @@ def run() -> int:
             for path, body in scaffold(name).items()}
     for target, source in source_files.items():
         data[target] = (ORIGIN / source).read_bytes()
+
+    if args.plan:
+        for relative, contents in sorted(data.items()):
+            path = output / relative
+            if not path.exists():
+                state = "create"
+            elif path.is_file() and path.read_bytes() == contents:
+                state = "unchanged"
+            else:
+                state = "conflict"
+            print(f"{state} {relative}")
+        return 0
 
     created = []
     skipped = []

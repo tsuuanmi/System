@@ -115,7 +115,7 @@ export class WorkService {
   }
 }
 
-function specStore(artifacts: Artifacts): SpecStore {
+export function specStore(artifacts: Artifacts): SpecStore {
   artifacts.registerKind({ kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: resolvedSpecSchema })
   /** The stored Artifact `id`, if it is stored and (when given) of `kind`. */
   const stored = (id: string, kind?: string): Envelope | undefined => {
@@ -137,9 +137,14 @@ function specStore(artifacts: Artifacts): SpecStore {
       const tree = stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined
       return tree && tree.commit === tree.parent ? tree.commit : undefined
     },
-    async changedTests(id) {
+    async changedTests(id, taskId) {
       const tree = stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined
-      return tree?.parent ? changedTests(tree.repository, tree.parent, tree.commit) : undefined
+      if (!tree) return undefined
+      // tr-1: against the Task's base, whatever attempt produced the change; without one, the attempt's start.
+      const task = taskId ? (stored(taskId, TASK_KIND.kind)?.content as Task | undefined) : undefined
+      const taskBase = task?.base ? (stored(task.base, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined) : undefined
+      const from = taskBase?.repository === tree.repository ? taskBase.commit : tree.parent
+      return from ? changedTests(tree.repository, from, tree.commit) : undefined
     },
     commitOf: (id) => (stored(id, GIT_TREE_KIND.kind)?.content as GitTreeContent | undefined)?.commit,
     taskOf(id) {

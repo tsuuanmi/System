@@ -84,13 +84,14 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    asking, run \`system work wait <id>\` as a background command.
 
 Bootstrap of a new repository (you do this, there is no script)
-1. Check the GitHub remote.
-2. If AGENTS.md is missing, write it from section 9, "Repository profile and agent
+1. Run \`system bootstrap plan --repo <path>\` and do the human steps it prints.
+2. Ask the operator before creating \`dev\` from \`main\`.
+3. The first \`.system/checks.yaml\` is a direct commit on \`dev\` that the operator reviews: admission
+   refuses a Work without one.
+4. Write STATUS.md (Aim and Items) and commit it on \`dev\` before the push.
+5. Run \`system bootstrap check\` until it passes. If AGENTS.md is missing, write it from
+   section 9, "Repository profile and agent
    contract", of ~/.system/current/docs/governance/documentation-architecture.md.
-3. Ask the operator before creating \`dev\` from \`main\`.
-4. Write \`.system/checks.yaml\` from the repository's CI and commit it on
-   \`dev\`. This is the one direct commit, since there are no checks to pin yet.
-5. Create STATUS.md, with Aim and Items.
 
 Only a human approves, denies or verifies again. Never try to act as the
 human: print the exact command for the operator to run in a terminal, such as

@@ -6,7 +6,7 @@
 # capabilities, outputs, step instructions and verifier differ.
 schema: system.workflow/v1
 id: research-source
-version: 5
+version: 6
 steps:
   - id: investigate
     capabilities: [research, web-search, tier.standard]
@@ -32,13 +32,13 @@ steps:
       every [id] must be in "sources" and every source must be cited at least
       once. Write any other bracketed text (regexes, checkboxes, tags like
       verified or unknown) without square brackets, because the citation check
-      (citations-v2) reads every bracket as a source id.
+      (citations-v3) reads every bracket outside code as a source id.
   - id: citations
     dependsOn: [investigate]
     verify:
       capability: research.citation-check
       subject: $steps.investigate.sources
-      criteria: citations-v2
+      criteria: citations-v3
       inputs:
         report: $steps.investigate.report
   - id: accept

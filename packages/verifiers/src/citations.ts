@@ -19,6 +19,10 @@
  * agree (`completeness`), and a page that cannot be read (HTTP 4xx/5xx, a
  * fetch error) counts neither way: the ratio is over the readable sources, and
  * with none readable the verdict is `inconclusive`.
+ *
+ * `citations-v3` (verifier version 5): as v2, except that the completeness
+ * check ignores text inside inline code and fenced code blocks when it collects
+ * the report's `[id]`s. Quote matching is unchanged.
  */
 import { createHash } from 'node:crypto'
 import type { Artifacts } from '@system/artifacts'
@@ -121,14 +125,21 @@ export function looseMatch(page: string, quote: string, minWordMatch: number): {
   return { ratio: best.matched / q.length, passage: page.slice(words[best.from]!.start, words[best.to - 1]!.end).slice(0, MAX_PASSAGE) }
 }
 
-/** The `[id]`s a report cites: bracketed ids that are not the text of a Markdown link. */
-function citedIds(report: string): Set<string> {
-  return new Set([...report.matchAll(/\[([A-Za-z0-9][\w.-]*)\](?!\()/g)].map((m) => m[1]!))
+/** `report` without fenced code blocks (``` or ~~~, closed or running to the end) and inline code spans (a backtick run closed by a run of the same length). */
+export function stripCode(report: string): string {
+  return report
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm, ' ')
+    .replace(/(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, ' ')
+}
+
+/** The `[id]`s a report cites: bracketed ids that are not the text of a Markdown link; with `ignoreCode` (`citations-v3`) not those inside code. */
+function citedIds(report: string, ignoreCode: boolean): Set<string> {
+  return new Set([...(ignoreCode ? stripCode(report) : report).matchAll(/\[([A-Za-z0-9][\w.-]*)\](?!\()/g)].map((m) => m[1]!))
 }
 
 /** What is wrong between a report and its sources, naming the ids; the sources' claims count too. */
-export function completeness(report: string, sources: z.infer<typeof sourcesSchema>['sources']): string[] {
-  const cited = citedIds(report)
+export function completeness(report: string, sources: z.infer<typeof sourcesSchema>['sources'], ignoreCode = false): string[] {
+  const cited = citedIds(report, ignoreCode)
   const known = new Set(sources.map((x) => x.id))
   const problems: string[] = []
   const unknown = [...cited].filter((id) => !known.has(id))
@@ -160,11 +171,11 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
   const producer = { type: 'verifier' as const, ref: 'research.citation-check' }
   return {
     ref: 'research.citation-check',
-    version: '4',
+    version: '5',
     capabilities: ['research.citation-check'],
     accepts: ['file'],
     async criteria({ name }) {
-      return (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: { name, ...(name === 'citations-v2' ? V2_CRITERIA : DEFAULT_CRITERIA) }, classification: 'public', producer })).id
+      return (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: { name, ...(name === 'citations-v2' || name === 'citations-v3' ? V2_CRITERIA : DEFAULT_CRITERIA) }, classification: 'public', producer })).id
     },
     async verify(request): Promise<VerifyResult> {
       const criteriaRead = artifacts.get(request.criteria)
@@ -188,7 +199,7 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
       const reportId = request.inputs?.report
       if (parsed && loose !== undefined && reportId) {
         const read = await artifacts.readBytes(reportId).then((b) => Buffer.from(b).toString('utf8'), (error: Error) => { problems.push(`the report cannot be read: ${error.message}`); return undefined })
-        if (read !== undefined) problems.push(...completeness(read, parsed.sources))
+        if (read !== undefined) problems.push(...completeness(read, parsed.sources, criteria.name === 'citations-v3'))
       }
       if (parsed && !problems.length) {
         for (const source of parsed.sources) {

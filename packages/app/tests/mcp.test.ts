@@ -383,4 +383,8 @@ test('the bootstrap steps cite a section that exists in documentation-architectu
   const { INSTRUCTIONS } = await import('../src/mcp.ts')
   assert.doesNotMatch(INSTRUCTIONS, /Appendix B/)
   assert.match(INSTRUCTIONS, /section 9, "Repository profile and agent\s+contract"/)
+  assert.match(INSTRUCTIONS, /system bootstrap plan --repo <path>/)
+  assert.match(INSTRUCTIONS, /system bootstrap check/)
+  assert.match(INSTRUCTIONS, /STATUS\.md/)
+  assert.match(INSTRUCTIONS, /Only a human approves/)
 })

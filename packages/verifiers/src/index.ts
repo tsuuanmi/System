@@ -13,6 +13,7 @@ import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationChe
 
 export * from './checks.ts'
 export * from './citations.ts'
+export * from './draft-checks.ts'
 
 export const name = 'system-verifiers'
 export const inject = ['capabilities', 'artifacts', 'subprocess']

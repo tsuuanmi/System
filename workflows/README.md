@@ -35,10 +35,10 @@ a role; it is also what makes the working tree a step's output. See
   A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`, `prefer: research.web`, one `retry`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
-  `sources`, with the `report` as an input; criteria `citations-v2`) → `accept`. `investigate` goes to an Account that has the role
+  `sources`, with the `report` as an input; criteria `citations-v3`) → `accept`. `investigate` goes to an Account that has the role
   `research.web` (a `web` Account, given the role in the profile) and to any other capable Account
   when none can take it (unavailable, signed out, limited, no free slot, or its attempt failed and it
-  left routing); `prefer` ranks without requiring, so a Host with no such Account still runs it; version 5.
+  left routing); `prefer` ranks without requiring, so a Host with no such Account still runs it; version 6.
 - [research-source.yaml](research-source.yaml) — same steps, verifier and criteria as `research.yaml`, but `investigate` has no `prefer` and reads the Task's repository checkout, citing public repositories by pinned `raw.githubusercontent.com/<owner>/<repo>/<commit>/<path>` URLs. Use `research.yaml` for questions answered from the web, `research-source.yaml` for questions about a repository's source.
 - [brainstorm.yaml](brainstorm.yaml) — `idea-a` (`brainstorm.idea-a`) and
   `idea-b` (`brainstorm.idea-b`) each write a `proposal` from the brief alone,

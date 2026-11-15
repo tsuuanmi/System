@@ -61,13 +61,13 @@ columns are history, and the reasoning behind each is in [PLAN.md at
 | Host `recordBytes` | n/a | recorded | 11,308 for three Works (Software Engineering, Research and a direct Task, fake Workers) | not measured | not measured | not measured | not measured |
 | Tokens per Work | n/a | Fresh input, cache read, cache write, output, recorded per milestone; usage includes every turn of an attempt and, for Claude Code, subagents (`modelUsage`) and the CLI's own `costUsd`; USD figures are API-equivalent estimates, not what the subscription is billed | | not measured | not measured | not measured | not measured |
 
-|---|---|---|---|---|---|---|---|---|
-|---|---|---|---|---|---|---|---|
-| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); accepted at DF's close (operator, 2026-11-10) as DG's baseline. df-29: 3,606 → 3,599. The gap to DF9's 3,255 stays: those mechanisms are behaviour the tests pin, and a helper extracted from the verdict and dispatch code added more lines than it saved. Closing it means dropping one (operator decision: the `claim` command, about 60 lines, or the staleness note, per-source retry or slot wait in `live()`) | 3,882 (+6.8% on DG's 3,636, within +10%): routing by headroom (sc-4, +140), publish retry (sc-7), resume after restart (sc-8), re-runs (sc-9, sc-13); dg-11 gave back 36 | 3,953 → 3,941: dead `Artifacts.ofKind` and an orphan comment deleted. 59 above SC's 3,882: the rest is behaviour the tests pin; closing it needs the operator decision on the `claim` command (about 60 lines) | 3,982 → 3,900 (-82): `freeze` and the restore of frozen files, the objection reopen and `holdInconclusive` deleted | 4,183 (+7.3% on RO's 3,900, within +10%) |
-| All package source, lines | 11,062 | 11,366 | not measured | 11,191 | 12,191 | not measured | 14,491 → 14,317 (`.ts` and `.mjs` under `packages/*/src`; `red-v1` and `tests-frozen-v1` gone from verifiers) | 14,799 |
-| Tests, lines | 9,540 | 9,712 | not measured | 13,136 | 16,435 | not measured | 14,323 → 13,824 (`.ts` and `.mjs` under `packages/*/tests`) | 14,853 (`.ts` and `.mjs` under `packages/*/tests`) |
-| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) | 4,350 (39): over the 4,285 limit by 65; SC's decisions live in this PLAN, not a PROP | 4,373 → 4,283 (39), under the 4,285 limit: restated procedure left to its one home (host.md, bin/README, web-worker README, ADR-0007). ro-16: 4,296 → 4,283 (39), under the limit again: the runbook's following-a-Work, dev-branch and status text left to its homes (app README, effects README, ADR-0008) | 4,277 → 4,271 (39) | 4,270 (42): 73 lines over 200 characters: part of cm-8's and the salvage Work's reduction came from joining wrapped lines, so the line count understates growth |
-| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) | about 2 min 30 s on a quiet machine (docs 1 s, install 10 s, build 30 s, typecheck 10 s, unit 27 s, smoke 71 s); timeouts and flakes at loads of 200-460 | not measured | not measured (the unit run did not finish in this sandbox: Node 22, and one cancel test hangs before the change too) | about 3 min 20 s of check time (docs 1 s, install 11 s, build 32 s, typecheck 10 s, unit 43 s, smoke 92 s; web 6 min 40 s only when web files change) |
+| Measure | OC, after the pass (`a4862d7`) | CQ (`6d92315`) | DF9, hygiene pass (`f752e79` → change) | DF, before df-28 (`1029250`) | SC close (`3af21cf`, 2026-11-11) | RO, hygiene ro-6 (`6a68258` → change) | SS, ss-7 (`3b76769` → change) | CM close | TR release (`41cbfea`, 2026-11-14) |
+|---|---|---|---|---|---|---|---|---|---|
+| Active core, lines | 3,403 | 3,420 | 3,391 → 3,255 | 3,601 (+10.6% on DF9): each DF defect fixed by a mechanism (claim, red check, base re-run, wait); accepted at DF's close (operator, 2026-11-10) as DG's baseline. df-29: 3,606 → 3,599. The gap to DF9's 3,255 stays: those mechanisms are behaviour the tests pin, and a helper extracted from the verdict and dispatch code added more lines than it saved. Closing it means dropping one (operator decision: the `claim` command, about 60 lines, or the staleness note, per-source retry or slot wait in `live()`) | 3,882 (+6.8% on DG's 3,636, within +10%): routing by headroom (sc-4, +140), publish retry (sc-7), resume after restart (sc-8), re-runs (sc-9, sc-13); dg-11 gave back 36 | 3,953 → 3,941: dead `Artifacts.ofKind` and an orphan comment deleted. 59 above SC's 3,882: the rest is behaviour the tests pin; closing it needs the operator decision on the `claim` command (about 60 lines) | 3,982 → 3,900 (-82): `freeze` and the restore of frozen files, the objection reopen and `holdInconclusive` deleted | 4,183 (+7.3% on RO's 3,900, within +10%) | 4,280 (`packages/work/src` + `packages/artifacts/src` `.ts`) → 4,280: a docs-only pass |
+| All package source, lines | 11,062 | 11,366 | not measured | 11,191 | 12,191 | not measured | 14,491 → 14,317 (`.ts` and `.mjs` under `packages/*/src`; `red-v1` and `tests-frozen-v1` gone from verifiers) | 14,799 | not measured |
+| Tests, lines | 9,540 | 9,712 | not measured | 13,136 | 16,435 | not measured | 14,323 → 13,824 (`.ts` and `.mjs` under `packages/*/tests`) | 14,853 (`.ts` and `.mjs` under `packages/*/tests`) | not measured |
+| Docs under `docs/`, lines (files) | 4,821 (46) | 4,985 (48): over the 4,285 limit by the WW programme's documents | 5,417 (48) → 4,257 (39) | 4,311 (39): over the limit. df-29: 4,314 → 4,284 (39) | 4,350 (39): over the 4,285 limit by 65; SC's decisions live in this PLAN, not a PROP | 4,373 → 4,283 (39), under the 4,285 limit: restated procedure left to its one home (host.md, bin/README, web-worker README, ADR-0007). ro-16: 4,296 → 4,283 (39), under the limit again: the runbook's following-a-Work, dev-branch and status text left to its homes (app README, effects README, ADR-0008) | 4,277 → 4,271 (39) | 4,270 (42): 73 lines over 200 characters: part of cm-8's and the salvage Work's reduction came from joining wrapped lines, so the line count understates growth | 4,382 (42) before → 4,284 (42) after the hygiene pass (under the 4,285 budget) |
+| Required checks | 5 min 44 s at a load of about 270 | 4 min 45 s at a load of about 210; 4 min 20 s on a quiet machine, about 2 min 20 s without WW's three headed-browser test files | not measured | about 2 min (df-27: 6 checks, 124 s) | about 2 min 30 s on a quiet machine (docs 1 s, install 10 s, build 30 s, typecheck 10 s, unit 27 s, smoke 71 s); timeouts and flakes at loads of 200-460 | not measured | not measured (the unit run did not finish in this sandbox: Node 22, and one cancel test hangs before the change too) | about 3 min 20 s of check time (docs 1 s, install 11 s, build 32 s, typecheck 10 s, unit 43 s, smoke 92 s; web 6 min 40 s only when web files change) | not measured |
 
 Every milestone ends with a **simplification pass**. A System Work (Sonnet)
 proposes deletions and simplifications: dead code, unused abstractions,
@@ -530,9 +530,37 @@ Order: tr-1, tr-2 and tr-3 in parallel, then tr-4, then tr-5 before tr-6; one re
 
 tr-5 (2026-11-14): `docs.py check` fails a prose line over 120 characters under docs/ (`DOC-LEN-001`; tables, fenced code, front matter, headings and URL-or-link-only lines excepted); the 42 documents were wrapped without changing words, and `docs.py sync` now wraps the generated index entries at 120. Docs lines before 4,270 (42 files), after 4,376 (42 files): over the 4,285 budget by 91, the true count, left to a hygiene pass. `tools/bootstrap_docs.py` copies `tools/docs.py`, so the portable checker is the same file.
 
-Escaped defects: 1 — tr-4 (work:c6bd714c) committed tools/__pycache__/docs.cpython-38.pyc; fixed by this Work's change (.gitignore).
+Escaped defects: 2 — tr-4 (work:c6bd714c) committed tools/__pycache__/docs.cpython-38.pyc; fixed by work:26223015 (.gitignore). tr-1 (work:c2c76de0) computed the changed tests against the attempt's start, not the Task's base, so reopened Works reported a wrong list (PR #268 'none', PR #264 a new file as modified); fixed by work:717ec1a2.
 
 Close: all six merged, and the next 10 Items on the released code each have the changed-tests list, no Escaped defect, and no research Work failing on citation format.
+
+## 3f. BS — Bootstrap (decided 2026-11-15 by the overnight session)
+
+**Aim:** another repository can adopt System from a read-only plan and check, without a false green.
+
+How decided: by the overnight session of 2026-11-14/15 under the operator's standing order to continue from PLAN, taking the recommended answers of the proposal Artifact sha256:1e69a03b41a5fab080f45f552cddd3f848b838da80fd9afb87a8b9ed036de05a; the operator reviews them in the morning and may change them.
+
+Decisions:
+- Read-only first: `plan` and `check`; `apply`, which writes into another repository, waits.
+- The false green is stopped twice, by `bootstrap check` (bs-2) and by the verifier (bs-4).
+- The first checks file is only a draft System prints, committed by a human, because admission refuses a Work without one (research work:4806e133).
+- Several repositories on one Host are accepted under today's limits (GitHub `origin`, `dev`, one token).
+
+Left to the operator:
+- The role `research.source` in the profile so that research-source.yaml excludes web Accounts (tr-4 did not: work:9a798245 ran on web/chatgpt/second).
+- The first real repository for a trial (bs-6, not registered).
+
+Order: tr-7 and bs-1 in parallel, then bs-2, bs-4 beside it, then bs-3, then bs-5; these Items count toward TR's close (PLAN 3e).
+
+State at the end of the overnight session (2026-11-15):
+- Items: tr-7, bs-1, bs-2, bs-3, bs-4 and bs-5 merged into dev, each on its first Work (bs-1 and bs-5 had one reopened implement step each); 0 operator touches; API-equivalent cost about $2.2 for the six.
+- Tried by the operator's session on real repositories: `bootstrap check` passes on System itself and fails a repository whose checks are all limited to documentation paths ("guard: fail"); `bootstrap plan` writes nothing and drafts checks from plain `run:` steps.
+- BS release pull request #272 is green and waits for the operator to merge it (the session's merge was refused by its permission policy).
+- TR's close (3e) is not met: the window after TR's release found an Escaped defect (tr-1's changed-tests list against the attempt's start), so counting the next 10 Items starts again after the next release.
+- Still the operator's: the role `research.source` in the profile.
+- bs-6 tried on DNA (read-only): check passes, plan's draft matches DNA's gates but includes setup steps as checks (a candidate Item: skip install and toolchain steps). Before releasing bs-4 the session checked every repository enrolled on this machine (DNA, System, system-dogfood): each has a `docs` check with no `paths`, so no Work there can reach the zero-checks case.
+- Next milestone (unattended scale, PLAN 3e order) prepared, not decided: research work:e7246c75 (citations passed; report sha256:86dec262949d25179b26b60b4089ee33057b946649e1be1c620e359fd5ccc8f4) finds Workers run as the Host's OS user with no user or sandbox field in DSH's spawn path, favours a launcher around the existing argv (a dedicated Unix account through sudo or systemd-run, with systemd or bubblewrap hardening) over a new runtime, and lists nine decisions for the operator (git store, token delivery, network, scope, evidence).
+- Measures: active core 4,285 lines; docs 4,283 (42).
 
 ## 4. Future, not current gates
 

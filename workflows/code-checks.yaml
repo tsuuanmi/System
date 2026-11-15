@@ -14,4 +14,4 @@ steps:
     verify:
       capability: code.required-checks
       subject: $work.input
-      criteria: repo-checks-v1
+      criteria: repo-checks-v2

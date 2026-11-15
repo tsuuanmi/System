@@ -26,6 +26,8 @@ import { z } from 'zod'
 export const CHECKS_FILE = '.system/checks.yaml'
 /** The criteria names, pinned in the `checks@1` Artifact, and what each verdict means; any other name refuses admission. */
 export const REPO_CHECKS = 'repo-checks-v1'
+/** `repo-checks-v1` with one difference: a run where no check ran (every one filtered out by `paths`) is `inconclusive`, not `pass`. */
+export const REPO_CHECKS_V2 = 'repo-checks-v2'
 /**
  * The small mode (ro-15, Satisfied): the Task's base is not judged by the repository's checks but by exactly the tests the verify step's input
  * `tests` names (one `<test file> "<test name>"` per line), run with `node --test-name-pattern <file>` (the file itself, not `--test`, which counts the file as a test that passed) after the pinned setup checks named in `SETUP_CHECKS`.
@@ -33,7 +35,7 @@ export const REPO_CHECKS = 'repo-checks-v1'
  */
 export const SATISFIED_TESTS = 'satisfied-tests-v1'
 export const SETUP_CHECKS = ['install', 'build']
-export const CRITERIA_NAMES = [REPO_CHECKS, SATISFIED_TESTS] as const
+export const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, SATISFIED_TESTS] as const
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
@@ -48,6 +50,11 @@ export const checksFileSchema = z.object({
     red: z.enum(['pass', 'fail']).optional(),
   }).strict()).min(1).max(20),
 }).strict()
+/** The checks of a `.system/checks.yaml` text, or why the schema refuses it (`checks.yaml` as `bootstrap check` and admission both read it). */
+export function parseChecksFile(text: string): { checks: Checks['checks'] } | { problem: string } {
+  const parsed = checksFileSchema.safeParse(parse(text))
+  return parsed.success ? { checks: parsed.data.checks } : { problem: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }
+}
 export const checksSchema = z.object({
   name: z.string(),
   source: z.object({ repository: z.string(), commit: z.string(), path: z.literal(CHECKS_FILE) }).strict(),
@@ -176,9 +183,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       } catch {
         throw new Error(`no ${CHECKS_FILE} at commit ${base.commit} of ${base.repository}`)
       }
-      const parsed = checksFileSchema.safeParse(parse(text))
-      if (!parsed.success) throw new Error(`${CHECKS_FILE} at ${base.commit} is invalid: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
-      const content: Checks = { name, source: { repository: base.repository, commit: base.commit, path: CHECKS_FILE }, checks: parsed.data.checks }
+      const parsed = parseChecksFile(text)
+      if ('problem' in parsed) throw new Error(`${CHECKS_FILE} at ${base.commit} is invalid: ${parsed.problem}`)
+      const content: Checks = { name, source: { repository: base.repository, commit: base.commit, path: CHECKS_FILE }, checks: parsed.checks }
       return (await artifacts.put({ ...CHECKS_KIND, content, inputs: [task.base], classification: 'operator-shared', producer })).id
     },
     async verify(request): Promise<VerifyResult> {
@@ -354,6 +361,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       } finally {
         await removeWorktree(tree.repository, worktree)
         rmSync(scratch, { recursive: true, force: true })
+      }
+      if (checks.name === REPO_CHECKS_V2 && !ran.length) {
+        return verdict('inconclusive', `no check ran: every check in ${CHECKS_FILE} is limited by paths the change does not touch`, evidence)
       }
       const which = `run: ${ran.join(', ')}${skipped.length ? `; skipped: ${skipped.join(', ')}` : ''}`
       return failed.length

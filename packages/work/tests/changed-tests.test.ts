@@ -77,3 +77,54 @@ test('the Worker\'s reason is shown; a test without one shows "no reason given"'
   assert.equal(NO_REASON, 'no reason given')
   assert.deepEqual(withReasons(files.slice(0, 1), undefined), [{ path: 'tests/a.test.ts', change: 'modified', reason: 'no reason given' }])
 })
+
+/** tr-1 escaped defect: the list is against the Task's base, whatever attempt produced the change. */
+async function reopened(edit: (write: (path: string, text: string) => void) => void) {
+  const { Artifacts } = await import('@system/artifacts')
+  const { memoryBlobStore, memoryRecordTable } = await import('../../../test-support/memory.ts')
+  const { GIT_TREE_KIND, TASK_KIND, gitTreeSchema, taskSchema } = await import('../src/kinds.ts')
+  const { specStore } = await import('../src/index.ts')
+  const r = repo({ 'tests/old.test.ts': 'one\n', 'src/a.ts': 'x\n' }, (write) => write('README', 'r\n'))
+  const run = (...args: string[]) => execFileSync('git', ['-C', r.dir, ...args], { env, encoding: 'utf8' }).trim()
+  const write = (path: string, text: string) => { mkdirSync(dirname(join(r.dir, path)), { recursive: true }); writeFileSync(join(r.dir, path), text) }
+  const artifacts = new Artifacts(memoryRecordTable(), memoryBlobStore())
+  artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
+  artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
+  const producer = { type: 'operator' as const, ref: 'tan' }
+  const put = async (content: { repository: string; commit: string; tree: string; parent?: string }) =>
+    (await artifacts.put({ ...GIT_TREE_KIND, content, subject: { type: 'git-commit', ref: content.commit }, classification: 'local-private', producer })).id
+  const tree = (c: string) => run('rev-parse', `${c}^{tree}`)
+  const commit = (message: string) => { run('add', '--all'); run('commit', '--quiet', '-m', message); return run('rev-parse', 'HEAD') }
+  const repository = run('rev-parse', '--show-toplevel')
+  const base = await put({ repository, commit: r.base, tree: tree(r.base) })
+  const task = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'x', base }, inputs: [base], classification: 'local-private', producer })).id
+  // attempt 1 starts at the base; attempt 2 starts from attempt 1's change.
+  edit(write)
+  return { r, specs: specStore(artifacts), task, put, tree, repository, commit, write }
+}
+
+test('a reopened implement: a test modified in attempt 1 is listed though attempt 2 changed only source', async () => {
+  const x = await reopened(() => {})
+  try {
+    x.write('tests/old.test.ts', 'two\n')
+    const first = x.commit('attempt 1')
+    x.write('src/a.ts', 'y\n')
+    const second = x.commit('attempt 2')
+    const change = await x.put({ repository: x.repository, commit: second, tree: x.tree(second), parent: first })
+    assert.deepEqual(await x.specs.changedTests!(change, x.task), [{ path: 'tests/old.test.ts', change: 'modified' }])
+    assert.deepEqual(await x.specs.changedTests!(change), [], 'without a Task, the attempt\'s start, as before')
+  } finally { x.r.done() }
+})
+
+test('a test created in attempt 1 and edited in attempt 2 is not listed: it did not exist at the Task\'s base', async () => {
+  const x = await reopened(() => {})
+  try {
+    x.write('tests/new.test.ts', 'one\n')
+    const first = x.commit('attempt 1')
+    x.write('tests/new.test.ts', 'two\n')
+    const second = x.commit('attempt 2')
+    const change = await x.put({ repository: x.repository, commit: second, tree: x.tree(second), parent: first })
+    assert.deepEqual(await x.specs.changedTests!(change, x.task), [])
+    assert.deepEqual(await x.specs.changedTests!(change), [{ path: 'tests/new.test.ts', change: 'modified' }], 'the attempt-start list is the defect')
+  } finally { x.r.done() }
+})
