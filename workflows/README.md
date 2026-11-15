@@ -32,6 +32,7 @@ a role; it is also what makes the working tree a step's output. See
   on the input change, criteria pinned from its base). A Sub-workflow of
   `develop.yaml` and `hygiene.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
+  A new criteria version is pinned in a Workflow only in a release after the one that added it, because `system update` checks a release with the running Host's verifiers.
   A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`research`, `web-search`, `tier.standard`, `prefer: research.web`, one `retry`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
