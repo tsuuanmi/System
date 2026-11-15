@@ -41,7 +41,7 @@ export type ExecutorRecord = z.infer<typeof executorSchema>
 const known = <T extends z.ZodTypeAny>(t: T) => z.union([t, z.literal('unknown')])
 /** fl-4: what an attempt did, computed by System from its log; `unknown` where the Runtime's log does not say. */
 export const attemptSummarySchema = z.object({
-  runtime: z.enum(['claude-code', 'codex', 'web']),
+  runtime: z.string(),
   toolCalls: known(z.record(z.string(), z.number().int().nonnegative())),
   filesRead: known(z.array(z.string())),
   filesEdited: known(z.array(z.string())),
