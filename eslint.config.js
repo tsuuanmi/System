@@ -1,5 +1,7 @@
-// Item fl-10: one rule only, `@typescript-eslint/no-floating-promises` (a test
-// once dropped a promise inside try/finally, so cleanup ran before git finished).
+// Item fl-10: two rules only. `@typescript-eslint/no-floating-promises` catches a promise
+// dropped inside try/finally; `@typescript-eslint/return-await` ('in-try-catch') catches
+// Escaped defect 4's exact shape, `return promise.then(...)` inside try with a finally
+// (cleanup ran before git finished).
 // Type-aware through the repository's tsconfig.json.
 import tseslint from 'typescript-eslint'
 
@@ -22,6 +24,7 @@ export default [
           allowForKnownSafeCalls: [{ from: 'package', package: 'node:test', name: ['test', 'describe', 'it', 'suite', 'before', 'after', 'beforeEach', 'afterEach'] }],
         },
       ],
+      '@typescript-eslint/return-await': ['error', 'in-try-catch'],
     },
   },
 ]
