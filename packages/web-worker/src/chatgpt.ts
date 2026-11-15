@@ -801,7 +801,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     if (request.signal.aborted) return finish({ status: 'cancelled', outputs: {}, reason: 'cancelled; the browser was closed' })
     if (timedOut) return finish({ status: 'failed', outputs: {}, reason: `attempt exceeded its time limit of ${limit} minutes` })
     note(`failed: ${(error as Error).message}`)
-    const shot = await page?.screenshot({ timeout: 5000 }).catch(() => undefined)
+    const shot = page && await screenshotOf(page)
     if (shot) partial.screenshot = await putFile(shot, 'image/png')
     if (page) {
       const found = await within(5000, driver.diagnostics(page)).catch((e: Error) => { evidence.set({ diagnosticsError: e.message.split('\n')[0] ?? 'failed' }); return undefined })
@@ -816,4 +816,14 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     await display?.stop()
     await cleanup(ws)
   }
+}
+
+/** The failure evidence's screenshot: Chrome sometimes answers "Unable to capture screenshot" right after a failure (a page not yet painted), so it is tried again after a pause. */
+async function screenshotOf(page: Page): Promise<Buffer | undefined> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const shot = await page.screenshot({ timeout: 5000 }).catch(() => undefined)
+    if (shot) return shot
+    await new Promise<void>((resolve) => setTimeout(resolve, 400))
+  }
+  return undefined
 }
