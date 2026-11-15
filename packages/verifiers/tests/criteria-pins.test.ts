@@ -73,3 +73,72 @@ test('Workflows pin only criteria versions the last release knows (Q0 rule)', (t
   }
   assert.deepEqual(unknownPins(pins, known), [], `criteria unknown to ${ref}`)
 })
+
+/** The Escaped defect 7 rule (Q0 generalised): a file the running Host reads at admission or update uses only keys the last release knows. */
+export const KEYS_REASON = 'the Q0 rule (Escaped defect 7): a new key of `.system/checks.yaml` is used in this repository only in a release after the one that added it, because the running Host\'s strict schema refuses a key it does not know and so every new Work'
+
+/** The string list a verifiers source declares as `export const <name> = [...]`; undefined when it has no such constant (a release before the constants existed). */
+export function constantList(source: string, name: string): string[] | undefined {
+  const m = source.match(new RegExp(`export const ${name} = \\[([^\\]]*)\\]`))
+  return m ? [...m[1]!.matchAll(/'([^']+)'/g)].map((x) => x[1]!) : undefined
+}
+
+/** The keys a release's checks.ts knows: its constants, or for a release before them the keys written in the schema. */
+export function knownKeys(source: string): { file: Set<string>; check: Set<string> } {
+  const fromSchema = (schema: string) => {
+    const body = source.split(`const ${schema} = z.object({`)[1]?.split('}).strict()')[0] ?? ''
+    return [...body.matchAll(/^ {2}(\w+): z\./gm)].map((m) => m[1]!)
+  }
+  return {
+    file: new Set(constantList(source, 'CHECKS_FILE_KEYS') ?? fromSchema('checksFileSchema')),
+    check: new Set(constantList(source, 'CHECK_KEYS') ?? fromSchema('checkSchema')),
+  }
+}
+
+/** The problems of a checks file: each key (top-level or of a check) the last release does not know, as one line naming the key and the rule. */
+export function unknownKeys(file: string, doc: unknown, known: { file: Set<string>; check: Set<string> }): string[] {
+  if (doc === null || typeof doc !== 'object') return []
+  const problems: string[] = []
+  for (const [key, value] of Object.entries(doc)) {
+    if (!known.file.has(key)) problems.push(`${file} uses the key ${key}, unknown to the previous release; ${KEYS_REASON}`)
+    else if (Array.isArray(value)) {
+      for (const check of value) {
+        if (check === null || typeof check !== 'object') continue
+        for (const k of Object.keys(check)) if (!known.check.has(k)) problems.push(`${file} uses the check key ${k} (in ${key}), unknown to the previous release; ${KEYS_REASON}`)
+      }
+    }
+  }
+  return problems
+}
+
+test('unknownKeys names a checks.yaml key that the last release does not know', () => {
+  const main = `export const CHECKS_FILE_KEYS = ['checks'] as const\nexport const CHECK_KEYS = ['name', 'run'] as const\n`
+  const known = knownKeys(main)
+  const doc = parse('checks:\n  - name: a\n    run: x\nafterInstall:\n  - name: b\n    run: y\n')
+  const problems = unknownKeys('.system/checks.yaml', doc, known)
+  assert.equal(problems.length, 1)
+  assert.match(problems[0]!, /\.system\/checks\.yaml uses the key afterInstall/)
+  assert.ok(problems[0]!.includes(KEYS_REASON))
+  assert.match(unknownKeys('c.yaml', parse('checks:\n  - name: a\n    run: x\n    paths: [a]\n'), known)[0]!, /check key paths/)
+  assert.deepEqual(unknownKeys('c.yaml', parse('checks:\n  - name: a\n    run: x\n'), known), [])
+})
+
+test('knownKeys reads a release before the constants from its schema', () => {
+  const src = `const checkSchema = z.object({\n  name: z.string(),\n  run: z.string(),\n}).strict()\nexport const checksFileSchema = z.object({\n  checks: z.array(checkSchema),\n}).strict()\n`
+  const known = knownKeys(src)
+  assert.deepEqual([...known.file], ['checks'])
+  assert.deepEqual([...known.check], ['name', 'run'])
+})
+
+test('this repository\'s .system/checks.yaml uses only keys the last release knows (Escaped defect 7)', (t) => {
+  const ref = releaseRef()
+  if (ref === undefined) return t.skip('no main branch in this clone (shallow clone?): cannot read the last release')
+  const known = knownKeys(git('show', `${ref}:packages/verifiers/src/checks.ts`))
+  assert.deepEqual(unknownKeys('.system/checks.yaml', parse(readFileSync(join(repo, '.system/checks.yaml'), 'utf8')), known), [], `keys unknown to ${ref}`)
+})
+
+test('the schema and the exported key constants list the same keys', async () => {
+  const { checksFileSchema, CHECKS_FILE_KEYS, CHECK_KEYS } = await import('../src/checks.ts')
+  assert.deepEqual(Object.keys(checksFileSchema.shape).sort(), [...CHECKS_FILE_KEYS].sort())
+  assert.deepEqual(Object.keys(checksFileSchema.shape.checks.element.shape).sort(), [...CHECK_KEYS].sort())
+})

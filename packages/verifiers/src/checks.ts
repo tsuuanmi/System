@@ -39,6 +39,9 @@ export const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, SATISFIED_TESTS] as 
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
+/** The top-level keys of a checks file and the keys of one check: the one place that lists them. The schemas below must have exactly these keys (`satisfies`), and criteria-pins.test.ts reads them from `main` (Escaped defect 7: a file uses only keys the last release knows). */
+export const CHECKS_FILE_KEYS = ['checks', 'afterInstall'] as const
+export const CHECK_KEYS = ['name', 'run', 'timeoutSeconds', 'paths', 'red'] as const
 const checkSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9-]*$/),
   run: z.string().min(1),
@@ -47,12 +50,12 @@ const checkSchema = z.object({
   paths: z.array(z.string().min(1)).min(1).optional(),
   /** Ignored: read for old files and old `checks@1` (a verdict reason notes it). */
   red: z.enum(['pass', 'fail']).optional(),
-}).strict()
+} satisfies Record<(typeof CHECK_KEYS)[number], z.ZodTypeAny>).strict()
 export const checksFileSchema = z.object({
   checks: z.array(checkSchema).min(1).max(20),
   /** Item fl-5: checks `system update` runs on the installed release (`release.install-check`); same schema as `checks`. */
   afterInstall: z.array(checkSchema).min(1).max(20).optional(),
-}).strict()
+} satisfies Record<(typeof CHECKS_FILE_KEYS)[number], z.ZodTypeAny>).strict()
 /** The checks of a `.system/checks.yaml` text (and its `afterInstall` list when it has one), or why the schema refuses it (`checks.yaml` as `bootstrap check` and admission both read it). */
 export function parseChecksFile(text: string): { checks: Checks['checks']; afterInstall?: Checks['checks'] } | { problem: string } {
   const parsed = checksFileSchema.safeParse(parse(text))
