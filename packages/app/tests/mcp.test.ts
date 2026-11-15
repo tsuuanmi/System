@@ -258,6 +258,19 @@ test('the instructions name develop.yaml as the Workflow for any change and only
   for (const gone of ['feature', 'software-engineering', 'debate', 'second-opinion', 'research-fanout', 'red:']) assert.ok(!text.includes(gone), gone)
 })
 
+test('the instructions tell the caller to write the Task under the six context-pack headings (fl-2)', async () => {
+  const { INSTRUCTIONS } = await import('../src/mcp.ts')
+  const text = INSTRUCTIONS.replace(/\s+/g, ' ')
+  let at = text.indexOf('Goal')
+  assert.ok(at >= 0, 'Goal')
+  for (const heading of ['Files to change and why', 'Tests to add or update', 'Invariants not to change', 'Out of scope', 'Done when']) {
+    const next = text.indexOf(heading, at)
+    assert.ok(next > at, `${heading} after the previous heading`)
+    at = next
+  }
+  assert.match(text, /workflows\/README\.md/)
+})
+
 test('an MCP server of older code than the Host recovers on the code under SYSTEM_CODE, and its session keeps working', { timeout: 120_000 }, async () => {
   // A Host of other code than this build's, and an install whose `current` code is that Host's.
   const dir = mkdtempSync('/tmp/sm-old-')
