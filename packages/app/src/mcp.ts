@@ -70,6 +70,12 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    shows your claim, and the Work you submit for the Item takes it over.
 2. \`task_new\` with the repository, the ref and the \`item\`; its result is
    \`{ task, base }\`: pass \`task\` alone as the input.
+   For a change, write the Task's instructions as a context pack, prose under
+   these headings, so the Worker reads the named files first instead of
+   exploring: Goal (what and why); Files to change and why (the files the
+   Worker reads first); Tests to add or update; Invariants not to change;
+   Out of scope; Done when (what shows it is finished). Template:
+   ~/.system/current/workflows/README.md.
 3. \`work_submit\` with the Workflow file
    ~/.system/current/workflows/develop.yaml for any change to a repository
    (the Worker writes the tests first, then the code, and runs the checks);

@@ -446,3 +446,13 @@ test('develop.yaml implement instructions carry the review, bug-fix, risk, refac
   assert.match(text, /tests of the files you change and the tests you write.*build.*typecheck.*checks step/i, 'focused tests, build and typecheck')
   assert.doesNotMatch(text, /run the repository's checks/i, 'no full checks inside implement')
 })
+
+test('develop.yaml implement reads the files a context pack names first, widens only when needed and reports a wrong pack (fl-2)', () => {
+  const spec = resolve(parseWorkflow(fixture('develop.yaml')), available, fixture)
+  const implement = spec.steps.find((s) => s.id === 'implement') as { instructions?: string }
+  const text = (implement.instructions ?? '').replace(/\s+/g, ' ')
+  assert.match(text, /Files to change and why/)
+  assert.match(text, /read the files it names first.*widen only when they are not enough/i)
+  assert.match(text, /pack is wrong.*say so in (your|the) result/i)
+  assert.match(text, /without (these|the) headings.*as (before|usual)|no headings.*as (before|usual)/i, 'a Task without the headings works as before')
+})
