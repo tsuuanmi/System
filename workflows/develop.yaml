@@ -21,8 +21,11 @@ steps:
       Work test-first. Write or change the tests for the new behaviour and run
       them to see them fail for the right reason, then write the code. Update
       every existing test that pins behaviour the change alters (search the
-      tests for the names, messages and fields it changes). Run the
-      repository's checks before you finish.
+      tests for the names, messages and fields it changes). Before you finish,
+      run the tests of the files you change and the tests you write, then
+      build and typecheck, and fix your change until they pass. Do not run the
+      repository's full test suite or its other checks: the checks step runs
+      them after you.
 
       A bug fix starts with a test that reproduces the bug. Test the risky
       cases your change touches when they apply: a reopened step, a Host

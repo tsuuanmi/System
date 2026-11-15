@@ -277,7 +277,11 @@ test('a repo.write attempt in a repository with .system/checks.yaml is told to r
   const told = async (repository: string, capabilities: string[], name: string) => {
     const req = { ...request({ task: await task(artifacts, 'do it', repository) }, ['change']), capabilities }
     const ws = await prepare(artifacts, req, join(root, name))
-    try { return prompt(ws, req).includes('`.system/checks.yaml`') } finally { await cleanup(ws) }
+    try {
+      const text = prompt(ws, req)
+      if (text.includes('`.system/checks.yaml`')) assert.match(text, /focused tests.*build.*typecheck/s)
+      return text.includes('`.system/checks.yaml`')
+    } finally { await cleanup(ws) }
   }
   assert.equal(await told(withChecks, ['repo.write'], 'ws-checks'), true)
   assert.equal(await told(repo(), ['repo.write'], 'ws-none'), false)

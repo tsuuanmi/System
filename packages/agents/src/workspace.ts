@@ -115,7 +115,7 @@ function treeSlot(ws: Workspace, request: WorkerRequest): string | undefined {
   return ws.base && writesRepository(request.capabilities) ? request.outputs[0] : undefined
 }
 
-const CHECKS_LINE = 'Before you finish, run the checks in `.system/checks.yaml` whose `paths` match the files you changed, the way the verifier would run them, and fix your change until they pass. If a check cannot pass for a reason outside your change, say so in your final message.'
+const CHECKS_LINE = 'Before you finish, run focused tests (the tests of the files you changed and the tests you wrote), build and typecheck, the way `.system/checks.yaml` runs them, and fix your change until they pass. Leave the full test suite and the other checks to the checks step. If a check cannot pass for a reason outside your change, say so in your final message.'
 
 export function prompt(ws: Workspace, request: WorkerRequest): string {
   const tree = treeSlot(ws, request)

@@ -443,4 +443,6 @@ test('develop.yaml implement instructions carry the review, bug-fix, risk, refac
   for (const part of [/read the whole diff/i, /__pycache__/, /bug fix starts with a test that reproduces/i, /reopened step.*Host restart.*second repository/is, /hygiene\.yaml/, /compatibility layer only when the Task asks.*removes it/is]) {
     assert.match(text, part)
   }
+  assert.match(text, /tests of the files you change and the tests you write.*build.*typecheck.*checks step/i, 'focused tests, build and typecheck')
+  assert.doesNotMatch(text, /run the repository's checks/i, 'no full checks inside implement')
 })
