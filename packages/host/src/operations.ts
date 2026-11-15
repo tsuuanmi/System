@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -39,6 +39,7 @@ export interface Services {
 
 const commandId = z.string().min(1).optional()
 const workId = z.string().min(1)
+const date = z.string().refine((d) => !Number.isNaN(Date.parse(d)), 'not a date')
 /** Bytes as base64: canonical, so what was sent is what is stored. */
 const base64 = z.string().max(MAX_FRAME).refine((text) => Buffer.from(text, 'base64').toString('base64') === text, 'not canonical base64')
 
@@ -148,9 +149,16 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'Duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events.',
-      params: z.object({ workId }).strict(),
-      handler: (host, p) => summarize(known(host, p.workId)),
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events. With `since` (a date or timestamp; `until` excludes, `escaped` is the Escaped defect count of PLAN 3e): the five measures of effect over every Work admitted in the range, each with its counts: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool share.',
+      params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional() }).strict(),
+      handler(host, p) {
+        if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')
+        if (p.workId !== undefined) {
+          if (p.until !== undefined || p.escaped !== undefined) throw new Error('`until` and `escaped` go with `since`')
+          return summarize(known(host, p.workId))
+        }
+        return rangeReport(host.view.list(), { since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }) })
+      },
     },
     'work.events': {
       read: true,

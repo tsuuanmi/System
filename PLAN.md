@@ -42,7 +42,7 @@ operator's sessions directly. DF turns that back.
 
 ## 2. Growth and feedback budgets (Charter 11 and 12)
 
-Record the measures at the end of every milestone. Growth above budget is
+Record the measures at the end of every milestone. The measures of effect (Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution) come from `system work report --since <date> [--escaped <n>]`, not by hand. Growth above budget is
 justified in the milestone's row or paid for by removal. The core budget is
 +10% per milestone from 3,403 lines
 ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)); the older

@@ -114,6 +114,12 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal((await call('work.run', { workId: work.id }) as { state: { status: string } }).state.status, 'succeeded')
   assert.deepEqual(await call('work.replay', { workId: work.id }), { state: (await call('work.show', { workId: work.id }) as { state: unknown }).state, matches: true })
   assert.equal(((await call('work.report', { workId: work.id })) as { id?: string; attempts?: unknown }).attempts !== undefined, true)
+  const range = await call('work.report', { since: '2000-01-01', escaped: 0 }) as { works: number; verifiedSuccessRate: { accepted: number; ended: number } }
+  assert.equal(range.works >= 1, true)
+  assert.equal(range.verifiedSuccessRate.accepted <= range.verifiedSuccessRate.ended, true)
+  assert.equal((await call('work.report', { since: '2999-01-01' }) as { works: number }).works, 0)
+  await assert.rejects(call('work.report', {}), /give `workId`, or `since`/)
+  await assert.rejects(call('work.report', { workId: work.id, since: '2000-01-01' }), /give `workId`, or `since`/)
   await assert.rejects(call('approval.decide', { workId: work.id, decision: 'approved', reason: 'ok' }), /nothing awaits a decision/)
   assert.deepEqual(await call('work.events', { workId: work.id, after: 1000 }), { events: [], status: 'succeeded' })
 
