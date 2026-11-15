@@ -11,6 +11,7 @@ import { promisify } from 'node:util'
 import { Command } from 'commander'
 import { addWorktree, git, parseStatus, removeWorktree } from '@system/work'
 // By path, as client.ts imports the Host: declaring @system/verifiers here would change the lockfile.
+import { describeOldName, findOldNames } from './old-names.ts'
 import { CHECKS_FILE, parseChecksFile } from '../../verifiers/lib/checks.js'
 
 export interface BootstrapResult {
@@ -79,6 +80,15 @@ export async function bootstrapCheck(path: string): Promise<BootstrapResult[]> {
 
   const hasDocs = ref ? await git(top, ['cat-file', '-e', `${ref}:tools/docs.py`]).then(() => true, () => false) : false
   await item('docs', async () => (hasDocs ? docsCheck(top, ref!) : undefined))
+
+  // The repository's own Workflows on dev, by the names nm-1 retires.
+  await item('capabilities', async () => {
+    if (!ref) return undefined
+    const files = (await git(top, ['ls-tree', '-r', '--name-only', ref, '--', 'workflows/'])).split('\n').filter((f) => /^workflows\/[^/]+\.yaml$/.test(f))
+    const old = []
+    for (const file of files) old.push(...findOldNames((await show(file)) ?? '', file))
+    return old.length ? `old capability names in Workflows: ${old.map(describeOldName).join('; ')}` : undefined
+  })
   return results
 }
 
@@ -116,7 +126,7 @@ export async function bootstrapMain(args: string[], out: (text: string) => void)
   const program = new Command('system').exitOverride()
   const bootstrap = program.command('bootstrap').description('check that a repository is ready for System')
   bootstrap.command('check')
-    .description('read-only: origin on github.com, dev branch, checks file, false-green guard, STATUS.md, docs check; one line per item, non-zero exit if any fails')
+    .description('read-only: origin on github.com, dev branch, checks file, false-green guard, STATUS.md, docs check, old capability names; one line per item, non-zero exit if any fails')
     .option('--repo <path>', 'a git repository', '.')
     .action((options: { repo: string }) => {
       run = async () => {
