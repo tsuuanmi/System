@@ -675,7 +675,8 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   for (const file of ['packages/work/src/controller.ts', 'tests/work.test.ts', 'docs/requirements/purpose.md', 'workflows/code-checks.yaml']) assert.deepEqual(run([file]), main, file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).
   for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'test-support/headed.ts']) assert.deepEqual(run([file]), all.filter((name) => name !== 'statusmd'), file)
-  for (const file of ['test-support/fixture.ts', 'package.json', 'pnpm-lock.yaml']) assert.deepEqual(run([file]), main, file)
+  // The lint check (Item fl-10) runs for a change to the ESLint config as for any code.
+  for (const file of ['test-support/fixture.ts', 'package.json', 'pnpm-lock.yaml', 'eslint.config.js']) assert.deepEqual(run([file]), main, file)
 })
 
 test('a commit checked as it is (code-checks.yaml on its own) runs every check, paths or not', async () => {
