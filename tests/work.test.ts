@@ -118,7 +118,7 @@ test('with the fakes row disabled by config, admission names the missing capabil
     await host()
     const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'research.yaml'), '--input', input])
     assert.equal(ran.status, 1)
-    assert.match(ran.stderr, /needs Worker capability research, which no enabled Worker provides/)
+    assert.match(ran.stderr, /needs Worker capability web.search, which no enabled Worker provides/)
     // The real `verifiers` row is on when the fakes are off, so the verifier is available.
     assert.doesNotMatch(ran.stderr, /needs verifier/)
   } finally {
