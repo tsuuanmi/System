@@ -69,7 +69,7 @@ checks:
   does not reopen `implement` (retry `onFail` fires on `fail` only): the Work is
   held for an operator Approval before `publish`; approve lets it publish and merge,
   deny fails it.
-- **Node** ([src/reasons.ts](src/reasons.ts), PROP-0007 decision 3): when the
+- **Node** (`nodeBin` in [agents/src/node.ts](../agents/src/node.ts), PROP-0007 decision 3; a Worker's `PATH` gets it too, fl-3): when the
   commit's `package.json` has `engines.node`, a Node that satisfies it goes
   first on the checks' `PATH`: the Host's own, else the newest under
   `~/.nvm/versions/node`, as `bin/system` looks; none is an `error` verdict.

@@ -20,6 +20,7 @@ import { WEB_WORKER_DISABLED, type WebAccountSettings, type WebWorkerService } f
 
 export * from './agent.ts'
 export * from './identity.ts'
+export * from './node.ts'
 export * from './quota.ts'
 export * from './runtimes.ts'
 export * from './web.ts'

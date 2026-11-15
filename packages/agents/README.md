@@ -239,7 +239,8 @@ model is recorded for it.
    prompt as a commit of the same repository, to show or cherry-pick), or an empty
    directory.
 2. **Environment:** every host variable is removed except `PATH`, `LANG`,
-   `LC_ALL` and `TZ`. The agent gets `HOME`, `TMPDIR` and its account's
+   `LC_ALL` and `TZ`; `PATH` starts with the Node the work tree's `engines.node` asks
+   for, as a check's does (fl-3). The agent gets `HOME`, `TMPDIR` and its account's
    credential only: `CLAUDE_CODE_OAUTH_TOKEN`, or a fresh `CODEX_HOME` holding
    a copy of the account's `auth.json`.
 3. **Run** through the DSH subprocess service, which owns the process range in

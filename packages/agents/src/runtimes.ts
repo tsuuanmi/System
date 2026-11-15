@@ -3,6 +3,7 @@
  * (ADR-0004 decision 6, ADR-0005). Pure functions; spawning is the adapter's.
  */
 import type { Progress } from '@system/work'
+import { nodeBin } from './node.ts'
 import type { Workspace } from './workspace.ts'
 
 export type Runtime = 'claude-code' | 'codex'
@@ -38,6 +39,15 @@ const KEEP = ['PATH', 'LANG', 'LC_ALL', 'TZ']
 function baseEnv(ws: Workspace): Record<string, string> {
   const env: Record<string, string> = { HOME: ws.home, TMPDIR: ws.home }
   for (const key of KEEP) if (process.env[key]) env[key] = process.env[key]!
+  // The repository's Node first on PATH, as a check gets it (fl-3): under the throwaway HOME `bin/system` cannot find a newer one itself.
+  let bin: string | undefined
+  try {
+    bin = nodeBin(ws.work)
+  } catch {
+    // None installed satisfies it: the host's PATH as it is, and the tests say why.
+  }
+  const path = [bin, process.env.PATH].filter(Boolean).join(':')
+  if (path) env.PATH = path
   return env
 }
 

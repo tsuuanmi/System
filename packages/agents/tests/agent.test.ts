@@ -212,6 +212,25 @@ test('the agent sees a throwaway HOME, its own token and nothing else from the h
   }
 })
 
+test("the agent's PATH starts with the Node the repository asks for, as a check's does (fl-3)", async () => {
+  const { artifacts } = memory()
+  const repository = repo()
+  writeFileSync(join(repository, 'package.json'), JSON.stringify({ engines: { node: '>=1' } }))
+  execFileSync('git', ['-C', repository, 'add', '.'])
+  execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'engines'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  const hostPath = process.env.PATH
+  process.env.PATH = '/usr/bin:/bin'
+  try {
+    const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-node'))
+    const result = await worker.run(request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']))
+    const tree = treeOf(artifacts, result.outputs.change!)
+    const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${tree.commit}:ENV.json`], { encoding: 'utf8' })) as { path: string }
+    assert.equal(seen.path.split(':')[0], dirname(process.execPath))
+  } finally {
+    process.env.PATH = hostPath
+  }
+})
+
 test('a missing token fails the attempt before anything runs', async () => {
   const { artifacts } = memory()
   const worker = agentWorker(account('claude-code', { token: async () => undefined }), artifacts, processSpawner, join(root, 'attempts-4'))
