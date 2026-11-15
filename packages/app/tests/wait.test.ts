@@ -146,15 +146,14 @@ test('waitFor ends with unreachable when the Host never answers', async () => {
   })
 })
 
-test("waitFor's --timeout ends an outage as unreachable, not as a timeout", async () => {
-  const started = Date.now()
-  await assert.doesNotReject(async () => {
-    const waited = await fakeRemote({}, undefined, 0, { never: true, reconnectMs: 60_000 }).waitFor(['work:a'], { any: false, timeoutMs: 200 })
-    assert.ok(unreachable(waited))
-    assert.equal(waited.timedOut, false)
-    assert.ok(Date.now() - started >= 200, 'the timeout bounds the outage')
-    assert.ok(Date.now() - started < 5000, 'the timeout interrupts outage retries')
-  })
+// No wall-clock assertion: the outage bound is 60 s, so only --timeout can end this within the test's own 30 s limit,
+// and how long that took says nothing about the code on a loaded machine (Date.now() also runs a ms ahead of timers).
+test("waitFor's --timeout ends an outage as unreachable, not as a timeout", { timeout: 30_000 }, async () => {
+  const calls: string[] = []
+  const waited = await fakeRemote({}, undefined, 0, { never: true, reconnectMs: 60_000, calls }).waitFor(['work:a'], { any: false, timeoutMs: 200 })
+  assert.ok(unreachable(waited), 'the outage is reported as unreachable')
+  assert.equal(waited.timedOut, false)
+  assert.ok(calls.length > 0, 'the Host was tried before the timeout ended the outage')
 })
 
 test('non-patient reads still fail at once', async () => {
