@@ -7,10 +7,10 @@
 # skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 6
+version: 7
 steps:
   - id: implement
-    capabilities: [code-write, code.develop, tier.standard]
+    capabilities: [repo.write, develop.implement, tier.standard]
     inputs:
       task: $work.input
     outputs: [change]

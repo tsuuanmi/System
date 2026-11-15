@@ -94,7 +94,7 @@ test('the pinned spec survives a Workflow file edit and a killed host; done step
   const workId = crashed.stdout.trim()
 
   // Edit the file mid-run: a capability no Worker has. Running Work must not notice.
-  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [code-write, code.develop, tier.standard]', 'capabilities: [teleport]'))
+  writeFileSync(file, readFileSync(file, 'utf8').replace('capabilities: [repo.write, develop.implement, tier.standard]', 'capabilities: [teleport]'))
   // The new Host settles the lost attempt and dispatches it again by itself (sc-8): no `work run`.
   await host()
   const resumed = system(['work', 'wait', workId])

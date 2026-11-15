@@ -1,15 +1,15 @@
 # Research from a repository's source (item tr-4). Same as research.yaml except
-# that investigate has no `prefer: research.web` and reads the Task's checkout.
+# that investigate has no `prefer` and reads the Task's checkout.
 # Research (MVP-0). A research Worker answers a question with a report and its
 # sources; a citation verifier checks the exact sources Artifact.
 # Same schema and controller as software-engineering.yaml: only the
 # capabilities, outputs, step instructions and verifier differ.
 schema: system.workflow/v1
 id: research-source
-version: 6
+version: 7
 steps:
   - id: investigate
-    capabilities: [research, web-search, tier.standard]
+    capabilities: [web.search, repo.read, tier.standard]
     retry: { onFail: [investigate], max: 1 }
     inputs:
       question: $work.input
