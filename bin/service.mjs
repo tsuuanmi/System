@@ -52,6 +52,16 @@ export function installRoot(repo, exists) {
   return basename(dirname(repo)) === 'releases' && exists(join(install, 'current')) ? join(install, 'current') : repo
 }
 
+/**
+ * The install's profile file (`<install>/profile.yml`, beside `releases/` and `current`) for the release
+ * directory `repo`, or undefined for a checkout. The one place that path is decided: `bin/system` (the
+ * unit's patch) and `system doctor` both ask here.
+ */
+export function installProfile(repo, exists) {
+  const install = installRoot(repo, exists)
+  return install === repo ? undefined : join(dirname(install), 'profile.yml')
+}
+
 /** The `system.service` text: a plain user unit running `system host` (with the install's profile as a patch, if any), with no socket activation. */
 export function unitText({ node, entry, home, path, patch }) {
   return `[Unit]

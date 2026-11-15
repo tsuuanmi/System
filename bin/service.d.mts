@@ -8,3 +8,4 @@ export const UPGRADE_EXIT: 75
 export const UPGRADE_RETRIES: number
 export function supervise(options: { run: () => Promise<number>; stopped: () => boolean; log: (line: string) => void; wait?: (ms: number) => Promise<void> }): Promise<number>
 export function hostCommand(args: string[]): boolean
+export function installProfile(repo: string, exists: (path: string) => boolean): string | undefined

@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { profileFiles } from '../src/index.ts'
 import { findOldNames } from '../src/old-names.ts'
 import { ROWS, formatReport, runDoctor, type DoctorHost, type HostStatus, type StorageStatus } from '../src/doctor.ts'
 
@@ -86,4 +90,18 @@ test('a profile with only new names prints what it printed before', async () => 
 test('findOldNames reads inline and block lists and ignores comments and other keys', () => {
   const text = 'a:\n  capabilities:\n    - web-search\n    - repo.read # code-write\n  note: code-write\n  prefer: research.web\n'
   assert.deepEqual(findOldNames(text, 'f').map((n) => [n.old, n.line]), [['web-search', 3], ['research.web', 6]])
+})
+
+test('in an install, the doctor reads the profile.yml at the install root, beside releases/ and current', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'install-')))
+  try {
+    const release = join(root, 'releases', '0123abc')
+    mkdirSync(release, { recursive: true })
+    symlinkSync(release, join(root, 'current'))
+    writeFileSync(join(root, 'profile.yml'), 'accounts:\n  - ref: a\n    capabilities: [code.develop]\n')
+    const report = await runDoctor({ ...host(), profileFiles: () => profileFiles(join(root, 'dsh'), release) })
+    assert.match(formatReport(report), /code\.develop → develop\.implement/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

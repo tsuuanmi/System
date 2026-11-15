@@ -20,6 +20,7 @@ import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.
 import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
+import { installProfile } from '../../../bin/service.mjs'
 import { exitWithin, serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
@@ -195,10 +196,10 @@ async function runHost(ctx: Context): Promise<number> {
 }
 
 /** The operator's patches of the `system` profile: its own `cordis.patch.yml` and the install's `profile.yml`, where they exist. */
-function profileFiles(home: string): { file: string; text: string }[] {
+export function profileFiles(home: string, code: string = realpathSync(codeRoot())): { file: string; text: string }[] {
   const dir = join(home, 'profiles', 'system')
-  const own = [join(dir, 'cordis.patch.yml'), join(dirname(codeRoot()), 'profile.yml')]
-  return own.filter((file) => existsSync(file)).map((file) => ({ file, text: readFileSync(file, 'utf8') }))
+  const own = [join(dir, 'cordis.patch.yml'), installProfile(code, existsSync)]
+  return own.filter((file): file is string => file !== undefined).filter((file) => existsSync(file)).map((file) => ({ file, text: readFileSync(file, 'utf8') }))
 }
 
 export function apply(ctx: Context): void {

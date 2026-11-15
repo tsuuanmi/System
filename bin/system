@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameS
 import { constants, homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { MIN_NODE, hostCommand, installRoot, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
+import { MIN_NODE, hostCommand, installProfile, installRoot, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
 import { update } from './update.mjs'
 
 const PROFILE = 'system'
@@ -72,7 +72,7 @@ function installService(args) {
   const unit = unitPath(homedir())
   mkdirSync(dirname(unit), { recursive: true })
   // An install's profile file (`~/.system/profile.yml`: the Accounts and Effects of this machine) is the Host's patch.
-  const profile = install === repo ? undefined : join(dirname(install), 'profile.yml')
+  const profile = installProfile(repo, existsSync)
   writeFileSync(unit, unitText({ node: process.execPath, entry: join(install, 'bin', 'system'), home, path: process.env.PATH ?? '', patch: profile && existsSync(profile) ? profile : undefined }))
   process.stdout.write(`service unit written: ${unit}\n`)
   for (const [command, ...rest] of [['systemctl', '--user', 'daemon-reload'], ['loginctl', 'enable-linger', userInfo().username]]) {
