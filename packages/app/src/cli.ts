@@ -95,6 +95,8 @@ export interface WorkCommands {
   waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** A Work's measurements. */
   report(workId: string): Promise<unknown>
+  /** The five measures of effect over the Works admitted in a range. */
+  rangeReport(range: { since: string; until?: string; escaped?: number }): Promise<unknown>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
   claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
@@ -526,11 +528,22 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
-  work.command('report <workId>')
-    .description('duration, attempts, operator touches and usage of a Work, from its events')
-    .action((workId: string) => {
+  work.command('report [workId]')
+    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
+    .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
+    .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
+    .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN 3e (else that measure is unknown)')
+    .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string }) => {
       select(async () => {
-        io.out(`${JSON.stringify(await host.work().report(workId), null, 2)}\n`)
+        if ((workId === undefined) === (options.since === undefined)) throw new Error('give a Work ID, or --since <date> for a range')
+        if (workId !== undefined && (options.until !== undefined || options.escaped !== undefined)) throw new Error('--until and --escaped go with --since')
+        if (workId !== undefined) {
+          io.out(`${JSON.stringify(await host.work().report(workId), null, 2)}\n`)
+          return 0
+        }
+        const escaped = options.escaped === undefined ? undefined : Number(options.escaped)
+        if (escaped !== undefined && !(Number.isInteger(escaped) && escaped >= 0)) throw new Error('--escaped is a count')
+        io.out(`${JSON.stringify(await host.work().rangeReport({ since: options.since!, ...(options.until === undefined ? {} : { until: options.until }), ...(escaped === undefined ? {} : { escaped }) }), null, 2)}\n`)
         return 0
       })
     })
