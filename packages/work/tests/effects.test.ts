@@ -424,6 +424,30 @@ for (const [rejected, reason] of [
   })
 }
 
+// fl-8: a refusal for build or cache output has no base tip; it still reopens implement with the reason and the previous change.
+test('a publish build-output refusal reopens implement with the reason, without a base, and succeeds', async () => {
+  const w = world()
+  const reason = 'the change adds build or cache output, which is never published; remove tools/__pycache__/docs.cpython-38.pyc from it'
+  const c = controller(w, { apply: async (intent, remote): Promise<ScriptedOutcome> => {
+    remote.applies++
+    if (remote.applies === 1) return { state: 'failed', rejected: 'build-output', reason, detail: {} }
+    remote.published.set(intent.operationId, { commit: intent.subject })
+    return { state: 'applied', reason: 'merged', detail: { commit: intent.subject } }
+  } })
+  const done = await c.run((await admit(c, w)).id)
+  assert.equal(done.state.status, 'succeeded', done.state.reason)
+  const reopenings = done.events.filter((e) => e.type === 'reopened')
+  assert.equal(reopenings.length, 1)
+  const reopened = reopenings[0]!
+  assert.equal(reopened.stepId, 'implement')
+  assert.equal(reopened.failedEffect, 'publish')
+  assert.equal(reopened.base, undefined)
+  assert.ok(reopened.reason.includes('__pycache__'))
+  assert.equal(w.calls[1]!.inputs.base, undefined)
+  assert.ok(w.calls[1]!.inputs.previous)
+  assert.equal(c.replay(done.id).matches, true)
+})
+
 test('a publish that fails for another reason fails the Work without reopening', async () => {
   const w = world()
   const c = controller(w, { apply: async () => ({ state: 'failed', reason: 'dev kept moving during 3 merges', detail: {} }) })
