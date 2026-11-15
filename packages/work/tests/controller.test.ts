@@ -466,6 +466,8 @@ test('the controller and Workflow compiler name no domain, Worker or verifier', 
   const src = join(repo, 'packages', 'work', 'src')
   for (const file of ['controller.ts', 'workflow.ts', 'record.ts', 'registry.ts']) {
     const code = readFileSync(join(src, file), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+      // The one table of old capability names (nm-1) is the only place they may be named.
+      .replace(/export const CAPABILITY_ALIASES[^{]*\{[^}]*\}/, '')
     assert.doesNotMatch(code, /research|software|engineering|citation|claude|codex|required-checks|code-write|git-tree/i, file)
   }
 })

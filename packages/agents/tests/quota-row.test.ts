@@ -125,9 +125,9 @@ test('listing accounts spawns no quota reader; web and unknown refs are unreadab
   const row = await mount(dir, [c.spec, x.spec, web], () => 0)
   const statuses = await row.accounts()
   assert.deepEqual(statuses, [
-    { ref: c.spec.ref, runtime: 'claude-code', capabilities: ['research'], models: {}, available: true, reason: 'registered', command: c.fake.command, providerAccount: 'claude-account', version: '' },
-    { ref: x.spec.ref, runtime: 'codex', capabilities: ['research'], models: {}, available: true, reason: 'registered', command: x.fake.command, providerAccount: 'codex-account', version: '' },
-    { ref: web.ref, runtime: 'web', capabilities: ['research'], models: {}, available: false, reason: 'the web-worker row is disabled' },
+    { ref: c.spec.ref, runtime: 'claude-code', abilities: ['repo.read', 'repo.write', 'web.search'], capabilities: ['research'], models: {}, available: true, reason: 'registered', command: c.fake.command, providerAccount: 'claude-account', version: '' },
+    { ref: x.spec.ref, runtime: 'codex', abilities: ['repo.read', 'repo.write'], capabilities: ['research'], models: {}, available: true, reason: 'registered', command: x.fake.command, providerAccount: 'codex-account', version: '' },
+    { ref: web.ref, runtime: 'web', abilities: ['web.search', 'web.browse'], capabilities: ['research'], models: {}, available: false, reason: 'the web-worker row is disabled' },
   ])
   assert.deepEqual(await row.quota('unknown'), { unreadable: 'no quota reader for unknown' })
   assert.equal(existsSync(c.fake.log), false)

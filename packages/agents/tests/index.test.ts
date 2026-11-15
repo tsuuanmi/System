@@ -12,6 +12,7 @@ import { TASK_KIND, taskSchema, type WorkerPort } from '@system/work'
 import { test } from 'node:test'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
 import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '../src/index.ts'
+import { RUNTIME_ABILITIES } from '../src/runtimes.ts'
 
 /** Mount the row on a bare context with `webWorker` (if any); the accounts it reports and what it disposed. */
 async function mount(webWorker: unknown, hold = false, accounts: object[] = [{}], services_: Record<string, unknown> = {}, rowSlots = 2): Promise<any> {
@@ -284,4 +285,44 @@ test('a Claude account reads the last rate_limit_event even when the CLI version
   assert.equal(before.windows.seven_day.percentUsed, 77)
   assert.equal(before.unreadable, undefined)
   first.unload()
+})
+
+// nm-1: abilities come from the Runtime's adapter in code, not from the profile.
+test('each Runtime declares its abilities: Claude Code repo.read, repo.write, web.search; Codex repo.read, repo.write; web web.search, web.browse', () => {
+  assert.deepEqual(RUNTIME_ABILITIES['claude-code'], ['repo.read', 'repo.write', 'web.search'])
+  assert.deepEqual(RUNTIME_ABILITIES.codex, ['repo.read', 'repo.write'])
+  assert.deepEqual(RUNTIME_ABILITIES.web, ['web.search', 'web.browse'])
+})
+
+test('a CLI Account registers with its Runtime abilities and what its profile grants; status lists them apart', async () => {
+  const ports: WorkerPort[] = []
+  const provided: Record<string, any> = {}
+  const services = {
+    storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
+    capabilities: { registerWorker: (w: WorkerPort) => { ports.push(w); return () => {} } },
+    artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
+    subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
+  } as Record<string, unknown>
+  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value }, baseDir: tempDir('base-') }
+  await apply(ctx as never, { accounts: [
+    claude('claude-code/a', { claudeHome: tempDir(), capabilities: ['code.develop', 'research'], models: { standard: 'm' } }),
+    codex('codex/b', fakeCodexHome(undefined, 'acct-b'), { capabilities: ['research'] }),
+  ] as never })
+  const [a, b] = ports
+  for (const need of ['repo.read', 'repo.write', 'web.search', 'code.develop', 'research', 'tier.standard']) assert.ok(a!.capabilities.includes(need), `claude ${need}`)
+  assert.ok(b!.capabilities.includes('repo.write') && b!.capabilities.includes('research'))
+  assert.ok(!b!.capabilities.includes('web.search'), 'codex has no web.search')
+  const status = await provided.agents.accounts() as { ref: string; abilities: string[]; capabilities: string[] }[]
+  assert.deepEqual(status.map((s) => [s.ref, s.abilities, s.capabilities]), [
+    ['claude-code/a', ['repo.read', 'repo.write', 'web.search'], ['code.develop', 'research', 'tier.standard']],
+    ['codex/b', ['repo.read', 'repo.write'], ['research']],
+  ])
+})
+
+test('a web Account is handed over with the web abilities, and its status lists them apart from its granted capabilities', async () => {
+  const registered: WebRegistration[] = []
+  const { accounts } = await mount({ expect: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined } } })
+  assert.deepEqual(registered[0]!.abilities, ['web.search', 'web.browse'])
+  assert.deepEqual((accounts[0] as any).abilities, ['web.search', 'web.browse'])
+  assert.deepEqual(accounts[0]!.capabilities, ['research', 'tier.standard'])
 })

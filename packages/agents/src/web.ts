@@ -30,6 +30,8 @@ export interface WebRegistration extends WebAccountSettings {
   /** The Site, as the entry names it; the web-worker row refuses one that does not ship. */
   site: string
   capabilities: string[]
+  /** What the web Runtime can do (`RUNTIME_ABILITIES.web`): offered with `capabilities`, but not part of what the entry grants. */
+  abilities?: readonly string[]
   attemptTimeoutMinutes?: number
   maxConcurrentAttempts?: number
 }

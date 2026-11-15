@@ -62,3 +62,14 @@ test('quotaLine names an event reading', () => {
   } }
   assert.equal(quotaLine(reading, now), 'quota: 5h 43%, 7d 31%, read 2 min ago (from the last attempt)')
 })
+
+test('workers shows an Account\'s abilities on their own line, before the roles and tiers it is granted', async () => {
+  const accounts = [{ ref: 'codex/x1', runtime: 'codex', available: true, reason: 'registered', abilities: ['repo.read', 'repo.write'], capabilities: ['research', 'tier.standard'] }]
+  let output = ''
+  let run: cli.Run | undefined
+  const program = cli.buildProgram({ workers: async () => ({ registered: ['codex/x1'], accounts }) } as unknown as cli.ClientHost, { out: (text: string) => { output += text } } as Parameters<typeof cli.buildProgram>[1], (selected) => { run = selected })
+  program.exitOverride()
+  await program.parseAsync(['node', 'system', 'workers'])
+  assert.equal(await run!(), 0)
+  assert.match(output, /\n  abilities: repo\.read, repo\.write\n  capabilities: research, tier\.standard\n/)
+})
