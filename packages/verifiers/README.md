@@ -21,6 +21,10 @@ without evidence, unstored evidence, and a subject kind the verifier does not
 accept. A verdict about a subject that has since been replaced counts as
 `stale`, never as a pass.
 
+## `release.install-check` (version 1)
+
+Item fl-5. Runs the `afterInstall` list of `.system/checks.yaml` at a release commit (criteria `install-check-v1`, pinned from that commit as `checks@1`) with the install's `current/bin` first on PATH, in a worktree of the commit. `pass` when every command exits 0, `fail` naming each failed check, `error` when the commit cannot be checked out; evidence is one `check-run@1` per command. Used by `system update` (bin/update.mjs), which writes the Workflow itself: no file under `workflows/` pins it (Q0). This repository's own list is Item fl-6 (doctor, workers, status, bootstrap, mcp; the last runs `tools/mcp-probe.mjs`).
+
 ## `code.required-checks` (version 1)
 
 - **Accepts:** `git-tree`, and a `task` (`code-checks.yaml` on its own), whose base commit is checked as it is.
@@ -69,7 +73,7 @@ checks:
   does not reopen `implement` (retry `onFail` fires on `fail` only): the Work is
   held for an operator Approval before `publish`; approve lets it publish and merge,
   deny fails it.
-- **Node** ([src/reasons.ts](src/reasons.ts), PROP-0007 decision 3): when the
+- **Node** (`nodeBin` in [agents/src/node.ts](../agents/src/node.ts), PROP-0007 decision 3; a Worker's `PATH` gets it too, fl-3): when the
   commit's `package.json` has `engines.node`, a Node that satisfies it goes
   first on the checks' `PATH`: the Host's own, else the newest under
   `~/.nvm/versions/node`, as `bin/system` looks; none is an `error` verdict.

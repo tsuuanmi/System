@@ -22,3 +22,11 @@ test('the parts run in order: install, build, then the checks that need them', (
   assert.ok(order.indexOf('install') < order.indexOf('build'))
   for (const name of ['typecheck', 'unit', 'smoke']) assert.ok(order.indexOf('build') < order.indexOf(name), name)
 })
+
+test('lint runs after install, on TypeScript files and the config', () => {
+  const lint = checks.find((check) => check.name === 'lint')
+  assert.ok(lint)
+  assert.match(lint.run, /pnpm lint\b/)
+  assert.ok(checks.map((check) => check.name).indexOf('install') < checks.indexOf(lint))
+  assert.ok(lint.paths?.includes('eslint.config.js'))
+})

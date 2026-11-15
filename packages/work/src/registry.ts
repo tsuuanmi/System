@@ -3,7 +3,7 @@
  * routing read it. Routing is by capability, never by domain or vendor.
  */
 import { DEFAULT_QUOTA_CEILING_PERCENT, rankByHeadroom, type QuotaReading } from './headroom.ts'
-import type { ExecutorRecord, UsageObserved } from './record.ts'
+import type { AttemptSummary, ExecutorRecord, UsageObserved } from './record.ts'
 import type { AvailableCapabilities } from './workflow.ts'
 
 /** What a Worker gets for one attempt: exact Artifact IDs only, no transcript. */
@@ -50,6 +50,8 @@ export interface WorkerResult {
   usage?: Omit<UsageObserved, 'state'>
   /** Bounded agent output as an Artifact, for audit. */
   log?: string
+  /** fl-4: what the attempt did, computed by System from its output; recorded with the observed event. */
+  summary?: AttemptSummary
   executor?: ExecutorRecord
 }
 
@@ -160,7 +162,7 @@ export interface EffectIntent {
 export interface EffectOutcome {
   state: 'applied' | 'failed'
   /** Set only on a `failed` outcome the remote observed as a refusal that a new change on a newer base can fix; `detail.base` is then the git-tree Artifact of the base tip. Never set for an unknown outcome or other failures. */
-  rejected?: 'conflict' | 'merge-check'
+  rejected?: 'conflict' | 'merge-check' | 'build-output'
   /** Set on a `failed` outcome that holds the Work: the merge commit (a git-tree Artifact) that needs an operator's Approval, because its re-check was inconclusive or its verifier changed since admission. Nothing was published. */
   held?: string
   reason: string

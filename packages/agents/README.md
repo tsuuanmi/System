@@ -239,7 +239,8 @@ model is recorded for it.
    prompt as a commit of the same repository, to show or cherry-pick), or an empty
    directory.
 2. **Environment:** every host variable is removed except `PATH`, `LANG`,
-   `LC_ALL` and `TZ`. The agent gets `HOME`, `TMPDIR` and its account's
+   `LC_ALL` and `TZ`; `PATH` starts with the Node the work tree's `engines.node` asks
+   for, as a check's does (fl-3). The agent gets `HOME`, `TMPDIR` and its account's
    credential only: `CLAUDE_CODE_OAUTH_TOKEN`, or a fresh `CODEX_HOME` holding
    a copy of the account's `auth.json`.
 3. **Run** through the DSH subprocess service, which owns the process range in
@@ -281,10 +282,14 @@ model is recorded for it.
    `total_cost_usd`), not what the subscription is billed, present only when
    every result reports one. The last result decides success and the message;
    lines that are not results are ignored. Then the account, CLI path and
-   version (asked once, on first use, never at startup), and the stdout's last
-   256 KiB as a `local-private` log Artifact. The log is never handed to
-   another Worker, and is only a bounded copy: usage is parsed from the whole
-   stdout (kept to its last 64 MiB), never from the log.
+   version (asked once, on first use, never at startup), and the stdout's first
+   64 KiB and its last part, 256 KiB in all with a marker line for the cut, as a
+   `local-private` log Artifact. The log is never handed to
+   another Worker, and is only a bounded copy: usage and the attempt summary
+   (tool calls by name, files read and edited, the longest tool calls, the tool
+   share of the time; `unknown` where a Runtime's log does not say; recorded as
+   `summary` of the `observed` event and shown by `system work show`) are
+   computed from the whole stdout (kept to its last 64 MiB), never from the log.
 6. **Clean up:** the worktree registration and the attempt directory are removed.
 
 **Cancel:** the controller aborts the attempt; DSH sends SIGTERM to the range

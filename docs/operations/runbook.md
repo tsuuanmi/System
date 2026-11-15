@@ -82,8 +82,14 @@ Host that stopped itself for new code waits for its attempts first; see
   client of the new code, which makes the Host drain and restart on it (below);
 - if the Host does not run the new code within `--wait` (default 75 minutes,
   more than one attempt's time limit), it switches `current` back, and the
-  unit's next start runs the code before. Releases other than the current one
-  and the one before are removed.
+  unit's next start runs the code before;
+- once the Host runs it, the commit's `.system/checks.yaml` may list
+  `afterInstall` checks (the schema of `checks`): `system update` runs them as a
+  Work of the verifier `release.install-check`, with the installed `system` on
+  PATH, and prints the Work ID (a Verdict bound to the commit). When one fails
+  it switches `current` back to the release before, asks the Host to run it, and
+  names the failed check. Releases other than the current one and the one
+  before are removed.
 
 While it upgrades the Host starts no new attempt and lets the running ones
 finish; Works can still be submitted and wait. The log lines, exit status,

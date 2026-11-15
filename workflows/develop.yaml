@@ -7,7 +7,7 @@
 # skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 7
+version: 8
 steps:
   - id: implement
     capabilities: [repo.write, develop.implement, tier.standard]
@@ -18,11 +18,21 @@ steps:
     # One automatic further attempt on the same change when the checks fail, and one on the base's new tip when the publish is refused for a conflict or a failing check on the merge (sc-7).
     retry: { onFail: [checks.checks, publish], max: 1 }
     instructions: |
+      If the Task has the headings Goal, Files to change and why, Tests to add
+      or update, Invariants not to change, Out of scope and Done when (a
+      context pack), read the files it names first and widen only when they
+      are not enough. If the pack is wrong (a file missing, a wrong
+      invariant), say so in your result. A Task without these headings works
+      as before.
+
       Work test-first. Write or change the tests for the new behaviour and run
       them to see them fail for the right reason, then write the code. Update
       every existing test that pins behaviour the change alters (search the
-      tests for the names, messages and fields it changes). Run the
-      repository's checks before you finish.
+      tests for the names, messages and fields it changes). Before you finish,
+      run the tests of the files you change and the tests you write, then
+      build and typecheck, and fix your change until they pass. Do not run the
+      repository's full test suite or its other checks: the checks step runs
+      them after you.
 
       A bug fix starts with a test that reproduces the bug. Test the risky
       cases your change touches when they apply: a reopened step, a Host

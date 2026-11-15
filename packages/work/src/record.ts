@@ -38,6 +38,23 @@ export const usageSchema = z.union([
 ])
 
 export type ExecutorRecord = z.infer<typeof executorSchema>
+const known = <T extends z.ZodTypeAny>(t: T) => z.union([t, z.literal('unknown')])
+/** fl-4: what an attempt did, computed by System from its log; `unknown` where the Runtime's log does not say. */
+export const attemptSummarySchema = z.object({
+  runtime: z.string(),
+  toolCalls: known(z.record(z.string(), z.number().int().nonnegative())),
+  filesRead: known(z.array(z.string())),
+  filesEdited: known(z.array(z.string())),
+  /** The longest tool calls, longest first; for Bash the first 120 characters of the command. */
+  longest: z.array(z.object({ tool: z.string(), seconds: z.number().nonnegative(), command: z.string().optional() }).strict()),
+  toolSeconds: known(z.number().nonnegative()),
+  /** `toolSeconds` over the result's `duration_ms`. */
+  toolShare: known(z.number().nonnegative()),
+  durationMs: known(z.number().nonnegative()),
+  numTurns: known(z.number().int().nonnegative()),
+}).strict()
+export type AttemptSummary = z.infer<typeof attemptSummarySchema>
+
 export type UsageObserved = Extract<z.infer<typeof usageSchema>, { state: 'observed' }>
 
 export const eventSchema = z.discriminatedUnion('type', [
@@ -72,6 +89,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     partial: z.record(z.string(), contentIdSchema).optional(),
     /** The bounded agent output, for audit only; never handed to another Worker. */
     log: contentIdSchema.optional(),
+    /** fl-4: what the attempt did (tool calls, files, longest calls, tool share), computed by System from its log; absent in old records and for Runtimes with no log. */
+    summary: attemptSummarySchema.optional(),
     worker: executorSchema.optional(),
     /** Old records only: the attempt failed on a rate limit of its Account (the step stayed failed). */
     rateLimited: z.literal(true).optional(),
@@ -139,7 +158,7 @@ export const eventSchema = z.discriminatedUnion('type', [
     state: z.enum(['applied', 'failed', 'absent', 'unknown']), reason: z.string(),
     detail: z.record(z.string(), z.string()).optional(),
     /** The remote observed a conflict with the base or a failing check on the merge (`EffectOutcome.rejected`); only such an outcome may reopen a step. */
-    rejected: z.enum(['conflict', 'merge-check']).optional(),
+    rejected: z.enum(['conflict', 'merge-check', 'build-output']).optional(),
     /** The merge commit the provider held for an operator's Approval (`EffectOutcome.held`); recorded with state `absent`: nothing was published. */
     held: contentIdSchema.optional(),
   }).strict(),

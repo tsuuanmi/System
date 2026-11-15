@@ -6,11 +6,12 @@ const SHA = 'b'.repeat(40)
 const OLD = 'a'.repeat(40)
 
 /** A fake machine: a filesystem of paths and links, the commands run and their answers, the Host's probes. */
-function machine(options: { current?: string; checks?: number; build?: number; hostUp?: boolean; releases?: string[] } = {}) {
+function machine(options: { current?: string; checks?: number; build?: number; hostUp?: boolean; releases?: string[]; afterInstall?: boolean; installCheck?: number } = {}) {
   const ran: string[] = []
   const links = new Map<string, string>(options.current ? [['/i/current', `releases/${options.current}`]] : [])
   const dirs = new Set<string>(['/i/repo', ...(options.releases ?? (options.current ? [options.current] : [])).map((r) => `/i/releases/${r}`)])
   const log: string[] = []
+  const written = new Map<string, string>()
   let probes = 0
   let clock = 0
   const deps = {
@@ -19,6 +20,7 @@ function machine(options: { current?: string; checks?: number; build?: number; h
     origin: 'git@example:o/System.git',
     waitMs: 60_000,
     log: (line: string) => { log.push(line) },
+    write: (path: string, text: string) => { written.set(path, text) },
     exists: (path: string) => dirs.has(path) || links.has(path),
     readlink: (path: string) => links.get(path),
     switchLink: (path: string, target: string) => { links.set(path, target) },
@@ -33,12 +35,17 @@ function machine(options: { current?: string; checks?: number; build?: number; h
       if (args.includes('worktree') && args.includes('remove')) { dirs.delete(args.at(-1)!); return { status: 0, stdout: '' } }
       if (args.includes('worktree')) { dirs.add(`/i/releases/${SHA}`); return { status: 0, stdout: '' } }
       if (args[0] === 'task') return { status: 0, stdout: 'sha256:task\n' }
+      if (args.includes('show') && args.some((a) => a.endsWith(':checks.yaml') || a.includes('.system/checks.yaml'))) {
+        return options.afterInstall ? { status: 0, stdout: 'checks:\n  - name: x\n    run: "true"\nafterInstall:\n  - name: answers\n    run: system ping\n' } : { status: 0, stdout: 'checks:\n  - name: x\n    run: "true"\n' }
+      }
+      if (args[0] === 'work' && args.some((a) => a.endsWith('install-check.yaml'))) return { status: options.installCheck ?? 0, stdout: 'work:installed\n' }
+      if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:installed') return { status: 0, stdout: '{"reason": "failed: answers: no such command"}' }
       if (args[0] === 'work') return { status: options.checks ?? 0, stdout: 'work:checked\n' }
       if (command === 'corepack' && args.includes('build')) return { status: options.build ?? 0, stdout: '' }
       return { status: 0, stdout: '' }
     },
   }
-  return { deps, ran, links, dirs, log, probes: () => probes }
+  return { deps, ran, links, dirs, log, written, probes: () => probes }
 }
 
 test('a new commit of main is built, checked by a System Work on that commit, then made current; the Host is asked until it runs it', async () => {
@@ -54,6 +61,7 @@ test('a new commit of main is built, checked by a System Work on that commit, th
     '/cli/bin/system task new --text',
     '/cli/bin/system work submit --workflow',
     '/cli/bin/system work show work:checked',
+    'git -C /i/repo show',
   ])
   assert.ok(m.ran.some((line) => line.includes(`--repo /i/repo --ref ${SHA}`)))
   assert.ok(m.ran.some((line) => line.includes(`--workflow /i/releases/${SHA}/workflows/code-checks.yaml --input sha256:task`)))
@@ -129,4 +137,29 @@ test('the first install checks the whole commit: no --against', async () => {
   assert.equal(await update(m.deps), 0)
   assert.ok(m.ran.some((line) => line.includes('task new') && !line.includes('--against')))
   assert.ok(m.log.some((line) => line.includes('whole commit, none skipped')))
+})
+
+test('without afterInstall in the release checks file, nothing more is run or written', async () => {
+  const m = machine({ current: OLD })
+  assert.equal(await update(m.deps), 0)
+  assert.equal(m.written.size, 0)
+  assert.ok(!m.ran.some((line) => line.includes('install-check')))
+})
+
+test('a passing afterInstall check leaves the new release current, with its Work named', async () => {
+  const m = machine({ current: OLD, afterInstall: true })
+  assert.equal(await update(m.deps), 0)
+  assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
+  assert.ok(m.ran.some((line) => line.includes('work submit --workflow /i/install-check.yaml --input sha256:task')))
+  assert.match(m.written.get('/i/install-check.yaml') ?? '', /capability: release\.install-check[\s\S]*criteria: install-check-v1/)
+  assert.ok(m.log.some((line) => line.includes('work:installed') && line.includes('passed')))
+  assert.deepEqual(m.deps.releases().sort(), [OLD, SHA].sort())
+})
+
+test('a failing afterInstall check switches back to the release before, names the failed check and its Work', async () => {
+  const m = machine({ current: OLD, afterInstall: true, installCheck: 1 })
+  assert.equal(await update(m.deps), 1)
+  assert.equal(m.links.get('/i/current'), `releases/${OLD}`)
+  assert.ok(m.log.some((line) => line.includes('work:installed') && line.includes('failed: answers') && line.includes('switched back')))
+  assert.ok(m.dirs.has(`/i/releases/${OLD}`))
 })

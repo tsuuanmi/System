@@ -12,7 +12,8 @@
     "test": "SYSTEM_NO_BROWSER=1 node --test $(ls packages/*/tests/*.test.ts | grep -Ev '^packages/web-worker/tests/(chatgpt|chrome|remote)|/(driver|conformance)\\.test\\.ts$')",
     "test:web": "node --test --test-timeout=300000 packages/web-worker/tests/*.test.ts packages/web-driver/tests/driver.test.ts packages/web-driver/tests/conformance.test.ts tests/chatgpt-web.test.ts tests/web-canary.test.ts",
     "smoke": "SYSTEM_NO_BROWSER=1 node --test --test-timeout=300000 --test-concurrency=16 $(ls tests/*.test.ts | grep -Ev '/(chatgpt-web|web-canary)\\.test\\.ts$')",
-    "check": "\"$npm_execpath\" run build && \"$npm_execpath\" run typecheck && \"$npm_execpath\" run test && \"$npm_execpath\" run smoke && \"$npm_execpath\" run test:web"
+    "lint": "eslint .",
+    "check": "\"$npm_execpath\" run build && \"$npm_execpath\" run typecheck && \"$npm_execpath\" run lint && \"$npm_execpath\" run test && \"$npm_execpath\" run smoke && \"$npm_execpath\" run test:web"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.1",
@@ -20,7 +21,9 @@
     "@system/artifacts": "workspace:*",
     "@system/work": "workspace:*",
     "@types/node": "24.19.2",
+    "eslint": "10.14.0",
     "pnpm": "12.9.1",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
   }
 }

@@ -25,10 +25,18 @@
  * - reconcile only reads the remote: `applied` when the branch holds the commit
  *   and its pull request is open (and ready, if asked) or, with `merge`, when the
  *   base holds the change; `absent` otherwise; `unknown` when it cannot be read.
+ * - Build and cache output is never published (fl-8, Escaped defect 1): before any push,
+ *   the files the change adds to its base are listed; one under `__pycache__/` or
+ *   `node_modules/`, a `*.pyc` or `.DS_Store`, or one the base's own .gitignore ignores,
+ *   fails the change as `rejected: 'build-output'` naming the files, with no `detail.base`.
+ *   The Worker's step that lists the publish step in `retry.onFail` is reopened with the reason.
  * - The token reaches git through `GIT_CONFIG_*` environment variables, never
  *   its arguments, and the API through the Authorization header.
  */
 import { execFile } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { GIT_TREE_KIND, git as runGit, pin, type EffectIntent, type EffectOutcome, type EffectPort, type GitTreeContent, type Reconciled } from '@system/work'
 
@@ -73,6 +81,31 @@ function mergeTree(repository: string, tip: string, commit: string): Promise<{ t
       else reject(new Error(`git merge-tree in ${repository} failed: ${error.message}`))
     })
   })
+}
+
+/** Build or cache output by name, whatever any .gitignore says. */
+const BUILD_OUTPUT = /(^|\/)(__pycache__|node_modules)\/|\.pyc$|(^|\/)\.DS_Store$/
+
+/** Of `paths`, those the .gitignore files held by `base` ignore (`git check-ignore --no-index`, run over a scratch copy of just those files, so the change's own .gitignore counts for nothing). */
+async function ignoredAt(git: typeof runGit, repository: string, base: string, paths: string[]): Promise<string[]> {
+  const scratch = mkdtempSync(join(tmpdir(), 'system-ignore-'))
+  try {
+    await git(scratch, ['init', '--quiet'])
+    const files = (await git(repository, ['ls-tree', '-r', '--name-only', '-z', base])).split('\0').filter((f) => f === '.gitignore' || f.endsWith('/.gitignore'))
+    for (const file of files) {
+      mkdirSync(dirname(join(scratch, file)), { recursive: true })
+      writeFileSync(join(scratch, file), await git(repository, ['show', `${base}:${file}`]))
+    }
+    return await new Promise<string[]>((resolve, reject) => {
+      const child = execFile('git', ['-C', scratch, 'check-ignore', '--no-index', '-z', '--stdin'], { maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => {
+        if (!error || (error as { code?: number }).code === 1) resolve(stdout.split('\0').filter(Boolean))
+        else reject(new Error(`git check-ignore failed: ${error.message}`))
+      })
+      child.stdin!.end(paths.join('\0'))
+    })
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
 }
 
 /** Run `run` after every earlier one for the same key has finished: one merge at a time per base. */
@@ -132,6 +165,22 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       ? { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` }
       : {}
     return { tree, url, slug, token, env, branch: branchOf(intent.workId) }
+  }
+
+  /** fl-8: the build or cache files the change adds to its base (its parent, else the merge base with the remote-tracking base branch). */
+  async function buildOutput(t: Awaited<ReturnType<typeof target>>): Promise<string[]> {
+    const repository = t.tree.repository
+    let base = t.tree.parent
+    if (!base) {
+      // No network: the remote-tracking ref this repository already holds.
+      base = (await git(repository, ['merge-base', `refs/remotes/${config.remote}/${config.base}`, t.tree.commit]).catch(() => '')).trim()
+    }
+    const against = base || (await git(repository, ['hash-object', '-t', 'tree', '/dev/null'])).trim()
+    const added = (await git(repository, ['diff', '--no-renames', '--name-only', '-z', '--diff-filter=A', against, t.tree.commit])).split('\0').filter(Boolean)
+    const named = added.filter((f) => BUILD_OUTPUT.test(f))
+    const rest = added.filter((f) => !BUILD_OUTPUT.test(f))
+    const ignored = base && rest.length ? await ignoredAt(git, repository, base, rest) : []
+    return [...named, ...ignored].sort()
   }
 
   async function remoteCommit(t: Awaited<ReturnType<typeof target>>): Promise<string> {
@@ -296,6 +345,10 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
     async apply(intent): Promise<EffectOutcome> {
       const t = await target(intent)
       const merge = intent.params.merge === true
+      const output = await buildOutput(t)
+      if (output.length) {
+        return { state: 'failed', rejected: 'build-output', reason: `the change adds build or cache output, which is never published; remove ${output.join(', ')} from it (and keep it out of the commit)`, detail: { repository: t.slug, branch: t.branch, commit: t.tree.commit } }
+      }
       // ADR-0008 decision 2: a pull request for the branch aimed elsewhere is never merged or retargeted.
       const open = await pullsOf(t)
       let pull = open.find((p) => p.base?.ref === config.base)

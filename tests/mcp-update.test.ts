@@ -48,10 +48,8 @@ test('a running system mcp calls tools through the current release after two rea
         move(n)
         // Like update.mjs: switch the link, wait for the old Host to drain, then start current.
         assert.deepEqual(await host.exited, { code: 75, signal: null }, host.stderr())
-        // A resource request consumes the cached connection's EOF. The next tool
-        // call must recover with current's client, without a version refusal.
-        await assert.rejects(client.listResources(), /the Host closed the connection/)
         host = await cli.start()
+        // The first call on the cached connection (fl-7) must reconnect with current's client, without a version refusal.
       }
       const result = await client.callTool({ name: 'work.list', arguments: {} })
       const content = result.content as { type: string; text: string }[]

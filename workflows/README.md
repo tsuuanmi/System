@@ -7,6 +7,14 @@ changes future admissions only.
 The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml`, `research-source.yaml` and
 `brainstorm.yaml`, and the Sub-workflow `code-checks.yaml`.
 
+**Context pack.** A develop Task's instructions are prose under six headings, so
+the Worker reads the named files first instead of exploring (no Task field; a Task
+without them works as before): `Goal`; `Files to change and why`; `Tests to add or
+update`; `Invariants not to change`; `Out of scope`; `Done when`. `develop.yaml`'s
+`implement` reads the files named first, widens only when they are not enough, and
+says in its result when the pack is wrong. The MCP `instructions`
+([packages/app/src/mcp.ts](../packages/app/src/mcp.ts)) tell callers to write it.
+
 A step's `capabilities` are of three kinds (terms in [GLOSSARY.md](../GLOSSARY.md)):
 an **Ability** is what a Runtime can do (`repo.read`, `repo.write`, `web.search`,
 `web.browse`); a **Role** is a step's part in a Workflow, given to Accounts

@@ -141,7 +141,7 @@ test('a pinned over-ceiling Account waits rather than failing or falling back', 
     { ref: 'P', quota: async () => reading(91) },
     { ref: 'S', quota: async () => reading(10) },
   ], 'P')
-  f.run()
+  void f.run() // fire-and-forget: the Work is left waiting; setup() keeps the promise in `runs` and t.after settles it
   await turns()
   assert.deepEqual(dispatched(f.record()), [])
   assert.equal(f.record().state.status, 'running')
@@ -252,7 +252,7 @@ test('a limited attempt drops the cached quota reading', async (t) => {
     { ref: 'S', quota: async (fresh) => { calls.push({ ref: 'S', fresh, attempted }); return reading(50) } },
   ])
   // Inspect after observation even if a broken controller keeps routing to P.
-  f.run()
+  void f.run() // fire-and-forget: the Work is left waiting; setup() keeps the promise in `runs` and t.after settles it
   await eventually(() => observations(f.record()).length > 0, 'the first attempt must be observed')
   assert.equal(calls.filter((call) => call.ref === 'P' && call.fresh === true && call.attempted).length, 1)
   assert.equal(calls.some((call) => call.ref === 'S' && call.fresh === true), false)
@@ -334,7 +334,7 @@ test('a limited Account takes no step before the default 5 hours are over, even 
   const f = await setup(t, [{ ref: 'P', quota: async () => { throw new Error('reader down') }, run: async () => {
     if (first) { first = false; return { status: 'failed', outputs: {}, reason: outOfCredits } }
   } }])
-  f.run()
+  void f.run() // fire-and-forget: the Work is left waiting; setup() keeps the promise in `runs` and t.after settles it
   await eventually(() => f.controller.live(f.id).some((entry) => String(entry.waiting) === 'quota'), 'limited step must wait on quota')
   // The retry interval is 20 ms here; the Account stays passed over through many retries.
   await new Promise((resolve) => setTimeout(resolve, 200))

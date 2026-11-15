@@ -760,7 +760,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     let missing: string[] = []
     for (const slot of request.outputs) {
       const named = answer.blocks.filter((block) => block.label === slot)
-      if (named.length > 1) return finish({ status: 'failed', outputs: {}, partial: { conversation: conversation.id }, reason: `${account.ref}: ${named.length} rendered blocks are labelled ${slot} (ambiguous)` })
+      if (named.length > 1) return await finish({ status: 'failed', outputs: {}, partial: { conversation: conversation.id }, reason: `${account.ref}: ${named.length} rendered blocks are labelled ${slot} (ambiguous)` })
       if (named.length) [contents[slot], filled[slot]] = [named[0]!.code, 'block']
       else missing.push(slot)
     }
@@ -790,16 +790,16 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
     const outputs: Record<string, string> = {}
     for (const [slot, content] of Object.entries(contents)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
     if (missing.length) {
-      return finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref} wrote no output block for ${missing.join(', ')}` })
+      return await finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref} wrote no output block for ${missing.join(', ')}` })
     }
     // An output closed early (a fence of its own inside it) leaves the rest of the answer outside the blocks: never accepted.
     if (outside > web.maxOutsideChars) {
-      return finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref}: the answer continues outside its output blocks (${outside} characters): an output may be cut short` })
+      return await finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref}: the answer continues outside its output blocks (${outside} characters): an output may be cut short` })
     }
-    return finish({ status: 'succeeded', outputs: { ...outputs, conversation: conversation.id }, partial: { conversation: conversation.id } })
+    return await finish({ status: 'succeeded', outputs: { ...outputs, conversation: conversation.id }, partial: { conversation: conversation.id } })
   } catch (error) {
-    if (request.signal.aborted) return finish({ status: 'cancelled', outputs: {}, reason: 'cancelled; the browser was closed' })
-    if (timedOut) return finish({ status: 'failed', outputs: {}, reason: `attempt exceeded its time limit of ${limit} minutes` })
+    if (request.signal.aborted) return await finish({ status: 'cancelled', outputs: {}, reason: 'cancelled; the browser was closed' })
+    if (timedOut) return await finish({ status: 'failed', outputs: {}, reason: `attempt exceeded its time limit of ${limit} minutes` })
     note(`failed: ${(error as Error).message}`)
     const shot = page && await screenshotOf(page)
     if (shot) partial.screenshot = await putFile(shot, 'image/png')
@@ -808,7 +808,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       if (found) partial.snapshot = await putFile(Buffer.from(JSON.stringify(found satisfies PageDiagnostics)), 'application/json')
     }
     const reason = error instanceof Failure ? error.message : `${account.ref}: ${(error as Error).message.split('\n')[0]}`
-    return finish({ status: 'failed', outputs: {}, ...(Object.keys(partial).length ? { partial } : {}), reason })
+    return await finish({ status: 'failed', outputs: {}, ...(Object.keys(partial).length ? { partial } : {}), reason })
   } finally {
     clearTimeout(timer)
     request.signal.removeEventListener('abort', forward)
