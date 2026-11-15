@@ -27,13 +27,18 @@ checks:
   - name: install
     run: corepack pnpm install --frozen-lockfile
     timeoutSeconds: 300
-    paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, docs/requirements/purpose.md]
+    paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, eslint.config.js, docs/requirements/purpose.md]
   - name: build
     run: corepack pnpm build
     timeoutSeconds: 300
     paths: *code
   - name: typecheck
     run: corepack pnpm typecheck
+    timeoutSeconds: 300
+    paths: *code
+  - name: lint
+    # Item fl-10 (Escaped defect 4): only `@typescript-eslint/no-floating-promises`, over the sources and tests.
+    run: corepack pnpm lint
     timeoutSeconds: 300
     paths: *code
   - name: unit
