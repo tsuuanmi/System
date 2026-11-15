@@ -3,6 +3,7 @@ export interface UpdateDeps {
   cli: string
   origin: string
   run(command: string, args: string[], cwd?: string): Promise<{ status: number; stdout: string }>
+  write(path: string, text: string): void
   exists(path: string): boolean
   readlink(path: string): string | undefined
   switchLink(path: string, target: string): void

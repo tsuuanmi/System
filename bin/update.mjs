@@ -15,13 +15,30 @@
 //   5. ask the Host, as a client of the new code, until it runs it: a hello of other code makes a Host
 //      whose `current` changed drain and exit 75, and the unit starts the new code (D). If it does not
 //      come up in time, switch `current` back; the unit's next start runs the code before.
+//   6. verify it on the install (Item fl-5): when the commit's `.system/checks.yaml` lists `afterInstall` checks, run them
+//      as a Work of the verifier `release.install-check` (the Host runs the new code, so it knows the verifier; its workflow
+//      is written here, not pinned by a file of the repository, the Q0 rule), bound to the commit. A failed check switches
+//      `current` back and the Host is asked to run the release before; the failed check is named.
 // The releases other than the current one and the one before are removed.
 import { join } from 'node:path'
+
+/** The Work of the install check: a verify step of `release.install-check`, its input the release commit's task. */
+const INSTALL_CHECK_WORKFLOW = `# Written by \`system update\` (Item fl-5); not a file of the repository, so no Workflow pins the verifier (Q0).
+schema: system.workflow/v1
+id: install-check
+version: 1
+steps:
+  - id: install
+    verify:
+      capability: release.install-check
+      subject: $work.input
+      criteria: install-check-v1
+`
 
 /** The last line of a command's output. */
 const lastLine = (text) => text.trim().split('\n').at(-1) ?? ''
 
-export async function update({ install, cli, origin, run, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
+export async function update({ install, cli, origin, run, write, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
   const repo = join(install, 'repo')
   const link = join(install, 'current')
   const git = (...args) => run('git', ['-C', repo, ...args])
@@ -77,6 +94,25 @@ export async function update({ install, cli, origin, run, exists, readlink, swit
       await sleep(5000)
     }
     log(`the Host runs ${commit.slice(0, 12)}`)
+
+    // The `afterInstall` checks of this commit, run against the installed release (not the checkout).
+    const listed = (await git('show', `${commit}:.system/checks.yaml`)).stdout
+    if (/^afterInstall:/m.test(listed)) {
+      write(join(install, 'install-check.yaml'), INSTALL_CHECK_WORKFLOW)
+      log(`verifying the install of ${commit.slice(0, 12)} with its afterInstall checks, as a System Work`)
+      const installed = await run(cli, ['work', 'submit', '--workflow', join(install, 'install-check.yaml'), '--input', task])
+      const installWork = installed.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
+      if (installed.status !== 0) {
+        const shown = installWork.startsWith('work:') ? (await run(cli, ['work', 'show', installWork])).stdout : installed.stdout
+        const reason = /"reason":\s*"((?:[^"\\]|\\.)*)"/.exec(shown)?.[1] ?? lastLine(shown)
+        switchLink(link, before)
+        log(`the install checks of ${commit.slice(0, 12)} failed (${installWork}): ${reason}; switched back to ${before}, asking the Host to run it`)
+        const back = now() + waitMs
+        while (!(await probe(join(install, before))) && now() < back) await sleep(5000)
+        return 1
+      }
+      log(`the install checks of ${commit.slice(0, 12)} passed: ${installWork}`)
+    }
     for (const old of releases()) {
       if (`releases/${old}` === before || old === commit) continue
       await git('worktree', 'remove', '--force', join(install, 'releases', old))

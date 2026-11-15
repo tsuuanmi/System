@@ -39,21 +39,24 @@ export const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, SATISFIED_TESTS] as 
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
-export const checksFileSchema = z.object({
-  checks: z.array(z.object({
-    name: z.string().regex(/^[a-z][a-z0-9-]*$/),
-    run: z.string().min(1),
-    timeoutSeconds: z.number().int().positive().max(3600).default(600),
-    /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one or it failed earlier in the Work; without it, always. */
-    paths: z.array(z.string().min(1)).min(1).optional(),
-    /** Ignored: read for old files and old `checks@1` (a verdict reason notes it). */
-    red: z.enum(['pass', 'fail']).optional(),
-  }).strict()).min(1).max(20),
+const checkSchema = z.object({
+  name: z.string().regex(/^[a-z][a-z0-9-]*$/),
+  run: z.string().min(1),
+  timeoutSeconds: z.number().int().positive().max(3600).default(600),
+  /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one or it failed earlier in the Work; without it, always. */
+  paths: z.array(z.string().min(1)).min(1).optional(),
+  /** Ignored: read for old files and old `checks@1` (a verdict reason notes it). */
+  red: z.enum(['pass', 'fail']).optional(),
 }).strict()
-/** The checks of a `.system/checks.yaml` text, or why the schema refuses it (`checks.yaml` as `bootstrap check` and admission both read it). */
-export function parseChecksFile(text: string): { checks: Checks['checks'] } | { problem: string } {
+export const checksFileSchema = z.object({
+  checks: z.array(checkSchema).min(1).max(20),
+  /** Item fl-5: checks `system update` runs on the installed release (`release.install-check`); same schema as `checks`. */
+  afterInstall: z.array(checkSchema).min(1).max(20).optional(),
+}).strict()
+/** The checks of a `.system/checks.yaml` text (and its `afterInstall` list when it has one), or why the schema refuses it (`checks.yaml` as `bootstrap check` and admission both read it). */
+export function parseChecksFile(text: string): { checks: Checks['checks']; afterInstall?: Checks['checks'] } | { problem: string } {
   const parsed = checksFileSchema.safeParse(parse(text))
-  return parsed.success ? { checks: parsed.data.checks } : { problem: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }
+  return parsed.success ? { checks: parsed.data.checks, ...(parsed.data.afterInstall ? { afterInstall: parsed.data.afterInstall } : {}) } : { problem: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }
 }
 export const checksSchema = z.object({
   name: z.string(),

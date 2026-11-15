@@ -129,6 +129,7 @@ async function runUpdate(args) {
     cli: join(repo, 'bin', 'system'),
     origin,
     run: capture,
+    write: (path, text) => writeFileSync(path, text),
     exists: existsSync,
     readlink: (link) => { try { return readlinkSync(link) } catch { return undefined } },
     switchLink: (link, target) => { rmSync(`${link}.new`, { force: true }); symlinkSync(target, `${link}.new`); renameSync(`${link}.new`, link) },

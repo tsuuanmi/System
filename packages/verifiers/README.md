@@ -21,6 +21,10 @@ without evidence, unstored evidence, and a subject kind the verifier does not
 accept. A verdict about a subject that has since been replaced counts as
 `stale`, never as a pass.
 
+## `release.install-check` (version 1)
+
+Item fl-5. Runs the `afterInstall` list of `.system/checks.yaml` at a release commit (criteria `install-check-v1`, pinned from that commit as `checks@1`) with the install's `current/bin` first on PATH, in a worktree of the commit. `pass` when every command exits 0, `fail` naming each failed check, `error` when the commit cannot be checked out; evidence is one `check-run@1` per command. Used by `system update` (bin/update.mjs), which writes the Workflow itself: no file under `workflows/` pins it (Q0).
+
 ## `code.required-checks` (version 1)
 
 - **Accepts:** `git-tree`, and a `task` (`code-checks.yaml` on its own), whose base commit is checked as it is.
