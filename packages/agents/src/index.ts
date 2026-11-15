@@ -19,6 +19,7 @@ import { RUNTIME_ABILITIES, type Runtime } from './runtimes.ts'
 import { WEB_WORKER_DISABLED, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
 export * from './agent.ts'
+export * from './attempt-summary.ts'
 export * from './identity.ts'
 export * from './node.ts'
 export * from './quota.ts'

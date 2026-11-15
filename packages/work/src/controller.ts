@@ -1018,6 +1018,7 @@ export class WorkController {
       usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
+      ...(result.summary ? { summary: result.summary } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
       ...(limited ? { limited: true as const } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),

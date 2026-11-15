@@ -267,6 +267,16 @@ test('usage a Worker does not report is recorded as unknown, never zero', async 
   assert.deepEqual(observed && 'usage' in observed && observed.usage, { state: 'unknown' })
 })
 
+test('the attempt summary a Worker computed is recorded with the observed event, and absent when it gave none', async () => {
+  const summary = { runtime: 'claude-code' as const, toolCalls: { Bash: 2 }, filesRead: [], filesEdited: [], longest: [{ tool: 'Bash', seconds: 30, command: 'pnpm test' }], toolSeconds: 30, toolShare: 0.3, durationMs: 100_000, numTurns: 4 }
+  const h = harness({ worker: { async run(request) { return { status: 'succeeded', outputs: Object.fromEntries(request.outputs.map((slot) => { const out = id(`${request.attemptId}/${slot}`); h.specs.stored.add(out); return [slot, out] })), summary } } } })
+  const done = await runFixture(h, 'research.yaml')
+  const observed = done.events.find((e) => e.type === 'observed')
+  assert.deepEqual(observed?.type === 'observed' && observed.summary, summary)
+  const bare = await runFixture(harness(), 'research.yaml')
+  assert.equal(bare.events.find((e) => e.type === 'observed' && e.summary), undefined)
+})
+
 test('routing records every candidate and why it was or was not chosen', async () => {
   const h = harness()
   h.capabilities.registerWorker({ ref: 'coder-only', capabilities: ['repo.write'], run: async () => ({ status: 'failed', outputs: {} }) })
