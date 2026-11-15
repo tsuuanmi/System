@@ -55,7 +55,7 @@ export function installRoot(repo, exists) {
 /**
  * The install's profile file (`<install>/profile.yml`, beside `releases/` and `current`) for the release
  * directory `repo`, or undefined for a checkout. The one place that path is decided: `bin/system` (the
- * unit's patch) and `system doctor` both ask here.
+ * unit's patch) asks here.
  */
 export function installProfile(repo, exists) {
   const install = installRoot(repo, exists)

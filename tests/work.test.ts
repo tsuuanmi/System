@@ -21,7 +21,7 @@ const FAKES_ON = `- id: verifiers
 - id: fakes
   disabled: false
   config:
-    workers: [code-write, code.develop, research, web-search, tier.standard]
+    workers: [repo.write, develop.implement, research, web.search, tier.standard]
     verifiers: [code.required-checks, research.citation-check]
     effects: [git.publish]
 `
@@ -56,7 +56,7 @@ after(async () => {
 
 test('a direct Task, Software Engineering and Research all succeed through one controller', () => {
   rmSync(log, { force: true })
-  const task = system(['work', 'submit', '--capability', 'code-write', '--input', input])
+  const task = system(['work', 'submit', '--capability', 'repo.write', '--input', input])
   assert.equal(task.status, 0, task.stderr)
   const se = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'develop.yaml'), '--input', input])
   assert.equal(se.status, 0, se.stderr)

@@ -55,7 +55,7 @@ _Avoid_: permission, feature
 **Role**:
 A capability naming a step's part in a Workflow, given to one or more Accounts so
 that the step runs on that Account, such as the first Brainstorm proposal or
-the development of a code change (`code.develop`). A step's `prefer` names a role that ranks its Accounts first without requiring them, falling back to any other capable Account (ro-12).
+the development of a code change (`develop.implement`). A step's `prefer` names a role that ranks its Accounts first without requiring them, falling back to any other capable Account (ro-12).
 _Avoid_: persona, agent type
 
 ### Running and directing work

@@ -110,7 +110,7 @@ export const wasMerged = (record: WorkRecord): boolean => !!mergedEntry(record)
 /** The commit on `dev` a merged Work made, when its merge effect recorded it. */
 export const mergeCommitOf = (record: WorkRecord): string | undefined => mergedEffect(record)?.detail?.mergeCommit
 
-/** Whether a Work changed nothing: it did not succeed and a step of it failed on `no change` (a `code-write` tree equal to its base). */
+/** Whether a Work changed nothing: it did not succeed and a step of it failed on `no change` (a `repo.write` tree equal to its base). */
 const changedNothing = (record: WorkRecord): boolean =>
   record.state.status !== 'succeeded' && record.events.some((e) => e.type === 'observed' && e.status === 'failed' && /^no change\b/.test(e.reason ?? ''))
 

@@ -10,13 +10,12 @@ interface Entry { id?: string; config?: { accounts?: { ref: string; capabilities
 const bundle = parse(readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')) as { insert: Entry[] }[]
 const row = (id: string) => bundle[0]!.insert.find((entry) => entry.id === id)!
 
-test('the shipped Accounts and fakes have the code.develop Worker capability', () => {
+test('the shipped Accounts and fakes have the develop.implement Role, and grant no ability or old name', () => {
   const accounts = row('agents').config!.accounts!
   const claude = accounts.find((account) => account.ref === 'claude-code/default')!
   const codex = accounts.find((account) => account.ref === 'codex/default')!
-  assert.ok(claude.capabilities!.includes('code-write'))
-  assert.ok(claude.capabilities!.includes('code.develop'))
-  assert.ok(codex.capabilities!.includes('code-write'))
-  assert.ok(!codex.capabilities!.includes('code.develop'))
-  assert.ok(row('fakes').config!.workers!.includes('code.develop'))
+  assert.ok(claude.capabilities!.includes('develop.implement'))
+  assert.ok(!codex.capabilities!.includes('develop.implement'))
+  assert.ok(row('fakes').config!.workers!.includes('develop.implement'))
+  for (const account of accounts) for (const old of ['code-write', 'code.develop', 'web-search', 'research.web']) assert.ok(!account.capabilities!.includes(old), `${account.ref} ${old}`)
 })

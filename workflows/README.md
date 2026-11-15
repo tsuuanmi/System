@@ -14,7 +14,7 @@ an **Ability** is what a Runtime can do (`repo.read`, `repo.write`, `web.search`
 `research.lane-*`, `review.second-opinion`); a **Tier** is a model class
 (`tier.economy`, `tier.standard`, `tier.frontier`). `repo.write` is also what makes
 the working tree a step's output. The old names (`code-write`, `web-search`,
-`research.web`, `code.develop`) still route, as aliases for one release.
+`research.web`, `code.develop`) are unknown capabilities: a step needing one is refused at admission.
 
 - [develop.yaml](develop.yaml) — the default for any change to a repository:
   `implement` (`repo.write`, `develop.implement`, `tier.standard`; works test-first:

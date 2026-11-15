@@ -25,10 +25,10 @@ const agents = (overlay: string) => flat(composeEntries([bundle, parse(overlay) 
 const refs = (config: ReturnType<typeof agents>) => config.accounts.map((a) => a.ref)
 
 test('an overlay account with a ref the bundle has changes only the fields it names', () => {
-  const config = agents('- id: agents\n  config:\n    accounts:\n      - ref: codex/default\n        capabilities: [code-write, brainstorm.idea-b, research]\n')
+  const config = agents('- id: agents\n  config:\n    accounts:\n      - ref: codex/default\n        capabilities: [repo.write, brainstorm.idea-b, research]\n')
   assert.deepEqual(refs(config), ['claude-code/default', 'codex/default'])
   const codex = config.accounts[1]!
-  assert.deepEqual(codex.capabilities, ['code-write', 'brainstorm.idea-b', 'research'], 'a list of names is replaced whole')
+  assert.deepEqual(codex.capabilities, ['repo.write', 'brainstorm.idea-b', 'research'], 'a list of names is replaced whole')
   assert.equal(codex.models?.standard, 'gpt-6.1-sol', 'what the overlay does not name stays the bundle\'s')
   assert.equal(config.attemptTimeoutMinutes, 60)
 })
@@ -47,7 +47,7 @@ test('$patch: delete removes an account; $patch: replace takes the overlay whole
 })
 
 test('other entries are untouched, and an entry without config still takes the overlay\'s', () => {
-  const entries = flat(composeEntries([bundle, parse('- id: fakes\n  disabled: false\n  config:\n    workers: [code-write]\n') as unknown[]]))
+  const entries = flat(composeEntries([bundle, parse('- id: fakes\n  disabled: false\n  config:\n    workers: [repo.write]\n') as unknown[]]))
   const fakes = entries.find((e) => e.id === 'fakes')!
-  assert.deepEqual([fakes.disabled, fakes.config.workers, fakes.config.verifiers], [false, ['code-write'], ['code.required-checks', 'research.citation-check']])
+  assert.deepEqual([fakes.disabled, fakes.config.workers, fakes.config.verifiers], [false, ['repo.write'], ['code.required-checks', 'research.citation-check']])
 })

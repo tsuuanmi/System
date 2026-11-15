@@ -49,10 +49,10 @@ const failures = async (dir: string) => (await bootstrapCheck(dir)).filter((r) =
 test('a passing repository passes every item, one line each', async () => {
   const dir = repository({ files: { 'tools/docs.py': 'import sys\nsys.exit(0)\n' } })
   const results = await bootstrapCheck(dir)
-  assert.equal(results.length, 7)
+  assert.equal(results.length, 6)
   assert.deepEqual(results.filter((r) => r.problem), [])
   const text = formatBootstrap(results)
-  assert.equal(text.trimEnd().split('\n').length, 7)
+  assert.equal(text.trimEnd().split('\n').length, 6)
   assert.ok(text.trimEnd().split('\n').every((line) => /: ok$/.test(line)), text)
 })
 
@@ -114,7 +114,7 @@ test('item 6: a failing tools/docs.py fails; a repository without it skips the i
   assert.deepEqual(failed.map((r) => r.name), ['docs'])
   assert.match(failed[0]!.problem!, /broken link/)
   const results = await bootstrapCheck(repository())
-  assert.equal(results.length, 7)
+  assert.equal(results.length, 6)
   assert.equal(results.find((r) => r.name === 'docs')!.problem, undefined)
 })
 
@@ -126,19 +126,4 @@ test('item 6 runs `docs.py check` on dev in a temporary worktree and leaves the 
   assert.deepEqual(await failures(dir), [])
   assert.equal(git(dir, 'status', '--porcelain') + git(dir, 'worktree', 'list') + git(dir, 'for-each-ref'), before)
   assert.equal(execFileSync('ls', ['-A', dir], { encoding: 'utf8' }).includes('ran-'), false)
-})
-
-const WORKFLOW = (needs: string) => `name: w\nsteps:\n  - id: s\n    capabilities: [${needs}]\n`
-
-test('a Workflow needing an old capability name fails the capabilities item', async () => {
-  const dir = repository({ files: { 'workflows/w.yaml': WORKFLOW('code-write, tier.standard') } })
-  const bad = await failures(dir)
-  assert.deepEqual(bad.map((r) => r.name), ['capabilities'])
-  assert.match(bad[0]!.problem!, /code-write → repo\.write/)
-  assert.match(bad[0]!.problem!, /workflows\/w\.yaml:4/)
-})
-
-test('new capability names and no workflows pass the capabilities item', async () => {
-  assert.deepEqual(await failures(repository({ files: { 'workflows/w.yaml': WORKFLOW('repo.write, develop.implement') } })), [])
-  assert.deepEqual(await failures(repository()), [])
 })

@@ -431,8 +431,8 @@ test('a using step\'s `when` or `unless` applies to every step of its Sub-workfl
   assert.deepEqual([implement.outputs, implement.optionalOutputs], [['change'], ['satisfied']])
 })
 
-test('code-checks.yaml pins repo-checks-v1: a release checked by the running Host cannot pin a criteria that release adds', () => {
-  assert.match(fixture('code-checks.yaml'), /criteria: repo-checks-v1\s*$/m)
+test('code-checks.yaml pins repo-checks-v2, which the running release (639d336) and later know', () => {
+  assert.match(fixture('code-checks.yaml'), /criteria: repo-checks-v2\s*$/m)
 })
 
 test('develop.yaml implement instructions carry the review, bug-fix, risk, refactor and compatibility rules within 8 KiB', () => {

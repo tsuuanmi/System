@@ -50,7 +50,7 @@ after(async () => {
 const newTask = (text: string) => system(['task', 'new', '--text', text, '--repo', gitRepo]).stdout.trim()
 
 test('Claude Code makes a real change, captured as an exact commit with observed usage', { skip: !enabled && 'set SYSTEM_REAL_AGENTS=1' }, () => {
-  const ran = system(['work', 'submit', '--capability', 'code-write', 'tier.economy', '--input', newTask('Create a file named HELLO.md whose only content is the line: hello from System. Change nothing else.')])
+  const ran = system(['work', 'submit', '--capability', 'repo.write', 'tier.economy', '--input', newTask('Create a file named HELLO.md whose only content is the line: hello from System. Change nothing else.')])
   assert.equal(ran.status, 0, ran.stderr + ran.stdout)
   const record = show(ran.stdout.trim())
   const result = tree(record.state.steps.task.outputs.result!)
@@ -70,7 +70,7 @@ test('a cancelled Claude Code attempt is taken over by Codex from its partial tr
     '3. Append the line: step two  to NOTES.md',
     'If NOTES.md already contains "step one", skip steps 1 and 2.',
   ].join('\n'))
-  const submit = cli.runAsync(['work', 'submit', '--capability', 'code-write', 'tier.economy', '--input', input])
+  const submit = cli.runAsync(['work', 'submit', '--capability', 'repo.write', 'tier.economy', '--input', input])
   while (!submit.stdout().trim()) await new Promise((r) => setTimeout(r, 200))
   const workId = submit.stdout().trim().split('\n')[0]!
   // Cancel 3 s after dispatch: an agent CLI takes longer than that just to start, so the attempt is

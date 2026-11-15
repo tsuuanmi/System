@@ -30,13 +30,13 @@ the optional web-worker row) becomes a System Worker
         runtime: claude-code
         label: me@example.com           # free text for people
         claudeHome: claude/default      # holds .claude.json (provider account ID); under $DSH_HOME/system unless absolute; this is the default (claude/<name>)
-        capabilities: [code-write, code.develop, research, web-search]
+        capabilities: [develop.implement, research]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
         maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
       - ref: codex/default
         runtime: codex
-        capabilities: [code-write, code.tests]
+        capabilities: [code.tests]
         codexHome: codex/default        # under $DSH_HOME/system unless absolute
       # A second account is another entry with its own ref and credential.
 ```
@@ -48,9 +48,8 @@ A Runtime's **abilities** are declared in code (`RUNTIME_ABILITIES` in `src/runt
 abilities plus the Roles and Tiers its `capabilities:` and `models:` grant. `system workers` and `workers.list` show the two apart
 (`abilities:` and `capabilities:`).
 
-For one release the old names are aliases of the new, in one table (`CAPABILITY_ALIASES`, `packages/work/src/registry.ts`), read for a step's
-requirement and an Account's grant alike: `code-write` = `repo.write`, `web-search` = `web.search`, `research.web` = `web.browse`,
-`code.develop` = `develop.implement`. A Work pinned with the old names routes as before.
+The old names (`code-write`, `web-search`, `research.web`, `code.develop`) are gone: one is an unknown capability, and a step needing it is refused at
+admission ("no enabled Worker provides ..."). A pinned spec that names one still replays, as replay does not route.
 
 ## Account identity
 
@@ -191,9 +190,9 @@ events survive a Host restart (see Cache under [Quota](#quota)).
 
 ## Software Engineering policy and the attempt budget
 
-`develop.implement` (old name `code.develop`) is a role: the plan and implement steps of the code Workflows ask for it (see the [Workflows README](../../workflows/README.md)), so the Claude Code account above takes them. `repo.write` (old name `code-write`) is an ability, not a role.
+`develop.implement` is a role: the plan and implement steps of the code Workflows ask for it (see the [Workflows README](../../workflows/README.md)), so the Claude Code account above takes them. `repo.write` is an ability, not a role.
 
-A `code-write` attempt runs every command in the foreground (PROP-0007
+A `repo.write` attempt runs every command in the foreground (PROP-0007
 decision 1): Claude Code gets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and
 `Monitor` among its disallowed tools, and every Runtime's prompt says to run
 each command under `timeout` and wait for it. When the repository has `.system/checks.yaml` at the base commit, the prompt also tells it to run the checks whose `paths` match its changed files before it finishes. A wait on a background job
@@ -210,7 +209,7 @@ each time the stream grows. `attemptTimeoutMinutes` stays the hard limit.
 Tiers are those of System 1: `economy`, `standard`, `frontier`. An account's
 `models` maps each tier it offers to a model; each listed tier adds the
 capability `tier.<name>`, so a Workflow step asks for one like any other
-capability (`capabilities: [code-write, tier.frontier]`) and preflight refuses
+capability (`capabilities: [repo.write, tier.frontier]`) and preflight refuses
 a tier no enabled account offers. A `web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../web-worker/README.md)). A step with no tier gets the `standard`
 model, or the CLI's default when the account lists none. Each attempt records
 the tier, the configured model, and the models the CLI reports it served.
@@ -252,11 +251,11 @@ model is recorded for it.
    While it runs, its stdout is read every 0.5 s; when it grew, the attempt
    reports its progress (`progressReader`: turns, the last tool, tokens so
    far) to the Host, which keeps it in memory only.
-4. **Capture**, the same rule for every domain: for a step with `code-write`
+4. **Capture**, the same rule for every domain: for a step with `repo.write`
    in a git workspace the first output slot is the working tree, committed on
    the base with a private index as `git-tree@1` and pinned at
    `refs/system/artifacts/<commit>`; every other slot, and every slot of a step
-   without `code-write`, is the file `out/<slot>` as `file@1`. A change such a
+   without `repo.write`, is the file `out/<slot>` as `file@1`. A change such a
    step makes to the checkout is not an output. A missing output fails the attempt.
    A change equal to its base (the tree is the base commit's own) is still
    captured, and the Worker reports its final message beside the outputs; the

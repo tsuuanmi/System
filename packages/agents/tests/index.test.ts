@@ -142,8 +142,8 @@ const cliMount = async (accounts: object[], hold = false): Promise<{ registered:
   await started
   return { registered, before, accounts: await provided.agents.accounts() as any[], started }
 }
-const claude = (ref: string, own: object = {}) => ({ ref, runtime: 'claude-code', capabilities: ['code-write'], ...own })
-const codex = (ref: string, home: string, own: object = {}) => ({ ref, runtime: 'codex', capabilities: ['code-write'], codexHome: home, ...own })
+const claude = (ref: string, own: object = {}) => ({ ref, runtime: 'claude-code', capabilities: ['repo.write'], ...own })
+const codex = (ref: string, home: string, own: object = {}) => ({ ref, runtime: 'codex', capabilities: ['repo.write'], codexHome: home, ...own })
 
 test('any priority registers and carries a note, including multiple old primaries', async () => {
   const { accounts, registered } = await cliMount(['primary', 'primary', 'secondary', 'anything'].map((priority, i) => claude(`claude-code/c${i}`, { priority, claudeHome: tempDir() })))
@@ -305,16 +305,16 @@ test('a CLI Account registers with its Runtime abilities and what its profile gr
   } as Record<string, unknown>
   const ctx = { get: (key: string) => services[key], effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value }, baseDir: tempDir('base-') }
   await apply(ctx as never, { accounts: [
-    claude('claude-code/a', { claudeHome: tempDir(), capabilities: ['code.develop', 'research'], models: { standard: 'm' } }),
+    claude('claude-code/a', { claudeHome: tempDir(), capabilities: ['develop.implement', 'research'], models: { standard: 'm' } }),
     codex('codex/b', fakeCodexHome(undefined, 'acct-b'), { capabilities: ['research'] }),
   ] as never })
   const [a, b] = ports
-  for (const need of ['repo.read', 'repo.write', 'web.search', 'code.develop', 'research', 'tier.standard']) assert.ok(a!.capabilities.includes(need), `claude ${need}`)
+  for (const need of ['repo.read', 'repo.write', 'web.search', 'develop.implement', 'research', 'tier.standard']) assert.ok(a!.capabilities.includes(need), `claude ${need}`)
   assert.ok(b!.capabilities.includes('repo.write') && b!.capabilities.includes('research'))
   assert.ok(!b!.capabilities.includes('web.search'), 'codex has no web.search')
   const status = await provided.agents.accounts() as { ref: string; abilities: string[]; capabilities: string[] }[]
   assert.deepEqual(status.map((s) => [s.ref, s.abilities, s.capabilities]), [
-    ['claude-code/a', ['repo.read', 'repo.write', 'web.search'], ['code.develop', 'research', 'tier.standard']],
+    ['claude-code/a', ['repo.read', 'repo.write', 'web.search'], ['develop.implement', 'research', 'tier.standard']],
     ['codex/b', ['repo.read', 'repo.write'], ['research']],
   ])
 })
