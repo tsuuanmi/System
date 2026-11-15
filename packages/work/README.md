@@ -55,6 +55,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   inconclusive verdict, hold, failed publish and operator touch as `failures`
   (its `event`, kind and `outside` cause, or none for a failure of the change),
   with `outsideFailures` and `changeFailures` counted.
+- [src/measures.ts](src/measures.ts) — `rangeReport`: the five measures of effect over the Works admitted in a range (`system work report --since`), from their records alone; a measure with nothing to divide by is `unknown`, never zero.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` 
   a conversation held elsewhere as `file@1` parts under a manifest of what
   the operator asserts and a fixed notice.
