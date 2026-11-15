@@ -172,7 +172,7 @@ export function remoteHost(remote: Remote): ClientHost {
         after = polled.events.at(-1)?.seq ?? after
         if (TERMINAL.has(polled.status)) {
           await cancelling
-          return reread('work.show', { workId }, options.patient, options.signal, options.outage)
+          return await reread('work.show', { workId }, options.patient, options.signal, options.outage)
         }
         const slept = await Promise.race([new Promise<'slept'>((done) => setTimeout(() => done('slept'), POLL_MS)), interrupted, stopped])
         if (slept === 'stopped') return 'stopped'

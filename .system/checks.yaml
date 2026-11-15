@@ -37,7 +37,7 @@ checks:
     timeoutSeconds: 300
     paths: *code
   - name: lint
-    # Item fl-10 (Escaped defect 4): only `@typescript-eslint/no-floating-promises`, over the sources and tests.
+    # Item fl-10 (Escaped defect 4): only `@typescript-eslint/no-floating-promises` and `@typescript-eslint/return-await` ('in-try-catch'), over the sources and tests.
     run: corepack pnpm lint
     timeoutSeconds: 300
     paths: *code

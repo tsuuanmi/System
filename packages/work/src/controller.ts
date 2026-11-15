@@ -1258,7 +1258,7 @@ export class WorkController {
         const stepId = record.state.status === 'held' ? record.state.awaiting : undefined
         if (!stepId) throw new WorkError(`nothing awaits a decision on ${workId} (it is ${record.state.status})`)
         const decided = await this.append(record, { type: 'decided', caller: decision.caller, stepId, decision: decision.decision, reason: decision.reason })
-        return decision.decision === 'denied' ? await this.finish(decided, 'failed', `${stepId} denied by ${decision.caller.operatorId}: ${decision.reason}`) : undefined
+        return decision.decision === 'denied' ? this.finish(decided, 'failed', `${stepId} denied by ${decision.caller.operatorId}: ${decision.reason}`) : undefined
       })
       started?.()
       return denied ?? await this.drive(workId)
