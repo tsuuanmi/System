@@ -30,14 +30,14 @@ test('which paths are tests', () => {
   for (const path of ['src/a.ts', 'packages/work/src/tests.ts', 'docs/tests/a.md', 'packages/tests/a.ts', 'src/contest.ts', 'attest/a.ts']) assert.equal(isTestPath(path), false, path)
 })
 
-test('a change that edits an existing test and adds a new one lists only the edited one', () => {
+test('a change that edits an existing test and adds a new one lists only the edited one', async () => {
   const r = repo({ 'tests/a.test.ts': 'one\n', 'src/a.ts': 'x\n' }, (write) => {
     write('tests/a.test.ts', 'two\n')
     write('tests/b.test.ts', 'new\n')
     write('src/a.ts', 'y\n')
   })
   try {
-    return changedTests(r.dir, r.base, r.commit).then((list) => assert.deepEqual(list, [{ path: 'tests/a.test.ts', change: 'modified' }]))
+    assert.deepEqual(await changedTests(r.dir, r.base, r.commit), [{ path: 'tests/a.test.ts', change: 'modified' }])
   } finally { r.done() }
 })
 
