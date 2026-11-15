@@ -40,7 +40,7 @@ before(async () => {
 - id: fakes
   disabled: false
   config:
-    workers: [code-write]
+    workers: [repo.write]
 `)
   await cli.start({ env: held })
 })
@@ -81,7 +81,7 @@ test('an error is one line; SYSTEM_DEBUG=1 adds the stack', () => {
 
 test('Ctrl-C detaches: exit 0, and the Work finishes in the Host', { timeout: 120_000 }, async () => {
   rmSync(hold, { force: true })
-  const run = cli.runAsync(['work', 'submit', '--capability', 'code-write'])
+  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write'])
   const workId = await admitted(run)
   assert.equal(status(workId), 'running')
   run.child.kill('SIGINT')
@@ -95,7 +95,7 @@ test('Ctrl-C detaches: exit 0, and the Work finishes in the Host', { timeout: 12
 
 test('--cancel-on-interrupt cancels the Work at Ctrl-C and follows it to the end: exit 5', { timeout: 120_000 }, async () => {
   rmSync(hold, { force: true })
-  const run = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--cancel-on-interrupt'])
+  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--cancel-on-interrupt'])
   const workId = await admitted(run)
   run.child.kill('SIGINT')
   const ran = await run.done
@@ -142,7 +142,7 @@ test('a timeout retries once with the same commandId: one Work', { timeout: 120_
   try {
     const before = system('work', 'list').stdout.split('\n').filter(Boolean).length
     // Asynchronously: the proxy lives in this process.
-    const ran = await cli.runAsync(['work', 'submit', '--capability', 'code-write', '--no-run'], { env: { DSH_HOME: proxyHome } }).done
+    const ran = await cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--no-run'], { env: { DSH_HOME: proxyHome } }).done
     assert.equal(ran.status, 0, ran.stderr)
     assert.match(ran.stdout, /^work:[0-9a-f-]+\n$/)
     assert.equal(seen.length, 2)
@@ -215,15 +215,15 @@ test('status shows an Item as todo, then doing while its Work runs; a second Wor
   assert.match(made.stderr, /^base sha256:/)
   const task = made.stdout.trim()
   rmSync(hold, { force: true })
-  const run = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--input', task])
+  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--input', task])
   const workId = await admitted(run)
   const line = system('status', '--repo', project, '--item', 'p-2').stdout.split('\n').find((l) => !l.startsWith('note:'))!
   assert.match(line, new RegExp(`^\\[ \\] p-2 Second - doing: ${workId} step task on fake-worker since \\S+Z`))
   assert.equal(system('status', '--repo', project, '--state', 'doing').stdout.split('\n')[0], line)
-  const refused = system('work', 'submit', '--capability', 'code-write', '--input', task, '--no-run')
+  const refused = system('work', 'submit', '--capability', 'repo.write', '--input', task, '--no-run')
   assert.equal(refused.status, 1)
   assert.match(refused.stderr, new RegExp(`^system: Item p-2 already has Work ${workId} \\(running, fake-worker\\)`))
-  const forced = system('work', 'submit', '--capability', 'code-write', '--input', task, '--no-run', '--force')
+  const forced = system('work', 'submit', '--capability', 'repo.write', '--input', task, '--no-run', '--force')
   assert.equal(forced.status, 0, forced.stderr)
   run.child.kill('SIGINT')
   await run.done
@@ -253,7 +253,7 @@ test('work wait survives a Host restart', { timeout: 120_000 }, async () => {
     if (id && state && !['succeeded', 'failed', 'cancelled'].includes(state)) system('work', 'cancel', id)
   }
   await cli.start({ env: restartEnv })
-  const run = cli.runAsync(['work', 'submit', '--capability', 'code-write'], { env: restartEnv })
+  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write'], { env: restartEnv })
   const workId = await admitted(run)
   run.child.kill('SIGINT')
   await run.done

@@ -8,7 +8,7 @@ The `fakes` row: a scripted Worker (`fake-worker`) and verifier
 - id: fakes
   disabled: false
   config:
-    workers: [code-write, code.develop, research, web-search, tier.standard]
+    workers: [repo.write, develop.implement, research, web.search, tier.standard]
     verifiers: [code.required-checks, research.citation-check]
 ```
 

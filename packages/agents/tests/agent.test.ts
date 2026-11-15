@@ -36,7 +36,7 @@ function repo(): string {
 
 function account(runtime: 'claude-code' | 'codex', extra: Partial<Account> = {}): Account {
   return {
-    ref: `${runtime}/default`, runtime, capabilities: ['code-write', 'research'], command: fake, version: async () => 'fake',
+    ref: `${runtime}/default`, runtime, capabilities: ['repo.write', 'research'], command: fake, version: async () => 'fake',
     token: async () => 'the-token', ...extra,
   }
 }
@@ -52,7 +52,7 @@ async function task(artifacts: Artifacts, instructions: string, repository?: str
 }
 
 function request(inputs: Record<string, string>, outputs: string[], signal = new AbortController().signal): WorkerRequest {
-  return { workId: 'work:test', attemptId: `attempt:${Math.random().toString(16).slice(2)}`, stepId: 'implement', capabilities: ['code-write'], inputs, outputs, signal }
+  return { workId: 'work:test', attemptId: `attempt:${Math.random().toString(16).slice(2)}`, stepId: 'implement', capabilities: ['repo.write'], inputs, outputs, signal }
 }
 
 const treeOf = (artifacts: Artifacts, id: string) => {
@@ -106,14 +106,14 @@ test('without a repository every output is a file the agent wrote; a missing one
   assert.match(missing.reason!, /wrote no output file for report/)
 })
 
-test('a step without code-write stores its outputs as bytes, whatever the Task\'s base', async () => {
+test('a step without repo.write stores its outputs as bytes, whatever the Task\'s base', async () => {
   const { artifacts } = memory()
   const repository = repo()
   const attempts = join(root, 'attempts-research-base')
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
   const result = await worker.run({
     ...request({ task: await task(artifacts, 'FAKE:outputs', repository) }, ['report', 'sources']),
-    capabilities: ['research', 'web-search'], stepId: 'investigate',
+    capabilities: ['research', 'web.search'], stepId: 'investigate',
   })
   assert.equal(result.status, 'succeeded', result.reason)
   for (const [slot, expected] of [['report', '# report [s1]\n'], ['sources', '{"sources":[]}\n']]) {
@@ -129,7 +129,7 @@ test('a step without code-write stores its outputs as bytes, whatever the Task\'
   assert.deepEqual(readdirSync(attempts), [])
 })
 
-test('a step without code-write that changes the checkout does not output the change', async () => {
+test('a step without repo.write that changes the checkout does not output the change', async () => {
   const { artifacts, records } = memory()
   const repository = repo()
   const input = await task(artifacts, 'FAKE:edit FAKE:outputs', repository)
@@ -139,7 +139,7 @@ test('a step without code-write that changes the checkout does not output the ch
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
   const result = await worker.run({
     ...request({ task: input }, ['report', 'sources']),
-    capabilities: ['research', 'web-search'], stepId: 'investigate',
+    capabilities: ['research', 'web.search'], stepId: 'investigate',
   })
   assert.equal(result.status, 'succeeded', result.reason)
   for (const id of Object.values(result.outputs)) {
@@ -155,10 +155,10 @@ test('a step without code-write that changes the checkout does not output the ch
   assert.deepEqual(readdirSync(attempts), [])
 })
 
-test('a step without code-write on a repository base is prompted to write report as a file', async () => {
+test('a step without repo.write on a repository base is prompted to write report as a file', async () => {
   const req = {
     ...request({}, ['report', 'sources']),
-    capabilities: ['research', 'web-search'], stepId: 'investigate',
+    capabilities: ['research', 'web.search'], stepId: 'investigate',
   }
   const dir = join(root, 'ws-research-files')
   const ws = {
@@ -204,7 +204,7 @@ test('the agent sees a throwaway HOME, its own token and nothing else from the h
     const result = await worker.run(request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']))
     const tree = treeOf(artifacts, result.outputs.change!)
     const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${tree.commit}:ENV.json`], { encoding: 'utf8' })) as { keys: string[]; home: string }
-    assert.deepEqual(seen.keys.filter((k) => !['PATH', 'LANG', 'LC_ALL', 'TZ'].includes(k)), ['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', 'CLAUDE_CODE_OAUTH_TOKEN', 'HOME', 'TMPDIR'], 'a code-write attempt also has its background tasks disabled')
+    assert.deepEqual(seen.keys.filter((k) => !['PATH', 'LANG', 'LC_ALL', 'TZ'].includes(k)), ['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', 'CLAUDE_CODE_OAUTH_TOKEN', 'HOME', 'TMPDIR'], 'a repo.write attempt also has its background tasks disabled')
     assert.match(seen.home, /attempts-3\/attempt_[0-9a-f]+\/home$/)
   } finally {
     delete process.env.SSH_AUTH_SOCK
@@ -254,7 +254,7 @@ test('a running Claude Code attempt reports its progress from the stream as it g
   assert.deepEqual(reports.at(-1), { turns: 2, lastTool: 'Read', tokens: 36, inputTokens: 230 })
 })
 
-test('a code-write attempt may not start background jobs or monitors, and is told to run in the foreground under timeout', async () => {
+test('a repo.write attempt may not start background jobs or monitors, and is told to run in the foreground under timeout', async () => {
   const { artifacts } = memory()
   const marker = join(root, 'background.pid')
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-background'))
@@ -267,7 +267,7 @@ test('a code-write attempt may not start background jobs or monitors, and is tol
   }
 })
 
-test('a code-write attempt in a repository with .system/checks.yaml is told to run the checks for its paths', async () => {
+test('a repo.write attempt in a repository with .system/checks.yaml is told to run the checks for its paths', async () => {
   const { artifacts } = memory()
   const withChecks = repo()
   mkdirSync(join(withChecks, '.system'))
@@ -279,8 +279,8 @@ test('a code-write attempt in a repository with .system/checks.yaml is told to r
     const ws = await prepare(artifacts, req, join(root, name))
     try { return prompt(ws, req).includes('`.system/checks.yaml`') } finally { await cleanup(ws) }
   }
-  assert.equal(await told(withChecks, ['code-write'], 'ws-checks'), true)
-  assert.equal(await told(repo(), ['code-write'], 'ws-none'), false)
+  assert.equal(await told(withChecks, ['repo.write'], 'ws-checks'), true)
+  assert.equal(await told(repo(), ['repo.write'], 'ws-none'), false)
   assert.equal(await told(withChecks, ['research'], 'ws-research'), false)
 })
 
@@ -472,7 +472,7 @@ test('Codex takes over cancelled Claude work from the partial Artifact, in one W
   capabilities.registerWorker(agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-9')))
   capabilities.registerWorker(agentWorker(account('codex', { codexHome }), artifacts, processSpawner, join(root, 'attempts-9')))
   const controller = new WorkController(table, specs, capabilities)
-  const spec = resolve(parseWorkflow('schema: system.workflow/v1\nid: one\nversion: 1\nsteps:\n  - id: implement\n    capabilities: [code-write]\n    inputs: {task: $work.input}\n    outputs: [change]\n'), capabilities.available())
+  const spec = resolve(parseWorkflow('schema: system.workflow/v1\nid: one\nversion: 1\nsteps:\n  - id: implement\n    capabilities: [repo.write]\n    inputs: {task: $work.input}\n    outputs: [change]\n'), capabilities.available())
   const ready = join(root, 'ready-takeover')
   const input = await task(artifacts, `FAKE:sleep FAKE:edit FAKE:ready=${ready}`, repository)
   const admitted = await controller.admit({ spec, input, caller: { type: 'human', operatorId: 't' }, source: { kind: 'workflow-file' } })
@@ -516,14 +516,14 @@ test('a step asking for a tier runs that tier\'s model; no tier runs standard; t
     const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${treeOf(artifacts, result.outputs.change!).commit}:ENV.json`], { encoding: 'utf8' })) as { model?: string }
     return { seen: seen.model, executor: result.executor }
   }
-  const frontier = await run(['code-write', 'tier.frontier'])
+  const frontier = await run(['repo.write', 'tier.frontier'])
   assert.equal(frontier.seen, 'opus')
   assert.deepEqual([frontier.executor?.tier, frontier.executor?.model, frontier.executor?.servedModels], ['frontier', 'opus', ['served-opus', 'served-subagent']])
-  const plain = await run(['code-write'])
+  const plain = await run(['repo.write'])
   assert.equal(plain.seen, 'sonnet')
   assert.equal(plain.executor?.tier, undefined)
   const bare = agentWorker(account('codex', { codexHome: join(root, 'codex-account') }), artifacts, processSpawner, join(root, 'attempts-10'))
-  const none = await bare.run({ ...request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']), capabilities: ['code-write'] })
+  const none = await bare.run({ ...request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']), capabilities: ['repo.write'] })
   const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${treeOf(artifacts, none.outputs.change!).commit}:ENV.json`], { encoding: 'utf8' })) as { model?: string }
   assert.equal(seen.model, undefined, 'an account with no models passes no model flag')
 })

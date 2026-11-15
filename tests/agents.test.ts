@@ -35,12 +35,12 @@ before(async () => {
         runtime: claude-code
         label: main Claude
         priority: primary
-        capabilities: [code-write]
+        capabilities: [repo.write]
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
       - ref: codex/default
         runtime: codex
-        capabilities: [code-write]
+        capabilities: [repo.write]
         command: ${fakeAgent}
         codexHome: codex/default
 `)
@@ -76,7 +76,7 @@ test('both configured accounts are registered, with the CLI version', () => {
 })
 
 test('a direct Task runs Claude Code in its own worktree and records the exact resulting commit', () => {
-  const ran = system(['work', 'submit', '--capability', 'code-write', '--input', newTask('FAKE:edit')])
+  const ran = system(['work', 'submit', '--capability', 'repo.write', '--input', newTask('FAKE:edit')])
   assert.equal(ran.status, 0, ran.stderr)
   const record = show(ran.stdout.trim())
   const observed = record.events.find((e) => e.type === 'observed')!
@@ -89,7 +89,7 @@ test('a direct Task runs Claude Code in its own worktree and records the exact r
 test('cancel from another process stops the attempt, keeps its partial tree, and Codex takes over', { timeout: 120_000 }, async () => {
   const ready = join(cli.home, 'agent-ready')
   const input = newTask(`FAKE:sleep FAKE:edit FAKE:ready=${ready}`)
-  const submit = cli.runAsync(['work', 'submit', '--capability', 'code-write', '--worker', 'claude-code/default', '--input', input])
+  const submit = cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--worker', 'claude-code/default', '--input', input])
   // Wait for the Work to be admitted and dispatched.
   let workId = ''
   for (let i = 0; i < 1200 && !workId; i++) {
@@ -132,7 +132,7 @@ test('cancel from another process stops the attempt, keeps its partial tree, and
 })
 
 test('a retry naming an unknown Worker is refused', () => {
-  const ran = system(['work', 'submit', '--capability', 'code-write', '--input', newTask('FAKE:fail')])
+  const ran = system(['work', 'submit', '--capability', 'repo.write', '--input', newTask('FAKE:fail')])
   assert.equal(ran.status, 1)
   const workId = ran.stdout.trim()
   const retried = system(['work', 'retry', workId, '--worker', 'nobody/default'])
@@ -172,7 +172,7 @@ test('duplicate provider account IDs refuse the later account, while unreadable 
   writeAccount('identity-a', 'same-provider-account')
   writeAccount('identity-b', 'same-provider-account')
   writeAccount('identity-unknown')
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: codex/x1, runtime: codex, capabilities: [code-write], command: ${fakeAgent}, codexHome: codex/identity-a}\n      - {ref: codex/x2, runtime: codex, capabilities: [code-write], command: ${fakeAgent}, codexHome: codex/identity-b}\n      - {ref: codex/x3, runtime: codex, capabilities: [code-write], command: ${fakeAgent}, codexHome: codex/identity-unknown}\n`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: codex/x1, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-a}\n      - {ref: codex/x2, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-b}\n      - {ref: codex/x3, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-unknown}\n`)
   await cli.start()
   const out = system(['workers'])
   assert.match(out.stdout, /codex\/x2[^\n]*codex\/x1[^\n]*provider account/i)

@@ -4,11 +4,11 @@
  * outputs, and `work/`: a detached git worktree of the exact input commit, or
  * an empty directory when no input names a commit.
  *
- * Output capture, the same rule for every domain: for a step with `code-write`
+ * Output capture, the same rule for every domain: for a step with `repo.write`
  * in a git workspace the first output slot is the working tree, captured as one
  * commit on the base (`git-tree@1`, pinned); every other slot, and every slot
- * of a step without `code-write` or without a git workspace, is the file
- * `out/<slot>` (`file@1`). A change a step without `code-write` makes to the
+ * of a step without `repo.write` or without a git workspace, is the file
+ * `out/<slot>` (`file@1`). A change a step without `repo.write` makes to the
  * checkout is not an output. The adapter captures;
  * the agent's claim of what it produced is never used.
  *

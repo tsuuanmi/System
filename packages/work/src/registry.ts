@@ -63,34 +63,8 @@ export function requestedTier(capabilities: readonly string[]): Tier | undefined
   return TIERS.find((tier) => capabilities.includes(tierCapability(tier)))
 }
 
-/**
- * The old capability names and the new ones they stand for, for one release (nm-1). The only place the pairs live: a step's requirement and an
- * Account's grant are both read through it, so a spec pinned with `code-write` still routes to an Account that offers `repo.write`, and the reverse.
- */
-export const CAPABILITY_ALIASES: Readonly<Record<string, string>> = {
-  'code-write': 'repo.write',
-  'web-search': 'web.search',
-  'research.web': 'web.browse',
-  'code.develop': 'develop.implement',
-}
-
-/** The name a capability goes by now: the new name of an old one, any other name as it is. */
-export const canonicalCapability = (name: string): string => CAPABILITY_ALIASES[name] ?? name
-
-/** Whether `have` offers `need`, an old name and its new one counting as the same. */
-export const hasCapability = (have: readonly string[], need: string): boolean => {
-  const wanted = canonicalCapability(need)
-  return have.some((c) => canonicalCapability(c) === wanted)
-}
-
-/** Whether the attempt changes a repository: `repo.write` or its old name `code-write`. */
-export const writesRepository = (capabilities: readonly string[]): boolean => hasCapability(capabilities, 'repo.write')
-
-/** Every name an offered capability answers to: itself, its new name and the old names of that. */
-const names = (capability: string): string[] => {
-  const canonical = canonicalCapability(capability)
-  return [capability, canonical, ...Object.keys(CAPABILITY_ALIASES).filter((old) => CAPABILITY_ALIASES[old] === canonical)]
-}
+/** Whether the attempt changes a repository: it has the ability `repo.write`. */
+export const writesRepository = (capabilities: readonly string[]): boolean => capabilities.includes('repo.write')
 
 export interface WorkerPort {
   /** A stable name, recorded in routing decisions. */
@@ -246,7 +220,7 @@ export class Capabilities {
 
   available(): AvailableCapabilities {
     return {
-      workers: new Set(this.workers.flatMap((w) => w.capabilities.flatMap(names))),
+      workers: new Set(this.workers.flatMap((w) => w.capabilities)),
       verifiers: new Set(this.verifiers.flatMap((v) => v.capabilities)),
       effects: new Set(this.effects.flatMap((e) => e.capabilities)),
     }
@@ -266,12 +240,12 @@ export class Capabilities {
     const rank = (ws: WorkerPort[]) => rankByHeadroom(ws.map((w) => ({ ref: w.ref, attempts: attempts.get(w.ref) ?? 0, reading: readings.get(w.ref), ceiling: w.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT })))
     const pool = rankable.filter((w) => !limited.has(w.ref))
     // A preferred capability (ro-12): rank the Accounts that have it alone, if one of them can take the step now.
-    const preferred = prefer ? pool.filter((w) => hasCapability(w.capabilities, prefer)) : []
+    const preferred = prefer ? pool.filter((w) => w.capabilities.includes(prefer)) : []
     const first = preferred.length ? rank(preferred) : undefined
     const ranking = first?.selected ? first : rank(pool)
     let full = false
     const candidates = this.workers.map((w) => {
-      const missing = needs.filter((c) => !hasCapability(w.capabilities, c))
+      const missing = needs.filter((c) => !w.capabilities.includes(c))
       if (only !== undefined && w.ref !== only) return { ref: w.ref, selected: false, reason: `only ${only} is allowed` }
       if (missing.length) return { ref: w.ref, selected: false, reason: `lacks ${missing.join(', ')}` }
       if (!rankable.includes(w)) { full = true; return { ref: w.ref, selected: false, reason: 'capable; no free slot' } }
@@ -285,7 +259,7 @@ export class Capabilities {
 
   /** The Workers `routeWorker` ranks: capable, allowed, and with a free slot when `free` is given. */
   rankable(needs: readonly string[], only?: string, free?: (worker: WorkerPort) => boolean): WorkerPort[] {
-    return this.workers.filter((w) => (only === undefined || w.ref === only) && needs.every((c) => hasCapability(w.capabilities, c)) && (!free || free(w)))
+    return this.workers.filter((w) => (only === undefined || w.ref === only) && needs.every((c) => w.capabilities.includes(c)) && (!free || free(w)))
   }
 
   /** The Worker (Account) of a ref. */

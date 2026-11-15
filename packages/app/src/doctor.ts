@@ -4,8 +4,6 @@
  * closed; an optional row may be disabled by config without failing it.
  */
 
-import { describeOldName, findOldNames, type OldName } from './old-names.ts'
-
 /** A row of the System bundle, the service it provides, and whether System needs it. */
 export interface RowProbe {
   id: string
@@ -55,8 +53,6 @@ export interface DoctorReport {
   storage: StorageStatus
   host: HostStatus
   problems: string[]
-  /** Old capability names still granted in the profile (nm-3); present only when there are some. They do not fail the report: the aliases still route. */
-  oldCapabilities?: OldName[]
 }
 
 /** What the doctor reads from the running host; a seam so tests need no host. */
@@ -65,8 +61,6 @@ export interface DoctorHost {
   dshVersion(): string
   probeStorage(): Promise<StorageStatus>
   probeHost(): Promise<HostStatus>
-  /** The profile's own files (the operator's patches), as text, for the old names granted in them. */
-  profileFiles?(): { file: string; text: string }[]
 }
 
 export async function runDoctor(host: DoctorHost): Promise<DoctorReport> {
@@ -80,7 +74,6 @@ export async function runDoctor(host: DoctorHost): Promise<DoctorReport> {
     ? await host.probeStorage()
     : { ok: false, backend: REQUIRED_BACKEND, detail: 'not probed: storage rows are not mounted' }
   if (storageMounted && !storage.ok) problems.push(`storage probe failed: ${storage.detail}`)
-  const oldCapabilities = (host.profileFiles?.() ?? []).flatMap(({ file, text }) => findOldNames(text, file))
   return {
     ok: problems.length === 0,
     versions: { node: process.version, dsh: host.dshVersion() },
@@ -88,7 +81,6 @@ export async function runDoctor(host: DoctorHost): Promise<DoctorReport> {
     storage,
     host: await host.probeHost(),
     problems,
-    ...(oldCapabilities.length ? { oldCapabilities } : {}),
   }
 }
 
@@ -101,6 +93,5 @@ export function formatReport(report: DoctorReport): string {
   lines.push(`  storage probe     ${report.storage.ok ? 'ok' : 'failed'}  backend ${report.storage.backend}: ${report.storage.detail}`)
   lines.push(`  host              ${report.host.answering ? 'answering' : 'not answering'}: ${report.host.detail}`)
   for (const problem of report.problems) lines.push(`  problem: ${problem}`)
-  for (const old of report.oldCapabilities ?? []) lines.push(`  old capability name: ${describeOldName(old)}`)
   return `${lines.join('\n')}\n`
 }

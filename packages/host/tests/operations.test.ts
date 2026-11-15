@@ -117,14 +117,14 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('approval.decide', { workId: work.id, decision: 'approved', reason: 'ok' }), /nothing awaits a decision/)
   assert.deepEqual(await call('work.events', { workId: work.id, after: 1000 }), { events: [], status: 'succeeded' })
 
-  const second = await call('work.submit', { capabilities: ['code-write'], input: input(f), run: false }) as { id: string }
+  const second = await call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
   await call('work.run', { workId: second.id })
   assert.equal((await terminal(client, second.id)).status, 'succeeded')
 
-  const pinned = await call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/claude', run: false }) as { id: string; events: { type: string; worker?: string }[] }
+  const pinned = await call('work.submit', { capabilities: ['repo.write'], input: input(f), worker: 'fake/claude', run: false }) as { id: string; events: { type: string; worker?: string }[] }
   assert.equal(pinned.events[0]!.worker, 'fake/claude')
-  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'nobody/default' }), /no enabled Worker nobody\/default/)
-  await assert.rejects(call('work.submit', { capabilities: ['code-write'], input: input(f), worker: 'fake/codex' }), /fake\/codex does not provide code-write/)
+  await assert.rejects(call('work.submit', { capabilities: ['repo.write'], input: input(f), worker: 'nobody/default' }), /no enabled Worker nobody\/default/)
+  await assert.rejects(call('work.submit', { capabilities: ['repo.write'], input: input(f), worker: 'fake/codex' }), /fake\/codex does not provide repo.write/)
 
   assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake/claude', 'fake/codex'])
   assert.deepEqual(await call('workers.login', { ref: 'web/chatgpt/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
@@ -157,7 +157,7 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('status', { repository: project, item: 'Bad' }), /-32602|invalid|item/i)
   await assert.rejects(call('task.new', { instructions: 'x', item: 'Bad' }), /-32602|invalid|item/i)
   // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).
-  await call('work.submit', { capabilities: ['code-write'], input: input(f), force: true, run: false })
+  await call('work.submit', { capabilities: ['repo.write'], input: input(f), force: true, run: false })
   await call('task.new', { instructions: 'x', item: 'p-2' })
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
   await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3' }), /Item p-3 is blocked by p-2/)
@@ -462,7 +462,7 @@ test('work.submit joins the Sub-workflows sent in uses: namespaced steps run and
   const head = (id: string) => `schema: system.workflow/v1\nid: ${id}\nversion: 1\nsteps:\n`
   const checks = `${head('checks')}  - id: checks\n    verify: { capability: code.required-checks, subject: $work.input, criteria: repo-checks-v1 }\n`
   const outer = `${head('outer')}  - id: implement
-    capabilities: [code-write]
+    capabilities: [repo.write]
     inputs: { task: $work.input }
     outputs: [change]
   - id: checks

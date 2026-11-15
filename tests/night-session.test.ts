@@ -30,7 +30,7 @@ before(async () => {
 - id: fakes
   disabled: false
   config:
-    workers: [code-write, code.develop, tier.standard]
+    workers: [repo.write, develop.implement, tier.standard]
     verifiers: [code.required-checks]
     effects: [git.publish]
 `)

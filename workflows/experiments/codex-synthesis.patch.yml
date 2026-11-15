@@ -7,7 +7,7 @@
     accounts:
       - ref: claude-code/default
         runtime: claude-code
-        capabilities: [code-write, research, web-search, brainstorm.idea-a]
+        capabilities: [repo.write, research, web.search, brainstorm.idea-a]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
         models:
           economy: haiku
@@ -15,7 +15,7 @@
           frontier: opus
       - ref: codex/default
         runtime: codex
-        capabilities: [code-write, brainstorm.idea-b, brainstorm.synthesis]
+        capabilities: [repo.write, brainstorm.idea-b, brainstorm.synthesis]
         codexHome: codex/default
         models:
           economy: gpt-6-luna

@@ -68,7 +68,7 @@ function harness(options: { verdict?: VerifyResult['verdict']; worker?: Partial<
   const verdicts: string[] = []
   capabilities.registerWorker({
     ref: 'fake',
-    capabilities: ['code-write', 'code.develop', 'research', 'web-search', 'tier.standard', 'tier.economy'],
+    capabilities: ['repo.write', 'develop.implement', 'research', 'web.search', 'tier.standard', 'tier.economy'],
     async run(request) {
       calls.push(request)
       const outputs = Object.fromEntries(request.outputs.map((slot) => {
@@ -147,7 +147,7 @@ function treeWorker(h: () => Harness, same: (slot: string) => boolean, message?:
   }
 }
 
-test('a code-write step whose change is its base tree fails with "no change", quoting the Worker\'s message', async () => {
+test('a repo.write step whose change is its base tree fails with "no change", quoting the Worker\'s message', async () => {
   const h: Harness = harness({ worker: treeWorker(() => h, () => true, `I looked\nand found  nothing to do ${'x'.repeat(400)}`) })
   const done = await runFixture(h, 'develop.yaml')
   assert.equal(done.state.status, 'failed')
@@ -185,7 +185,7 @@ id: gated
 version: 1
 steps:
   - id: tests
-    capabilities: [code-write]
+    capabilities: [repo.write]
     inputs: { task: $work.input }
     outputs: [change]
   - id: red
@@ -193,7 +193,7 @@ steps:
     verify: { capability: code.required-checks, subject: $steps.tests.change, criteria: repo-checks-v1 }
   - id: implement
     dependsOn: [red]
-    capabilities: [code-write]
+    capabilities: [repo.write]
     inputs: { task: $work.input }
     outputs: [change]
   - id: checks
@@ -269,7 +269,7 @@ test('usage a Worker does not report is recorded as unknown, never zero', async 
 
 test('routing records every candidate and why it was or was not chosen', async () => {
   const h = harness()
-  h.capabilities.registerWorker({ ref: 'coder-only', capabilities: ['code-write'], run: async () => ({ status: 'failed', outputs: {} }) })
+  h.capabilities.registerWorker({ ref: 'coder-only', capabilities: ['repo.write'], run: async () => ({ status: 'failed', outputs: {} }) })
   const done = await runFixture(h, 'research.yaml')
   const dispatched = done.events.find((e) => e.type === 'dispatched')
   assert.deepEqual(dispatched && 'candidates' in dispatched && dispatched.candidates, [
@@ -312,8 +312,8 @@ test('a Work submitted for one Worker runs its Worker steps only there, and is r
       return { status: 'succeeded', outputs: Object.fromEntries(request.outputs.map((slot) => [slot, out])) }
     },
   })
-  register('first', ['research', 'web-search', 'tier.standard'])
-  register('plain', ['code-write'])
+  register('first', ['research', 'web.search', 'tier.standard'])
+  register('plain', ['repo.write'])
   const spec = resolve(parseWorkflow(fixture('research.yaml')), h.capabilities.available(), fixture)
   const base = { spec, input: await input(h), caller, source: { kind: 'workflow-file' as const } }
   await assert.rejects(() => h.controller.admit({ ...base, worker: 'nobody' }), /no enabled Worker nobody/)
@@ -386,11 +386,11 @@ test('a succeeded attempt keeps the Artifacts it reports beside its outputs, and
 
 test('a tier is a capability: a step asking for a tier no Worker offers is refused at preflight', () => {
   const capabilities = new Capabilities()
-  capabilities.registerWorker({ ref: 'claude', capabilities: ['code-write', 'tier.standard', 'tier.frontier'], run: async () => ({ status: 'failed', outputs: {} }) })
-  const workflow = (tier: string) => `schema: system.workflow/v1\nid: t\nversion: 1\nsteps:\n  - id: a\n    capabilities: [code-write, ${tier}]\n    outputs: [x]\n`
+  capabilities.registerWorker({ ref: 'claude', capabilities: ['repo.write', 'tier.standard', 'tier.frontier'], run: async () => ({ status: 'failed', outputs: {} }) })
+  const workflow = (tier: string) => `schema: system.workflow/v1\nid: t\nversion: 1\nsteps:\n  - id: a\n    capabilities: [repo.write, ${tier}]\n    outputs: [x]\n`
   assert.doesNotThrow(() => resolve(parseWorkflow(workflow('tier.frontier')), capabilities.available(), fixture))
   assert.throws(() => resolve(parseWorkflow(workflow('tier.economy')), capabilities.available(), fixture), /needs Worker capability tier.economy, which no enabled Worker provides/)
-  assert.equal(capabilities.routeWorker(['code-write', 'tier.frontier']).selected?.ref, 'claude')
+  assert.equal(capabilities.routeWorker(['repo.write', 'tier.frontier']).selected?.ref, 'claude')
 })
 
 async function verdictOf(h: Harness, verifier: Partial<VerifierPort>) {
@@ -466,8 +466,6 @@ test('the controller and Workflow compiler name no domain, Worker or verifier', 
   const src = join(repo, 'packages', 'work', 'src')
   for (const file of ['controller.ts', 'workflow.ts', 'record.ts', 'registry.ts']) {
     const code = readFileSync(join(src, file), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
-      // The one table of old capability names (nm-1) is the only place they may be named.
-      .replace(/export const CAPABILITY_ALIASES[^{]*\{[^}]*\}/, '')
     assert.doesNotMatch(code, /research|software|engineering|citation|claude|codex|required-checks|code-write|git-tree/i, file)
   }
 })
@@ -562,7 +560,7 @@ id: retrying
 version: 1
 steps:
   - id: implement
-    capabilities: [code-write]
+    capabilities: [repo.write]
     inputs: { task: $work.input }
     outputs: [change]
     retry: { onFail: [checks, implement], max: 1 }
@@ -589,7 +587,7 @@ id: retry-two
 version: 1
 steps:
   - id: tests
-    capabilities: [code-write]
+    capabilities: [repo.write]
     inputs: { task: $work.input }
     outputs: [change]
     retry: { onFail: [red, checks], max: 1 }
@@ -598,7 +596,7 @@ steps:
     verify: { capability: code.required-checks, subject: $steps.tests.change, criteria: red-v1 }
   - id: implement
     dependsOn: [red]
-    capabilities: [code-write]
+    capabilities: [repo.write]
     inputs: { task: $work.input }
     outputs: [change]
     retry: { onFail: [frozen, checks], max: 1 }

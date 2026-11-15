@@ -34,7 +34,7 @@
       name: '@system/fakes'
       disabled: true
       config:
-        workers: [code-write, code.develop, research, web-search, tier.standard]
+        workers: [repo.write, develop.implement, research, web.search, tier.standard]
         verifiers: [code.required-checks, research.citation-check]
         effects: [git.publish]
 
@@ -83,7 +83,7 @@
         accounts:
           - ref: claude-code/default
             runtime: claude-code
-            capabilities: [code-write, code.develop, research, web-search, brainstorm.idea-a, brainstorm.synthesis, research.plan, research.lane-a, research.lane-b, research.synthesis]
+            capabilities: [develop.implement, research, brainstorm.idea-a, brainstorm.synthesis, research.plan, research.lane-a, research.lane-b, research.synthesis]
             tokenRef: CLAUDE_CODE_OAUTH_TOKEN
             # A step asks for a tier with the capability tier.<name>.
             models:
@@ -92,7 +92,7 @@
               frontier: opus
           - ref: codex/default
             runtime: codex
-            capabilities: [code-write, brainstorm.idea-b]
+            capabilities: [brainstorm.idea-b]
             codexHome: codex/default
             # From the models Codex 0.166.0 lists for this account, by their descriptions.
             models:

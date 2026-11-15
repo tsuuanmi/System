@@ -50,7 +50,7 @@ before(async () => {
       - ref: web/chatgpt/anon
         runtime: web
         site: chatgpt
-        capabilities: [web-search]
+        capabilities: [web.search]
         url: ${signedOut}/
         executablePath: ${CHROME}
         timeouts: {load: 5, answer: 5, stable: 0.5}
