@@ -330,9 +330,7 @@ test("an MCP server recovers on every update: the install's current link moves t
       if (n > 1) {
         move(n)
         await server.close()
-        // Consume the old connection's EOF through a resource request, so the tool
-        // below tests release selection rather than the separate dropped-socket error.
-        await assert.rejects(client.listResources(), /the Host closed the connection/)
+        // The first call on the old connection (fl-7) reconnects, on the release the link now holds.
         server = await listen(n)
       }
       const listed = await call(client, 'work.list')
@@ -390,6 +388,48 @@ test('an MCP session refreshes its tools and notifies after recovering on newer 
     await host.close()
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('fl-7: the first call after the Host restarts reconnects and is sent again only when its repeat is idempotent (a read, or a write with commandId)', { timeout: 120_000 }, async () => {
+  const dir = mkdtempSync('/tmp/sm-rs-')
+  mkdirSync(join(dir, 'system'))
+  mkdirSync(join(dir, 'data'))
+  const f = fixture()
+  const methods = operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services)
+  let host = await f.startHost(join(dir, 'data'))
+  let server = await serve(host, { path: join(dir, 'system', 'host.sock'), methods })
+  const restart = async () => {
+    await server.close()
+    await host.close()
+    host = await f.startHost(join(dir, 'data'))
+    server = await serve(host, { path: join(dir, 'system', 'host.sock'), methods })
+  }
+  const client = new Client({ name: 'test', version: '0' })
+  clients.push(client)
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [entry, 'mcp'], env: { ...process.env, DSH_HOME: dir, SYSTEM_OPERATOR_ID: 'o1' } as Record<string, string> }))
+  const submit = { capabilities: ['repo.write'], run: false, commandId: 'c-restart' }
+  const first = await call(client, 'work.submit', submit)
+  assert.equal(first.error, undefined, first.error)
+  // A read right after a restart succeeds on the first call.
+  await restart()
+  const listed = await call(client, 'work.list')
+  assert.equal(listed.error, undefined, listed.error)
+  assert.deepEqual((listed.value as { id: string }[]).map((w) => w.id), [first.value.id])
+  // A write with commandId after a restart succeeds on the first call and is the same Work, once.
+  await restart()
+  const again = await call(client, 'work.submit', submit)
+  assert.equal(again.error, undefined, again.error)
+  assert.equal(again.value.id, first.value.id)
+  assert.equal(((await call(client, 'work.list')).value as unknown[]).length, 1)
+  // A write without commandId is not sent again: the failure is reported as before, and the next call reconnects.
+  await restart()
+  const bare = await call(client, 'work.submit', { capabilities: ['repo.write'], run: false })
+  assert.match(bare.error ?? '', /the Host closed the connection/)
+  assert.equal(((await call(client, 'work.list')).value as unknown[]).length, 1)
+  await client.close()
+  await server.close()
+  await host.close()
+  rmSync(dir, { recursive: true, force: true })
 })
 
 test('the bootstrap steps cite a section that exists in documentation-architecture.md', async () => {
