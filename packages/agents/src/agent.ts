@@ -11,6 +11,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync }
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, writesRepository, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
+import { boundLog, summarizeAttempt } from './attempt-summary.ts'
 import { quotaFromRateLimitEvent, type QuotaEvent, type QuotaReport } from './quota.ts'
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
 import { capture, cleanup, prepare, prompt } from './workspace.ts'
@@ -20,7 +21,6 @@ const GRACE_MS = 30_000
 export const DRAIN_MS = 5000
 /** The wall-clock limit of an attempt when neither the account nor the row sets one. */
 export const DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 60
-const MAX_LOG_BYTES = 256 * 1024
 /** How often a running agent's stdout is read for its progress. */
 const PROGRESS_MS = 500
 
@@ -205,16 +205,17 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     if (codexAuth) keepRefreshedAuth(codexAuth)
     if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
     const log = (await artifacts.putBytes({
-      kind: 'file', schemaVersion: 1, data: Buffer.from(stdout.slice(-MAX_LOG_BYTES)),
+      kind: 'file', schemaVersion: 1, data: Buffer.from(boundLog(stdout)),
       mediaType: 'application/x-ndjson',
       classification: 'local-private', producer: { type: 'worker', ref: account.ref }, workId: request.workId, attemptId: request.attemptId,
     })).id
     const captured = await capture(artifacts, ws, request, account.ref)
-    const common = { log, usage: parsed.usage, executor }
+    const summary = summarizeAttempt(account.runtime, stdout)
+    const common = { log, summary, usage: parsed.usage, executor }
     // A stopped agent's output is incomplete, so its usage is unknown rather than a partial count.
-    if (request.signal.aborted) return { status: 'cancelled', outputs: {}, partial: captured.outputs, reason: 'cancelled; the agent was stopped', log, executor }
-    if (overBudget) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `over budget: ${overBudget}`, log, executor }
-    if (timedOut) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `attempt exceeded its time limit of ${limit} minutes`, log, executor }
+    if (request.signal.aborted) return { status: 'cancelled', outputs: {}, partial: captured.outputs, reason: 'cancelled; the agent was stopped', log, summary, executor }
+    if (overBudget) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `over budget: ${overBudget}`, log, summary, executor }
+    if (timedOut) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `attempt exceeded its time limit of ${limit} minutes`, log, summary, executor }
     if (outcome.exitCode !== 0 || !parsed.ok) {
       const why = outcome.signal ? `signal ${outcome.signal}` : `exit ${outcome.exitCode}`
       return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...common }

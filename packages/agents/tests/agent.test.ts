@@ -90,7 +90,9 @@ test('usage sums every result of a stream, from the whole stdout and not the bou
   assert.deepEqual(result.usage, { inputTokens: 490, cacheReadTokens: 224, cacheWriteTokens: 62, outputTokens: 51, costUsd: 1.25, source: 'claude-code modelUsage (includes subagents) over 2 result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate' })
   const log = Buffer.from(await artifacts.readBytes(result.log!)).toString()
   assert.ok(log.length <= 256 * 1024, 'the log is bounded')
-  assert.ok(!log.includes('"input_tokens":3,'), 'the first result is past the bound, yet it was counted')
+  assert.ok(log.includes('"input_tokens":3,'), 'the head of the log is kept: the first result is in it')
+  assert.ok(log.includes('"input_tokens":1,'), 'the tail of the log is kept: the last result is in it')
+  assert.match(log, /\[… \d+ bytes cut by System …\]/, 'the cut is marked')
 })
 
 test('without a repository every output is a file the agent wrote; a missing one fails the attempt', async () => {
@@ -679,4 +681,13 @@ test('an optional output is captured when the Worker writes it and is no failure
   const left = await worker.run(await optional('FAKE:edit'))
   assert.equal(left.status, 'succeeded', left.reason)
   assert.deepEqual(Object.keys(left.outputs), ['change'])
+})
+
+test('the attempt carries the summary System computed from the whole output', async () => {
+  const { artifacts } = memory()
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-summary'))
+  const result = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs FAKE:turns') }, ['report']))
+  assert.equal(result.status, 'succeeded', result.reason)
+  assert.deepEqual(result.summary?.toolCalls, { Bash: 1, Read: 1 })
+  assert.equal(result.summary?.runtime, 'claude-code')
 })
