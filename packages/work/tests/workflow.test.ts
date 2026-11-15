@@ -434,3 +434,13 @@ test('a using step\'s `when` or `unless` applies to every step of its Sub-workfl
 test('code-checks.yaml pins repo-checks-v1: a release checked by the running Host cannot pin a criteria that release adds', () => {
   assert.match(fixture('code-checks.yaml'), /criteria: repo-checks-v1\s*$/m)
 })
+
+test('develop.yaml implement instructions carry the review, bug-fix, risk, refactor and compatibility rules within 8 KiB', () => {
+  const spec = resolve(parseWorkflow(fixture('develop.yaml')), available, fixture)
+  const implement = spec.steps.find((s) => s.id === 'implement') as { instructions?: string }
+  const text = (implement.instructions ?? '').replace(/\s+/g, ' ')
+  assert.ok(Buffer.byteLength(text) < 8 * 1024, 'under the 8 KiB limit')
+  for (const part of [/read the whole diff/i, /__pycache__/, /bug fix starts with a test that reproduces/i, /reopened step.*Host restart.*second repository/is, /hygiene\.yaml/, /compatibility layer only when the Task asks.*removes it/is]) {
+    assert.match(text, part)
+  }
+})

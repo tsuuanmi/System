@@ -59,5 +59,9 @@ bin/system work submit --workflow workflows/research.yaml --input <artifactId>
 [`tools/web-canary`](../tools/web-canary) runs it on a fixed question for the
 `web` Accounts ([runbook](../docs/operations/runbook.md#the-web-canary)).
 
+Compatibility policy: criteria versions and Artifact kinds are never deleted (old records must replay).
+A change across a release boundary is expand then contract, with a registered removal Item (the Q0 rule
+above: a new criteria version is pinned only in a later release). Nothing else keeps fallbacks or aliases.
+
 The vocabulary and preflight rules are in
 [workflow composition](../docs/architecture/workflow-composition.md).
