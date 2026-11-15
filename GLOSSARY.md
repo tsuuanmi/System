@@ -159,6 +159,11 @@ A defect in a change that passed its checks and was accepted, found later by
 review or use.
 _Avoid_: false positive, regression
 
+**Guardrail**:
+An enforced check (a test, a type, a lint rule, an API or a verifier) added
+because a defect escaped or a failure recurred, shown to block that defect.
+_Avoid_: rule, guideline, reminder
+
 ### Outside material
 
 **Conversation**:
