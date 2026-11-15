@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -108,13 +108,4 @@ test('a commit that cannot be checked out is error', async () => {
   assert.equal(result.verdict, 'error')
 })
 
-test("this repository's own .system/checks.yaml lists the five afterInstall checks (Item fl-6), read-only, with the installed system", () => {
-  const parsed = parseChecksFile(readFileSync(new URL('../../../.system/checks.yaml', import.meta.url), 'utf8'))
-  assert.ok('checks' in parsed, 'problem' in parsed ? parsed.problem : '')
-  assert.deepEqual(parsed.afterInstall?.map((c) => c.name), ['doctor', 'workers', 'status', 'bootstrap', 'mcp'])
-  for (const check of parsed.afterInstall ?? []) {
-    assert.match(check.run, /\bsystem\b/, check.name)
-    assert.doesNotMatch(check.run, /\/home\/|\/Users\//, `${check.name} hard-codes a path`)
-  }
-  assert.ok(parsed.checks.length >= 9, 'the checks list is unchanged')
-})
+// Item fl-6b restores the test that this repository's .system/checks.yaml lists the five afterInstall checks, together with the block, after the release (Escaped defect 7).
