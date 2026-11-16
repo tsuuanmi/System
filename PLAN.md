@@ -620,3 +620,12 @@ Order after NM: the unattended-scale spike with bubblewrap (decided 2026-11-15: 
   - A standard git `pre-push` hook (rb-2) covers hand pushes; System's own publish is not affected.
   - TR's close criterion is kept as it is; RB is its path.
 - Order: rb-1, rb-2, then the unattended-scale spike, then pstack's `/create-verification-skill` trial against fl-6's feature map.
+
+## 3j. ROI review (2026-11-16)
+
+- Ranking: turn on the scheduled session; ns-2 Guardrail; ns-1 DNA; ns-3.
+- Decisions (operator, 2026-11-16):
+  - The scheduled session runs with SS's limits (6 Items a night, Ready `todo` only, no approve, no release) for System now and DNA after ns-1.
+  - Unattended-scale isolation (bubblewrap, ADR-0011) is required before raising those limits or adding more repositories, not before turning the session on.
+  - pstack's trial and the attempt-summary accuracy work are deferred until data asks for them.
+- Facts: the timer had never been installed (installed by the operator on 2026-11-16 per the runbook); System and DNA had no `todo` Items, so the session's value depends on a queue of Ready Items written by the operator or a caller session.
