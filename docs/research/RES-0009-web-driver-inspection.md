@@ -3,7 +3,7 @@ id: RES-0009
 type: research
 status: active
 summary: Inspect the web driver (driver.ts, ui-ops, the ChatGPT UI map) and its one caller, classify each driver method as generic, ChatGPT-specific or unused by the Runtime, and name what the generic Procedures of PLAN WW step 2 can bind to.
-related: [RES-0008, ADR-0002]
+related: [ADR-0002]
 ---
 
 # Web driver inspection (WW step 2, first part)

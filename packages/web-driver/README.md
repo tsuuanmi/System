@@ -2,7 +2,7 @@
 
 System 1's ChatGPT web driver, its UI map and its UI engine, ported whole
 (operator's decision, 2026-11-07: System 1 already works against chatgpt.com,
-so its logic is ported, not written again; [PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md) item 7).
+so its logic is ported, not written again; PROP-0005 ([retired](../../docs/governance/retired.md)) item 7).
 It is a library: the `web` Runtime in [@system/web-worker](../web-worker/README.md)
 runs an attempt through the generic [Procedures](#generic-procedures-ww2-ii-new-here) bound to this
 package's UI map, and builds a `ChatGptWebDriver` for what login, remote login and recheck still

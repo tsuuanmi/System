@@ -2,7 +2,7 @@
 
 The `web-worker` row: the `web` Runtime, where an account is the
 operator's own signed-in ChatGPT website session driven through a genuine
-headed Chrome ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
+headed Chrome (PROP-0005 ([retired](../../docs/governance/retired.md))).
 It is its own package and an **optional, off** row (WW2a, config-first
 optionality): System's core and the CLI Runtimes of [@system/agents](../agents/README.md)
 do not depend on it, are tested without it, and work when it is off. Its
@@ -60,7 +60,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 The Account's state is in `$DSH_HOME/system/web/<site>/<name>`; a `profileDir` that is set replaces that directory.
 
 An Account `web/chatgpt/<name>` runs one step as one prompt in the operator's
-own signed-in ChatGPT web session ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).
+own signed-in ChatGPT web session (PROP-0005 ([retired](../../docs/governance/retired.md))).
 It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives a genuine headed Chrome with
 `patchright-core` 1.63.0 (System 1's pin; [chrome.ts](src/chrome.ts) chooses the Chrome and installs the pinned Chrome for Testing on first use), and runs inside the Host,
 not as a spawned process. The account is configured in the `agents` row like any other;
@@ -279,4 +279,4 @@ successful `login --remote` does the recheck itself, and reports "signed in, but
 
 ## Limits
 
-The `web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that for their own account (PROP-0005). It needs a Chrome new enough for chatgpt.com: the pinned build is installed under `$DSH_HOME/system/browsers` when no recent one exists.
+The `web` Runtime is outside OpenAI's Terms of Use for its web product; the operator accepted that risk for both accounts (`chatgpt-web/default`, `chatgpt-web/second`) and for regular unattended use, scheduled canaries included (2026-11-06, extended 2026-11-07; PROP-0005, retired). The ChatGPT-specific open-source drivers are unlicensed, so none of their code is copied. Out of scope: other websites, automating sign-in, getting round a bot check (the human clears one), a headless mode, file upload, the ChatGPT API. Not yet verified on the real site: web search, model choice, cited sources and the operator's custom instructions in a temporary chat. It needs a Chrome new enough for chatgpt.com: the pinned build is installed under `$DSH_HOME/system/browsers` when no recent one exists.

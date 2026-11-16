@@ -78,7 +78,7 @@ CLI to scrape.
 
 ## Amendment (2026-11-06, before implementation)
 
-A necessity review ([PROP-0004](../proposals/PROP-0004-host-design.md),
+A necessity review (PROP-0004, [retired](../governance/retired.md),
 Brainstorm Work `work:5e9141d7…`) and the operator changed the following.
 The rest of this decision stands.
 

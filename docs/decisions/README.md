@@ -31,10 +31,6 @@ acceptance does not imply its code exists.
 - [ADR-0008 — A `dev` integration branch System may merge into](ADR-0008-dev-integration-branch.md) — accepted —
   System's own changes integrate into a `dev` branch that System may update and merge into once the required checks
   pass; only the operator merges `dev` into `main`.
-- [ADR-0009 — Goals and Orchestrators](ADR-0009-goals-and-orchestrators.md) — superseded — A Goal is an immutable
-  operator-written Artifact (aim, scope, budget, principles as context) whose spend is folded from its Works, and an
-  Orchestrator is an agent caller reaching the Host through `system mcp`, scoped to one Goal, that may never approve,
-  accept or merge; the Host notifies it when its Works change state.
 - [ADR-0010 — The core budget, measured from OC](ADR-0010-core-budget-rebaselined.md) — accepted — The active core's
   growth budget is measured from 3,403 lines (after milestone OC) instead of the PR #3 baseline of 2,317, at +10% per
   milestone, and growth over it is paid back within the same milestone; removing features to shrink the core is planned

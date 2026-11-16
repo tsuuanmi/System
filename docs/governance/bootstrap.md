@@ -1,3 +1,7 @@
+---
+related: [governance/documentation-architecture]
+---
+
 # Bootstrap another repository from System
 
 The [portable standard](documentation-architecture.md) is self-contained and

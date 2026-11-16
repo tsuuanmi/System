@@ -2,6 +2,7 @@
 type: requirement
 status: active
 reviewed: 2026-11-16
+related: [architecture/control-plane]
 ---
 
 # System Product Charter

@@ -515,7 +515,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
-    .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN 3e (else that measure is unknown)')
+    .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN section 2 (else that measure is unknown)')
     .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string }) => {
       select(async () => {
         if ((workId === undefined) === (options.since === undefined)) throw new Error('give a Work ID, or --since <date> for a range')

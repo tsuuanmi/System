@@ -4,14 +4,15 @@ type: decision
 status: accepted
 date: 2026-11-14
 summary: The Host carries admitted Works on and never picks an Item or creates a Work; picking, writing the Task and submitting is a caller's act (scheduled sessions included); Items stay in each repository's STATUS.md with derived state, and a database is reconsidered only on three stated triggers.
+related: [architecture/host]
 ---
 
 # The Host carries Works on and never picks an Item
 
 ## Context
 
-Milestone CM ([PLAN 3d](../../PLAN.md)) makes work continue across a
-restart and across Items. [ADR-0009](ADR-0009-goals-and-orchestrators.md) is
+Milestone CM (PLAN.md) makes work continue across a
+restart and across Items. ADR-0009 ([retired](../governance/retired.md)) is
 superseded: System has no Goal engine, planner or dispatcher of its own.
 Evidence: research Work `work:dcf503df-fd54-5cb8-b079-c098beae7c6e` (R1) and
 synthesis `work:d9c19b94-ed21-5eb0-84ab-506dc2c8e9aa`.

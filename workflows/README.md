@@ -75,5 +75,8 @@ Compatibility policy: criteria versions and Artifact kinds are not deleted (old 
 A change across a release boundary is expand then contract, with a registered removal Item (the Q0 rule
 above: a new criteria version is pinned only in a later release). Nothing else keeps fallbacks or aliases.
 
+**Guardrail rule** (operator, 2026-11-15, Q8): each Escaped defect or recurring failure ends in an enforced test, type,
+lint, API or check that is proven to block it; prose is allowed only when that is impossible, with the reason.
+
 The vocabulary and preflight rules are in
 [workflow composition](../docs/architecture/workflow-composition.md).

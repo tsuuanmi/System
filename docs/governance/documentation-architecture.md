@@ -1,3 +1,7 @@
+---
+related: [governance/bootstrap]
+---
+
 # Portable Documentation Architecture Standard
 
 A **repository-agnostic** contract for documents as a knowledge system: one

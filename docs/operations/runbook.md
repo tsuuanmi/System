@@ -217,7 +217,7 @@ slot never clears, find the process with `pgrep -fa claude` or `pgrep -fa codex`
 ## The web account
 
 A Worker that runs a step in the operator's signed-in ChatGPT web session
-([PROP-0005](../proposals/PROP-0005-chatgpt-website-worker.md); options in the
+(PROP-0005, [retired](../governance/retired.md); options in the
 [web-worker README](../../packages/web-worker/README.md)). It is
 **not enabled by default**, in two steps in the profile's own patch
 (`$DSH_HOME/profiles/system/cordis.patch.yml`), then restart the Host: turn on the
@@ -322,7 +322,7 @@ question's text starts a new series (a new Task ID).
 
 ## The scheduled session's prompt
 
-`tools/night-session.md` is the prompt of the scheduled session (PLAN 3c, ss-1,
+`tools/night-session.md` is the prompt of the scheduled session (PLAN SS, section 1, ss-1,
 ss-8): a Claude Code caller of System, not part of it. It reads `status`, takes
 `todo` Items in STATUS order and works each through the MCP tools (`mcp__system__work_submit`
 and the others) and `system work wait` (the prompt holds the sequence and its limits). It never approves,

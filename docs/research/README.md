@@ -10,9 +10,6 @@ The generated index below is the authoritative list of current research.
 - [RES-0003 — DSH-hosted control plane: evidence and experiments](RES-0003-dsh-control-plane-evaluation.md) — active —
   Evaluate DSH/Cordis as the selected host for a minimal System control plane, plugin composition, lifecycle safety and
   cross-domain MVP proofs.
-- [RES-0008 — Brainstorm evaluation (B3): five briefs, three arms](RES-0008-brainstorm-evaluation.md) — active —
-  Evaluate Brainstorm (PLAN.md B3) on five real briefs against a one-Worker baseline, with a stance per proposal and a
-  Codex synthesis as variants; blind scores by a model judge.
 - [RES-0009 — Web driver inspection (WW step 2, first part)](RES-0009-web-driver-inspection.md) — active — Inspect the
   web driver (driver.ts, ui-ops, the ChatGPT UI map) and its one caller, classify each driver method as generic,
   ChatGPT-specific or unused by the Runtime, and name what the generic Procedures of PLAN WW step 2 can bind to.

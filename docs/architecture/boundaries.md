@@ -2,6 +2,7 @@
 type: architecture
 status: draft
 reviewed: 2026-11-05
+decided-by: [ADR-0001]
 ---
 
 # Draft boundaries and failure scenarios

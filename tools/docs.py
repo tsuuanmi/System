@@ -30,7 +30,7 @@ FIELDS = {"id", "type", "status", "date", "created", "summary", "owners",
           *RELATIONS}
 PROFILE_FIELDS = {"level", "areas", "id-prefixes", "source-roots",
                   "forbidden-names", "ledger", "reachability-depth",
-                  "review-days", "max-lines", "reviewed"}
+                  "review-days", "max-lines", "reviewed", *RELATIONS}
 STATUSES = {
     "proposal": {"draft", "proposed", "accepted", "rejected", "implementing",
                  "implemented", "superseded", "withdrawn"},
@@ -308,6 +308,16 @@ class Graph:
                     if self.resolve(target) is None:
                         self.errors.append(f"DOC-LNK-005 {path}: unresolved {relation}: {target}")
 
+    def check_typed_edges(self) -> None:
+        """Every document under docs/ declares at least one typed edge; routers and the ledger are excepted."""
+        ledger = first(self.profile, "ledger")
+        for doc in self.docs:
+            if doc.router or doc.rel == ledger:
+                continue
+            if not any(doc.meta.get(relation) for relation in RELATIONS):
+                self.errors.append(
+                    f"DOC-GRF-001 docs/{doc.rel}: no typed edge in front matter ({', '.join(RELATIONS)})")
+
     def check_reachability(self) -> None:
         index = self.by_identity.get("")
         if not index:
@@ -422,6 +432,7 @@ class Graph:
     def check(self) -> int:
         self.check_structure()
         self.check_identity_links()
+        self.check_typed_edges()
         self.check_reachability()
         if self.errors:
             print("\n".join(self.errors), file=sys.stderr)

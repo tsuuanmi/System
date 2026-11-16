@@ -2,13 +2,14 @@
 type: architecture
 status: active
 reviewed: 2026-11-07
+decided-by: [ADR-0007, ADR-0012]
 ---
 
 # The Host
 
 **Status:** R2 implemented
 ([ADR-0007](../decisions/ADR-0007-one-long-lived-host.md) as amended, and
-[PROP-0004](../proposals/PROP-0004-host-design.md)): the Host in `packages/work` and `packages/host`, the thin CLI in
+PROP-0004, [retired](../governance/retired.md)): the Host in `packages/work` and `packages/host`, the thin CLI in
 `packages/app` (their READMEs say what each file holds). The old per-command mode, where every `system` command
 booted its own host and coordinated through files, is gone; what it did is in
 [Work ownership and recovery](work-ownership-and-recovery.md).
@@ -252,6 +253,18 @@ PLAN's growth budget.
 
 `system init` installs the unit ([bin/README.md](../../bin/README.md)); the
 [operations runbook](../operations/runbook.md) covers starting, stopping and diagnosis.
+
+## Deferred, with the trigger that reopens each
+
+Decided at the necessity review of 2026-11-06 (operator); non-goals stay out: remote access, several users,
+sandboxing, a durable scheduler queue, live plugin reload and auto-resume of an uncertain attempt.
+
+- Per-Work lanes: when a 20-Work run shows the one commit lane busy.
+- A long poll for `work.events`: when a 20-Work run shows that polling every second costs.
+- `system doctor --offline`: at the first wedged or unstartable Host that the existing tools cannot diagnose.
+- Socket activation of the unit (a plain unit with `Restart=on-failure`, lingering and a ping timeout instead):
+  when starting the Host by hand becomes a recurring cost.
+- Compaction of Work records: when the memory report in `host.status` (Work count, record size) exceeds its budget.
 
 ## Guarantees and the tests that hold them
 

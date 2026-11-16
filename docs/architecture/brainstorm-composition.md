@@ -2,6 +2,7 @@
 type: architecture
 status: active
 reviewed: 2026-11-06
+decided-by: [ADR-0002, ADR-0003]
 ---
 
 # Brainstorm as a Workflow composition, not a Team engine
@@ -62,7 +63,7 @@ policy**, not a new class of Worker.
 6. Absence of a required second provider must be an explicit admission
    refusal, not an unnoticed fallback to two Claude attempts.
 
-The live run is evaluated in [RES-0008](../research/RES-0008-brainstorm-evaluation.md).
+The live run was evaluated in RES-0008 ([retired](../governance/retired.md); the findings are below).
 
 ## B3 product experiment: quality is not a verifier gate
 
@@ -71,7 +72,13 @@ more than **one Worker**: at least five distinct briefs (architecture,
 trade-off, feature proposal, failure diagnosis, open-ended ideation), a
 one-Worker baseline, and human judgments of usefulness, diversity,
 disagreement quality, actionability, time, known usage and interventions
-(results: [RES-0008](../research/RES-0008-brainstorm-evaluation.md)).
+(results below).
+
+**Result (RES-0008, 2026-11-06, five briefs, scored blind by a Claude Sonnet judge, which may favour its own
+model).** Brainstorm beat one Worker on every brief (quality 4.65 shared prompt and 4.45 with stances, against 3.60)
+for about four times the time and tokens; use one Worker for narrow questions. Stances helped only with a Claude
+synthesis, and the synthesis provider is confounded with them. Do not move the synthesis to Codex before one clean
+comparison judged by someone other than Sonnet, and add no debate or voting.
 
 The config-only **distinct cognitive roles** variant was tested and adopted
 as the default: `idea-a` optimizes simplicity and practical feasibility,
