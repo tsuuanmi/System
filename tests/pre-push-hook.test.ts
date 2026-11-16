@@ -17,16 +17,25 @@ before(() => {
   root = mkdtempSync(join(tmpdir(), 'pre-push-'))
   const bin = join(root, 'bin')
   mkdirSync(bin)
-  // Stand-ins for the four checks; FAIL names the one that fails.
-  for (const name of ['python3', 'node', 'corepack']) {
-    writeFileSync(join(bin, name), `#!/bin/sh\ncase "$*" in *"$FAIL"*) [ -n "$FAIL" ] && exit 1;; esac\nexit 0\n`)
-    chmodSync(join(bin, name), 0o755)
+  const stub = (dir: string, name: string, body: string) => {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`)
+    chmodSync(join(dir, name), 0o755)
   }
-  env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
+  // Stand-ins for the four checks; FAIL names the one that fails.
+  const check = 'case "$*" in *"$FAIL"*) [ -n "$FAIL" ] && exit 1;; esac\nexit 0'
+  for (const name of ['python3', 'corepack']) stub(bin, name, check)
+  // The shell's `node` is first on PATH and is Node 22: it fails every check; only the Node finder runs, on the real Node.
+  stub(bin, 'node', `case "$1" in *node-bin.ts) exec "${process.execPath}" "$@";; esac\necho "needs Node >=99; this is v22.23.4" >&2\nexit 1`)
+  // The repository's Node, as the finder finds it under HOME's nvm layout.
+  const home = join(root, 'home')
+  stub(join(home, '.nvm', 'versions', 'node', 'v99.0.0', 'bin'), 'node', check)
+  env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
   const remote = join(root, 'remote.git')
   repo = join(root, 'repo')
   mkdirSync(repo)
   sh(root, 'git', ['init', '--quiet', '--bare', remote])
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ engines: { node: '>=99' } }))
   sh(repo, 'git', ['init', '--quiet', '-b', 'main'])
   sh(repo, 'git', ['remote', 'add', 'origin', remote])
   sh(repo, 'git', ['config', 'core.hooksPath', dirname(hook)])
@@ -54,4 +63,17 @@ test('a push to another ref passes even when a check fails', () => {
 
 test('--no-verify bypasses the hook', () => {
   assert.equal(push('dev', 'test', ['--no-verify', '--force']).status, 0)
+})
+
+test('no installed Node satisfying engines.node refuses the push, with the reason', () => {
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ engines: { node: '>=98 <99' } }))
+  sh(repo, 'git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'd']) // a new commit: an unchanged dev would not run the hook
+  try {
+    const r = push('dev')
+    assert.notEqual(r.status, 0)
+    assert.match(r.stderr, /no installed Node satisfies engines.node/)
+    assert.match(r.stderr, /refusing the push to dev: no suitable Node/)
+  } finally {
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ engines: { node: '>=99' } }))
+  }
 })
