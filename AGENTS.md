@@ -10,7 +10,7 @@ test stand-ins. Changes to this repository are checked by
 ## Read before changing
 
 1. Read the [Product Charter](docs/requirements/purpose.md) and the
-   [MVP contract](docs/requirements/mvp.md).
+   [MVP contract](docs/requirements/purpose.md).
 2. Read the [documentation router](docs/README.md), the
    [local governance profile](docs/governance/documentation.md) and
    [ADR-0001](docs/decisions/ADR-0001-control-plane-on-dsh.md),

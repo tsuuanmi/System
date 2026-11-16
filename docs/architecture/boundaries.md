@@ -43,7 +43,7 @@ smallest two-workflow spike validates the transitions.
 ## Failure points for a controlled spike
 
 The crash, cancel, plugin-disable, denial and replacement scenarios are the
-[MVP failure tests](../requirements/mvp.md#failure-and-governance-tests). The
+[MVP failure tests](../requirements/purpose.md#success-means). The
 ones it does not name:
 
 - a higher-priority configuration patch that overrides the intended
@@ -68,5 +68,5 @@ research reports is `WorkerRequest`/`WorkerResult` in `@system/work`.
 - Which provider metering oracle and result verification can be reproduced in
   a local CI fixture?
 
-The [MVP contract](../requirements/mvp.md) owns required behavior; this page
+The [MVP contract](../requirements/purpose.md) owns required behavior; this page
 records possible mechanisms until experiments choose one.

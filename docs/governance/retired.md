@@ -13,3 +13,4 @@ Append-only record of retired System documents, following the [documentation pol
 | RES-0005 | MVP-0 plugin and component reuse audit | concluded | packages/README.md | 2026-11-09 | `f752e79:docs/research/RES-0005-plugin-reuse-audit.md` |
 | RES-0006 | Brainstorm-first feasibility: three Worker executions, two existing runtimes | concluded | docs/architecture/brainstorm-composition.md | 2026-11-09 | `f752e79:docs/research/RES-0006-brainstorm-workflow-feasibility.md` |
 | RES-0007 | PR #2 source review: Brainstorm, concurrency and next evaluation | concluded | docs/architecture/work-ownership-and-recovery.md | 2026-11-09 | `f752e79:docs/research/RES-0007-brainstorm-and-concurrency-review.md` |
+| mvp | MVP scope and acceptance contract | concluded | docs/requirements/purpose.md | 2026-11-16 | `d66d3f5f2f55c85e73025ca50c80ff7eb37396a4:docs/requirements/mvp.md` |

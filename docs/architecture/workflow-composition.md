@@ -217,4 +217,4 @@ dependent admission fail with a clear missing-capability reason
 ([control plane](control-plane.md#kernel--active-composition-rule)).
 
 See [Artifact-ID handoff](artifact-verification.md),
-and [MVP requirements](../requirements/mvp.md).
+and [MVP requirements](../requirements/purpose.md).

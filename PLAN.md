@@ -9,7 +9,7 @@
 ## 0. Read and align
 
 - [Product Charter](docs/requirements/purpose.md), [accepted ADRs](docs/decisions/README.md)
-  and [MVP scope](docs/requirements/mvp.md) define product/architecture truth.
+  and [MVP scope](docs/requirements/purpose.md) define product/architecture truth.
   The terms are in [GLOSSARY.md](GLOSSARY.md).
 - Recheck the actual current state before changing code; do not repeat
   finished work.

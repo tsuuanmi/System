@@ -92,4 +92,4 @@ GitHub Actions' composite actions (expanded in place) and reusable workflows
 
 See [workflow composition](../architecture/workflow-composition.md) for the
 target boundary and illustrative domain-neutral YAML, and
-[MVP acceptance](../requirements/mvp.md) for tests.
+[MVP acceptance](../requirements/purpose.md) for tests.

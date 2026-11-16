@@ -82,7 +82,7 @@ System contracts.
 
 ## Experiment backlog before freezing modules
 
-E1-E9 are the [MVP failure and acceptance tests](../requirements/mvp.md#failure-and-governance-tests)
+E1-E9 are the [MVP failure and acceptance tests](../requirements/purpose.md#success-means)
 and the RES-0002 proof matrix (retired), stated as DSH questions: a profile with only needed services
 and an inspected effective tree (E1); disable and re-enable a noncritical
 plugin including a higher-priority patch override, with no code deletion (E2);
@@ -105,6 +105,6 @@ a report, bounded evidence review), the Product Charter's workflow generality
 has failed; distinct adapters, validation policy and task definitions are
 fine ([control plane](../architecture/control-plane.md#domain-independence)).
 
-See the accepted [MVP requirements](../requirements/mvp.md) and current
+See the accepted [MVP requirements](../requirements/purpose.md) and current
 [architecture](../architecture/control-plane.md). Historical reference
 observations (RES-0001, retired) are not measurements from this project.

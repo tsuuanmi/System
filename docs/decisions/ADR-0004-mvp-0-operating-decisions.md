@@ -14,7 +14,7 @@ related: [ADR-0001, ADR-0002, ADR-0003, ADR-0005, ADR-0006, RES-0003]
 [ADR-0001](ADR-0001-control-plane-on-dsh.md) to
 [ADR-0003](ADR-0003-artifact-ids-and-verification-contracts.md) fix the
 architecture but leave the operator model, Worker runtime, storage, effect
-executor and isolation open. The [MVP contract](../requirements/mvp.md) is
+executor and isolation open. The [MVP contract](../requirements/purpose.md) is
 broad; the first build should be the **smallest slice that proves the core
 claim**: work persists, Workers change, humans govern, and two domains run
 on one controller. This ADR records the choices for that slice (**MVP-0**)

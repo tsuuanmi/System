@@ -25,7 +25,7 @@ ADR-0008); `system approve` is for a human at a terminal.
 
 - [Product Charter](docs/requirements/purpose.md) — mission, purposes and
   philosophy; authoritative product intent.
-- [MVP requirements](docs/requirements/mvp.md) — a shared core proven by
+- [MVP requirements](docs/requirements/purpose.md) — a shared core proven by
   **Software Engineering** and **Research** workflows.
 - [Control-plane architecture](docs/architecture/control-plane.md) —
   DSH-hosted logical ownership, plugin boundaries and active composition.

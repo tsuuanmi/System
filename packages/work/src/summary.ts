@@ -1,5 +1,5 @@
 /**
- * A Work's measurements, derived from its events (mvp.md failure test 8,
+ * A Work's measurements, derived from its events (operator touches,
  * MVP-06): duration, attempts, time waited for a slot, rate-limited attempts, the operator's touches, and usage. Submitting
  * Work is the request itself, not a touch; a human cancel, retry or decision
  * is. Usage an attempt did not report, or did not split into cache and fresh input, is counted apart, never as zero.
