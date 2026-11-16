@@ -644,7 +644,7 @@ Order after NM: the unattended-scale spike with bubblewrap (decided 2026-11-15: 
       a verifier that throws has no test, in the controller or the merge check; no test has a late `observed` of a
       lost attempt on a live Host), and one not at all (no test asserts the Claude Code allow/deny flags or the Codex
       sandbox flag in packages/agents/src/runtimes.ts; nothing scans a change for secrets).
-- Order: rb-1, rb-2, rb-3, rb-4, rb-5, then the unattended-scale spike, then pstack's `/create-verification-skill` trial against fl-6's feature map.
+- Order: rb-1, rb-2, ns-2, rb-3, rb-4, rb-5, then the unattended-scale spike (operator, 2026-11-16: ns-2 before rb-3 as the Guardrail for a recurring failure; pstack's trial deferred, section 3j).
 
 ## 3j. ROI review (2026-11-16)
 
