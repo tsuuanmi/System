@@ -134,6 +134,12 @@ The operator merging `dev` into `main` after reading a release report. System
 never makes a Release.
 _Avoid_: deploy, ship; checkpoint (a milestone's internal gate)
 
+**Scheduled session**:
+A caller session started on a schedule, with no operator present, that picks
+Ready Items and carries them through Works within fixed limits; it never
+approves, releases or writes Items.
+_Avoid_: night run, bot, autopilot
+
 ### Checking work
 
 **Verifier**:
