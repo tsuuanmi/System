@@ -57,10 +57,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 
 ## Accounts and attempts
 
-The Account's state is in `$DSH_HOME/system/web/<site>/<name>` ([migrate.ts](src/migrate.ts)); the Runtime was `chatgpt-web`,
-with `chatgpt-web/<name>`. At registration an old directory moves there once and one line is logged; with both present, or
-a Chrome holding the old profile, the Account is unavailable (never merged or deleted; see the
-[runbook](../../docs/operations/runbook.md#the-web-account)). A `profileDir` that is set is never moved.
+The Account's state is in `$DSH_HOME/system/web/<site>/<name>`; a `profileDir` that is set replaces that directory.
 
 An Account `web/chatgpt/<name>` runs one step as one prompt in the operator's
 own signed-in ChatGPT web session ([PROP-0005](../../docs/proposals/PROP-0005-chatgpt-website-worker.md)).

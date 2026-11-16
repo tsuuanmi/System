@@ -109,14 +109,6 @@ test('a web account that sets its own maxConcurrentAttempts other than 1 is unav
 // WW-rename: the runtime is `web` with a `site`, and the ref says the same.
 const SERVICE = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
 
-test('the chatgpt-web runtime is refused with the new names, even with the row on and off', async () => {
-  const renamed = 'the chatgpt-web runtime was renamed: use runtime: web, site: chatgpt, ref web/chatgpt/<name>'
-  for (const web of [SERVICE, undefined]) {
-    const { accounts } = await mount(web, false, [{ ref: 'chatgpt-web/default', runtime: 'chatgpt-web', site: undefined }])
-    assert.deepEqual([accounts[0]!.available, accounts[0]!.reason], [false, renamed])
-  }
-})
-
 test('a web account whose ref is not web/<site>/<name> with its own site is unavailable', async () => {
   const { accounts } = await mount(SERVICE, false, [{ ref: 'web/gemini/default' }, { ref: 'web/default' }, { site: undefined }, { ref: 'web/chatgpt/second' }])
   assert.deepEqual(accounts.map((a: { available: boolean }) => a.available), [false, false, false, true])

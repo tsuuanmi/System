@@ -286,7 +286,7 @@ async function cite(json: unknown, pinned?: Record<string, unknown>) {
   const verifier = citationCheck(artifacts)
   const criteria = pinned
     ? (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: pinned, classification: 'public', producer })).id
-    : await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v1', operatorId: 't' })
+    : await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
   const subject = await sources(artifacts, json)
   const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'citations', capability: 'research.citation-check', subject, criteria })
   const evidence = artifacts.get(result.evidence[0]!)
@@ -313,6 +313,22 @@ test('an unreachable or missing page is inconclusive', async () => {
   assert.equal(closed.evidence?.results[0]?.status, null)
 })
 
+test('an unknown criteria version, citations-v1 among them, is refused at admission and gives an error verdict, never a pass', async () => {
+  const artifacts = store()
+  const verifier = citationCheck(artifacts)
+  const subject = await sources(artifacts, { sources: [{ id: 's1', url: `${base}/article`, quote: 'system verifies citations', claims: ['c'] }] })
+  for (const name of ['citations-v1', 'citations-v4', 'v1']) {
+    await assert.rejects(verifier.criteria({ capability: 'research.citation-check', name, operatorId: 't' }), /unknown criteria .* known: citations-v2, citations-v3$/, name)
+    // Criteria already pinned under that name (a Work admitted before its removal), with or without the loose-match setting.
+    for (const extra of [{}, { minWordMatch: 0.8 }]) {
+      const criteria = (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: { name, minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 1 << 20, ...extra }, classification: 'public', producer })).id
+      const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'citations', capability: 'research.citation-check', subject, criteria })
+      assert.equal(result.verdict, 'error', name)
+      assert.match(result.reason, /unknown criteria/)
+    }
+  }
+})
+
 test('a malformed sources file, no sources, or an empty quote fails', async () => {
   assert.equal((await cite({ sources: [] })).result.verdict, 'fail')
   assert.equal((await cite({ sources: [{ id: 's1', url: 'ftp://x/y', quote: 'long enough quote', claims: ['c'] }] })).result.verdict, 'fail')
@@ -336,7 +352,7 @@ async function citeV2(json: unknown, report?: string, name = 'citations-v2') {
 const parisQuote = 'Its capital, largest city and main cultural and economic centre is Paris.'
 const franceQuote = 'Paris is the capital and largest city of France.'
 
-test('v2: the shortened and the reworded canary quotes pass; v1 still rejects both', async () => {
+test('v2: the shortened and the reworded canary quotes pass', async () => {
   for (const [path, quote] of [['paris', parisQuote], ['france', franceQuote]] as const) {
     const json = { sources: [{ id: 's1', url: `${base}/${path}`, quote, claims: ['c'] }] }
     const v2 = await citeV2(json)
@@ -344,7 +360,6 @@ test('v2: the shortened and the reworded canary quotes pass; v1 still rejects bo
     assert.ok((v2.evidence?.results[0]?.wordRatio ?? 0) >= 0.8)
     assert.match(v2.evidence?.results[0]?.passage ?? '', /paris/)
     assert.ok((v2.evidence?.results[0]?.passage ?? '').length <= 300)
-    assert.equal((await cite(json)).result.verdict, 'inconclusive')
   }
 })
 
@@ -458,41 +473,42 @@ const twoOfThree = () => ({ sources: [
   { id: 's2', url: `${base}/article`, quote: 'exactly & carefully', claims: ['c'] },
   { id: 's3', url: `${base}/gone`, quote: 'a quote on a missing page', claims: ['c'] },
 ] })
-const criteriaWith = (extra: Record<string, unknown>) => ({ name: 'c', minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 1 << 20, ...extra })
+const threeReadable = () => ({ sources: [...twoOfThree().sources.slice(0, 2), { id: 's3', url: `${base}/article`, quote: 'a sentence the page never says', claims: ['c'] }] })
+const criteriaWith = (extra: Record<string, unknown>) => ({ name: 'citations-v2', minWordMatch: 0.8, minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 1 << 20, ...extra })
 
-test('2 of 3 confirmed passes at the default 0.5, naming the unconfirmed source; evidence has ratio and threshold', async () => {
-  const { result, evidence } = await cite(twoOfThree())
+test('2 of 3 readable confirmed passes at the default 0.5, naming the unconfirmed source; evidence has ratio and threshold', async () => {
+  const { result, evidence } = await cite(threeReadable())
   assert.equal(result.verdict, 'pass', result.reason)
   assert.match(result.reason, /2 of 3/)
-  assert.match(result.reason, /s3 \(HTTP 404, quote unreadable\)/)
-  assert.doesNotMatch(result.reason, /s1|s2/)
+  assert.match(result.reason, /s3 \(HTTP 200, 0% of the quote's words/)
+  assert.doesNotMatch(result.reason, /s1 |s2 /)
   assert.equal(evidence?.minConfirmedRatio, 0.5)
   assert.equal(evidence?.confirmedRatio, 2 / 3)
 })
 
-test('2 of 3 confirmed is inconclusive at 1.0, and the reason still lists the unconfirmed source', async () => {
-  const { result, evidence } = await cite(twoOfThree(), criteriaWith({ minConfirmedRatio: 1 }))
+test('2 of 3 readable confirmed is inconclusive at 1.0, and the reason still lists the unconfirmed source', async () => {
+  const { result, evidence } = await cite(threeReadable(), criteriaWith({ minConfirmedRatio: 1 }))
   assert.equal(result.verdict, 'inconclusive')
   assert.match(result.reason, /s3/)
   assert.equal(evidence?.minConfirmedRatio, 1)
 })
 
-test('criteria pinned without minConfirmedRatio keep the old rule: every quote must be found', async () => {
-  assert.equal((await cite(twoOfThree(), criteriaWith({}))).result.verdict, 'inconclusive')
-  const { result, evidence } = await cite({ sources: twoOfThree().sources.slice(0, 2) }, criteriaWith({}))
+test('an unreadable page is not counted: 2 readable confirmed and one 404 pass', async () => {
+  const { result, evidence } = await cite(twoOfThree(), criteriaWith({ minConfirmedRatio: 1 }))
   assert.equal(result.verdict, 'pass', result.reason)
-  assert.equal(evidence?.minConfirmedRatio, 1)
+  assert.match(result.reason, /unreadable, not counted: s3/)
+  assert.equal(evidence?.confirmedRatio, 1)
 })
 
-test('the reason names every unconfirmed source with why: quote not found, or fetch failed', async () => {
+test('the reason names every unconfirmed source with why: quote not found, or unreadable', async () => {
   const { result } = await cite({ sources: [
     { id: 'ok', url: `${base}/article`, quote: 'system verifies citations', claims: ['c'] },
     { id: 'nf', url: `${base}/article`, quote: 'a sentence the page never says', claims: ['c'] },
     { id: 'ff', url: 'http://127.0.0.1:1/x', quote: 'system verifies citations', claims: ['c'] },
   ] }, criteriaWith({ minConfirmedRatio: 0.3 }))
   assert.equal(result.verdict, 'pass', result.reason)
-  assert.match(result.reason, /nf \(HTTP 200, quote not found\)/)
-  assert.match(result.reason, /ff \(fetch failed: /)
+  assert.match(result.reason, /nf \(HTTP 200, 0% of the quote's words/)
+  assert.match(result.reason, /unreadable, not counted: ff \(fetch failed: /)
 })
 
 test('a ratio outside 0 to 1 is not valid criteria', () => {

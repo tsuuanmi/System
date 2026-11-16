@@ -10,11 +10,11 @@
  * never proves what the Worker read). A pass can include unconfirmed quotes:
  * the reason names each with why, and the evidence lists every result with
  * the ratio and threshold used. Criteria pinned without `minConfirmedRatio`
- * mean 1.0: every quote must be found, as before version 2. Version 3:
- * `normalize` finds quotes beside links and table cells (see there).
+ * mean 1.0: every quote must be found. `citations-v1` (exact match) was
+ * removed (2026-11-16): a Work pinned to it cannot be retried, and verifying
+ * against it gives an `error` verdict, never a pass; `work replay` reads events only.
  *
- * `citations-v2` (verifier version 4; the criteria name selects it, `v1`
- * stays as it was so earlier verdicts reproduce): the quote need only be
+ * `citations-v2` (verifier version 4; the criteria name selects it): the quote need only be
  * loosely there (`looseMatch`), the report's `[id]`s and the sources must
  * agree (`completeness`), and a page that cannot be read (HTTP 4xx/5xx, a
  * fetch error) counts neither way: the ratio is over the readable sources, and
@@ -37,12 +37,12 @@ export const citationCriteriaSchema = z.object({
   fetchTimeoutMs: z.number().int().positive(),
   maxBytes: z.number().int().positive(),
   minConfirmedRatio: z.number().min(0).max(1).optional(),
-  /** `citations-v2`: the share of a quote's words that must appear in order near each other; absent means the exact match of v1. */
+  /** `citations-v2`: the share of a quote's words that must appear in order near each other; a criteria without it is refused with an `error` verdict. */
   minWordMatch: z.number().min(0).max(1).optional(),
 }).strict()
 export type CitationCriteria = z.infer<typeof citationCriteriaSchema>
 
-const DEFAULT_CRITERIA: Omit<CitationCriteria, 'name'> = { minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 2 * 1024 * 1024, minConfirmedRatio: 0.5 }
+const V2_CRITERIA: Omit<CitationCriteria, 'name'> = { minWordMatch: 0.8, minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 2 * 1024 * 1024, minConfirmedRatio: 0.5 }
 
 export const sourcesSchema = z.object({
   sources: z.array(z.object({
@@ -84,7 +84,7 @@ export function normalize(text: string): string {
     .replace(/[\s|]+/g, ' ').replace(/ ([,.;:!?)])/g, '$1').trim().toLowerCase()
 }
 
-const V2_CRITERIA: Omit<CitationCriteria, 'name'> = { ...DEFAULT_CRITERIA, minWordMatch: 0.8 }
+const KNOWN_CRITERIA: string[] = ['citations-v2', 'citations-v3']
 const USER_AGENT_V2 = 'System-citation-check/1.0 (+https://github.com/tsuuanmi/System)'
 const MAX_PASSAGE = 300
 
@@ -152,7 +152,7 @@ export function completeness(report: string, sources: z.infer<typeof sourcesSche
 }
 
 async function fetchText(url: string, criteria: CitationCriteria): Promise<{ status: number; text: string; contentHash: string }> {
-  const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(criteria.fetchTimeoutMs), headers: { 'user-agent': criteria.minWordMatch === undefined ? 'System citation check' : USER_AGENT_V2 } })
+  const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(criteria.fetchTimeoutMs), headers: { 'user-agent': USER_AGENT_V2 } })
   const reader = response.body?.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
@@ -175,12 +175,16 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
     capabilities: ['research.citation-check'],
     accepts: ['file'],
     async criteria({ name }) {
-      return (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: { name, ...(name === 'citations-v2' || name === 'citations-v3' ? V2_CRITERIA : DEFAULT_CRITERIA) }, classification: 'public', producer })).id
+      if (!KNOWN_CRITERIA.includes(name)) throw new Error(`unknown criteria ${name} for research.citation-check; known: ${KNOWN_CRITERIA.join(', ')}`)
+      return (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: { name, ...V2_CRITERIA }, classification: 'public', producer })).id
     },
     async verify(request): Promise<VerifyResult> {
       const criteriaRead = artifacts.get(request.criteria)
       const criteria = criteriaRead.state === 'stored' ? citationCriteriaSchema.parse(criteriaRead.envelope.content) : undefined
       if (!criteria) return { verdict: 'error', reason: 'the pinned criteria are not stored', subject: request.subject, criteria: request.criteria, evidence: [] }
+      const loose = criteria.minWordMatch
+      // A version this verifier no longer knows (citations-v1 was removed) is never judged by another version's rule.
+      if (!KNOWN_CRITERIA.includes(criteria.name) || loose === undefined) return { verdict: 'error', reason: `unknown criteria ${criteria.name} for research.citation-check; known: ${KNOWN_CRITERIA.join(', ')}`, subject: request.subject, criteria: request.criteria, evidence: [] }
       const problems: string[] = []
       const results: CheckResult[] = []
       let parsed: z.infer<typeof sourcesSchema> | undefined
@@ -195,9 +199,8 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
         if (parsed.sources.length < criteria.minSources) problems.push(`${parsed.sources.length} source(s); at least ${criteria.minSources} required`)
         for (const source of parsed.sources) if (normalize(source.quote).length < criteria.minQuoteChars) problems.push(`source ${source.id}: the quote is shorter than ${criteria.minQuoteChars} characters`)
       }
-      const loose = criteria.minWordMatch
       const reportId = request.inputs?.report
-      if (parsed && loose !== undefined && reportId) {
+      if (parsed && reportId) {
         const read = await artifacts.readBytes(reportId).then((b) => Buffer.from(b).toString('utf8'), (error: Error) => { problems.push(`the report cannot be read: ${error.message}`); return undefined })
         if (read !== undefined) problems.push(...completeness(read, parsed.sources, criteria.name === 'citations-v3'))
       }
@@ -206,43 +209,32 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
           try {
             const page = await fetchText(source.url, criteria)
             const readable = page.status < 400
-            if (loose === undefined) {
-              results.push({ id: source.id, url: source.url, status: page.status, found: readable && normalize(page.text).includes(normalize(source.quote)), contentHash: page.contentHash })
-            } else {
-              const near = readable ? looseMatch(normalize(page.text), normalize(source.quote), loose) : { ratio: 0, passage: '' }
-              results.push({ id: source.id, url: source.url, status: page.status, found: readable && near.ratio >= loose, contentHash: page.contentHash, readable, ...(readable ? { wordRatio: near.ratio, passage: near.passage } : {}) })
-            }
+            const near = readable ? looseMatch(normalize(page.text), normalize(source.quote), loose) : { ratio: 0, passage: '' }
+            results.push({ id: source.id, url: source.url, status: page.status, found: readable && near.ratio >= loose, contentHash: page.contentHash, readable, ...(readable ? { wordRatio: near.ratio, passage: near.passage } : {}) })
           } catch (error) {
-            results.push({ id: source.id, url: source.url, status: null, found: false, error: `fetch failed: ${(error as Error).message}`, ...(loose === undefined ? {} : { readable: false }) })
+            results.push({ id: source.id, url: source.url, status: null, found: false, error: `fetch failed: ${(error as Error).message}`, readable: false })
           }
         }
       }
       const minConfirmedRatio = criteria.minConfirmedRatio ?? 1
-      // v2 judges the readable sources only; v1 counted every source.
-      const counted = loose === undefined ? results : results.filter((r) => r.readable)
+      // The readable sources only.
+      const counted = results.filter((r) => r.readable)
       const confirmed = counted.filter((r) => r.found).length
       const confirmedRatio = counted.length ? confirmed / counted.length : undefined
       const evidence = (await artifacts.put({
-        ...CITATION_CHECK_KIND, content: { problems, minConfirmedRatio, ...(loose === undefined ? {} : { minWordMatch: loose }), confirmedRatio, results }, inputs: [request.subject, request.criteria, ...Object.values(request.inputs ?? {})],
+        ...CITATION_CHECK_KIND, content: { problems, minConfirmedRatio, minWordMatch: loose, confirmedRatio, results }, inputs: [request.subject, request.criteria, ...Object.values(request.inputs ?? {})],
         classification: 'local-private', producer,
       })).id
       const result = (verdict: VerifyResult['verdict'], reason: string): VerifyResult => ({ verdict, reason, subject: request.subject, criteria: request.criteria, evidence: [evidence] })
       if (problems.length) return result('fail', `the sources file is not acceptable: ${problems.join('; ')}`)
-      if (loose !== undefined) {
-        const percent = (r: CheckResult) => `${Math.round((r.wordRatio ?? 0) * 100)}%`
-        const unreadable = results.filter((r) => !r.readable).map((r) => `${r.id} (${r.error ?? `HTTP ${r.status}`})`)
-        const wrong = counted.filter((r) => !r.found).map((r) => `${r.id} (HTTP ${r.status}, ${percent(r)} of the quote's words, needs ${loose * 100}%)`)
-        const note = [wrong.length ? `not confirmed: ${wrong.join(', ')}` : '', unreadable.length ? `unreadable, not counted: ${unreadable.join(', ')}` : ''].filter(Boolean).join('; ')
-        const tally2 = `${confirmed} of ${counted.length} readable confirmed (needs ${minConfirmedRatio})`
-        if (confirmedRatio === undefined) return result('inconclusive', `no source could be read: ${unreadable.join(', ')}`)
-        if (confirmedRatio < minConfirmedRatio) return result('inconclusive', `${tally2}; ${note}`)
-        return result('pass', note ? `${tally2}; ${note}` : `all ${counted.length} quote(s) found at their URLs`)
-      }
-      const unconfirmed = results.filter((r) => !r.found)
-      const why = unconfirmed.map((r) => `${r.id} (${r.error ?? `HTTP ${r.status}, quote ${r.status !== null && r.status < 400 ? 'not found' : 'unreadable'}`})`).join(', ')
-      const tally = `${confirmed} of ${results.length} confirmed (needs ${minConfirmedRatio})`
-      if (confirmedRatio !== undefined && confirmedRatio < minConfirmedRatio) return result('inconclusive', `${tally}; not confirmed now: ${why}`)
-      return result('pass', unconfirmed.length ? `${tally}; accepted with unconfirmed: ${why}` : `all ${results.length} quote(s) found at their URLs`)
+      const percent = (r: CheckResult) => `${Math.round((r.wordRatio ?? 0) * 100)}%`
+      const unreadable = results.filter((r) => !r.readable).map((r) => `${r.id} (${r.error ?? `HTTP ${r.status}`})`)
+      const wrong = counted.filter((r) => !r.found).map((r) => `${r.id} (HTTP ${r.status}, ${percent(r)} of the quote's words, needs ${loose * 100}%)`)
+      const note = [wrong.length ? `not confirmed: ${wrong.join(', ')}` : '', unreadable.length ? `unreadable, not counted: ${unreadable.join(', ')}` : ''].filter(Boolean).join('; ')
+      const tally = `${confirmed} of ${counted.length} readable confirmed (needs ${minConfirmedRatio})`
+      if (confirmedRatio === undefined) return result('inconclusive', `no source could be read: ${unreadable.join(', ')}`)
+      if (confirmedRatio < minConfirmedRatio) return result('inconclusive', `${tally}; ${note}`)
+      return result('pass', note ? `${tally}; ${note}` : `all ${counted.length} quote(s) found at their URLs`)
     },
   }
 }

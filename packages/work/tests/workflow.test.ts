@@ -71,18 +71,6 @@ test('the Brainstorm file: two proposals from the brief alone, then a synthesis 
   assert.deepEqual(problems(fixture('brainstorm.yaml'), noCodex), ['step idea-b needs Worker capability brainstorm.idea-b, which no enabled Worker provides'])
 })
 
-test('the B3 experiment files resolve: a one-step baseline, and Brainstorm with one shared prompt', () => {
-  const roles: AvailableCapabilities = { ...available, workers: new Set(['brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']) }
-  const single = resolve(parseWorkflow(fixture('experiments/brainstorm-single.yaml')), roles)
-  assert.deepEqual(single.steps.map((s) => s.id), ['answer'])
-  const shared = resolve(parseWorkflow(fixture('experiments/brainstorm-shared.yaml')), roles)
-  const stance = resolve(parseWorkflow(fixture('brainstorm.yaml')), roles)
-  const strip = (spec: typeof stance) => spec.steps.map((s) => ({ ...s, instructions: undefined }))
-  assert.deepEqual(strip(shared), strip(stance), 'only the instructions differ')
-  const [a, b] = shared.steps as { instructions?: string }[]
-  assert.equal(a!.instructions, b!.instructions)
-})
-
 test('steps resolve in dependency order, file order among ready steps, with sorted dependsOn', () => {
   const spec = resolve(parseWorkflow(`${base}  - id: c
     dependsOn: [b, a]

@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, conversationSchema, type WorkRecord, type WorkState } from '@system/work'
+import { type WorkRecord, type WorkState } from '@system/work'
 import type { QuotaReport } from '@system/agents'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { RECONNECT_MS } from './remote.ts'
@@ -365,23 +365,6 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       select(async () => {
         if (options.state && !['todo', 'doing', 'done'].includes(options.state)) throw new Error('--state is todo, doing or done')
         for (const line of await host.work().status(options.repo, options.state, options.item)) io.out(`${line}\n`)
-        return 0
-      })
-    })
-  const conversation = program.command('conversation').description('read a stored conversation')
-  conversation.command('show <id>')
-    .description('print a conversation\'s notice, what the operator asserted, and its parts')
-    .action((id: string) => {
-      select(async () => {
-        const read = await host.artifacts().get(id)
-        if (read.state !== 'stored' || read.envelope.kind !== CONVERSATION_KIND.kind) throw new Error(`${id} is not a stored conversation`)
-        const content = conversationSchema.parse(read.envelope.content)
-        io.out(`${content.notice}\n\n`)
-        for (const [key, value] of Object.entries(content.asserted)) io.out(`${key}: ${Array.isArray(value) ? value.join(', ') : value}\n`)
-        for (const o of read.occurrences) io.out(`added by ${o.producer.ref} at ${o.at}\n`)
-        if (read.envelope.lineage.supersedes) io.out(`corrects ${read.envelope.lineage.supersedes.join(', ')}\n`)
-        io.out('\n')
-        for (const p of content.parts) io.out(`${p.role.padEnd(10)} ${p.name}  ${p.bytes} bytes  ${p.artifact}\n`)
         return 0
       })
     })

@@ -115,8 +115,12 @@ checks:
 - **Accepts:** `file` (the Worker's `sources` output).
 - **Criteria:** `citation-criteria@1`: at least 1 source, quotes of at least
   8 characters, 20 s fetch timeout, 2 MiB per page, and `minConfirmedRatio`
-  (0 to 1, default 0.5). Criteria pinned before version 2 lack the field and
-  mean 1.0, so they keep their old meaning.
+  (0 to 1, default 0.5), plus `minWordMatch` (0.8) for `citations-v2` and `citations-v3`.
+  **`citations-v1` (exact match) was removed on 2026-11-16:** asking for it
+  refuses the Work at admission, naming the known criteria; criteria already
+  pinned to it (or to any name but v2 and v3, or without `minWordMatch`) give
+  an `error` verdict, never a pass, so a Work pinned to v1 cannot be retried.
+  `work replay` reads events only and keeps working.
 - **Format:** `{"sources": [{"id", "url", "quote", "claims": [..]}]}`; the
   Research Workflow's step instructions tell the Worker this shape.
 - **Verify:** fetch each URL and search its text for the quote, ignoring
@@ -133,11 +137,10 @@ checks:
   - **A pass can include unconfirmed quotes.** The verdict reason names each
     one and why ("HTTP 200, quote not found", "fetch failed: ..."), and the
     evidence lists every result, so nothing is hidden.
-- **`citations-v2`** (the criteria name picks it; `citations-v1` above is
-  unchanged, so earlier verdicts reproduce; the Research Workflows use v2).
+- **`citations-v2`** (the criteria name picks it).
   The operator's rule (2026-11-08): the check may be loose; the information must
   be complete and traceable.
-  - **Criteria:** v1's plus `minWordMatch` (default 0.8); `minConfirmedRatio` 0.5.
+  - **Criteria:** `minWordMatch` (default 0.8); `minConfirmedRatio` 0.5.
   - **Loose match** (`looseMatch`): page and quote are normalised as above, then
     split into words (letters and digits, so punctuation never matters). A quote
     is confirmed when at least `minWordMatch` of its words appear in the same
@@ -154,7 +157,7 @@ checks:
     is not one) is in `sources`, every source is cited at least once, and
     every source has a claim. Otherwise `fail`, naming the ids.
   - **Fetch:** User-Agent `System-citation-check/1.0 (+https://github.com/tsuuanmi/System)`.
-- **`citations-v3`** (verifier version 5; v1 and v2 are unchanged; the Research
+- **`citations-v3`** (verifier version 5; v2 is unchanged; the Research
   Workflows use v3): v2, except that completeness ignores text inside inline
   code and fenced code blocks when it collects the report's `[id]`s (`?.[1]` in
   backticks is not a citation). `[s1]` in prose still counts, and an id not in

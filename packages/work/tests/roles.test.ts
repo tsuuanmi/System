@@ -46,7 +46,7 @@ test('repo.write stays on the steps that write the checkout', () => {
 test('no shipped Workflow outputs a checkout without repo.write', () => {
   const available = {
     ...everything,
-    workers: new Set([...everything.workers, 'research.plan', 'research.lane-a', 'research.lane-b', 'research.synthesis', 'review.second-opinion', 'brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']),
+    workers: new Set([...everything.workers, 'review.second-opinion', 'brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']),
   }
   for (const file of readdirSync(join(repo, 'workflows')).filter((name) => name.endsWith('.yaml'))) {
     const spec = resolve(parseWorkflow(fixture(file)), available, fixture)

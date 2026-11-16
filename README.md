@@ -100,7 +100,6 @@ Brainstorm takes a brief the same way (`--workflow workflows/brainstorm.yaml`):
 Claude Code and Codex each write a proposal, then a synthesis compares them;
 `bin/system work show <work>` lists the three output Artifact IDs and
 `bin/system artifact cat <id>` prints one.
-`bin/system conversation show <id>` prints a `conversation@1` the web Worker stored.
 A step asks for a model tier with the capability `tier.economy`,
 `tier.standard` or `tier.frontier`.
 

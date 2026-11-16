@@ -70,9 +70,6 @@ nothing else.
   once, with no `work run` (no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
-- [debate.test.ts](debate.test.ts) — WW2b: the Debate Workflow on the fake CLI: dispatch
-  order a1/b1, a2/b2, synthesis; each Round 2 step's inputs are exactly the
-  Round 1 proposals and the brief; the synthesis gets all four; replay.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
   (Artifact writes through the Host, `doctor` boots beside it) on one store all
   succeed (no "database is locked"), also when the boots all find the store

@@ -75,8 +75,7 @@ disagreement quality, actionability, time, known usage and interventions
 
 The config-only **distinct cognitive roles** variant was tested and adopted
 as the default: `idea-a` optimizes simplicity and practical feasibility,
-`idea-b` looks for missing assumptions and disconfirming cases; the
-one-shared-prompt version is `workflows/experiments/brainstorm-shared.yaml`.
+`idea-b` looks for missing assumptions and disconfirming cases.
 Both still receive only the original brief, and prompts should not script
 fake disagreements. Keep both proposals visible beside the synthesis so the
 operator can disagree with the synthesizer, and test a Codex synthesis on a
