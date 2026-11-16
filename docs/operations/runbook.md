@@ -391,6 +391,10 @@ A conflict fails the publish step naming the files; a check that fails on the
 merge names it in the reason. Do not require pull requests in `dev`'s branch
 protection: the push would be refused.
 
+A hand push to `dev` can run the fast checks first: in your checkout run
+`git config core.hooksPath tools/hooks` (`tools/hooks/pre-push`; bypass once with `git push --no-verify`).
+System's own publish pushes from attempt worktrees with `core.hooksPath=/dev/null`, so the hook never runs for it.
+
 ## Another home
 
 Only `~/.dsh` gets the unit. For another `DSH_HOME`, run

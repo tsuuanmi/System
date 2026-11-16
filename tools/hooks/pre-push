@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs the fast checks before a hand push to `dev` (Item rb-2). Enable with
+# `git config core.hooksPath tools/hooks`. Skip once with `git push --no-verify`.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  [ "$remote_ref" = "refs/heads/dev" ] || continue
+  root=$(git rev-parse --show-toplevel) || exit 1
+  cd "$root" || exit 1
+  for check in 'python3 tools/docs.py check' 'node tools/check-status.ts STATUS.md' 'corepack pnpm typecheck' 'corepack pnpm test'; do
+    # shellcheck disable=SC2086
+    if ! $check >&2; then
+      echo "pre-push: refusing the push to dev: '$check' failed. Fix it, or bypass with 'git push --no-verify'." >&2
+      exit 1
+    fi
+  done
+done
+exit 0
