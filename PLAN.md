@@ -15,7 +15,9 @@
   finished work.
 - **Deferred MVP-1 items** (operator, 2026-11-08): sandbox, egress denial,
   and a plugin unload with Work in flight (MVP failure tests 3 and 4) wait for
-  a Worker that runs untrusted code or content.
+  a Worker that runs untrusted code or content. The trigger is judged not met (2026-11-16): Workers run only the
+  operator's own repositories with lockfile-pinned dependencies, and the Website Worker reads pages but runs no code
+  from them; rb-5's secret scan and rb-4's permission-flag tests are the part done before a sandbox.
 
 ## 1. Finished milestones
 
@@ -588,6 +590,10 @@ Order after NM: the unattended-scale spike with bubblewrap (decided 2026-11-15: 
   fails for want of one and the pinned DSH plugin can satisfy the System
   contract without duplicating the model loop.
 - [ ] Adaptive routing only on a measured need, such as quota exhaustion.
+- [ ] A fixed set of reproducible failure scenarios to compare System versions. *Trigger: a change to a retry or
+  recovery rule that needs a before/after comparison the Host's records cannot give.*
+- [ ] A model review step in a separate optional Workflow. *Trigger: an Escaped defect that a review of the diff would
+  have caught; the last ones sat on the release boundary, which RB addresses.*
 
 ## 3h. FL — Flow and verification (decided 2026-11-15)
 
@@ -619,7 +625,26 @@ Order after NM: the unattended-scale spike with bubblewrap (decided 2026-11-15: 
   - A rehearsal check (`upgrade`, rb-1) runs the update from `main` to the commit under check, path-limited to keep checks fast.
   - A standard git `pre-push` hook (rb-2) covers hand pushes; System's own publish is not affected.
   - TR's close criterion is kept as it is; RB is its path.
-- Order: rb-1, rb-2, then the unattended-scale spike, then pstack's `/create-verification-skill` trial against fl-6's feature map.
+  - Grilling of the "Verified Feedback Loop v2" proposal (operator, 2026-11-16): no new milestone; rb-3, rb-4 and rb-5
+    are added after rb-2; no new measures, no confidence in failure classes, no recovery-decision component in the
+    core (a new recovery rule is a Workflow declaration); a Task's Done when stays guidance and only a Verifier's
+    criteria gate. Evidence:
+    - Recurring Failure Rate counts a failure as recurring when its coarse class (an Outside cause, or `change-<kind>`:
+      about ten classes) appeared in an earlier Work of the range (packages/work/src/measures.ts). In the FL window
+      (from 2026-11-15 13:40 UTC: 39 Works, 6 failures) it reads 3/6 = 0.50; keyed by the same check and the same
+      first failing test it reads 0/6 within the window, 1/6 with earlier history (verifiers.test.ts "System's own
+      checks..." on 2026-11-14 and 2026-11-16).
+    - outsideCause (packages/work/src/outside.ts) matches its patterns against the whole reason, test names included:
+      work:b131dd34 (smoke test "work wait survives a Host restart" timed out) is counted `restart`, and work:c6e7cba1
+      (a failure in workers-quota.test.ts) is counted `quota`. Report only: cm-2's hold count reads `limited` and
+      `attempt-lost`, not verdict reasons.
+    - Of the proposal's eight Verification Contract invariants, tests pin four (pinned verdict criteria and version;
+      bounded retry.onFail with the previous evidence; base re-run gives inconclusive; unknown effect outcome is
+      reconciled, never retried blindly), three partly (the controller's `'stale'` branch is never reached by a test;
+      a verifier that throws has no test, in the controller or the merge check; no test has a late `observed` of a
+      lost attempt on a live Host), and one not at all (no test asserts the Claude Code allow/deny flags or the Codex
+      sandbox flag in packages/agents/src/runtimes.ts; nothing scans a change for secrets).
+- Order: rb-1, rb-2, rb-3, rb-4, rb-5, then the unattended-scale spike, then pstack's `/create-verification-skill` trial against fl-6's feature map.
 
 ## 3j. ROI review (2026-11-16)
 
