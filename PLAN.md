@@ -644,7 +644,8 @@ Order after NM: the unattended-scale spike with bubblewrap (decided 2026-11-15: 
       a verifier that throws has no test, in the controller or the merge check; no test has a late `observed` of a
       lost attempt on a live Host), and one not at all (no test asserts the Claude Code allow/deny flags or the Codex
       sandbox flag in packages/agents/src/runtimes.ts; nothing scans a change for secrets).
-- Order: rb-1, rb-2, ns-2, rb-3, rb-4, rb-5, then the unattended-scale spike (operator, 2026-11-16: ns-2 before rb-3 as the Guardrail for a recurring failure; pstack's trial deferred, section 3j).
+  - Second grilling (operator, 2026-11-16): System's purpose and headline measure are in the Charter (6a1a31c); unused parts deleted (8018e2d); Intent becomes an Artifact (in-1, in-2, in-3); lim-1 and flaky-1 come first because each failed a Work today; mcp-1 because sessions see "Host not running" after every Host restart.
+- Order: lim-1, flaky-1, ns-2, mcp-1, in-1, in-2, rb-3, rb-4, rb-5, install-1, in-3, then the unattended-scale spike (operator, 2026-11-16).
 
 ## 3j. ROI review (2026-11-16)
 
