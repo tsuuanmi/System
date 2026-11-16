@@ -52,6 +52,14 @@ checks:
     run: corepack pnpm smoke
     timeoutSeconds: 600
     paths: *code
+  - name: upgrade
+    # Item rb-1: rehearse the release. An install of the last release (`origin/main`) in temporary homes runs ITS `system update` to this
+    # commit and must keep it, with its afterInstall Verdict passed (Escaped defects 3, 7, 8 and fl-6 showed only on such an update).
+    # Offline; tools/upgrade-rehearsal.mjs says what it replaces (each check's `run`, so the update does not run the suite and itself).
+    # tests/upgrade-rehearsal.test.ts runs it twice: this commit, and the shape of Escaped defect 7 (a key main refuses), which must fail.
+    run: node --test --test-timeout=850000 tests/upgrade-rehearsal.test.ts
+    timeoutSeconds: 900
+    paths: [bin/**, packages/host/**, packages/app/**, packages/verifiers/**, packages/work/**, .system/checks.yaml, workflows/**]
   - name: web
     # The Website Worker's tests, which drive a real headed Chrome on Xvfb
     # (milestone WW). Kept out of unit and smoke so the main path stays fast and
