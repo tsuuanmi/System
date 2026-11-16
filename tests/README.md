@@ -21,6 +21,10 @@ nothing else.
   through `system mcp` against a real Host with fake Workers.
 - [mcp-update.test.ts](mcp-update.test.ts) — one running `system mcp` calls
   tools across two atomic install-link switches and real Host upgrades.
+- [upgrade-rehearsal.test.ts](upgrade-rehearsal.test.ts) — rb-1 (run by the `upgrade` check, not smoke: it builds two releases):
+  [tools/upgrade-rehearsal.mjs](../tools/upgrade-rehearsal.mjs) builds the last release (`origin/main`) in temporary homes, starts its Host
+  and runs that install's `system update` to this commit, against a local `origin`; it passes only when the update keeps the new release
+  with its afterInstall Verdict passed. A `checks.yaml` key the last release refuses (Escaped defect 7) fails it, naming the refusal.
 - [host-process.test.ts](host-process.test.ts) — H4a: `bin/system host` as a
   child process: `host.hello` and `host.status` on `host.sock`, a second Host
   refused, the Work commands reaching the running Host, SIGTERM and SIGINT
