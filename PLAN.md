@@ -610,3 +610,13 @@ Order after NM: the unattended-scale spike with bubblewrap (decided 2026-11-15: 
   - 3 of the last 4 Escaped defects sit on a version boundary that tests run in one environment cannot see.
   - An emergency commit straight to `dev` skipped the checks and left a failing test.
   - Escaped defect 9 was miscounted and withdrawn.
+
+## 3i. RB — Release boundary (decided 2026-11-16)
+
+- Aim: no defect of the kind "old release meets new release" reaches production or blocks the pipeline.
+- Evidence: Escaped defects 3, 7 and 8, and fl-6's install assumptions, all sit on the boundary between the previous release and the new one; the operator's emergency commit `b2d4e0d` reached `dev` without checks and left a failing test.
+- Decisions (operator, 2026-11-16):
+  - A rehearsal check (`upgrade`, rb-1) runs the update from `main` to the commit under check, path-limited to keep checks fast.
+  - A standard git `pre-push` hook (rb-2) covers hand pushes; System's own publish is not affected.
+  - TR's close criterion is kept as it is; RB is its path.
+- Order: rb-1, rb-2, then the unattended-scale spike, then pstack's `/create-verification-skill` trial against fl-6's feature map.
