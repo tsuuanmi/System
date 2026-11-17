@@ -1113,7 +1113,7 @@ export class WorkController {
   /** In the lane: read the committed record again and append the verdict. */
   private async observeVerifier({ workId, attemptId, step: s, verifier, subject, criteria }: VerifierAttempt, result: VerifyResult): Promise<WorkRecord> {
     const record = this.require(workId)
-    let bound = this.bind(result, subject, criteria)
+    let bound = bindVerdict(result, subject, criteria, (id) => this.specs.exists(id))
     // The second run of a check on the same change (`retry.rerunUnchanged`): a pass is flaky, a second fail is held for the operator as inconclusive.
     const lastRun = record.events.findLast((e) => e.type === 'verified' && e.stepId === s.id)
     const first = lastRun?.type === 'verified' && lastRun.verdict === 'fail' && lastRun.verdictId
@@ -1130,10 +1130,6 @@ export class WorkController {
       ...(first ? { rerunOf: first.verdictId } : {}),
       verifier: { ref: verifier.ref, version: verifier.version },
     })
-  }
-
-  private bind(result: VerifyResult, subject: string, criteria: string): Pick<VerifyResult, 'verdict' | 'reason' | 'evidence'> {
-    return bindVerdict(result, subject, criteria, (id) => this.specs.exists(id))
   }
 
   /** A verify step's verdict about an output that has since changed no longer counts. */

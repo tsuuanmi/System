@@ -49,7 +49,6 @@ export interface RangeReport {
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; worksWithUnknownCost: number }
   /** Admission to acceptance of the accepted Works. */
   timeToVerifiedResolution: { medianMs: number | Unknown; p90Ms: number | Unknown; accepted: number }
-  /** Mean tool share of the attempts whose summary (fl-4) knows it. */
   /** Mean of the attempts' tool-seconds per second (the record's `toolShare`): parallel tool calls overlap, so it is not a share and can pass 1. */
   toolSecondsPerSecond: { mean: number | Unknown; attempts: number }
 }

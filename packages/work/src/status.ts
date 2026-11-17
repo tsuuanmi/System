@@ -104,11 +104,10 @@ function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | u
 
 /** Whether a Work's effects merged its change into `dev`: a `git.publish` the merge queue applied (it merges only into a base in `mergeInto`). */
 const mergedEntry = (record: WorkRecord) => Object.entries(record.state.effects).find(([, e]) => e.state === 'applied' && e.detail?.merged === 'true')
-const mergedEffect = (record: WorkRecord) => mergedEntry(record)?.[1]
 export const wasMerged = (record: WorkRecord): boolean => !!mergedEntry(record)
 
 /** The commit on `dev` a merged Work made, when its merge effect recorded it. */
-export const mergeCommitOf = (record: WorkRecord): string | undefined => mergedEffect(record)?.detail?.mergeCommit
+export const mergeCommitOf = (record: WorkRecord): string | undefined => mergedEntry(record)?.[1].detail?.mergeCommit
 
 /** Whether a Work changed nothing: it did not succeed and a step of it failed on `no change` (a `repo.write` tree equal to its base). */
 const changedNothing = (record: WorkRecord): boolean =>
