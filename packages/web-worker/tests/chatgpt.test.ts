@@ -16,7 +16,7 @@ import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatg
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
-import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
+import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLanguageLabel, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
 import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
@@ -95,6 +95,20 @@ test('parseBlocks reads tilde fences by CommonMark: backtick code inside never e
   assert.deepEqual(parseBlocks(`~~~~~review\nx\n~~~~\ny\n~~~~~`, ['review']), { blocks: { review: 'x\n~~~~\ny' }, missing: [] })
   assert.deepEqual(parseBlocks('~~~~review\nx\n~~~', ['review']), { blocks: {}, missing: ['review'] })
   assert.deepEqual(parseBlocks('~~~~review\nx\n````', ['review']), { blocks: {}, missing: ['review'] })
+})
+
+// The shape of work:bbbf12bc's `sources` output (web-1): an empty line, the block's header label, an empty line, the object.
+const SOURCES_WITH_LABEL = '\nJSON\n\n{"sources": [{"id": "s1", "url": "https://example.org/a", "title": "A"}]}'
+
+test('stripLanguageLabel drops a leading language label line before valid JSON, and nothing else (web-1)', () => {
+  const stored = stripLanguageLabel(SOURCES_WITH_LABEL)
+  assert.equal(stored, '{"sources": [{"id": "s1", "url": "https://example.org/a", "title": "A"}]}')
+  assert.doesNotThrow(() => JSON.parse(stored))
+  assert.equal(stripLanguageLabel('json\n{"a": 1}'), '{"a": 1}')
+  assert.equal(stripLanguageLabel('{"a": 1}'), '{"a": 1}')
+  assert.equal(stripLanguageLabel('JSON\nnot json'), 'JSON\nnot json')
+  assert.equal(stripLanguageLabel('# Report\n\nbody'), '# Report\n\nbody')
+  assert.equal(stripLanguageLabel('Sources\n{"a": 1}'), 'Sources\n{"a": 1}')
 })
 
 test('stripLeaked removes a listed token at the very start or end of an output, repeatedly, and never inside it', () => {

@@ -171,6 +171,25 @@ export function stripLeaked(content: string, tokens: readonly string[]): { conte
   return { content: removed.length ? text.trim() : content, removed }
 }
 
+const LANGUAGE_LABELS = new Set(['json', 'jsonc', 'json5', 'yaml', 'yml', 'toml', 'xml', 'csv', 'markdown', 'md', 'text', 'plaintext', 'txt'])
+
+/**
+ * A JSON output without the code block's language label (web-1): when the content, after blank lines, opens with a line that is
+ * exactly a known language name and the rest is valid JSON, the label line and the blank lines around it are dropped. Anything
+ * else is returned as it was.
+ */
+export function stripLanguageLabel(content: string): string {
+  const found = /^\s*([A-Za-z0-9]+)[ \t]*\r?\n/.exec(content)
+  if (!found || !LANGUAGE_LABELS.has(found[1]!.toLowerCase())) return content
+  const rest = content.slice(found[0].length).trim()
+  try {
+    JSON.parse(rest)
+  } catch {
+    return content
+  }
+  return rest
+}
+
 /** How many characters of the Markdown, whitespace ignored, are outside the blocks that fill `slots` (WW5c). */
 export function outsideChars(markdown: string, slots: readonly string[]): number {
   return readBlocks(markdown, slots).outside.replace(/\s/g, '').length
@@ -787,6 +806,8 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       stripped[slot] = clean.removed
     }
     if (Object.keys(stripped).length) evidence.set({ stripped })
+    // A JSON output never starts with its block's language label (web-1).
+    for (const [slot, content] of Object.entries(contents)) contents[slot] = stripLanguageLabel(content)
     const outputs: Record<string, string> = {}
     for (const [slot, content] of Object.entries(contents)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
     if (missing.length) {

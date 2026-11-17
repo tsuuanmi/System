@@ -103,6 +103,17 @@ export function bindingProblems(map: UiMap): string[] {
   return problems
 }
 
+/**
+ * A block's text without its own header: when the page's code element also holds the header (live 2026-11-16: "\nJSON\n\n{...}"),
+ * the label's line and the blank lines around it are not the block's content. Only a label line at the very start, after blank
+ * lines, is removed; the label itself stays on the block, for matching it to an output's name.
+ */
+export function withoutHeader(text: string, label: string): string {
+  if (!label) return text
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return text.replace(new RegExp(`^(?:[ \\t]*\\r?\\n)*[ \\t]*${escaped}[ \\t]*\\r?\\n(?:[ \\t]*\\r?\\n)*`), '')
+}
+
 export class Procedures {
   readonly engine: UiEngine
   private readonly page: Page
@@ -517,6 +528,6 @@ export class Procedures {
     }, [labelEls, codeEls] as const).catch(() => texts.map(() => '')) as string[]
     await Promise.all([...labelEls, ...codeEls].map((handle) => handle.dispose().catch(() => undefined)))
     const same = labelEls.length === texts.length
-    return { blocks: texts.map((text, index) => ({ label: labels[index] ?? '', code: text })), ...(same ? {} : { labels: labelEls.length }) }
+    return { blocks: texts.map((text, index) => ({ label: labels[index] ?? '', code: withoutHeader(text, labels[index] ?? '') })), ...(same ? {} : { labels: labelEls.length }) }
   }
 }
