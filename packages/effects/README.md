@@ -53,7 +53,7 @@ The controller records `effect-intended` before `apply` and
   `git-tree@1` and checked with the effect's `required` checks and their
   pinned criteria. The re-check is a verification like any other
   (`mergeCheck`): it runs the verifier ref and version pinned at admission,
-  binds subject, criteria and evidence with the controller's `bindVerdict`
+  binds subject, criteria and evidence through Verification (`packages/work/src/verification.ts`, shared with the controller)
   (a pass without stored evidence is refused) and stores a verdict Artifact
   per check, named in `detail.verdicts`. A verdict other than `pass` or
   `inconclusive` is `failed`. An `inconclusive` verdict, or a verifier version
