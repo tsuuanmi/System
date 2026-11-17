@@ -5,6 +5,7 @@
  */
 import type { WorkRecord } from './record.ts'
 import { failureClass } from './failure-class.ts'
+import { laterPasses } from './later-pass.ts'
 import { summarize, type ClassifiedLookup } from './summary.ts'
 import { mergeCommitOf, wasMerged } from './status.ts'
 import type { EscapedDefect } from './defect.ts'
@@ -54,6 +55,8 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
+  // cls-5: a later pass is read from every record, not only the range's.
+  const later = laterPasses(records)
   let accepted = 0
   let ended = 0
   let failures = 0
@@ -84,7 +87,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
       const commit = mergeCommitOf(record)
       if (commit) mergedCommits.push(commit)
     }
-    const summary = summarize(record, classified)
+    const summary = summarize(record, classified, later)
     operatorTouches += summary.operatorTouches
     const counted = summary.failures.filter((f) => f.kind !== 'touch')
     unknownFailures += counted.filter((f) => f.unknown).length

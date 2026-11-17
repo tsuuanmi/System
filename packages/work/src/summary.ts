@@ -4,6 +4,7 @@
  * Work is the request itself, not a touch; a human cancel, retry or decision
  * is. Usage an attempt did not report, or did not split into cache and fresh input, is counted apart, never as zero.
  */
+import type { LaterPass } from './later-pass.ts'
 import { attemptCause, outsideCause, type OutsideCause } from './outside.ts'
 import type { WorkRecord } from './record.ts'
 
@@ -49,8 +50,8 @@ export interface WorkSummary {
   }
 }
 
-/** `classified`: the recorded Classifications (cls-1); an `unknown` failure that has one is reported under its label, marked as classified. The classes and counts are the rules' alone. */
-export function summarize(record: WorkRecord, classified?: ClassifiedLookup): WorkSummary {
+/** `classified`: the recorded Classifications (cls-1); an `unknown` failure that has one is reported under its label, marked as classified. The classes and counts are the rules' alone. `later` (cls-5): the cross-Work view, from the Host's records: a failed check whose change passed it later, in this Work or another, is `flaky`, and a "no change" after a reopen whose previous change passed later is `process`; without it only this Work is read. */
+export function summarize(record: WorkRecord, classified?: ClassifiedLookup, later?: LaterPass): WorkSummary {
   const touches: string[] = []
   const usage: WorkSummary['usage'] = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
   let attempts = 0
@@ -66,14 +67,14 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup): Wo
   const processAfterCorrectChange = (index: number, stepId: string): boolean => {
     const previous = record.events.slice(0, index).findLast((e) => e.type === 'reopened' && e.stepId === stepId)
     const kept = previous?.type === 'reopened' ? previous.previous : undefined
-    return !!kept && record.events.slice(index + 1).some((e) => e.type === 'verified' && e.verdict === 'pass' && e.subject === kept)
+    return !!kept && (record.events.slice(index + 1).some((e) => e.type === 'verified' && e.verdict === 'pass' && e.subject === kept) || !!later?.(kept, undefined, record, index))
   }
   const lastCause = () => failures.at(-1)?.unknown ? 'unknown' as const : failures.at(-1)?.outside
   const lastVerdict = () => failures.findLast((f) => f.kind === 'verdict')
   for (const [index, event] of record.events.entries()) {
     if (event.type === 'observed' && event.status === 'failed') add(index, 'attempt', event.reason ?? '', event.rateLimited ? 'quota' : /^no change\b/.test(event.reason ?? '') && processAfterCorrectChange(index, event.stepId) ? 'process' : attemptCause(event.reason ?? ''))
     if (event.type === 'attempt-lost') add(index, 'attempt-lost', event.reason, 'restart')
-    if (event.type === 'verified' && (event.verdict === 'fail' || event.verdict === 'inconclusive')) add(index, 'verdict', event.reason, event.verdictId && flakyVerdicts.has(event.verdictId) ? 'flaky' : outsideCause(event.reason, 'verdict'))
+    if (event.type === 'verified' && (event.verdict === 'fail' || event.verdict === 'inconclusive')) add(index, 'verdict', event.reason, (event.verdictId && flakyVerdicts.has(event.verdictId)) || (event.verdict === 'fail' && later?.(event.subject, event.stepId, record, index)) ? 'flaky' : outsideCause(event.reason, 'verdict'))
     if (event.type === 'effect-observed' && event.state === 'failed') add(index, 'publish', event.reason, event.rejected === 'conflict' ? 'conflict' : undefined)
     if (event.type === 'terminal' && event.outcome === 'held' && event.reason !== 'verification passed; awaiting operator approval') {
       add(index, 'hold', event.reason, /^inconclusive verification/.test(event.reason) ? (lastVerdict()?.unknown ? 'unknown' : lastVerdict()?.outside) : undefined)
