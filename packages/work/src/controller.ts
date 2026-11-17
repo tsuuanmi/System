@@ -718,7 +718,7 @@ export class WorkController {
       const absent = await this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: 'absent', reason: applied.reason, detail: applied.detail, held: applied.held })
       return this.finish(absent, 'held', `${intent.stepId}: merge commit ${applied.held} awaits operator approval: ${applied.reason}`, intent.stepId)
     }
-    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail, ...(applied.rejected ? { rejected: applied.rejected } : {}) })
+    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail, ...(applied.rejected ? { rejected: applied.rejected } : {}), ...(applied.cause ? { cause: applied.cause } : {}) })
   }
 
   /** In the lane: dispatch every ready step that can start now, in Workflow file order. */
@@ -964,6 +964,7 @@ export class WorkController {
     if (aborted) status = 'cancelled'
     const outputs = status === 'succeeded' ? result.outputs : {}
     let unchangedAfter: string | undefined
+    let noChange = false
     if (status === 'succeeded') {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = [...s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot])), ...(s.optionalOutputs ?? []).filter((slot) => outputs[slot] && !this.specs.exists(outputs[slot]))]
@@ -975,6 +976,7 @@ export class WorkController {
       if (status === 'succeeded' && s.outputs[0] && !s.mayBeEmpty && !holds && isJudged(spec, s.id, s.outputs[0])) {
         const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
         if (base) {
+          noChange = true
           const said = result.message?.replace(/\s+/g, ' ').trim()
           unchangedAfter = s.retry?.rerunUnchanged ? this.failingCheckOf(this.require(workId), s) : undefined
           if (unchangedAfter) {
@@ -1012,6 +1014,8 @@ export class WorkController {
       ...(result.executor ? { worker: result.executor } : {}),
       ...(limited ? { limited: true as const } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),
+      ...(status === 'failed' && result.cause ? { cause: result.cause } : {}),
+      ...(noChange ? { noChange: true as const } : {}),
       ...(changedTests?.length ? { changedTests } : {}),
       // An Account that no longer offers the step's capabilities left routing because of this failure: another may take it (ro-12).
       ...(status === 'failed' && (result.retryable || s.capabilities.some((c) => !attempt.worker.capabilities.includes(c))) && !aborted ? { retryable: true as const } : {}),
@@ -1103,6 +1107,7 @@ export class WorkController {
       type: 'verified', stepId: s.id, attemptId, subject, criteria,
       verdict: bound.verdict, reason: bound.reason, verdictId, evidence: bound.evidence,
       ...(first ? { rerunOf: first.verdictId } : {}),
+      ...(result.cause ? { cause: result.cause } : {}),
       verifier: { ref: verifier.ref, version: verifier.version },
     })
   }
@@ -1128,7 +1133,7 @@ export class WorkController {
     const bad = verdicts.filter(([, verdict]) => verdict !== 'pass' && verdict !== 'inconclusive')
     if (bad.length) return this.finish(record, 'failed', `verification did not pass: ${bad.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
     const unsure = verdicts.filter(([id, verdict]) => verdict === 'inconclusive' && !this.decisionOf(record, id))
-    if (unsure.length) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${unsure.map(([id]) => id).join(', ')}`)
+    if (unsure.length) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${unsure.map(([id]) => id).join(', ')}`, undefined, undefined, 'inconclusive')
     // A passing verify step with `result` says the Item already holds: the Work ends Satisfied, with its verdict as the evidence.
     const satisfying = verifies.find((s) => s.result && this.verdictOf(record, spec, s.id) === 'pass')
     if (satisfying?.result) {
@@ -1149,10 +1154,10 @@ export class WorkController {
     // One approval serves an effect step that requires the same verify steps (df-25: publish's approval of an inconclusive verdict).
     const decided = this.decisionOf(record, s.id) ?? (notPass.length ? this.effectDecisionOn(record, spec, notPass.map(([id]) => id)) : undefined)
     if (notPass.length) {
-      if (!decided) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id)
+      if (!decided) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id, undefined, 'inconclusive')
       return this.finish(record, 'succeeded', `accepted by ${decided.caller.operatorId} despite inconclusive ${notPass.map(([id]) => id).join(', ')}: ${decided.reason}`)
     }
-    if (s.accept.approval === 'operator' && !decided) return this.finish(record, 'held', 'verification passed; awaiting operator approval', s.id)
+    if (s.accept.approval === 'operator' && !decided) return this.finish(record, 'held', 'verification passed; awaiting operator approval', s.id, undefined, 'approval')
     return this.finish(record, 'succeeded', decided ? `accepted by ${decided.caller.operatorId}: ${decided.reason}` : `accepted on ${s.accept.requires.join(', ')}`)
   }
 
@@ -1193,7 +1198,7 @@ export class WorkController {
     const notPass = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const).filter(([, verdict]) => verdict !== 'pass')
     const acceptedInconclusive = notPass.length > 0 && notPass.every(([, verdict]) => verdict === 'inconclusive')
     if (acceptedInconclusive && !decided) {
-      return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id) }
+      return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id, undefined, 'inconclusive') }
     }
     if (notPass.length && !acceptedInconclusive) {
       return { record: await this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`) }
@@ -1239,13 +1244,13 @@ export class WorkController {
     }
   }
 
-  private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string, awaiting?: string, satisfied?: { result: 'satisfied'; evidence: Record<string, string> }): Promise<WorkRecord> {
+  private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string, awaiting?: string, satisfied?: { result: 'satisfied'; evidence: Record<string, string> }, hold?: 'approval' | 'inconclusive'): Promise<WorkRecord> {
     const results: Record<string, string> = {}
     for (const [stepId, s] of Object.entries(record.state.steps)) {
       for (const [slot, id] of Object.entries(s.outputs)) results[`${stepId}.${slot}`] = id
     }
     for (const [name, id] of Object.entries(satisfied?.evidence ?? {})) if (id) results[name] = id
-    return this.append(record, { type: 'terminal', outcome, reason, results, ...(satisfied ? { result: satisfied.result } : {}), ...(awaiting ? { awaiting } : {}) })
+    return this.append(record, { type: 'terminal', outcome, reason, results, ...(satisfied ? { result: satisfied.result } : {}), ...(awaiting ? { awaiting } : {}), ...(hold ? { hold } : {}) })
   }
 }
 

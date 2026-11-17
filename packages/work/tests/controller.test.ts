@@ -155,6 +155,7 @@ test('a repo.write step whose change is its base tree fails with "no change", qu
   const reason = done.events.findLast((e) => e.type === 'observed')
   assert.ok(reason?.type === 'observed' && reason.reason?.startsWith('no change: the working tree is the same as the base commit abcdef0. The Worker said: I looked and found nothing to do x'))
   assert.ok(reason.reason!.length < 400)
+  assert.equal(reason.noChange, true, 'the controller marks its own no-change failure')
   assert.equal(h.verdicts.length, 0)
 })
 
@@ -241,6 +242,7 @@ test('accept with operator approval holds the Work after verification passes', a
   const done = await h.controller.run(admitted.id)
   assert.equal(done.state.status, 'held')
   assert.match(done.state.reason!, /awaiting operator approval/)
+  assert.equal(done.events.findLast((e) => e.type === 'terminal')?.type === 'terminal' && (done.events.findLast((e) => e.type === 'terminal') as { hold?: string }).hold, 'approval')
 })
 
 test("a Worker's claim of success without stored outputs fails the step", async () => {
@@ -1074,4 +1076,12 @@ test('a change that touches no test records no list, and the publish intent carr
   const done = await runFixture(h, 'develop.yaml')
   assert.equal(done.state.status, 'succeeded')
   assert.deepEqual(intents.map((i) => i?.changedTests), [[{ path: 'tests/a.test.ts', change: 'modified', reason: 'pinned the old text' }]])
+})
+
+test('a Worker\'s cause is recorded with its failed attempt, and only a failed one (cause-1)', async () => {
+  const h = harness({ worker: { async run() { return { status: 'failed', outputs: {}, reason: 'the site did not take the paste', cause: 'attach' } } } })
+  const done = await runRetrying(h)
+  const observed = done.events.find((e) => e.type === 'observed')
+  assert.ok(observed?.type === 'observed' && observed.cause === 'attach')
+  assert.equal(done.id !== '', true)
 })

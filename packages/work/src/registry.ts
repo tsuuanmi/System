@@ -3,7 +3,7 @@
  * routing read it. Routing is by capability, never by domain or vendor.
  */
 import { DEFAULT_QUOTA_CEILING_PERCENT, rankByHeadroom, type QuotaReading } from './headroom.ts'
-import type { AttemptSummary, ExecutorRecord, UsageObserved } from './record.ts'
+import type { AttemptSummary, ExecutorRecord, PortCause, UsageObserved } from './record.ts'
 import type { AvailableCapabilities } from './workflow.ts'
 
 /** What a Worker gets for one attempt: exact Artifact IDs only, no transcript. */
@@ -45,6 +45,8 @@ export interface WorkerResult {
   reason?: string
   /** A failure that may be tried afresh: it happened before anything was sent that cannot be sent again. The Worker decides; the Workflow's `retry` says whether to. */
   retryable?: true
+  /** The Worker's marker of an Outside failure; recorded with the observed event. */
+  cause?: PortCause
   /** The Worker's own final message, if it gave one; the controller quotes it when it fails the step itself. */
   message?: string
   usage?: Omit<UsageObserved, 'state'>
@@ -111,6 +113,8 @@ export interface VerifyResult {
   criteria: string
   /** Stored Artifact IDs supporting the verdict. */
   evidence: string[]
+  /** The Verifier's marker of an Outside verdict (`load`: the base fails it too); recorded with the verified event. */
+  cause?: PortCause
 }
 
 export interface CriteriaRequest {
@@ -165,6 +169,8 @@ export interface EffectOutcome {
   rejected?: 'conflict' | 'merge-check' | 'build-output'
   /** Set on a `failed` outcome that holds the Work: the merge commit (a git-tree Artifact) that needs an operator's Approval, because its re-check was inconclusive or its verifier changed since admission. Nothing was published. */
   held?: string
+  /** The marker of an Outside failure (`conflict`); recorded with the effect-observed event. */
+  cause?: PortCause
   reason: string
   /** What the remote side now holds, such as a branch, commit and pull request. */
   detail: Record<string, string>

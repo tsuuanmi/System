@@ -67,7 +67,7 @@ async function expected<T>(run: () => Promise<Result<T>>): Promise<Result<T>> {
   try {
     return await run()
   } catch (error) {
-    if (error instanceof ProviderError && error.kind !== 'aborted') return failed(error.message, { error: error.kind })
+    if (error instanceof ProviderError && error.kind !== 'aborted') return failed(error.message, { error: error.kind, ...(error.attach ? { attach: true } : {}) })
     throw error
   }
 }

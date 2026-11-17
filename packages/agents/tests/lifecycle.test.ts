@@ -124,3 +124,12 @@ test('settle runs before the log is read, and what it returns joins the partial 
   assert.equal(result.partial?.evidence, 'artifact:e')
   assert.equal(existsSync(join(dir, 'work')), false)
 })
+
+test('a turn\'s cause is carried to a failed result and never to a successful one (cause-1)', async () => {
+  const failed = await run(request([]), async () => ({ failure: 'the site did not take the paste', cause: 'attach' }), { files: false })
+  assert.equal(failed.result.status, 'failed')
+  assert.equal(failed.result.cause, 'attach')
+  const ok = await run(request([]), async () => ({ cause: 'attach' }), { files: false })
+  assert.equal(ok.result.status, 'succeeded')
+  assert.equal('cause' in ok.result, false)
+})

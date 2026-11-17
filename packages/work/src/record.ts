@@ -55,6 +55,11 @@ export const attemptSummarySchema = z.object({
 }).strict()
 export type AttemptSummary = z.infer<typeof attemptSummarySchema>
 
+/** Why a port's failure is Outside, said by the port that wrote the reason (cause-1): only `outside.ts` reads it; an event without one is classified by its text, as old records are. */
+export const PORT_CAUSES = ['attach', 'conflict', 'load'] as const
+export type PortCause = (typeof PORT_CAUSES)[number]
+const portCause = z.enum(PORT_CAUSES).optional()
+
 export type UsageObserved = Extract<z.infer<typeof usageSchema>, { state: 'observed' }>
 
 export const eventSchema = z.discriminatedUnion('type', [
@@ -98,6 +103,10 @@ export const eventSchema = z.discriminatedUnion('type', [
     limited: z.literal(true).optional(),
     /** The Worker says this failure may be tried afresh (`retry.onFail` names the step itself). */
     retryable: z.literal(true).optional(),
+    /** The Worker's own marker of an Outside failure (the web attach). */
+    cause: portCause,
+    /** The controller's own failure: the step changed nothing. */
+    noChange: z.literal(true).optional(),
     /** Old records only: never written (a later step's final message objected to an earlier step's output). */
     objection: z.string().optional(),
     /** A no-change attempt on a step reopened by this failing verdict, passed on as the same change (`retry.rerunUnchanged`): the check runs again on it. */
@@ -114,6 +123,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     verifier: z.object({ ref: z.string(), version: z.string() }).strict().optional(),
     /** The second run of the check on the same change; the id is the first run's verdict. */
     rerunOf: contentIdSchema.optional(),
+    /** The Verifier's marker of an Outside verdict (the base re-run: `load`). */
+    cause: portCause,
   }).strict(),
   z.object({
     /** A step whose `when`/`unless` condition on an optional output was not met: it does not run, and counts as done for the steps after it. */
@@ -161,6 +172,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     rejected: z.enum(['conflict', 'merge-check', 'build-output']).optional(),
     /** The merge commit the provider held for an operator's Approval (`EffectOutcome.held`); recorded with state `absent`: nothing was published. */
     held: contentIdSchema.optional(),
+    /** The provider's marker of an Outside failure (a conflict at publish). */
+    cause: portCause,
   }).strict(),
   z.object({
     type: z.literal('decided'), seq: z.number().int(), at, caller: storedCallerSchema,
@@ -174,6 +187,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     result: z.literal('satisfied').optional(),
     /** For `held`: the step whose operator decision `system approve` records. */
     awaiting: z.string().optional(),
+    /** For `held`, why the controller held: `approval` (awaiting the operator's Approval) or `inconclusive` (a verdict needs a decision). */
+    hold: z.enum(['approval', 'inconclusive']).optional(),
   }).strict(),
 ])
 

@@ -9,7 +9,7 @@
  * then a declared output that is missing.
  */
 import type { Artifacts } from '@system/artifacts'
-import type { UsageObserved, WorkerRequest, WorkerResult } from '@system/work'
+import type { PortCause, UsageObserved, WorkerRequest, WorkerResult } from '@system/work'
 import { boundLog } from './attempt-summary.ts'
 import { capture, cleanup, prepare, type Workspace } from './workspace.ts'
 
@@ -33,6 +33,8 @@ export interface TurnContext {
 export interface TurnOutcome {
   /** The turn's own failure: the attempt fails with this reason. */
   failure?: string
+  /** The marker of an Outside failure for `failure` (WorkerResult.cause). */
+  cause?: PortCause
   message?: string
   usage?: Omit<UsageObserved, 'state'>
   summary?: WorkerResult['summary']
@@ -104,7 +106,7 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
     else if (timedOut) result = stopped(`attempt exceeded its time limit of ${limit} minutes`, 'failed')
     else {
       const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
-      if (outcome.failure !== undefined) result = { status: 'failed', outputs: {}, ...kept, reason: outcome.failure, ...common }
+      if (outcome.failure !== undefined) result = { status: 'failed', outputs: {}, ...kept, reason: outcome.failure, ...(outcome.cause ? { cause: outcome.cause } : {}), ...common }
       else if (captured?.missing.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote no output ${noun} for ${captured.missing.join(', ')}`, ...common }
       else result = { status: 'succeeded', outputs: captured?.outputs ?? {}, ...(outcome.partial ? { partial: outcome.partial } : {}), ...(outcome.message ? { message: outcome.message } : {}), ...common }
     }

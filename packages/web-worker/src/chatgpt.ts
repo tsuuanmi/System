@@ -20,7 +20,7 @@ import { chromium, type BrowserContext, type Page } from 'patchright-core'
 import type { Artifacts } from '@system/artifacts'
 import { bindsPower, ChatGptWebDriver, Procedures, ProviderError, type PageDiagnostics, type PowerTier, type ProviderErrorKind, type Result, type UiMap } from '@system/web-driver'
 import { exited, mediaTypeOf, runAttempt, type TurnContext, type Workspace } from '@system/agents'
-import { addConversation, requestedTier, TIERS, tierCapability, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
+import { addConversation, requestedTier, TIERS, tierCapability, type PortCause, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { ensureChrome } from './chrome.ts'
 import { refuseBrowser } from './no-browser.ts'
 import { acquireDisplay, type Display } from './display.ts'
@@ -212,7 +212,14 @@ export function escapedMarkdown(markdown: string): boolean {
   return /^ {0,3}\\[~`]/m.test(markdown) || /\\:/.test(markdown)
 }
 
-class Failure extends Error {}
+/** A failure of the attempt's own; `outside` is the marker of an Outside failure that the Worker's result carries (the attach). */
+class Failure extends Error {
+  readonly outside?: PortCause
+  constructor(message: string, outside?: PortCause) {
+    super(message)
+    if (outside) this.outside = outside
+  }
+}
 
 /** Chrome's profile lock is a socket at `$TMPDIR/org.chromium.Chromium.XXXXXX/SingletonSocket`, and a socket path may be 107 bytes at most. */
 const MAX_TMPDIR = 55
@@ -450,7 +457,7 @@ async function genericTurn(port: TurnPort): Promise<{ text: string; blocks: Arra
   const need = <T>(result: Result<T>, kind: ProviderErrorKind): T => {
     if (result.status === 'ok') return result.value as T
     const named = result.evidence.error
-    throw new ProviderError(typeof named === 'string' ? named as ProviderErrorKind : kind, `chatgpt-web: ${result.reason ?? result.status}`)
+    throw new ProviderError(typeof named === 'string' ? named as ProviderErrorKind : kind, `chatgpt-web: ${result.reason ?? result.status}`, result.evidence.attach === true ? { attach: true } : undefined)
   }
   /** The site's own error in place of an answer: sent, never resent. Any other failure of the wait or the read is the stage's. */
   const answered = <T>(result: Result<T>, kind: ProviderErrorKind): T => {
@@ -712,7 +719,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       if (failed === 'wait' && ranOut) evidence.set({ waitEnded: 'timeout' })
       if ((error as Error).name === 'TimeoutError' && op !== undefined && seconds !== undefined) throw new Failure(`${account.ref}: ${failed}: ${op} timed out after ${seconds} s`)
       if (ranOut) throw new Failure(`${account.ref}: the ${failed} stage timed out${seconds === undefined ? '' : ` after ${seconds} s`}: ${first}`)
-      if (error instanceof ProviderError && error.kind !== 'aborted') throw new Failure(`${account.ref}: ${error.message}${error.kind === 'reauth_required' ? '; sign in again (system workers login)' : ''}`)
+      if (error instanceof ProviderError && error.kind !== 'aborted') throw new Failure(`${account.ref}: ${error.message}${error.kind === 'reauth_required' ? '; sign in again (system workers login)' : ''}`, error.attach ? 'attach' : undefined)
       throw error
     }
   }
@@ -825,7 +832,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
           if (found) partial.snapshot = await put(Buffer.from(JSON.stringify(found satisfies PageDiagnostics)), 'application/json')
         }
         const reason = error instanceof Failure ? error.message : `${account.ref}: ${(error as Error).message.split('\n')[0]}`
-        return { failure: reason, partial }
+        return { failure: reason, partial, ...(error instanceof Failure && error.outside ? { cause: error.outside } : {}) }
       }
     },
   })

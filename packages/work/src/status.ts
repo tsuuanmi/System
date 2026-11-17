@@ -119,7 +119,7 @@ export const mergeCommitOf = (record: WorkRecord): string | undefined => mergedE
 
 /** Whether a Work changed nothing: it did not succeed and a step of it failed on `no change` (a `repo.write` tree equal to its base). */
 const changedNothing = (record: WorkRecord): boolean =>
-  record.state.status !== 'succeeded' && record.events.some((e) => e.type === 'observed' && e.status === 'failed' && /^no change\b/.test(e.reason ?? ''))
+  record.state.status !== 'succeeded' && record.events.some((e) => e.type === 'observed' && e.status === 'failed' && (e.noChange ?? /^no change\b/.test(e.reason ?? '')))
 
 const artifactsOf = (record: WorkRecord): string[] => Object.values(record.state.results)
 

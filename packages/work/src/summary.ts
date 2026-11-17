@@ -73,12 +73,12 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
   const lastCause = () => failures.at(-1)?.unknown ? 'unknown' as const : failures.at(-1)?.outside
   const lastVerdict = () => failures.findLast((f) => f.kind === 'verdict')
   for (const [index, event] of record.events.entries()) {
-    if (event.type === 'observed' && event.status === 'failed') add(index, 'attempt', event.reason ?? '', event.rateLimited ? 'quota' : /^no change\b/.test(event.reason ?? '') && processAfterCorrectChange(index, event.stepId) ? 'process' : attemptCause(event.reason ?? ''))
+    if (event.type === 'observed' && event.status === 'failed') add(index, 'attempt', event.reason ?? '', event.rateLimited ? 'quota' : (event.noChange ?? /^no change\b/.test(event.reason ?? '')) && processAfterCorrectChange(index, event.stepId) ? 'process' : attemptCause(event.reason ?? '', event.cause))
     if (event.type === 'attempt-lost') add(index, 'attempt-lost', event.reason, 'restart')
-    if (event.type === 'verified' && (event.verdict === 'fail' || event.verdict === 'inconclusive')) add(index, 'verdict', event.reason, (event.verdictId && flakyVerdicts.has(event.verdictId)) || (event.verdict === 'fail' && later?.(event.subject, event.stepId, record, index)) ? 'flaky' : outsideCause(event.reason, 'verdict'))
-    if (event.type === 'effect-observed' && event.state === 'failed') add(index, 'publish', event.reason, event.rejected === 'conflict' ? 'conflict' : undefined)
-    if (event.type === 'terminal' && event.outcome === 'held' && event.reason !== 'verification passed; awaiting operator approval') {
-      add(index, 'hold', event.reason, /^inconclusive verification/.test(event.reason) ? (lastVerdict()?.unknown ? 'unknown' : lastVerdict()?.outside) : undefined)
+    if (event.type === 'verified' && (event.verdict === 'fail' || event.verdict === 'inconclusive')) add(index, 'verdict', event.reason, (event.verdictId && flakyVerdicts.has(event.verdictId)) || (event.verdict === 'fail' && later?.(event.subject, event.stepId, record, index)) ? 'flaky' : outsideCause(event.reason, 'verdict', event.cause))
+    if (event.type === 'effect-observed' && event.state === 'failed') add(index, 'publish', event.reason, event.rejected === 'conflict' ? 'conflict' : event.cause)
+    if (event.type === 'terminal' && event.outcome === 'held' && (event.hold ?? (event.reason === 'verification passed; awaiting operator approval' ? 'approval' : undefined)) !== 'approval') {
+      add(index, 'hold', event.reason, (event.hold ?? (/^inconclusive verification/.test(event.reason) ? 'inconclusive' : undefined)) === 'inconclusive' ? (lastVerdict()?.unknown ? 'unknown' : lastVerdict()?.outside) : undefined)
     }
     if (event.type === 'dispatched') {
       if (event.executor === 'worker') attempts += 1
