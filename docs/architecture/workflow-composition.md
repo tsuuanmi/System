@@ -206,6 +206,13 @@ attempt by the Host on start, once its process is confirmed gone; otherwise on
 completed steps are never re-run. `system work replay` folds the events again and
 compares the result with the stored state.
 
+**Derived facts (state).** `fold` computes, once, what readers used to re-scan
+the events for: the verifiers pinned at admission (`state.verifiers`), a step's
+latest reopening (`reopening`), the Outside failures in a row on a step
+(`outside`), the changed tests of each change (`changedTests`) and the merge
+commit an Approval covers (`effects[].approvedMerge`). A record stored without
+them folds to the same facts when it is opened; no event gained a required field.
+
 **Why a failure is Outside (cause-1).** The port that writes a failure's reason
 also says its cause, as an optional `cause` (`attach`, `conflict` or `load`) on
 the `observed`, `verified` and `effect-observed` events; the controller's own

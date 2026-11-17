@@ -651,8 +651,6 @@ export class WorkController {
       ...(approvedMerge ? { approvedMerge } : {}), ...(changedTests ? { changedTests } : {}) }
   }
 
-  /** tr-1: the changed tests recorded for change `subject` (the latest attempt that produced it); undefined when no attempt of the record produced it, empty when it touched no test. */
-
   /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
   private requiredOf(record: WorkRecord, s: Extract<Step, { effect: unknown }>): NonNullable<EffectIntent['required']> {
     const spec = this.specOf(record)
