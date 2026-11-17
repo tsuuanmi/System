@@ -24,12 +24,14 @@ before(() => {
   }
   // Stand-ins for the four checks; FAIL names the one that fails.
   const check = 'case "$*" in *"$FAIL"*) [ -n "$FAIL" ] && exit 1;; esac\nexit 0'
-  for (const name of ['python3', 'corepack']) stub(bin, name, check)
+  stub(bin, 'python3', check)
   // The shell's `node` is first on PATH and is Node 22: it fails every check; only the Node finder runs, on the real Node.
   stub(bin, 'node', `case "$1" in *node-bin.ts) exec "${process.execPath}" "$@";; esac\necho "needs Node >=99; this is v22.23.4" >&2\nexit 1`)
   // The repository's Node, as the finder finds it under HOME's nvm layout.
   const home = join(root, 'home')
-  stub(join(home, '.nvm', 'versions', 'node', 'v99.0.0', 'bin'), 'node', check)
+  const nodeDir = join(home, '.nvm', 'versions', 'node', 'v99.0.0', 'bin')
+  stub(nodeDir, 'node', check)
+  stub(nodeDir, 'corepack', check) // corepack is run beside the chosen Node, not from PATH (Item ns-2)
   env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
   const remote = join(root, 'remote.git')
   repo = join(root, 'repo')
