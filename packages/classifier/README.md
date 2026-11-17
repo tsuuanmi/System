@@ -44,6 +44,11 @@ The gate says when a Classification may be used for more than the report. It is 
   the Classifier the items whose samples disagreed, with a few samples. A Classifier that cannot answer counts as `unknown`.
 - **The gate passes** when the hybrid is at least as accurate as the rules **and** it has no change→Outside error.
   Rules alone on the 41 items: 24/41 = 58.5% (95% 43.4–72.2%), `unknown` 12.2% (5 items); no change→Outside error.
+- **The first real evaluation** (2026-11-17, `claude -p --model haiku`, report Artifact
+  `sha256:4613d1ee4e71592f3e1153d86b0498f7e3423e62094079cfd21a11cf8cb70669`): rules 24/41 = 58.5% (43–72%), `unknown` 12%,
+  change→Outside 0; Classifier 28/41 = 68.3% (53–80%), `unknown` 15%, change→Outside 1 (work:61d3cf2c answered `process`);
+  hybrid 26/41 = 63.4%, change→Outside 1; the samples disagreed on 11. The gate fails: the Classifier stays off and
+  report-only.
 - **Required checks never call a model:** [eval.test.ts](tests/eval.test.ts) runs the evaluation with a fake Runtime and the
   gate on a stored report ([gate-report.json](tests/fixtures/gate-report.json)).
 - **The real run** is made once by the operator or a session, not by a check. `--ask-command` is a shell command that reads one
