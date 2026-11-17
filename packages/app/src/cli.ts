@@ -84,7 +84,7 @@ export interface WorkCommands {
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
-  list(): Soon<{ id: string; status: string; specId: string }[]>
+  list(since?: string): Soon<{ id: string; status: string; specId: string; item?: string }[]>
   replay(workId: string): Soon<{ state: WorkState; matches: boolean }>
   cancel(workId: string, reason: string): Promise<'requested' | WorkRecord>
   decide(workId: string, decision: 'approved' | 'denied', operatorId: string, reason: string): Promise<Followed>
@@ -522,10 +522,11 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('list')
-    .description('list Work: id, status, pinned spec')
-    .action(() => {
+    .description('list Work, one per line: id, status, pinned spec and the Item its Task names (when it names one)')
+    .option('--since <iso>', 'only the Works admitted at or after this date or timestamp (inclusive)')
+    .action((options: { since?: string }) => {
       select(async () => {
-        for (const work of await host.work().list()) io.out(`${work.id}  ${work.status.padEnd(21)}  ${work.specId}\n`)
+        for (const work of await host.work().list(options.since)) io.out(`${work.id}  ${work.status.padEnd(21)}  ${work.specId}${work.item ? `  ${work.item}` : ''}\n`)
         return 0
       })
     })

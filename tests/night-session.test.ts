@@ -62,6 +62,7 @@ test('one Item: claim, task_new, work_submit, work wait (4 then 0), work_report'
   writeFileSync(join(project, 'STATUS.md'), 'Aim: a project\n- [ ] n-1 Do the thing with `backticks` and $HOME\n')
   git('add', '.'); git('commit', '-qm', 'status')
 
+  const tonight = new Date().toISOString()
   const todo = await tool('status', { repository: project, state: 'todo' })
   assert.match(todo[0], /^\[ \] n-1 Do the thing/)
   assert.equal((await tool('item_claim', { repository: project, item: 'n-1' })).who, 'night')
@@ -94,4 +95,11 @@ test('one Item: claim, task_new, work_submit, work wait (4 then 0), work_report'
   const report = await tool('work_report', { workId: work })
   assert.ok(report && typeof report === 'object')
   assert.ok((await tool('work_list', {})).some((w: { id: string }) => w.id === work))
+  // ns-3: `since` finds tonight's Works, each with its Item; the CLI prints one line per Work.
+  const mine = await tool('work_list', { since: tonight })
+  assert.deepEqual(mine.map((w: { id: string; item?: string }) => [w.id, w.item]), [[work, 'n-1']])
+  assert.deepEqual(await tool('work_list', { since: new Date(Date.now() + 60_000).toISOString() }), [])
+  const lines = cli.run(['work', 'list', '--since', tonight])
+  assert.equal(lines.status, 0, lines.stderr)
+  assert.deepEqual(lines.stdout.split('\n').filter(Boolean).map((l) => [l.split(/\s+/)[0], l.split(/\s+/).at(-1)]), [[work, 'n-1']])
 })

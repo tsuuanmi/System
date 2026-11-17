@@ -178,6 +178,27 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual([...called].sort(), Object.keys(tableOf(table)).sort(), 'a method of the table has no round trip in this test')
 })
 
+test('work.list takes `since` (admission time, inclusive) and shows the Item of a Work whose Task names one', async () => {
+  const { f, open } = await started()
+  const client = await open()
+  const specStore = f.specStore
+  let naming = false
+  specStore.taskOf = (id) => (naming ? { task: { instructions: 'x', base: id, item: 'ns-9' }, repository: '/nowhere' } as never : undefined)
+  specStore.withNote = async (id) => id
+  const plain = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  naming = true
+  const itemWork = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
+  const rows = async (params?: unknown) => await client.call('work.list', params) as { id: string; item?: string }[]
+  const at = async (id: string) => ((await client.call('work.show', { workId: id })) as { events: { at: string }[] }).events[0]!.at
+  assert.deepEqual((await rows()).map((r) => [r.id, r.item]), [[plain.id, undefined], [itemWork.id, 'ns-9']])
+  assert.equal('item' in (await rows())[0]!, false)
+  assert.deepEqual((await rows({ since: await at(plain.id) })).map((r) => r.id), [plain.id, itemWork.id])
+  assert.deepEqual((await rows({ since: await at(itemWork.id) })).map((r) => r.id), [itemWork.id])
+  assert.deepEqual(await rows({ since: new Date(Date.parse(await at(itemWork.id)) + 1).toISOString() }), [])
+  await assert.rejects(client.call('work.list', { since: 'tonight' }), /-32602|date/i)
+})
+
 test('an agent connection is refused every method flagged agent: false, and only those', async () => {
   const { table, open } = await started()
   const client = await open(agent)
