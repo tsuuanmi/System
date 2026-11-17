@@ -67,6 +67,27 @@ server once for your user ([agents](#using-system-from-an-agent)):
 claude mcp add --scope user system -- ~/.local/bin/system mcp
 ```
 
+## Install gitleaks
+
+The `secrets` check of `.system/checks.yaml` ([tools/secrets-check.sh](../../tools/secrets-check.sh), Item rb-5) runs
+[gitleaks](https://github.com/gitleaks/gitleaks) on what a change adds to its base, with values redacted. The operator
+installs the binary (8.30.1 on 2026-11-17); a machine without it fails the check with "install gitleaks", never
+passes it.
+The check finds it in `$GITLEAKS_BIN`, on `PATH`, or at `~/.local/bin/gitleaks` of the user who runs the Host (the check
+itself has a throwaway `HOME`). It is not part of the `sh install` block above: that block is the commands a new machine
+runs for System itself, and the check needs gitleaks only to verify a change.
+
+```sh
+v=8.30.1
+d=$(mktemp -d) && cd "$d"
+curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz"
+curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_checksums.txt"
+grep " gitleaks_${v}_linux_x64.tar.gz\$" "gitleaks_${v}_checksums.txt" | sha256sum -c -
+tar -xzf "gitleaks_${v}_linux_x64.tar.gz" gitleaks
+install -D gitleaks ~/.local/bin/gitleaks
+~/.local/bin/gitleaks version
+```
+
 ## Stop, restart, status
 
 ```

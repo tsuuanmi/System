@@ -28,6 +28,11 @@ checks:
     run: node tools/check-status.ts STATUS.md
     timeoutSeconds: 60
     paths: [STATUS.md, tools/check-status.ts, packages/work/src/status-parse.ts, .system/checks.yaml]
+  - name: secrets
+    # Item rb-5: gitleaks on what the change adds to its base (`$SYSTEM_CHECK_BASE..HEAD`, never the whole history), values redacted. No `paths`:
+    # a secret can be added anywhere. The binary is the operator's (runbook, "Install gitleaks"): a machine without it fails closed.
+    run: sh tools/secrets-check.sh
+    timeoutSeconds: 120
   - name: install
     run: corepack pnpm install --frozen-lockfile
     timeoutSeconds: 300
