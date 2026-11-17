@@ -11,7 +11,8 @@ import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
 import { acceptMove, decisionOf, dependentsOf, nextMove, rerunOf, resolveRef, retryMove, settled, verdictOf, type Finish } from './next-move.ts'
-import { DEFAULT_LIMIT_MS, isQuotaLimited, quotaResetFrom } from './limits.ts'
+import { AccountAdmission, QUOTA_RETRY_MS } from './admission.ts'
+import { isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
 import { askVerifier, firstRunOf, refusedResult, settleVerdict, type VerifierPin } from './verification.ts'
@@ -54,8 +55,6 @@ export interface SpecStore {
 
 /** How often a running attempt checks for a cancel request. */
 const CANCEL_POLL_MS = 250
-/** A step waiting on quota is tried again at the earliest reset, or at least this often (a reading may have changed). */
-const QUOTA_RETRY_MS = 5 * 60_000
 
 export const SPEC_KIND = 'workflow-spec'
 export const SPEC_SCHEMA_VERSION = 1
@@ -182,16 +181,17 @@ export class WorkController {
   private readonly waitingForCheck = new Map<string, { stepId: string; verifier: string; since: number }>()
   /** When each Worker step (`<work>/<step>`) first found every capable Account full, in memory only. */
   private readonly waitingForSlot = new Map<string, number>()
-  /** The Worker steps (`<work>/<step>`) whose capable, free Accounts are all over the quota ceiling, in memory only; `timer` tries them again. */
-  private readonly waitingForQuota = new Map<string, { workId: string; stepId: string; worker: string; since: number; until?: string; timer: NodeJS.Timeout }>()
+  /** Quota waits, limited Accounts and today's attempt counts (ss-5). */
+  private readonly accounts: AccountAdmission
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
-  private readonly quotaRetryMs: number
-  /** Accounts that limited an attempt (ref -> passed over until their reset, ss-5). In memory only: after a restart the quota is read fresh and routing is as usual. */
-  private readonly limitedAccounts = new Map<string, number>()
 
   constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, quotaRetryMs = QUOTA_RETRY_MS) {
-    this.quotaRetryMs = quotaRetryMs
+    this.accounts = new AccountAdmission({
+      retryMs: quotaRetryMs,
+      history: () => this.list().flatMap((r) => r.events.flatMap((e) => (e.type === 'dispatched' && e.executor === 'worker' ? [{ ref: e.selected, at: Date.parse(e.at) }] : []))),
+    })
+    this.accounts.onWake(() => this.notify())
     this.table = table
     this.specs = specs
     this.capabilities = capabilities
@@ -231,7 +231,7 @@ export class WorkController {
     const check = this.waitingForCheck.get(workId)
     return [
       ...this.running.of(workId),
-      ...[...this.waitingForQuota.values()].filter((w) => w.workId === workId).map((w) => waiting(w.stepId, w.worker, w.since, 'quota', w.until)),
+      ...this.accounts.waiting(workId).map((w) => waiting(w.stepId, w.worker, w.since, 'quota', w.until)),
       ...(check ? [waiting(check.stepId, check.verifier, check.since, 'a check slot')] : []),
     ]
   }
@@ -411,7 +411,7 @@ export class WorkController {
       if (failures.length) throw failures[0]
     }
     this.waitingForCheck.delete(workId)
-    for (const key of [...this.waitingForQuota.keys()]) if (this.waitingForQuota.get(key)!.workId === workId) this.stopWaitingForQuota(key)
+    this.accounts.stopWork(workId)
     // A step may fail the Work while others are in flight: they are observed, after the terminal event.
     await Promise.all(flying)
     if (failures.length) throw failures[0]
@@ -550,6 +550,7 @@ export class WorkController {
       const events = [...current.events, next]
       return { ...current, events, state: fold(stepIds, events), ...(receipts.length ? { receipts: [...(current.receipts ?? []), ...receipts] } : {}) }
     })
+    if (event.type === 'dispatched' && event.executor === 'worker') this.accounts.count(event.selected)
     this.changed(updated)
     return updated
   }
@@ -733,19 +734,8 @@ export class WorkController {
     // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
     const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
     const readings = await this.readQuotas(capable)
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), readings, this.activeLimited(readings), this.attemptsToday(), s.prefer)
-    if (route.quotaWait) {
-      const was = this.waitingForQuota.get(waitKey)
-      if (!was || was.until !== route.quotaWait.resetsAt) {
-        if (was) clearTimeout(was.timer)
-        const delay = Math.min(this.quotaRetryMs, route.quotaWait.resetsAt ? Math.max(0, Date.parse(route.quotaWait.resetsAt) - Date.now()) : this.quotaRetryMs)
-        const timer = setTimeout(() => { this.waitingForQuota.delete(waitKey); this.notify() }, delay)
-        // A retry timer never keeps the process alive by itself.
-        timer.unref()
-        this.waitingForQuota.set(waitKey, { workId: record.id, stepId: s.id, worker: capable[0]!.ref, since: was?.since ?? Date.now(), ...(route.quotaWait.resetsAt ? { until: route.quotaWait.resetsAt } : {}), timer })
-      }
-      return { record, blocked: true }
-    }
+    const route = this.accounts.route(this.capabilities, { workId: record.id, stepId: s.id, key: waitKey }, s.capabilities, only, (w) => this.slots.hasFree(w), readings, s.prefer)
+    if (route.quotaWait) return { record, blocked: true }
     if (route.full) {
       if (!this.waitingForSlot.has(waitKey)) this.waitingForSlot.set(waitKey, Date.now())
       return { record, blocked: true }
@@ -753,9 +743,9 @@ export class WorkController {
     if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled Worker ${only ? `${only} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`) }
     const attemptId = `attempt:${randomUUID()}`
     if (!this.slots.reserve(route.selected, attemptId)) return { record, blocked: true }
-    const waitedMs = this.waited(Math.min(this.waitingForSlot.get(waitKey) ?? Infinity, this.waitingForQuota.get(waitKey)?.since ?? Infinity))
+    const waitedMs = this.waited(Math.min(this.waitingForSlot.get(waitKey) ?? Infinity, this.accounts.waitingSince(waitKey) ?? Infinity))
     this.waitingForSlot.delete(waitKey)
-    this.stopWaitingForQuota(waitKey)
+    this.accounts.stop(waitKey)
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
@@ -768,38 +758,12 @@ export class WorkController {
     return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
   }
 
-  /** The Accounts still out of quota: a fresh readable reading of an Account is believed over the record of its limit. */
-  private activeLimited(readings: ReadonlyMap<string, QuotaReading>): ReadonlySet<string> {
-    const now = Date.now()
-    for (const [ref, until] of this.limitedAccounts) if (until <= now) this.limitedAccounts.delete(ref)
-    return new Set([...this.limitedAccounts.keys()].filter((ref) => !('windows' in (readings.get(ref) ?? {}))))
-  }
-
-  /** Worker attempts dispatched since 00:00 UTC, by Account (limited ones included); read from the table, never recorded. */
-  private attemptsToday(): Map<string, number> {
-    const start = new Date().setUTCHours(0, 0, 0, 0)
-    const counts = new Map<string, number>()
-    for (const record of this.list()) {
-      for (let i = record.events.length - 1; i >= 0; i--) {
-        const e = record.events[i]!
-        if (Date.parse(e.at) < start) break
-        if (e.type === 'dispatched' && e.executor === 'worker') counts.set(e.selected, (counts.get(e.selected) ?? 0) + 1)
-      }
-    }
-    return counts
-  }
-
   /** The quota of each of the Workers that has one; a reader that throws is an unreadable Account, never a failed step. */
   private async readQuotas(workers: readonly WorkerPort[]): Promise<Map<string, QuotaReading>> {
     const read = await Promise.all(workers.filter((w) => w.quota).map(async (w): Promise<[string, QuotaReading]> => {
       try { return [w.ref, await w.quota!()] } catch (error) { return [w.ref, { unreadable: (error as Error).message }] }
     }))
     return new Map(read)
-  }
-
-  private stopWaitingForQuota(key: string): void {
-    clearTimeout(this.waitingForQuota.get(key)?.timer)
-    this.waitingForQuota.delete(key)
   }
 
   /** `waitedMs` for a dispatch of a step that waited since `since`. */
@@ -870,7 +834,7 @@ export class WorkController {
     const limited = status === 'failed' && !aborted && isQuotaLimited(reason)
     if (limited) {
       // Out until the reset the error gives, else 5 hours: no reader failing can put it back in routing sooner.
-      this.limitedAccounts.set(attempt.worker.ref, quotaResetFrom(reason, Date.now()) ?? Date.now() + DEFAULT_LIMIT_MS)
+      this.accounts.limit(attempt.worker.ref, quotaResetFrom(reason, Date.now()))
       // Drop the cached reading and read it again now; an unreadable Account is never a failure.
       try { await attempt.worker.quota?.(true) } catch { /* routing reads it again */ }
     }
