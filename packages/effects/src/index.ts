@@ -40,6 +40,9 @@ export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (s
         hold ??= `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`
         continue
       }
+      const stored = artifacts.get(subject)
+      const kind = stored.state === 'stored' ? stored.envelope.kind : undefined
+      if (!kind || !verifier.accepts.includes(kind)) return { verdict: 'error', reason: `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`, evidence, verdicts }
       let result: VerifyResult
       try {
         result = await verifier.verify({ workId: intent.workId, attemptId: `merge:${intent.operationId}`, stepId: intent.stepId, capability, subject, criteria })
