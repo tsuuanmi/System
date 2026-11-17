@@ -7,7 +7,7 @@
 # skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 8
+version: 9
 steps:
   - id: implement
     capabilities: [repo.write, develop.implement, tier.standard]
@@ -16,7 +16,7 @@ steps:
     outputs: [change]
     optionalOutputs: [satisfied]
     # One automatic further attempt on the same change when the checks fail, and one on the base's new tip when the publish is refused for a conflict or a failing check on the merge (sc-7).
-    retry: { onFail: [checks.checks, publish], max: 1 }
+    retry: { onFail: [checks.checks, publish], max: 1, rerunUnchanged: true }
     instructions: |
       If the Task has the headings Goal, Files to change and why, Tests to add
       or update, Invariants not to change, Out of scope and Done when (a
