@@ -11,16 +11,15 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync }
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, writesRepository, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
-import { boundLog, summarizeAttempt } from './attempt-summary.ts'
+import { summarizeAttempt } from './attempt-summary.ts'
 import { quotaFromRateLimitEvent, type QuotaEvent, type QuotaReport } from './quota.ts'
 import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
-import { capture, cleanup, prepare, prompt } from './workspace.ts'
+import { runAttempt } from './lifecycle.ts'
+import { prompt } from './workspace.ts'
 
 const GRACE_MS = 30_000
 /** After the agent exits, its output is read for this long and its process range is given this long to empty; then both are closed (never waited for: a process it left holding the pipes would hold the attempt). */
 export const DRAIN_MS = 5000
-/** The wall-clock limit of an attempt when neither the account nor the row sets one. */
-export const DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 60
 /** How often a running agent's stdout is read for its progress. */
 const PROGRESS_MS = 500
 
@@ -140,93 +139,72 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: await account.version(),
     ...(tier ? { tier } : {}), ...(model ? { model } : {}),
   }
-  const ws = await prepare(artifacts, request, join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')))
-  try {
-    const text = prompt(ws, request)
-    let invocation
-    let codexAuth: { attempt: string; account: string; before: string } | undefined
-    if (account.runtime === 'claude-code') {
-      const token = await account.token?.()
-      if (!token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
-      invocation = claudeInvocation(account.command, ws, text, token, model, writesRepository(request.capabilities))
-    } else {
-      const home = join(ws.root, 'codex-home')
-      mkdirSync(home, { mode: 0o700 })
-      const source = join(account.codexHome!, 'auth.json')
-      if (!existsSync(source)) return { status: 'failed', outputs: {}, reason: `${account.ref}: no auth.json in ${account.codexHome} (codex login --device-auth)`, executor }
-      // A fresh CODEX_HOME per attempt holding only auth.json: no memories or history carry over (ADR-0005).
-      copyFileSync(source, join(home, 'auth.json'))
-      codexAuth = { attempt: join(home, 'auth.json'), account: source, before: digest(source) }
-      invocation = codexInvocation(account.command, ws, text, home, model)
-    }
-    // Remove every host variable the agent was not given (SSH agent, tokens, ...).
-    const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
-    Object.assign(env, invocation.env)
-    // The limit stops the agent through the same abort as an operator cancel, so SIGTERM, the grace and SIGKILL are one path.
-    const limit = account.attemptTimeoutMinutes ?? DEFAULT_ATTEMPT_TIMEOUT_MINUTES
-    const stop = new AbortController()
-    const forward = () => stop.abort()
-    if (request.signal.aborted) forward()
-    request.signal.addEventListener('abort', forward, { once: true })
-    let timedOut = false
-    const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
-    // Over budget is stopped through the same abort, and fails with what was spent.
-    const budget = account.attemptBudget
-    let overBudget: string | undefined
-    const spend = (what: string) => { overBudget ??= what; forward() }
-    const budgetTimer = budget?.minutes === undefined ? undefined : setTimeout(() => spend(`${budget.minutes} minutes`), budget.minutes * 60_000)
-    const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: stop.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
-    // Output that grew is activity: what it says so far is the attempt's progress.
-    const read = progressReader(account.runtime)
-    let seen = 0
-    const watch = setInterval(() => {
+  // The credential is checked before anything is prepared: without it there is nothing to run.
+  const token = account.runtime === 'claude-code' ? await account.token?.() : undefined
+  if (account.runtime === 'claude-code' && !token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
+  const source = account.runtime === 'claude-code' ? undefined : join(account.codexHome!, 'auth.json')
+  if (source && !existsSync(source)) return { status: 'failed', outputs: {}, reason: `${account.ref}: no auth.json in ${account.codexHome} (codex login --device-auth)`, executor }
+  let stdout = () => ''
+  let codexAuth: { attempt: string; account: string; before: string } | undefined
+  return runAttempt({
+    artifacts, ref: account.ref, executor, request, dir: join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')),
+    timeoutMinutes: account.attemptTimeoutMinutes, cancelReason: 'cancelled; the agent was stopped',
+    log: () => stdout(),
+    turn: async (ctx) => {
+      const { ws } = ctx
+      const text = prompt(ws, request)
+      let invocation
+      if (token) invocation = claudeInvocation(account.command, ws, text, token, model, writesRepository(request.capabilities))
+      else {
+        const home = join(ws.root, 'codex-home')
+        mkdirSync(home, { mode: 0o700 })
+        // A fresh CODEX_HOME per attempt holding only auth.json: no memories or history carry over (ADR-0005).
+        copyFileSync(source!, join(home, 'auth.json'))
+        codexAuth = { attempt: join(home, 'auth.json'), account: source!, before: digest(source!) }
+        invocation = codexInvocation(account.command, ws, text, home, model)
+      }
+      // Remove every host variable the agent was not given (SSH agent, tokens, ...).
+      const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
+      Object.assign(env, invocation.env)
+      // Over budget is stopped through the lifecycle's abort, and fails with what was spent.
+      const budget = account.attemptBudget
+      const budgetTimer = budget?.minutes === undefined ? undefined : setTimeout(() => ctx.stop(`over budget: ${budget.minutes} minutes`), budget.minutes * 60_000)
+      const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: ctx.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
+      stdout = spawned.stdout
+      // Output that grew is activity: what it says so far is the attempt's progress.
+      const read = progressReader(account.runtime)
+      let seen = 0
+      const watch = setInterval(() => {
+        const out = spawned.stdout()
+        if (out.length === seen) return
+        seen = out.length
+        const progress = read(out)
+        request.progress?.(progress)
+        if (budget?.inputTokens !== undefined && (progress.inputTokens ?? 0) > budget.inputTokens) ctx.stop(`over budget: input tokens (${progress.inputTokens} of ${budget.inputTokens})`)
+      }, PROGRESS_MS)
+      watch.unref()
+      const done = await spawned.done.finally(() => {
+        clearInterval(watch)
+        clearTimeout(budgetTimer)
+        rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
+      })
       const out = spawned.stdout()
-      if (out.length === seen) return
-      seen = out.length
-      const progress = read(out)
-      request.progress?.(progress)
-      if (budget?.inputTokens !== undefined && (progress.inputTokens ?? 0) > budget.inputTokens) spend(`input tokens (${progress.inputTokens} of ${budget.inputTokens})`)
-    }, PROGRESS_MS)
-    watch.unref()
-    const outcome = await spawned.done.finally(() => {
-      clearInterval(watch)
-      clearTimeout(timer)
-      clearTimeout(budgetTimer)
-      request.signal.removeEventListener('abort', forward)
-      rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
-    })
-    const stdout = spawned.stdout()
-    // Even a rejected or stopped attempt tells the truth about quota.
-    if (account.runtime === 'claude-code' && account.onRateLimit) {
-      const events = rateLimitEvents(stdout)
-      if (events.length) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
-    }
-    const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
-    if (codexAuth) keepRefreshedAuth(codexAuth)
-    if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
-    const log = (await artifacts.putBytes({
-      kind: 'file', schemaVersion: 1, data: Buffer.from(boundLog(stdout)),
-      mediaType: 'application/x-ndjson',
-      classification: 'local-private', producer: { type: 'worker', ref: account.ref }, workId: request.workId, attemptId: request.attemptId,
-    })).id
-    const captured = await capture(artifacts, ws, request, account.ref)
-    const summary = summarizeAttempt(account.runtime, stdout)
-    const common = { log, summary, usage: parsed.usage, executor }
-    // A stopped agent's output is incomplete, so its usage is unknown rather than a partial count.
-    if (request.signal.aborted) return { status: 'cancelled', outputs: {}, partial: captured.outputs, reason: 'cancelled; the agent was stopped', log, summary, executor }
-    if (overBudget) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `over budget: ${overBudget}`, log, summary, executor }
-    if (timedOut) return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `attempt exceeded its time limit of ${limit} minutes`, log, summary, executor }
-    if (outcome.exitCode !== 0 || !parsed.ok) {
-      const why = outcome.signal ? `signal ${outcome.signal}` : `exit ${outcome.exitCode}`
-      return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...common }
-    }
-    if (captured.missing.length) {
-      return { status: 'failed', outputs: {}, partial: captured.outputs, reason: `${account.ref} wrote no output file for ${captured.missing.join(', ')}`, ...common }
-    }
-    return { status: 'succeeded', outputs: captured.outputs, ...(parsed.message ? { message: parsed.message } : {}), ...common }
-  } finally {
-    await cleanup(ws)
-  }
+      // Even a rejected or stopped attempt tells the truth about quota.
+      if (account.runtime === 'claude-code' && account.onRateLimit) {
+        const events = rateLimitEvents(out)
+        if (events.length) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
+      }
+      const parsed = account.runtime === 'claude-code' ? parseClaude(out) : parseCodex(out)
+      if (codexAuth) keepRefreshedAuth(codexAuth)
+      if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
+      const summary = summarizeAttempt(account.runtime, out)
+      if (done.exitCode !== 0 || !parsed.ok) {
+        const why = done.signal ? `signal ${done.signal}` : `exit ${done.exitCode}`
+        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, summary, usage: parsed.usage }
+      }
+      return { ...(parsed.message ? { message: parsed.message } : {}), summary, usage: parsed.usage }
+    },
+  })
 }
 
 /** Copy a refreshed `auth.json` back, unless the account's file changed meanwhile. */

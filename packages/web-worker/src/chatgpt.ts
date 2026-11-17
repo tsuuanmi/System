@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright-core'
 import type { Artifacts } from '@system/artifacts'
 import { bindsPower, ChatGptWebDriver, Procedures, ProviderError, type PageDiagnostics, type PowerTier, type ProviderErrorKind, type Result, type UiMap } from '@system/web-driver'
-import { cleanup, exited, mediaTypeOf, prepare, type Workspace } from '@system/agents'
+import { exited, mediaTypeOf, runAttempt, type TurnContext, type Workspace } from '@system/agents'
 import { addConversation, requestedTier, TIERS, tierCapability, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { ensureChrome } from './chrome.ts'
 import { refuseBrowser } from './no-browser.ts'
@@ -630,19 +630,7 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
   const log: string[] = []
   const note = (line: string) => { log.push(`${new Date().toISOString()} ${line}`) }
   const producer = { type: 'worker' as const, ref: account.ref }
-  const common = { inputs: Object.values(request.inputs), classification: 'local-private' as const, producer, workId: request.workId, attemptId: request.attemptId }
   const partial: Record<string, string> = {}
-  const putFile = async (data: Uint8Array, mediaType: string) => (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, ...common, data, mediaType })).id
-
-  // The limit stops the browser through the same abort as an operator cancel.
-  const limit = account.attemptTimeoutMinutes ?? 60
-  const stop = new AbortController()
-  const forward = () => stop.abort()
-  if (request.signal.aborted) forward()
-  request.signal.addEventListener('abort', forward, { once: true })
-  let timedOut = false
-  const timer = setTimeout(() => { timedOut = true; forward() }, limit * 60_000)
-  const check = () => stop.signal.throwIfAborted()
   let context: BrowserContext | undefined
   // One close, shared by the abort and the end of the attempt: a second `close()` returns before the browser has exited.
   let closing: Promise<void> | undefined
@@ -663,12 +651,8 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
   let page: Page | undefined
   let display: Display | undefined
   let tabs: Awaited<ReturnType<typeof singleTab>> | undefined
-  const ws = await prepare(artifacts, request, join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')))
-  // The evidence record exists before Chrome starts and follows each stage as it happens.
-  const evidence = createEvidence(join(ws.root, 'evidence.json'), {
-    attempt: request.attemptId, account: account.ref, chrome: executor.version,
-    uiMap: { revision: driver.map.uiRevision, hash: driver.map.hash }, launchTimeoutSeconds: launchTimeoutMs(web) / 1000,
-  })
+  let evidence!: Evidence
+  let put!: TurnContext['put']
   let driverFailed: string | undefined
   // What the attempt says about the Account (WW6d). A cancel or the time limit says nothing; a failure of the Host's does not count.
   const recordHealth = (result: Omit<WorkerResult, 'executor' | 'log'>) => {
@@ -681,19 +665,33 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       hostBusy: busyAtStart || hostBusy(healthSettings),
     })
   }
-  const finish = async (result: Omit<WorkerResult, 'executor' | 'log'>): Promise<WorkerResult> => {
-    // The browser is ended, and that recorded, before the evidence is stored.
-    if (tabs) evidence.set({ pages: { ...evidence.data.pages!, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
-    evidence.begin('close')
-    await close()
-    evidence.end('close', await survivor())
-    note(`evidence ${evidence.json()}`)
-    recordHealth(result)
-    const logId = await putFile(Buffer.from(`${log.join('\n')}\n`), 'text/plain')
-    // Kept whatever the status: a succeeded attempt reports it beside its outputs (the controller records `partial` for it too).
-    result.partial = { ...result.partial, evidence: await putFile(Buffer.from(evidence.json()), 'application/json') }
-    return { ...result, log: logId, executor }
-  }
+  return runAttempt({
+    artifacts, ref: account.ref, executor, request, dir: join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')),
+    timeoutMinutes: account.attemptTimeoutMinutes, cancelReason: 'cancelled; the browser was closed', outputNoun: 'block', files: false,
+    inputs: Object.values(request.inputs), log: () => `${log.join('\n')}\n`, logMediaType: 'text/plain',
+    // The browser is ended, and that recorded, before the evidence is stored; kept whatever the status (the controller records `partial` for it too).
+    settle: async (result) => {
+      if (tabs) evidence.set({ pages: { ...evidence.data.pages!, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
+      evidence.begin('close')
+      await close()
+      evidence.end('close', await survivor())
+      note(`evidence ${evidence.json()}`)
+      recordHealth(result)
+      return { evidence: await put(Buffer.from(evidence.json()), 'application/json') }
+    },
+    teardown: async () => {
+      await close()
+      await display?.stop()
+    },
+    turn: async (ctx) => {
+      const { ws } = ctx
+      put = ctx.put
+      // The evidence record exists before Chrome starts and follows each stage as it happens.
+      evidence = createEvidence(join(ws.root, 'evidence.json'), {
+        attempt: request.attemptId, account: account.ref, chrome: executor.version,
+        uiMap: { revision: driver.map.uiRevision, hash: driver.map.hash }, launchTimeoutSeconds: launchTimeoutMs(web) / 1000,
+      })
+      const check = () => ctx.signal.throwIfAborted()
   /** The limit each stage runs under, in seconds; none known for the stages that have no clock of their own. */
   const limitOf = (name: string): number | undefined => ({ launch: launchTimeoutMs(web) / 1000, open: web.timeouts.load, auth: web.timeouts.load, mode: web.timeouts.mode, wait: web.timeouts.answer, read: web.timeouts.answer })[name]
   /** A stage that ran out of time is a failure of that stage, named with its own limit; the other failures are told as the Procedures word them. */
@@ -743,100 +741,94 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       throw error
     }
   }
-  try {
-    const prompt = webPrompt(ws, request, driver.map.settings.attachMinChars)
-    display = await acquireDisplay()
-    check()
-    context = await recorded('launch', () => stage('launch', () => launchBounded(launcher, web, display!)))
-    chromePid = profileLockPid(web.profileDir)
-    stop.signal.addEventListener('abort', () => { void close() }, { once: true })
-    check()
-    // One working tab, whatever Chrome brought up: the worker's own first, then the rest closed, before any navigation.
-    tabs = await singleTab(context)
-    page = tabs.page
-    page.setDefaultNavigationTimeout(web.timeouts.load * 1000)
-    const size = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })).catch(() => undefined)
-    evidence.set({ ...(size ? { viewport: size } : {}), pages: { initial: tabs.initial, beforeNavigation: context.pages().length, closedInherited: tabs.closed, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
-    tabs.check()
-    // The Procedures open the chat (a temporary one when asked, in Chat mode), check the sign-in, send the prompt and wait for the
-    // finished answer, on the clocks of `procedureMap`.
-    const answer = await stage('answer', () => genericTurn({ page: page!, map: driver.map, web, prompt, tier: requestedTier(request.capabilities), signal: stop.signal, note, evidence, staged }))
-    tabs.check()
-    evidence.set({ waitEnded: 'done' })
-    const markdown = answer.text
-    const { links } = answer
-    note(`answer of ${markdown.length} characters, ${links.length} link(s)`)
-    const url = page.url()
-    const conversation = await addConversation(artifacts, {
-      prompt: { name: 'prompt.md', data: Buffer.from(prompt.text), mediaType: 'text/markdown' },
-      response: { name: 'response.md', data: Buffer.from(markdown), mediaType: 'text/markdown' },
-      attachments: links.length ? [{ name: 'links.json', data: Buffer.from(JSON.stringify(links, null, 2)), mediaType: 'application/json' }] : [],
-    }, { provider: 'ChatGPT', url, context: [`ui-map:${driver.map.uiRevision}`, ...(web.temporaryChat ? ['temporary-chat'] : [])] }, { producer })
-    // Each output: the rendered block that carries its name (its code, verbatim), else the Markdown text's fenced block.
-    // The turn has no Markdown of the site's own, only the rendered text: a fence there is read last, as `rendered`.
-    const filled: Record<string, 'block' | 'rendered'> = {}
-    let contents: Record<string, string> = {}
-    let missing: string[] = []
-    for (const slot of request.outputs) {
-      const named = answer.blocks.filter((block) => block.label === slot)
-      if (named.length > 1) return await finish({ status: 'failed', outputs: {}, partial: { conversation: conversation.id }, reason: `${account.ref}: ${named.length} rendered blocks are labelled ${slot} (ambiguous)` })
-      if (named.length) [contents[slot], filled[slot]] = [named[0]!.code, 'block']
-      else missing.push(slot)
-    }
-    // Nothing found in a block or the Markdown (the site showed the fences as text, and its Copy escaped them): the rendered text, exactly as shown.
-    let source = markdown
-    if (!Object.keys(contents).length && !escapedMarkdown(answer.rendered)) {
-      const shown = parseBlocks(answer.rendered, request.outputs)
-      if (Object.keys(shown.blocks).length) {
-        source = answer.rendered
-        contents = shown.blocks
-        missing = shown.missing
-        for (const slot of Object.keys(shown.blocks)) filled[slot] = 'rendered'
+      try {
+      const prompt = webPrompt(ws, request, driver.map.settings.attachMinChars)
+      display = await acquireDisplay()
+      check()
+      context = await recorded('launch', () => stage('launch', () => launchBounded(launcher, web, display!)))
+      chromePid = profileLockPid(web.profileDir)
+      ctx.signal.addEventListener('abort', () => { void close() }, { once: true })
+      check()
+      // One working tab, whatever Chrome brought up: the worker's own first, then the rest closed, before any navigation.
+      tabs = await singleTab(context)
+      page = tabs.page
+      page.setDefaultNavigationTimeout(web.timeouts.load * 1000)
+      const size = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })).catch(() => undefined)
+      evidence.set({ ...(size ? { viewport: size } : {}), pages: { initial: tabs.initial, beforeNavigation: context.pages().length, closedInherited: tabs.closed, closedLate: tabs.late(), closeFailed: tabs.lateFailed() } })
+      tabs.check()
+      // The Procedures open the chat (a temporary one when asked, in Chat mode), check the sign-in, send the prompt and wait for the
+      // finished answer, on the clocks of `procedureMap`.
+      const answer = await stage('answer', () => genericTurn({ page: page!, map: driver.map, web, prompt, tier: requestedTier(request.capabilities), signal: ctx.signal, note, evidence, staged }))
+      tabs.check()
+      evidence.set({ waitEnded: 'done' })
+      const markdown = answer.text
+      const { links } = answer
+      note(`answer of ${markdown.length} characters, ${links.length} link(s)`)
+      const url = page.url()
+      const conversation = await addConversation(artifacts, {
+        prompt: { name: 'prompt.md', data: Buffer.from(prompt.text), mediaType: 'text/markdown' },
+        response: { name: 'response.md', data: Buffer.from(markdown), mediaType: 'text/markdown' },
+        attachments: links.length ? [{ name: 'links.json', data: Buffer.from(JSON.stringify(links, null, 2)), mediaType: 'application/json' }] : [],
+      }, { provider: 'ChatGPT', url, context: [`ui-map:${driver.map.uiRevision}`, ...(web.temporaryChat ? ['temporary-chat'] : [])] }, { producer })
+      // Each output: the rendered block that carries its name (its code, verbatim), else the Markdown text's fenced block.
+      // The turn has no Markdown of the site's own, only the rendered text: a fence there is read last, as `rendered`.
+      const filled: Record<string, 'block' | 'rendered'> = {}
+      let contents: Record<string, string> = {}
+      let missing: string[] = []
+      for (const slot of request.outputs) {
+        const named = answer.blocks.filter((block) => block.label === slot)
+        if (named.length > 1) return { failure: `${account.ref}: ${named.length} rendered blocks are labelled ${slot} (ambiguous)`, partial: { conversation: conversation.id } }
+        if (named.length) [contents[slot], filled[slot]] = [named[0]!.code, 'block']
+        else missing.push(slot)
       }
-    }
-    // Filled from rendered blocks, the text is the page's own (no fences): what is outside is what is not a block's label or code.
-    const outside = Object.values(filled).includes('block') ? unblocked(source, answer.blocks.filter((block) => filled[block.label] === 'block')) : outsideChars(source, request.outputs)
-    evidence.set({ filled, outsideChars: outside })
-    // The site's leaked control tokens are removed at each output's edges, and recorded.
-    const stripped: Record<string, string[]> = {}
-    for (const [slot, content] of Object.entries(contents)) {
-      const clean = stripLeaked(content, driver.map.answer.leakedTokens)
-      if (!clean.removed.length) continue
-      contents[slot] = clean.content
-      stripped[slot] = clean.removed
-    }
-    if (Object.keys(stripped).length) evidence.set({ stripped })
-    // A JSON output never starts with its block's language label (web-1).
-    for (const [slot, content] of Object.entries(contents)) contents[slot] = stripLanguageLabel(content)
-    const outputs: Record<string, string> = {}
-    for (const [slot, content] of Object.entries(contents)) outputs[slot] = await putFile(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
-    if (missing.length) {
-      return await finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref} wrote no output block for ${missing.join(', ')}` })
-    }
-    // An output closed early (a fence of its own inside it) leaves the rest of the answer outside the blocks: never accepted.
-    if (outside > web.maxOutsideChars) {
-      return await finish({ status: 'failed', outputs: {}, partial: { ...outputs, conversation: conversation.id }, reason: `${account.ref}: the answer continues outside its output blocks (${outside} characters): an output may be cut short` })
-    }
-    return await finish({ status: 'succeeded', outputs: { ...outputs, conversation: conversation.id }, partial: { conversation: conversation.id } })
-  } catch (error) {
-    if (request.signal.aborted) return await finish({ status: 'cancelled', outputs: {}, reason: 'cancelled; the browser was closed' })
-    if (timedOut) return await finish({ status: 'failed', outputs: {}, reason: `attempt exceeded its time limit of ${limit} minutes` })
-    note(`failed: ${(error as Error).message}`)
-    const shot = page && await screenshotOf(page)
-    if (shot) partial.screenshot = await putFile(shot, 'image/png')
-    if (page) {
-      const found = await within(5000, driver.diagnostics(page)).catch((e: Error) => { evidence.set({ diagnosticsError: e.message.split('\n')[0] ?? 'failed' }); return undefined })
-      if (found) partial.snapshot = await putFile(Buffer.from(JSON.stringify(found satisfies PageDiagnostics)), 'application/json')
-    }
-    const reason = error instanceof Failure ? error.message : `${account.ref}: ${(error as Error).message.split('\n')[0]}`
-    return await finish({ status: 'failed', outputs: {}, ...(Object.keys(partial).length ? { partial } : {}), reason })
-  } finally {
-    clearTimeout(timer)
-    request.signal.removeEventListener('abort', forward)
-    await close()
-    await display?.stop()
-    await cleanup(ws)
-  }
+      // Nothing found in a block or the Markdown (the site showed the fences as text, and its Copy escaped them): the rendered text, exactly as shown.
+      let source = markdown
+      if (!Object.keys(contents).length && !escapedMarkdown(answer.rendered)) {
+        const shown = parseBlocks(answer.rendered, request.outputs)
+        if (Object.keys(shown.blocks).length) {
+          source = answer.rendered
+          contents = shown.blocks
+          missing = shown.missing
+          for (const slot of Object.keys(shown.blocks)) filled[slot] = 'rendered'
+        }
+      }
+      // Filled from rendered blocks, the text is the page's own (no fences): what is outside is what is not a block's label or code.
+      const outside = Object.values(filled).includes('block') ? unblocked(source, answer.blocks.filter((block) => filled[block.label] === 'block')) : outsideChars(source, request.outputs)
+      evidence.set({ filled, outsideChars: outside })
+      // The site's leaked control tokens are removed at each output's edges, and recorded.
+      const stripped: Record<string, string[]> = {}
+      for (const [slot, content] of Object.entries(contents)) {
+        const clean = stripLeaked(content, driver.map.answer.leakedTokens)
+        if (!clean.removed.length) continue
+        contents[slot] = clean.content
+        stripped[slot] = clean.removed
+      }
+      if (Object.keys(stripped).length) evidence.set({ stripped })
+      // A JSON output never starts with its block's language label (web-1).
+      for (const [slot, content] of Object.entries(contents)) contents[slot] = stripLanguageLabel(content)
+      const outputs: Record<string, string> = {}
+      for (const [slot, content] of Object.entries(contents)) outputs[slot] = await put(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
+      const captured = { outputs: { ...outputs, conversation: conversation.id }, missing }
+      // An output closed early (a fence of its own inside it) leaves the rest of the answer outside the blocks: never accepted.
+      if (!missing.length && outside > web.maxOutsideChars) {
+        return { captured, partial: { conversation: conversation.id }, failure: `${account.ref}: the answer continues outside its output blocks (${outside} characters): an output may be cut short` }
+      }
+      return { captured, partial: { conversation: conversation.id } }
+      } catch (error) {
+        // A cancel or the time limit is the lifecycle's to report; nothing of the page is kept for them.
+        if (request.signal.aborted || ctx.timedOut()) return {}
+        note(`failed: ${(error as Error).message}`)
+        const shot = page && await screenshotOf(page)
+        if (shot) partial.screenshot = await put(shot, 'image/png')
+        if (page) {
+          const found = await within(5000, driver.diagnostics(page)).catch((e: Error) => { evidence.set({ diagnosticsError: e.message.split('\n')[0] ?? 'failed' }); return undefined })
+          if (found) partial.snapshot = await put(Buffer.from(JSON.stringify(found satisfies PageDiagnostics)), 'application/json')
+        }
+        const reason = error instanceof Failure ? error.message : `${account.ref}: ${(error as Error).message.split('\n')[0]}`
+        return { failure: reason, partial }
+      }
+    },
+  })
 }
 
 /** The failure evidence's screenshot: Chrome sometimes answers "Unable to capture screenshot" right after a failure (a page not yet painted), so it is tried again after a pause. */
