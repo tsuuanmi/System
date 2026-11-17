@@ -154,6 +154,31 @@ test('a closed Host writes nothing, even when its attempt reports late', async (
   await assert.rejects(host.run(id), /Host is closed/)
 })
 
+test('a late report of an attempt already marked lost, on a running Host, writes nothing that counts', async () => {
+  const f = fixture()
+  const home = newHome()
+  const first = await f.startHost(home)
+  const { id } = await first.submit(f.admission('brainstorm.yaml'))
+  f.hold('idea-b')
+  const running = first.run(id)
+  await f.arrived('idea-b')
+  await turns()
+  await first.close()
+  const second = await f.startHost(home)
+  const before = second.view.get(id)!
+  assert.deepEqual(types(before), ['admitted', 'dispatched:idea-a', 'dispatched:idea-b', 'observed:idea-a', 'attempt-lost:idea-b'])
+  f.release('idea-b')
+  await assert.rejects(running, /Host is closed/)
+  await turns()
+  const after = second.view.get(id)!
+  assert.deepEqual(after.events, before.events, 'the late report added no event')
+  assert.equal(after.state.steps['idea-b']!.state, 'pending')
+  assert.deepEqual(after.state.steps['idea-b']!.outputs, {})
+  assert.deepEqual(f.attempts, ['idea-a', 'idea-b'], 'nothing was dispatched again')
+  assertConsistent(f, id)
+  await second.close()
+})
+
 test('submitting twice with one commandId gives one Work; its ID derives from the commandId', async () => {
   const f = fixture()
   const host = await f.startHost(newHome())

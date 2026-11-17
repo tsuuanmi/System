@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseClaude, parseCodex, progressReader } from '../src/runtimes.ts'
+import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader } from '../src/runtimes.ts'
 
 const line = (value: unknown) => JSON.stringify(value)
 
@@ -104,4 +104,26 @@ test('Claude Code progress is read as the stream grows: turns are messages, toke
 test('Codex progress counts completed turns and their tokens', () => {
   const read = progressReader('codex')
   assert.deepEqual(read(`${line({ type: 'item.completed', item: { type: 'command_execution' } })}\n${line({ type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 } })}\n`), { turns: 1, lastTool: 'command_execution', tokens: 8, inputTokens: 10 })
+})
+
+const ws = { inputs: '/ws/in', outputs: '/ws/out', work: '/ws/work' } as never
+
+test('the Claude Code Runtime asks for acceptEdits, allows Bash and the web tools, and denies git push and gh', () => {
+  const { argv } = claudeInvocation('claude', ws, 'do it', 'token')
+  const after = (flag: string) => {
+    const rest = argv.slice(argv.indexOf(flag) + 1)
+    const end = rest.findIndex((a) => a.startsWith('--'))
+    return end < 0 ? rest : rest.slice(0, end)
+  }
+  assert.deepEqual(after('--permission-mode'), ['acceptEdits'])
+  assert.deepEqual(after('--allowedTools'), ['Bash', 'WebSearch', 'WebFetch'])
+  assert.deepEqual(after('--disallowedTools'), ['Bash(git push:*)', 'Bash(gh:*)'])
+  assert.equal(argv.includes('--dangerously-skip-permissions'), false)
+  assert.deepEqual(claudeInvocation('claude', ws, 'do it', 'token', undefined, true).argv.slice(-1), ['Monitor'])
+})
+
+test('the Codex Runtime runs in the workspace-write sandbox, never a wider one', () => {
+  const { argv } = codexInvocation('codex', ws, 'do it', '/codex-home')
+  assert.equal(argv[argv.indexOf('-s') + 1], 'workspace-write')
+  assert.equal(argv.some((a) => /danger|bypass|read-only/.test(a)), false)
 })
