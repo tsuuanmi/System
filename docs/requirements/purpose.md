@@ -38,8 +38,9 @@ does so.
 **Verified Items merged per operator touch**, read from the Host's records by
 `system work report`, not by hand. Verified Success Rate, Recurring Failure
 Rate, Escaped Defect Rate, Cost per Verified Work and Time to Verified
-Resolution are diagnostics. `work report` does not compute the headline measure
-yet; an Item will add it.
+Resolution are diagnostics. `work report --since` computes the headline measure
+(`headline`: distinct Items merged, operator touches as `summary.ts` counts them,
+human callers only, and their ratio, `no touches` when there are none).
 
 ## Vision
 

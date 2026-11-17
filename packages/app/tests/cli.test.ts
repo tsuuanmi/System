@@ -32,6 +32,14 @@ test('intent new prints the Intent ID alone and needs exactly one of --body and 
   await assert.rejects(system(['intent', 'new', '--title', 'T'], work), /exactly one of --body and --body-file/)
 })
 
+test('defect add prints the Artifact ID alone', async () => {
+  const seen: unknown[] = []
+  const work = { newDefect: async (...args: unknown[]) => { seen.push(args); return { defect: 'sha256:defect' } } }
+  const result = await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke'], work)
+  assert.equal(result.out, 'sha256:defect\n')
+  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined]])
+})
+
 for (const verb of ['approve', 'deny'] as const) {
   test(`${verb} several Works asks for one typed confirmation and decides each`, async () => {
     const decided: string[] = []
