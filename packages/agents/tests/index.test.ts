@@ -327,3 +327,44 @@ test('a web Account is handed over with the web abilities, and its status lists 
   assert.deepEqual((accounts[0] as any).abilities, ['web.search', 'web.browse'])
   assert.deepEqual(accounts[0]!.capabilities, ['research', 'tier.standard'])
 })
+
+// flaky-2 (third occurrence): Cordis applies the rows that were waiting for the same services in no fixed order, so the agents row can apply
+// before the web-worker row has provided `webWorker`. It then reported its web accounts as "the web-worker row is disabled" and never announced
+// them, and the web-worker row waited 60 s for an announcement that was never coming ("still registering after 60 s").
+/** A bare context whose registry lists the web-worker row, which provides its service only when the test says (`provide`). */
+function mountBeforeWebWorker(waitSeconds?: number) {
+  const provided: Record<string, any> = {}
+  let appeared: ((ctx: { get(key: string): unknown }) => void) | undefined
+  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: {}, artifacts: {}, subprocess: {}, credentials: {} }
+  const ctx = {
+    get: (key: string) => services[key],
+    registry: { values: () => [{ name: 'system-web-worker' }] },
+    inject: (_names: string[], callback: (ctx: { get(key: string): unknown }) => void) => { appeared = callback },
+    effect: () => {},
+    provide: (key: string, value: unknown) => { provided[key] = value },
+  }
+  const started = apply(ctx as never, { webWorkerWaitSeconds: waitSeconds, accounts: [{ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], url: 'http://localhost/' }] } as never)
+  return {
+    started,
+    accounts: () => provided.agents.accounts() as Promise<{ available: boolean; reason: string }[]>,
+    provide: (service: unknown) => { services.webWorker = service; appeared!(ctx) },
+  }
+}
+
+test('a web-worker row that provides its service after the agents row applied is still handed the accounts and told they are announced', async () => {
+  const calls: string[] = []
+  const row = mountBeforeWebWorker()
+  assert.deepEqual((await row.accounts()).map((a) => a.reason), [REGISTERING], 'the account is listed as registering while the row is awaited')
+  row.provide({ expect: (ref: string) => { calls.push(`expect ${ref}`) }, announced: () => { calls.push('announced') }, register: async (account: WebRegistration) => { calls.push(`register ${account.ref}`); return { command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined } } })
+  await row.started
+  assert.deepEqual(calls, ['expect web/chatgpt/default', 'announced', 'register web/chatgpt/default'])
+  assert.deepEqual((await row.accounts()).map((a) => [a.available, a.reason]), [[true, 'registered']])
+})
+
+test('a web-worker row that never provides its service is waited for, bounded by webWorkerWaitSeconds, and the account says so', async () => {
+  const row = mountBeforeWebWorker(0.05)
+  await row.started
+  const [account] = await row.accounts()
+  assert.equal(account!.available, false)
+  assert.match(account!.reason, /web-worker row did not start within 0\.05 s/)
+})
