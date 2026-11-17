@@ -81,3 +81,25 @@ test('the quota class is limits.ts\'s one list (cls-4): the lim-1 reason classes
   assert.equal(outsideCause(reason, 'verdict'), undefined)
   assert.equal(attemptCause('429 too many requests'), 'quota')
 })
+
+// cause-1: a port's `cause` decides first; the reason's words are only the fallback for events without one.
+test('a recorded cause classifies whatever the reason says; an event without one keeps the text rule', () => {
+  assert.equal(outsideCause('the site refused the paste', undefined, 'attach'), 'attach')
+  assert.equal(attemptCause('the site refused the paste', 'attach'), 'attach')
+  assert.equal(outsideCause('refused to merge into dev: README.md', undefined, 'conflict'), 'conflict')
+  assert.equal(outsideCause('smoke: red on the base as well', 'verdict', 'load'), 'load')
+  assert.equal(outsideCause('smoke: red on the base as well', 'verdict'), undefined)
+  assert.equal(outsideCause('smoke: red on the base as well', 'verdict', 'attach'), undefined, 'a verdict is Outside only by the Verifier\'s marker')
+  assert.equal(outsideCause(ATTACH), 'attach', 'old text, no cause')
+  assert.equal(outsideCause('merge conflict with dev at abc: README.md'), 'conflict')
+  assert.equal(outsideCause('x: the base fails it too (base abc)', 'verdict'), 'load')
+})
+
+const attached = (reason: string, cause?: 'attach') => ({ type: 'observed', stepId: 'task', attemptId: 'attempt:x', status: 'failed', outputs: {}, reason, usage: { state: 'unknown' }, ...(cause ? { cause } : {}) }) as never
+
+test('reworded attach failures with a cause count toward the hold; old ones count by text', () => {
+  const reworded = 'the site did not take the pasted input'
+  assert.deepEqual(outsideRun(seq([attached(reworded, 'attach'), attached(reworded, 'attach'), attached(reworded, 'attach')]), 'task'), { count: 3, cause: 'attach', reason: reworded })
+  assert.equal(outsideRun(seq([attached(reworded), attached(reworded)]), 'task').count, 0, 'no cause and no old text: not Outside')
+  assert.equal(outsideRun(seq([attached(ATTACH), attached(STILL), attached(ATTACH)]), 'task').count, 3, 'old records by text')
+})

@@ -32,6 +32,7 @@ type ScriptedOutcome = EffectOutcome
 
 interface Options {
   verdict?: VerifyResult['verdict']
+  verdictCause?: VerifyResult['cause']
   approval?: (intent: EffectIntent) => string | undefined
   apply?: (intent: EffectIntent, remote: Remote) => Promise<ScriptedOutcome>
   reconcile?: (intent: EffectIntent, remote: Remote) => Promise<Reconciled>
@@ -68,7 +69,7 @@ function controller(w: ReturnType<typeof world>, options: Options = {}) {
   capabilities.registerVerifier({
     ref: 'checks', version: '1', capabilities: ['code.required-checks'], accepts: ['git-tree'],
     async criteria() { return w.store('criteria', 'checks') },
-    async verify(r) { return { verdict: options.verdict ?? 'pass', reason: 'scripted', subject: r.subject, criteria: r.criteria, evidence: [w.store(`evidence/${r.attemptId}`, 'check-run')] } },
+    async verify(r) { return { ...(options.verdictCause ? { cause: options.verdictCause } : {}), verdict: options.verdict ?? 'pass', reason: 'scripted', subject: r.subject, criteria: r.criteria, evidence: [w.store(`evidence/${r.attemptId}`, 'check-run')] } },
   })
   capabilities.registerEffect({
     ref: 'publisher', version: '1', capabilities: ['git.publish'], accepts: ['git-tree'],
@@ -124,6 +125,8 @@ test('nothing is published unless the required verdict passed on that exact subj
   assert.equal(notPublished.state.status, 'held')
   assert.equal(notPublished.state.awaiting, 'publish')
   assert.match(notPublished.state.reason!, /inconclusive verification needs an operator decision: checks\.checks/)
+  assert.equal((notPublished.events.findLast((e) => e.type === 'terminal') as { hold?: string }).hold, 'inconclusive')
+  assert.equal(notPublished.events.find((e) => e.type === 'verified' && e.cause === 'load') !== undefined, false)
   assert.ok(!types(notPublished).includes('effect-intended'))
   assert.equal(unsure.remote.applies + failing.remote.applies, 0)
 })
@@ -476,9 +479,10 @@ for (const state of ['unknown', 'absent'] as const) {
 test('publish retry is bounded: a second conflict fails the Work', async () => {
   const w = world()
   const base = w.store('tip-1', 'git-tree')
-  const c = controller(w, { apply: async () => ({ state: 'failed', rejected: 'conflict', reason: 'merge conflict with dev at abc123def456: README.md', detail: { base } }) })
+  const c = controller(w, { apply: async () => ({ state: 'failed', rejected: 'conflict', cause: 'conflict', reason: 'the merge was refused', detail: { base } }) })
   const done = await c.run((await admit(c, w)).id)
   assert.equal(done.state.status, 'failed')
+  assert.deepEqual(done.events.filter((e) => e.type === 'effect-observed').map((e) => e.cause), ['conflict', 'conflict'], 'the provider\'s cause is recorded')
   assert.equal(done.events.filter((e) => e.type === 'reopened').length, 1)
   assert.equal(w.calls.length, 2)
   assert.equal(done.events.filter((e) => e.type === 'effect-intended').length, 2)
@@ -505,4 +509,13 @@ test('restart after an observed publish conflict reuses the recorded base determ
   assert.equal(reopened?.base, base)
   assert.equal(w.calls[1]!.inputs.base, base)
   assert.equal(recovered.replay(done.id).matches, true)
+})
+
+test('a Verifier\'s cause and a Worker\'s cause are recorded with their events (cause-1)', async () => {
+  const w = world()
+  const c = controller(w, { verdict: 'inconclusive', verdictCause: 'load' })
+  const done = await c.run((await admit(c, w)).id)
+  const verified = done.events.find((e) => e.type === 'verified')
+  assert.ok(verified?.type === 'verified' && verified.cause === 'load')
+  assert.equal(c.replay(done.id).matches, true)
 })

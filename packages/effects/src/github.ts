@@ -261,7 +261,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit: tip, tree, parent: tip }, subject: { type: 'git-commit', ref: tip },
         classification: 'local-private', producer: { type: 'system', ref: 'git.publish' },
       })).id
-      return { state: 'failed', rejected: kind, reason, detail: { repository: t.slug, branch: t.branch, commit: change, baseCommit: tip, base } }
+      return { state: 'failed', rejected: kind, ...(kind === 'conflict' ? { cause: 'conflict' as const } : {}), reason, detail: { repository: t.slug, branch: t.branch, commit: change, baseCommit: tip, base } }
     }
     /** The commit of the approved merge Artifact, if it was made on `tip`. */
     const approvedOn = (subject: string, tip: string): string | undefined => {

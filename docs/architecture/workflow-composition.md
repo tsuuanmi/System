@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: active
-reviewed: 2026-11-05
+reviewed: 2026-11-18
 decided-by: [ADR-0002, ADR-0006]
 covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*.yaml]
 ---
@@ -205,6 +205,14 @@ attempt by the Host on start, once its process is confirmed gone; otherwise on
 `system work run`, see [Start, stop and recovery](host.md#start-stop-and-recovery));
 completed steps are never re-run. `system work replay` folds the events again and
 compares the result with the stored state.
+
+**Why a failure is Outside (cause-1).** The port that writes a failure's reason
+also says its cause, as an optional `cause` (`attach`, `conflict` or `load`) on
+the `observed`, `verified` and `effect-observed` events; the controller's own
+failures carry `noChange` on `observed` and `hold` (`approval`, `inconclusive`)
+on `terminal`. `outside.ts` is the only reader: it takes `cause` first and
+matches the reason's words only for events without one, so old records
+classify as before and a rewording elsewhere changes no hold.
 
 DAG support should emerge from `dependsOn` only. Do not require a
 DAG-specific user abstraction for a one-step task.

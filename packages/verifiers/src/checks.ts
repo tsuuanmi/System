@@ -203,7 +203,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       return (await artifacts.put({ ...CHECKS_KIND, content, inputs: [task.base], classification: 'operator-shared', producer })).id
     },
     async verify(request): Promise<VerifyResult> {
-      const verdict = (v: VerifyResult['verdict'], reason: string, evidence: string[]): VerifyResult => ({ verdict: v, reason: ignoredRed && (v === 'pass' || v === 'fail') ? `${reason}; note: red: in ${CHECKS_FILE} is ignored` : reason, subject: request.subject, criteria: request.criteria, evidence })
+      const verdict = (v: VerifyResult['verdict'], reason: string, evidence: string[], cause?: VerifyResult['cause']): VerifyResult => ({ ...(cause ? { cause } : {}), verdict: v, reason: ignoredRed && (v === 'pass' || v === 'fail') ? `${reason}; note: red: in ${CHECKS_FILE} is ignored` : reason, subject: request.subject, criteria: request.criteria, evidence })
       const subject = artifacts.get(request.subject)
       const treeId = subject.state === 'stored' && subject.envelope.kind === TASK_KIND.kind ? (subject.envelope.content as Task).base ?? '' : request.subject
       const tree = contentOf<GitTreeContent>(artifacts, treeId, 'git-tree')
@@ -365,7 +365,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             } else {
               const baseAgain = await failingOnBase(still)
               if (!baseAgain || still.every((name) => baseAgain.has(name))) {
-                return verdict('inconclusive', `${still.map((name) => `${name}: the base fails it too (base ${base})`).join('; ')}, also on a re-run once; failed on the change: ${firstFailed}; and again: ${failed.join('; ')}`, evidence)
+                return verdict('inconclusive', `${still.map((name) => `${name}: the base fails it too (base ${base})`).join('; ')}, also on a re-run once; failed on the change: ${firstFailed}; and again: ${failed.join('; ')}`, evidence, 'load')
               }
               return verdict('fail', `failed: ${failed.join('; ')} (the base passed on re-run once; the first run failed on both: ${firstFailed})`, evidence)
             }
