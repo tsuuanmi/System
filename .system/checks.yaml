@@ -18,7 +18,9 @@
 # Charter comes after it, so it still does. `install-guide` keeps the runbook.
 checks:
   - name: docs
-    run: python3 tools/docs.py check && python3 tools/docs.py sync --check && bash tools/smoke_bootstrap.sh
+    # Item dc-1: the covered-path impact check against the base the checks were pinned from (SYSTEM_CHECK_BASE, set by the verifier);
+    # `docs-unchanged: <path> — <reason>` lines in the committed .system/docs-waivers waive a doc. Unset (a local run), it is skipped.
+    run: python3 tools/docs.py check && python3 tools/docs.py sync --check && bash tools/smoke_bootstrap.sh && { [ -z "$SYSTEM_CHECK_BASE" ] || python3 tools/docs.py impact "$SYSTEM_CHECK_BASE" --waivers .system/docs-waivers; }
     timeoutSeconds: 120
   - name: statusmd
     # Item cm-4: STATUS.md has no problem (bad line, duplicate ID, unknown `after:` ID, cycle). No install needed: it
@@ -29,7 +31,7 @@ checks:
   - name: install
     run: corepack pnpm install --frozen-lockfile
     timeoutSeconds: 300
-    paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, eslint.config.js, '!**/*.md', docs/requirements/purpose.md]
+    paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, eslint.config.js, '!**/*.md', docs/requirements/purpose.md, '!.system/docs-waivers']
   - name: build
     run: corepack pnpm build
     timeoutSeconds: 300

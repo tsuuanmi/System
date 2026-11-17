@@ -128,7 +128,10 @@ there, not while the `.building` file `corepack pnpm build` keeps exists.
 A release is a pull request from `dev` to `main`, merged by the operator, then `system update`.
 The docs CI's `impact` check fails when the release changes a path a doc `covers:` without changing
 that doc ([the tool](../../tools/docs.py), [governance](../governance/documentation.md)). When the doc
-is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it.
+is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it. System's
+`docs` check runs the same impact check on every Work, so most are found earlier; its waivers are the
+lines of `.system/docs-waivers`, committed with the change. Clear that file's waiver lines in the release
+pull request (keep its comment line).
 Editing the body does not rerun CI: close and reopen the pull request.
 
 ## Rollback

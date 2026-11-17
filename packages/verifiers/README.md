@@ -42,7 +42,7 @@ checks:
 
 - **Verify:** check out the exact subject commit into a fresh worktree, run
   each check with a minimal environment (`PATH`, `LANG`, a throwaway `HOME`,
-  `CI=1`) through the DSH subprocess service, and store one `check-run@1`
+  `CI=1`, and `SYSTEM_CHECK_BASE`, the commit the checks were pinned from) through the DSH subprocess service, and store one `check-run@1`
   evidence Artifact per check (exit, signal, timeout, duration, output tails).
   The checks run in order in that one worktree with one `HOME`, so a later
   check reuses what an earlier one built (`install` and `build` once, not per

@@ -60,8 +60,10 @@ From the root, using Python 3.8+ and no third-party packages:
 | `python3 tools/bootstrap_docs.py --out <target> --name <name>` | Create a different project's governance skeleton without overwriting files |
 
 CI runs check, sync --check and impact (PR only), plus a bootstrap smoke test.
-A waiver is a PR-body line like
-`docs-unchanged: docs/architecture/control-plane.md — formatting-only change`.
+System's `docs` check also runs impact against the change's base (`SYSTEM_CHECK_BASE`), so a stale
+doc fails at the Work that made it stale. A waiver is a line like
+`docs-unchanged: docs/architecture/control-plane.md — formatting-only change`, in the PR body or in the
+committed `.system/docs-waivers` (read by `impact --waivers`; cleared at release).
 
 **Conformance disclosure:** this is a **Level 1** bootstrap checker with
 additional limited graph support; not every Level 2/3 check, complete impact
