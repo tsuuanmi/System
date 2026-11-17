@@ -120,6 +120,7 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   - The unattended-scale spike (isolation in section 0) comes after the Items still open in STATUS.md (operator, 2026-11-17).
   - The Classifier stays report-only until it passes cls-2's gate on labelled data; contracts are JSON Schema, and Jev is not adopted now (section 4).
   - Left to the operator (BS): the role `research.source` in the profile.
+  - Decision (2026-11-18): the Classifier stays off and report-only after two real evaluations failed the gate (hybrid 63.4% both times; report Artifacts sha256:4613d1ee… and sha256:74e1452b…). Default unless the operator decides otherwise: delete packages/classifier if the gate still fails when the labelled set has grown past 80 failures (Charter 9).
 - Order (priority, not dependency): the Items still open in STATUS.md, then the unattended-scale spike.
 
 

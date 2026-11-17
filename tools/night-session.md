@@ -115,8 +115,7 @@ stores it as one Artifact and tells the operator, so you store and send
 nothing yourself. Plain sentences and a list, with IDs, nothing invented, and
 no text after the report. For each Work you submitted
 read its Account and cost with `mcp__system__work_report` (`workId`), and list
-tonight's Works on the Host with `mcp__system__work_list` and `since` (the time
-you started, ISO); each row names its Item when its Task names one.
+tonight's Works on the Host with `mcp__system__work_list` and `since` (the session start time given at the end of this prompt, ISO; do not run `date`); each row names its Item when its Task names one.
 
 The report has these parts, in this order:
 
