@@ -114,7 +114,8 @@ stores it as one Artifact and tells the operator, so you store and send
 nothing yourself. Plain sentences and a list, with IDs, nothing invented, and
 no text after the report. For each Work you submitted
 read its Account and cost with `mcp__system__work_report` (`workId`), and list
-the Works on the Host with `mcp__system__work_list`.
+tonight's Works on the Host with `mcp__system__work_list` and `since` (the time
+you started, ISO); each row names its Item when its Task names one.
 
 The report has these parts, in this order:
 
@@ -123,7 +124,7 @@ The report has these parts, in this order:
 - **Items done:** Work merged or left as a draft pull request, with the link.
 - **Items skipped, and why:** held (which Work, awaiting what), failed twice (the
   reason of each), claimed by someone else, anything else.
-- **Works with no Item:** read `work_list`; any Work on the Host this night
+- **Works with no Item:** read `work_list` with `since`; any Work on the Host this night
   that names no Item (not one you submitted) goes here with its Account and
   cost, so the operator sees where quota went.
 - **Why the night ended:** 6 Items, no `todo` left, or a Host that did not answer.

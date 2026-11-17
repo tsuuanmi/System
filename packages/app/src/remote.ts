@@ -194,7 +194,7 @@ export function remoteHost(remote: Remote): ClientHost {
       return follow(workId, options)
     },
     get: (workId) => read('work.show', { workId }) as Promise<WorkRecord>,
-    list: () => read('work.list'),
+    list: (since) => read('work.list', since === undefined ? undefined : { since }),
     report: (workId, classify) => read('work.report', { workId, ...(classify ? { classify } : {}) }),
     rangeReport: (range) => read('work.report', range),
     replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,

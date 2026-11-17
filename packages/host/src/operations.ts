@@ -142,9 +142,18 @@ export function operations(services: Services): Methods {
     'work.list': {
       read: true,
       agent: true,
-      summary: 'Every Work as `{ id, status, specId }`; `status` is `admitted, not running` for a Work admitted and never run.',
-      params: z.object({}).strict(),
-      handler: (host) => host.view.list().map((r) => ({ id: r.id, status: workStatus(r), specId: r.state.specId })),
+      summary: 'Every Work as `{ id, status, specId, item? }`; `status` is `admitted, not running` for a Work admitted and never run; `item` is the Item (ID) its Task names, absent for a Work whose Task names none. With `since` (a date or timestamp, inclusive): only the Works admitted at or after it.',
+      params: z.object({ since: date.optional() }).strict(),
+      handler(host, p) {
+        const from = p.since === undefined ? undefined : Date.parse(p.since)
+        return host.view.list()
+          .filter((r) => from === undefined || Date.parse(r.events[0]!.at) >= from)
+          .map((r) => {
+            const first = r.events[0]!
+            const item = first.type === 'admitted' ? first.item?.id : undefined
+            return { id: r.id, status: workStatus(r), specId: r.state.specId, ...(item ? { item } : {}) }
+          })
+      },
     },
     'work.replay': {
       read: true,
