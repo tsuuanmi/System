@@ -4,21 +4,20 @@
  * `ctx.agents` (`system workers`). Spawns through the DSH subprocess service. A `web` account is served by
  * the optional `web-worker` row (see web.ts), or reported unavailable when it is off.
  */
-import { existsSync, mkdirSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, z, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
 import { chooseAsker, type Ask } from './ask.ts'
-import { readClaudeAccountId, readCodexAccountId } from './identity.ts'
-import { createQuotaCache, probeClaudeQuota, readClaudeQuota, readCodexQuota, type QuotaCache, type QuotaReport } from './quota.ts'
+import { adapterFor } from './adapters/index.ts'
+import type { QuotaCache, QuotaReport } from './quota.ts'
 import { RUNTIME_ABILITIES, type Runtime } from './runtimes.ts'
-import { WEB_WORKER_DISABLED, type WebAccountSettings, type WebWorkerService } from './web.ts'
+import { WEB_WORKER_DISABLED, isWebRuntime, webRefProblem, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
+export * from './adapters/index.ts'
 export * from './agent.ts'
 export * from './ask.ts'
 export * from './attempt-summary.ts'
@@ -43,14 +42,6 @@ export const agentsDomain = defineDomain({
 
 /** `web` is the web Runtime, served by the `web-worker` row; its Site is the account's `site`. */
 export type AccountRuntime = Runtime | 'web'
-
-/** What is wrong with a web account's Site and ref, if anything: its ref is `web/<site>/<name>`; the web-worker row knows which Sites ship. */
-export function webRefProblem(account: { ref: string; site?: string }): string | undefined {
-  if (!account.site) return 'a web account names its site (site: chatgpt)'
-  const [runtime, site, name, ...rest] = account.ref.split('/')
-  if (runtime !== 'web' || site !== account.site || !name || rest.length) return `the ref ${account.ref} does not match site ${account.site}: a web account is web/<site>/<name>, here web/${account.site}/<name>`
-  return undefined
-}
 
 export interface AccountConfig extends WebAccountSettings {
   ref: string
@@ -211,7 +202,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }
     const status = statuses.find((s) => s.ref === ref)
     if (!status) return { unreadable: `no quota reader for ${ref}` }
-    if (status.runtime === 'web') return { unreadable: 'a web account has no quota reader' }
+    if (isWebRuntime(status.runtime)) return { unreadable: 'a web account has no quota reader' }
     if (status.reason === REGISTERING) return { unreadable: 'still registering' }
     return { unreadable: status.available ? `no quota reader for ${ref}` : `not registered: ${status.reason}` }
   }
@@ -228,7 +219,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const ceiling = config.quotaCeilingPercent
   if (ceiling !== undefined && !(typeof ceiling === 'number' && ceiling >= 1 && ceiling <= 100)) throw new Error(`quotaCeilingPercent is ${String(ceiling)}; it must be a number from 1 to 100`)
   let webWorkerLate: string | undefined
-  if (webWorkerComing && entries.some(({ account }) => account.runtime === 'web')) {
+  if (webWorkerComing && entries.some(({ account }) => isWebRuntime(account.runtime))) {
     const seconds = config.webWorkerWaitSeconds ?? 30
     let timer: NodeJS.Timeout | undefined
     webWorker = await new Promise<WebWorkerService | undefined>((resolve) => {
@@ -240,7 +231,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   }
   const outcomes = new Map<string, { done(): void; refuse(error: Error): void }>()
   for (const { account } of entries) {
-    if (account.runtime !== 'web' || webRefProblem(account) || !webWorker) continue
+    if (!isWebRuntime(account.runtime) || webRefProblem(account) || !webWorker) continue
     const done = new Promise<void>((resolve, refuse) => outcomes.set(account.ref, { done: resolve, refuse }))
     done.catch(() => {})
     webWorker.expect(account.ref, done)
@@ -256,7 +247,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const observations = domain?.table('quota')
   for (const { account, status } of entries) {
     try {
-      if (account.runtime === 'web') {
+      if (isWebRuntime(account.runtime)) {
         const problem = webRefProblem(account)
         if (problem) throw new Error(problem)
         if (!webWorker) throw new Error(webWorkerLate ?? WEB_WORKER_DISABLED)
@@ -265,7 +256,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
       const tiers = TIERS.filter((tier) => account.models?.[tier])
       // A web account is one Chrome profile: one attempt at a time, whatever the row says.
-      const web = account.runtime === 'web'
+      const web = isWebRuntime(account.runtime)
       if (web && account.maxConcurrentAttempts !== undefined && account.maxConcurrentAttempts !== 1) throw new Error('a web account runs one attempt at a time (one Chrome profile); maxConcurrentAttempts must be 1')
       const slots = web ? 1 : account.maxConcurrentAttempts ?? config.maxConcurrentAttempts
       if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error(`maxConcurrentAttempts is ${slots}; it must be a whole number of at least 1`)
@@ -273,7 +264,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       status.capabilities = offered
       const attemptTimeoutMinutes = account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes
       let askVersion: () => Promise<string>
-      if (account.runtime === 'web') {
+      if (web) {
         // The web-worker row checks the account, registers its Worker and owns its sign-in.
         const registered = await webWorker!.register({ ...account, site: account.site!, capabilities: offered, abilities: status.abilities, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
         status.command = registered.command
@@ -282,49 +273,16 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         unavailable.set(account.ref, registered.unavailable)
         dispose.push(registered.dispose)
       } else {
-        const command = await subprocess.resolveExecutable(account.command ?? (account.runtime === 'claude-code' ? 'claude' : 'codex'))
+        // A runtime that is neither web nor a CLI with an adapter is refused here, with what the profile may name.
+        const adapter = adapterFor(account.runtime)
+        if (!adapter) throw new Error(`unknown runtime ${account.runtime}`)
+        const command = await subprocess.resolveExecutable(account.command ?? adapter.defaultCommand)
         status.command = command
         askVersion = lazyVersion(subprocess, command)
-        const resolved: Account = { ref: account.ref, runtime: account.runtime, capabilities: [...new Set([...status.abilities, ...offered])], command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
-        if (account.runtime === 'claude-code') {
-          const ref = credentialRef(account.tokenRef ?? 'CLAUDE_CODE_OAUTH_TOKEN')
-          if (!(await credentials.describe(ref)).configured) throw new Error(`token ${ref} is not configured (system credentials set ${ref})`)
-          resolved.token = async () => (await credentials.resolve(ref))?.value
-        } else {
-          const home = account.codexHome ?? `codex/${account.ref.split('/')[1] ?? 'default'}`
-          resolved.codexHome = isAbsolute(home) ? home : systemPath(ctx, home)
-          if (!existsSync(join(resolved.codexHome, 'auth.json'))) throw new Error(`no auth.json in ${resolved.codexHome} (CODEX_HOME=${resolved.codexHome} codex login --device-auth)`)
-        }
-        // The provider's account ID, read from the account's own files: unknown leaves it registered; a known one registers once.
-        let id: string | undefined
-        const quotaOptions = { ttlMs: config.quota?.ttlMs, now: config.quota?.now }
-        if (account.runtime === 'claude-code') {
-          const h = account.claudeHome ?? `claude/${account.ref.split('/')[1] ?? 'default'}`
-          const claudeHome = isAbsolute(h) ? h : systemPath(ctx, h)
-          // The row owns this home: create it (mode 700) so the quota reader's cwd exists. A failure leaves the account registered; the quota reason names the directory.
-          try { mkdirSync(claudeHome, { recursive: true, mode: 0o700 }) } catch { /* reported by the quota read */ }
-          id = readClaudeAccountId(claudeHome)
-          const cache = createQuotaCache({
-            ...quotaOptions,
-            seed: observations?.get(account.ref),
-            // A failed write never fails an attempt.
-            persist: (observed) => { observations?.put(account.ref, observed).catch(() => {}) },
-            probe: async () => {
-              const token = await resolved.token?.()
-              return token ? probeClaudeQuota({ command, home: claudeHome, token, model: account.models?.economy, now: quotaOptions.now }) : []
-            },
-            read: async () => {
-              const token = await resolved.token?.()
-              return token ? readClaudeQuota({ command, home: claudeHome, token, now: quotaOptions.now }) : { unreadable: 'its token is not configured' }
-            },
-          })
-          resolved.onRateLimit = (events) => cache.observe(events)
-          quotas.set(account.ref, cache)
-        } else {
-          const codexHome = resolved.codexHome!
-          quotas.set(account.ref, createQuotaCache({ ...quotaOptions, read: () => readCodexQuota({ command, codexHome, now: quotaOptions.now }) }))
-          id = readCodexAccountId(codexHome)
-        }
+        const resolved: Account = { ref: account.ref, runtime: account.runtime as Runtime, capabilities: [...new Set([...status.abilities, ...offered])], command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
+        // The adapter checks the credential and sets the Account's hooks; the provider's account ID comes from the account's own files: unknown leaves it registered; a known one registers once.
+        const { quota: cache, providerAccount: id } = await adapter.register({ account, resolved, command, credentials, home: (relative) => systemPath(ctx, relative), quota: { ttlMs: config.quota?.ttlMs, now: config.quota?.now }, observations })
+        quotas.set(account.ref, cache)
         const key = id && `${account.runtime}:${id}`
         if (id) status.providerAccount = id
         if (key && seen.has(key)) throw new Error(`provider account ${id} is already registered as ${seen.get(key)}; two refs on one account would count its quota twice`)

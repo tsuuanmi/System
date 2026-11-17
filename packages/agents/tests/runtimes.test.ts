@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader } from '../src/runtimes.ts'
+import { adapterFor } from '../src/adapters/index.ts'
+
+const claude = adapterFor('claude-code')!
+const codex = adapterFor('codex')!
+const parseClaude = (out: string) => claude.parse(out)
+const parseCodex = (out: string) => codex.parse(out)
+const claudeInvocation = (command: string, ws: never, prompt: string, token: string, model?: string, codeWrite = false) => claude.invocation({ command, ws, prompt, model, codeWrite, env: { CLAUDE_CODE_OAUTH_TOKEN: token } })
+const codexInvocation = (command: string, ws: never, prompt: string, home: string, model?: string) => codex.invocation({ command, ws, prompt, model, codeWrite: false, env: { CODEX_HOME: home } })
 
 const line = (value: unknown) => JSON.stringify(value)
 
@@ -89,7 +96,7 @@ test('a stream with no result is unreadable output', () => {
 })
 
 test('Claude Code progress is read as the stream grows: turns are messages, tokens are fresh input, cache writes and output, input tokens include cache reads', () => {
-  const read = progressReader('claude-code')
+  const read = claude.progress()
   const assistant = (id: string, tool: string | undefined, output: number) => line({ type: 'assistant', message: { id, content: [{ type: 'text', text: 'x' }, ...(tool ? [{ type: 'tool_use', name: tool }] : [])], usage: { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 100, output_tokens: output } } })
   let stdout = `${line({ type: 'system', subtype: 'init' })}\n${assistant('m1', 'Bash', 3)}\n`
   assert.deepEqual(read(stdout), { turns: 1, lastTool: 'Bash', tokens: 18, inputTokens: 115 })
@@ -102,7 +109,7 @@ test('Claude Code progress is read as the stream grows: turns are messages, toke
 })
 
 test('Codex progress counts completed turns and their tokens', () => {
-  const read = progressReader('codex')
+  const read = codex.progress()
   assert.deepEqual(read(`${line({ type: 'item.completed', item: { type: 'command_execution' } })}\n${line({ type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 } })}\n`), { turns: 1, lastTool: 'command_execution', tokens: 8, inputTokens: 10 })
 })
 
@@ -126,4 +133,15 @@ test('the Codex Runtime runs in the workspace-write sandbox, never a wider one',
   const { argv } = codexInvocation('codex', ws, 'do it', '/codex-home')
   assert.equal(argv[argv.indexOf('-s') + 1], 'workspace-write')
   assert.equal(argv.some((a) => /danger|bypass|read-only/.test(a)), false)
+})
+
+test('the registry is keyed by Runtime name: both CLI Runtimes have an adapter, `web` has none', () => {
+  assert.equal(claude.runtime, 'claude-code')
+  assert.equal(codex.runtime, 'codex')
+  assert.equal(adapterFor('web'), undefined)
+})
+
+test('the credential of each adapter reaches the CLI only through its env', () => {
+  assert.equal(claudeInvocation('claude', ws, 'p', 'tok').env.CLAUDE_CODE_OAUTH_TOKEN, 'tok')
+  assert.equal(codexInvocation('codex', ws, 'p', '/h').env.CODEX_HOME, '/h')
 })

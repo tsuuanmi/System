@@ -6,14 +6,13 @@
  * 30 s grace; whatever the attempt produced is kept as unaccepted partial output.
  * An attempt past its time limit is stopped the same way but fails: nobody cancelled it.
  */
-import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, writesRepository, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
-import { summarizeAttempt } from './attempt-summary.ts'
-import { quotaFromRateLimitEvent, type QuotaEvent, type QuotaReport } from './quota.ts'
-import { claudeInvocation, codexInvocation, parseClaude, parseCodex, progressReader, type Runtime } from './runtimes.ts'
+import { adapterFor } from './adapters/index.ts'
+import type { QuotaEvent, QuotaReport } from './quota.ts'
+import type { Runtime } from './runtimes.ts'
 import { runAttempt } from './lifecycle.ts'
 import { prompt } from './workspace.ts'
 
@@ -74,21 +73,8 @@ export interface Account {
   quotaCeilingPercent?: number
   /** The account's cached quota reading; routing reads it and records it with the choice. */
   quota?: (fresh?: boolean) => Promise<QuotaReport>
-  /** claude-code: told the quota windows an attempt's `rate_limit_event`s reported (the last of each window); a throwing hook never fails the attempt. */
+  /** Runtimes that report quota windows: told the ones an attempt's `rate_limit_event`s reported (the last of each window); a throwing hook never fails the attempt. */
   onRateLimit?: (events: ReadonlyArray<QuotaEvent>) => void
-}
-
-/** The last quota event of each window in a Claude Code stream. */
-export function rateLimitEvents(stdout: string): QuotaEvent[] {
-  const last = new Map<string, QuotaEvent>()
-  const observedAt = Date.now()
-  for (const line of stdout.split('\n')) {
-    if (!line.includes('rate_limit_event')) continue
-    try {
-      for (const event of quotaFromRateLimitEvent(JSON.parse(line) as unknown, observedAt)) last.set(event.window, event)
-    } catch { /* not JSON: not an event */ }
-  }
-  return [...last.values()]
 }
 
 /** Input tokens (cache reads included) and minutes; either may be absent. */
@@ -96,8 +82,6 @@ export interface AttemptBudget {
   inputTokens?: number
   minutes?: number
 }
-
-export const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
 
 /** Where the CLI's process ID is kept while an attempt runs, so a later Host can tell whether it is gone. */
 const pidFile = (attemptsDir: string, attemptId: string) => join(attemptsDir, `${attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
@@ -139,13 +123,10 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     ref: account.ref, account: account.ref.split('/').slice(1).join('/') || account.ref, command: account.command, version: await account.version(),
     ...(tier ? { tier } : {}), ...(model ? { model } : {}),
   }
-  // The credential is checked before anything is prepared: without it there is nothing to run.
-  const token = account.runtime === 'claude-code' ? await account.token?.() : undefined
-  if (account.runtime === 'claude-code' && !token) return { status: 'failed', outputs: {}, reason: `${account.ref}: its token is not configured (system credentials set)`, executor }
-  const source = account.runtime === 'claude-code' ? undefined : join(account.codexHome!, 'auth.json')
-  if (source && !existsSync(source)) return { status: 'failed', outputs: {}, reason: `${account.ref}: no auth.json in ${account.codexHome} (codex login --device-auth)`, executor }
+  const adapter = adapterFor(account.runtime)!
+  const pre = await adapter.preflight(account)
+  if ('failed' in pre) return { status: 'failed', outputs: {}, reason: pre.failed, executor }
   let stdout = () => ''
-  let codexAuth: { attempt: string; account: string; before: string } | undefined
   return runAttempt({
     artifacts, ref: account.ref, executor, request, dir: join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')),
     timeoutMinutes: account.attemptTimeoutMinutes, cancelReason: 'cancelled; the agent was stopped',
@@ -153,16 +134,8 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
     turn: async (ctx) => {
       const { ws } = ctx
       const text = prompt(ws, request)
-      let invocation
-      if (token) invocation = claudeInvocation(account.command, ws, text, token, model, writesRepository(request.capabilities))
-      else {
-        const home = join(ws.root, 'codex-home')
-        mkdirSync(home, { mode: 0o700 })
-        // A fresh CODEX_HOME per attempt holding only auth.json: no memories or history carry over (ADR-0005).
-        copyFileSync(source!, join(home, 'auth.json'))
-        codexAuth = { attempt: join(home, 'auth.json'), account: source!, before: digest(source!) }
-        invocation = codexInvocation(account.command, ws, text, home, model)
-      }
+      const staged = pre.stage(ws.root)
+      const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env })
       // Remove every host variable the agent was not given (SSH agent, tokens, ...).
       const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
       Object.assign(env, invocation.env)
@@ -172,7 +145,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: ctx.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
       stdout = spawned.stdout
       // Output that grew is activity: what it says so far is the attempt's progress.
-      const read = progressReader(account.runtime)
+      const read = adapter.progress()
       let seen = 0
       const watch = setInterval(() => {
         const out = spawned.stdout()
@@ -190,14 +163,12 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       })
       const out = spawned.stdout()
       // Even a rejected or stopped attempt tells the truth about quota.
-      if (account.runtime === 'claude-code' && account.onRateLimit) {
-        const events = rateLimitEvents(out)
-        if (events.length) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
-      }
-      const parsed = account.runtime === 'claude-code' ? parseClaude(out) : parseCodex(out)
-      if (codexAuth) keepRefreshedAuth(codexAuth)
+      const events = adapter.rateLimitEvents?.(out)
+      if (events?.length && account.onRateLimit) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
+      const parsed = adapter.parse(out)
+      staged.finish()
       if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
-      const summary = summarizeAttempt(account.runtime, out)
+      const summary = adapter.summarize(out)
       if (done.exitCode !== 0 || !parsed.ok) {
         const why = done.signal ? `signal ${done.signal}` : `exit ${done.exitCode}`
         return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, summary, usage: parsed.usage }
@@ -205,12 +176,4 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       return { ...(parsed.message ? { message: parsed.message } : {}), summary, usage: parsed.usage }
     },
   })
-}
-
-/** Copy a refreshed `auth.json` back, unless the account's file changed meanwhile. */
-export function keepRefreshedAuth(auth: { attempt: string; account: string; before: string }): void {
-  if (!existsSync(auth.attempt) || digest(auth.attempt) === auth.before || digest(auth.account) !== auth.before) return
-  const staged = join(dirname(auth.account), `.auth.json.${process.pid}`)
-  copyFileSync(auth.attempt, staged)
-  renameSync(staged, auth.account)
 }
