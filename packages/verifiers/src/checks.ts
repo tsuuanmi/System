@@ -20,7 +20,7 @@ import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult } from '@system/work'
 import { parse } from 'yaml'
-import { firstFailure, interrupted, nodeBin } from './reasons.ts'
+import { failureLine, interrupted, nodeBin } from './reasons.ts'
 import { z } from 'zod'
 
 export const CHECKS_FILE = '.system/checks.yaml'
@@ -270,8 +270,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             const running = interrupted(output)
             failure = running.length ? `${check.name}: timed out after ${check.timeoutSeconds} s while running ${running.join(', ')}` : `${check.name} (timed out after ${check.timeoutSeconds} s)`
           } else if (run.exitCode !== 0) {
-            const first = firstFailure(output)
-            failure = first ? `${check.name}: ${first}` : `${check.name} (exit ${run.exitCode ?? run.signal})`
+            failure = failureLine(output, check.name, run.exitCode, run.signal, { stderr: spawned.stderr(), stdout: spawned.stdout() }, Object.values(given.data).filter((v): v is string => typeof v === 'string'))
           } else if (leftovers.length) {
             failure = `${check.name} (left running: ${leftovers.join(', ')})`
           }
