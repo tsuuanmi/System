@@ -10,7 +10,7 @@ import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
-import { OUTSIDE_HOLD, outsideHoldReason, outsideRun } from './outside.ts'
+import { OUTSIDE_HOLD, outsideHoldReason } from './outside.ts'
 import { DEFAULT_LIMIT_MS, isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
@@ -646,31 +646,20 @@ export class WorkController {
     const event = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === operationId)
     if (event?.type !== 'effect-intended') throw new WorkError(`no recorded intent for ${operationId}`)
     const step = this.specOf(record).steps.find((s) => s.id === event.stepId)
-    // The Approval of the merge commit last held counts only if given after the hold: an earlier one was for another commit.
-    const held = record.events.findLast((e) => e.type === 'effect-observed' && e.operationId === operationId && e.held)
-    const decided = held?.type === 'effect-observed' ? record.events.findLast((e) => e.type === 'decided' && e.stepId === event.stepId) : undefined
-    const approvedMerge = held?.type === 'effect-observed' && decided?.type === 'decided' && decided.decision === 'approved' && decided.seq > held.seq ? held.held : undefined
-    const changedTests = this.changedTestsOf(record, event.subject)
+    const { approvedMerge } = record.state.effects[operationId]!, changedTests = record.state.changedTests?.[event.subject]
     return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [],
       ...(approvedMerge ? { approvedMerge } : {}), ...(changedTests ? { changedTests } : {}) }
   }
 
   /** tr-1: the changed tests recorded for change `subject` (the latest attempt that produced it); undefined when no attempt of the record produced it, empty when it touched no test. */
-  private changedTestsOf(record: WorkRecord, subject: string): EffectIntent['changedTests'] {
-    const observed = record.events.findLast((e) => e.type === 'observed' && e.status === 'succeeded' && Object.values(e.outputs).includes(subject) && e.changedTests)
-      ?? record.events.findLast((e) => e.type === 'observed' && e.status === 'succeeded' && Object.values(e.outputs).includes(subject))
-    return observed?.type === 'observed' ? observed.changedTests ?? [] : undefined
-  }
 
   /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
   private requiredOf(record: WorkRecord, s: Extract<Step, { effect: unknown }>): NonNullable<EffectIntent['required']> {
     const spec = this.specOf(record)
-    const admitted = record.events[0]
-    const pinned = admitted?.type === 'admitted' ? admitted.verifiers : undefined
     return s.effect.requires.flatMap((id) => {
       const verify = spec.steps.find((t) => t.id === id)
       const criteria = record.state.criteria[id]
-      return verify && isVerifyStep(verify) && criteria ? [{ capability: verify.verify.capability, criteria, ...(pinned?.[id] ? { verifier: pinned[id] } : {}) }] : []
+      return verify && isVerifyStep(verify) && criteria ? [{ capability: verify.verify.capability, criteria, ...(record.state.verifiers?.[id] ? { verifier: record.state.verifiers[id] } : {}) }] : []
     })
   }
 
@@ -749,9 +738,9 @@ export class WorkController {
     // The third Outside failure in a row on a step holds the Work instead of dispatching it again (cm-2, anti-windup).
     for (const next of ready) {
       if (!isWorkerStep(next) && !isVerifyStep(next)) continue
-      const run = outsideRun(record.events, next.id)
-      if (run.count >= OUTSIDE_HOLD && !busy) return { record: await this.finish(record, 'held', outsideHoldReason(next.id, { count: run.count, cause: run.cause!, reason: run.reason! }), next.id), settles: [], epoch }
-      if (run.count >= OUTSIDE_HOLD) return { record, settles: [], waiting: true, epoch }
+      const run = record.state.steps[next.id]!.outside
+      if (run && run.count >= OUTSIDE_HOLD && !busy) return { record: await this.finish(record, 'held', outsideHoldReason(next.id, run), next.id), settles: [], epoch }
+      if (run && run.count >= OUTSIDE_HOLD) return { record, settles: [], waiting: true, epoch }
     }
     const settles: (() => Promise<WorkRecord>)[] = []
     let waiting = false
@@ -853,11 +842,8 @@ export class WorkController {
   /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead, `blocked` when its Account has no free slot. */
   private async dispatchWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<{ record: WorkRecord; attempt?: WorkerAttempt; blocked?: boolean }> {
     const inputs = Object.fromEntries(Object.entries(s.inputs ?? {}).map(([name, ref]) => [name, this.resolveRef(record, ref)]))
-    const reopened = record.events.findLast((e) => e.type === 'reopened' && e.stepId === s.id)
-    const takeover = reopened?.type === 'reopened' ? reopened : undefined
-    if (takeover?.previous) inputs.previous = takeover.previous
-    if (takeover?.failure) inputs.failure = takeover.failure
-    if (takeover?.base) inputs.base = takeover.base
+    const takeover = record.state.steps[s.id]!.reopening
+    for (const name of ['previous', 'failure', 'base'] as const) if (takeover?.[name]) inputs[name] = takeover[name]!
     const admitted = record.events[0]
     const only = takeover?.worker ?? (admitted?.type === 'admitted' ? admitted.worker : undefined)
     const waitKey = `${record.id}/${s.id}`
@@ -981,7 +967,7 @@ export class WorkController {
           unchangedAfter = s.retry?.rerunUnchanged ? this.failingCheckOf(this.require(workId), s) : undefined
           if (unchangedAfter) {
             // The step was reopened by a failing check and changed nothing: the check runs again on the change it failed.
-            outputs[s.outputs[0]] = this.latestReopening(this.require(workId), s.id)!.previous!
+            outputs[s.outputs[0]] = this.require(workId).state.steps[s.id]!.reopening!.previous!
             reason = `no change: ran the check again on the same change${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`
           } else [status, reason] = ['failed', `no change: the working tree is the same as the base commit ${base.slice(0, 7)}${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`]
         }
@@ -993,7 +979,7 @@ export class WorkController {
     if (changeId && this.specs.changedTests) {
       try {
         const files = await this.specs.changedTests(changeId, this.require(workId).state.input)
-        if (files?.length) changedTests = unchangedAfter ? this.changedTestsOf(this.require(workId), changeId) : withReasons(files, result.message)
+        if (files?.length) changedTests = unchangedAfter ? this.require(workId).state.changedTests?.[changeId] : withReasons(files, result.message)
       } catch { /* a list that cannot be read is never a failure of the step */ }
     }
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
@@ -1063,8 +1049,7 @@ export class WorkController {
     const waiting = this.waitingForCheck.get(record.id)
     const waitedMs = this.waited(waiting?.stepId === s.id ? waiting.since : undefined)
     this.waitingForCheck.delete(record.id)
-    const admitted = record.events[0]
-    const pin = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
+    const pin = record.state.verifiers?.[s.id]
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
@@ -1085,14 +1070,9 @@ export class WorkController {
     return 'refusal' in asked ? refusedResult(asked.refusal, subject, criteria) : asked.result
   }
 
-  private latestReopening(record: WorkRecord, stepId: string) {
-    const e = record.events.findLast((r) => r.type === 'reopened' && r.stepId === stepId)
-    return e?.type === 'reopened' ? e : undefined
-  }
-
   /** The verdict of a check in `retry.onFail` that automatically reopened this step, with its change to hand back (`retry.rerunUnchanged`). */
   private failingCheckOf(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): string | undefined {
-    const r = this.latestReopening(record, s.id)
+    const r = record.state.steps[s.id]!.reopening
     if (!r?.automatic || !r.failure || r.failedEffect || !r.previous) return undefined
     return record.events.some((v) => v.type === 'verified' && v.verdictId === r.failure && v.verdict === 'fail' && s.retry?.onFail.includes(v.stepId)) ? r.failure : undefined
   }
@@ -1207,7 +1187,7 @@ export class WorkController {
     if (!provider) return { record: await this.finish(record, 'failed', `no enabled provider offers ${s.effect.capability} for step ${s.id}`) }
     const kind = this.specs.kindOf(subject)
     if (!kind || !provider.accepts.includes(kind)) return { record: await this.finish(record, 'failed', `${provider.ref} publishes ${provider.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`) }
-    const changedTests = this.changedTestsOf(record, subject)
+    const changedTests = record.state.changedTests?.[subject]
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
       workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params }, required: this.requiredOf(record, s),

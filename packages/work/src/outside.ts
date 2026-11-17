@@ -20,28 +20,26 @@ const PATTERNS: [OutsideCause, RegExp][] = [
   ['slow-host', /timed out after|timeout/i],
 ]
 
-/** Outside failures in a row on one step that hold the Work (cm-2). */
+/** Outside failures in a row on one step that hold the Work (cm-2); `OutsideRun` is the run kept in the step's state. */
+export type OutsideRun = { count: number; cause: OutsideCause; reason: string }
 export const OUTSIDE_HOLD = 3
 
 /** The reason of a hold by that count; `outsideCause` reads the cause back from it. */
-export const outsideHoldReason = (stepId: string, run: { count: number; cause: OutsideCause; reason: string }): string =>
+export const outsideHoldReason = (stepId: string, run: OutsideRun): string =>
   `step ${stepId} held after ${run.count} Outside failures in a row (last cause: ${run.cause}): ${run.reason}`
 
-/**
- * The consecutive re-dispatches of `stepId` caused by an Outside failure (an `attempt-lost`, or a `limited`
- * attempt), derived from the events; the last cause and its reason. An attempt of the step that finishes, a
- * human's retry or Approval, and a skip reset it. `count` is 0 when the last thing was not an Outside failure.
- */
-export function outsideRun(events: readonly WorkEvent[], stepId: string): { count: number; cause?: OutsideCause; reason?: string } {
-  let run: { count: number; cause?: OutsideCause; reason?: string } = { count: 0 }
-  for (const event of events) {
-    if (event.type === 'attempt-lost' && event.stepId === stepId) run = { count: run.count + 1, cause: 'restart', reason: event.reason }
-    else if (event.type === 'observed' && event.stepId === stepId) run = event.limited ? { count: run.count + 1, cause: 'quota', reason: event.reason ?? '' } : event.status === 'failed' && outsideCause(event.reason ?? '', undefined, event.cause) === 'attach' ? { count: run.count + 1, cause: 'attach', reason: event.reason ?? '' } : { count: 0 }
-    else if (event.type === 'verified' || event.type === 'skipped' || event.type === 'decided') { if (event.stepId === stepId) run = { count: 0 } }
-    else if (event.type === 'reopened' && (event.stepId === stepId || event.reset?.includes(stepId))) run = { count: 0 }
-  }
+/** The Outside failures in a row on `stepId` after `event` (cm-2): an `attempt-lost`, or a `limited` or attach attempt extends the run; a finished attempt, a human's retry or Approval, and a skip end it (`undefined`). `fold` keeps it in the step's state. */
+export function outsideNext(run: OutsideRun | undefined, event: WorkEvent, stepId: string): OutsideRun | undefined {
+  const more = (cause: OutsideCause, reason: string): OutsideRun => ({ count: (run?.count ?? 0) + 1, cause, reason })
+  if (event.type === 'attempt-lost' && event.stepId === stepId) return more('restart', event.reason)
+  if (event.type === 'observed' && event.stepId === stepId) return event.limited ? more('quota', event.reason ?? '') : event.status === 'failed' && outsideCause(event.reason ?? '', undefined, event.cause) === 'attach' ? more('attach', event.reason ?? '') : undefined
+  if ((event.type === 'verified' || event.type === 'skipped' || event.type === 'decided') && event.stepId === stepId) return undefined
+  if (event.type === 'reopened' && (event.stepId === stepId || event.reset?.includes(stepId))) return undefined
   return run
 }
+
+export const outsideRun = (events: readonly WorkEvent[], stepId: string): { count: number; cause?: OutsideCause; reason?: string } =>
+  events.reduce<OutsideRun | undefined>((run, event) => outsideNext(run, event, stepId), undefined) ?? { count: 0 }
 
 /**
  * The Outside cause of a reason, or `undefined`. `from: 'verdict'` is a verifier's reason: it is Outside only by the marker
