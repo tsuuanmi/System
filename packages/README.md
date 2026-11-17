@@ -21,6 +21,9 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
 - [web-worker](web-worker/README.md) — `@system/web-worker`, the optional,
   off-by-default `web-worker` row: the `web` Runtime (browser, sign-in and
   remote viewer) and the browser dependencies, depended on by nothing in the core.
+- [classifier](classifier/README.md) — `@system/classifier`, the optional,
+  off-by-default `classifier` row: answers closed questions about an Artifact
+  with an economy-tier Account, for `work report` only.
 - [verifiers](verifiers/README.md) — `@system/verifiers`, the `verifiers` row:
   `code.required-checks` and `research.citation-check`.
 - [effects](effects/README.md) — `@system/effects`, the `effects` row:

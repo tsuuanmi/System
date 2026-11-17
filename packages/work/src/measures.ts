@@ -5,7 +5,7 @@
  */
 import type { WorkRecord } from './record.ts'
 import { failureClass } from './failure-class.ts'
-import { summarize } from './summary.ts'
+import { summarize, type ClassifiedLookup } from './summary.ts'
 import { wasMerged } from './status.ts'
 
 export type Unknown = 'unknown'
@@ -14,6 +14,8 @@ export interface RangeOptions {
   until?: string
   /** Escaped defects of the range, counted by hand in PLAN section 2. */
   escaped?: number
+  /** The recorded Classifications (cls-1): the `unknown` failures that have one are told apart in `classifiedUnknownFailures`; no measure changes. */
+  classified?: ClassifiedLookup
 }
 
 export interface RangeReport {
@@ -26,6 +28,8 @@ export interface RangeReport {
   recurringFailureRate: { rate: number | Unknown; recurring: number; failures: number }
   /** Escaped defects over distinct Items merged. */
   unknownFailures: number
+  /** Of those, the ones a Classification labels, by label; absent when none (the Classifier row is off, or has classified none). */
+  classifiedUnknownFailures?: Record<string, number>
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number }
   /** The API-equivalent cost estimate of every attempt in the range that reports one, over accepted Works; a lower bound when `worksWithUnknownCost` is above 0, `unknown` when no cost is known. */
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; worksWithUnknownCost: number }
@@ -40,7 +44,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, classified }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -49,6 +53,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   let failures = 0
   let recurring = 0
   let unknownFailures = 0
+  const classifiedUnknown: Record<string, number> = {}
   let knownCostUsd = 0
   let worksWithUnknownCost = 0
   const seen = new Set<string>()
@@ -67,8 +72,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
       const item = first.type === 'admitted' ? first.item : undefined
       merged.add(item ? `${item.repository}\0${item.id}` : record.id)
     }
-    const counted = summarize(record).failures.filter((f) => f.kind !== 'touch')
+    const counted = summarize(record, classified).failures.filter((f) => f.kind !== 'touch')
     unknownFailures += counted.filter((f) => f.unknown).length
+    for (const f of counted) if (f.classified) classifiedUnknown[f.classified.label] = (classifiedUnknown[f.classified.label] ?? 0) + 1
     const classes = counted.filter((f) => !f.unknown).map(failureClass)
     failures += classes.length
     recurring += classes.filter((c) => seen.has(c)).length
@@ -84,7 +90,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   }
   resolution.sort((a, b) => a - b)
   return {
-    since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures,
+    since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
     escapedDefectRate: { rate: escaped === undefined ? 'unknown' : ratio(escaped, merged.size), escaped: escaped ?? 'unknown', itemsMerged: merged.size },

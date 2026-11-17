@@ -195,7 +195,7 @@ export function remoteHost(remote: Remote): ClientHost {
     },
     get: (workId) => read('work.show', { workId }) as Promise<WorkRecord>,
     list: () => read('work.list'),
-    report: (workId) => read('work.report', { workId }),
+    report: (workId, classify) => read('work.report', { workId, ...(classify ? { classify } : {}) }),
     rangeReport: (range) => read('work.report', range),
     replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,
     cancel: (workId, reason) => change('work.cancel', { workId, reason }),

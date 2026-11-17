@@ -19,3 +19,5 @@ The synthetic fixtures and CLIs live in [test-support](../../../test-support/REA
 `FAKE:ratelimit=<five_hour|seven_day>:<fraction>` emits an attempt quota event
 for the hook tests in `agent.test.ts`; `FAKE:unified=<five>,<seven>` emits both
 fractional windows in `unifiedWindows` for the ro-2 hook test. These tests use no real CLI or account.
+
+[ask.test.ts](ask.test.ts) checks `ask` (cls-1): one tool-less turn on the economy model of an Account that is not excluded, through the same fake CLI; `FAKE:cause=<label>` makes the fake answer a Classifier question.
