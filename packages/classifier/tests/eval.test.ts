@@ -40,9 +40,9 @@ test('a fake Classifier that always says change: the confusion matrix has the se
 test('the rules-only accuracy on the 41 items is computed and in the result; the hybrid is the rules unless unknown', async () => {
   const report = await run(fake(['change']))
   assert.equal(report.rules.total, 41)
-  assert.equal(report.rules.correct, 24)
-  assert.equal(report.rules.unknownRate, 5 / 41)
-  assert.match(formatReport(report), /rules\s+24\/41 = 58\.5% \(95% 43\.4%–72\.2%\)/)
+  assert.equal(report.rules.correct, 25)
+  assert.equal(report.rules.unknownRate, 4 / 41)
+  assert.match(formatReport(report), /rules\s+25\/41 = 61\.0% \(95% 45\.7%–74\.3%\)/)
   assert.match(formatReport(report), /gate: pass/)
   assert.equal(report.rules.correct, diagonal(report.rules.confusion))
   assert.equal(report.rules.accuracy, report.rules.correct / 41)
