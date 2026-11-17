@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "question": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "hash"
+      ],
+      "additionalProperties": false
+    },
+    "input": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "samples": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtimeVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "runtime",
+          "runtimeVersion"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "disagreement": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "question",
+    "input",
+    "samples",
+    "distribution",
+    "confidence",
+    "label",
+    "disagreement"
+  ],
+  "additionalProperties": false
+}

@@ -8,7 +8,18 @@ import { attemptCause, outsideCause, type OutsideCause } from './outside.ts'
 import type { WorkRecord } from './record.ts'
 
 /** One failed attempt, failed or inconclusive verdict, hold, failed publish or operator touch, read from `event` (`<type>#<index>`); `outside` when its reason is an Outside failure, `unknown` when its cause cannot be placed, absent for a failure of the change. */
-export interface Failure { event: string; kind: 'attempt' | 'attempt-lost' | 'verdict' | 'hold' | 'publish' | 'touch'; reason: string; outside?: OutsideCause; unknown?: true }
+export interface Failure { event: string; kind: 'attempt' | 'attempt-lost' | 'verdict' | 'hold' | 'publish' | 'touch'; reason: string; outside?: OutsideCause; unknown?: true; classified?: ClassifiedFailure }
+
+/** A Classifier's recorded answer about an `unknown` failure (cls-1), for the report only: nothing decides from it. */
+export interface ClassifiedFailure { label: string; confidence: number; /** The `classification@1` Artifact. */ classification: string }
+/** The recorded Classification of a failure, if any; never asks a model. */
+export type ClassifiedLookup = (failure: Pick<Failure, 'kind' | 'reason'>) => ClassifiedFailure | undefined
+/** What the report reads of the optional Classifier row: recorded answers, and asking for those a Work lacks. */
+export interface FailureClassifier {
+  lookup: ClassifiedLookup
+  /** Classify the failures of `record` whose rules answer `unknown` and that have no answer yet. Never throws. */
+  classify(record: WorkRecord): Promise<void>
+}
 
 export interface WorkSummary {
   id: string
@@ -23,6 +34,8 @@ export interface WorkSummary {
   touches: string[]
   /** Every failure and touch with its classification; `outsideFailures + changeFailures + unknownFailures === failures.length`. */
   failures: Failure[]
+  /** The `unknown` failures that carry a Classification, counted by its label; absent when none does (the Classifier row is off, or has classified none). */
+  classifiedFailures?: Record<string, number>
   outsideFailures: number
   changeFailures: number
   /** Failures whose cause System cannot place: neither Outside nor a failure of the change. */
@@ -36,7 +49,8 @@ export interface WorkSummary {
   }
 }
 
-export function summarize(record: WorkRecord): WorkSummary {
+/** `classified`: the recorded Classifications (cls-1); an `unknown` failure that has one is reported under its label, marked as classified. The classes and counts are the rules' alone. */
+export function summarize(record: WorkRecord, classified?: ClassifiedLookup): WorkSummary {
   const touches: string[] = []
   const usage: WorkSummary['usage'] = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
   let attempts = 0
@@ -85,5 +99,14 @@ export function summarize(record: WorkRecord): WorkSummary {
   }
   const first = Date.parse(record.events[0]!.at)
   const last = Date.parse(record.events.at(-1)!.at)
-  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, waitedForSlotMs, rateLimitedAttempts, operatorTouches: touches.length, touches, failures, outsideFailures: failures.filter((f) => f.outside).length, changeFailures: failures.filter((f) => !f.outside && !f.unknown).length, unknownFailures: failures.filter((f) => f.unknown).length, usage }
+  const counts: Record<string, number> = {}
+  if (classified) {
+    for (const failure of failures) {
+      const answer = failure.unknown && failure.kind !== 'touch' ? classified(failure) : undefined
+      if (!answer) continue
+      failure.classified = answer
+      counts[answer.label] = (counts[answer.label] ?? 0) + 1
+    }
+  }
+  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, waitedForSlotMs, rateLimitedAttempts, operatorTouches: touches.length, touches, failures, ...(Object.keys(counts).length ? { classifiedFailures: counts } : {}), outsideFailures: failures.filter((f) => f.outside).length, changeFailures: failures.filter((f) => !f.outside && !f.unknown).length, unknownFailures: failures.filter((f) => f.unknown).length, usage }
 }

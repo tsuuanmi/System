@@ -147,6 +147,16 @@ or a check that the base fails too, after one re-run on the change and the base,
 Only a check of the Artifact's own form may fail it.
 _Avoid_: score, review, result
 
+**Classifier**:
+Answers one closed question about an Artifact; not a Verifier and never a
+ground for acceptance.
+_Avoid_: judge, decision
+
+**Classification**:
+A Classifier's recorded answer: label, label distribution, confidence, model and
+question version.
+_Avoid_: verdict, decision
+
 **Satisfied**:
 A Work's outcome when its Item already holds at the Task's base, shown by a
 test that a Verifier ran there; nothing is merged and the Item counts as done.

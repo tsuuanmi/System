@@ -80,7 +80,7 @@ export interface Account {
 }
 
 /** The last quota event of each window in a Claude Code stream. */
-function rateLimitEvents(stdout: string): QuotaEvent[] {
+export function rateLimitEvents(stdout: string): QuotaEvent[] {
   const last = new Map<string, QuotaEvent>()
   const observedAt = Date.now()
   for (const line of stdout.split('\n')) {
@@ -98,7 +98,7 @@ export interface AttemptBudget {
   minutes?: number
 }
 
-const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
+export const digest = (path: string) => (existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : '')
 
 /** Where the CLI's process ID is kept while an attempt runs, so a later Host can tell whether it is gone. */
 const pidFile = (attemptsDir: string, attemptId: string) => join(attemptsDir, `${attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
@@ -230,7 +230,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
 }
 
 /** Copy a refreshed `auth.json` back, unless the account's file changed meanwhile. */
-function keepRefreshedAuth(auth: { attempt: string; account: string; before: string }): void {
+export function keepRefreshedAuth(auth: { attempt: string; account: string; before: string }): void {
   if (!existsSync(auth.attempt) || digest(auth.attempt) === auth.before || digest(auth.account) !== auth.before) return
   const staged = join(dirname(auth.account), `.auth.json.${process.pid}`)
   copyFileSync(auth.attempt, staged)

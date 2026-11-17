@@ -94,7 +94,7 @@ export interface WorkCommands {
   /** Wait for every one of `workIds`, or with `any` the first, to end, be held or await approval. */
   waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** A Work's measurements. */
-  report(workId: string): Promise<unknown>
+  report(workId: string, classify?: boolean): Promise<unknown>
   /** The five measures of effect over the Works admitted in a range. */
   rangeReport(range: { since: string; until?: string; escaped?: number }): Promise<unknown>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
@@ -516,12 +516,20 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
     .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN section 2 (else that measure is unknown)')
-    .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string }) => {
+    .option('--classify', 'with a Work ID: first ask the Classifier (the optional classifier row) for the failures no rule places, then report; a Work that has ended is classified by the Host anyway')
+    .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string; classify?: boolean }) => {
       select(async () => {
         if ((workId === undefined) === (options.since === undefined)) throw new Error('give a Work ID, or --since <date> for a range')
         if (workId !== undefined && (options.until !== undefined || options.escaped !== undefined)) throw new Error('--until and --escaped go with --since')
+        if (workId === undefined && options.classify) throw new Error('--classify goes with a Work ID')
         if (workId !== undefined) {
-          io.out(`${JSON.stringify(await host.work().report(workId), null, 2)}\n`)
+          let report = await host.work().report(workId, options.classify)
+          // The Host bounds a call; classification still going on is asked about again until it is done.
+          for (let n = 0; options.classify && (report as { classifying?: boolean }).classifying && n < 600; n += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000))
+            report = await host.work().report(workId, true)
+          }
+          io.out(`${JSON.stringify(report, null, 2)}\n`)
           return 0
         }
         const escaped = options.escaped === undefined ? undefined : Number(options.escaped)

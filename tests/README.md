@@ -47,6 +47,7 @@ nothing else.
 - [real-agents.test.ts](real-agents.test.ts) — credential-gated
   (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
   through the operator's Host when one answers, or one the test starts.
+- [classifier.test.ts](classifier.test.ts) — cls-1: the profile with the optional `classifier` row on and a fake economy Account: an unknown failure is classified and `work report` shows it; off, reports are as before.
 - [web-worker-off.test.ts](web-worker-off.test.ts) — WW2a: the profile with the
   `web-worker` row off (the bundle's default) runs a Software Engineering Work and a
   Brainstorm on the fake Runtimes, `system workers` reports a `web` account

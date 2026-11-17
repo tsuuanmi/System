@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -25,6 +25,8 @@ export interface Services {
     describe(name: string): Promise<{ configured: boolean; source?: string }>
   }
   workers(): Promise<{ registered: string[]; accounts: unknown[] }>
+  /** The optional Classifier row (cls-1), report-only: undefined when the row is off. */
+  classifier?: FailureClassifier
   /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
   login(ref: string, cookies: string | undefined): Promise<{ signedIn: boolean; detail: string; imported?: number; skipped?: number }>
   /** Start the remote sign-in of a browser Account: where to reach its viewer, and until when. */
@@ -36,6 +38,9 @@ export interface Services {
   /** Whether `commit` is in the running release of `repository`: false when it is not, undefined when unknown. */
   releaseHolds?(repository: string, commit: string): Promise<boolean | undefined>
 }
+
+/** How long `work.report` with `classify` waits for the Classifier: under the call timeout. */
+const CLASSIFY_WAIT_MS = 7000
 
 const commandId = z.string().min(1).optional()
 const workId = z.string().min(1)
@@ -149,15 +154,28 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events. With `since` (a date or timestamp; `until` excludes, `escaped` is the Escaped defect count of PLAN section 2): the five measures of effect over every Work admitted in the range, each with its counts: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool share.',
-      params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional() }).strict(),
-      handler(host, p) {
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp; `until` excludes, `escaped` is the Escaped defect count of PLAN section 2): the five measures of effect over every Work admitted in the range, each with its counts: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool share.',
+      params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional(), classify: z.boolean().optional() }).strict(),
+      async handler(host, p) {
         if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')
+        const classifier = services.classifier
+        if (p.classify && p.workId === undefined) throw new Error('`classify` goes with `workId`')
+        if (p.classify && !classifier) throw new Error('the classifier row is disabled (a profile patch turns it on with `disabled: false`)')
         if (p.workId !== undefined) {
           if (p.until !== undefined || p.escaped !== undefined) throw new Error('`until` and `escaped` go with `since`')
-          return summarize(known(host, p.workId))
+          const record = known(host, p.workId)
+          // Asking is the operator's choice; a report otherwise only reads what is recorded. A call is bounded (CALL_TIMEOUT):
+          // classification that is still going on goes on in the Host, and the report says so (`classifying`); ask again for the rest.
+          let classifying = false
+          if (p.classify) {
+            let timer: NodeJS.Timeout | undefined
+            const finished = await Promise.race([classifier!.classify(record).then(() => true), new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), CLASSIFY_WAIT_MS) })])
+            clearTimeout(timer)
+            classifying = !finished
+          }
+          return { ...summarize(record, classifier?.lookup), ...(classifying ? { classifying: true } : {}) }
         }
-        return rangeReport(host.view.list(), { since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }) })
+        return rangeReport(host.view.list(), { since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), ...(classifier ? { classified: classifier.lookup } : {}) })
       },
     },
     'work.events': {

@@ -18,6 +18,7 @@
 //   FAKE:turns    (claude, stream-json) first print two assistant messages that use tools, as progress
 //   FAKE:background=FILE  (claude) start a background job (its pid in FILE), unless background tasks are disabled and Monitor is disallowed
 //   FAKE:fail     report an error
+//   FAKE:cause=LABEL  (cls-1) with FAKE:fail, the error message carries this marker; a Classifier question (a prompt that says "Reply with only a JSON object") that quotes it is answered {"label":"LABEL"}
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
 //   FAKE:noise    with FAKE:followup, print 300 KB of other events between the results
@@ -40,6 +41,8 @@ const has = (marker) => prompt.includes(`FAKE:${marker}`)
 const cwd = process.cwd()
 const flag = codex ? '-m' : '--model'
 const model = args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined
+
+const cause = /FAKE:cause=(\S+)/.exec(prompt)?.[1]
 
 function finish(ok, message) {
   if (codex) {
@@ -86,6 +89,12 @@ function finish(ok, message) {
   process.stdout.write('', () => process.exit(ok ? 0 : 1))
 }
 
+// A Classifier question: answered at once, nothing else done.
+if (cause && prompt.includes('Reply with only a JSON object')) {
+  finish(true, JSON.stringify({ label: cause }))
+  await new Promise(() => {})
+}
+
 if (!codex && has('turns') && args.includes('stream-json')) {
   for (const [id, tool] of [['m1', 'Bash'], ['m2', 'Read']]) console.log(JSON.stringify({ type: 'assistant', message: { id, content: [{ type: 'tool_use', name: tool }], usage: { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 3 } } }))
 }
@@ -112,7 +121,7 @@ if (has('satisfied')) {
   for (const [, , path] of prompt.matchAll(/^- (satisfied) \(optional, the file (\/[^)]+)\)$/gm)) writeFileSync(path, 't/ok.test.mjs "holds"\n')
 }
 if (codex && has('refresh')) appendFileSync(join(process.env.CODEX_HOME, 'auth.json'), '\n')
-if (has('fail')) finish(false, 'scripted failure')
+if (has('fail')) finish(false, cause ? `scripted failure FAKE:cause=${cause}` : 'scripted failure')
 const held = /FAKE:holdstdout=(\S+)/.exec(prompt)?.[1]
 if (held) writeFileSync(held, String(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).pid))
 for (const [marker, detached] of [['grandchild', false], ['escaped', true]]) {

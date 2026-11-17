@@ -1,0 +1,34 @@
+{
+  "name": "@system/classifier",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Classifier: answers one closed question about an Artifact and records the answer as a classification@1 Artifact (cls-1); report-only, an optional row",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "schemas"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
+    "@system/agents": "workspace:*",
+    "@system/artifacts": "workspace:*",
+    "@system/work": "workspace:*",
+    "yaml": "2.9.1",
+    "zod": "4.6.6"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "ajv": "8.20.0"
+  }
+}

@@ -99,6 +99,14 @@
               standard: gpt-6.1-sol
               frontier: gpt-6-astra
 
+    # The Classifier (cls-1): answers closed questions (classifiers/*.yaml) about an Artifact with an economy-tier
+    # Account of the agents row and records each answer as a classification@1 Artifact. Report-only: `work report`
+    # reads it, nothing routes or verifies on it. Optional and off: with it off reports are as before; a profile
+    # patch turns it on with `disabled: false`. Listed after `agents`, whose service it reads.
+    - id: classifier
+      name: '@system/classifier'
+      disabled: true
+
     # Optional: Worker tokens (`system credentials`, ADR-0005). Only real
     # Workers read it, so it may be disabled by a profile patch.
     - id: credentials
