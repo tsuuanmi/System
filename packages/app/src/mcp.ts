@@ -12,7 +12,6 @@
  * Host's `work.changed` (see the Host README) becomes
  * `notifications/resources/updated`.
  */
-import { randomUUID } from 'node:crypto'
 import { parseArgs } from 'node:util'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -22,7 +21,7 @@ import { z, type Caller } from '@system/work'
 import { NotRunning, RpcError, tableOf, type Client, type Methods } from '../../host/lib/index.js'
 import { operations, type Services } from '../../host/lib/operations.js'
 import { explain, operatorId } from './io.ts'
-import { readWorkflowFile } from './remote.ts'
+import { readWorkflowFile, repeatable, rowsOf, withCommandId, type Row } from './remote.ts'
 
 /** What a code root offers `system mcp`: its operation table builder. */
 export interface Code { operations: (services: Services) => Methods; tableOf: typeof tableOf }
@@ -36,8 +35,8 @@ export const toolsOf = ({ operations, tableOf }: Code) => Object.entries(tableOf
 
 export const tools = toolsOf({ operations, tableOf })
 
-/** The operations of a code's table that only read (`read: true`), for its shapes only: a repeat of one is harmless. */
-export const readsOf = ({ operations, tableOf }: Code): Set<string> => new Set(Object.entries(tableOf(operations({} as Services))).filter(([, row]) => row.read).map(([name]) => name))
+/** The call policy's rows of a code's table (which operations only read, which take a `commandId`), for its shapes only. */
+const rowsOfCode = ({ operations, tableOf }: Code): Map<string, Row> => rowsOf(tableOf(operations({} as Services)))
 
 /**
  * What a session is told when it connects (the MCP `instructions`), so that
@@ -151,12 +150,12 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
     if (subscribed.has(workId)) void server.sendResourceUpdated({ uri: `system://work/${workId}` }).catch(() => {})
   }
   let current = tools
-  let reads = readsOf({ operations, tableOf })
+  let rows = rowsOfCode({ operations, tableOf })
   /** The Host runs newer code: list its tools; if its table cannot be read, keep the list. */
   const newCode = (code: Code) => {
     try {
       current = toolsOf(code)
-      reads = readsOf(code)
+      rows = rowsOfCode(code)
     } catch {
       return
     }
@@ -191,9 +190,9 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
    */
   const forwarded = async (method: string, given: object): Promise<unknown> => {
     // A write that takes a `commandId` gets one here, before the first send, so that the repeat reuses it.
-    const takesId = !reads.has(method) && current.some((tool) => tool.name === method && 'commandId' in ((tool.inputSchema.properties as object | undefined) ?? {}))
-    const params = takesId && typeof (given as { commandId?: unknown }).commandId !== 'string' ? { ...given, commandId: `mcp-${randomUUID()}` } : given
-    const repeatable = reads.has(method) || typeof (params as { commandId?: unknown }).commandId === 'string'
+    const row = rows.get(method)
+    const params = withCommandId(row, given, 'mcp-')
+    const again = repeatable(row, params)
     let client: Client
     try {
       client = await link()
@@ -203,7 +202,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
     try {
       return await client.call(method, params)
     } catch (error) {
-      if (!lost(error) || !repeatable) throw failed(error)
+      if (!lost(error) || !again) throw failed(error)
       session = undefined
     }
     try {

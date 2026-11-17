@@ -15,12 +15,13 @@ import type { Artifacts, Classification } from '@system/artifacts'
 import { WEB_WORKER_DISABLED, type AgentsService, type QuotaReport, type WebWorkerService } from '@system/agents'
 import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type FailureClassifier, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
+import { buildHostProgram, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
 import { completePendingInstallCheck } from './pending-install-check.ts'
 import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
+import type { Services } from '../../host/lib/operations.js'
 import { exitWithin, serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
@@ -106,7 +107,7 @@ async function probeHost(home: string): Promise<HostStatus> {
   }
 }
 
-function credentialCommands(ctx: Context): CredentialCommands {
+function credentialCommands(ctx: Context): Services['credentials'] {
   const store = ctx.get('credentials') as CredentialProvider | undefined
   if (!store) throw new Error('the credentials row is not mounted (run `system doctor`)')
   return {

@@ -99,7 +99,7 @@ function watch(host: Host, p: z.infer<typeof watching>, link: Link, on: boolean)
   return { status: record.state.status, seq: record.events.at(-1)!.seq }
 }
 
-export function operations(services: Services): Methods {
+export function operations(services: Services) {
   return {
     'work.submit': {
       agent: true,
@@ -241,7 +241,7 @@ export function operations(services: Services): Methods {
     'task.new': {
       agent: true,
       summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s STATUS.md cannot be read, when its `dev` has no line for the Item, and when the Item is Blocked (it comes after Items not done: `(after: id, id)` in its line; the refusal says "blocked by ...") unless `force` is true. When the Item\'s line has `(intent: <12 hex>)`, that `intent@1` Artifact is added to the Task\'s `context` (refused unless the prefix is exactly one stored `intent@1`).',
-      params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional(), force: z.boolean().optional() }).strict(),
+      params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional(), force: z.boolean().optional(), commandId }).strict(),
       async handler(host, p, caller) {
         if (p.item && p.repository && !p.force) {
           const status = await readStatus(p.repository).catch((error: unknown) => { throw new WorkError(statusUnreadable(p.repository!, error)) })
@@ -255,26 +255,26 @@ export function operations(services: Services): Methods {
     'intent.new': {
       agent: true,
       summary: 'Store an `intent@1` Artifact, what the operator settled with a caller session before Items carry it out: `{ intent }`, the Artifact ID. `body` is Markdown (Outcome, Why, Constraints, Out of scope). With `supersedes`, the Intent replaces an earlier one, which must be a stored `intent@1` Artifact; a changed Intent is a new Intent. Set `settledByOperator: true` only when the operator settled this Intent in this session: it counts as an operator act in `work.report`; without it the Intent is not counted.',
-      params: z.object({ title: z.string().min(1).max(200), body: z.string().min(1), supersedes: artifactId.optional(), settledByOperator: z.boolean().optional() }).strict(),
-      handler: (_host, { settledByOperator, ...intent }, caller) => services.newIntent({ ...intent, ...(settledByOperator ? { settledBy: 'operator' as const } : {}) }, caller),
+      params: z.object({ title: z.string().min(1).max(200), body: z.string().min(1), supersedes: artifactId.optional(), settledByOperator: z.boolean().optional(), commandId }).strict(),
+      handler: (_host, { settledByOperator, commandId: _id, ...intent }, caller) => services.newIntent({ ...intent, ...(settledByOperator ? { settledBy: 'operator' as const } : {}) }, caller),
     },
     'artifact.confirm': {
       agent: true,
       summary: 'Store a `confirmation@1` Artifact: the operator confirmed the stored Artifact `subject` (a dataset, a set of labels): `{ confirmation }`, the Artifact ID. `note` says what was confirmed; `date` (default now) is when. Call it only when the operator confirmed it in this session: `work.report` counts each as an operator act.',
-      params: z.object({ subject: artifactId, note: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional() }).strict(),
-      handler: (_host, p, caller) => services.newConfirmation(p, caller),
+      params: z.object({ subject: artifactId, note: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional(), commandId }).strict(),
+      handler: (_host, { commandId: _id, ...p }, caller) => services.newConfirmation(p, caller),
     },
     'defect.add': {
       agent: true,
       summary: 'Store an `escaped-defect@1` Artifact: a defect that escaped the Item (an Item ID) or the merge commit (7 to 40 hex characters) named by `subject`: `{ defect }`, the Artifact ID. `foundBy` is the Work ID that found it or text; `reason` says what was wrong; `date` (default now) is when it was found. `work.report` counts the recorded defects whose Item was merged in its range. With `supersedes`, the defect replaces an earlier one, which must be a stored `escaped-defect@1` Artifact and is no longer counted; a wrong record is corrected, not edited.',
-      params: z.object({ subject: z.string().min(1), foundBy: z.string().min(1).max(500), reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional(), supersedes: artifactId.optional() }).strict(),
-      handler: (_host, p, caller) => services.newDefect(p, caller),
+      params: z.object({ subject: z.string().min(1), foundBy: z.string().min(1).max(500), reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional(), supersedes: artifactId.optional(), commandId }).strict(),
+      handler: (_host, { commandId: _id, ...p }, caller) => services.newDefect(p, caller),
     },
     'defect.withdraw': {
       agent: true,
       summary: 'Store an `escaped-defect-withdrawal@1` Artifact: the `escaped-defect@1` Artifact `withdraws` was recorded wrongly and is no longer counted by `work.report`: `{ withdrawal }`, the Artifact ID. `reason` says why; `date` (default now) is when. `withdraws` must be a stored `escaped-defect@1` Artifact.',
-      params: z.object({ withdraws: artifactId, reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional() }).strict(),
-      handler: (_host, p, caller) => services.withdrawDefect(p, caller),
+      params: z.object({ withdraws: artifactId, reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional(), commandId }).strict(),
+      handler: (_host, { commandId: _id, ...p }, caller) => services.withdrawDefect(p, caller),
     },
     status: {
       read: true,
@@ -296,17 +296,17 @@ export function operations(services: Services): Methods {
       async handler(host, p, caller) {
         if (p.force) {
           const status = await readStatus(p.repository).catch(() => undefined)
-          return host.claim(status?.repository ?? p.repository, p.item, caller, true)
+          return host.claim(status?.repository ?? p.repository, p.item, caller, true, { commandId: p.commandId })
         }
         const status = await readStatus(p.repository).catch((error: unknown) => { throw new WorkError(statusUnreadable(p.repository, error)) })
         if (!status.items.some((i) => i.id === p.item)) throw new WorkError(noItemLine(p.item, status))
-        return host.claim(status.repository, p.item, caller, p.force)
+        return host.claim(status.repository, p.item, caller, p.force, { commandId: p.commandId })
       },
     },
     'artifact.put': {
       agent: true,
       summary: 'Store bytes (base64, within the frame limit) as a `file@1` Artifact: its envelope.',
-      params: z.object({ data: base64, mediaType: z.string().min(1).default('application/octet-stream'), classification: z.enum(CLASSIFICATIONS).default('local-private') }).strict(),
+      params: z.object({ data: base64, mediaType: z.string().min(1).default('application/octet-stream'), classification: z.enum(CLASSIFICATIONS).default('local-private'), commandId }).strict(),
       handler: (_host, p, caller) => services.putFile(Buffer.from(p.data, 'base64'), p.mediaType, p.classification, caller),
     },
     'artifact.show': {
@@ -368,11 +368,11 @@ export function operations(services: Services): Methods {
     'credentials.set': {
       agent: false,
       summary: 'Store a value under a name in the DSH credential store. Nothing returns it.',
-      params: z.object({ name: z.string().min(1), value: z.string().min(1) }).strict(),
+      params: z.object({ name: z.string().min(1), value: z.string().min(1), commandId }).strict(),
       async handler(_host, p) {
         await services.credentials.set(p.name, p.value)
         return { stored: p.name }
       },
     },
-  }
+  } satisfies Methods
 }

@@ -14,7 +14,7 @@ import { bootstrapMain } from './bootstrap.ts'
 import { buildProgram, type Run } from './cli.ts'
 import { confirmHuman, errorLine, explain, readSecret } from './io.ts'
 import { runMcp, type Code } from './mcp.ts'
-import { remoteHost } from './remote.ts'
+import { hostClient } from './remote.ts'
 
 /** How long a command keeps trying while the Host is away, in milliseconds: the swap of an upgrade takes a moment. */
 const CONNECT_RETRY = 3000
@@ -80,7 +80,7 @@ export async function main(args: string[], home: string): Promise<number> {
   }
   let selected: Run | undefined
   const io = { out, err, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
-  buildProgram(remoteHost({ open, err, reconnectMs: testMs('SYSTEM_WAIT_RECONNECT_MS'), retryMs: testMs('SYSTEM_WAIT_RETRY_MS') }), io, (run) => { selected = run }).parse(args, { from: 'user' })
+  buildProgram(hostClient({ open, err, reconnectMs: testMs('SYSTEM_WAIT_RECONNECT_MS'), retryMs: testMs('SYSTEM_WAIT_RETRY_MS') }), io, (run) => { selected = run }).parse(args, { from: 'user' })
   if (selected === undefined) return 0
   try {
     return await selected()

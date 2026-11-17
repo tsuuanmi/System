@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import type { Command } from 'commander'
-import { buildProgram, type ClientHost } from '../src/cli.ts'
+import { buildProgram } from '../src/cli.ts'
+import { fakeHost } from './fake-host.ts'
 import { tools } from '../src/mcp.ts'
 
 const file = readFileSync(new URL('../../../tools/night-session.md', import.meta.url), 'utf8')
-const program = buildProgram({} as unknown as ClientHost, { out() {}, err() {} } as any, () => {})
+const program = buildProgram(fakeHost(), { out() {}, err() {} } as any, () => {})
 
 /** Every line of the fenced code blocks that starts with `system `. */
 function systemLines(text: string): string[] {

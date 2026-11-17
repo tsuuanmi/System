@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as cli from '../src/cli.ts'
+import { fakeHost } from './fake-host.ts'
 import type { QuotaReport } from '../../agents/src/quota.ts'
 
 // Resolve the planned export at runtime so the tests compile before it exists.
@@ -39,7 +40,7 @@ test('workers keeps account lines and prints exactly one quota line per account'
   ]
   let output = ''
   let run: cli.Run | undefined
-  const program = cli.buildProgram({ workers: async () => ({ registered: ['codex/x1'], accounts }) } as unknown as cli.ClientHost, { out: (text: string) => { output += text } } as Parameters<typeof cli.buildProgram>[1], (selected) => { run = selected })
+  const program = cli.buildProgram(fakeHost({ 'workers.list': () => ({ registered: ['codex/x1'], accounts }) }), { out: (text: string) => { output += text } } as Parameters<typeof cli.buildProgram>[1], (selected) => { run = selected })
   program.exitOverride()
   await program.parseAsync(['node', 'system', 'workers'])
   assert.equal(await run!(), 0)
@@ -67,7 +68,7 @@ test('workers shows an Account\'s abilities on their own line, before the roles 
   const accounts = [{ ref: 'codex/x1', runtime: 'codex', available: true, reason: 'registered', abilities: ['repo.read', 'repo.write'], capabilities: ['research', 'tier.standard'] }]
   let output = ''
   let run: cli.Run | undefined
-  const program = cli.buildProgram({ workers: async () => ({ registered: ['codex/x1'], accounts }) } as unknown as cli.ClientHost, { out: (text: string) => { output += text } } as Parameters<typeof cli.buildProgram>[1], (selected) => { run = selected })
+  const program = cli.buildProgram(fakeHost({ 'workers.list': () => ({ registered: ['codex/x1'], accounts }) }), { out: (text: string) => { output += text } } as Parameters<typeof cli.buildProgram>[1], (selected) => { run = selected })
   program.exitOverride()
   await program.parseAsync(['node', 'system', 'workers'])
   assert.equal(await run!(), 0)
