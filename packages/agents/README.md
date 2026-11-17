@@ -286,8 +286,8 @@ model is recorded for it.
    64 KiB and its last part, 256 KiB in all with a marker line for the cut, as a
    `local-private` log Artifact. The log is never handed to
    another Worker, and is only a bounded copy: usage and the attempt summary
-   (tool calls by name, files read and edited, the longest tool calls, the tool
-   share of the time; `unknown` where a Runtime's log does not say; recorded as
+   (tool calls by name, files read and edited, the longest tool calls, the tool-seconds per second
+   (parallel calls overlap, so not a share); `unknown` where a Runtime's log does not say; recorded as
    `summary` of the `observed` event and shown by `system work show`) are
    computed from the whole stdout (kept to its last 64 MiB), never from the log.
 6. **Clean up:** the worktree registration and the attempt directory are removed.
