@@ -61,8 +61,10 @@ export interface Fixture {
 }
 
 export interface Env {
-  /** A fresh Chrome page, closed after the file. */
+  /** A fresh tab of the file's Chrome, cookies cleared. */
   page(): Promise<Page>
+  /** Close the tab; the Chrome stays for the next scenario. */
+  release(page: Page): Promise<void>
   skip: string | boolean
 }
 
@@ -89,7 +91,7 @@ export function conformance(fixture: Fixture, env: Env): void {
     } finally {
       p.dispose()
       // The browser goes first: a site's server waits for the page's open connections before it stops.
-      await page.context().close().catch(() => undefined)
+      await env.release(page)
       await site.stop()
     }
   }

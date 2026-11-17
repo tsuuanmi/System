@@ -633,6 +633,8 @@ export class FakeChatGpt {
 
   async stop(): Promise<void> {
     for (const stream of this.streams) stream.destroy()
+    // A Chrome that outlives the site (the file's shared one) may hold idle connections open: `close()` would wait for them.
+    this.server?.closeAllConnections()
     await new Promise<void>((resolve) => this.server?.close(() => resolve()) ?? resolve())
   }
 

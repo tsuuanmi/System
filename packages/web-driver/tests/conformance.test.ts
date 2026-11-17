@@ -3,13 +3,10 @@
  * (fake-other.ts, ui/fake-other.ui.yaml) and ChatGPT's map on its fake page. Headed Chrome on a private Xvfb; no network.
  * Belongs to `test:web`.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { after, before } from 'node:test'
-import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
-import { launch, webDefaults } from '../../web-worker/src/chatgpt.ts'
-import { startXvfb, type Display } from '../../web-worker/src/display.ts'
+import { readFileSync } from 'node:fs'
+import { after } from 'node:test'
+import { skipHeaded } from '../../../test-support/headed.ts'
+import { page, release } from './shared-chrome.ts'
 import { shippedMap } from '../src/index.ts'
 import { loadUiMap } from '../src/ui-ops/index.ts'
 import { conformance, type Fixture, type Scenario } from './conformance.ts'
@@ -17,27 +14,12 @@ import { FakeChatGpt } from './fake-chatgpt.ts'
 import { FakeOther } from './fake-other.ts'
 
 const skip = skipHeaded
-const root = mkdtempSync(join(tmpdir(), 'system-conformance-'))
-let display: Display
 const opened: Array<() => Promise<unknown>> = []
-before(async () => {
-  if (!skip) display = await startXvfb()
-})
 after(async () => {
   for (const close of opened) await close()
-  await display?.stop()
-  rmSync(root, { recursive: true, force: true })
 })
 
-let count = 0
-const env = {
-  skip,
-  async page() {
-    const context = await launch({ ...webDefaults(join(root, `profile-${count++}`)), executablePath: CHROME }, display)
-    opened.push(() => context.close().catch(() => {}))
-    return context.pages()[0] ?? context.newPage()
-  },
-}
+const env = { skip, page, release }
 
 const other: Fixture = {
   name: 'fake-other (hostile)',
