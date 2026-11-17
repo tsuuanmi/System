@@ -84,6 +84,15 @@ test('an account whose registration is not done is listed as registering, and an
   await announced[0]
 })
 
+// flaky-2: an announced account whose registration the row never reached (its apply threw, or it was unloaded first) must be refused, not left pending until the operation's wait runs out.
+test('an announced account is refused, not left pending, when the row stops before it registers the account', async () => {
+  const announced: Promise<unknown>[] = []
+  const web = { expect: (_ref: string, done: Promise<unknown>) => { announced.push(done) }, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
+  await assert.rejects(mount(web, false, [{}], { storageDomain: { open: async () => { throw new Error('database is locked') } } }), /database is locked/)
+  assert.equal(announced.length, 1)
+  await assert.rejects(Promise.race([announced[0], new Promise((r) => setTimeout(() => r('still pending'), 200))]), /database is locked/)
+})
+
 const ONE_CHROME = 'a web account runs one attempt at a time (one Chrome profile); maxConcurrentAttempts must be 1'
 
 test('a web account has one slot whatever the row says, and an agent CLI account inherits the row', async () => {

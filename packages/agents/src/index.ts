@@ -222,7 +222,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   }
   webWorker?.announced()
   // After the accounts are listed (as registering), which `system workers` serves while this awaits. Optional like `webWorker`: a bare context (a test's) keeps no readings across a restart.
-  const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain)
+  // Opening can fail: the announced accounts are then refused with that reason, never left pending until an operation's wait runs out (flaky-2).
+  const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain).catch((error: Error) => {
+    for (const outcome of outcomes.values()) outcome.refuse(error)
+    throw error
+  })
   if (domain) ctx.effect(() => () => { void domain.close() }, 'system_agents domain')
   const observations = domain?.table('quota')
   for (const { account, status } of entries) {
