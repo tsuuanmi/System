@@ -220,6 +220,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     done.catch(() => {})
     webWorker.expect(account.ref, done)
   }
+  webWorker?.announced()
   // After the accounts are listed (as registering), which `system workers` serves while this awaits. Optional like `webWorker`: a bare context (a test's) keeps no readings across a restart.
   const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain)
   if (domain) ctx.effect(() => () => { void domain.close() }, 'system_agents domain')

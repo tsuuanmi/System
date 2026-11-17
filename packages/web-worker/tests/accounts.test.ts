@@ -10,17 +10,44 @@ import { shippedMap } from '@system/web-driver'
 import { apply, offeredTiers } from '../src/index.ts'
 
 /** Mount the row on a bare context; its service. */
-function mount(config?: { registerWaitSeconds?: number }, home = '/nonexistent') {
+function mount(config?: { registerWaitSeconds?: number }, home = '/nonexistent', plugins: { name: string }[] = []) {
   const provided: Record<string, any> = {}
   const services: Record<string, unknown> = { capabilities: {}, artifacts: {}, subprocess: {}, dshHomePath: (...segments: string[]) => join(home, ...segments) }
-  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value } }
+  const ctx = { get: (key: string) => services[key], registry: { values: () => plugins }, effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value } }
   apply(ctx as never, config as never)
-  return provided.webWorker as { register(account: Record<string, unknown>): Promise<unknown>; expect(ref: string, done: Promise<unknown>): void; loginWait(ref: string, cancel: boolean): Promise<unknown>; loginRemote(ref: string): Promise<unknown> }
+  return provided.webWorker as { register(account: Record<string, unknown>): Promise<unknown>; expect(ref: string, done: Promise<unknown>): void; announced(): void; loginWait(ref: string, cancel: boolean): Promise<unknown>; loginRemote(ref: string): Promise<unknown> }
 }
 
 test('an account that is not configured is refused at once', { timeout: 10_000 }, async () => {
   const web = mount()
   await assert.rejects(web.loginRemote('web/chatgpt/none'), /web\/chatgpt\/none is not a configured web account/)
+})
+
+// flaky-1: the Host serves while the agents row is still waiting for its services, so a login can come before the row has announced any account.
+test('an account the agents row has not announced yet is waited for, not refused as "not configured"', { timeout: 10_000 }, async () => {
+  const web = mount(undefined, undefined, [{ name: 'system-agents' }])
+  let settled = false
+  const asked = web.loginRemote('web/chatgpt/default').finally(() => { settled = true })
+  asked.catch(() => {})
+  await Promise.resolve()
+  assert.equal(settled, false, 'it waits for the agents row to announce')
+  web.expect('web/chatgpt/default', Promise.reject(new Error('Xvfb is not installed')))
+  web.announced()
+  await assert.rejects(asked, /web\/chatgpt\/default: Xvfb is not installed/)
+})
+
+test('once the agents row has announced, a ref it did not announce is refused at once', { timeout: 10_000 }, async () => {
+  const web = mount(undefined, undefined, [{ name: 'system-agents' }])
+  const asked = web.loginRemote('web/chatgpt/none')
+  asked.catch(() => {})
+  web.announced()
+  await assert.rejects(asked, /web\/chatgpt\/none is not a configured web account/)
+  await assert.rejects(web.loginRemote('web/chatgpt/none'), /not a configured web account/)
+})
+
+test('the wait for the agents row is bounded by registerWaitSeconds', { timeout: 10_000 }, async () => {
+  const web = mount({ registerWaitSeconds: 0.2 }, undefined, [{ name: 'system-agents' }])
+  await assert.rejects(web.loginRemote('web/chatgpt/default'), /web\/chatgpt\/default is still registering after 0\.2 s/)
 })
 
 test('an operation waits for the registration in progress, and a failed one is refused with its own reason', { timeout: 10_000 }, async () => {
