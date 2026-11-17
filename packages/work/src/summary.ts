@@ -12,7 +12,6 @@ import type { WorkRecord } from './record.ts'
 /** One failed attempt, failed or inconclusive verdict, hold, failed publish or operator touch, read from `event` (`<type>#<index>`); `outside` when its reason is an Outside failure, `unknown` when its cause cannot be placed, absent for a failure of the change. */
 export interface Failure { event: string; kind: 'attempt' | 'attempt-lost' | 'verdict' | 'hold' | 'publish' | 'touch'; reason: string; outside?: OutsideCause; unknown?: true; classified?: ClassifiedFailure }
 
-/** A Classifier's recorded answer about an `unknown` failure (cls-1), for the report only: nothing decides from it. */
 export interface ClassifiedFailure { label: string; confidence: number; /** The `classification@1` Artifact. */ classification: string }
 /** The recorded Classification of a failure, if any; never asks a model. */
 export type ClassifiedLookup = (failure: Pick<Failure, 'event' | 'kind' | 'reason'>, record: WorkRecord) => ClassifiedFailure | undefined

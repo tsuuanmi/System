@@ -5,7 +5,6 @@
  */
 import type { WorkRecord } from './record.ts'
 
-/** A later pass of the same change content. */
 export interface LaterPassed { work: string; check: string }
 /**
  * The pass of `change` after event `index` of `record`: of `check` when given (a failed check), of any check otherwise (a

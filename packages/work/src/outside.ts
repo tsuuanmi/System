@@ -12,7 +12,6 @@ import type { WorkEvent } from './record.ts'
 /** `flaky` and `process` (cls-3) are placed by structure in `summarize`, never by a reason's text: a check that passed on the re-run of the same change, and a "no change" after a correct change (a Process failure, GLOSSARY). */
 export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach' | 'flaky' | 'process'
 
-/** The other causes by pattern; `quota` is `isQuotaLimited` (limits.ts), the one list. */
 const PATTERNS: [OutsideCause, RegExp][] = [
   ['restart', /host stopped before the attempt reported|host restart/i],
   ['conflict', /merge conflict with /i],

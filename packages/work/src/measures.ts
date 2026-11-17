@@ -62,7 +62,6 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
-  // cls-5: a later pass is read from every record, not only the range's.
   const later = laterPasses(records)
   let accepted = 0
   let ended = 0

@@ -86,7 +86,7 @@ budget is 4,285 lines under `docs/`. The older columns and the reasoning behind 
 
 | Measure | CM close | TR release (`41cbfea`, 2026-11-14) | FL close (`a96b498`, 2026-11-16) | 2026-11-17 close (after this pass) |
 |---|---|---|---|---|
-| Active core, lines | 4,183 (+7.3% on RO's 3,900, within +10%) | 4,280 (`packages/work/src` + `packages/artifacts/src`): a docs-only pass | 4,401, measured at `a052973`, which only adds documentation | 4,857 before → 4,840 after (−17: one reader for the operator records, two one-use wrappers; budget ≤ 4,841) |
+| Active core, lines | 4,183 (+7.3% on RO's 3,900, within +10%) | 4,280 (`packages/work/src` + `packages/artifacts/src`): a docs-only pass | 4,401, measured at `a052973`, which only adds documentation | 4,857 before → 4,840 after the simplification pass (one reader for the operator records, two one-use wrappers); cls-6 then took it to 4,853; 4,840 after this change (−13: comments restating code or another file's; budget ≤ 4,841) |
 | All package source, lines | 14,799 | not measured | not measured | 17,098 (`packages/*/src`; 17,115 before) |
 | Tests, lines | 14,853 | not measured | not measured | 22,294 (`packages/*/tests`, `tests`, `test-support`; 16 fewer: two duplicate summary tests) |
 | Docs under `docs/`, lines (files) | 4,270 (42) | 4,382 (42) before, 4,284 (42) after the hygiene pass | 4,288 (42): 3 over the budget | 3,624 (35); PLAN.md 188 → 164, STATUS.md 34 |

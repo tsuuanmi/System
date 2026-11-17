@@ -1,13 +1,11 @@
 /**
  * `escaped-defect@1` (Item ms-1): a defect that reached `dev` or a release after the Item that carried it was verified and
  * merged, recorded so `work report` counts Escaped defects from records. It names the Item (by ID) or the merge commit
- * (a hex prefix of at least 7 characters), who or what found it, why it is a defect, and when.
+ * (a hex prefix of at least 7 characters), who or what found it, why, and when.
  *
- * Artifacts are immutable, so a wrong record is corrected by a new one (Item def-2): an `escaped-defect@1` with `supersedes`
- * (an earlier defect it replaces, like `intent@1` in-1), or an `escaped-defect-withdrawal@1` {withdraws, reason, date}. The
- * withdrawal is its own kind because a withdrawal has no Item or commit, and putting `withdraws` on `escaped-defect@1` would
- * make `item`/`commit` optional there and weaken its exactly-one rule. `work report` counts only defects neither
- * superseded nor withdrawn.
+ * A wrong record is corrected by a new one (Item def-2): an `escaped-defect@1` with `supersedes`, or an
+ * `escaped-defect-withdrawal@1`, its own kind because it has no Item or commit (the exactly-one rule stays). `work report`
+ * counts only defects neither superseded nor withdrawn.
  */
 import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts'
 import { z } from 'zod'
@@ -40,7 +38,6 @@ export const withdrawalSchema = z.object({
   date: z.string().min(10).max(40),
 }).strict()
 export type DefectWithdrawal = z.infer<typeof withdrawalSchema>
-/** A stored defect with its Artifact ID. */
 export type StoredDefect = EscapedDefect & { id: string }
 
 /** What a CLI or MCP caller gives: the subject as an Item ID or a commit, the date optional (now). */
@@ -67,12 +64,10 @@ export async function withdrawDefect(artifacts: Artifacts, input: { withdraws: s
   return artifacts.put({ ...WITHDRAWAL_KIND, content, classification: 'local-private', producer })
 }
 
-/** Every stored `escaped-defect@1`, with its ID, for `rangeReport`. */
 export function storedDefects(artifacts: Artifacts): StoredDefect[] {
   return storedOf<EscapedDefect>(artifacts, DEFECT_KIND.kind).map(({ id, content }) => ({ ...content, id }))
 }
 
-/** Every stored `escaped-defect-withdrawal@1`, for `rangeReport`. */
 export function storedWithdrawals(artifacts: Artifacts): DefectWithdrawal[] {
   return storedOf<DefectWithdrawal>(artifacts, WITHDRAWAL_KIND.kind).map((s) => s.content)
 }

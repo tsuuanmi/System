@@ -26,7 +26,6 @@ export async function addConfirmation(artifacts: Artifacts, input: ConfirmationI
   return artifacts.put({ ...CONFIRMATION_KIND, content, classification: 'local-private', producer })
 }
 
-/** Every stored `confirmation@1`, for `rangeReport`. */
 export function storedConfirmations(artifacts: Artifacts): Confirmation[] {
   return storedOf<Confirmation>(artifacts, CONFIRMATION_KIND.kind).map((s) => s.content)
 }
