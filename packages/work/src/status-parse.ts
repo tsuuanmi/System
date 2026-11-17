@@ -8,11 +8,13 @@ export const ITEM_ID = /^[a-z][a-z0-9-]*-[0-9]+$/
 
 export interface Item {
   id: string
-  /** Without the `(after: ...)` marker. */
+  /** Without the `(after: ...)` and `(intent: ...)` markers. */
   title: string
   done: boolean
   /** The IDs of the Items this one comes after, from `(after: id, id)` at the end of its line; absent when it has none. */
   after?: string[]
+  /** The first 12 hex characters of the `intent@1` Artifact ID the Item carries out, from `(intent: <12 hex>)` at the end of its line; absent when it has none. */
+  intent?: string
 }
 
 export interface ParsedStatus {
@@ -25,8 +27,9 @@ export interface ParsedStatus {
 /** `STATUS.md` is about this long at most; details go elsewhere, as links. */
 const MAX_LINES = 100
 const MAX_AIM = 3
-/** The marker ends the Item line: `(after: cm-1, cm-3)`. Without the colon it is title text. */
-const AFTER = /^(.*?)\s*\(after:\s*([^)]*)\)$/
+/** Markers end the Item line, each at most once and in either order: `(after: cm-1, cm-3)`, `(intent: 0123456789ab)`. Without the colon it is title text. */
+const MARKER = /^(.*?)\s*\((after|intent):\s*([^)]*)\)$/
+const INTENT_PREFIX = /^[0-9a-f]{12}$/
 
 /** The cycles of the `after` relation (each once, as `a -> b -> a`), found from the Items in file order. */
 function cycles(items: Item[]): string[][] {
@@ -109,11 +112,19 @@ export function parseStatus(text: string, options: { strict?: boolean } = {}): P
     } else if (items.some((i) => i.id === item[2])) {
       problems.push(`${here}: Item ${item[2]} is listed already`)
     } else {
-      const marker = AFTER.exec(item[3]?.trim() ?? '')
-      const after = marker ? [...new Set(marker[2]!.split(',').map((id) => id.trim()).filter(Boolean))] : []
-      const title = marker ? marker[1]!.trim() : item[3]?.trim() ?? ''
-      if (marker && !after.length) problems.push(`${here}: Item ${item[2]} has an empty (after: ) list`)
-      items.push({ id: item[2]!, title, done: item[1] !== ' ', ...(after.length ? { after } : {}) })
+      let title = item[3]?.trim() ?? ''
+      const seen = new Map<string, string>()
+      for (let marker = MARKER.exec(title); marker; marker = MARKER.exec(title)) {
+        title = marker[1]!.trim()
+        if (seen.has(marker[2]!)) problems.push(`${here}: Item ${item[2]} has more than one (${marker[2]}: ) marker`)
+        else seen.set(marker[2]!, marker[3]!)
+      }
+      const list = seen.get('after')
+      const after = list === undefined ? [] : [...new Set(list.split(',').map((id) => id.trim()).filter(Boolean))]
+      const intent = seen.get('intent')?.trim()
+      if (list !== undefined && !after.length) problems.push(`${here}: Item ${item[2]} has an empty (after: ) list`)
+      if (intent !== undefined && !INTENT_PREFIX.test(intent)) problems.push(`${here}: Item ${item[2]} has (intent: ${intent}): expected the first 12 lower-case hex characters of an intent@1 Artifact ID`)
+      items.push({ id: item[2]!, title, done: item[1] !== ' ', ...(after.length ? { after } : {}), ...(intent && INTENT_PREFIX.test(intent) ? { intent } : {}) })
       at.set(item[2]!, n + 1)
       if (!title) problems.push(`${here}: Item ${item[2]} has no title`)
     }

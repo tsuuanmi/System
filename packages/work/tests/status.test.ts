@@ -558,3 +558,27 @@ test('admitting a Work for a Blocked Item is refused naming what blocks it, unle
   assert.equal((await admit(task(dir, 'cm-2'), true)).state.status, 'running')
   assert.equal((await admit(task(dir, 'cm-1'))).state.status, 'running')
 })
+
+test('in-2: an Item line may end with (intent: <12 hex>) beside (after: ...), in either order, once each', () => {
+  const hex = 'abc123def456'
+  const parsed = parseStatus(AFTER('- [ ] a-1 One', `- [ ] a-2 Two (intent: ${hex})`, `- [ ] a-3 Three (after: a-1) (intent: ${hex})`, `- [ ] a-4 Four (intent: ${hex}) (after: a-1, a-2)`))
+  assert.deepEqual(parsed.problems, [])
+  assert.deepEqual(parsed.items, [
+    { id: 'a-1', title: 'One', done: false },
+    { id: 'a-2', title: 'Two', done: false, intent: hex },
+    { id: 'a-3', title: 'Three', done: false, after: ['a-1'], intent: hex },
+    { id: 'a-4', title: 'Four', done: false, after: ['a-1', 'a-2'], intent: hex },
+  ])
+  for (const bad of ['ABC123DEF456', 'abc123', 'abc123def4567', 'sha256:abc123def456', '']) {
+    assert.ok(parseStatus(AFTER(`- [ ] a-1 One (intent: ${bad})`)).problems.some((p) => /^line 2: .*intent/.test(p)), bad)
+  }
+  assert.ok(parseStatus(AFTER(`- [ ] a-1 One (intent: ${hex}) (intent: ${hex})`)).problems.some((p) => /intent/.test(p)))
+  assert.ok(parseStatus(AFTER('- [ ] a-1 One', '- [ ] a-2 Two (after: a-1) (after: a-1)', '')).problems.some((p) => /after/.test(p)))
+  // Without the colon it is title text, as for after.
+  assert.equal(parseStatus(AFTER('- [ ] a-1 One (intent 123)')).items[0]!.title, 'One (intent 123)')
+})
+
+test('in-2: status shows `intent: <prefix>` for an Item that has one, and nothing for an Item without', () => {
+  const status = parseStatus(AFTER('- [ ] a-1 One', '- [ ] a-2 Two (after: a-1) (intent: abc123def456)'))
+  assert.deepEqual(itemLines(status, undefined, []), ['[ ] a-1 One - todo: nobody', '[ ] a-2 Two (intent: abc123def456) - todo (blocked by a-1)'])
+})

@@ -130,6 +130,15 @@ export class Artifacts {
     return record ? { state: 'stored', ...structuredClone(record) } : { state: 'missing' }
   }
 
+  /** The IDs of the stored Artifacts of `kind` whose hex digest starts with `prefix`, found by reading every record. */
+  idsByPrefix(kind: string, prefix: string): string[] {
+    const found: string[] = []
+    for (const key of this.records.keys()) {
+      if (key.startsWith(`sha256:${prefix}`) && this.records.get(key)?.envelope.kind === kind) found.push(key)
+    }
+    return found
+  }
+
   /** The IDs of the Artifacts whose `lineage.supersedes` names `id`, found by reading every record. */
   supersededBy(id: string): string[] {
     const found: string[] = []

@@ -486,8 +486,14 @@ A repository lists its planned work in a `STATUS.md` at its root: one line per
 reported by `system status` as a `note:`. `(after: id, id)` at the end of a
 line (with the colon) makes the Item **Blocked** until each named Item is done;
 `status` then reads `todo (blocked by <ids>)`, and a cycle or an ID with no line
-is a problem (`cycle: a -> b -> a`, `unknown id`). The check `statusmd` fails a
-change whose `STATUS.md` has any problem.
+is a problem (`cycle: a -> b -> a`, `unknown id`). `(intent: <12 hex>)` beside it
+(either order, each once) names the `intent@1` Artifact the Item carries out, by
+the first 12 hex characters of its ID: `status` shows it, and `task new --item`
+adds that Intent to the Task's `context` (refused when the prefix is not exactly
+one stored `intent@1`). The check `statusmd` fails a change whose `STATUS.md` has
+any problem; it cannot open the Artifact store, so it checks an intent prefix
+only against `--intents <file>` (stored `intent@1` IDs, one per line) and
+otherwise prints a `note:` that the prefixes were not checked.
 
 ```
 system task new --text "..." --repo . --ref dev --item df-3   # prints the Task ID alone
