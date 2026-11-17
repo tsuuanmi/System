@@ -159,7 +159,11 @@ function setup() {
   return { controller, table, specs, requests, task, admit, hold }
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+/** Wait until the Work's live progress shows (up to 5 s), not a fixed time: a loaded machine is slower than 20 ms. */
+const settle = async (live?: () => unknown[]) => {
+  for (let waited = 0; waited < 5000 && live && live().length === 0; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+}
 
 test('each state: done from dev, doing from a running Work with its live progress, todo is nobody', async () => {
   const dir = repository(STATUS)
@@ -178,7 +182,7 @@ test('each state: done from dev, doing from a running Work with its live progres
   assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}`)
   assert.equal(workStatus(controller.get(work.id)!), 'admitted, not running')
   const running = controller.run(work.id)
-  await settle()
+  await settle(() => controller.live(work.id))
   assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} step task on fake/claude since ${work.events[0]!.at}; turns 3, last tool Edit, 1200 tokens`)
   assert.equal(lines().join('\n'), lines().join('\n'), 'the same records give the same text')
   assert.equal(lines({ state: 'doing' }).length, 1)
@@ -247,7 +251,7 @@ test('a second Work for an Item with a running Work is refused, naming it and it
   const release = hold()
   const first = await admit(task(dir, 'df-3'))
   const running = controller.run(first.id)
-  await settle()
+  await settle(() => controller.live(first.id))
   await assert.rejects(admit(task(dir, 'df-3', 'again')), (error: Error) => error.message.includes(first.id) && error.message.includes('fake/claude') && error.message.includes('force') && !error.message.includes('\n'))
   // Another Item, another repository, and a Task that names no Item are not affected.
   await admit(task(dir, 'df-4'))
