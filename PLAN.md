@@ -160,6 +160,10 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
 - [ ] Optional Skill, LSP, web-fetch or another Worker adapter only if a Work
   fails for want of one and the pinned DSH plugin can satisfy the System
   contract without duplicating the model loop.
+- [ ] Select tests by the import graph of the changed files (Jest `--findRelatedTests`, Vitest `related`, Nx affected
+  are the standards; Node's test runner has none). *Trigger: the required checks exceed their time budget (Charter 12).
+  Risk: the smoke tests boot the Host through `bin/system` and load plugins dynamically, so an import graph misses
+  dependencies.*
 - [ ] Adaptive routing only on a measured need, such as quota exhaustion.
 - [ ] A fixed set of reproducible failure scenarios to compare System versions. *Trigger: a change to a retry or
   recovery rule that needs a before/after comparison the Host's records cannot give.*

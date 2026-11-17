@@ -46,7 +46,7 @@ const checkSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9-]*$/),
   run: z.string().min(1),
   timeoutSeconds: z.number().int().positive().max(3600).default(600),
-  /** Globs (GitHub Actions' `paths`): the check runs only when the change touches one or it failed earlier in the Work; without it, always. */
+  /** Globs (GitHub Actions' `paths`, with `!` exclusions: the last pattern matching a file decides): the check runs only when the change touches an included file or it failed earlier in the Work; without it, always. */
   paths: z.array(z.string().min(1)).min(1).optional(),
   /** Ignored: read for old files and old `checks@1` (a verdict reason notes it). */
   red: z.enum(['pass', 'fail']).optional(),
@@ -112,9 +112,17 @@ export function stopLeftovers(home: string): string[] {
   return found
 }
 
-/** Whether a check runs for a change touching `touched` (paths relative to the repository): always without `paths`. */
-export const selected = (check: { paths?: string[] }, touched: readonly string[]): boolean =>
-  !check.paths || touched.some((file) => check.paths!.some((glob) => matchesGlob(file, glob)))
+/**
+ * Whether a check runs for a change touching `touched` (paths relative to the repository): always without `paths`.
+ * As GitHub Actions: the patterns are read in order, a file is included when the last pattern matching it is a positive one and
+ * excluded when it is a `!` pattern; the check runs when at least one touched file is included.
+ */
+export const selected = (check: { paths?: string[] }, touched: readonly string[]): boolean => {
+  const paths = check.paths
+  if (!paths) return true
+  const included = (file: string): boolean => paths.reduce((in_, glob) => glob.startsWith('!') ? (matchesGlob(file, glob.slice(1)) ? false : in_) : (matchesGlob(file, glob) ? true : in_), false)
+  return touched.some(included)
+}
 
 /** The throwaway directory (and HOME) of one verify attempt: its name carries the attempt ID, so a later Host can tell whether the run is gone. */
 const scratchOf = (attemptId: string): string => join(tmpdir(), `system-checks-${attemptId.replace(/[^A-Za-z0-9-]/g, '-')}`)

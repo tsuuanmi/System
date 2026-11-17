@@ -675,6 +675,33 @@ test('a check that failed earlier in the Work runs again whatever the diff selec
   assert.match(passEarlier.reason, /run: always [\d.]+ s; skipped: gate$/)
 })
 
+test('`paths` with `!` exclusions follow GitHub Actions: the last matching pattern decides, a check runs when a touched file is included', async () => {
+  const { selected } = await import('../src/checks.ts')
+  const code = { paths: ['packages/**', '!**/*.md'] }
+  assert.equal(selected(code, ['packages/x/README.md']), false)
+  assert.equal(selected(code, ['packages/x/src/a.ts']), true)
+  assert.equal(selected(code, ['packages/x/README.md', 'packages/x/src/a.ts']), true)
+  assert.equal(selected(code, ['docs/a.md']), false)
+  // Order matters: a later positive pattern includes the file again.
+  assert.equal(selected({ paths: ['!**/*.md', 'packages/**'] }, ['packages/x/README.md']), true)
+  assert.equal(selected({ paths: ['packages/**', '!**/*.md', 'docs/requirements/purpose.md'] }, ['docs/requirements/purpose.md']), true)
+  // Without `!` as before; without `paths` always.
+  assert.equal(selected({ paths: ['packages/**'] }, ['packages/x/README.md']), true)
+  assert.equal(selected({ paths: ['packages/**'] }, ['docs/a.md']), false)
+  assert.equal(selected({}, []), true)
+  // A list of only `!` patterns includes nothing.
+  assert.equal(selected({ paths: ['!**/*.md'] }, ['a.ts']), false)
+})
+
+test('release boundary: the previous release\'s verifier (a glob match, no `!` meaning) does not exclude: a `!` entry is a glob that matches no file', async () => {
+  const { matchesGlob } = await import('node:path')
+  // The old `selected`: any touched file matches any glob.
+  const old = (paths: string[], touched: string[]) => touched.some((file) => paths.some((glob) => matchesGlob(file, glob)))
+  assert.equal(old(['packages/**', '!**/*.md'], ['packages/x/README.md']), true, 'no exclusion, and the check still runs as before')
+  assert.equal(old(['packages/**', '!**/*.md'], ['docs/a.md']), false)
+  assert.equal(old(['!**/*.md'], ['README.md']), false)
+})
+
 test('System\'s own checks: a change to docs alone runs only docs; code, tests or the Charter run the main checks; the web Runtime adds web', async () => {
   const { readFileSync } = await import('node:fs')
   const { parse } = await import('yaml')
@@ -682,6 +709,8 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   const own = checksFileSchema.parse(parse(readFileSync(new URL('../../../.system/checks.yaml', import.meta.url), 'utf8')))
   const run = (touched: string[]) => own.checks.filter((c) => selected(c, touched)).map((c) => c.name)
   assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
+  // Markdown among code paths runs no code check (2026-11-17), unless the check names it (the runbook, the Charter).
+  assert.deepEqual(run(['packages/web-worker/README.md', 'packages/web-driver/README.md']), ['docs'])
   const all = own.checks.map((c) => c.name)
   // The upgrade rehearsal (Item rb-1) has its own `paths`: the release surface only, so it is not in `main` below.
   // The install guide check (Item install-1) has its own `paths` too: bin, the bundle, the runbook, the script.
