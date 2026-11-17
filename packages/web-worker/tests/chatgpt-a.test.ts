@@ -37,8 +37,10 @@ test('Chrome starts when TMPDIR is too deep for its profile socket', { skip, tim
   }
 })
 
-test('one prompt is sent in a temporary chat in Chat mode, the answer is awaited, and each labelled block fills its slot', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result, fake } = await run({}, ['report', 'sources'])
+test('one prompt is sent in a temporary chat in Chat mode, the answer is awaited, each labelled block fills its slot, and the exchange is stored as a conversation with its links and a small input kept in one part', { skip, timeout: 60_000 }, async () => {
+  // One flow, one browser: the former "one prompt", "stored as a conversation", "links inside the answer" and "no inputs or small ones stay one part" tests (web-4).
+  const answer = `${blocks('report', 'sources')}\nSee [source A](https://example.org/a) and [source B](https://example.org/b?x=1).`
+  const { artifacts, result, fake } = await run({ answer, attachOver: 1000 }, ['report', 'sources'], { instructions: 'Explain the fake topic.', note: 'a short note' })
   assert.equal(result.status, 'succeeded', result.reason)
   assert.equal(await text(artifacts, result.outputs.report!), 'content of report\nsecond line')
   assert.equal(await text(artifacts, result.outputs.sources!), 'content of sources\nsecond line')
@@ -46,14 +48,14 @@ test('one prompt is sent in a temporary chat in Chat mode, the answer is awaited
   assert.equal(fake.sent[0]!.temporary, true)
   assert.equal(fake.sent[0]!.mode, 'chat', 'the page started on Work: the driver switched it before anything was typed')
   assert.match(fake.sent[0]!.prompt, /"~~~~report"/)
+  assert.match(fake.sent[0]!.prompt, /a short note/)
   assert.equal(result.usage, undefined, 'the web UI shows no token counts')
   assert.deepEqual(result.executor, { ref: 'web/chatgpt/default', account: 'chatgpt/default', command: CHROME, version: 'fake' })
   assert.ok(result.log)
-})
-
-test('the exchange is stored as a conversation produced by the Worker, with the page URL, the model read back and temporary-chat context', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run({}, ['report'], { instructions: 'Explain the fake topic.' })
-  assert.equal(result.status, 'succeeded', result.reason)
+  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
+  const evidence = JSON.parse(line.slice(line.indexOf('{')))
+  assert.ok(!evidence.stages.some((stage: { stage: string }) => stage.stage === 'attach'))
+  assert.equal(evidence.attach, undefined)
   const { occurrences, content } = conversationOf(artifacts, result)
   assert.deepEqual(occurrences.map((o) => o.producer), [{ type: 'worker', ref: 'web/chatgpt/default' }])
   assert.equal(content.asserted.provider, 'ChatGPT')
@@ -66,9 +68,12 @@ test('the exchange is stored as a conversation produced by the Worker, with the 
   const sent = await text(artifacts, prompt!.artifact)
   assert.match(sent, /Explain the fake topic\./)
   assert.match(sent, /"~~~~report"/)
-  const answer = await text(artifacts, response!.artifact)
+  const rendered = await text(artifacts, response!.artifact)
   // The response is the page's rendered text: its words, with the block as the page shows it.
-  assert.match(answer, /^Here is the answer\.\n[\s\S]*report\ncontent of report\nsecond line$/)
+  assert.match(rendered, /report\ncontent of report\nsecond line/)
+  const links = content.parts.find((p) => p.role === 'attachment')!
+  assert.equal(links.name, 'links.json')
+  assert.deepEqual(JSON.parse(await text(artifacts, links.artifact)), ['https://example.org/a', 'https://example.org/b?x=1'])
 })
 
 // WW1g: a prompt with inputs is a header typed in the composer and a body pasted after it, which the site may turn into an attachment.
@@ -111,16 +116,6 @@ test('an input the site never finishes adding fails with its size and what to ch
   assert.equal(fake.sent.length, 0)
 })
 
-test('the prompt of a Task with no inputs, or small ones, stays one part', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result, fake } = await run({ attachOver: 1000 }, ['report'], { note: 'a short note' })
-  assert.equal(result.status, 'succeeded', result.reason)
-  assert.match(fake.sent[0]!.prompt, /a short note/)
-  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
-  const evidence = JSON.parse(line.slice(line.indexOf('{')))
-  assert.ok(!evidence.stages.some((stage: { stage: string }) => stage.stage === 'attach'))
-  assert.equal(evidence.attach, undefined)
-})
-
 test('with temporaryChat off the chat is a conversation of the account, bound by its id', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result, fake } = await run({}, ['report'], { config: { temporaryChat: false } })
   assert.equal(result.status, 'succeeded', result.reason)
@@ -128,16 +123,6 @@ test('with temporaryChat off the chat is a conversation of the account, bound by
   const { content } = conversationOf(artifacts, result)
   assert.match(content.asserted.url!, /\/c\/[0-9a-f-]{36}$/)
   assert.deepEqual(content.asserted.context, ['ui-map:2026-10-11'])
-})
-
-test('links inside the answer are kept as an attachment of the conversation', { skip, timeout: 60_000 }, async () => {
-  const answer = `${blocks('report')}\nSee [source A](https://example.org/a) and [source B](https://example.org/b?x=1).`
-  const { artifacts, result } = await run({ answer })
-  assert.equal(result.status, 'succeeded', result.reason)
-  const { content } = conversationOf(artifacts, result)
-  const links = content.parts.find((p) => p.role === 'attachment')!
-  assert.equal(links.name, 'links.json')
-  assert.deepEqual(JSON.parse(await text(artifacts, links.artifact)), ['https://example.org/a', 'https://example.org/b?x=1'])
 })
 
 test('a sign-in wall fails the attempt with a screenshot as partial output', { skip, timeout: 60_000 }, async () => {
@@ -251,7 +236,7 @@ test('cancel while the answer is awaited stops the attempt', { skip, timeout: 60
 })
 
 test('the attempt time limit stops a waiting attempt and fails it', { skip, timeout: 60_000 }, async () => {
-  const { result } = await run({ thinkMs: 60_000 }, ['report'], { extra: { attemptTimeoutMinutes: 0.1 } })
+  const { result } = await run({ thinkMs: 60_000 }, ['report'], { extra: { attemptTimeoutMinutes: 0.05 } })
   assert.equal(result.status, 'failed')
   assert.match(result.reason!, /exceeded its time limit/)
 })

@@ -150,25 +150,18 @@ test('the outside limit is a setting: a short remark outside the block is fine, 
 })
 
 // WW8a: the model and Power the page showed are recorded; WW8b: the Power is then selected from the step's tier.
-test('the evidence records the model and Power the page showed before, and a menu left open is closed before the insert', { skip, timeout: 120_000 }, async () => {
-  for (const menuOpen of [false, true]) {
-    const { artifacts, result, fake } = await run({ menuOpen }, ['report'])
-    assert.equal(result.status, 'succeeded', result.reason)
+// The levels come from the live menu (five on this page): economy is the first, standard the middle, frontier the last, no tier the middle.
+// web-4: also the former WW8a test: the evidence records the model and Power the page showed before (all runs), and a menu left open (the last run) is closed before the insert.
+test('a step selects the Power level of its tier before the send, the evidence says what was chosen and what the page showed before, and a menu left open is closed before the insert', { skip, timeout: 180_000 }, async () => {
+  for (const [tier, power, target] of [['economy', 'Instant', 'economy'], ['standard', 'Medium', 'standard'], ['frontier', 'Max', 'frontier'], [undefined, 'Medium', 'standard']] as const) {
+    const menuOpen = tier === undefined
+    const { artifacts, result, fake } = await run({ menuOpen }, ['report'], { tier })
+    assert.equal(result.status, 'succeeded', `${tier}: ${result.reason}`)
     const evidence = await evidenceOf(artifacts, result)
-    assert.deepEqual([evidence.model, evidence.powerBefore], ['Latest', 'Instant'], `menuOpen ${menuOpen}`)
+    assert.equal(evidence.model, 'Latest', `${tier}`)
     const observe = evidence.stages.find((stage: { stage: string }) => stage.stage === 'observe')
     assert.deepEqual([observe.status, typeof observe.elapsedMs], ['ok', 'number'])
     assert.equal(fake.sent[0]!.model, 'Latest', 'no model was selected')
-    assert.equal(fake.sent[0]!.menuOpen, false, 'the menu was closed before the insert')
-  }
-})
-
-// The levels come from the live menu (five on this page): economy is the first, standard the middle, frontier the last, no tier the middle.
-test('a step selects the Power level of its tier before the send, and the evidence says what was chosen', { skip, timeout: 180_000 }, async () => {
-  for (const [tier, power, target] of [['economy', 'Instant', 'economy'], ['standard', 'Medium', 'standard'], ['frontier', 'Max', 'frontier'], [undefined, 'Medium', 'standard']] as const) {
-    const { artifacts, result, fake } = await run({}, ['report'], { tier })
-    assert.equal(result.status, 'succeeded', `${tier}: ${result.reason}`)
-    const evidence = await evidenceOf(artifacts, result)
     assert.deepEqual([evidence.power, evidence.powerTarget, evidence.powerLevels, evidence.powerBefore], [power, target, 5, 'Instant'], `${tier}`)
     assert.deepEqual([fake.sent[0]!.power, fake.sent[0]!.menuOpen], [power, false], `${tier}`)
     const stages = evidence.stages.map((stage: { stage: string }) => stage.stage)
