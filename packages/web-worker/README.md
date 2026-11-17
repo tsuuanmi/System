@@ -215,7 +215,7 @@ Procedures do:
   map binds the control (the `model.open`, `model.close`, `model.power` and `model.power-status`
   entries), and a step that asks a tier (`workflows/research.yaml` asks `tier.standard`) routes
   to it. `tools/web-canary --report` counts the distinct values per Account.
-`chatgpt.test.ts` runs the attempt tests once, on the Procedures.
+`chatgpt-{a,b,c}.test.ts` run the attempt tests once, on the Procedures.
 
 **Login** (`system workers login web/chatgpt/<name> [--cookies <file> | --remote]`,
 operator-only operations `workers.login`, `workers.loginRemote` and
