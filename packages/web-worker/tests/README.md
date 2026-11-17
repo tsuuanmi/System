@@ -3,7 +3,7 @@
 Most of these run a real headed Chrome on Xvfb, so `corepack pnpm test` leaves them out; `corepack pnpm test:web` runs them.
 [no-browser.test.ts](no-browser.test.ts) is the exception: it runs in `test` and shows that `SYSTEM_NO_BROWSER=1` refuses every browser launch.
 
-[chatgpt.test.ts](chatgpt.test.ts) runs the `web` Runtime against System 1's
+[chatgpt-a.test.ts](chatgpt-a.test.ts), [chatgpt-b.test.ts](chatgpt-b.test.ts) and [chatgpt-c.test.ts](chatgpt-c.test.ts) (one file split in three so the runner runs them in separate processes at once, web-2; shared helpers in [chatgpt-support.ts](chatgpt-support.ts)) run the `web` Runtime against System 1's
 fake ChatGPT site ([web-driver/tests/fake-chatgpt.ts](../../web-driver/tests/fake-chatgpt.ts); scenarios
 are its options; the Chrome the Runtime chooses, headed on a private Xvfb; a Chrome that cannot start fails them, see [test-support](../../../test-support/README.md)).
 Its WW1 tests seed a disposable profile with tabs and relaunch it after a clean close and after a SIGKILL, check the one-working-tab invariant (a late page is closed too), the launch clock (a launcher that never returns, with its Chrome killed, and one that fails), a held profile that is never launched, a launch that fails while another Chrome holds the profile, a close that leaves the process or cannot identify it, a late page that will not close, the stage and limit a timeout names, send attempted against confirmed, and the evidence record of good, failed, cancelled and timed-out attempts. [fake-chatgpt/](fake-chatgpt) is a small page for the remote sign-in tests only.
