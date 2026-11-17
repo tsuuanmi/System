@@ -100,11 +100,19 @@ export class WorkService {
   async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string, against?: string): Promise<{ task: string; base?: string }> {
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     let base: string | undefined
+    let intent: string | undefined
     if (item) {
       // Every Worker is told the Item's line, so an Item without one is refused here.
       if (!repository) throw new WorkError(`Item ${item} needs a repository: its line is read from STATUS.md on dev`)
       const status = await readStatus(repository)
-      if (!status.items.some((i) => i.id === item)) throw new WorkError(`Item ${item} has no line in STATUS.md on ${status.ref} of ${status.repository}; add the line first`)
+      const line = status.items.find((i) => i.id === item)
+      if (!line) throw new WorkError(`Item ${item} has no line in STATUS.md on ${status.ref} of ${status.repository}; add the line first`)
+      if (line.intent) {
+        // The Item's Intent travels with its Task as context, so every Worker reads what was wanted.
+        const found = this.artifacts.idsByPrefix(INTENT_KIND.kind, line.intent)
+        if (found.length !== 1) throw new WorkError(`Item ${item} names intent ${line.intent}, which matches ${found.length} stored intent@1 Artifacts (needs exactly one)`)
+        intent = found[0]
+      }
     }
     if (repository) {
       const tree = await snapshot(repository, ref)
@@ -115,6 +123,7 @@ export class WorkService {
         classification: 'local-private', producer,
       })).id
     }
+    if (intent && !context.includes(intent)) context = [...context, intent]
     const task = await this.artifacts.put({
       ...TASK_KIND, content: { instructions, ...(base ? { base } : {}), ...(context.length ? { context } : {}), ...(item ? { item } : {}) }, inputs: [...(base ? [base] : []), ...context],
       classification: 'local-private', producer,
