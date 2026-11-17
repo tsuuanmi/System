@@ -684,13 +684,17 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
   const all = own.checks.map((c) => c.name)
   // The upgrade rehearsal (Item rb-1) has its own `paths`: the release surface only, so it is not in `main` below.
-  const main = all.filter((name) => name !== 'web' && name !== 'statusmd' && name !== 'upgrade')
+  // The install guide check (Item install-1) has its own `paths` too: bin, the bundle, the runbook, the script.
+  const main = all.filter((name) => name !== 'web' && name !== 'statusmd' && name !== 'upgrade' && name !== 'install-guide')
   const withUpgrade = (names: string[]) => all.filter((name) => names.includes(name) || name === 'upgrade')
   // The STATUS.md check (Item cm-4) runs for STATUS.md, its tool, its parser or the checks file, and needs no install.
   assert.deepEqual(run(['STATUS.md']), ['docs', 'statusmd'])
-  assert.deepEqual(run(['packages/work/src/status-parse.ts']), all.filter((name) => name !== 'web'))
+  assert.deepEqual(run(['packages/work/src/status-parse.ts']), all.filter((name) => name !== 'web' && name !== 'install-guide'))
   assert.deepEqual(run(['.system/checks.yaml']), all.filter((name) => name !== 'web'))
-  for (const file of ['packages/work/src/controller.ts', 'workflows/code-checks.yaml', 'bin/system', 'packages/host/src/host.ts', 'packages/app/src/update.ts', 'packages/verifiers/src/checks.ts']) assert.deepEqual(run([file]), withUpgrade(main), file)
+  assert.deepEqual(run(['bin/system']), all.filter((name) => name !== 'web' && name !== 'statusmd'))
+  assert.deepEqual(run(['packages/bundle/src/index.ts']), all.filter((name) => main.includes(name) || name === 'install-guide'))
+  for (const file of ['docs/operations/runbook.md', 'tools/install.sh']) assert.deepEqual(run([file]), ['docs', 'install-guide'], file)
+  for (const file of ['packages/work/src/controller.ts', 'workflows/code-checks.yaml', 'packages/host/src/host.ts', 'packages/app/src/update.ts', 'packages/verifiers/src/checks.ts']) assert.deepEqual(run([file]), withUpgrade(main), file)
   for (const file of ['tests/work.test.ts', 'docs/requirements/purpose.md']) assert.deepEqual(run([file]), main, file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).
   for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'test-support/headed.ts']) assert.deepEqual(run([file]), [...main, 'web'], file)
