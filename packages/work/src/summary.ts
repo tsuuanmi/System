@@ -5,6 +5,7 @@
  * is. Usage an attempt did not report, or did not split into cache and fresh input, is counted apart, never as zero.
  */
 import type { LaterPass } from './later-pass.ts'
+import { defaultChange } from './failure-class.ts'
 import { attemptCause, outsideCause, type OutsideCause } from './outside.ts'
 import type { WorkRecord } from './record.ts'
 
@@ -111,8 +112,10 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
   const counts: Record<string, number> = {}
   if (classified) {
     for (const failure of failures) {
-      const answer = failure.unknown && failure.kind !== 'touch' ? classified(failure, record) : undefined
-      if (!answer) continue
+      const asked = (failure.unknown && failure.kind !== 'touch') || defaultChange(failure)
+      const answer = asked ? classified(failure, record) : undefined
+      // cls-6: a default `change` takes the Classifier's answer only when every sample agreed on a class other than `change`.
+      if (!answer || (!failure.unknown && (answer.confidence < 1 || answer.label === 'change' || answer.label === 'unknown'))) continue
       failure.classified = answer
       counts[answer.label] = (counts[answer.label] ?? 0) + 1
     }

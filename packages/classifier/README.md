@@ -38,12 +38,18 @@ The gate says when a Classification may be used for more than the report. It is 
   runs offline and the same every time.
 - **The evaluation** (`evaluate`) places each item three ways: the **rules** (rb-3 and cls-3, `summarize` on the item's
   record: an Outside cause, `unknown`, or `change`), the **Classifier** (the question asked of the failure's evidence) and
-  the **hybrid** (the rules' class unless `unknown`, then the Classifier's). The report gives for each: accuracy with its 95%
+  the **hybrid** (the rules' class, except that `unknown` takes the Classifier's answer, and so does a default `change` (cls-6: no
+  Outside cause, no failing test named, no base pass recorded) when every sample agreed on a class other than `change`; a
+  `change` that rests on positive evidence, an Outside cause or cls-5's later-pass fact is never put to it; `work report` follows
+  the same rule). The report gives for each: accuracy with its 95%
   Wilson interval, the `unknown` rate, the confusion matrix (gold by answered) and the count of **change→Outside** errors (a
   gold `change` answered with `quota`, `restart`, `conflict`, `load`, `slow-host`, `attach`, `flaky` or `process`); and for
   the Classifier the items whose samples disagreed, with a few samples. A Classifier that cannot answer counts as `unknown`.
 - **The gate passes** when the hybrid is at least as accurate as the rules **and** it has no change→Outside error.
-  Rules alone on the 41 items: 25/41 = 61.0% (95% 45.7–74.3%), `unknown` 9.8% (4 items); no change→Outside error.
+  Rules alone on the 41 items: 25/41 = 61.0% (95% 45.7–74.3%) on the 34-record snapshot; 26/41 = 63.4% (95% 48.1–76.4%) on the
+  37-record one (cls-6 added the later Works be9ef65d, ca752647 and f501e529 and a `trees` map: the cross-Work fact compares
+  git trees, and the same tree has another Artifact ID in each Work, so without `trees` it could not match); `unknown` 9.8%
+  (4 items); no change→Outside error.
 - **The first real evaluation** (2026-11-17, `claude -p --model haiku`, report Artifact
   `sha256:4613d1ee4e71592f3e1153d86b0498f7e3423e62094079cfd21a11cf8cb70669`): rules 24/41 = 58.5% (43–72%), `unknown` 12%,
   change→Outside 0; Classifier 28/41 = 68.3% (53–80%), `unknown` 15%, change→Outside 1 (work:61d3cf2c answered `process`);
