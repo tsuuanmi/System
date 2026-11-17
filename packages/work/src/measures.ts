@@ -19,6 +19,12 @@ export interface RangeOptions {
   defects?: readonly EscapedDefect[]
   /** The recorded Classifications (cls-1): the `unknown` failures that have one are told apart in `classifiedUnknownFailures`; no measure changes. */
   classified?: ClassifiedLookup
+  /** The stored `intent@1` Artifacts (when stored, who settled): those with `settledBy: 'operator'` stored in the range are operator acts. */
+  intents?: readonly { at: string; settledBy?: 'operator' }[]
+  /** The stored `confirmation@1` Artifacts: those dated in the range are operator acts. */
+  confirmations?: readonly { date: string }[]
+  /** The merge times of `dev` into `main` in the repositories the Host knows Items for (`releasesOf`): those in the range are operator acts. */
+  releases?: readonly string[]
 }
 
 export interface RangeReport {
@@ -32,8 +38,8 @@ export interface RangeReport {
   unknownFailures: number
   /** Of those, the ones a Classification labels, by label; absent when none (the Classifier row is off, or has classified none). */
   classifiedUnknownFailures?: Record<string, number>
-  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator touch, the touches `summarize` counts (human callers only). With no touches `perTouch` is `no touches`, never Infinity. */
-  headline: { itemsMerged: number; operatorTouches: number; perTouch: number | 'no touches' }
+  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts`: Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
+  headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts' }
   /** Escaped defects over distinct Items merged; `source` says where the count comes from: recorded `escaped-defect@1` Artifacts, the `--escaped` override, or `none` (no input). */
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number; source: 'records' | 'override (--escaped)' | 'none' }
   /** The API-equivalent cost estimate of every attempt in the range that reports one, over accepted Works; a lower bound when `worksWithUnknownCost` is above 0, `unknown` when no cost is known. */
@@ -50,7 +56,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects, classified }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects, classified, intents, confirmations, releases }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -102,6 +108,14 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     }
     if (unknownCost) worksWithUnknownCost += 1
   }
+  const inRangeAt = (at: string) => at >= since && (until === undefined || at < until)
+  const parts = {
+    intentsSettled: intents?.filter((i) => i.settledBy === 'operator' && inRangeAt(i.at)).length ?? 0,
+    confirmations: confirmations?.filter((c) => inRangeAt(c.date)).length ?? 0,
+    releases: releases?.filter(inRangeAt).length ?? 0,
+    humanTouches: operatorTouches,
+  }
+  const operatorActs = parts.intentsSettled + parts.confirmations + parts.releases + parts.humanTouches
   resolution.sort((a, b) => a - b)
   const recorded = defects?.filter((d) => (d.item !== undefined && mergedItems.has(d.item)) || (d.commit !== undefined && mergedCommits.some((c) => c.startsWith(d.commit!)))).length
   const count = escaped ?? recorded
@@ -109,7 +123,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
-    headline: { itemsMerged: merged.size, operatorTouches, perTouch: operatorTouches === 0 ? 'no touches' : merged.size / operatorTouches },
+    headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs },
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
     costPerVerifiedWork: { usd: accepted === 0 || (knownCostUsd === 0 && worksWithUnknownCost > 0) ? 'unknown' : knownCostUsd / accepted, knownCostUsd, accepted, worksWithUnknownCost },
     timeToVerifiedResolution: resolution.length === 0 ? { medianMs: 'unknown', p90Ms: 'unknown', accepted } : { medianMs: (resolution[Math.floor((resolution.length - 1) / 2)]! + resolution[Math.floor(resolution.length / 2)]!) / 2, p90Ms: percentile(resolution, 0.9), accepted },

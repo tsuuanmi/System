@@ -13,7 +13,8 @@ import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { git, pin, snapshot } from './git.ts'
 import { DEFECT_KIND, addDefect, defectSchema, storedDefects, type DefectInput, type EscapedDefect } from './defect.ts'
-import { INTENT_KIND, addIntent, intentSchema, type Intent } from './intent.ts'
+import { INTENT_KIND, addIntent, intentSchema, storedIntents, type Intent } from './intent.ts'
+import { CONFIRMATION_KIND, addConfirmation, confirmationSchema, storedConfirmations, type ConfirmationInput } from './confirmation.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
@@ -32,6 +33,8 @@ export * from './host.ts'
 export * from './host-lock.ts'
 export * from './intent.ts'
 export * from './defect.ts'
+export * from './confirmation.ts'
+export * from './releases.ts'
 export * from './kinds.ts'
 export * from './lane.ts'
 export * from './headroom.ts'
@@ -98,6 +101,16 @@ export class WorkService {
   /** Store an `escaped-defect@1` Artifact: a defect that escaped the Item or merge commit it names. */
   async newDefect(defect: DefectInput, caller: Caller): Promise<{ defect: string }> {
     return { defect: (await addDefect(this.artifacts, defect, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** Store a `confirmation@1` Artifact: the operator confirmed the stored Artifact it names. */
+  async newConfirmation(confirmation: ConfirmationInput, caller: Caller): Promise<{ confirmation: string }> {
+    return { confirmation: (await addConfirmation(this.artifacts, confirmation, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** The stored Intents and confirmations, for the operator acts of `rangeReport`. */
+  operatorActs(): { intents: { at: string; settledBy?: 'operator' }[]; confirmations: { date: string }[] } {
+    return { intents: storedIntents(this.artifacts), confirmations: storedConfirmations(this.artifacts) }
   }
 
   /** The recorded Escaped defects. */
@@ -223,6 +236,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
   artifacts.registerKind({ ...INTENT_KIND, content: intentSchema })
   artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema })
+  artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema })
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })

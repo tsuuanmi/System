@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Artifacts } from '@system/artifacts'
 import { memoryBlobStore, memoryRecordTable } from '../../../test-support/memory.ts'
-import { INTENT_KIND, addIntent, intentSchema } from '../src/intent.ts'
+import { INTENT_KIND, addIntent, intentSchema, storedIntents } from '../src/intent.ts'
 import { GIT_TREE_KIND, TASK_KIND, gitTreeSchema, taskSchema } from '../src/kinds.ts'
 
 const producer = { type: 'operator' as const, ref: 'tan' }
@@ -69,4 +69,14 @@ test('in-2: task new --item puts the Item\'s Intent Artifact in the Task\'s cont
   // Already in context: not twice; others stay.
   assert.deepEqual(ctx((await service.newTask('x', dir, 'dev', { type: 'human', operatorId: 'tan' }, [other.id, intent.id], 'a-2')).task), [other.id, intent.id])
   await assert.rejects(service.newTask('x', dir, 'dev', { type: 'human', operatorId: 'tan' }, [], 'a-3'), /intent 000000000000/)
+})
+
+test('settledBy is optional and only `operator`; it is stored as given', async () => {
+  assert.equal(intentSchema.safeParse({ title: 'x', body, settledBy: 'caller' }).success, false)
+  const artifacts = store()
+  const envelope = await addIntent(artifacts, { title: 'Settled', body, settledBy: 'operator' }, producer)
+  assert.deepEqual(envelope.content, { title: 'Settled', body, settledBy: 'operator' })
+  assert.deepEqual(storedIntents(artifacts), [{ at: envelope.createdAt, settledBy: 'operator' }])
+  const plain = await addIntent(artifacts, { title: 'Plain', body }, producer)
+  assert.deepEqual(storedIntents(artifacts).find((i) => i.at === plain.createdAt)?.settledBy, undefined)
 })
