@@ -14,6 +14,7 @@ import { createClassifier } from './classifier.ts'
 import { loadQuestions } from './question.ts'
 
 export * from './classifier.ts'
+export * from './eval.ts'
 export * from './evidence.ts'
 export * from './question.ts'
 export * from './schema.ts'

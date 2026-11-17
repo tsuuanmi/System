@@ -1,0 +1,422 @@
+{
+ "comment": "cls-2 labelled set: Artifact sha256:a8ad435ec0b8f7b7cbdbf879fc634dab0c5c107cfb0f26052d054a36667eee55 (system artifact cat <id>), copied verbatim below; labels follow failure-cause v2 (cls-3), confirmed by the operator on 2026-11-17.",
+ "artifact": "sha256:a8ad435ec0b8f7b7cbdbf879fc634dab0c5c107cfb0f26052d054a36667eee55",
+ "set": {
+  "name": "failure-cause labelled set",
+  "version": 1,
+  "labelled": "2026-11-17",
+  "method": "independent subagent labelling from Work records and git, confirmed by the operator (Q42); definitions per Q39-Q41",
+  "items": [
+   {
+    "work": "work:1e17f624-3103-50cb-8ca0-7c33b3f5f357",
+    "admitted": "2026-11-14T09:46:06.528Z",
+    "kind": "verdict",
+    "event": "verified#4",
+    "reason": "the sources file is not acceptable: the report cites [a-z], [a-z0-9-], [0-9], [verified], [unknown], [assumption], [x], not in sources",
+    "label": "process",
+    "confidence": "high",
+    "evidence": "Task instructions (work show input) told the Worker to mark claims [verified]/[assumption]/[unknown]; citations-v2 reads every bracket as a source id (STATUS tr-2 records this as the caller's doing)."
+   },
+   {
+    "work": "work:8854ad3b-a3b7-568f-8cd2-f303ee31c0f6",
+    "admitted": "2026-11-14T09:46:06.629Z",
+    "kind": "verdict",
+    "event": "verified#4",
+    "reason": "the sources file is not acceptable: the report cites [verified], [assumption], [unknown], [E], not in sources",
+    "label": "process",
+    "confidence": "high",
+    "evidence": "Same caller Task asking for [verified]/[assumption]/[unknown] tags; the only refused ids are those tags (tr-2)."
+   },
+   {
+    "work": "work:91243e9b-6a0e-55fb-8825-ab69fa3b1b6f",
+    "admitted": "2026-11-14T09:46:06.760Z",
+    "kind": "verdict",
+    "event": "verified#4",
+    "reason": "the sources file is not acceptable: the report cites [assumption], [unknown], not in sources; sources not cited in the report: s3, s4, s5, s6, s7, s8, s9, s12, s14, s15, s18",
+    "label": "process",
+    "confidence": "medium",
+    "evidence": "Same caller Task asking for bracket tags; but the verdict also lists 11 uncited sources, which is the Worker's report content (the 'every source cited' rule was only added to the Workflow later by tr-2)."
+   },
+   {
+    "work": "work:9dda9b91-b942-55c7-86b6-080426a0a503",
+    "admitted": "2026-11-14T09:49:51.527Z",
+    "kind": "attempt",
+    "event": "observed#2",
+    "reason": "web/chatgpt/default: chatgpt-web: chatgpt-web: attach text failed: the attachment was still being added after 30000 ms (an attachment is still being added; the composer holds 5877 characters (header 5877, header and body 44612); 0 new chip(s), 0 named by the body's first 24 characters)",
+    "label": "attach",
+    "confidence": "high",
+    "evidence": "web/chatgpt attempt failed 'attach text failed ... still being added after 30000 ms' for a 44 KB input; STATUS tr-3 calls it an attach (Outside) failure."
+   },
+   {
+    "work": "work:b131dd34-770b-5276-9da8-44d52921fc1d",
+    "admitted": "2026-11-14T10:27:49.598Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: smoke: cli-host.test.ts \"work wait survives a Host restart\": test timed out after 120000ms (skipped: web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Check evidence: the change failed publish-crash.test.ts asserts (status 'succeeded' vs 'running') and the restart smoke while base cf83365 passed smoke; attempt 2 rewrote tests/test-support to fit the new behaviour (later counted as an Escaped defect, tr-1)."
+   },
+   {
+    "work": "work:8bc783f6-ae83-5e2a-9f9a-bddf14cee561",
+    "admitted": "2026-11-14T10:27:49.948Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: verifiers.test.ts \"System's own checks: a change to docs alone runs only docs; code, tests or the Charter run the main checks; the web Runtime adds web\": packages/work/src/controller.ts (skipped: web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change added a statusmd check without updating verifiers.test.ts; base unit passed; attempt 2 only edited that test and passed."
+   },
+   {
+    "work": "work:a9e48ced-d41c-5d7b-876e-8e3391ec0ab7",
+    "admitted": "2026-11-14T11:18:03.151Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: smoke: agents.test.ts \"cancel from another process stops the attempt, keeps its partial tree, and Codex takes over\": The input did not match the regular expression /cancelled by human tester: switch accounts/. Input: 'cancelled by agent tester: switch accounts'; web: chatgpt-web.test.ts \"login --remote prints the tunnel and the address, serves noVNC behind the token, and Save reports the state\": system: workers.loginRemote: not allowed for agents",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change made cancel/loginRemote treat the test runner as an agent; base smoke and web passed; attempt 2 fixed test-support/cli.ts to run as a human (terminal) and passed."
+   },
+   {
+    "work": "work:8fc4e4b3-1c1f-516a-9216-097da60aaa43",
+    "admitted": "2026-11-14T14:35:04.177Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: statusmd (exit 1) (skipped: install, build, typecheck, unit, smoke, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "statusmd evidence: 'STATUS.md has 102 lines; keep it to about 100'; base passed; attempt 2 removed two done Items and passed."
+   },
+   {
+    "work": "work:c6bd714c-ccf4-5719-8811-aefc1b543d48",
+    "admitted": "2026-11-14T15:00:14.530Z",
+    "kind": "publish",
+    "event": "effect-observed#7",
+    "reason": "merge conflict with dev at 377ac7278bb6: workflows/README.md",
+    "label": "conflict",
+    "confidence": "high",
+    "evidence": "Publish refused: merge conflict with dev on workflows/README.md; checks had passed; attempt 2 rebased on new dev and merged."
+   },
+   {
+    "work": "work:9a798245-b8a0-5d02-9ed0-6580f4b380e4",
+    "admitted": "2026-11-14T16:24:43.136Z",
+    "kind": "verdict",
+    "event": "verified#4",
+    "reason": "the sources file is not acceptable: the report cites [1], not in sources",
+    "label": "process",
+    "confidence": "medium",
+    "evidence": "Checker read '?.[1]' inside quoted code as a source id although tr-2's rule was in the instructions; STATUS tr-7 fixes the verifier (citations-v3). A verifier defect, not the report."
+   },
+   {
+    "work": "work:61d3cf2c-2b20-539d-8f8c-5cbd5c4be869",
+    "admitted": "2026-11-14T16:36:38.146Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: statusmd (exit 1) (skipped: install, build, typecheck, unit, smoke, web)",
+    "label": "change",
+    "confidence": "medium",
+    "evidence": "statusmd: 'STATUS.md has 106 lines'; base passed. The caller's Task said to append exactly six lines, but work 8fc4e4b3 shows the same situation was fixable inside the change by trimming done Items."
+   },
+   {
+    "work": "work:61d3cf2c-2b20-539d-8f8c-5cbd5c4be869",
+    "admitted": "2026-11-14T16:36:38.146Z",
+    "kind": "attempt",
+    "event": "observed#8",
+    "reason": "no change: the working tree is the same as the base commit 92f7461. The Worker said: Nothing needed changing. The base commit (92f7461) already holds the whole change, and `git status` is clean. - **STATUS.md:** the six Items (tr-7, bs-1 to bs-5) are at lines 101–106, in the requested order. - **PLAN.md:** section \"3f. BS — Bootstrap (decided 2026-11-15 by the overnight session)\" is…",
+    "label": "change",
+    "confidence": "medium",
+    "evidence": "Reopened attempt started from the previous attempt's commit (normal) and the Worker said nothing needed changing although statusmd still failed (106 lines); the earlier change was not correct, so this is not 'no change after a correct change'."
+   },
+   {
+    "work": "work:f296d656-9db3-5ab7-8ef6-14ae2a885604",
+    "admitted": "2026-11-14T16:39:19.677Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: typecheck (exit 2) (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "typecheck error TS2345 in the change's new tests/bootstrap-plan.test.ts; base typecheck passed; attempt 2 fixed it."
+   },
+   {
+    "work": "work:98b52b46-1173-5aa1-9699-e63c136a636c",
+    "admitted": "2026-11-14T18:00:44.025Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: mcp.test.ts \"the bootstrap steps cite a section that exists in documentation-architecture.md\": The input did not match the regular expression /section 9, \"Repository profile and agent\\s+contract\"/. Input: 'System is the durable work control plane on this machine. This session is a\\n' + (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change re-wrapped the MCP instructions so the regex for 'section 9, \"Repository profile and agent contract\"' no longer matched; base unit passed; attempt 2 passed."
+   },
+   {
+    "work": "work:c6e7cba1-7913-5f48-93cf-be85d8f06dc9",
+    "admitted": "2026-11-15T02:52:52.175Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: workers-quota.test.ts \"workers keeps account lines and prints exactly one quota line per account\": The input did not match the regular expression /  capabilities: research\\n  models: standard=test-model\\n/. Input: 'registered: codex/x1\\n' + (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Unit failures on the change (workers-quota output, controller domain-name test) while base d560e6d passed unit."
+   },
+   {
+    "work": "work:c6e7cba1-7913-5f48-93cf-be85d8f06dc9",
+    "admitted": "2026-11-15T02:52:52.175Z",
+    "kind": "verdict",
+    "event": "verified#11",
+    "reason": "failed: unit: wait.test.ts \"waitFor's --timeout ends an outage as unreachable, not as a timeout\": Got unwanted rejection. (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "medium",
+    "evidence": "Cited test is wait.test.ts, but evidence tail shows the change still fails the 'controller names no domain' test as in attempt 1, base unit passed; whether wait.test itself is flaky is unchecked."
+   },
+   {
+    "work": "work:f4b7c58e-bffa-5a97-b6e1-bfdb6c5dfa1d",
+    "admitted": "2026-11-15T02:52:52.351Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: web: chatgpt.test.ts \"a sign-in wall fails the attempt with a screenshot as partial output\": not an Artifact ID: undefined (skipped: statusmd)",
+    "label": "flaky",
+    "confidence": "medium",
+    "evidence": "Failing web test (sign-in wall screenshot) is unrelated to the change's code-label work; base web passed; attempt 2 only added a screenshot retry because Chrome 'sometimes answers Unable to capture screenshot' and passed."
+   },
+   {
+    "work": "work:d4420d46-77ac-5111-9ad6-c47f2489ccb3",
+    "admitted": "2026-11-15T04:22:57.838Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: changed-tests.test.ts \"a change that edits an existing test and adds a new one lists only the edited one\": git diff in /tmp/system-changed-tests-TKuLQc failed: fatal: unable to read tree (0236a33f95e506acfc697f3482d00ebc15dd610d); smoke: web-worker-off.test.ts \"system workers shows each account's capabilities and the model of each tier (df-23), and no secret\": The input did not match the regular expression /claude-code\\/default[^\\n]*\\(claude-code\\)\\n\\s+capabilities: code-write, code\\.develop, research,[^\\n]*tier\\.economy, tier\\.standard, tier\\.frontier\\n\\s+models: economy=haiku, standard=sonnet, frontier=opus\\n/. Input: 'registered: claude-code/default, codex/default\\n' + (skipped: statusmd)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change failed unit (domain-name test) and smoke (workers output regex) while base e35047e passed both; attempt 2 fixed and passed."
+   },
+   {
+    "work": "work:fcecc3cd-4721-5ee6-ad82-5c4ec3a59932",
+    "admitted": "2026-11-15T05:59:23.043Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: controller.test.ts \"a Worker that disappears after admission fails the Work with a missing-capability reason\": The input did not match the regular expression /no enabled Worker provides research, web-search, tier.standard/. Input: 'no enabled Worker provides web.search, tier.standard for step investigate'; smoke: agents.test.ts \"tests/agents.test.ts\": Promise resolution is still pending but the event loop has already resolved (skipped: statusmd)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Capability renames broke controller/workflow/work tests; base passed; failures repeat in attempt 2."
+   },
+   {
+    "work": "work:fcecc3cd-4721-5ee6-ad82-5c4ec3a59932",
+    "admitted": "2026-11-15T05:59:23.043Z",
+    "kind": "verdict",
+    "event": "verified#11",
+    "reason": "failed: unit: changed-tests.test.ts \"a change that edits an existing test and adds a new one lists only the edited one\": git diff in /tmp/system-changed-tests-SbcM8I failed: fatal: unable to read tree (0236a33f95e506acfc697f3482d00ebc15dd610d); smoke: work.test.ts \"the pinned spec survives a Workflow file edit and a killed host; done steps never re-run\": Expected values to be strictly equal: 0 !== 1 (skipped: statusmd)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Attempt 2 of the same Work still fails the capability-rename tests (workflow.test 'no enabled Worker provides repo.write'); base passed."
+   },
+   {
+    "work": "work:e4b21e59-5f02-5039-b3c8-9ecd5440e567",
+    "admitted": "2026-11-15T05:59:23.303Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: smoke: bootstrap-check.test.ts \"bootstrap check prints one line per item, exits 0 when all pass and non-zero when one fails\": Expected values to be strictly equal: 7 !== 6 (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change added a bootstrap check item (7 lines vs expected 6) without updating the smoke test; base smoke passed; attempt 2 updated the test."
+   },
+   {
+    "work": "work:5d3d275c-1014-5a0f-9a07-7f4b9e4738ab",
+    "admitted": "2026-11-15T07:28:34.687Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: smoke: work.test.ts \"with the fakes row disabled by config, admission names the missing capability\": The input did not match the regular expression /needs Worker capability research, which no enabled Worker provides/. Input: 'system: invalid workflow: step investigate needs Worker capability web.search, which no enabled Worker provides; step investigate needs Worker capability tier.standard, which no enabled Worker provides\\n' (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change renamed the capability in the admission message; smoke regex expects 'research'; base passed; attempt 2 fixed it."
+   },
+   {
+    "work": "work:0c0b2392-40cf-5678-b987-b9cb446d9862",
+    "admitted": "2026-11-15T14:20:25.271Z",
+    "kind": "publish",
+    "event": "effect-observed#7",
+    "reason": "checks on the merge with dev at 525430966b81: fail: failed: web: chatgpt-web.test.ts \"login imports a cookie file, reports the signed-in state and prints no cookie value\": system: web/chatgpt/default is not a configured web account (system workers)",
+    "label": "flaky",
+    "confidence": "high",
+    "evidence": "Merge-check failed on chatgpt-web login 'not a configured web account'; the change itself passed web, attempt 2's tree is identical to the failed merge (git diff 2d14560 d993bb2 empty) and passed; STATUS flaky-1 names this Work; race later fixed in 74001ed."
+   },
+   {
+    "work": "work:fca6e5c2-21be-5cf8-97e7-28101651222a",
+    "admitted": "2026-11-15T14:48:06.550Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: controller.test.ts \"the controller and Workflow compiler name no domain, Worker or verifier\": record.ts (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change put domain words into record.ts, failing the 'controller names no domain' unit test; base passed; attempt 2 passed."
+   },
+   {
+    "work": "work:7bbe1314-e0eb-56e6-9b8a-02a0116cacb9",
+    "admitted": "2026-11-15T18:25:34.200Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: api.test.ts \"the README lists exactly the table's methods, flags and params\": the README is out of date with the table: run SYSTEM_DOCS_WRITE=1 corepack pnpm test (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "README out of date with API table after the change; base unit passed; attempt 2 only edited packages/host/README.md."
+   },
+   {
+    "work": "work:d37085f2-425c-5107-a12e-6667d461daa9",
+    "admitted": "2026-11-15T19:53:28.508Z",
+    "kind": "verdict",
+    "event": "verified#2",
+    "reason": "failed: status (exit 1); bootstrap (exit 1)",
+    "label": "process",
+    "confidence": "low",
+    "evidence": "release.install-check: status/bootstrap failed 'no STATUS.md on origin/dev (a619dd2, 2026-11-09)' because the install repository only fetched main; next release a96b498 added 'git fetch origin dev' to those afterInstall checks. Stale ref in System's install setup, though the fix was in the checks file the release carried."
+   },
+   {
+    "work": "work:8932e477-7535-5ab2-b6f0-dce858ef2ee5",
+    "admitted": "2026-11-16T00:13:20.390Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: verifiers.test.ts \"System's own checks: a change to docs alone runs only docs; code, tests or the Charter run the main checks; the web Runtime adds web\": tests/work.test.ts (skipped: web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change added an 'upgrade' check without updating verifiers.test.ts; base passed; attempt 2 passed."
+   },
+   {
+    "work": "work:6667a703-68a9-4a6f-9bd8-85513fc18b34",
+    "admitted": "2026-11-16T06:20:14.909Z",
+    "kind": "attempt",
+    "event": "observed#2",
+    "reason": "no change: the working tree is the same as the base commit f90ea85. The Worker said: I made no change, because this checkout is missing the code the task is about. I reverted my edits, so the working tree is clean. The checkout is `f90ea85d`, and `b3ec5aee` (the #512 merge with the HVS-II run-1 work) is not an ancestor of it. The object does exist in the repository, and `origin/main…",
+    "label": "process",
+    "confidence": "high",
+    "evidence": "Worker: checkout f90ea85 lacks b3ec5aee, the merge the Task is about; Task based on an old commit."
+   },
+   {
+    "work": "work:16c0f40a-80fd-4942-94a0-1f498adb611a",
+    "admitted": "2026-11-16T07:53:08.427Z",
+    "kind": "publish",
+    "event": "effect-observed#7",
+    "reason": "merge conflict with dev at 2d2ff3659706: PLAN.md, STATUS.md",
+    "label": "conflict",
+    "confidence": "high",
+    "evidence": "Publish refused: merge conflict with dev on PLAN.md, STATUS.md; attempt 2 on new dev merged."
+   },
+   {
+    "work": "work:c28a351c-0413-4221-a79a-f7ce0c7c87e7",
+    "admitted": "2026-11-16T09:44:16.559Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: web: chatgpt-web.test.ts \"login imports a cookie file, reports the signed-in state and prints no cookie value\": system: web/chatgpt/default is not a configured web account (system workers) (skipped: statusmd)",
+    "label": "flaky",
+    "confidence": "high",
+    "evidence": "chatgpt-web login 'not a configured web account' (flaky-1); base web passed; same change content (8018e2d, identical stat) passed in work:be9ef65d per STATUS flaky-1. Check durations were ~2x normal, so load may have contributed."
+   },
+   {
+    "work": "work:c28a351c-0413-4221-a79a-f7ce0c7c87e7",
+    "admitted": "2026-11-16T09:44:16.559Z",
+    "kind": "attempt",
+    "event": "observed#8",
+    "reason": "claude-code/c4 exit 1: You've hit your 5-hour limit · resets 6pm (Asia/Ho_Chi_Minh)",
+    "label": "quota",
+    "confidence": "high",
+    "evidence": "claude-code/c4 exit 1: 'You've hit your 5-hour limit'."
+   },
+   {
+    "work": "work:c28a351c-0413-4221-a79a-f7ce0c7c87e7",
+    "admitted": "2026-11-16T09:44:16.559Z",
+    "kind": "attempt",
+    "event": "observed#12",
+    "reason": "no change: the working tree is the same as the base commit 2c80830. The Worker said: I made no changes. The base commit (2c80830) already has every deletion in this Task, so the working tree is clean. - **Files:** `brainstorm-shared`, `brainstorm-single`, `debate`, `research-fanout` and `codex-synthesis.patch.yml` are gone. `workflows/experiments/` holds only `README.md` and `second…",
+    "label": "process",
+    "confidence": "high",
+    "evidence": "Caller reopened from the previous change (2c80830) to fix a flaky-1 failure; the change was correct (same content passed later), so the Worker had nothing to change."
+   },
+   {
+    "work": "work:50378f7f-2603-4096-b377-5abce17d3474",
+    "admitted": "2026-11-16T14:12:29.269Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: smoke: docs-typed-edge.test.ts \"the repository passes: every document has a typed edge\": Expected values to be strictly equal: 1 !== 0 (skipped: statusmd)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change's new docs-typed-edge.test.ts copied build output (lib/ READMEs) and failed; base smoke passed; attempt 2 fixed the test's copy filter."
+   },
+   {
+    "work": "work:50378f7f-2603-4096-b377-5abce17d3474",
+    "admitted": "2026-11-16T14:12:29.269Z",
+    "kind": "verdict",
+    "event": "verified#11",
+    "reason": "failed: web: chatgpt-web.test.ts \"login imports a cookie file, reports the signed-in state and prints no cookie value\": system: web/chatgpt/default is not a configured web account (system workers) (skipped: statusmd)",
+    "label": "flaky",
+    "confidence": "high",
+    "evidence": "Attempt 2 only edited docs-typed-edge.test.ts; web failed with flaky-1's 'not a configured web account' although web passed on attempt 1's commit d0ff938 and on base."
+   },
+   {
+    "work": "work:bbbf12bc-1429-4b43-972c-20da07614c69",
+    "admitted": "2026-11-17T01:41:23.894Z",
+    "kind": "verdict",
+    "event": "verified#4",
+    "reason": "the sources file is not acceptable: not JSON: Unexpected token 'J', \"\nJSON\n\n{\n  \"... is not valid JSON",
+    "label": "process",
+    "confidence": "medium",
+    "evidence": "sources Artifact starts '\\nJSON\\n\\n{': the web Runtime captured the code block's language label; the report was complete; STATUS web-1 fixes System's web Runtime, not the Worker's answer."
+   },
+   {
+    "work": "work:80d26f56-6a4a-40ed-a8ba-ff2a7aa6b980",
+    "admitted": "2026-11-17T02:12:26.749Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: web: chatgpt-web.test.ts \"login imports a cookie file, reports the signed-in state and prints no cookie value\": system: web/chatgpt/default is still registering after 60 s (system workers) (skipped: statusmd, upgrade)",
+    "label": "flaky",
+    "confidence": "medium",
+    "evidence": "web check: login 'still registering after 60 s' and Host 'not answering ... after 10000 ms'; base web passed; the identical patch (77c17b6, same diff) passed web in work:ca752647; other check durations normal, so not obviously host slowness."
+   },
+   {
+    "work": "work:80d26f56-6a4a-40ed-a8ba-ff2a7aa6b980",
+    "admitted": "2026-11-17T02:12:26.749Z",
+    "kind": "attempt",
+    "event": "observed#8",
+    "reason": "no change: the working tree is the same as the base commit 3512f2f. The Worker said: I can't run the tests here, so I'm not writing `satisfied`, and I changed nothing. **What I found:** the fix for web-1 is already in the base commit `3512f2f`, which came from an earlier Work (work:80d26f56). The Item text says \"No earlier Work for this Item\", so that earlier change may not have bee…",
+    "label": "process",
+    "confidence": "high",
+    "evidence": "Retry started from the previous attempt's commit 3512f2f which already held the (correct, later passing) fix; Worker reported no change."
+   },
+   {
+    "work": "work:5d9e15cc-7a46-4f37-a4d3-94a399ad8465",
+    "admitted": "2026-11-17T02:41:16.120Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: status.test.ts \"each state: done from dev, doing from a running Work with its live progress, todo is nobody\": Expected values to be strictly equal: + actual - expected (skipped: statusmd, web)",
+    "label": "flaky",
+    "confidence": "medium",
+    "evidence": "status.test.ts (not touched by the change) used a fixed 20 ms wait and saw 'admitted, not running'; unit ran 64 s vs ~44 s normal (busy machine); attempt 2 only replaced the wait with a condition."
+   },
+   {
+    "work": "work:774553ad-96d8-49d0-a704-38f19a743bde",
+    "admitted": "2026-11-17T04:36:38.718Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: api.test.ts \"the README lists exactly the table's methods, flags and params\": the README is out of date with the table: run SYSTEM_DOCS_WRITE=1 corepack pnpm test (the base passed on re-run once; the first run failed on both: unit: api.test.ts \"the README lists exactly the table's methods, flags and params\": the README is out of date with the table: run SYSTEM_DOCS_WRITE=1 corepack pnpm test)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change fails api.test README check twice (both runs); base's first-run failure was a different timing test that passed on re-run; attempt 2 only edited packages/host/README.md."
+   },
+   {
+    "work": "work:f6fa7b46-eb43-4354-8d8a-8a4e144c8f01",
+    "admitted": "2026-11-17T04:36:39.528Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: verifiers.test.ts \"System's own checks: a change to docs alone runs only docs; code, tests or the Charter run the main checks; the web Runtime adds web\": Expected values to be strictly deep-equal: + actual - expected (skipped: web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "Change added an 'install-guide' check without updating verifiers.test.ts; base passed; attempt 2 passed."
+   },
+   {
+    "work": "work:ba0e584a-9578-4d21-863f-03e339e84923",
+    "admitted": "2026-11-17T04:36:40.598Z",
+    "kind": "verdict",
+    "event": "verified#5",
+    "reason": "failed: unit: api.test.ts \"the README lists exactly the table's methods, flags and params\": the README is out of date with the table: run SYSTEM_DOCS_WRITE=1 corepack pnpm test (skipped: statusmd, web)",
+    "label": "change",
+    "confidence": "high",
+    "evidence": "README out of date with API table after the change; base passed; attempt 2 only edited packages/host/README.md."
+   }
+  ]
+ }
+}
