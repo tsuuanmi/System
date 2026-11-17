@@ -4,11 +4,11 @@
  * Work is the request itself, not a touch; a human cancel, retry or decision
  * is. Usage an attempt did not report, or did not split into cache and fresh input, is counted apart, never as zero.
  */
-import { outsideCause, type OutsideCause } from './outside.ts'
+import { attemptCause, outsideCause, type OutsideCause } from './outside.ts'
 import type { WorkRecord } from './record.ts'
 
-/** One failed attempt, failed or inconclusive verdict, hold, failed publish or operator touch, read from `event` (`<type>#<index>`); `outside` when its reason is an Outside failure, absent for a failure of the change. */
-export interface Failure { event: string; kind: 'attempt' | 'attempt-lost' | 'verdict' | 'hold' | 'publish' | 'touch'; reason: string; outside?: OutsideCause }
+/** One failed attempt, failed or inconclusive verdict, hold, failed publish or operator touch, read from `event` (`<type>#<index>`); `outside` when its reason is an Outside failure, `unknown` when its cause cannot be placed, absent for a failure of the change. */
+export interface Failure { event: string; kind: 'attempt' | 'attempt-lost' | 'verdict' | 'hold' | 'publish' | 'touch'; reason: string; outside?: OutsideCause; unknown?: true }
 
 export interface WorkSummary {
   id: string
@@ -21,10 +21,12 @@ export interface WorkSummary {
   rateLimitedAttempts: number
   operatorTouches: number
   touches: string[]
-  /** Every failure and touch with its classification; `outsideFailures + changeFailures === failures.length`. */
+  /** Every failure and touch with its classification; `outsideFailures + changeFailures + unknownFailures === failures.length`. */
   failures: Failure[]
   outsideFailures: number
   changeFailures: number
+  /** Failures whose cause System cannot place: neither Outside nor a failure of the change. */
+  unknownFailures: number
   /** `inputTokens` is the total; fresh input counts only attempts that split their cache use. */
   usage: {
     inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; freshInputTokens: number; outputTokens: number
@@ -41,18 +43,18 @@ export function summarize(record: WorkRecord): WorkSummary {
   let waitedForSlotMs = 0
   let rateLimitedAttempts = 0
   const failures: Failure[] = []
-  const add = (index: number, kind: Failure['kind'], reason: string, outside: OutsideCause | undefined = kind === 'verdict' ? outsideCause(reason, 'verdict') : outsideCause(reason)) => {
-    failures.push({ event: `${record.events[index]!.type}#${index}`, kind, reason, ...(outside ? { outside } : {}) })
+  const add = (index: number, kind: Failure['kind'], reason: string, cause: OutsideCause | 'unknown' | undefined = kind === 'verdict' ? outsideCause(reason, 'verdict') : outsideCause(reason)) => {
+    failures.push({ event: `${record.events[index]!.type}#${index}`, kind, reason, ...(cause === 'unknown' ? { unknown: true as const } : cause ? { outside: cause } : {}) })
   }
-  const lastOutside = () => failures.at(-1)?.outside
+  const lastCause = () => failures.at(-1)?.unknown ? 'unknown' as const : failures.at(-1)?.outside
   const lastVerdict = () => failures.findLast((f) => f.kind === 'verdict')
   for (const [index, event] of record.events.entries()) {
-    if (event.type === 'observed' && event.status === 'failed') add(index, 'attempt', event.reason ?? '', event.rateLimited ? 'quota' : outsideCause(event.reason ?? '') === 'attach' ? 'attach' : undefined)
+    if (event.type === 'observed' && event.status === 'failed') add(index, 'attempt', event.reason ?? '', event.rateLimited ? 'quota' : attemptCause(event.reason ?? ''))
     if (event.type === 'attempt-lost') add(index, 'attempt-lost', event.reason, 'restart')
     if (event.type === 'verified' && (event.verdict === 'fail' || event.verdict === 'inconclusive')) add(index, 'verdict', event.reason)
     if (event.type === 'effect-observed' && event.state === 'failed') add(index, 'publish', event.reason, event.rejected === 'conflict' ? 'conflict' : undefined)
     if (event.type === 'terminal' && event.outcome === 'held' && event.reason !== 'verification passed; awaiting operator approval') {
-      add(index, 'hold', event.reason, /^inconclusive verification/.test(event.reason) ? lastVerdict()?.outside : undefined)
+      add(index, 'hold', event.reason, /^inconclusive verification/.test(event.reason) ? (lastVerdict()?.unknown ? 'unknown' : lastVerdict()?.outside) : undefined)
     }
     if (event.type === 'dispatched') {
       if (event.executor === 'worker') attempts += 1
@@ -78,10 +80,10 @@ export function summarize(record: WorkRecord): WorkSummary {
       }
     }
     if (event.type === 'terminal' && event.outcome === 'cancelled' && event.caller?.type === 'human') { touches.push('cancel'); add(index, 'touch', event.reason) }
-    if (event.type === 'reopened' && event.caller?.type === 'human') { touches.push(`retry ${event.stepId}`); add(index, 'touch', event.reason, lastOutside()) }
-    if (event.type === 'decided') { touches.push(`${event.decision} ${event.stepId}`); add(index, 'touch', event.reason, lastOutside()) }
+    if (event.type === 'reopened' && event.caller?.type === 'human') { touches.push(`retry ${event.stepId}`); add(index, 'touch', event.reason, lastCause()) }
+    if (event.type === 'decided') { touches.push(`${event.decision} ${event.stepId}`); add(index, 'touch', event.reason, lastCause()) }
   }
   const first = Date.parse(record.events[0]!.at)
   const last = Date.parse(record.events.at(-1)!.at)
-  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, waitedForSlotMs, rateLimitedAttempts, operatorTouches: touches.length, touches, failures, outsideFailures: failures.filter((f) => f.outside).length, changeFailures: failures.filter((f) => !f.outside).length, usage }
+  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, waitedForSlotMs, rateLimitedAttempts, operatorTouches: touches.length, touches, failures, outsideFailures: failures.filter((f) => f.outside).length, changeFailures: failures.filter((f) => !f.outside && !f.unknown).length, unknownFailures: failures.filter((f) => f.unknown).length, usage }
 }

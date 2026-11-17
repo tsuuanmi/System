@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { outsideCause, outsideRun } from '../src/outside.ts'
+import { attemptCause, outsideCause, outsideRun } from '../src/outside.ts'
 
 test('the real reasons of 2026-11-10/11 classify', () => {
   assert.equal(outsideCause('Your workspace is out of credits'), 'quota')
@@ -11,6 +11,8 @@ test('the real reasons of 2026-11-10/11 classify', () => {
   assert.equal(outsideCause('retried by the operator'), undefined)
   assert.equal(outsideCause('tests failed: 3 assertions'), undefined)
   assert.equal(outsideCause(''), undefined)
+  assert.equal(attemptCause('tests failed: 3 assertions'), 'unknown')
+  assert.equal(attemptCause('out of credits'), 'quota')
 })
 
 const at = '2026-11-14T00:00:00Z'
@@ -59,4 +61,15 @@ test('outsideRun counts a failed attach attempt, and a failure of another reason
   const failedWith = (reason: string) => ({ type: 'observed', stepId: 'task', attemptId: 'attempt:x', status: 'failed', outputs: {}, reason, usage: { state: 'unknown' } }) as never
   assert.deepEqual(outsideRun(seq([failedWith(ATTACH), failedWith(ATTACH)]), 'task'), { count: 2, cause: 'attach', reason: ATTACH })
   assert.equal(outsideRun(seq([failedWith(ATTACH), failedWith('tests failed')]), 'task').count, 0)
+})
+
+test('a verdict reason is Outside only by its Verifier marker, whatever a test is named', () => {
+  const smoke = 'failed: smoke: timed out after 600 s while running smoke.test.ts "work wait survives a Host restart"'
+  const quota = 'failed: unit: workers-quota.test.ts "a Worker out of credits is skipped": boom'
+  for (const reason of [smoke, quota]) {
+    assert.equal(outsideCause(reason, 'verdict'), undefined, reason)
+    assert.equal(outsideCause(reason), undefined, 'a check failure is not a Worker attempt reason')
+  }
+  assert.equal(outsideCause('unit: the base fails it too (base abc)', 'verdict'), 'load')
+  assert.equal(outsideCause('out of credits', 'verdict'), undefined)
 })

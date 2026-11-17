@@ -27,7 +27,7 @@ test('a Work run straight through needs no operator touch; observed usage is sum
   ]))
   assert.deepEqual(summary, {
     id: 'work:1', status: 'succeeded', durationMs: 10_000, attempts: 1, waitedForSlotMs: 0, rateLimitedAttempts: 0, operatorTouches: 0, touches: [],
-    failures: [], outsideFailures: 0, changeFailures: 0,
+    failures: [], outsideFailures: 0, changeFailures: 0, unknownFailures: 0,
     usage: { inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 7, observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 0 },
   })
 })
@@ -110,12 +110,12 @@ const held = (reason: string, awaiting?: string): Unnumbered => ({
   type: 'terminal', at, outcome: 'held', reason, results: {}, ...(awaiting ? { awaiting } : {}),
 })
 
-function failures(events: Unnumbered[], expected: { event: string; kind: string; reason: string; outside?: string }[], outsideFailures: number, changeFailures: number): void {
+function failures(events: Unnumbered[], expected: { event: string; kind: string; reason: string; outside?: string; unknown?: true }[], outsideFailures: number, changeFailures: number, unknownFailures = 0): void {
   const summary = summarize(record(events))
-  assert.deepEqual(summary, { ...summary, failures: expected, outsideFailures, changeFailures })
+  assert.deepEqual(summary, { ...summary, failures: expected, outsideFailures, changeFailures, unknownFailures })
   assert.ok('outsideFailures' in summary && typeof summary.outsideFailures === 'number')
   assert.ok('changeFailures' in summary && typeof summary.changeFailures === 'number')
-  assert.equal(summary.outsideFailures + summary.changeFailures, expected.length)
+  assert.equal(summary.outsideFailures + summary.changeFailures + summary.unknownFailures, expected.length)
   assert.deepEqual(summarize(record(events)), summary, 'the same recorded events give the same classification')
 }
 
@@ -127,8 +127,8 @@ test('failed attempts classify quota reasons, recorded rate limits and unknown r
   ], [
     { event: 'observed#0', kind: 'attempt', reason: 'Your workspace is out of credits', outside: 'quota' },
     { event: 'observed#1', kind: 'attempt', reason: 'unrelated failure', outside: 'quota' },
-    { event: 'observed#2', kind: 'attempt', reason: 'tests failed: 3 assertions' },
-  ], 2, 1)
+    { event: 'observed#2', kind: 'attempt', reason: 'tests failed: 3 assertions', unknown: true },
+  ], 2, 0, 1)
 })
 
 test('an attach failure is Outside; a check timeout verdict is a failure of the change unless the base fails it too', () => {
@@ -190,17 +190,17 @@ test('failed publishes classify recorded conflicts and unknown failures', () => 
 
 for (const [reason, outside] of [
   ['Your workspace is out of credits', 'quota'],
-  ['tests failed: 3 assertions', undefined],
+  ['tests failed: 3 assertions', 'unknown'],
 ] as const) {
-  test(`a human retry inherits the preceding ${outside ?? 'change'} failure`, () => {
-    const classification = outside ? { outside } : {}
+  test(`a human retry inherits the preceding ${outside} failure`, () => {
+    const classification = outside === 'unknown' ? { unknown: true as const } : { outside }
     failures([
       failedAttempt(reason),
       { type: 'reopened', at, caller: human, stepId: 'task', reason: 'retried by the operator' },
     ], [
       { event: 'observed#0', kind: 'attempt', reason, ...classification },
       { event: 'reopened#1', kind: 'touch', reason: 'retried by the operator', ...classification },
-    ], outside ? 2 : 0, outside ? 0 : 2)
+    ], outside === 'unknown' ? 0 : 2, 0, outside === 'unknown' ? 2 : 0)
   })
 }
 
@@ -219,4 +219,20 @@ test('a clean run has no failures of either class', () => {
     { type: 'observed', at, stepId: 'task', attemptId: 'attempt:1', status: 'succeeded', outputs: {}, usage: { state: 'unknown' } },
     { type: 'terminal', at, outcome: 'succeeded', reason: 'ok', results: {} },
   ], [], 0, 0)
+})
+
+test('a failure of a check names its test but is a failure of the change, not restart or quota (work:b131dd34, work:c6e7cba1)', () => {
+  const smoke = 'failed: smoke: timed out after 600 s while running smoke.test.ts "work wait survives a Host restart"'
+  const quota = 'failed: unit: workers-quota.test.ts "a Worker out of credits is skipped": expected 1, got 2'
+  failures([verdict('fail', smoke), verdict('fail', quota)], [
+    { event: 'verified#0', kind: 'verdict', reason: smoke },
+    { event: 'verified#1', kind: 'verdict', reason: quota },
+  ], 0, 2)
+})
+
+test('only the marker of its Verifier makes a verdict Outside', () => {
+  failures([verdict('fail', 'out of credits'), verdict('fail', 'unit: the base fails it too (base abc)')], [
+    { event: 'verified#0', kind: 'verdict', reason: 'out of credits' },
+    { event: 'verified#1', kind: 'verdict', reason: 'unit: the base fails it too (base abc)', outside: 'load' },
+  ], 1, 1)
 })

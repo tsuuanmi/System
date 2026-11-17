@@ -4,6 +4,7 @@
  * never zero. Admission decides the range: `since` inclusive, `until` exclusive.
  */
 import type { WorkRecord } from './record.ts'
+import { failureClass } from './failure-class.ts'
 import { summarize } from './summary.ts'
 import { wasMerged } from './status.ts'
 
@@ -21,9 +22,10 @@ export interface RangeReport {
   works: number
   /** Works accepted (`succeeded`) over Works ended (`succeeded`, `failed`, `cancelled`; a running or held Work has not ended). */
   verifiedSuccessRate: { rate: number | Unknown; accepted: number; ended: number }
-  /** Failures (not operator touches) whose class, by tr-3's classifier (the Outside cause, else `change-<kind>`), occurred in an earlier Work of the range, over all failures. */
+  /** Failures (not operator touches) whose class, by `failureClass` (the Outside cause, else the check and first failing test), occurred in an earlier Work of the range, over all failures; failures of `unknown` cause are counted apart (`unknownFailures`), in neither. */
   recurringFailureRate: { rate: number | Unknown; recurring: number; failures: number }
   /** Escaped defects over distinct Items merged. */
+  unknownFailures: number
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number }
   /** The API-equivalent cost estimate of every attempt in the range that reports one, over accepted Works; a lower bound when `worksWithUnknownCost` is above 0, `unknown` when no cost is known. */
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; worksWithUnknownCost: number }
@@ -46,6 +48,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   let ended = 0
   let failures = 0
   let recurring = 0
+  let unknownFailures = 0
   let knownCostUsd = 0
   let worksWithUnknownCost = 0
   const seen = new Set<string>()
@@ -64,7 +67,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
       const item = first.type === 'admitted' ? first.item : undefined
       merged.add(item ? `${item.repository}\0${item.id}` : record.id)
     }
-    const classes = summarize(record).failures.filter((f) => f.kind !== 'touch').map((f) => f.outside ?? `change-${f.kind}`)
+    const counted = summarize(record).failures.filter((f) => f.kind !== 'touch')
+    unknownFailures += counted.filter((f) => f.unknown).length
+    const classes = counted.filter((f) => !f.unknown).map(failureClass)
     failures += classes.length
     recurring += classes.filter((c) => seen.has(c)).length
     for (const c of classes) seen.add(c)
@@ -79,7 +84,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   }
   resolution.sort((a, b) => a - b)
   return {
-    since, ...(until === undefined ? {} : { until }), works: inRange.length,
+    since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures,
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
     escapedDefectRate: { rate: escaped === undefined ? 'unknown' : ratio(escaped, merged.size), escaped: escaped ?? 'unknown', itemsMerged: merged.size },
