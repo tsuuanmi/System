@@ -8,6 +8,7 @@ import type { LaterPass } from './later-pass.ts'
 import { defaultChange } from './failure-class.ts'
 import { attemptCause, outsideCause, type OutsideCause } from './outside.ts'
 import type { WorkRecord } from './record.ts'
+import { flakyFirstRuns } from './verification.ts'
 
 /** One failed attempt, failed or inconclusive verdict, hold, failed publish or operator touch, read from `event` (`<type>#<index>`); `outside` when its reason is an Outside failure, `unknown` when its cause cannot be placed, absent for a failure of the change. */
 export interface Failure { event: string; kind: 'attempt' | 'attempt-lost' | 'verdict' | 'hold' | 'publish' | 'touch'; reason: string; outside?: OutsideCause; unknown?: true; classified?: ClassifiedFailure }
@@ -62,7 +63,7 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
     failures.push({ event: `${record.events[index]!.type}#${index}`, kind, reason, ...(cause === 'unknown' ? { unknown: true as const } : cause ? { outside: cause } : {}) })
   }
   // cls-3: a check that failed and then passed on the re-run of the same change (`rerunOf`) is flaky.
-  const flakyVerdicts = new Set(record.events.flatMap((e) => (e.type === 'verified' && e.verdict === 'pass' && e.rerunOf ? [e.rerunOf] : [])))
+  const flakyVerdicts = flakyFirstRuns(record.events)
   // cls-3: a "no change" on a step reopened with a previous change that a later verdict passed unchanged is System's (a Process failure).
   const processAfterCorrectChange = (index: number, stepId: string): boolean => {
     const previous = record.events.slice(0, index).findLast((e) => e.type === 'reopened' && e.stepId === stepId)

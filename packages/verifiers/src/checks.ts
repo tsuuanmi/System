@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join, matchesGlob, normalize, sep } from 'node:path'
 import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
-import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult } from '@system/work'
+import { TASK_KIND, addWorktree, git, removeWorktree, type GitTreeContent, type Task, type VerifierPort, type VerifyResult, verifierRerunReason } from '@system/work'
 import { parse } from 'yaml'
 import { failureLine, interrupted, nodeBin } from './reasons.ts'
 import { z } from 'zod'
@@ -361,7 +361,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             const still = failedNames.filter((name) => again.get(name))
             failed.splice(0, failed.length, ...still.map((name) => again.get(name)!))
             if (!still.length) {
-              flaky = `re-run once: ${failedNames.join(', ')} failed, then passed on the change (flaky); first run: ${firstFailed}; `
+              flaky = verifierRerunReason(failedNames, firstFailed)
             } else {
               const baseAgain = await failingOnBase(still)
               if (!baseAgain || still.every((name) => baseAgain.has(name))) {

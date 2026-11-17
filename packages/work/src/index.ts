@@ -25,6 +25,7 @@ import { Capabilities } from './registry.ts'
 import type { ResolvedSpec } from './workflow.ts'
 
 export * from './controller.ts'
+export * from './verification.ts'
 export * from './conversation.ts'
 export * from './errors.ts'
 export * from './git.ts'

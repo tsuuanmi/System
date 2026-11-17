@@ -14,6 +14,7 @@ import { OUTSIDE_HOLD, outsideHoldReason, outsideRun } from './outside.ts'
 import { DEFAULT_LIMIT_MS, isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
+import { askVerifier, firstRunOf, refusedResult, settleVerdict, type VerifierPin } from './verification.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import { activeWork, blockedText, itemBlockedBy, itemNote, readStatus, whoHas } from './status.ts'
 import type { QuotaReading } from './headroom.ts'
@@ -65,19 +66,6 @@ export interface SpecStore {
   taskOf(id: string): { task: Task; repository?: string } | undefined
   /** Store a copy of Task `id` with `note` added to its context as a text Artifact; returns the copy's ID. */
   withNote(id: string, note: string, caller: Caller): Promise<string>
-}
-
-/** A verdict counts only for the exact subject and criteria asked about, with stored evidence; anything else is `error`. The merge queue's re-check binds with it too. */
-export function bindVerdict(result: VerifyResult, subject: string, criteria: string, exists: (id: string) => boolean): Pick<VerifyResult, 'verdict' | 'reason' | 'evidence'> {
-  const evidence = [...new Set(result.evidence ?? [])]
-  const problems: string[] = []
-  if (result.subject !== subject) problems.push(`it judged ${result.subject}, not the subject ${subject}`)
-  if (result.criteria !== criteria) problems.push(`it used criteria ${result.criteria}, not the pinned ${criteria}`)
-  const missing = evidence.filter((id) => !exists(id))
-  if (missing.length) problems.push(`its evidence ${missing.join(', ')} is not stored`)
-  if (result.verdict === 'pass' && !evidence.length) problems.push('a pass needs evidence')
-  if (problems.length) return { verdict: 'error', reason: `verdict refused: ${problems.join('; ')} (verifier said ${result.verdict}: ${result.reason})`, evidence: evidence.filter(exists) }
-  return { verdict: result.verdict, reason: result.reason, evidence }
 }
 
 /** How often a running attempt checks for a cancel request. */
@@ -164,7 +152,8 @@ interface VerifierAttempt {
   inputs: Record<string, string>
   /** Evidence of this step's earlier verdicts against the same criteria that were not a pass, oldest first. */
   earlier: string[]
-  refusal?: string
+  /** The verifier and version pinned at admission, if any. */
+  pin?: VerifierPin
 }
 
 /** What a listener of `onChange` is told after an event is committed. */
@@ -1069,12 +1058,8 @@ export class WorkController {
     const waiting = this.waitingForCheck.get(record.id)
     const waitedMs = this.waited(waiting?.stepId === s.id ? waiting.since : undefined)
     this.waitingForCheck.delete(record.id)
-    const kind = this.specs.kindOf(subject)
     const admitted = record.events[0]
-    const pinned = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
-    let refusal: string | undefined
-    if (pinned && (pinned.ref !== verifier.ref || pinned.version !== verifier.version)) refusal = `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`
-    else if (!kind || !verifier.accepts.includes(kind)) refusal = `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`
+    const pin = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
@@ -1085,17 +1070,14 @@ export class WorkController {
       throw error
     }
     const earlier = record.events.flatMap((e) => e.type === 'verified' && e.stepId === s.id && e.criteria === criteria && e.verdict !== 'pass' ? e.evidence ?? [] : [])
-    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, earlier, refusal } }
+    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, earlier, pin } }
   }
 
   /** Outside the lane: ask the verifier, touching no Work state. */
-  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, inputs, earlier, refusal }: VerifierAttempt): Promise<VerifyResult> {
-    if (refusal) return { verdict: 'error', reason: refusal, subject, criteria, evidence: [] }
-    try {
-      return await verifier.verify({ workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria, ...(Object.keys(inputs).length ? { inputs } : {}), ...(earlier.length ? { earlier } : {}) })
-    } catch (error) {
-      return { verdict: 'error', reason: `the verifier threw: ${(error as Error).message}`, subject, criteria, evidence: [] }
-    }
+  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, inputs, earlier, pin }: VerifierAttempt): Promise<VerifyResult> {
+    // A changed pin refuses the step with `error` (the merge check holds instead, for an Approval).
+    const asked = await askVerifier(this.specs, { verifier, pin, onPinMismatch: 'error', request: { workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria, ...(Object.keys(inputs).length ? { inputs } : {}), ...(earlier.length ? { earlier } : {}) } })
+    return 'refusal' in asked ? refusedResult(asked.refusal, subject, criteria) : asked.result
   }
 
   private latestReopening(record: WorkRecord, stepId: string) {
@@ -1113,17 +1095,9 @@ export class WorkController {
   /** In the lane: read the committed record again and append the verdict. */
   private async observeVerifier({ workId, attemptId, step: s, verifier, subject, criteria }: VerifierAttempt, result: VerifyResult): Promise<WorkRecord> {
     const record = this.require(workId)
-    let bound = bindVerdict(result, subject, criteria, (id) => this.specs.exists(id))
-    // The second run of a check on the same change (`retry.rerunUnchanged`): a pass is flaky, a second fail is held for the operator as inconclusive.
-    const lastRun = record.events.findLast((e) => e.type === 'verified' && e.stepId === s.id)
-    const first = lastRun?.type === 'verified' && lastRun.verdict === 'fail' && lastRun.verdictId
-      && record.events.some((e) => e.type === 'observed' && e.seq > lastRun.seq && e.unchangedAfter === lastRun.verdictId) ? lastRun : undefined
-    if (first && bound.verdict === 'pass') bound = { ...bound, reason: `flaky: failed (${first.verdictId}) then passed on the same change; ${bound.reason}` }
-    else if (first && bound.verdict === 'fail') bound = { verdict: 'inconclusive', reason: `failed twice on the same change, held for an operator decision (verifier said fail: ${bound.reason}); first run ${first.verdictId}`, evidence: [...(first.evidence ?? []), ...(bound.evidence ?? [])] }
-    const verdictId = await this.specs.putVerdict({
-      subject, criteria, capability: s.verify.capability, verifier: { ref: verifier.ref, version: verifier.version },
-      verdict: bound.verdict, reason: bound.reason, evidence: bound.evidence,
-    })
+    // The second run of a check on the same change (`retry.rerunUnchanged`) settles against the first.
+    const first = firstRunOf(record.events, s.id)
+    const { verdictId, bound } = await settleVerdict(this.specs, { verifier, capability: s.verify.capability, subject, criteria, result, first })
     return this.append(record, {
       type: 'verified', stepId: s.id, attemptId, subject, criteria,
       verdict: bound.verdict, reason: bound.reason, verdictId, evidence: bound.evidence,
