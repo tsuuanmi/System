@@ -23,6 +23,15 @@ test('task new prints the Task ID alone on stdout, and the base commit on stderr
   assert.match(result.err, /base sha256:base/)
 })
 
+test('intent new prints the Intent ID alone and needs exactly one of --body and --body-file', async () => {
+  const seen: unknown[] = []
+  const work = { newIntent: async (...args: unknown[]) => { seen.push(args); return { intent: 'sha256:intent' } } }
+  const result = await system(['intent', 'new', '--title', 'T', '--body', 'B', '--supersedes', 'sha256:old'], work)
+  assert.equal(result.out, 'sha256:intent\n')
+  assert.deepEqual(seen, [['T', 'B', 'sha256:old']])
+  await assert.rejects(system(['intent', 'new', '--title', 'T'], work), /exactly one of --body and --body-file/)
+})
+
 for (const verb of ['approve', 'deny'] as const) {
   test(`${verb} several Works asks for one typed confirmation and decides each`, async () => {
     const decided: string[] = []

@@ -12,6 +12,7 @@ import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type ClaimTable, ty
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { git, pin, snapshot } from './git.ts'
+import { INTENT_KIND, addIntent, intentSchema, type Intent } from './intent.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
@@ -28,6 +29,7 @@ export * from './git.ts'
 export * from './changed-tests.ts'
 export * from './host.ts'
 export * from './host-lock.ts'
+export * from './intent.ts'
 export * from './kinds.ts'
 export * from './lane.ts'
 export * from './headroom.ts'
@@ -84,6 +86,11 @@ export class WorkService {
   /** The Host core over this row's table, specs and capabilities (PROP-0004 C1): takes the lock for `home`, then recovers. */
   startHost(home: string): Promise<Host> {
     return Host.start({ home, capabilities: this.capabilities, ...this.storage, stallMinutes: this.config.stallMinutes })
+  }
+
+  /** Store an `intent@1` Artifact: what the operator settled with a caller session. */
+  async newIntent(intent: Intent, caller: Caller): Promise<{ intent: string }> {
+    return { intent: (await addIntent(this.artifacts, intent, { type: 'operator', ref: caller.operatorId })).id }
   }
 
   /**
@@ -195,6 +202,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
   const artifacts = ctx.get('artifacts') as Artifacts
   artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
+  artifacts.registerKind({ ...INTENT_KIND, content: intentSchema })
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })

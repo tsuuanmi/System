@@ -66,6 +66,10 @@ repositories, write Items, approve, deny and release. They may run System on
 more than one machine.
 _Avoid_: user, admin, team
 
+**Intent**:
+What the operator wants, settled with a caller session and stored as an Artifact before any Item carries it out. It says the outcome and why, and is not itself checkable; the Items made from it name it, so every result can be traced back to what was wanted. A changed Intent is a new Intent.
+_Avoid_: idea, prompt, request
+
 **Item**:
 A planned piece of a project's work, with a stable ID in the project's
 status list. An Item can get several Tasks over time (a request rewritten

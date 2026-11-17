@@ -95,6 +95,11 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    (\`work_show\`, \`artifact_show\`). To know when a Work is done without
    asking, run \`system work wait <id>\` as a background command.
 
+Intent
+When the operator settles what they want ("chốt", "đồng ý", "yes"), store it
+with \`intent_new\` (title; Markdown body with Outcome, Why, Constraints and
+Out of scope) before you write Items. Encouraged for new Items, not required.
+
 Bootstrap of a new repository (you do this, there is no script)
 1. Run \`system bootstrap plan --repo <path>\` and do the human steps it prints.
 2. Ask the operator before creating \`dev\` from \`main\`.
