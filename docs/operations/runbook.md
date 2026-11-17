@@ -2,7 +2,7 @@
 type: operations
 status: active
 reviewed: 2026-11-09
-covers: [bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
+covers: [tools/install.sh, bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
 ---
 
 # Runbook
@@ -15,6 +15,24 @@ The Host runs as a process and the CLI is its thin client: every command but
 `$DSH_HOME/system/host.sock`, so a Host must run for them.
 
 ## Install and start
+
+**On a new machine**, this page is the whole guide. You need `git`, `corepack`
+and Node >=24.9 (`nvm install 24`; add the `xvfb` package only for the web
+Worker, with `INSTALL_WEB=1`); [tools/install.sh](../../tools/install.sh) checks
+each and says what is missing. Clone, then run the script (the `install-guide`
+check runs this block as it is):
+
+```sh
+git clone git@github.com:tsuuanmi/System.git && cd System
+```
+
+```sh install
+tools/install.sh
+```
+
+It builds the install below for the commit you cloned and runs `system init`.
+Then link `~/.system/current/bin/system` as `system` on `PATH` and enable the
+unit (the next paragraphs); `system update` takes it from there.
 
 System runs from an install under `~/.system` (`SYSTEM_INSTALL` for another
 place), apart from any checkout you develop in:

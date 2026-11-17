@@ -60,6 +60,14 @@ checks:
     run: node --test --test-timeout=850000 tests/upgrade-rehearsal.test.ts
     timeoutSeconds: 900
     paths: [bin/**, packages/host/**, packages/app/**, packages/verifiers/**, packages/work/**, .system/checks.yaml, workflows/**]
+  - name: install-guide
+    # Item install-1: a new machine runs System from a clone with one guide. From an empty HOME and the commit under check it runs
+    # the commands of the runbook's "Install and start" page (the `sh install` block: tools/install.sh), registers the fake Worker,
+    # starts the Host without systemd and runs one Work to `succeeded`; tests/install-guide.test.ts also shows a broken command fails.
+    # (Named `install-guide`: `install` is the dependency step the later checks reuse, packages/verifiers SETUP_CHECKS.)
+    run: node --test --test-timeout=840000 tests/install-guide.test.ts
+    timeoutSeconds: 900
+    paths: [bin/**, packages/bundle/**, docs/operations/runbook.md, tools/install.sh, tests/install-guide.test.ts, .system/checks.yaml]
   - name: web
     # The Website Worker's tests, which drive a real headed Chrome on Xvfb
     # (milestone WW). Kept out of unit and smoke so the main path stays fast and
