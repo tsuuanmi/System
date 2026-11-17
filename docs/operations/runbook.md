@@ -338,6 +338,21 @@ enabling the timer, with no `todo` Item: `packages/bundle/system-night-session.s
 in a checkout after the Host answers. It should find no `todo` Item, store a
 report and print its ID. A "permission" refusal names a rule to fix in the script.
 
+### Which repositories the session works on
+
+By default the session works on this repository. `SYSTEM_NIGHT_REPOS` (paths of
+checkouts separated by `:`) names the repositories instead; the launcher passes
+the list to the prompt in that order, and an entry that is not a git checkout is
+reported (stderr, and the night report) and skipped. The limits (6 Items over all
+repositories) do not change. To add DNA, keep this repository first and set it in
+the installed unit, with an `Environment=` line or a drop-in
+(`systemctl --user edit system-night-session`):
+
+```ini
+[Service]
+Environment=SYSTEM_NIGHT_REPOS=%h/workspaces/System:%h/workspaces/DNA
+```
+
 ### The night report and its notifier
 
 The session's final answer is the report, in Markdown (the prompt lists its

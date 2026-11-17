@@ -48,7 +48,7 @@ const mcpAllowed = allowed.filter((r) => r.startsWith('mcp__')).sort()
 test('the service starts the script that runs claude -p with --allowedTools and the prompt file', () => {
   assert.match(service, /^ExecStart=@REPO@\/packages\/bundle\/system-night-session\.sh$/m)
   assert.match(script, /claude -p "\$prompt" --output-format text --allowedTools "\$@"/)
-  assert.match(script, /prompt=\$\(cat "\$repo\/tools\/night-session\.md"\)/)
+  assert.match(script, /prompt=\$\(cat "\$repo\/tools\/night-session\.md";/)
 })
 
 test('the allowlist holds exactly the MCP tools the prompt names, and the wait', () => {

@@ -84,3 +84,53 @@ test('when the report cannot be stored the launcher fails', () => {
   const r = run({ answer: 'report', putExit: 2 })
   assert.notEqual(r.res.status, 0)
 })
+
+/** The prompt is the argument after `-p`; the fake claude writes one argument per line, so read it back whole. */
+function promptOf(args: string) {
+  return args.split('\n--output-format')[0]!.replace(/^-p\n/, '')
+}
+function checkout(name: string) {
+  const d = mkdtempSync(join(tmpdir(), `night-repo-${name}-`))
+  spawnSync('git', ['init', '-q', d])
+  return d
+}
+
+test('without SYSTEM_NIGHT_REPOS the prompt names this repository only', () => {
+  const r = run({ answer: 'report' })
+  const p = promptOf(r.claudeArgs!)
+  assert.ok(p.includes(`Repositories for this night:\n- ${repo}`), p.slice(-300))
+  assert.equal((p.match(/^- \//gm) ?? []).length, 1)
+})
+
+test('SYSTEM_NIGHT_REPOS a:b names both checkouts, in order', () => {
+  const a = checkout('a')
+  const b = checkout('b')
+  try {
+    const r = run({ answer: 'report', env: { SYSTEM_NIGHT_REPOS: `${a}:${b}` } })
+    assert.equal(r.res.status, 0, r.res.stderr)
+    const p = promptOf(r.claudeArgs!)
+    assert.ok(p.includes(`Repositories for this night:\n- ${a}\n- ${b}`), p.slice(-300))
+    assert.ok(!p.includes(`- ${repo}\n`))
+  } finally {
+    rmSync(a, { recursive: true, force: true })
+    rmSync(b, { recursive: true, force: true })
+  }
+})
+
+test('an entry that is not a git checkout is reported and skipped, not fatal', () => {
+  const a = checkout('a')
+  const bad = mkdtempSync(join(tmpdir(), 'night-notgit-'))
+  try {
+    const r = run({ answer: 'report', env: { SYSTEM_NIGHT_REPOS: `${bad}:${a}:/nonexistent/x` } })
+    assert.equal(r.res.status, 0, r.res.stderr)
+    const p = promptOf(r.claudeArgs!)
+    assert.ok(p.includes(`Repositories for this night:\n- ${a}`) || p.includes(`night:\n- ${a}\n\n`), p.slice(-400))
+    assert.ok(!p.includes(`- ${bad}\n`))
+    assert.match(r.res.stderr, /not a git checkout/)
+    assert.ok(p.includes(`Skipped, not a git checkout: ${bad}`), p.slice(-400))
+    assert.ok(p.includes('Skipped, not a git checkout: /nonexistent/x'))
+  } finally {
+    rmSync(a, { recursive: true, force: true })
+    rmSync(bad, { recursive: true, force: true })
+  }
+})
