@@ -43,7 +43,7 @@ The gate says when a Classification may be used for more than the report. It is 
   gold `change` answered with `quota`, `restart`, `conflict`, `load`, `slow-host`, `attach`, `flaky` or `process`); and for
   the Classifier the items whose samples disagreed, with a few samples. A Classifier that cannot answer counts as `unknown`.
 - **The gate passes** when the hybrid is at least as accurate as the rules **and** it has no change→Outside error.
-  Rules alone on the 41 items: 24/41 = 58.5% (95% 43.4–72.2%), `unknown` 12.2% (5 items); no change→Outside error.
+  Rules alone on the 41 items: 25/41 = 61.0% (95% 45.7–74.3%), `unknown` 9.8% (4 items); no change→Outside error.
 - **The first real evaluation** (2026-11-17, `claude -p --model haiku`, report Artifact
   `sha256:4613d1ee4e71592f3e1153d86b0498f7e3423e62094079cfd21a11cf8cb70669`): rules 24/41 = 58.5% (43–72%), `unknown` 12%,
   change→Outside 0; Classifier 28/41 = 68.3% (53–80%), `unknown` 15%, change→Outside 1 (work:61d3cf2c answered `process`);
