@@ -406,7 +406,7 @@ class Graph:
             print(f"docs/{rel}" + (f" [{doc.doc_id}]" if doc.doc_id else ""))
         return 0
 
-    def impact(self, base: str) -> int:
+    def impact(self, base: str, waiver_file: str | None = None) -> int:
         try:
             output = subprocess.check_output(
                 ["git", "diff", "--name-only", f"{base}...HEAD"],
@@ -416,7 +416,11 @@ class Graph:
             print(exc.stderr.strip(), file=sys.stderr)
             return 1
         changed = set(output.splitlines())
-        waivers = {m.group(1) for m in WAIVER.finditer(os.environ.get("PR_BODY", ""))}
+        text = os.environ.get("PR_BODY", "")
+        if waiver_file and os.path.exists(waiver_file):
+            with open(waiver_file, encoding="utf-8") as handle:
+                text += "\n" + handle.read()
+        waivers = {m.group(1) for m in WAIVER.finditer(text)}
         errors = []
         for doc in self.docs:
             patterns = doc.meta.get("covers", [])
@@ -424,7 +428,7 @@ class Graph:
                                 for path in changed for pattern in patterns):
                 path = f"docs/{doc.rel}"
                 if path not in changed and path not in waivers:
-                    errors.append(f"DOC-IMP-001 {path}: covered path changed; update it or waive in PR")
+                    errors.append(f"DOC-IMP-001 {path}: covered path changed; update it or waive it (PR body or .system/docs-waivers)")
         if errors:
             print("\n".join(errors), file=sys.stderr)
         return int(bool(errors))
@@ -452,6 +456,7 @@ def main() -> int:
     trace.add_argument("target")
     impact = sub.add_parser("impact")
     impact.add_argument("base")
+    impact.add_argument("--waivers", help="file with docs-unchanged: <path> — <reason> lines")
     opts = parser.parse_args()
     try:
         graph = Graph()
@@ -462,7 +467,7 @@ def main() -> int:
         if opts.command == "trace":
             return graph.trace(opts.target)
         if opts.command == "impact":
-            return graph.impact(opts.base)
+            return graph.impact(opts.base, opts.waivers)
     except (OSError, ValueError) as exc:
         print(f"docs: {exc}", file=sys.stderr)
         return 1
