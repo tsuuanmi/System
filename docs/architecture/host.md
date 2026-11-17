@@ -242,6 +242,14 @@ attempt to do it.
   here: recovery (above) runs a settled Worker attempt again, and anything else
   waits for an explicit run; a Work that was only held at the gate has nothing
   in flight to interrupt. The file is one use, not a queue.
+- **Pending install check (upd-1).** `system update` leaves
+  `<install>/pending-install-check.json` from its switch of `current` until the
+  release's afterInstall Verdict passes (or it switches back). A Host that
+  starts on `current` finds the record for its own commit and runs
+  `system update --finish-pending` of its release; the Host knows nothing more
+  of the update. That command submits the install-check Work and, on a failure,
+  switches `current` back, which the Host then upgrades to as to any new code.
+  It does nothing while the `system update` that wrote the record still lives.
 - **Clients.** The thin client retries the connection, and a hello refused as
   upgrading, for 3 s before it says "not running", and a client following a
   Work opens a closed connection again once. `system mcp` does the same for a

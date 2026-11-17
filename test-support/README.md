@@ -40,6 +40,8 @@ Helpers shared by the tests, so each stand-in has one implementation:
   ([headed-probe.ts](headed-probe.ts) tries one), **fails** the file that imports
   it instead of skipping its tests: the checks once passed on a host where those
   tests fail. `SYSTEM_SKIP_HEADED=1` skips them, for a host with no Xvfb.
+- [update-driver.mjs](update-driver.mjs) — the real `update()` of `bin/update.mjs` with the real client, Host and link switch, answering
+  only the network and build steps; [pending-install-check.test.ts](../tests/pending-install-check.test.ts) kills it after the switch.
 
 It is not a package: tests import it by path. It imports the built
 `@system/*` packages, so run `corepack pnpm build` first (`corepack pnpm check`

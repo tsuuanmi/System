@@ -107,7 +107,14 @@ Host that stopped itself for new code waits for its attempts first; see
   PATH, and prints the Work ID (a Verdict bound to the commit). When one fails
   it switches `current` back to the release before, asks the Host to run it, and
   names the failed check. Releases other than the current one and the one
-  before are removed.
+  before are removed;
+- the switch first writes `~/.system/pending-install-check.json` (the commit,
+  the release before, the task, the workflow), removed once the check passes or
+  `current` is switched back. When `system update` is killed after the switch
+  (the Host may wait a long time for a running attempt), the Host that starts on
+  that release finds the record and runs `system update --finish-pending`
+  itself: the same check and the same switch back, with no session. A live
+  `system update` completes its own check.
 
 While it upgrades the Host starts no new attempt and lets the running ones
 finish; Works can still be submitted and wait. The log lines, exit status,
