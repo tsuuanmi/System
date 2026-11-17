@@ -113,6 +113,13 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   - A rehearsal check (`upgrade`, rb-1) runs the update from `main` to the commit under check, path-limited to keep checks fast.
   - A standard git `pre-push` hook (rb-2) covers hand pushes; System's own publish is not affected.
   - TR's close criterion is kept as it is; RB is its path.
+  - Reflection (operator, 2026-11-17):
+    - Q34: System's `docs` check runs the impact check (dc-1).
+    - Q35: the Charter's headline measure and Escaped defects come from records (ms-1).
+    - Q36: open work lives in STATUS, not in a session's chat.
+    - Q31: the failure-cause question gains `flaky` and `process` (cls-3).
+    - Q37: one Item fits one Worker attempt; a Done when with independent parts is split by the caller.
+    - Q38: a `toolShare` above 1 is investigated (tool-1).
   - Grilling of the "Verified Feedback Loop v2" proposal (operator, 2026-11-16): no new milestone; rb-3, rb-4 and rb-5
     are added after rb-2; no new measures, no confidence in failure classes, no recovery-decision component in the
     core (a new recovery rule is a Workflow declaration); a Task's Done when stays guidance and only a Verifier's
