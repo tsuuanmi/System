@@ -1,6 +1,6 @@
 # @system/web-worker tests
 
-Most of these run a real headed Chrome on Xvfb, so `corepack pnpm test` leaves them out; `corepack pnpm test:web` runs them.
+Most of these run a real headed Chrome on Xvfb, so `corepack pnpm test` leaves them out; `corepack pnpm test:web` runs them. `test:web` lists only files that start a browser: [web-check-guard.test.ts](web-check-guard.test.ts) (unit) fails for a listed file that does not use `test-support/headed.ts` (or the marker `test-support/browser-test.ts`), so a logic-only test goes in a `<name>.unit.test.ts` file that `corepack pnpm test` runs (web-3a). [chatgpt-logic.unit.test.ts](chatgpt-logic.unit.test.ts) holds the pure tests of the chatgpt Worker (block parsing, prompt, cookies, launch flags and clock, profile preparation, moved from chatgpt-a/b); [canary-report.unit.test.ts](canary-report.unit.test.ts) the report of `tools/web-canary` (moved from `tests/web-canary.test.ts`).
 [no-browser.test.ts](no-browser.test.ts) is the exception: it runs in `test` and shows that `SYSTEM_NO_BROWSER=1` refuses every browser launch.
 
 [chatgpt-a.test.ts](chatgpt-a.test.ts), [chatgpt-b.test.ts](chatgpt-b.test.ts) and [chatgpt-c.test.ts](chatgpt-c.test.ts) (one file split in three so the runner runs them in separate processes at once, web-2; shared helpers in [chatgpt-support.ts](chatgpt-support.ts)) run the `web` Runtime against System 1's

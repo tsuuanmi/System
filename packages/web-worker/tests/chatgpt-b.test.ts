@@ -18,45 +18,6 @@ import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 import { skip, root, site, blocks, web, run, text, sleep, evidenceOf } from './chatgpt-support.ts'
 
-// WW1 defect 3: the 1.5 s of `timeouts.load` that this file gives a slow page used to be Chrome's launch timeout too, and failed under load.
-test('Chrome gets a launch clock of its own, 30 s unless configured, whatever the page clocks are', () => {
-  const defaults = webDefaults(join(root, 'p'))
-  assert.equal(launchTimeoutMs(defaults), 30_000)
-  assert.equal(launchTimeoutMs({ ...defaults, timeouts: { load: 1.5, answer: 5, stable: 0.5 } }), 30_000, 'the 1.5 s of a page test is not a launch clock')
-  assert.equal(launchTimeoutMs({ ...defaults, timeouts: { ...defaults.timeouts, launch: 5 } }), 5000)
-})
-
-// WW1 defect 1: a profile that held 14 tabs (5.5 GB) stalled Chrome's launch for the 60 s limit, so restore is prevented before launch.
-
-test('before launch the profile is told to open a new tab and its last exit is marked clean; sessions go, the signed-in state stays', () => {
-  const dir = join(root, 'prepare')
-  const keep = { Cookies: 'cookies', 'Login Data': 'logins', 'Local Storage/leveldb/000003.log': 'ls', 'IndexedDB/https_x/1.ldb': 'idb', 'Session Storage/000003.log': 'ss' }
-  for (const [name, data] of Object.entries(keep)) {
-    mkdirSync(join(dir, 'Default', name, '..'), { recursive: true })
-    writeFileSync(join(dir, 'Default', name), data)
-  }
-  mkdirSync(join(dir, 'Default', 'Sessions'), { recursive: true })
-  writeFileSync(join(dir, 'Default', 'Sessions', 'Session_13'), 'tabs')
-  writeFileSync(join(dir, 'Default', 'Preferences'), JSON.stringify({ session: { restore_on_startup: 1, startup_urls: ['https://a.test/'] }, profile: { exit_type: 'Crashed', exited_cleanly: false, name: 'kept' }, other: { x: 1 } }))
-  prepareProfile(dir)
-  const prefs = JSON.parse(readFileSync(join(dir, 'Default', 'Preferences'), 'utf8'))
-  assert.deepEqual(prefs, { session: { restore_on_startup: 5, startup_urls: ['https://a.test/'] }, profile: { exit_type: 'Normal', exited_cleanly: true, name: 'kept' }, other: { x: 1 } })
-  assert.ok(!existsSync(join(dir, 'Default', 'Sessions')))
-  for (const [name, data] of Object.entries(keep)) assert.equal(readFileSync(join(dir, 'Default', name), 'utf8'), data, name)
-  assert.deepEqual(readdirSync(join(dir, 'Default')).filter((name) => /tmp/i.test(name)), [], 'the atomic write leaves nothing behind')
-  prepareProfile(join(root, 'fresh-profile'))
-  assert.ok(!existsSync(join(root, 'fresh-profile', 'Default', 'Preferences')), 'a profile with no Preferences yet is left for Chrome to create')
-})
-
-test('a profile that a running Chrome holds is left alone', () => {
-  const dir = join(root, 'held')
-  mkdirSync(join(dir, 'Default', 'Sessions'), { recursive: true })
-  symlinkSync(`host-${process.pid}`, join(dir, 'SingletonLock'))
-  assert.equal(profileLockPid(dir), process.pid)
-  prepareProfile(dir)
-  assert.ok(existsSync(join(dir, 'Default', 'Sessions')))
-})
-
 for (const end of ['a clean close', 'a SIGKILL'] as const) {
   test(`a profile that held several tabs opens one tab after ${end}, and its session cookie survives a clean one`, { skip, timeout: 120_000 }, async () => {
     const fake = await site()
