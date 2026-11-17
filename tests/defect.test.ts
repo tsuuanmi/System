@@ -56,7 +56,7 @@ test('MCP defect.add returns an ID that artifact show reads as escaped-defect@1,
   const parsed = JSON.parse(report.stdout)
   assert.equal(parsed.escapedDefectRate.source, 'records')
   assert.equal(parsed.escapedDefectRate.escaped, 0, 'no Item was merged, so no recorded defect counts')
-  assert.deepEqual(parsed.headline, { itemsMerged: 0, operatorTouches: 0, perTouch: 'no touches' })
+  assert.deepEqual(parsed.headline, { itemsMerged: 0, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts' })
   const override = JSON.parse(cli.run(['work', 'report', '--since', '2000-01-01', '--escaped', '2']).stdout)
   assert.equal(override.escapedDefectRate.source, 'override (--escaped)')
 })

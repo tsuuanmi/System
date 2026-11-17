@@ -99,7 +99,9 @@ export interface WorkCommands {
   rangeReport(range: { since: string; until?: string; escaped?: number }): Promise<unknown>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
   /** Store an `intent@1` Artifact; its ID. */
-  newIntent(title: string, body: string, supersedes?: string): Promise<{ intent: string }>
+  newIntent(title: string, body: string, supersedes?: string, settledByOperator?: boolean): Promise<{ intent: string }>
+  /** Store a `confirmation@1` Artifact; its ID. */
+  newConfirmation(subject: string, note: string, date?: string): Promise<{ confirmation: string }>
   /** Store an `escaped-defect@1` Artifact; its ID. */
   newDefect(subject: string, foundBy: string, reason: string, date?: string): Promise<{ defect: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
@@ -356,12 +358,24 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--body <markdown>', 'the body')
     .option('--body-file <path>', 'read the body from a file')
     .option('--supersedes <id>', 'the earlier intent@1 Artifact this one replaces')
-    .action((options: { title: string; body?: string; bodyFile?: string; supersedes?: string }) => {
+    .option('--settled-by-operator', 'the operator settled this Intent in this session (counts as an operator act in work report); set it only when they said so')
+    .action((options: { title: string; body?: string; bodyFile?: string; supersedes?: string; settledByOperator?: boolean }) => {
       select(async () => {
         if (Boolean(options.body) === Boolean(options.bodyFile)) throw new Error('give exactly one of --body and --body-file')
         const body = options.body ?? readFileSync(options.bodyFile!, 'utf8')
-        const created = await host.work().newIntent(options.title, body, options.supersedes)
+        const created = await host.work().newIntent(options.title, body, options.supersedes, options.settledByOperator)
         io.out(`${created.intent}\n`)
+        return 0
+      })
+    })
+  program.command('confirm <artifact-id>')
+    .description('store a confirmation@1 Artifact: the operator confirmed this stored Artifact (a dataset, a set of labels); counts as an operator act in work report; print its ID alone on stdout')
+    .requiredOption('--note <text>', 'what was confirmed')
+    .option('--date <date>', 'when it was confirmed (default now)')
+    .action((subject: string, options: { note: string; date?: string }) => {
+      select(async () => {
+        const created = await host.work().newConfirmation(subject, options.note, options.date)
+        io.out(`${created.confirmation}\n`)
         return 0
       })
     })
@@ -546,7 +560,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('report [workId]')
-    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
+    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the headline (Items merged per operator act: Intents settled, confirmations, releases, human touches) and the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
     .option('--escaped <n>', 'an explicit count of the Escaped defects of the range that replaces the recorded ones (`system defect add`); the report labels it an override')

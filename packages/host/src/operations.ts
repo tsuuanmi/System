@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -19,7 +19,11 @@ export interface Services {
   readBytes(id: string): Promise<Uint8Array>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller, item?: string, against?: string): Promise<{ task: string; base?: string }>
   /** Store an `intent@1` Artifact. */
-  newIntent(intent: { title: string; body: string; supersedes?: string }, caller: Caller): Promise<{ intent: string }>
+  newIntent(intent: { title: string; body: string; supersedes?: string; settledBy?: 'operator' }, caller: Caller): Promise<{ intent: string }>
+  /** Store a `confirmation@1` Artifact. */
+  newConfirmation(confirmation: { subject: string; note: string; date?: string }, caller: Caller): Promise<{ confirmation: string }>
+  /** The stored Intents (when, by whom settled) and confirmations, for the operator acts of `work.report`. */
+  operatorActs(): { intents: { at: string; settledBy?: 'operator' }[]; confirmations: { date: string }[] }
   /** Store an `escaped-defect@1` Artifact. */
   newDefect(defect: { subject: string; foundBy: string; reason: string; date?: string }, caller: Caller): Promise<{ defect: string }>
   /** The recorded Escaped defects (`escaped-defect@1` content), for `work.report`. */
@@ -169,7 +173,7 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator touch, `headline`) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1).',
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator act, `headline`: Intents the operator settled, confirmations, releases (merges of `dev` into `main`) and human touches) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1).',
       params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional(), classify: z.boolean().optional() }).strict(),
       async handler(host, p) {
         if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')
@@ -190,7 +194,11 @@ export function operations(services: Services): Methods {
           }
           return { ...summarize(record, classifier?.lookup), ...(classifying ? { classifying: true } : {}) }
         }
-        return rangeReport(host.view.list(), { since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), ...(classifier ? { classified: classifier.lookup } : {}) })
+        const records = host.view.list()
+        // Releases are merges of `dev` into `main` seen in each repository the Host knows Items for.
+        const repositories = new Set(records.flatMap((r) => { const first = r.events[0]!; return first.type === 'admitted' && first.item?.repository ? [first.item.repository] : [] }))
+        const releases = (await Promise.all([...repositories].map((repository) => releasesOf(repository)))).flat()
+        return rangeReport(records, { ...services.operatorActs(), releases, since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), ...(classifier ? { classified: classifier.lookup } : {}) })
       },
     },
     'work.events': {
@@ -241,9 +249,15 @@ export function operations(services: Services): Methods {
     },
     'intent.new': {
       agent: true,
-      summary: 'Store an `intent@1` Artifact, what the operator settled with a caller session before Items carry it out: `{ intent }`, the Artifact ID. `body` is Markdown (Outcome, Why, Constraints, Out of scope). With `supersedes`, the Intent replaces an earlier one, which must be a stored `intent@1` Artifact; a changed Intent is a new Intent.',
-      params: z.object({ title: z.string().min(1).max(200), body: z.string().min(1), supersedes: artifactId.optional() }).strict(),
-      handler: (_host, p, caller) => services.newIntent(p, caller),
+      summary: 'Store an `intent@1` Artifact, what the operator settled with a caller session before Items carry it out: `{ intent }`, the Artifact ID. `body` is Markdown (Outcome, Why, Constraints, Out of scope). With `supersedes`, the Intent replaces an earlier one, which must be a stored `intent@1` Artifact; a changed Intent is a new Intent. Set `settledByOperator: true` only when the operator settled this Intent in this session: it counts as an operator act in `work.report`; without it the Intent is not counted.',
+      params: z.object({ title: z.string().min(1).max(200), body: z.string().min(1), supersedes: artifactId.optional(), settledByOperator: z.boolean().optional() }).strict(),
+      handler: (_host, { settledByOperator, ...intent }, caller) => services.newIntent({ ...intent, ...(settledByOperator ? { settledBy: 'operator' as const } : {}) }, caller),
+    },
+    'artifact.confirm': {
+      agent: true,
+      summary: 'Store a `confirmation@1` Artifact: the operator confirmed the stored Artifact `subject` (a dataset, a set of labels): `{ confirmation }`, the Artifact ID. `note` says what was confirmed; `date` (default now) is when. Call it only when the operator confirmed it in this session: `work.report` counts each as an operator act.',
+      params: z.object({ subject: artifactId, note: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional() }).strict(),
+      handler: (_host, p, caller) => services.newConfirmation(p, caller),
     },
     'defect.add': {
       agent: true,

@@ -185,6 +185,8 @@ async function runHost(ctx: Context): Promise<number> {
       newTask: (instructions, repository, ref, context, who, item, against) => work.newTask(instructions, repository, ref, who, context, item, against),
       newIntent: (intent, who) => work.newIntent(intent, who),
       newDefect: (defect, who) => work.newDefect(defect, who),
+      newConfirmation: (confirmation, who) => work.newConfirmation(confirmation, who),
+      operatorActs: () => work.operatorActs(),
       defects: () => work.defects(),
       workflowFile: (name, input) => workflowFile(artifacts, name, input),
       credentials,

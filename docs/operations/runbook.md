@@ -233,6 +233,16 @@ The old ref is retired: do not give it to another Account. Records keep it.
 `system workers` also prints a `quota:` line under each account; see the
 [agents README](../../packages/agents/README.md#quota).
 
+`system work report --since <ISO>` prints the headline: Items merged per
+operator act. An operator act is an Intent the operator settled (store it with
+`system intent new ... --settled-by-operator`, only when they said so in that
+session; an Intent without the flag is not counted), an operator-confirmed
+Artifact (`system confirm <artifact-id> --note <text>` stores a
+`confirmation@1`), a release (a merge of `dev` into `main` seen in the
+repository) or a human touch (retry, cancel, decision). The report shows the
+parts and the ratio. Conversation with a caller session is not seen by System
+and not counted.
+
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
 another Account offers the same capabilities and has a free slot, which takes
