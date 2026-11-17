@@ -164,3 +164,7 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   have caught; the last ones sat on the release boundary, which RB addresses.*
 - [ ] Website Worker: a repair turn in the same chat when the model leaves out an output block (about 6%; proposed as
   WW6m, not decided); a long-lived Chrome per Account; a second Site; `digest`. *Trigger: measurement asks for it.*
+- [ ] The verifier's timeout and leftover-process handling on Ubuntu 26.04: a timed-out check reports exit 137, and
+  three tests in `packages/verifiers/tests/verifiers.test.ts` fail there (a check over its timeout, a check that leaves
+  an Xvfb or Chrome behind, a timed-out check names the test that was running). CI is pinned to `ubuntu-24.04` until
+  then. *Trigger: install-1, or an operator machine on 26.04.*
