@@ -56,6 +56,14 @@ export async function readStatus(path: string): Promise<StatusFile> {
   return { repository, commit, ref, note, ...parsed }
 }
 
+/** The refusal when a repository's STATUS.md cannot be read for a call that names an Item (one rule for task.new, item.claim and admission). */
+export const statusUnreadable = (repository: string, error: unknown): string =>
+  `STATUS.md of ${repository} could not be read: ${(error as Error).message}; to go on without it, give force`
+
+/** The refusal when the Item has no line in the STATUS.md that was read. */
+export const noItemLine = (item: string, status: Pick<StatusFile, 'ref' | 'repository'>): string =>
+  `Item ${item} has no line in STATUS.md on ${status.ref} of ${status.repository}; to go on without it, give force`
+
 type Admitted = Extract<WorkEvent, { type: 'admitted' }>
 export type ItemRef = NonNullable<Admitted['item']>
 

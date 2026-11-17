@@ -256,7 +256,7 @@ test('a second Work for an Item with a running Work is refused, naming it and it
   // Another Item, another repository, and a Task that names no Item are not affected.
   await admit(task(dir, 'df-4'))
   await admit(task(dir))
-  await admit(task(realpathSync(tmpdir()), 'df-3'))
+  await admit(task(repository(STATUS), 'df-3'))
   const forced = await admit(task(dir, 'df-3', 'again'), true)
   assert.equal(forced.state.status, 'running')
   release()
@@ -321,7 +321,7 @@ test('an earlier failed Work gives its Task, change and commit, and the failing 
   assert.match(note, /start from its commit/)
 })
 
-test('a Task from before Items, and one naming an Item without a readable STATUS.md, are admitted as they are', async () => {
+test('a Task from before Items, and one naming an Item without a readable STATUS.md (with force), are admitted as they are', async () => {
   const dir = repository(STATUS)
   const { specs, task, admit } = setup()
   const plain = task(dir)
@@ -329,7 +329,7 @@ test('a Task from before Items, and one naming an Item without a readable STATUS
   assert.equal(specs.tasks.get(plain)!.task.item, undefined)
   const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'system-status-nogit-')))
   const lone = task(elsewhere, 'df-3')
-  const admitted = await admit(lone)
+  const admitted = await admit(lone, true)
   assert.match(specs.tasks.get(admitted.state.input!)!.note!, /not in STATUS\.md/)
 })
 
@@ -581,4 +581,16 @@ test('in-2: an Item line may end with (intent: <12 hex>) beside (after: ...), in
 test('in-2: status shows `intent: <prefix>` for an Item that has one, and nothing for an Item without', () => {
   const status = parseStatus(AFTER('- [ ] a-1 One', '- [ ] a-2 Two (after: a-1) (intent: abc123def456)'))
   assert.deepEqual(itemLines(status, undefined, []), ['[ ] a-1 One - todo: nobody', '[ ] a-2 Two (intent: abc123def456) - todo (blocked by a-1)'])
+})
+
+test('admitting a Work whose Task names an Item needs a readable STATUS.md with a line for it, unless force; no Item, no check', async () => {
+  const dir = repository(STATUS)
+  const { task, admit } = setup()
+  const gone = realpathSync(mkdtempSync(join(tmpdir(), 'system-nogit-')))
+  await assert.rejects(admit(task(gone, 'df-3')), (error: Error) => error.message.includes(`STATUS.md of ${gone} could not be read`) && error.message.includes('force') && !error.message.includes('\n'))
+  assert.equal((await admit(task(gone, 'df-3'), true)).state.status, 'running')
+  await assert.rejects(admit(task(dir, 'df-9')), (error: Error) => /df-9 has no line in STATUS\.md on dev/.test(error.message) && error.message.includes('force'))
+  assert.equal((await admit(task(dir, 'df-9'), true)).state.status, 'running')
+  assert.equal((await admit(task(gone))).state.status, 'running')
+  assert.equal((await admit(task(dir, 'df-4'))).state.status, 'running')
 })

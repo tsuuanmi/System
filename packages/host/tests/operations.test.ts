@@ -183,6 +183,13 @@ test('every method of the table round-trips over the socket', async () => {
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
   await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3' }), /Item p-3 is blocked by p-2/)
   await call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3', force: true })
+  // An unreadable STATUS.md refuses both calls alike, unless `force`.
+  const nogit = realpathSync(mkdtempSync(join(dir, 'nogit-')))
+  const unreadable = new RegExp(`STATUS\\.md of ${nogit} could not be read.*force`)
+  await assert.rejects(call('task.new', { instructions: 'x', repository: nogit, item: 'p-2' }), unreadable)
+  await assert.rejects(call('item.claim', { repository: nogit, item: 'p-2' }), unreadable)
+  await call('task.new', { instructions: 'x', repository: nogit, item: 'p-2', force: true })
+  await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-9' }), /p-9 has no line in STATUS\.md/)
   const status = await call('host.status') as { works: number; recordBytes: number }
   assert.equal(status.works, 4)
   assert.ok(status.recordBytes > 0)
@@ -200,7 +207,7 @@ test('work.list takes `since` (admission time, inclusive) and shows the Item of 
   const plain = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
   await new Promise((resolve) => setTimeout(resolve, 5))
   naming = true
-  const itemWork = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
+  const itemWork = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false, force: true }) as { id: string }
   const rows = async (params?: unknown) => await client.call('work.list', params) as { id: string; item?: string }[]
   const at = async (id: string) => ((await client.call('work.show', { workId: id })) as { events: { at: string }[] }).events[0]!.at
   assert.deepEqual((await rows()).map((r) => [r.id, r.item]), [[plain.id, undefined], [itemWork.id, 'ns-9']])
