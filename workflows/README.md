@@ -4,7 +4,7 @@ Workflow definitions are **data** (ADR-0002): `system.workflow/v1` YAML files
 read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
-The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml`, `research-source.yaml` and
+The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml`, `research-source.yaml`, `plan-items.yaml` and
 `brainstorm.yaml`, and the Sub-workflow `code-checks.yaml`.
 
 **Context pack.** A develop Task's instructions are prose under six headings, so
@@ -59,6 +59,8 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
   `synthesis` (`brainstorm.synthesis`) reads both exact proposals and writes a
   `summary`. No verifier: success means the three outputs exist. The bundle
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
+
+- [plan-items.yaml](plan-items.yaml) — `propose` (`repo.read`, never `repo.write`, `tier.standard`) reads the Intent in the Task's context and the repository's `STATUS.md` and `PLAN.md`, and writes the output `items`: proposed Item lines in STATUS.md's grammar (`- [ ] <id> <text> (intent: <12 hex>) (after: ...)`, `after:` only for real dependencies, new ids, a Done-when clause in each). It has no verify or accept step (an accept step needs a verify step, and a verifier that runs `status-parse.ts` would be a new Host capability). It writes nothing to STATUS: the caller shows `items` to the operator and only after the operator agrees submits a docs Work (`develop.yaml`) that adds the lines. The scheduled session never runs it ([night-session.md](../tools/night-session.md)).
 
 Comparison configurations for the Brainstorm evaluation, and the Workflows that
 are not canonical (`second-opinion.yaml`),

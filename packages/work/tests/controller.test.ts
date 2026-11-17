@@ -180,6 +180,14 @@ test('a changed tree still passes, and a read-only scout with an unchanged check
   for (const s of scouting) assert.equal(done.state.steps[s.id]!.state, 'succeeded', s.id)
 })
 
+test('plan-items.yaml run by a read-only Worker produces an items output', async () => {
+  const h: Harness = harness({ worker: { capabilities: ['repo.read', 'tier.standard'] } })
+  const done = await runFixture(h, 'plan-items.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.ok(done.state.steps.propose!.outputs.items)
+  assert.deepEqual(h.calls.map((c) => c.outputs), [['items']])
+})
+
 const GATED = `schema: system.workflow/v1
 id: gated
 version: 1

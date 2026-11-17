@@ -89,7 +89,7 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    Workflow's contents. The others there: hygiene.yaml (a cleanup that keeps
    behaviour), research.yaml (questions answered from the web),
    research-source.yaml (questions about a repository's source),
-   brainstorm.yaml, and code-checks.yaml (the Sub-workflow the others use to
+   plan-items.yaml (Item lines proposed from an Intent), brainstorm.yaml, and code-checks.yaml (the Sub-workflow the others use to
    check a change).
 4. Follow it with \`work_watch\` or \`work_events\`; read details by ID
    (\`work_show\`, \`artifact_show\`). To know when a Work is done without

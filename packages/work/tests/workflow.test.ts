@@ -55,6 +55,21 @@ test('research-source.yaml compiles like research.yaml, has no prefer, and reads
   assert.deepEqual(source.steps.filter((s) => s.id !== 'investigate'), web.steps.filter((s) => s.id !== 'investigate'), 'verifier and criteria unchanged')
 })
 
+test('plan-items.yaml compiles to one read-only Worker step writing items, and the night session never runs it', () => {
+  const spec = resolve(parseWorkflow(fixture('plan-items.yaml')), available)
+  assert.deepEqual(spec.steps.map((s) => s.id), ['propose'])
+  const step = spec.steps[0] as { capabilities: string[]; inputs: Record<string, string>; outputs: string[]; instructions?: string }
+  assert.ok(step.capabilities.includes('repo.read'))
+  assert.ok(!step.capabilities.includes('repo.write'))
+  assert.deepEqual(step.inputs, { task: '$work.input' })
+  assert.deepEqual(step.outputs, ['items'])
+  assert.match(step.instructions ?? '', /- \[ \] <id> <text> \(intent: <12 hex>\) \(after: /)
+  assert.match(step.instructions ?? '', /STATUS\.md/)
+  assert.match(step.instructions ?? '', /PLAN\.md/)
+  assert.match(step.instructions ?? '', /Done when/)
+  assert.match(readFileSync(join(repo, 'tools', 'night-session.md'), 'utf8'), /Never run `workflows\/plan-items\.yaml`/)
+})
+
 test('the Brainstorm file: two proposals from the brief alone, then a synthesis of both exact proposals', () => {
   const roles: AvailableCapabilities = { ...available, workers: new Set(['brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']) }
   const spec = resolve(parseWorkflow(fixture('brainstorm.yaml')), roles)

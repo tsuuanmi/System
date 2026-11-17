@@ -36,6 +36,7 @@ wait, in step 6.
   tool for it, and do not try `system approve`, `system deny`, `system work approve`,
   `system work deny`, `system work retry`, `system work cancel`, `system update`
   or anything that merges into `main`. A Work that is held waits for the operator.
+- **Never run `workflows/plan-items.yaml`.** It proposes Items for the operator to agree to; the scheduled session proposes in its report only.
 - Only Items whose state is `todo`. Never `force` (neither `item_claim` nor
   `work_submit`); an Item another session has claimed is not yours.
 - If a tool says the Host is not answering, call it once more; if it still

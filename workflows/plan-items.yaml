@@ -1,0 +1,38 @@
+# Plan items (in-3). From an Intent, one read-only Worker proposes Item lines for the repository's STATUS.md. Nothing is
+# written to STATUS: the caller session shows the `items` to the operator and only after the operator agrees submits a docs
+# Work (develop.yaml) that adds them. The scheduled session never runs it (tools/night-session.md).
+# The Task is taken as `$work.input`, like develop.yaml; its context holds the `intent@1` Artifact. There is no verify or accept
+# step: an accept step must require a verify step, and the line grammar is read by packages/work/src/status-parse.ts, which a
+# Host verifier cannot call without a new verifier capability and criteria version (a release-boundary change). The caller checks
+# the lines with `tools/check-status.ts` when the docs Work adds them.
+schema: system.workflow/v1
+id: plan-items
+version: 1
+steps:
+  - id: propose
+    capabilities: [repo.read, tier.standard]
+    inputs:
+      task: $work.input
+    outputs: [items]
+    instructions: |
+      The Task's context holds an Intent (an intent@1 Artifact: Outcome, Why,
+      Constraints and more). Read it, then read the repository's STATUS.md
+      and PLAN.md. Do not change any file.
+
+      Write the output "items" as plain text: the Item lines that carry out
+      the Intent, one per line, in STATUS.md's exact grammar:
+      - [ ] <id> <text> (intent: <12 hex>) (after: <id>, <id>)
+      Rules:
+      - <id> is a prefix of the repository's Item ids, a dash and a number
+        (such as df-12), and is not already used by any line in STATUS.md or
+        by another proposed line; continue the numbering.
+      - <12 hex> is the first 12 hex characters of the Intent Artifact's ID
+        (without the sha256: prefix). Every line carries it.
+      - Add (after: ...) only for a real dependency: an Item that cannot start
+        before another one (existing or proposed) is done. No cycles, no
+        ordering for taste. Leave it out otherwise.
+      - Each line is one line, and its text ends with a Done-when clause that
+        says what shows the Item finished (a test, a check, an observable
+        behaviour), such as "Done when: <what>".
+      - Items are small enough for one Work each, in the order to do them.
+      Write only the lines, no heading and no commentary.
