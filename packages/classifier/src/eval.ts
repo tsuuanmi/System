@@ -5,7 +5,7 @@
  */
 import type { Ask } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
-import { summarize, type WorkRecord } from '@system/work'
+import { laterPasses, summarize, type WorkRecord } from '@system/work'
 import { createClassifier } from './classifier.ts'
 import { failureEvidence } from './evidence.ts'
 import type { LoadedQuestion } from './question.ts'
@@ -91,6 +91,7 @@ export interface EvalOptions {
 export async function evaluate({ set, artifact, records, question, ask, artifacts, progress }: EvalOptions): Promise<EvalReport> {
   const index = new Map<string, { artifact: string }>()
   const classifier = createClassifier({ artifacts, questions: [question], ask, index: { get: (k) => index.get(k), put: async (k, v) => { index.set(k, v) } } })
+  const later = laterPasses(Object.values(records))
   const rulesPairs: { gold: string; answer: string }[] = []
   const classifierPairs: typeof rulesPairs = []
   const hybridPairs: typeof rulesPairs = []
@@ -99,10 +100,10 @@ export async function evaluate({ set, artifact, records, question, ask, artifact
   for (const [n, item] of set.items.entries()) {
     const record = records[item.work]
     if (!record) throw new Error(`no record of ${item.work}`)
-    const failure = summarize(record).failures.find((f) => f.event === item.event)
+    const failure = summarize(record, undefined, later).failures.find((f) => f.event === item.event)
     if (!failure) throw new Error(`${item.work} has no failure at ${item.event}`)
     const rules = failure.outside ?? (failure.unknown ? 'unknown' : 'change')
-    const got = await classifier.classify(question.name, failureEvidence(failure, record), { exclude: [] })
+    const got = await classifier.classify(question.name, failureEvidence(failure, record, later), { exclude: [] })
     if (!got) unanswered += 1
     const answered = got?.label ?? 'unknown'
     rulesPairs.push({ gold: item.label, answer: rules })

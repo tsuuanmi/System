@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import type { WorkRecord } from '@system/work'
+import { laterPasses, type WorkRecord } from '@system/work'
 import type { Ask } from '@system/agents'
 import { createClassifier, failureEvidence, failureText, hashText, parseQuestion } from '../src/index.ts'
 
@@ -140,6 +140,15 @@ test('the evidence has the checks on the change and the base re-run, whether a l
   const attempt = failureEvidence({ event: 'observed#3', kind: 'attempt', reason: 'something odd' }, r)
   assert.match(attempt, /next attempt of task: succeeded/)
   assert.doesNotMatch(attempt, /later verdict/, 'no change to compare')
+})
+
+test('cls-5: the evidence names a later Work where the same change passed the check', () => {
+  const failed = evidenceRecord()
+  const passed = { ...evidenceRecord(), id: 'work:9', events: [{ ...failed.events[5]!, at: '2026-11-18T00:00:00.000Z', seq: 0 }] } as WorkRecord
+  const failure = { event: 'verified#1', kind: 'verdict' as const, reason: 'failed: unit: a.test.ts "x": unable to read tree' }
+  const first = { ...failed, events: failed.events.slice(0, 2) } as WorkRecord
+  assert.match(failureEvidence(failure, first, laterPasses([first, passed])), /^the same change passed checks later in work:9$/m)
+  assert.doesNotMatch(failureEvidence(failure, first), /passed checks later/)
 })
 
 test('a failure is classified from its evidence; a version 1 answer recorded from the reason text is still found', async () => {

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { WorkEvent, WorkRecord } from '../src/record.ts'
+import { laterPasses } from '../src/later-pass.ts'
 import { summarize } from '../src/summary.ts'
 
 const id = (c: string) => `sha256:${c.repeat(64)}`
@@ -42,4 +43,34 @@ test('a failed check that passes on the re-run of the same change (rerunUnchange
 test('a check that fails twice is still a failure of the change', () => {
   const r = build([admitted, verified('fail', id('1'), id('c')), verified('fail', id('2'), id('c'), { rerunOf: id('1') })])
   assert.equal(summarize(r).failures[0]!.outside, undefined)
+})
+
+// cls-5: the same facts read across Works (the Host's records).
+const other = (workId: string, events: Unnumbered[], laterAt: string): WorkRecord => ({ ...build(events.map((e) => ({ ...e, at: laterAt }) as Unnumbered)), id: workId })
+const failedWork = (): WorkRecord => build([admitted, verified('fail', id('1'), id('c'))])
+
+test('cls-5: a check that failed on a change whose tree passed the same check in a later Work is flaky', () => {
+  const failed = failedWork()
+  const passed = other('work:2', [admitted, verified('pass', id('2'), id('c'))], '2026-11-17T01:00:00.000Z')
+  assert.equal(summarize(failed).failures[0]!.outside, undefined, 'one record alone: still a failure of the change')
+  const s = summarize(failed, undefined, laterPasses([failed, passed]))
+  assert.equal(s.failures[0]!.outside, 'flaky')
+  assert.equal(s.outsideFailures, 1)
+})
+
+test('cls-5: a tree that never passes, passes another check, or passed only before stays a failure of the change', () => {
+  const failed = failedWork()
+  const otherCheck = other('work:2', [admitted, { ...verified('pass', id('2'), id('c')), stepId: 'lint' } as Unnumbered], '2026-11-17T01:00:00.000Z')
+  const earlier = other('work:3', [admitted, verified('pass', id('3'), id('c'))], '2026-11-16T00:00:00.000Z')
+  const differentTree = other('work:4', [admitted, verified('pass', id('4'), id('d'))], '2026-11-17T01:00:00.000Z')
+  assert.equal(summarize(failed, undefined, laterPasses([failed, otherCheck, earlier, differentTree])).failures[0]!.outside, undefined)
+  assert.equal(summarize(failed, undefined, laterPasses([failed])).failures[0]!.outside, undefined)
+})
+
+test('cls-5: a "no change" after a reopen whose previous change passed in a later Work is a process failure', () => {
+  const r = build([admitted, verified('fail', id('1'), id('c')), reopened, observed(NO_CHANGE)])
+  const passed = other('work:2', [admitted, verified('pass', id('2'), id('c'))], '2026-11-17T01:00:00.000Z')
+  const attempt = (s: ReturnType<typeof summarize>) => s.failures.find((x) => x.kind === 'attempt')!
+  assert.equal(attempt(summarize(r, undefined, laterPasses([r, passed]))).outside, 'process')
+  assert.equal(attempt(summarize(r, undefined, laterPasses([r]))).unknown, true)
 })
