@@ -35,12 +35,26 @@ does so.
 
 ## Headline measure
 
-**Verified Items merged per operator touch**, read from the Host's records by
-`system work report`, not by hand. Verified Success Rate, Recurring Failure
-Rate, Escaped Defect Rate, Cost per Verified Work and Time to Verified
-Resolution are diagnostics. `work report --since` computes the headline measure
-(`headline`: distinct Items merged, operator touches as `summary.ts` counts them,
-human callers only, and their ratio, `no touches` when there are none).
+**Verified Items merged per operator act**, read from the Host's records and
+repositories by `system work report`, not by hand. Verified Success Rate,
+Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work and Time to
+Verified Resolution are diagnostics. `work report --since` computes the headline
+measure (`headline`): distinct Items merged, the operator acts in the range
+(`parts`, and `operatorActs`, their sum) and their ratio (`itemsPerAct`, `no
+acts` when there are none). An operator act is:
+
+- an `intent@1` the operator settled (`settledBy: operator`, set by `system
+  intent new --settled-by-operator` or the MCP `settledByOperator`, only when the
+  operator said so in that session; an Intent without it is not counted);
+- a `confirmation@1` the operator stored for an Artifact they confirmed, such as
+  a dataset or a set of labels (`system confirm`, MCP `artifact.confirm`);
+- a release: a merge of `dev` into `main` seen in the repository (first-parent
+  merges of `main`), for each repository the Host knows Items for;
+- a human touch, as `summary.ts` counts them (human callers only).
+
+Conversation with a caller session is not seen by System: only what the caller
+records (the flag and the confirmation) is counted, so an unrecorded decision is
+not an act. Say it was the operator's only when it was.
 
 ## Vision
 

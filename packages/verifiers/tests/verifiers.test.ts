@@ -13,6 +13,8 @@ import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
+import { parseCheckFailure } from '../../work/src/failure-class.ts'
+import { failureLine } from '../src/reasons.ts'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, requiredChecks } from '../src/checks.ts'
 import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
 
@@ -246,6 +248,25 @@ test('a check that passes on the base keeps the fail verdict, and the base was r
   assert.equal(result.verdict, 'fail')
   assert.match(result.reason, /value-is-good \(exit 1\)/)
   assert.equal(result.evidence.length, 2)
+})
+
+test('a failing check that is not a test run puts the last lines of its stderr (else stdout) into the reason', async () => {
+  const doc = 'DOC-IMP-001 docs/operations/runbook.md: covered path changed; update it or waive it'
+  const { result } = await verifyChange(`checks:\n  - name: docs\n    run: 'grep -qx good value.txt && exit 0; echo noise >&2; echo "${doc}" >&2; exit 1'\n  - name: lint\n    run: 'grep -qx good value.txt && exit 0; echo "only stdout says it"; exit 2'\n`, { 'value.txt': 'bad\n' })
+  assert.equal(result.verdict, 'fail')
+  assert.ok(result.reason.includes(`docs: noise | ${doc}`), result.reason)
+  assert.ok(result.reason.includes('lint: only stdout says it'), result.reason)
+  assert.deepEqual(parseCheckFailure(`failed: docs: ${doc}`), { check: 'docs' })
+})
+
+test('a test failure keeps its reason format, and a long stderr is bounded', () => {
+  const spec = '✖ failing tests:\n\ntest at file:///a/b.test.ts:3:1\n✖ does x (1.2ms)\n  AssertionError: boom\n'
+  assert.equal(failureLine(spec, 'unit', 1, null, spec), 'unit: b.test.ts "does x": boom')
+  assert.deepEqual(parseCheckFailure(`failed: ${failureLine(spec, 'unit', 1, null, spec)}`), { check: 'unit', test: 'b.test.ts "does x"' })
+  const long = failureLine('', 'docs', 1, null, `${'x'.repeat(1000)}\n`)
+  assert.ok(long.length <= 'docs: '.length + 300 + 1, String(long.length))
+  assert.equal(failureLine('', 'docs', 1, null, ''), 'docs (exit 1)')
+  assert.equal(failureLine('', 'docs', 1, null, 'token=abc123\n', ['abc123']), 'docs: token=[redacted]')
 })
 
 test('when only some failed checks fail on the base too, the verdict is fail', async () => {

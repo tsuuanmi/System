@@ -254,8 +254,10 @@ export function remoteHost(remote: Remote): ClientHost {
     async newTask(instructions, repository, ref, context, item, against, force) {
       return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against, force })
     },
-    newIntent: (title, body, supersedes) => read('intent.new', { title, body, supersedes }),
-    newDefect: (subject, foundBy, reason, date) => read('defect.add', { subject, foundBy, reason, ...(date === undefined ? {} : { date }) }),
+    newIntent: (title, body, supersedes, settledByOperator) => read('intent.new', { title, body, supersedes, ...(settledByOperator ? { settledByOperator } : {}) }),
+    newConfirmation: (subject, note, date) => read('artifact.confirm', { subject, note, ...(date === undefined ? {} : { date }) }),
+        newDefect: (subject, foundBy, reason, date, supersedes) => read('defect.add', { subject, foundBy, reason, ...(date === undefined ? {} : { date }), ...(supersedes === undefined ? {} : { supersedes }) }),
+    withdrawDefect: (withdraws, reason, date) => read('defect.withdraw', { withdraws, reason, ...(date === undefined ? {} : { date }) }),
     claim: (repository, item, force) => change('item.claim', { repository: resolve(repository), item, force }),
     status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
   }

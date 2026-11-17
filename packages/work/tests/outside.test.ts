@@ -73,3 +73,11 @@ test('a verdict reason is Outside only by its Verifier marker, whatever a test i
   assert.equal(outsideCause('unit: the base fails it too (base abc)', 'verdict'), 'load')
   assert.equal(outsideCause('out of credits', 'verdict'), undefined)
 })
+
+test('the quota class is limits.ts\'s one list (cls-4): the lim-1 reason classes as quota, a verdict\'s never', () => {
+  const reason = "claude-code/c4 exit 1: You've hit your 5-hour limit · resets 6pm (Asia/Ho_Chi_Minh)"
+  assert.equal(outsideCause(reason), 'quota')
+  assert.equal(attemptCause(reason), 'quota')
+  assert.equal(outsideCause(reason, 'verdict'), undefined)
+  assert.equal(attemptCause('429 too many requests'), 'quota')
+})

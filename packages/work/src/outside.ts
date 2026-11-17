@@ -3,16 +3,16 @@
  * load or a timeout, an Account's quota or rate limit, a Host restart or a lost
  * attempt, a conflict with other work at publish, a slow Host. Deterministic
  * from the reason text; a verdict's reason is Outside only by the marker its Verifier writes, and an attempt reason no
- * pattern knows is `unknown`. The patterns live here and nowhere else.
+ * pattern knows is `unknown`. The patterns live here, except quota's, which is limits.ts's.
  */
 import { parseCheckFailure } from './failure-class.ts'
+import { isQuotaLimited } from './limits.ts'
 import type { WorkEvent } from './record.ts'
 
 /** `flaky` and `process` (cls-3) are placed by structure in `summarize`, never by a reason's text: a check that passed on the re-run of the same change, and a "no change" after a correct change (a Process failure, GLOSSARY). */
 export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach' | 'flaky' | 'process'
 
 const PATTERNS: [OutsideCause, RegExp][] = [
-  ['quota', /out of credits|rate[- ]limit|quota|usage limit|too many requests/i],
   ['restart', /host stopped before the attempt reported|host restart/i],
   ['conflict', /merge conflict with /i],
   ['load', /the base fails it too/i],
@@ -55,6 +55,7 @@ export function outsideCause(reason: string, from?: 'verdict'): OutsideCause | u
   if (held) return held[1] as OutsideCause
   if (from === 'verdict') return /the base fails it too/i.test(reason) ? 'load' : undefined
   if (parseCheckFailure(reason)) return undefined
+  if (isQuotaLimited(reason)) return 'quota'
   return PATTERNS.find(([, pattern]) => pattern.test(reason))?.[0]
 }
 

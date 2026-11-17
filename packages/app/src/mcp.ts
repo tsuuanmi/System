@@ -101,6 +101,11 @@ Intent
 When the operator settles what they want ("chốt", "đồng ý", "yes"), store it
 with \`intent_new\` (title; Markdown body with Outcome, Why, Constraints and
 Out of scope) before you write Items. Encouraged for new Items, not required.
+Set \`settledByOperator: true\` only when the operator settled that Intent in
+this session; System does not see the conversation, so an Intent without it is
+not counted as an operator act. Likewise call \`artifact_confirm\` (the stored
+Artifact's ID and a note) only when the operator confirmed that dataset or
+label set in this session.
 
 Bootstrap of a new repository (you do this, there is no script)
 1. Run \`system bootstrap plan --repo <path>\` and do the human steps it prints.

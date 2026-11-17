@@ -256,6 +256,14 @@ attempt to do it.
   call that finds its connection closed by a Host restart: it reconnects (with
   that retry) and sends the call once more, a write with the `commandId` it made
   before the first send, so the Host runs it once; a second failure is reported.
+  A session keeps `system mcp` for days, so `bin/system mcp` is a small front
+  (`bin/mcp-front.mjs`, no release code) that owns the session's stdio and runs
+  the MCP server of the release `current` points to as a child. When the link
+  moves, or the child exits, it starts the child from `current`, replays the
+  session's `initialize` and `notifications/initialized`, sends
+  `notifications/tools/list_changed` and sends the unanswered requests again;
+  so client fixes of a new release reach it. The front's own code is read once,
+  when the session starts.
 
 `host.status` reports the number of Works and the size of their records, for
 PLAN's growth budget.

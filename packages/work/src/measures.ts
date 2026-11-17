@@ -5,9 +5,10 @@
  */
 import type { WorkRecord } from './record.ts'
 import { failureClass } from './failure-class.ts'
+import { laterPasses } from './later-pass.ts'
 import { summarize, type ClassifiedLookup } from './summary.ts'
 import { mergeCommitOf, wasMerged } from './status.ts'
-import type { EscapedDefect } from './defect.ts'
+import type { DefectWithdrawal, EscapedDefect } from './defect.ts'
 
 export type Unknown = 'unknown'
 export interface RangeOptions {
@@ -16,9 +17,17 @@ export interface RangeOptions {
   /** An explicit count of Escaped defects that replaces the recorded ones; the report labels it `override (--escaped)`. */
   escaped?: number
   /** The recorded `escaped-defect@1` Artifacts (ms-1): those whose Item or merge commit was merged in the range are the Escaped defects of the range. Without them (and without `escaped`) that measure is `unknown`. */
-  defects?: readonly EscapedDefect[]
+  defects?: readonly (EscapedDefect & { id?: string })[]
+  /** The recorded `escaped-defect-withdrawal@1` contents (def-2): a defect they name is not counted. */
+  withdrawals?: readonly DefectWithdrawal[]
   /** The recorded Classifications (cls-1): the `unknown` failures that have one are told apart in `classifiedUnknownFailures`; no measure changes. */
   classified?: ClassifiedLookup
+  /** The stored `intent@1` Artifacts (when stored, who settled): those with `settledBy: 'operator'` stored in the range are operator acts. */
+  intents?: readonly { at: string; settledBy?: 'operator' }[]
+  /** The stored `confirmation@1` Artifacts: those dated in the range are operator acts. */
+  confirmations?: readonly { date: string }[]
+  /** The merge times of `dev` into `main` in the repositories the Host knows Items for (`releasesOf`): those in the range are operator acts. */
+  releases?: readonly string[]
 }
 
 export interface RangeReport {
@@ -32,15 +41,14 @@ export interface RangeReport {
   unknownFailures: number
   /** Of those, the ones a Classification labels, by label; absent when none (the Classifier row is off, or has classified none). */
   classifiedUnknownFailures?: Record<string, number>
-  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator touch, the touches `summarize` counts (human callers only). With no touches `perTouch` is `no touches`, never Infinity. */
-  headline: { itemsMerged: number; operatorTouches: number; perTouch: number | 'no touches' }
+  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts`: Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
+  headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts' }
   /** Escaped defects over distinct Items merged; `source` says where the count comes from: recorded `escaped-defect@1` Artifacts, the `--escaped` override, or `none` (no input). */
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number; source: 'records' | 'override (--escaped)' | 'none' }
   /** The API-equivalent cost estimate of every attempt in the range that reports one, over accepted Works; a lower bound when `worksWithUnknownCost` is above 0, `unknown` when no cost is known. */
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; worksWithUnknownCost: number }
   /** Admission to acceptance of the accepted Works. */
   timeToVerifiedResolution: { medianMs: number | Unknown; p90Ms: number | Unknown; accepted: number }
-  /** Mean tool share of the attempts whose summary (fl-4) knows it. */
   /** Mean of the attempts' tool-seconds per second (the record's `toolShare`): parallel tool calls overlap, so it is not a share and can pass 1. */
   toolSecondsPerSecond: { mean: number | Unknown; attempts: number }
 }
@@ -50,10 +58,11 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects, classified }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
+  const later = laterPasses(records)
   let accepted = 0
   let ended = 0
   let failures = 0
@@ -84,7 +93,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
       const commit = mergeCommitOf(record)
       if (commit) mergedCommits.push(commit)
     }
-    const summary = summarize(record, classified)
+    const summary = summarize(record, classified, later)
     operatorTouches += summary.operatorTouches
     const counted = summary.failures.filter((f) => f.kind !== 'touch')
     unknownFailures += counted.filter((f) => f.unknown).length
@@ -102,14 +111,25 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     }
     if (unknownCost) worksWithUnknownCost += 1
   }
+  const inRangeAt = (at: string) => at >= since && (until === undefined || at < until)
+  const parts = {
+    intentsSettled: intents?.filter((i) => i.settledBy === 'operator' && inRangeAt(i.at)).length ?? 0,
+    confirmations: confirmations?.filter((c) => inRangeAt(c.date)).length ?? 0,
+    releases: releases?.filter(inRangeAt).length ?? 0,
+    humanTouches: operatorTouches,
+  }
+  const operatorActs = parts.intentsSettled + parts.confirmations + parts.releases + parts.humanTouches
   resolution.sort((a, b) => a - b)
+  // def-2: a defect another one supersedes (a chain resolves to its latest) or a withdrawal names is not counted.
+  const gone = new Set<string>([...(recordedDefects ?? []).flatMap((d) => (d.supersedes ? [d.supersedes] : [])), ...(withdrawals ?? []).map((w) => w.withdraws)])
+  const defects = recordedDefects?.filter((d) => d.id === undefined || !gone.has(d.id))
   const recorded = defects?.filter((d) => (d.item !== undefined && mergedItems.has(d.item)) || (d.commit !== undefined && mergedCommits.some((c) => c.startsWith(d.commit!)))).length
   const count = escaped ?? recorded
   return {
     since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
-    headline: { itemsMerged: merged.size, operatorTouches, perTouch: operatorTouches === 0 ? 'no touches' : merged.size / operatorTouches },
+    headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs },
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
     costPerVerifiedWork: { usd: accepted === 0 || (knownCostUsd === 0 && worksWithUnknownCost > 0) ? 'unknown' : knownCostUsd / accepted, knownCostUsd, accepted, worksWithUnknownCost },
     timeToVerifiedResolution: resolution.length === 0 ? { medianMs: 'unknown', p90Ms: 'unknown', accepted } : { medianMs: (resolution[Math.floor((resolution.length - 1) / 2)]! + resolution[Math.floor(resolution.length / 2)]!) / 2, p90Ms: percentile(resolution, 0.9), accepted },

@@ -233,6 +233,16 @@ The old ref is retired: do not give it to another Account. Records keep it.
 `system workers` also prints a `quota:` line under each account; see the
 [agents README](../../packages/agents/README.md#quota).
 
+`system work report --since <ISO>` prints the headline: Items merged per
+operator act. An operator act is an Intent the operator settled (store it with
+`system intent new ... --settled-by-operator`, only when they said so in that
+session; an Intent without the flag is not counted), an operator-confirmed
+Artifact (`system confirm <artifact-id> --note <text>` stores a
+`confirmation@1`), a release (a merge of `dev` into `main` seen in the
+repository) or a human touch (retry, cancel, decision). The report shows the
+parts and the ratio. Conversation with a caller session is not seen by System
+and not counted.
+
 Each Account (an `agents` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
 another Account offers the same capabilities and has a free slot, which takes
@@ -240,7 +250,10 @@ the step. `system work report` shows the time a Work waited for a slot
 (`waitedForSlotMs`) and its rate-limited attempts (`rateLimitedAttempts`). Its
 `failures` classify each failure, verdict, hold, failed publish and touch as an
 Outside failure with its cause, or a failure of the change, from the recorded
-reason ([GLOSSARY](../../GLOSSARY.md); patterns in `packages/work/src/outside.ts`). To allow
+reason ([GLOSSARY](../../GLOSSARY.md); patterns in `packages/work/src/outside.ts`). The report counts
+only Escaped defects that no later one supersedes and none withdraws: correct a recorded defect with
+`system defect add ... --supersedes <defect-id>`, or retract it with `system defect withdraw <defect-id> --reason ...`.
+To allow
 more, set `maxConcurrentAttempts` (a whole number of at least 1, else the account
 is skipped and `system workers` says why) in the profile's `agents` row, then
 restart the Host:
@@ -581,6 +594,9 @@ start the Host first, then add the server:
 ```
 claude mcp add system -- system mcp
 ```
+
+A session keeps `system mcp` for days: it follows the release `current` points to, so
+`system update` reaches it without a restart ([Host](../architecture/host.md)).
 
 The server's `instructions` tell a session in any repository when to use System
 and the steps. A change uses `develop.yaml`; a cleanup that keeps behaviour uses

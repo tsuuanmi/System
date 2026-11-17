@@ -4,7 +4,7 @@
  * and on the base re-run, whether a later verdict passed the same content, and what the next attempt of the step reported.
  * Built from the record alone, so the same record gives the same text (and the same hash).
  */
-import type { Failure, WorkEvent, WorkRecord } from '@system/work'
+import type { Failure, LaterPass, WorkEvent, WorkRecord } from '@system/work'
 
 const MAX = 1200
 const clip = (text: string): string => (text.length > MAX ? `${text.slice(0, MAX)}…` : text)
@@ -20,8 +20,8 @@ function changeOf(events: readonly WorkEvent[], index: number): string | undefin
   return undefined
 }
 
-/** The evidence text of `failure` (read from `record.events[failure.event index]`). */
-export function failureEvidence(failure: Pick<Failure, 'event' | 'kind' | 'reason'>, record: WorkRecord): string {
+/** The evidence text of `failure` (read from `record.events[failure.event index]`); `later` (cls-5) adds a pass of the same change in a later Work. */
+export function failureEvidence(failure: Pick<Failure, 'event' | 'kind' | 'reason'>, record: WorkRecord, later?: LaterPass): string {
   const index = Number(failure.event.split('#')[1])
   const events = record.events
   const lines = [`failure: ${failure.kind}: ${clip(failure.reason)}`]
@@ -35,8 +35,11 @@ export function failureEvidence(failure: Pick<Failure, 'event' | 'kind' | 'reaso
         lines.push(`- ${v.stepId}: ${v.verdict}${v.rerunOf ? ' (re-run of the same change)' : ''}${base}: ${clip(v.reason)}`)
       }
     }
-    const later = events.slice(index + 1).some((e) => e.type === 'verified' && e.verdict === 'pass' && e.subject === change)
-    lines.push(`a later verdict passed the same content: ${later ? 'yes' : 'no'}`)
+    const passed = events.slice(index + 1).some((e) => e.type === 'verified' && e.verdict === 'pass' && e.subject === change)
+    lines.push(`a later verdict passed the same content: ${passed ? 'yes' : 'no'}`)
+    const stepId = events[index]?.type === 'verified' ? events[index].stepId : undefined
+    const elsewhere = later?.(change, stepId, record, index)
+    if (elsewhere) lines.push(`the same change passed ${elsewhere.check} later in ${elsewhere.work}`)
   }
   const failed = events[index]
   if (failed && 'stepId' in failed) {

@@ -1,6 +1,6 @@
 # PLAN.md — System: finished milestones, open work and the standing decisions
 
-> **Status:** updated 2026-11-16. Open work is the Items of [STATUS.md](STATUS.md) (state derived by `system status`)
+> **Status:** updated 2026-11-18. Open work is the Items of [STATUS.md](STATUS.md) (state derived by `system status`)
 > and section 3 below. Each finished milestone is one line in section 1; its checklist, evidence and decisions as
 > written then are in [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md) (sections 3 to 3h), and for the older ones in
 > [PLAN.md at `aaa38f6`](https://github.com/tsuuanmi/System/blob/aaa38f616c53b31003629fdb67a53bec1a06d80f/PLAN.md). This file is not an ADR or an alternate source of product requirements.
@@ -39,6 +39,12 @@
   verdicts; copied files keep attribution and the upstream commit (FL, 2026-11-15). The Guardrail rule (Q8) is in
   [workflows/README.md](workflows/README.md).
 - A task's context pack is written by the caller who read the code, not by a plan step (FL, 2026-11-15; `develop.yaml`).
+- Release boundary (RB, operator, 2026-11-16/17): the `upgrade` check (rb-1) rehearses the update from `main`, path-limited; a git `pre-push` hook (rb-2) covers hand pushes; TR's close criterion stays and RB is its path.
+- Q31: the failure-cause question gains `flaky` and `process` (cls-3). Q34: `docs` runs the impact check (dc-1). Q35: the headline measure and Escaped defects come from records (ms-1).
+- Q36: open work lives in STATUS, not in a session's chat. Q37: one Item fits one Worker attempt; the caller splits a Done when with independent parts. Q38: a `toolShare` above 1 is investigated (tool-1).
+- From the grilling of "Verified Feedback Loop v2" (2026-11-16): no new measures, no confidence in failure classes, no recovery-decision component in the core (a recovery rule is a Workflow declaration); a Task's Done when is guidance and only a Verifier's criteria gate. rb-3, rb-4, cls-4 and cls-5 are the fixes; `outside.test.ts` holds the b131dd34 and c6e7cba1 cases.
+- Dependencies and priority (2026-11-17): `after:` names only a real dependency; priority is the order of lines in STATUS.md; independent Items run in parallel, each in its own worktree. Intent is an Artifact (in-1 to in-3); the scheduled session runs on System only until DNA has open Items.
+- Classifier research (2026-11-17): work:3cb46bef (economy model as classifier; report sha256:9645d599fe3d30963d5d73aa4a6104677158e6dc20a582fe2113f59a265ddef6, citations passed) and work:bbbf12bc (Jev by TypeSafe AI; report sha256:02edfb76c7842b7552e94d309509f4b19a03269c61d0ab6e4b339f94691dcfff, citations not verified, web-1).
 
 ## 1. Finished milestones
 
@@ -64,6 +70,7 @@
 | BS | Bootstrap: `system bootstrap plan` and `check` (read-only), the zero-checks verdict is inconclusive, MCP instructions, a draft of the first checks file | PR #272, [BS in the pinned file](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md) |
 | NM | Capability names: Abilities declared by Runtime adapters, Roles in the Workflows, the profile moved to the new names (2026-11-15) | [NM in the pinned file](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md) |
 | FL | Flow and verification: focused tests in implement (fl-1), a context pack per Task (fl-2), the unit-test slowdown found (fl-3), attempt summaries (fl-4), `afterInstall` checks and the install verdict (fl-5, fl-6), Guardrails for Escaped defects 1, 3 and 4 (fl-8 to fl-10), the five measures (fl-11); first install Verdict passed (work:e31e50fd) | close `a96b498`, release `edb4058`, [FL in the pinned file](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md) |
+| 2026-11-16/17 (RB, classes, Intent, measures) | About 40 Items, rb-1 to rb-5, lim-1, flaky-1, mcp-1, mcp-2, in-1 to in-3, cls-1 to cls-5, ms-1, ms-2, def-2, dc-1, install-1, tool-1, rsn-1 and others (STATUS.md in git history): the `upgrade` and `secrets` checks, the `docs` impact check, failure classes from structure, `flaky` and `process` causes, the Classifier component, Intents, defects and confirmations as Artifacts, the headline measure from records | `dev` merges to close commit `3ab10ae`; simplification pass in the next merge |
 
 Who built them: PRs #5–#36 were System Works, apart from #34 and #35 (the operator's sessions); OC, CQ and the PRs after CQ
 were built by the operator's sessions directly; since DF, System Works build System's own Items.
@@ -77,13 +84,14 @@ budget is +10% per milestone from 3,403 lines ([ADR-0010](docs/decisions/ADR-001
 budget is 4,285 lines under `docs/`. The older columns and the reasoning behind them are in
 [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md#2-growth-and-feedback-budgets-charter-11-and-12).
 
-| Measure | CM close | TR release (`41cbfea`, 2026-11-14) | FL close (`a96b498`, 2026-11-16) |
-|---|---|---|---|
-| Active core, lines | 4,183 (+7.3% on RO's 3,900, within +10%) | 4,280 (`packages/work/src` + `packages/artifacts/src`): a docs-only pass | 4,401, measured at `a052973`, which only adds documentation |
-| All package source, lines | 14,799 | not measured | not measured |
-| Tests, lines | 14,853 | not measured | not measured |
-| Docs under `docs/`, lines (files) | 4,270 (42) | 4,382 (42) before, 4,284 (42) after the hygiene pass | 4,288 (42): 3 over the budget |
-| Required checks | about 3 min 20 s of check time (docs 1 s, install 11 s, build 32 s, typecheck 10 s, unit 43 s, smoke 92 s) | not measured | not measured |
+| Measure | CM close | TR release (`41cbfea`, 2026-11-14) | FL close (`a96b498`, 2026-11-16) | 2026-11-17 close (after this pass) |
+|---|---|---|---|---|
+| Active core, lines | 4,183 (+7.3% on RO's 3,900, within +10%) | 4,280 (`packages/work/src` + `packages/artifacts/src`): a docs-only pass | 4,401, measured at `a052973`, which only adds documentation | 4,857 before → 4,840 after the simplification pass (one reader for the operator records, two one-use wrappers); cls-6 then took it to 4,853; 4,840 after this change (−13: comments restating code or another file's; budget ≤ 4,841) |
+| All package source, lines | 14,799 | not measured | not measured | 17,098 (`packages/*/src`; 17,115 before) |
+| Tests, lines | 14,853 | not measured | not measured | 22,294 (`packages/*/tests`, `tests`, `test-support`; 16 fewer: two duplicate summary tests) |
+| Docs under `docs/`, lines (files) | 4,270 (42) | 4,382 (42) before, 4,284 (42) after the hygiene pass | 4,288 (42): 3 over the budget | 3,624 (35); PLAN.md 188 → 164, STATUS.md 34 |
+| Required checks | about 3 min 20 s of check time (docs 1 s, install 11 s, build 32 s, typecheck 10 s, unit 43 s, smoke 92 s) | not measured | not measured | install 1 s (warm), build 33 s, typecheck 10 s, lint 14 s, unit 81 s, smoke 102 s, docs 4 s; upgrade and install-guide not run in this pass |
+| Measures of effect (`system work report --since 2026-11-16T00:00:00Z`, 85 Works) | | | | Headline: 58 Items merged, 0 operator touches ("no touches"). Verified Success Rate 0.87 (71 of 82); Recurring Failure Rate 0.52 (15 of 29); Escaped Defect Rate 0.069 (4 of 58, from records); Cost per Verified Work $0.40 (5 Works of unknown cost); Time to Verified Resolution median 14.5 min (p90 49.1); tool-seconds per second 0.86 (91 attempts); 6 unknown failures |
 
 Docs lean and tightly linked (operator, 2026-11-16): PLAN.md 657 → 166 lines; docs under `docs/` 4,162 → 3,501 lines
 (ADR-0009, PROP-0004 to PROP-0007 and RES-0008 retired to [the ledger](docs/governance/retired.md)).
@@ -107,43 +115,12 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
 
 ### RB — Release boundary (decided 2026-11-16)
 
-- Aim: no defect of the kind "old release meets new release" reaches production or blocks the pipeline.
-- Evidence: Escaped defects 3, 7 and 8, and fl-6's install assumptions, all sit on the boundary between the previous release and the new one; the operator's emergency commit `b2d4e0d` reached `dev` without checks and left a failing test.
-- Decisions (operator, 2026-11-16):
-  - A rehearsal check (`upgrade`, rb-1) runs the update from `main` to the commit under check, path-limited to keep checks fast.
-  - A standard git `pre-push` hook (rb-2) covers hand pushes; System's own publish is not affected.
-  - TR's close criterion is kept as it is; RB is its path.
-  - Reflection (operator, 2026-11-17):
-    - Q34: System's `docs` check runs the impact check (dc-1).
-    - Q35: the Charter's headline measure and Escaped defects come from records (ms-1).
-    - Q36: open work lives in STATUS, not in a session's chat.
-    - Q31: the failure-cause question gains `flaky` and `process` (cls-3).
-    - Q37: one Item fits one Worker attempt; a Done when with independent parts is split by the caller.
-    - Q38: a `toolShare` above 1 is investigated (tool-1).
-  - Grilling of the "Verified Feedback Loop v2" proposal (operator, 2026-11-16): no new milestone; rb-3, rb-4 and rb-5
-    are added after rb-2; no new measures, no confidence in failure classes, no recovery-decision component in the
-    core (a new recovery rule is a Workflow declaration); a Task's Done when stays guidance and only a Verifier's
-    criteria gate. Evidence:
-    - Recurring Failure Rate counts a failure as recurring when its coarse class (an Outside cause, or `change-<kind>`:
-      about ten classes) appeared in an earlier Work of the range (packages/work/src/measures.ts). In the FL window
-      (from 2026-11-15 13:40 UTC: 39 Works, 6 failures) it reads 3/6 = 0.50; keyed by the same check and the same
-      first failing test it reads 0/6 within the window, 1/6 with earlier history (verifiers.test.ts "System's own
-      checks..." on 2026-11-14 and 2026-11-16).
-    - outsideCause (packages/work/src/outside.ts) matches its patterns against the whole reason, test names included:
-      work:b131dd34 (smoke test "work wait survives a Host restart" timed out) is counted `restart`, and work:c6e7cba1
-      (a failure in workers-quota.test.ts) is counted `quota`. Report only: cm-2's hold count reads `limited` and
-      `attempt-lost`, not verdict reasons.
-    - Of the proposal's eight Verification Contract invariants, tests pin four (pinned verdict criteria and version;
-      bounded retry.onFail with the previous evidence; base re-run gives inconclusive; unknown effect outcome is
-      reconciled, never retried blindly), three partly (the controller's `'stale'` branch is never reached by a test;
-      a verifier that throws has no test, in the controller or the merge check; no test has a late `observed` of a
-      lost attempt on a live Host), and one not at all (no test asserts the Claude Code allow/deny flags or the Codex
-      sandbox flag in packages/agents/src/runtimes.ts; nothing scans a change for secrets).
-  - Second grilling (operator, 2026-11-16): System's purpose and headline measure are in the Charter (6a1a31c); unused parts deleted (8018e2d); Intent becomes an Artifact (in-1, in-2, in-3); lim-1 and flaky-1 come first because each failed a Work today; mcp-1 because sessions see "Host not running" after every Host restart.
-  - Classifier (operator, 2026-11-17): rules first; a separate optional Classifier component, inspired by Jev's design (closed-label questions defined at call time, label probabilities and confidence, a "does any label apply" answer) but built on System's economy-tier Accounts, report-only until it passes a gate on labelled data (cls-1, cls-2); contracts as JSON Schema; Jev itself not adopted now.
-    Evidence: work:3cb46bef (economy model as classifier; report sha256:9645d599fe3d30963d5d73aa4a6104677158e6dc20a582fe2113f59a265ddef6, citations passed) and work:bbbf12bc (Jev by TypeSafe AI; report sha256:02edfb76c7842b7552e94d309509f4b19a03269c61d0ab6e4b339f94691dcfff, citations not verified: its sources file failed to parse, web-1).
-  - Dependencies and priority (operator, 2026-11-17): `after:` names only a real dependency (the later Item needs what the earlier one builds); priority is the order of lines in STATUS.md; independent Items run in parallel, each in its own worktree.
-- Order (priority, not dependency: STATUS order, real dependencies in after:): ns-2, mcp-1, rb-3, rb-4, in-1, in-2, ns-1, ns-3, install-1, rb-5, cls-1, cls-2, in-3, then the unattended-scale spike (operator, 2026-11-17; lim-1 and flaky-1 done, web-1 running).
+- Aim: no defect of the kind "old release meets new release" reaches production or blocks the pipeline. Its finished decisions are in section 0.
+- Open decisions:
+  - The unattended-scale spike (isolation in section 0) comes after the Items still open in STATUS.md (operator, 2026-11-17).
+  - The Classifier stays report-only until it passes cls-2's gate on labelled data; contracts are JSON Schema, and Jev is not adopted now (section 4).
+  - Left to the operator (BS): the role `research.source` in the profile.
+- Order (priority, not dependency): the Items still open in STATUS.md, then the unattended-scale spike.
 
 
 ### ROI review (2026-11-16; Items ns-1, ns-2, ns-3)

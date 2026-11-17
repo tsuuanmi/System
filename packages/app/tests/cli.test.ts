@@ -28,7 +28,9 @@ test('intent new prints the Intent ID alone and needs exactly one of --body and 
   const work = { newIntent: async (...args: unknown[]) => { seen.push(args); return { intent: 'sha256:intent' } } }
   const result = await system(['intent', 'new', '--title', 'T', '--body', 'B', '--supersedes', 'sha256:old'], work)
   assert.equal(result.out, 'sha256:intent\n')
-  assert.deepEqual(seen, [['T', 'B', 'sha256:old']])
+  assert.deepEqual(seen, [['T', 'B', 'sha256:old', undefined]])
+  await system(['intent', 'new', '--title', 'T', '--body', 'B', '--settled-by-operator'], work)
+  assert.deepEqual(seen[1], ['T', 'B', undefined, true])
   await assert.rejects(system(['intent', 'new', '--title', 'T'], work), /exactly one of --body and --body-file/)
 })
 
@@ -37,7 +39,26 @@ test('defect add prints the Artifact ID alone', async () => {
   const work = { newDefect: async (...args: unknown[]) => { seen.push(args); return { defect: 'sha256:defect' } } }
   const result = await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke'], work)
   assert.equal(result.out, 'sha256:defect\n')
-  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined]])
+  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined, undefined]])
+  seen.length = 0
+  await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke', '--supersedes', 'sha256:old'], work)
+  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined, 'sha256:old']])
+})
+
+test('defect withdraw prints the Artifact ID alone', async () => {
+  const seen: unknown[] = []
+  const work = { withdrawDefect: async (...args: unknown[]) => { seen.push(args); return { withdrawal: 'sha256:w' } } }
+  const result = await system(['defect', 'withdraw', 'sha256:d', '--reason', 'wrong carrier'], work)
+  assert.equal(result.out, 'sha256:w\n')
+  assert.deepEqual(seen, [['sha256:d', 'wrong carrier', undefined]])
+})
+
+test('confirm prints the Artifact ID alone', async () => {
+  const seen: unknown[] = []
+  const work = { newConfirmation: async (...args: unknown[]) => { seen.push(args); return { confirmation: 'sha256:conf' } } }
+  const result = await system(['confirm', 'sha256:subject', '--note', 'checked'], work)
+  assert.equal(result.out, 'sha256:conf\n')
+  assert.deepEqual(seen, [['sha256:subject', 'checked', undefined]])
 })
 
 for (const verb of ['approve', 'deny'] as const) {

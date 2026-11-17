@@ -12,8 +12,9 @@ import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type ClaimTable, ty
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { git, pin, snapshot } from './git.ts'
-import { DEFECT_KIND, addDefect, defectSchema, storedDefects, type DefectInput, type EscapedDefect } from './defect.ts'
-import { INTENT_KIND, addIntent, intentSchema, type Intent } from './intent.ts'
+import { DEFECT_KIND, WITHDRAWAL_KIND, addDefect, defectSchema, storedDefects, storedWithdrawals, withdrawDefect, withdrawalSchema, type DefectInput, type DefectWithdrawal, type StoredDefect } from './defect.ts'
+import { INTENT_KIND, addIntent, intentSchema, storedIntents, type Intent } from './intent.ts'
+import { CONFIRMATION_KIND, addConfirmation, confirmationSchema, storedConfirmations, type ConfirmationInput } from './confirmation.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
@@ -32,6 +33,8 @@ export * from './host.ts'
 export * from './host-lock.ts'
 export * from './intent.ts'
 export * from './defect.ts'
+export * from './confirmation.ts'
+export * from './releases.ts'
 export * from './kinds.ts'
 export * from './lane.ts'
 export * from './headroom.ts'
@@ -41,6 +44,8 @@ export * from './registry.ts'
 export * from './slots.ts'
 export * from './status.ts'
 export * from './measures.ts'
+export * from './later-pass.ts'
+export { defaultChange } from './failure-class.ts'
 export * from './summary.ts'
 export * from './outside.ts'
 export * from './workflow.ts'
@@ -100,8 +105,26 @@ export class WorkService {
     return { defect: (await addDefect(this.artifacts, defect, { type: 'operator', ref: caller.operatorId })).id }
   }
 
+  /** Store a `confirmation@1` Artifact: the operator confirmed the stored Artifact it names. */
+  async newConfirmation(confirmation: ConfirmationInput, caller: Caller): Promise<{ confirmation: string }> {
+    return { confirmation: (await addConfirmation(this.artifacts, confirmation, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** The stored Intents and confirmations, for the operator acts of `rangeReport`. */
+  operatorActs(): { intents: { at: string; settledBy?: 'operator' }[]; confirmations: { date: string }[] } {
+    return { intents: storedIntents(this.artifacts), confirmations: storedConfirmations(this.artifacts) }
+  }
+
+  /** Store an `escaped-defect-withdrawal@1` Artifact: the defect it names was recorded wrongly. */
+  async withdrawDefect(input: { withdraws: string; reason: string; date?: string }, caller: Caller): Promise<{ withdrawal: string }> {
+    return { withdrawal: (await withdrawDefect(this.artifacts, input, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
   /** The recorded Escaped defects. */
-  defects(): EscapedDefect[] { return storedDefects(this.artifacts) }
+  defects(): StoredDefect[] { return storedDefects(this.artifacts) }
+
+  /** The recorded withdrawals of Escaped defects. */
+  defectWithdrawals(): DefectWithdrawal[] { return storedWithdrawals(this.artifacts) }
 
   /**
    * Store a `task@1` input; with a repository, first snapshot `ref` there as a
@@ -223,6 +246,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
   artifacts.registerKind({ ...INTENT_KIND, content: intentSchema })
   artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema })
+  artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema })
+  artifacts.registerKind({ ...WITHDRAWAL_KIND, content: withdrawalSchema })
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })

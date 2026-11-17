@@ -179,7 +179,11 @@ async function finishPendingCheck() {
 }
 
 const args = process.argv.slice(2)
-if (args[0] === 'init') await init(args.slice(1))
+if (args[0] === 'mcp' && !process.env.SYSTEM_MCP_CHILD) {
+  // Item mcp-2: a small front keeps the session's stdio and runs the MCP server of the release `current` points to (mcp-front.mjs).
+  const { front } = await import(pathToFileURL(join(repo, 'bin', 'mcp-front.mjs')).href)
+  process.exit(await front({ install, args: args.slice(1) }))
+} else if (args[0] === 'init') await init(args.slice(1))
 else if (args[0] === 'update' && args[1] === '--finish-pending') process.exit(await finishPendingCheck())
 else if (args[0] === 'update') process.exit(await runUpdate(args.slice(1)))
 else if (thin(args)) {

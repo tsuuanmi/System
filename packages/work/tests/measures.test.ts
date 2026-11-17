@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { failureClass, parseCheckFailure } from '../src/failure-class.ts'
+import { defaultChange, failureClass, parseCheckFailure } from '../src/failure-class.ts'
 import { rangeReport } from '../src/measures.ts'
+import { releaseTimes } from '../src/releases.ts'
 import type { EscapedDefect } from '../src/defect.ts'
 import type { WorkEvent, WorkRecord } from '../src/record.ts'
 
@@ -73,6 +74,15 @@ test('a failure of the change is keyed by its check and first failing test', () 
   assert.equal(failureClass({ kind: 'attempt', reason: 'x', unknown: true }), 'unknown')
 })
 
+test('a failure of the change is the rules\' default unless it rests on positive evidence (cls-6)', () => {
+  assert.equal(defaultChange({ kind: 'verdict', reason: unit('x') }), false, 'a failing test is named')
+  assert.equal(defaultChange({ kind: 'verdict', reason: 'failed: unit: x (the base passed on re-run once; the first run failed on both: y)' }), false, 'a base pass is recorded')
+  assert.equal(defaultChange({ kind: 'verdict', reason: 'failed: build (exit 1)' }), true)
+  assert.equal(defaultChange({ kind: 'attempt', reason: 'no change: the Worker made none' }), true)
+  assert.equal(defaultChange({ kind: 'verdict', reason: unit('x'), outside: 'flaky' }), false, 'an Outside cause stands')
+  assert.equal(defaultChange({ kind: 'attempt', reason: 'x', unknown: true }), false, 'unknown is asked on its own')
+})
+
 test('the same check on the same test recurs; two tests of one check do not; unknown is counted apart', () => {
   const work = (name: string, day: string, reasons: Unnumbered[]) => record(name, 'failed', [admitted(T(day)), ...reasons, terminal(T(day, '01:00:00'), 'failed')])
   const same = rangeReport([work('p', '15', [verdictFail(T('15', '00:00:01'), unit('t1'))]), work('q', '16', [verdictFail(T('16', '00:00:01'), unit('t1'))])], { since: '2026-11-15' })
@@ -88,14 +98,44 @@ const human = { type: 'human' as const, operatorId: 'tan' }
 const reopenedBy = (at: string, caller: typeof human | typeof agent): Unnumbered => ({ type: 'reopened', at, caller, stepId: 'task', reason: 'again' }) as Unnumbered
 const withCommit = (r: WorkRecord, mergeCommit: string): WorkRecord => ({ ...r, state: { ...r.state, effects: { e: { state: 'applied', detail: { merged: 'true', mergeCommit } } } as never } })
 
-test('headline: Items merged per operator touch, touches by human callers only', () => {
+test('headline: operator acts are Intents settled, confirmations, releases and human touches; Items merged per act', () => {
   const touched = merged(record('t', 'succeeded', [admitted(T('15'), 'h-1'), reopenedBy(T('15', '00:00:01'), human), reopenedBy(T('15', '00:00:02'), agent), terminal(T('15', '01:00:00'), 'succeeded')]))
   const other = merged(record('u', 'succeeded', [admitted(T('16'), 'h-2'), reopenedBy(T('16', '00:00:01'), human), terminal(T('16', '01:00:00'), 'succeeded')]))
-  const r = rangeReport([touched, other], { since: '2026-11-15' })
-  assert.deepEqual(r.headline, { itemsMerged: 2, operatorTouches: 2, perTouch: 1 })
-  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15' }).headline, { itemsMerged: 2, operatorTouches: 0, perTouch: 'no touches' })
-  assert.deepEqual(rangeReport([OLD], { since: '2026-11-15' }).headline, { itemsMerged: 0, operatorTouches: 0, perTouch: 'no touches' })
+  const intents = [
+    { at: T('15', '02:00:00'), settledBy: 'operator' as const },
+    { at: T('16', '02:00:00'), settledBy: 'operator' as const },
+    { at: T('16', '03:00:00') }, // a caller's Intent the operator did not settle: not counted
+    { at: T('10'), settledBy: 'operator' as const }, // before the range
+    { at: T('18'), settledBy: 'operator' as const }, // after `until`
+  ]
+  const confirmations = [{ date: '2026-11-16' }, { date: '2026-11-01' }]
+  const releases = [T('15', '05:00:00'), T('17', '05:00:00'), T('09')]
+  const r = rangeReport([touched, other], { since: '2026-11-15', until: '2026-11-18', intents, confirmations, releases })
+  assert.deepEqual(r.headline, { itemsMerged: 2, parts: { intentsSettled: 2, confirmations: 1, releases: 2, humanTouches: 2 }, operatorActs: 7, itemsPerAct: 2 / 7 })
+  // The 2026-11-17 case: Items merged with no touches, yet the operator acted.
+  const acts = rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15'), settledBy: 'operator' }], releases: [T('16')] }).headline
+  assert.deepEqual(acts, { itemsMerged: 2, parts: { intentsSettled: 1, confirmations: 0, releases: 1, humanTouches: 0 }, operatorActs: 2, itemsPerAct: 1 })
+  // An Intent without `settledBy` is not counted; nothing counted gives `no acts`, never Infinity.
+  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15') }] }).headline, { itemsMerged: 2, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts' })
+  assert.deepEqual(rangeReport([OLD], { since: '2026-11-15' }).headline, { itemsMerged: 0, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts' })
   assert.equal(JSON.stringify(rangeReport([A], { since: '2026-11-15' }).headline).includes('null'), false)
+})
+
+test('releaseTimes reads the merges of a fake git log (one committer date per line, blank lines ignored)', () => {
+  assert.deepEqual(releaseTimes('2026-11-17T10:00:00+00:00\n\n2026-11-16T09:30:00+02:00\n'), ['2026-11-17T10:00:00.000Z', '2026-11-16T07:30:00.000Z'])
+  assert.deepEqual(releaseTimes(''), [])
+})
+
+test('superseded and withdrawn defects are not counted; a supersedes chain resolves to its latest', () => {
+  const n = merged(record('n', 'succeeded', [admitted(T('16'), 'd-2'), terminal(T('16', '01:00:00'), 'succeeded')]))
+  const d = (id: string, extra: Partial<EscapedDefect> = {}): EscapedDefect & { id: string } => ({ id, item: 'd-2', foundBy: 'w', reason: 'r', date: '2026-11-17', ...extra })
+  const count = (defects: (EscapedDefect & { id: string })[], withdrawals: { withdraws: string; reason: string; date: string }[] = []) =>
+    rangeReport([n], { since: '2026-11-15', defects, withdrawals }).escapedDefectRate.escaped
+  assert.equal(count([d('a'), d('b')]), 2)
+  assert.equal(count([d('a'), d('b', { supersedes: 'a' })]), 1, 'a superseded defect is not counted')
+  assert.equal(count([d('a'), d('b', { supersedes: 'a' }), d('c', { supersedes: 'b' })]), 1, 'a chain resolves to its latest')
+  assert.equal(count([d('a'), d('b')], [{ withdraws: 'a', reason: 'x', date: '2026-11-17' }]), 1, 'a withdrawn defect is not counted')
+  assert.equal(count([d('a'), d('b', { supersedes: 'a' })], [{ withdraws: 'b', reason: 'x', date: '2026-11-17' }]), 0, 'withdrawing the latest withdraws the chain')
 })
 
 test('recorded defects count in the range of the merged Item, by Item or merge commit, and not outside it', () => {

@@ -46,3 +46,38 @@ export function interrupted(output: string): string[] {
   }
   return running
 }
+
+/** The most a check's own output adds to a verdict's reason. */
+const OWN_ERROR_MAX = 300
+
+/** The last non-empty lines of `text` that fit in `OWN_ERROR_MAX` characters, on one line, each `secrets` value masked. */
+export function lastLines(text: string, secrets: readonly string[] = []): string {
+  let clean = text
+  for (const secret of secrets) if (secret.length >= 3) clean = clean.split(secret).join('[redacted]')
+  const lines = clean.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const picked: string[] = []
+  let size = 0
+  for (const line of lines.reverse()) {
+    const next = size + line.length + (picked.length ? 3 : 0)
+    if (next > OWN_ERROR_MAX) {
+      if (!picked.length) picked.push(line.slice(-OWN_ERROR_MAX))
+      break
+    }
+    picked.unshift(line)
+    size = next
+    if (picked.length >= 3) break
+  }
+  return picked.join(' | ')
+}
+
+/**
+ * Why a check that exited non-zero failed: its first failing test (`unit: a.test.ts "x": boom`, which rb-3 keys on), else
+ * the last lines of its stderr (else stdout), else `name (exit N)`. `output` is stdout and stderr together, as the test runner prints.
+ */
+export function failureLine(output: string, name: string, exitCode: number | null, signal: string | null, own: { stderr: string; stdout: string } | string, secrets: readonly string[] = []): string {
+  const first = firstFailure(output)
+  if (first) return `${name}: ${first}`
+  const text = typeof own === 'string' ? own : own.stderr.trim() ? own.stderr : own.stdout
+  const last = lastLines(text, secrets)
+  return last ? `${name}: ${last}` : `${name} (exit ${exitCode ?? signal})`
+}
