@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { update } from '../../../bin/update.mjs'
 
@@ -29,7 +30,8 @@ function machine(options: { current?: string; checks?: number; build?: number; h
     sleep: async (ms: number) => { clock += ms },
     probe: async () => { probes++; return options.hostUp ?? true },
     run: async (command: string, args: string[], cwd?: string) => {
-      const line = [command, ...args].join(' ') + (cwd ? ` @${cwd}` : '')
+      // corepack is run by the path beside this Node (Item ns-2); the log keeps its name.
+      const line = [command === join(dirname(process.execPath), 'corepack') ? 'corepack' : command, ...args].join(' ') + (cwd ? ` @${cwd}` : '')
       ran.push(line)
       if (args.includes('rev-parse')) return { status: 0, stdout: `${SHA}\n` }
       if (args.includes('worktree') && args.includes('remove')) { dirs.delete(args.at(-1)!); return { status: 0, stdout: '' } }
@@ -46,7 +48,7 @@ function machine(options: { current?: string; checks?: number; build?: number; h
       if (args[0] === 'work' && args.some((a) => a.endsWith('install-check.yaml'))) return { status: options.installCheck ?? 0, stdout: 'work:installed\n' }
       if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:installed') return { status: 0, stdout: '{"reason": "failed: answers: no such command"}' }
       if (args[0] === 'work') return { status: options.checks ?? 0, stdout: 'work:checked\n' }
-      if (command === 'corepack' && args.includes('build')) return { status: options.build ?? 0, stdout: '' }
+      if (command === join(dirname(process.execPath), 'corepack') && args.includes('build')) return { status: options.build ?? 0, stdout: '' }
       return { status: 0, stdout: '' }
     },
   }

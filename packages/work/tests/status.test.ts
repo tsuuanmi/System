@@ -159,7 +159,11 @@ function setup() {
   return { controller, table, specs, requests, task, admit, hold }
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+/** Wait until the Work's live progress shows (up to 5 s), not a fixed time: a loaded machine is slower than 20 ms. */
+const settle = async (live?: () => unknown[]) => {
+  for (let waited = 0; waited < 5000 && live && live().length === 0; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+}
 
 test('each state: done from dev, doing from a running Work with its live progress, todo is nobody', async () => {
   const dir = repository(STATUS)
@@ -178,7 +182,7 @@ test('each state: done from dev, doing from a running Work with its live progres
   assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}`)
   assert.equal(workStatus(controller.get(work.id)!), 'admitted, not running')
   const running = controller.run(work.id)
-  await settle()
+  await settle(() => controller.live(work.id))
   assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} step task on fake/claude since ${work.events[0]!.at}; turns 3, last tool Edit, 1200 tokens`)
   assert.equal(lines().join('\n'), lines().join('\n'), 'the same records give the same text')
   assert.equal(lines({ state: 'doing' }).length, 1)
@@ -247,7 +251,7 @@ test('a second Work for an Item with a running Work is refused, naming it and it
   const release = hold()
   const first = await admit(task(dir, 'df-3'))
   const running = controller.run(first.id)
-  await settle()
+  await settle(() => controller.live(first.id))
   await assert.rejects(admit(task(dir, 'df-3', 'again')), (error: Error) => error.message.includes(first.id) && error.message.includes('fake/claude') && error.message.includes('force') && !error.message.includes('\n'))
   // Another Item, another repository, and a Task that names no Item are not affected.
   await admit(task(dir, 'df-4'))
@@ -553,4 +557,28 @@ test('admitting a Work for a Blocked Item is refused naming what blocks it, unle
   await assert.rejects(admit(task(dir, 'cm-5')), /blocked by cm-6/)
   assert.equal((await admit(task(dir, 'cm-2'), true)).state.status, 'running')
   assert.equal((await admit(task(dir, 'cm-1'))).state.status, 'running')
+})
+
+test('in-2: an Item line may end with (intent: <12 hex>) beside (after: ...), in either order, once each', () => {
+  const hex = 'abc123def456'
+  const parsed = parseStatus(AFTER('- [ ] a-1 One', `- [ ] a-2 Two (intent: ${hex})`, `- [ ] a-3 Three (after: a-1) (intent: ${hex})`, `- [ ] a-4 Four (intent: ${hex}) (after: a-1, a-2)`))
+  assert.deepEqual(parsed.problems, [])
+  assert.deepEqual(parsed.items, [
+    { id: 'a-1', title: 'One', done: false },
+    { id: 'a-2', title: 'Two', done: false, intent: hex },
+    { id: 'a-3', title: 'Three', done: false, after: ['a-1'], intent: hex },
+    { id: 'a-4', title: 'Four', done: false, after: ['a-1', 'a-2'], intent: hex },
+  ])
+  for (const bad of ['ABC123DEF456', 'abc123', 'abc123def4567', 'sha256:abc123def456', '']) {
+    assert.ok(parseStatus(AFTER(`- [ ] a-1 One (intent: ${bad})`)).problems.some((p) => /^line 2: .*intent/.test(p)), bad)
+  }
+  assert.ok(parseStatus(AFTER(`- [ ] a-1 One (intent: ${hex}) (intent: ${hex})`)).problems.some((p) => /intent/.test(p)))
+  assert.ok(parseStatus(AFTER('- [ ] a-1 One', '- [ ] a-2 Two (after: a-1) (after: a-1)', '')).problems.some((p) => /after/.test(p)))
+  // Without the colon it is title text, as for after.
+  assert.equal(parseStatus(AFTER('- [ ] a-1 One (intent 123)')).items[0]!.title, 'One (intent 123)')
+})
+
+test('in-2: status shows `intent: <prefix>` for an Item that has one, and nothing for an Item without', () => {
+  const status = parseStatus(AFTER('- [ ] a-1 One', '- [ ] a-2 Two (after: a-1) (intent: abc123def456)'))
+  assert.deepEqual(itemLines(status, undefined, []), ['[ ] a-1 One - todo: nobody', '[ ] a-2 Two (intent: abc123def456) - todo (blocked by a-1)'])
 })

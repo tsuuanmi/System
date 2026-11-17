@@ -1,0 +1,37 @@
+# The first Classifier question (cls-1): why did a failure happen? Asked only for a failure whose rules answer
+# `unknown` (packages/work/src/outside.ts); the answer feeds `work report` and nothing else.
+# Contract: packages/classifier/schemas/question.schema.json (generated from the zod schema).
+name: failure-cause
+version: 1
+instructions: |
+  You are given the recorded reason of one failure of a unit of automated software work (a Worker attempt, a
+  verification, a hold or a publish). Say which cause it shows. Choose the label whose description fits the reason
+  best; choose unknown when the reason does not say, or fits none of the others.
+labels:
+  - label: quota
+    description: the Worker's Account ran out of credits, hit a usage or rate limit, or was refused for too many requests
+  - label: restart
+    description: the System Host stopped or restarted while the work was running, so the attempt never reported
+  - label: conflict
+    description: publishing the change failed because it conflicts with other work merged into the base branch
+  - label: load
+    description: the machine was too busy or the base commit fails the same check too, so the change is not to blame
+  - label: slow-host
+    description: a step or check timed out because the host was slow
+  - label: attach
+    description: attaching the text or files to the Worker's session failed
+  - label: change
+    description: the change itself is at fault, such as a failing test, a failed check or a refused verdict of the code
+  - label: unknown
+    description: the reason does not tell the cause, or fits none of the other labels
+examples:
+  # The lim-1 reason: Claude Code's 5-hour limit.
+  - input: "attempt: claude-code/c4 exit 1: You've hit your 5-hour limit · resets 6pm (Asia/Ho_Chi_Minh)"
+    label: quota
+  # work:b131dd34: a failing smoke test that is named like a restart but is the change's.
+  - input: 'verdict: failed: smoke: timed out after 600 s while running smoke.test.ts "work wait survives a Host restart"'
+    label: change
+  # A publish refused for a conflict.
+  - input: "publish: merge conflict with dev at abc123def456: packages/agents/README.md"
+    label: conflict
+samples: 3

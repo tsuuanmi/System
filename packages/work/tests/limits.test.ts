@@ -11,6 +11,10 @@ for (const [reason, expected] of [
   ['usage limit reached', true],
   ['rate limit reached', true],
   ['quota exceeded', true],
+  ["claude-code/c4 exit 1: You've hit your 5-hour limit · resets 6pm (Asia/Ho_Chi_Minh)", true],
+  ["You've hit your weekly limit", true],
+  ['over budget', false],
+  ['attempt stopped: over its time limit', false],
   ['tests red', false],
   ['no change: the working tree is the same', false],
   [undefined, false],
@@ -39,3 +43,10 @@ for (const [reason, expected] of [
     assert.equal(quotaResetFrom(reason, NOW), expected === undefined ? undefined : Date.parse(expected))
   })
 }
+
+const HIT = "claude-code/c4 exit 1: You've hit your 5-hour limit · resets 6pm (Asia/Ho_Chi_Minh)"
+test('quota reset in a named IANA zone', async () => {
+  const { quotaResetFrom } = await import(limitsPath)
+  assert.equal(quotaResetFrom(HIT, Date.parse('2026-11-16T10:27:08Z')), Date.parse('2026-11-16T11:00:00Z'))
+  assert.equal(quotaResetFrom(HIT, Date.parse('2026-11-16T12:00:00Z')), Date.parse('2026-11-17T11:00:00Z'))
+})

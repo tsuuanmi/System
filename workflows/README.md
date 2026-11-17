@@ -4,7 +4,7 @@ Workflow definitions are **data** (ADR-0002): `system.workflow/v1` YAML files
 read at admission and pinned as a `workflow-spec@1` Artifact. Editing a file
 changes future admissions only.
 
-The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml`, `research-source.yaml` and
+The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml`, `research-source.yaml`, `plan-items.yaml` and
 `brainstorm.yaml`, and the Sub-workflow `code-checks.yaml`.
 
 **Context pack.** A develop Task's instructions are prose under six headings, so
@@ -31,14 +31,14 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
   → `publish` (`git.publish`: the checked commit to `system/<work>`, one draft
   pull request) → `accept`. `implement`'s `retry` names `checks.checks` and
   `publish` (sc-7: a conflict or a failing check on the merge reopens it on the
-  base's new tip). Satisfied (ro-15; version 4): `implement` may also write the optional
+  base's new tip); it sets `rerunUnchanged` (sc-9: a flaky check is re-run on the same change, not failed as "no change"; version 9). Satisfied (ro-15; version 4): `implement` may also write the optional
   output `satisfied`, naming existing tests (`<test file> "<test name>"` per line)
   that show the Item already holds at the base; then `satisfied-check` runs exactly
   those tests on the Task's base, `checks`, `publish` and `accept` are skipped, and a
   pass ends the Work succeeded with the result "satisfied", publishing nothing.
 - [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
   (`repo.write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
-  is worth doing) → `implement` (`retry` on `checks.checks` and `publish`, sc-7; version 4) → `checks` → `publish` → `accept`: one pull
+  is worth doing) → `implement` (`retry` on `checks.checks` and `publish`, sc-7, and `rerunUnchanged`, sc-9; version 5) → `checks` → `publish` → `accept`: one pull
   request of cleanup for any repository that has `.system/checks.yaml`. It fits a change that keeps behaviour.
 - [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
   on the input change, criteria pinned from its base). A Sub-workflow of
@@ -59,6 +59,8 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
   `synthesis` (`brainstorm.synthesis`) reads both exact proposals and writes a
   `summary`. No verifier: success means the three outputs exist. The bundle
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
+
+- [plan-items.yaml](plan-items.yaml) — `propose` (`repo.read`, never `repo.write`, `tier.standard`) reads the Intent in the Task's context and the repository's `STATUS.md` and `PLAN.md`, and writes the output `items`: proposed Item lines in STATUS.md's grammar (`- [ ] <id> <text> (intent: <12 hex>) (after: ...)`, `after:` only for real dependencies, new ids, a Done-when clause in each). It has no verify or accept step (an accept step needs a verify step, and a verifier that runs `status-parse.ts` would be a new Host capability). It writes nothing to STATUS: the caller shows `items` to the operator and only after the operator agrees submits a docs Work (`develop.yaml`) that adds the lines. The scheduled session never runs it ([night-session.md](../tools/night-session.md)).
 
 Comparison configurations for the Brainstorm evaluation, and the Workflows that
 are not canonical (`second-opinion.yaml`),

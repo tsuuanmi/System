@@ -55,6 +55,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   inconclusive verdict, hold, failed publish and operator touch as `failures`
   (its `event`, kind and `outside` cause, or none for a failure of the change),
   with `outsideFailures` and `changeFailures` counted.
+- [src/summary.ts](src/summary.ts) — `summarize(record, classified?)`: a failure whose rules answer `unknown` and that has a Classification (cls-1, the optional [classifier](../classifier/README.md) row) is reported under its label as `classified`; classes and counts stay the rules'.
 - [src/measures.ts](src/measures.ts) — `rangeReport`: the five measures of effect over the Works admitted in a range (`system work report --since`), from their records alone; a measure with nothing to divide by is `unknown`, never zero.
 - [src/conversation.ts](src/conversation.ts) — `conversation@1` 
   a conversation held elsewhere as `file@1` parts under a manifest of what
@@ -151,6 +152,9 @@ reruns the Work, a denial fails it.
 optional `context`: Artifacts the Worker reads as data, also listed as the
 task's inputs, optional `item`: the Item of the repository's `STATUS.md`) and
 `git-tree@1` (`repository`, `commit`, `tree`, `parent`), registered by this row.
+[src/intent.ts](src/intent.ts): `intent@1` (`title`, Markdown `body`, optional
+`supersedes`: a stored `intent@1`), what the operator settled with a caller
+session, stored before Items carry it out (`addIntent`).
 The `admitted` event's optional `goal` and the `orchestrator` caller type are read-only: records stored before the Goal feature was removed (ADR-0009, superseded) still open and replay, and new events never carry either. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
 
 ## Crash boundaries

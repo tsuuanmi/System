@@ -2,7 +2,7 @@
 type: operations
 status: active
 reviewed: 2026-11-09
-covers: [bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
+covers: [tools/install.sh, bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
 ---
 
 # Runbook
@@ -15,6 +15,24 @@ The Host runs as a process and the CLI is its thin client: every command but
 `$DSH_HOME/system/host.sock`, so a Host must run for them.
 
 ## Install and start
+
+**On a new machine**, this page is the whole guide. You need `git`, `corepack`
+and Node >=24.9 (`nvm install 24`; add the `xvfb` package only for the web
+Worker, with `INSTALL_WEB=1`); [tools/install.sh](../../tools/install.sh) checks
+each and says what is missing. Clone, then run the script (the `install-guide`
+check runs this block as it is):
+
+```sh
+git clone git@github.com:tsuuanmi/System.git && cd System
+```
+
+```sh install
+tools/install.sh
+```
+
+It builds the install below for the commit you cloned and runs `system init`.
+Then link `~/.system/current/bin/system` as `system` on `PATH` and enable the
+unit (the next paragraphs); `system update` takes it from there.
 
 System runs from an install under `~/.system` (`SYSTEM_INSTALL` for another
 place), apart from any checkout you develop in:
@@ -338,6 +356,21 @@ enabling the timer, with no `todo` Item: `packages/bundle/system-night-session.s
 in a checkout after the Host answers. It should find no `todo` Item, store a
 report and print its ID. A "permission" refusal names a rule to fix in the script.
 
+### Which repositories the session works on
+
+By default the session works on this repository. `SYSTEM_NIGHT_REPOS` (paths of
+checkouts separated by `:`) names the repositories instead; the launcher passes
+the list to the prompt in that order, and an entry that is not a git checkout is
+reported (stderr, and the night report) and skipped. The limits (6 Items over all
+repositories) do not change. To add DNA, keep this repository first and set it in
+the installed unit, with an `Environment=` line or a drop-in
+(`systemctl --user edit system-night-session`):
+
+```ini
+[Service]
+Environment=SYSTEM_NIGHT_REPOS=%h/workspaces/System:%h/workspaces/DNA
+```
+
 ### The night report and its notifier
 
 The session's final answer is the report, in Markdown (the prompt lists its
@@ -486,8 +519,14 @@ A repository lists its planned work in a `STATUS.md` at its root: one line per
 reported by `system status` as a `note:`. `(after: id, id)` at the end of a
 line (with the colon) makes the Item **Blocked** until each named Item is done;
 `status` then reads `todo (blocked by <ids>)`, and a cycle or an ID with no line
-is a problem (`cycle: a -> b -> a`, `unknown id`). The check `statusmd` fails a
-change whose `STATUS.md` has any problem.
+is a problem (`cycle: a -> b -> a`, `unknown id`). `(intent: <12 hex>)` beside it
+(either order, each once) names the `intent@1` Artifact the Item carries out, by
+the first 12 hex characters of its ID: `status` shows it, and `task new --item`
+adds that Intent to the Task's `context` (refused when the prefix is not exactly
+one stored `intent@1`). The check `statusmd` fails a change whose `STATUS.md` has
+any problem; it cannot open the Artifact store, so it checks an intent prefix
+only against `--intents <file>` (stored `intent@1` IDs, one per line) and
+otherwise prints a `note:` that the prefixes were not checked.
 
 ```
 system task new --text "..." --repo . --ref dev --item df-3   # prints the Task ID alone

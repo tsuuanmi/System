@@ -40,6 +40,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       if (!data) throw new Error(`no Artifact ${id}`)
       return data
     },
+    async newIntent(intent) { return { intent: `intent:${intent.title}` } },
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
     workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
     credentials: {
@@ -165,6 +166,8 @@ test('every method of the table round-trips over the socket', async () => {
   // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).
   await call('work.submit', { capabilities: ['repo.write'], input: input(f), force: true, run: false })
   await call('task.new', { instructions: 'x', item: 'p-2' })
+  assert.deepEqual(await call('intent.new', { title: 'Want', body: 'Outcome.' }), { intent: 'intent:Want' })
+  await assert.rejects(call('intent.new', { title: '', body: 'x' }), /-32602|invalid|title/i)
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
   await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3' }), /Item p-3 is blocked by p-2/)
   await call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3', force: true })
@@ -173,6 +176,27 @@ test('every method of the table round-trips over the socket', async () => {
   assert.ok(status.recordBytes > 0)
 
   assert.deepEqual([...called].sort(), Object.keys(tableOf(table)).sort(), 'a method of the table has no round trip in this test')
+})
+
+test('work.list takes `since` (admission time, inclusive) and shows the Item of a Work whose Task names one', async () => {
+  const { f, open } = await started()
+  const client = await open()
+  const specStore = f.specStore
+  let naming = false
+  specStore.taskOf = (id) => (naming ? { task: { instructions: 'x', base: id, item: 'ns-9' }, repository: '/nowhere' } as never : undefined)
+  specStore.withNote = async (id) => id
+  const plain = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  naming = true
+  const itemWork = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
+  const rows = async (params?: unknown) => await client.call('work.list', params) as { id: string; item?: string }[]
+  const at = async (id: string) => ((await client.call('work.show', { workId: id })) as { events: { at: string }[] }).events[0]!.at
+  assert.deepEqual((await rows()).map((r) => [r.id, r.item]), [[plain.id, undefined], [itemWork.id, 'ns-9']])
+  assert.equal('item' in (await rows())[0]!, false)
+  assert.deepEqual((await rows({ since: await at(plain.id) })).map((r) => r.id), [plain.id, itemWork.id])
+  assert.deepEqual((await rows({ since: await at(itemWork.id) })).map((r) => r.id), [itemWork.id])
+  assert.deepEqual(await rows({ since: new Date(Date.parse(await at(itemWork.id)) + 1).toISOString() }), [])
+  await assert.rejects(client.call('work.list', { since: 'tonight' }), /-32602|date/i)
 })
 
 test('an agent connection is refused every method flagged agent: false, and only those', async () => {

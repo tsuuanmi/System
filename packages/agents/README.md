@@ -7,7 +7,7 @@ the optional web-worker row) becomes a System Worker
 
 - **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH), `credentials` (DSH). Reads
   `webWorker` if the web-worker row provides it.
-  **Provides:** `ctx.agents` (`system workers`; `quota(ref)`).
+  **Provides:** `ctx.agents` (`system workers`; `quota(ref)`; `ask`, one model turn with no tools on an economy-tier Account, for the [Classifier](../classifier/README.md)).
 - **Accounts:** one config entry per account; an account whose CLI or
   credential is missing is skipped with its reason. Routing is by headroom (see
   Routing by headroom); `system work retry --worker <ref>` names one.

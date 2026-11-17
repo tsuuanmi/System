@@ -180,6 +180,14 @@ test('a changed tree still passes, and a read-only scout with an unchanged check
   for (const s of scouting) assert.equal(done.state.steps[s.id]!.state, 'succeeded', s.id)
 })
 
+test('plan-items.yaml run by a read-only Worker produces an items output', async () => {
+  const h: Harness = harness({ worker: { capabilities: ['repo.read', 'tier.standard'] } })
+  const done = await runFixture(h, 'plan-items.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.ok(done.state.steps.propose!.outputs.items)
+  assert.deepEqual(h.calls.map((c) => c.outputs), [['items']])
+})
+
 const GATED = `schema: system.workflow/v1
 id: gated
 version: 1
@@ -424,6 +432,35 @@ test('a verdict about another subject, other criteria, or without stored evidenc
     assert.match(verified!.reason, reason, name)
     assert.equal(done.state.status, 'failed', name)
   }
+})
+
+test('a step whose subject changed after its pass is stale: never published, never accepted', async () => {
+  const specs = memorySpecs()
+  let published = 0
+  const h: Harness = harness({ specs, verifier: { async verify(r) {
+    const evidence = id(`evidence/${r.attemptId}`)
+    specs.stored.add(evidence)
+    // The verifier passes the subject it was given; then the implement step's recorded change becomes another one.
+    const row = h.table.rows.get([...h.table.rows.keys()][0]!)!
+    const observed = row.events.find((e) => e.type === 'observed' && e.stepId === 'implement')
+    if (observed?.type === 'observed') observed.outputs = { ...observed.outputs, change: id('a later change') }
+    return { verdict: 'pass', reason: 'scripted', subject: r.subject, criteria: r.criteria, evidence: [evidence] }
+  } } })
+  h.capabilities.routeEffect('git.publish').selected!.apply = async () => { published++; return { state: 'applied', reason: 'published', detail: {} } }
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(published, 0, 'nothing stale is published')
+  assert.notEqual(done.state.status, 'succeeded')
+  assert.equal(done.events.some((e) => e.type === 'terminal' && e.outcome === 'succeeded'), false)
+  assert.ok(done.events.some((e) => e.type === 'verified' && e.verdict === 'pass'), 'the verdict itself was a pass')
+  assert.match(JSON.stringify(done.events.filter((e) => e.type === 'terminal' || e.type === 'effect-observed')), /stale/)
+})
+
+test('a verifier that throws gives an error verdict, never a pass, and the Work fails', async () => {
+  const { done, verified } = await verdictOf(harness(), { async verify() { throw new Error('the checker crashed') } })
+  assert.equal(verified?.verdict, 'error')
+  assert.match(verified!.reason, /the verifier threw: the checker crashed/)
+  assert.equal(done.state.status, 'failed')
+  assert.equal(done.events.some((e) => e.type === 'verified' && e.verdict === 'pass'), false)
 })
 
 test('the controller stores the verdict Artifact bound to the exact subject and pinned criteria', async () => {

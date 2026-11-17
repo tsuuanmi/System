@@ -22,6 +22,7 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `effects` | `@system/effects` | `effects` | no | `git.publish` to GitHub (ADR-0004 decision 10): push, a pull request, and a merge only into `mergeInto` (`dev`, ADR-0008); token `GITHUB_TOKEN` |
 | `web-worker` | `@system/web-worker` | `webWorker` | no, **off** | the `web` Runtime for accounts of the `agents` row; enable with `disabled: false` ([runbook](../../docs/operations/runbook.md#the-web-account)); off, such accounts are unavailable ("the web-worker row is disabled") and nothing of the browser is loaded |
 | `agents` | `@system/agents` | `agents` | no | Claude Code and Codex accounts as Workers (ADR-0004, ADR-0005); accounts without a CLI or credential are skipped; Brainstorm roles are account capabilities |
+| `classifier` | `@system/classifier` | `classifier` | no, **off** | answers closed questions (`classifiers/*.yaml`) about an Artifact with an economy-tier Account of `agents`, recorded as `classification@1`; report-only (`work report`); enable with `disabled: false`; off, reports are as before |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
 | `system-app` | `@system/app` | — | yes | the CLI |
 
@@ -29,7 +30,7 @@ Each row is mounted because a System contract needs it; adding a row adds a
 line here, to `ROWS` in [`packages/app/src/doctor.ts`](../app/src/doctor.ts)
 when it provides a service and is on by default (`web-worker` is off, so it is not
 there), and to `EXPECTED_ROWS` in the [smoke test](../../tests/smoke.test.ts). `web-worker`
-is listed before `agents`, which reads its service when it starts.
+is listed before `agents`, which reads its service when it starts; `classifier` is listed after it, for the same reason.
 
 ## Web canary units
 

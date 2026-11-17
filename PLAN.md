@@ -133,7 +133,10 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
       lost attempt on a live Host), and one not at all (no test asserts the Claude Code allow/deny flags or the Codex
       sandbox flag in packages/agents/src/runtimes.ts; nothing scans a change for secrets).
   - Second grilling (operator, 2026-11-16): System's purpose and headline measure are in the Charter (6a1a31c); unused parts deleted (8018e2d); Intent becomes an Artifact (in-1, in-2, in-3); lim-1 and flaky-1 come first because each failed a Work today; mcp-1 because sessions see "Host not running" after every Host restart.
-- Order: lim-1, flaky-1, ns-2, mcp-1, in-1, in-2, rb-3, rb-4, rb-5, install-1, in-3, then the unattended-scale spike (operator, 2026-11-16).
+  - Classifier (operator, 2026-11-17): rules first; a separate optional Classifier component, inspired by Jev's design (closed-label questions defined at call time, label probabilities and confidence, a "does any label apply" answer) but built on System's economy-tier Accounts, report-only until it passes a gate on labelled data (cls-1, cls-2); contracts as JSON Schema; Jev itself not adopted now.
+    Evidence: work:3cb46bef (economy model as classifier; report sha256:9645d599fe3d30963d5d73aa4a6104677158e6dc20a582fe2113f59a265ddef6, citations passed) and work:bbbf12bc (Jev by TypeSafe AI; report sha256:02edfb76c7842b7552e94d309509f4b19a03269c61d0ab6e4b339f94691dcfff, citations not verified: its sources file failed to parse, web-1).
+  - Dependencies and priority (operator, 2026-11-17): `after:` names only a real dependency (the later Item needs what the earlier one builds); priority is the order of lines in STATUS.md; independent Items run in parallel, each in its own worktree.
+- Order (priority, not dependency: STATUS order, real dependencies in after:): ns-2, mcp-1, rb-3, rb-4, in-1, in-2, ns-1, ns-3, install-1, rb-5, cls-1, cls-2, in-3, then the unattended-scale spike (operator, 2026-11-17; lim-1 and flaky-1 done, web-1 running).
 
 
 ### ROI review (2026-11-16; Items ns-1, ns-2, ns-3)
@@ -157,6 +160,10 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
 - [ ] Optional Skill, LSP, web-fetch or another Worker adapter only if a Work
   fails for want of one and the pinned DSH plugin can satisfy the System
   contract without duplicating the model loop.
+- [ ] Select tests by the import graph of the changed files (Jest `--findRelatedTests`, Vitest `related`, Nx affected
+  are the standards; Node's test runner has none). *Trigger: the required checks exceed their time budget (Charter 12).
+  Risk: the smoke tests boot the Host through `bin/system` and load plugins dynamically, so an import graph misses
+  dependencies.*
 - [ ] Adaptive routing only on a measured need, such as quota exhaustion.
 - [ ] A fixed set of reproducible failure scenarios to compare System versions. *Trigger: a change to a retry or
   recovery rule that needs a before/after comparison the Host's records cannot give.*
@@ -168,3 +175,6 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   three tests in `packages/verifiers/tests/verifiers.test.ts` fail there (a check over its timeout, a check that leaves
   an Xvfb or Chrome behind, a timed-out check names the test that was running). CI is pinned to `ubuntu-24.04` until
   then. *Trigger: install-1, or an operator machine on 26.04.*
+- [ ] Jev (TypeSafe AI) or another hosted decision model as a Classifier backend. *Trigger: the economy-model
+  Classifier fails cls-2's gate; before any trial, its data retention terms are confirmed (the research found them
+  inconsistent) and the report's citations verified.*

@@ -13,12 +13,14 @@ import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, z, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
+import { chooseAsker, type Ask } from './ask.ts'
 import { readClaudeAccountId, readCodexAccountId } from './identity.ts'
 import { createQuotaCache, probeClaudeQuota, readClaudeQuota, readCodexQuota, type QuotaCache, type QuotaReport } from './quota.ts'
 import { RUNTIME_ABILITIES, type Runtime } from './runtimes.ts'
 import { WEB_WORKER_DISABLED, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
 export * from './agent.ts'
+export * from './ask.ts'
 export * from './attempt-summary.ts'
 export * from './identity.ts'
 export * from './node.ts'
@@ -125,6 +127,8 @@ export interface AgentsService {
   accounts(): Promise<AccountStatus[]>
   /** The account's 5-hour and weekly quota, read without a model turn and cached for 10 minutes (`fresh` drops the cache and reads again); a Claude reading may come from the last attempt's rate-limit event when `get_usage` has no plan limits (`source`); `unreadable` for a `web` or unknown ref. */
   quota(ref: string, options?: { fresh?: boolean }): Promise<QuotaReport>
+  /** One model turn with no tools on an economy-tier Account that is not in `exclude` (the Classifier's, cls-1); a refusal says why none could answer. Never throws. */
+  ask: Ask
 }
 
 /** A `Spawner` over the DSH subprocess service, which owns each process range. */
@@ -189,6 +193,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
   const quotas = new Map<string, QuotaCache>()
+  // The registered CLI Accounts, for `ask`.
+  const resolvedAccounts = new Map<string, Account>()
+  const spawner = subprocessSpawner(subprocess)
+  const ask = chooseAsker(() => [...resolvedAccounts.values()], spawner, attempts)
   const quota = async (ref: string, options?: { fresh?: boolean }): Promise<QuotaReport> => {
     const cache = quotas.get(ref)
     if (cache) {
@@ -202,7 +210,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     return { unreadable: status.available ? `no quota reader for ${ref}` : `not registered: ${status.reason}` }
   }
   // Provided before the loop: `system workers` shows the accounts still registering.
-  ctx.provide('agents', { accounts, quota } satisfies AgentsService)
+  ctx.provide('agents', { accounts, quota, ask } satisfies AgentsService)
   const dispose: (() => void)[] = []
   // Every account is listed from the start, as registering: the Host serves while this loop is still going (WW6e).
   const entries = (config.accounts ?? []).map((account) => {
@@ -220,8 +228,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     done.catch(() => {})
     webWorker.expect(account.ref, done)
   }
+  webWorker?.announced()
   // After the accounts are listed (as registering), which `system workers` serves while this awaits. Optional like `webWorker`: a bare context (a test's) keeps no readings across a restart.
-  const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain)
+  // Opening can fail: the announced accounts are then refused with that reason, never left pending until an operation's wait runs out (flaky-2).
+  const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain).catch((error: Error) => {
+    for (const outcome of outcomes.values()) outcome.refuse(error)
+    throw error
+  })
   if (domain) ctx.effect(() => () => { void domain.close() }, 'system_agents domain')
   const observations = domain?.table('quota')
   for (const { account, status } of entries) {
@@ -298,7 +311,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const key = id && `${account.runtime}:${id}`
         if (id) status.providerAccount = id
         if (key && seen.has(key)) throw new Error(`provider account ${id} is already registered as ${seen.get(key)}; two refs on one account would count its quota twice`)
-        dispose.push(capabilities.registerWorker(agentWorker(resolved, artifacts, subprocessSpawner(subprocess), attempts)))
+        dispose.push(capabilities.registerWorker(agentWorker(resolved, artifacts, spawner, attempts)))
+        resolvedAccounts.set(account.ref, resolved)
+        dispose.push(() => { resolvedAccounts.delete(account.ref) })
         if (key) seen.set(key, account.ref)
       }
       status.available = true

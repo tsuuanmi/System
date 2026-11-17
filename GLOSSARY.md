@@ -30,7 +30,7 @@ The share of a quota window above which an Account takes no new step.
 _Avoid_: limit, threshold
 
 **Outside failure**:
-A failure, hold or operator touch of a Work caused by its surroundings (machine load, an Account's quota, a Host restart, a conflict with other work, a slow Host), not by its change.
+A failure, hold or operator touch of a Work caused by its surroundings (machine load, an Account's quota, a Host restart, a conflict with other work, a slow Host), not by its change. A failure whose cause System cannot place is neither an Outside failure nor a failure of the change: its cause is unknown.
 _Avoid_: infra error, flake (a flake is one kind)
 
 **Worker**:
@@ -66,6 +66,10 @@ repositories, write Items, approve, deny and release. They may run System on
 more than one machine.
 _Avoid_: user, admin, team
 
+**Intent**:
+What the operator wants, settled with a caller session and stored as an Artifact before any Item carries it out. It says the outcome and why, and is not itself checkable; the Items made from it name it, so every result can be traced back to what was wanted. A changed Intent is a new Intent.
+_Avoid_: idea, prompt, request
+
 **Item**:
 A planned piece of a project's work, with a stable ID in the project's
 status list. An Item can get several Tasks over time (a request rewritten
@@ -86,7 +90,8 @@ _Avoid_: available, unblocked, eligible
 
 **Blocked**:
 An Item not yet done that comes after an Item still not done. Read from the
-status list, never recorded.
+status list, never recorded. `after:` names a real dependency, never a priority;
+priority is the order of the status list.
 _Avoid_: waiting, held (a held Work awaits an Approval)
 
 **Task**:
@@ -146,6 +151,16 @@ or a check that the base fails too, after one re-run on the change and the base,
 Only a check of the Artifact's own form may fail it.
 _Avoid_: score, review, result
 
+**Classifier**:
+Answers one closed question about an Artifact; not a Verifier and never a
+ground for acceptance.
+_Avoid_: judge, decision
+
+**Classification**:
+A Classifier's recorded answer: label, label distribution, confidence, model and
+question version.
+_Avoid_: verdict, decision
+
 **Satisfied**:
 A Work's outcome when its Item already holds at the Task's base, shown by a
 test that a Verifier ran there; nothing is merged and the Item counts as done.
@@ -155,6 +170,12 @@ _Avoid_: no-op, skipped, already done
 A defect in a change that passed its checks and was accepted, found later by
 review or use.
 _Avoid_: false positive, regression
+
+**Recurring failure**:
+A failure that an earlier Work already had: the same check failing on the
+same first test, or the same Outside cause. Two failures of one step are not
+the same failure for that alone.
+_Avoid_: repeat, regression
 
 **Guardrail**:
 An enforced check (a test, a type, a lint rule, an API or a verifier) added

@@ -37,7 +37,7 @@ checks:
   - name: test               # [a-z][a-z0-9-]*
     run: npm ci && npm test  # run with /bin/sh -c in the checked-out commit
     timeoutSeconds: 600      # default 600, at most 3600
-    paths: [src/**, package.json]  # optional globs: run only when the change touches one
+    paths: [src/**, '!**/*.md']  # optional globs, `!` excludes: run only when the change touches an included file
 ```
 
 - **Verify:** check out the exact subject commit into a fresh worktree, run
@@ -86,7 +86,11 @@ checks:
   commands keep `<check> (exit <n>)`. Several failures are joined by `; `.
 - **Paths** (decision 5): a check with `paths` (globs, as GitHub Actions'
   `paths` filter, matched by `path.matchesGlob`) runs only when
-  `git diff --name-only <base> <subject>` names a file one of them matches;
+  `git diff --name-only <base> <subject>` names a file they include: the patterns
+  are read in order and a `!` pattern excludes, as in GitHub Actions (the last
+  pattern matching a file decides; `['packages/**', '!**/*.md']` skips a README,
+  `['!**/*.md', 'packages/**']` does not). A verifier older than this reads `!…`
+  as a glob that matches nothing, so it only fails to exclude;
   the change is the union of two diffs: from the commit the checks were pinned
   from (the base) to the subject, and, when the subject names a `parent`, from
   that parent to the subject. So a reopened step's second attempt is selected

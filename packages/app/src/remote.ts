@@ -194,8 +194,8 @@ export function remoteHost(remote: Remote): ClientHost {
       return follow(workId, options)
     },
     get: (workId) => read('work.show', { workId }) as Promise<WorkRecord>,
-    list: () => read('work.list'),
-    report: (workId) => read('work.report', { workId }),
+    list: (since) => read('work.list', since === undefined ? undefined : { since }),
+    report: (workId, classify) => read('work.report', { workId, ...(classify ? { classify } : {}) }),
     rangeReport: (range) => read('work.report', range),
     replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,
     cancel: (workId, reason) => change('work.cancel', { workId, reason }),
@@ -254,6 +254,7 @@ export function remoteHost(remote: Remote): ClientHost {
     async newTask(instructions, repository, ref, context, item, against, force) {
       return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against, force })
     },
+    newIntent: (title, body, supersedes) => read('intent.new', { title, body, supersedes }),
     claim: (repository, item, force) => change('item.claim', { repository: resolve(repository), item, force }),
     status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
   }

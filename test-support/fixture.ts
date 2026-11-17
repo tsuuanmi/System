@@ -57,6 +57,8 @@ export interface Fixture {
   admit(file: string): Promise<WorkRecord>
   /** The same admission, not yet submitted: what `Host.submit` takes. */
   admission(file: string): Admission
+  /** The stand-in spec store, so a test can make a Task name an Item (`taskOf`, `withNote`). */
+  specStore: SpecStore
   /** What the fake publisher's `reconcile` reports about the remote. */
   remote: { state: 'applied' | 'absent' | 'unknown' }
   /** The verdicts the fake verifier gives next, in order; `pass` once they are used up. */
@@ -174,7 +176,7 @@ export function fixture(options: { seed?: number; slots?: number; checks?: numbe
   const table = memoryWorkTable()
   const controller = new WorkController(table, specStore, capabilities)
   return {
-    controller, capabilities, table, attempts, checkAttempts, checkPeak: () => checkPeak, remote, peak, verdicts: next, files: workflowFile,
+    specStore, controller, capabilities, table, attempts, checkAttempts, checkPeak: () => checkPeak, remote, peak, verdicts: next, files: workflowFile,
     hold: (stepId) => { held.add(stepId) },
     arrived: (stepId, count = 1) => ((arrived.get(stepId) ?? 0) >= count ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, [...(arrivals.get(stepId) ?? []), { count, go }]))),
     release: (stepId) => { held.delete(stepId); for (const go of waiting.get(stepId) ?? []) go(); waiting.delete(stepId) },

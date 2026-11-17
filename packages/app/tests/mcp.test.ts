@@ -248,13 +248,13 @@ test('a notice only wakes the client: one that was away reads work.events from i
 
 test('the initialize result carries instructions: the steps, the checks file and the human-only commands', { timeout: 120_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
-  for (const word of ['status', 'item_claim', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
+  for (const word of ['status', 'item_claim', 'task_new', 'intent_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
 })
 
 test('the instructions name develop.yaml as the Workflow for any change and only the canonical others', { timeout: 120_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
   assert.ok(text.includes('workflows/develop.yaml'))
-  for (const name of ['hygiene', 'research', 'research-source', 'brainstorm', 'code-checks']) assert.ok(text.includes(`${name}.yaml`), name)
+  for (const name of ['hygiene', 'research', 'research-source', 'plan-items', 'brainstorm', 'code-checks']) assert.ok(text.includes(`${name}.yaml`), name)
   for (const gone of ['feature', 'software-engineering', 'debate', 'second-opinion', 'research-fanout', 'red:']) assert.ok(!text.includes(gone), gone)
 })
 
@@ -390,7 +390,7 @@ test('an MCP session refreshes its tools and notifies after recovering on newer 
   }
 })
 
-test('fl-7: the first call after the Host restarts reconnects and is sent again only when its repeat is idempotent (a read, or a write with commandId)', { timeout: 120_000 }, async () => {
+test('fl-7: the first call after the Host restarts reconnects and is sent again (a read, or a write with a commandId the MCP makes when the caller gave none)', { timeout: 120_000 }, async () => {
   const dir = mkdtempSync('/tmp/sm-rs-')
   mkdirSync(join(dir, 'system'))
   mkdirSync(join(dir, 'data'))
@@ -421,11 +421,11 @@ test('fl-7: the first call after the Host restarts reconnects and is sent again 
   assert.equal(again.error, undefined, again.error)
   assert.equal(again.value.id, first.value.id)
   assert.equal(((await call(client, 'work.list')).value as unknown[]).length, 1)
-  // A write without commandId is not sent again: the failure is reported as before, and the next call reconnects.
+  // A write without commandId gets one from the MCP before the first send (mcp-1): it succeeds on the first call, as one more Work.
   await restart()
   const bare = await call(client, 'work.submit', { capabilities: ['repo.write'], run: false })
-  assert.match(bare.error ?? '', /the Host closed the connection/)
-  assert.equal(((await call(client, 'work.list')).value as unknown[]).length, 1)
+  assert.equal(bare.error, undefined, bare.error)
+  assert.equal(((await call(client, 'work.list')).value as unknown[]).length, 2)
   await client.close()
   await server.close()
   await host.close()

@@ -13,7 +13,7 @@ const home = cli.home
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
-const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'web-worker', 'agents', 'credentials', 'system-app']
+const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'fakes', 'subprocess', 'verifiers', 'effects', 'web-worker', 'agents', 'classifier', 'credentials', 'system-app']
 
 const system = (...args: string[]) => cli.run(args)
 

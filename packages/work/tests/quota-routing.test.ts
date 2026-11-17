@@ -195,6 +195,7 @@ test('cancelling a quota wait ends the Work and clears the live entry and retry'
 })
 
 const outOfCredits = 'codex/default exit 1: Your workspace is out of credits. Add credits to continue.'
+const fiveHourLimit = "claude-code/c4 exit 1: You've hit your 5-hour limit · resets 6pm (Asia/Ho_Chi_Minh)"
 const observations = (record: WorkRecord) => record.events.filter((event) => event.type === 'observed')
 
 test('a limited attempt moves the step to the other Account and the Work succeeds', async (t) => {
@@ -218,6 +219,20 @@ test('a limited attempt moves the step to the other Account and the Work succeed
   assert.equal(done.state.steps.task!.state, 'succeeded')
   assert.equal(done.state.steps.task!.attempts.length, 2, 'both attempts remain in the record')
   assert.equal(dispatched(done)[1]?.candidates.find((c) => c.ref === 'P')?.selected, false)
+})
+
+test('a 5-hour limit message is recorded limited and the step moves to another Account', async (t) => {
+  let limited = false
+  const f = await setup(t, [
+    { ref: 'P', quota: async () => reading(limited ? 100 : 30), run: async () => {
+      if (!limited) { limited = true; return { status: 'failed', outputs: {}, reason: fiveHourLimit } }
+    } },
+    { ref: 'S', quota: async () => reading(50) },
+  ])
+  const done = await f.run()
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(Reflect.get(observations(done)[0]!, 'limited'), true)
+  assert.deepEqual(f.ran.map((r) => r.worker), ['P', 'S'])
 })
 
 test('with one Account a limited step waits on quota', async (t) => {

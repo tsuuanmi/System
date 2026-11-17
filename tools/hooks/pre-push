@@ -7,17 +7,22 @@ while read -r _local_ref _local_sha remote_ref _remote_sha; do
   root=$(git rev-parse --show-toplevel) || exit 1
   cd "$root" || exit 1
   # The checks run with the repository's Node (engines.node), not the shell's (fl-3, third place): the same `nodeBin` the checks step uses.
-  if ! bin=$(node "$here/../node-bin.ts" "$root"); then
+  # Only asking for it uses the shell's Node, found by `command -v`; every later spawn names the chosen Node's own path (Item ns-2).
+  boot=$(command -v node) || { echo "pre-push: no node on PATH; install Node, or bypass with 'git push --no-verify'." >&2; exit 1; }
+  if ! bin=$("$boot" "$here/../node-bin.ts" "$root"); then
     echo "pre-push: refusing the push to dev: no suitable Node for this repository (see above). Install it, or bypass with 'git push --no-verify'." >&2
     exit 1
   fi
-  [ -z "$bin" ] || PATH="$bin:$PATH"
-  for check in 'python3 tools/docs.py check' 'node tools/check-status.ts STATUS.md' 'corepack pnpm typecheck' 'corepack pnpm test'; do
-    # shellcheck disable=SC2086
-    if ! $check >&2; then
-      echo "pre-push: refusing the push to dev: '$check' failed. Fix it, or bypass with 'git push --no-verify'." >&2
-      exit 1
-    fi
-  done
+  [ -n "$bin" ] || bin=$(dirname "$boot")
+  PATH="$bin:$PATH"
+  # check <name shown> <command...>: runs one check, refusing the push when it fails.
+  check() {
+    label=$1; shift
+    "$@" >&2 || { echo "pre-push: refusing the push to dev: '$label' failed. Fix it, or bypass with 'git push --no-verify'." >&2; exit 1; }
+  }
+  check 'python3 tools/docs.py check' python3 tools/docs.py check
+  check 'node tools/check-status.ts STATUS.md' "$bin/node" tools/check-status.ts STATUS.md
+  check 'corepack pnpm typecheck' "$bin/corepack" pnpm typecheck
+  check 'corepack pnpm test' "$bin/corepack" pnpm test
 done
 exit 0

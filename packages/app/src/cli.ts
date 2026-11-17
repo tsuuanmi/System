@@ -84,7 +84,7 @@ export interface WorkCommands {
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   get(workId: string): Soon<WorkRecord | undefined>
-  list(): Soon<{ id: string; status: string; specId: string }[]>
+  list(since?: string): Soon<{ id: string; status: string; specId: string; item?: string }[]>
   replay(workId: string): Soon<{ state: WorkState; matches: boolean }>
   cancel(workId: string, reason: string): Promise<'requested' | WorkRecord>
   decide(workId: string, decision: 'approved' | 'denied', operatorId: string, reason: string): Promise<Followed>
@@ -94,10 +94,12 @@ export interface WorkCommands {
   /** Wait for every one of `workIds`, or with `any` the first, to end, be held or await approval. */
   waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** A Work's measurements. */
-  report(workId: string): Promise<unknown>
+  report(workId: string, classify?: boolean): Promise<unknown>
   /** The five measures of effect over the Works admitted in a range. */
   rangeReport(range: { since: string; until?: string; escaped?: number }): Promise<unknown>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
+  /** Store an `intent@1` Artifact; its ID. */
+  newIntent(title: string, body: string, supersedes?: string): Promise<{ intent: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
   claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
@@ -345,6 +347,22 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  const intent = program.command('intent').description('what the operator wants, stored before Items carry it out')
+  intent.command('new')
+    .description('store an intent@1 Artifact (title, Markdown body: Outcome, Why, Constraints, Out of scope) and print its ID alone on stdout')
+    .requiredOption('--title <title>', 'a short title')
+    .option('--body <markdown>', 'the body')
+    .option('--body-file <path>', 'read the body from a file')
+    .option('--supersedes <id>', 'the earlier intent@1 Artifact this one replaces')
+    .action((options: { title: string; body?: string; bodyFile?: string; supersedes?: string }) => {
+      select(async () => {
+        if (Boolean(options.body) === Boolean(options.bodyFile)) throw new Error('give exactly one of --body and --body-file')
+        const body = options.body ?? readFileSync(options.bodyFile!, 'utf8')
+        const created = await host.work().newIntent(options.title, body, options.supersedes)
+        io.out(`${created.intent}\n`)
+        return 0
+      })
+    })
   program.command('claim <item>')
     .description('claim an Item of the project\'s STATUS.md before submitting a Work for it: system status then shows it as doing, claimed by you since now; a Work submitted for the Item takes the claim over')
     .option('--repo <path>', 'a git repository of the project', '.')
@@ -504,10 +522,11 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('list')
-    .description('list Work: id, status, pinned spec')
-    .action(() => {
+    .description('list Work, one per line: id, status, pinned spec and the Item its Task names (when it names one)')
+    .option('--since <iso>', 'only the Works admitted at or after this date or timestamp (inclusive)')
+    .action((options: { since?: string }) => {
       select(async () => {
-        for (const work of await host.work().list()) io.out(`${work.id}  ${work.status.padEnd(21)}  ${work.specId}\n`)
+        for (const work of await host.work().list(options.since)) io.out(`${work.id}  ${work.status.padEnd(21)}  ${work.specId}${work.item ? `  ${work.item}` : ''}\n`)
         return 0
       })
     })
@@ -516,12 +535,20 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
     .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN section 2 (else that measure is unknown)')
-    .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string }) => {
+    .option('--classify', 'with a Work ID: first ask the Classifier (the optional classifier row) for the failures no rule places, then report; a Work that has ended is classified by the Host anyway')
+    .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string; classify?: boolean }) => {
       select(async () => {
         if ((workId === undefined) === (options.since === undefined)) throw new Error('give a Work ID, or --since <date> for a range')
         if (workId !== undefined && (options.until !== undefined || options.escaped !== undefined)) throw new Error('--until and --escaped go with --since')
+        if (workId === undefined && options.classify) throw new Error('--classify goes with a Work ID')
         if (workId !== undefined) {
-          io.out(`${JSON.stringify(await host.work().report(workId), null, 2)}\n`)
+          let report = await host.work().report(workId, options.classify)
+          // The Host bounds a call; classification still going on is asked about again until it is done.
+          for (let n = 0; options.classify && (report as { classifying?: boolean }).classifying && n < 600; n += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000))
+            report = await host.work().report(workId, true)
+          }
+          io.out(`${JSON.stringify(report, null, 2)}\n`)
           return 0
         }
         const escaped = options.escaped === undefined ? undefined : Number(options.escaped)

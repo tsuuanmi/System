@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -18,6 +18,8 @@ export interface Services {
   artifact(id: string): unknown
   readBytes(id: string): Promise<Uint8Array>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller, item?: string, against?: string): Promise<{ task: string; base?: string }>
+  /** Store an `intent@1` Artifact. */
+  newIntent(intent: { title: string; body: string; supersedes?: string }, caller: Caller): Promise<{ intent: string }>
   /** A Workflow file a Workflow uses: `workflows/<name>` at the base commit of the `input` Task, else beside the Host's own code; undefined when neither has it. */
   workflowFile(name: string, input: string | undefined): string | undefined
   credentials: {
@@ -25,6 +27,8 @@ export interface Services {
     describe(name: string): Promise<{ configured: boolean; source?: string }>
   }
   workers(): Promise<{ registered: string[]; accounts: unknown[] }>
+  /** The optional Classifier row (cls-1), report-only: undefined when the row is off. */
+  classifier?: FailureClassifier
   /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
   login(ref: string, cookies: string | undefined): Promise<{ signedIn: boolean; detail: string; imported?: number; skipped?: number }>
   /** Start the remote sign-in of a browser Account: where to reach its viewer, and until when. */
@@ -36,6 +40,9 @@ export interface Services {
   /** Whether `commit` is in the running release of `repository`: false when it is not, undefined when unknown. */
   releaseHolds?(repository: string, commit: string): Promise<boolean | undefined>
 }
+
+/** How long `work.report` with `classify` waits for the Classifier: under the call timeout. */
+const CLASSIFY_WAIT_MS = 7000
 
 const commandId = z.string().min(1).optional()
 const workId = z.string().min(1)
@@ -135,9 +142,18 @@ export function operations(services: Services): Methods {
     'work.list': {
       read: true,
       agent: true,
-      summary: 'Every Work as `{ id, status, specId }`; `status` is `admitted, not running` for a Work admitted and never run.',
-      params: z.object({}).strict(),
-      handler: (host) => host.view.list().map((r) => ({ id: r.id, status: workStatus(r), specId: r.state.specId })),
+      summary: 'Every Work as `{ id, status, specId, item? }`; `status` is `admitted, not running` for a Work admitted and never run; `item` is the Item (ID) its Task names, absent for a Work whose Task names none. With `since` (a date or timestamp, inclusive): only the Works admitted at or after it.',
+      params: z.object({ since: date.optional() }).strict(),
+      handler(host, p) {
+        const from = p.since === undefined ? undefined : Date.parse(p.since)
+        return host.view.list()
+          .filter((r) => from === undefined || Date.parse(r.events[0]!.at) >= from)
+          .map((r) => {
+            const first = r.events[0]!
+            const item = first.type === 'admitted' ? first.item?.id : undefined
+            return { id: r.id, status: workStatus(r), specId: r.state.specId, ...(item ? { item } : {}) }
+          })
+      },
     },
     'work.replay': {
       read: true,
@@ -149,15 +165,28 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events. With `since` (a date or timestamp; `until` excludes, `escaped` is the Escaped defect count of PLAN section 2): the five measures of effect over every Work admitted in the range, each with its counts: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool share.',
-      params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional() }).strict(),
-      handler(host, p) {
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp; `until` excludes, `escaped` is the Escaped defect count of PLAN section 2): the five measures of effect over every Work admitted in the range, each with its counts: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool share.',
+      params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional(), classify: z.boolean().optional() }).strict(),
+      async handler(host, p) {
         if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')
+        const classifier = services.classifier
+        if (p.classify && p.workId === undefined) throw new Error('`classify` goes with `workId`')
+        if (p.classify && !classifier) throw new Error('the classifier row is disabled (a profile patch turns it on with `disabled: false`)')
         if (p.workId !== undefined) {
           if (p.until !== undefined || p.escaped !== undefined) throw new Error('`until` and `escaped` go with `since`')
-          return summarize(known(host, p.workId))
+          const record = known(host, p.workId)
+          // Asking is the operator's choice; a report otherwise only reads what is recorded. A call is bounded (CALL_TIMEOUT):
+          // classification that is still going on goes on in the Host, and the report says so (`classifying`); ask again for the rest.
+          let classifying = false
+          if (p.classify) {
+            let timer: NodeJS.Timeout | undefined
+            const finished = await Promise.race([classifier!.classify(record).then(() => true), new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), CLASSIFY_WAIT_MS) })])
+            clearTimeout(timer)
+            classifying = !finished
+          }
+          return { ...summarize(record, classifier?.lookup), ...(classifying ? { classifying: true } : {}) }
         }
-        return rangeReport(host.view.list(), { since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }) })
+        return rangeReport(host.view.list(), { since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), ...(classifier ? { classified: classifier.lookup } : {}) })
       },
     },
     'work.events': {
@@ -195,7 +224,7 @@ export function operations(services: Services): Methods {
     },
     'task.new': {
       agent: true,
-      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s `dev` has no line for the Item, and when the Item is Blocked (it comes after Items not done: `(after: id, id)` in its line; the refusal says "blocked by ...") unless `force` is true.',
+      summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s `dev` has no line for the Item, and when the Item is Blocked (it comes after Items not done: `(after: id, id)` in its line; the refusal says "blocked by ...") unless `force` is true. When the Item\'s line has `(intent: <12 hex>)`, that `intent@1` Artifact is added to the Task\'s `context` (refused unless the prefix is exactly one stored `intent@1`).',
       params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional(), force: z.boolean().optional() }).strict(),
       async handler(host, p, caller) {
         if (p.item && p.repository && !p.force) {
@@ -206,10 +235,16 @@ export function operations(services: Services): Methods {
         return services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item, p.repository ? p.against : undefined)
       },
     },
+    'intent.new': {
+      agent: true,
+      summary: 'Store an `intent@1` Artifact, what the operator settled with a caller session before Items carry it out: `{ intent }`, the Artifact ID. `body` is Markdown (Outcome, Why, Constraints, Out of scope). With `supersedes`, the Intent replaces an earlier one, which must be a stored `intent@1` Artifact; a changed Intent is a new Intent.',
+      params: z.object({ title: z.string().min(1).max(200), body: z.string().min(1), supersedes: artifactId.optional() }).strict(),
+      handler: (_host, p, caller) => services.newIntent(p, caller),
+    },
     status: {
       read: true,
       agent: true,
-      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: a Work for the Item was merged into `dev` (read from the Host\'s store), or `[x]` in `STATUS.md` for work done outside System (with the last merged Work and its final Artifact, the merged change or the report, when known; `work show` lists every Artifact); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody, or `todo (blocked by <ids>)` / `todo (blocked: cycle)` for a Blocked Item (it comes after Items not done, by `(after: id, id)` at the end of its line; derived, never stored). A `done` Item whose merge commit is not in the running release says `done, not yet released`. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
+      summary: 'The status of a project: one line per Item of the repository\'s `STATUS.md` on its `origin/dev` tip (else `dev`), as `[x] <id> <title> - <state>`. `done`: a Work for the Item was merged into `dev` (read from the Host\'s store), or `[x]` in `STATUS.md` for work done outside System (with the last merged Work and its final Artifact, the merged change or the report, when known; `work show` lists every Artifact); `doing`: a Work whose Task names the Item is running or held (its ID, step, Account, since when, and its live progress, or why it is held); `todo`: nobody, or `todo (blocked by <ids>)` / `todo (blocked: cycle)` for a Blocked Item (it comes after Items not done, by `(after: id, id)` at the end of its line; derived, never stored). An Item with `(intent: <12 hex>)` shows it after its title. A `done` Item whose merge commit is not in the running release says `done, not yet released`. `state` and `item` narrow it; STATUS.md lines that could not be read follow as `note:` lines, after one that names the ref read and how old it is. Read the Work by ID for details.',
       params: z.object({ repository: z.string().min(1), state: z.enum(['todo', 'doing', 'done']).optional(), item: z.string().regex(ITEM_ID).optional() }).strict(),
       async handler(host, p) {
         const status = await readStatus(p.repository)

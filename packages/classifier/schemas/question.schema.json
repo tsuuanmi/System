@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "version": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "instructions": {
+      "type": "string",
+      "minLength": 1
+    },
+    "labels": {
+      "minItems": 2,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "label",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        },
+        "required": [
+          "input",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "samples": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "instructions",
+    "labels",
+    "samples"
+  ],
+  "additionalProperties": false
+}

@@ -13,7 +13,7 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts'
 import { WEB_WORKER_DISABLED, type AgentsService, type QuotaReport, type WebWorkerService } from '@system/agents'
-import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type GitTreeContent, type Task, type WorkService } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type FailureClassifier, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
@@ -162,6 +162,13 @@ async function runHost(ctx: Context): Promise<number> {
     for (const listener of launcher) process.off(signal, listener)
   }
   const host = await work.startHost(home)
+  // The optional classifier row (cls-1): a Work that ends has the failures no rule places classified, for `work report`; never in the controller's way.
+  const classifier = ctx.get('classifier') as { failures: FailureClassifier } | undefined
+  const stopClassifying = classifier && host.view.onChange((change) => {
+    if (change.type !== 'terminal') return
+    const record = host.view.get(change.workId)
+    if (record) void classifier.failures.classify(record).catch(() => {})
+  })
   const credentials = credentialCommands(ctx)
   serving = await serveHost({
     host, home,
@@ -175,6 +182,7 @@ async function runHost(ctx: Context): Promise<number> {
       artifact: (id) => artifacts.get(id),
       readBytes: (id) => artifacts.readBytes(id),
       newTask: (instructions, repository, ref, context, who, item, against) => work.newTask(instructions, repository, ref, who, context, item, against),
+      newIntent: (intent, who) => work.newIntent(intent, who),
       workflowFile: (name, input) => workflowFile(artifacts, name, input),
       credentials,
       workers: () => workersView(ctx),
@@ -183,6 +191,7 @@ async function runHost(ctx: Context): Promise<number> {
       loginWait: async (ref, cancel) => webWorkerService(ctx).loginWait(ref, cancel),
       recheck: async (ref) => webWorkerService(ctx).recheck(ref),
       releaseHolds: (repository, commit) => releaseHolds(repository, commit),
+      ...(classifier ? { classifier: classifier.failures } : {}),
     },
   }).catch(async (error: unknown) => {
     await host.close()
@@ -190,6 +199,7 @@ async function runHost(ctx: Context): Promise<number> {
   })
   if (stopAsked) void serving.stop()
   const status = await serving.exited
+  stopClassifying?.()
   exitWithin(status, { log: (line) => { process.stderr.write(`system host: ${line}\n`) } })
   return status
 }

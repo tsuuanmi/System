@@ -36,6 +36,7 @@ wait, in step 6.
   tool for it, and do not try `system approve`, `system deny`, `system work approve`,
   `system work deny`, `system work retry`, `system work cancel`, `system update`
   or anything that merges into `main`. A Work that is held waits for the operator.
+- **Never run `workflows/plan-items.yaml`.** It proposes Items for the operator to agree to; the scheduled session proposes in its report only.
 - Only Items whose state is `todo`. Never `force` (neither `item_claim` nor
   `work_submit`); an Item another session has claimed is not yours.
 - If a tool says the Host is not answering, call it once more; if it still
@@ -45,7 +46,7 @@ wait, in step 6.
 
 1. Read the state of the repository: `mcp__system__status` with `repository`
    set to the repo and `state` set to `todo`. The lines come in STATUS order.
-   That order is the order you work in. Read any `note:` lines and put them in
+   That order is the order you work in: Ready Items are taken in STATUS order, and `after:` is a dependency, not a ranking. Read any `note:` lines and put them in
    the report.
 
 2. Take the first Ready `todo` Item you have not taken or skipped this night
@@ -114,7 +115,8 @@ stores it as one Artifact and tells the operator, so you store and send
 nothing yourself. Plain sentences and a list, with IDs, nothing invented, and
 no text after the report. For each Work you submitted
 read its Account and cost with `mcp__system__work_report` (`workId`), and list
-the Works on the Host with `mcp__system__work_list`.
+tonight's Works on the Host with `mcp__system__work_list` and `since` (the time
+you started, ISO); each row names its Item when its Task names one.
 
 The report has these parts, in this order:
 
@@ -123,7 +125,7 @@ The report has these parts, in this order:
 - **Items done:** Work merged or left as a draft pull request, with the link.
 - **Items skipped, and why:** held (which Work, awaiting what), failed twice (the
   reason of each), claimed by someone else, anything else.
-- **Works with no Item:** read `work_list`; any Work on the Host this night
+- **Works with no Item:** read `work_list` with `since`; any Work on the Host this night
   that names no Item (not one you submitted) goes here with its Account and
   cost, so the operator sees where quota went.
 - **Why the night ended:** 6 Items, no `todo` left, or a Host that did not answer.

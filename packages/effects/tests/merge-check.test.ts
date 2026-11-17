@@ -90,3 +90,12 @@ test('a correct pass passes with the criteria pinned at admission, and its verdi
   assert.ok(read.state === 'stored')
   assert.deepEqual(read.envelope.content, { subject: w.subject, criteria: w.criteria, capability: 'unit', verifier: { ref: 'unit-runner', version: '1' }, verdict: 'pass', reason: 'ok', evidence: [w.evidence] })
 })
+
+test('a verifier that throws gives an error verdict on the merge, never a pass, and stores no verdict', async () => {
+  const w = await world()
+  w.answer(() => { throw new Error('boom') })
+  const done = await w.check(w.subject, w.intent)
+  assert.equal(done.verdict, 'error')
+  assert.match(done.reason, /the verifier threw: boom/)
+  assert.deepEqual(done.verdicts, [])
+})

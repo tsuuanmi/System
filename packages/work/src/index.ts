@@ -12,6 +12,7 @@ import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type ClaimTable, ty
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { git, pin, snapshot } from './git.ts'
+import { INTENT_KIND, addIntent, intentSchema, type Intent } from './intent.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
@@ -28,6 +29,7 @@ export * from './git.ts'
 export * from './changed-tests.ts'
 export * from './host.ts'
 export * from './host-lock.ts'
+export * from './intent.ts'
 export * from './kinds.ts'
 export * from './lane.ts'
 export * from './headroom.ts'
@@ -86,6 +88,11 @@ export class WorkService {
     return Host.start({ home, capabilities: this.capabilities, ...this.storage, stallMinutes: this.config.stallMinutes })
   }
 
+  /** Store an `intent@1` Artifact: what the operator settled with a caller session. */
+  async newIntent(intent: Intent, caller: Caller): Promise<{ intent: string }> {
+    return { intent: (await addIntent(this.artifacts, intent, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
   /**
    * Store a `task@1` input; with a repository, first snapshot `ref` there as a
    * `git-tree@1` Artifact the task starts from.
@@ -93,11 +100,19 @@ export class WorkService {
   async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string, against?: string): Promise<{ task: string; base?: string }> {
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     let base: string | undefined
+    let intent: string | undefined
     if (item) {
       // Every Worker is told the Item's line, so an Item without one is refused here.
       if (!repository) throw new WorkError(`Item ${item} needs a repository: its line is read from STATUS.md on dev`)
       const status = await readStatus(repository)
-      if (!status.items.some((i) => i.id === item)) throw new WorkError(`Item ${item} has no line in STATUS.md on ${status.ref} of ${status.repository}; add the line first`)
+      const line = status.items.find((i) => i.id === item)
+      if (!line) throw new WorkError(`Item ${item} has no line in STATUS.md on ${status.ref} of ${status.repository}; add the line first`)
+      if (line.intent) {
+        // The Item's Intent travels with its Task as context, so every Worker reads what was wanted.
+        const found = this.artifacts.idsByPrefix(INTENT_KIND.kind, line.intent)
+        if (found.length !== 1) throw new WorkError(`Item ${item} names intent ${line.intent}, which matches ${found.length} stored intent@1 Artifacts (needs exactly one)`)
+        intent = found[0]
+      }
     }
     if (repository) {
       const tree = await snapshot(repository, ref)
@@ -108,6 +123,7 @@ export class WorkService {
         classification: 'local-private', producer,
       })).id
     }
+    if (intent && !context.includes(intent)) context = [...context, intent]
     const task = await this.artifacts.put({
       ...TASK_KIND, content: { instructions, ...(base ? { base } : {}), ...(context.length ? { context } : {}), ...(item ? { item } : {}) }, inputs: [...(base ? [base] : []), ...context],
       classification: 'local-private', producer,
@@ -195,6 +211,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
   const artifacts = ctx.get('artifacts') as Artifacts
   artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
+  artifacts.registerKind({ ...INTENT_KIND, content: intentSchema })
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })

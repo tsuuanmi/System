@@ -182,7 +182,7 @@ export function itemLines(
       ? `done${satisfied.length && !merged.length ? ', satisfied' : ''}${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, finalArtifactOf(last)].filter(Boolean).join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
       : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}`
         : blocked ? `todo (${blockedText(blocked)})` : 'todo: nobody'
-    lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}` : `${item.id} (not in STATUS.md)`} - ${text}`)
+    lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}${'intent' in item && item.intent ? ` (intent: ${item.intent})` : ''}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }
   return lines
 }

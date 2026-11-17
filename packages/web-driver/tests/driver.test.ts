@@ -14,7 +14,7 @@ import type { BrowserContext, Page } from 'patchright-core'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { launch, webDefaults } from '../../web-worker/src/chatgpt.ts'
 import { startXvfb, type Display } from '../../web-worker/src/display.ts'
-import { ChatGptWebDriver, ProviderError, shippedMap, type DriverTimeouts } from '../src/index.ts'
+import { ChatGptWebDriver, Procedures, ProviderError, shippedMap, type DriverTimeouts } from '../src/index.ts'
 import { FakeChatGpt, type FakeOptions } from './fake-chatgpt.ts'
 
 const skip = skipHeaded
@@ -179,5 +179,28 @@ test('the mode wait ends at its deadline even when a page operation never return
     const started = Date.now()
     await assert.rejects(awaitMode({ ...(hung.state ? { count: async () => 0 } : {}), ...hung }, { modeReadyMs: 300, modeSettleMs: 100 }), failure('ui_drift', /mode unknown/))
     assert.ok(Date.now() - started < 4000, `${Date.now() - started} ms`)
+  }
+})
+
+test('a code block\'s text never starts with the header label the page also shows (web-1)', { skip, timeout: 60_000 }, async () => {
+  const { fake, page, context } = await start({ codeWidget: true, labelInCode: true, answer: () => 'Here.\n```JSON\n{"sources": []}\n```\n```report\nplain\n```' })
+  const map = shippedMap()
+  const procedures = new Procedures(page, { ...map, settings: { ...map.settings, modeReadyMs: 1500, modeSettleMs: 200, answerPollMs: 100, answerStableMs: 400, answerTimeoutMs: 20_000 } }, { origin: fake.origin, readyMs: 8000 })
+  try {
+    const ok = <T>(result: { status: string; value?: T; reason?: string }): T => {
+      assert.equal(result.status, 'ok', `${result.status} ${result.reason ?? ''}`)
+      return result.value as T
+    }
+    ok(await procedures.checkAuth())
+    ok(await procedures.ensureMode())
+    ok(await procedures.openChat())
+    ok(await procedures.insertInstructions('Give blocks'))
+    const baseline = ok(await procedures.send())
+    ok(await procedures.waitForAnswer(baseline))
+    const read = ok(await procedures.readAnswer(baseline)) as { blocks: Array<{ label: string; code: string }> }
+    assert.deepEqual(read.blocks, [{ label: 'JSON', code: '{"sources": []}' }, { label: 'report', code: 'plain' }])
+  } finally {
+    procedures.dispose()
+    await context.close().catch(() => undefined)
   }
 })

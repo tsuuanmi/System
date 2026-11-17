@@ -20,7 +20,7 @@
 //      is written here, not pinned by a file of the repository, the Q0 rule), bound to the commit. A failed check switches
 //      `current` back and the Host is asked to run the release before; the failed check is named.
 // The releases other than the current one and the one before are removed.
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 /** The Work of the install check: a verify step of `release.install-check`, its input the release commit's task. */
 const INSTALL_CHECK_WORKFLOW = `# Written by \`system update\` (Item fl-5); not a file of the repository, so no Workflow pins the verifier (Q0).
@@ -41,6 +41,8 @@ const lastLine = (text) => text.trim().split('\n').at(-1) ?? ''
 export async function update({ install, cli, origin, run, write, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
   const repo = join(install, 'repo')
   const link = join(install, 'current')
+  // corepack beside the Node running this (Item ns-2); its `pnpm` shim finds `node` on the PATH `run` is given, which starts with that Node's directory.
+  const corepack = join(dirname(process.execPath), 'corepack')
   const git = (...args) => run('git', ['-C', repo, ...args])
   const must = async (what, ran) => {
     const result = await ran
@@ -59,8 +61,8 @@ export async function update({ install, cli, origin, run, write, exists, readlin
     const release = join(install, 'releases', commit)
     if (!exists(release)) await must('git worktree add', git('worktree', 'add', '--detach', release, commit))
     log(`building ${commit.slice(0, 12)} in ${release}`)
-    await must('pnpm install', run('corepack', ['pnpm', 'install', '--frozen-lockfile'], release))
-    await must('pnpm build', run('corepack', ['pnpm', 'build'], release))
+    await must('pnpm install', run(corepack, ['pnpm', 'install', '--frozen-lockfile'], release))
+    await must('pnpm build', run(corepack, ['pnpm', 'build'], release))
 
     // The commit `current` points to, when it is a release of this install; the new commit is checked as a change from it.
     const running = before?.startsWith('releases/') ? before.slice('releases/'.length) : undefined

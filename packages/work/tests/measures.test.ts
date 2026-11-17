@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { failureClass, parseCheckFailure } from '../src/failure-class.ts'
 import { rangeReport } from '../src/measures.ts'
 import type { WorkEvent, WorkRecord } from '../src/record.ts'
 
@@ -57,4 +58,27 @@ test('with nothing to divide by, or no input, a measure is unknown, never zero',
   assert.deepEqual(noEscaped.escapedDefectRate, { rate: 'unknown', escaped: 'unknown', itemsMerged: 2 })
   const noCost = rangeReport([B], { since: '2026-11-15' })
   assert.equal(noCost.costPerVerifiedWork.usd, 'unknown')
+})
+
+const unit = (test: string) => `failed: unit: a.test.ts "${test}": boom`
+const attempt = (at: string, n: number, reason: string): Unnumbered => ({ type: 'observed', at, stepId: 'task', attemptId: `attempt:${n}`, status: 'failed', outputs: {}, reason, usage: { state: 'unknown' } }) as Unnumbered
+
+test('a failure of the change is keyed by its check and first failing test', () => {
+  assert.deepEqual(parseCheckFailure(unit('x y')), { check: 'unit', test: 'a.test.ts "x y"' })
+  assert.deepEqual(parseCheckFailure('failed: smoke: timed out after 600 s while running s.test.ts "w", t.test.ts "v"'), { check: 'smoke', test: 's.test.ts "w"' })
+  assert.deepEqual(parseCheckFailure('failed: build (exit 1)'), { check: 'build' })
+  assert.equal(parseCheckFailure('unit failed'), undefined)
+  assert.equal(failureClass({ kind: 'verdict', reason: unit('x'), outside: 'quota' }), 'quota')
+  assert.equal(failureClass({ kind: 'attempt', reason: 'x', unknown: true }), 'unknown')
+})
+
+test('the same check on the same test recurs; two tests of one check do not; unknown is counted apart', () => {
+  const work = (name: string, day: string, reasons: Unnumbered[]) => record(name, 'failed', [admitted(T(day)), ...reasons, terminal(T(day, '01:00:00'), 'failed')])
+  const same = rangeReport([work('p', '15', [verdictFail(T('15', '00:00:01'), unit('t1'))]), work('q', '16', [verdictFail(T('16', '00:00:01'), unit('t1'))])], { since: '2026-11-15' })
+  assert.deepEqual(same.recurringFailureRate, { rate: 1 / 2, recurring: 1, failures: 2 })
+  const differ = rangeReport([work('p', '15', [verdictFail(T('15', '00:00:01'), unit('t1'))]), work('q', '16', [verdictFail(T('16', '00:00:01'), unit('t2'))])], { since: '2026-11-15' })
+  assert.deepEqual(differ.recurringFailureRate, { rate: 0, recurring: 0, failures: 2 })
+  const unknown = rangeReport([work('p', '15', [attempt(T('15', '00:00:01'), 1, 'strange')]), work('q', '16', [attempt(T('16', '00:00:01'), 1, 'strange')])], { since: '2026-11-15' })
+  assert.equal(unknown.unknownFailures, 2)
+  assert.deepEqual(unknown.recurringFailureRate, { rate: 'unknown', recurring: 0, failures: 0 })
 })

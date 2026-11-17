@@ -99,8 +99,11 @@ async function rehearse(scratch) {
   const release = join(install, 'releases', old)
   sh('git', ['-C', join(install, 'repo'), 'worktree', 'add', '-q', '--detach', release, old])
   log(`building the last release in ${release}`)
-  sh('corepack', ['pnpm', 'install', '--frozen-lockfile'], { cwd: release })
-  sh('corepack', ['pnpm', 'build'], { cwd: release })
+  // corepack beside this Node, and that Node first on PATH for its shim (Item ns-2).
+  const corepack = join(dirname(process.execPath), 'corepack')
+  const nodeEnv = { ...process.env, PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(':') }
+  sh(corepack, ['pnpm', 'install', '--frozen-lockfile'], { cwd: release, env: nodeEnv })
+  sh(corepack, ['pnpm', 'build'], { cwd: release, env: nodeEnv })
   sh('ln', ['-s', `releases/${old}`, join(install, 'current')])
   const cli = join(install, 'current', 'bin', 'system')
   const env = { ...process.env, DSH_HOME: home, SYSTEM_INSTALL: install, SYSTEM_NO_SERVICE: '1', SYSTEM_OPERATOR_ID: 'rehearsal', ...gitEnv }
