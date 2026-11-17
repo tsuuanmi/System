@@ -12,7 +12,7 @@ the Worker reads the named files first instead of exploring (no Task field; a Ta
 without them works as before): `Goal`; `Files to change and why`; `Tests to add or
 update`; `Invariants not to change`; `Out of scope`; `Done when`. `develop.yaml`'s
 `implement` reads the files named first, widens only when they are not enough, and
-says in its result when the pack is wrong. The MCP `instructions`
+says in its result when the pack is wrong. An Item fits one Worker attempt (about an hour): a Done when with several independent parts is split into several Items by the caller (web-3, work:a216a2f9, ran out of its 60 minutes doing three parts). The MCP `instructions`
 ([packages/app/src/mcp.ts](../packages/app/src/mcp.ts)) tell callers to write it.
 
 A step's `capabilities` are of three kinds (terms in [GLOSSARY.md](../GLOSSARY.md)):
