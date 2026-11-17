@@ -113,6 +113,18 @@ Sonnet code review's Standards axis also checks the code against Charter items 8
 Items are in [STATUS.md](STATUS.md); the sections below keep only the decisions of milestones still open. Left to the
 operator (BS): the role `research.source` in the profile, so that `research-source.yaml` excludes web Accounts.
 
+### DP — Deepening pass (decided 2026-11-18)
+
+- **Aim:** concentrate rules that are written in several places, and that already disagree, behind deep modules that are testable through small interfaces (Charter 11 and 12). The source is the architecture review of 2026-11-18. Its seven candidates map to dp-1..dp-11.
+- **Decision:** a behaviour defect gets a develop Item with a red test first. The restructuring that follows is a hygiene Item that keeps behaviour.
+- **Decision:** a hygiene Item of DP does not grow the net lines of the active core (`packages/work/src` + `packages/artifacts/src`). Each records its lines before and after in its result. Growth is justified in DP's row of section 2.
+- **Decision:** when STATUS.md cannot be read, `admit`, `task.new` and `item.claim` all refuse a Task, Claim or Work that names an Item, unless `force` is set (dp-2). A Work without an Item is not affected.
+- **Decision:** the pinned-verifier version check stays an `error` refusal in the controller and a `hold` in the merge check. This is deliberate: a merge awaits an Approval.
+- **Decision:** no new GLOSSARY terms. "Item gate" and "Verification" are module names. Do not use "judge" (GLOSSARY lists it under Avoid for Classifier).
+- **Decision:** DP runs now, with the operator present, in parallel where Items do not depend on each other. The scheduled session does not take dp-8, dp-9, dp-10 or dp-11.
+- **ADR fit:** ADR-0002 (one generic interpreter: do not split the controller per domain), ADR-0003, ADR-0007 and ADR-0012 (Item state derived, the Host never picks).
+- **Order:** by `after:`. The first parallel wave is dp-1, dp-2, dp-4, dp-5 and dp-10.
+
 ### RB — Release boundary (decided 2026-11-16)
 
 - Aim: no defect of the kind "old release meets new release" reaches production or blocks the pipeline. Its finished decisions are in section 0.
@@ -149,6 +161,7 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   are the standards; Node's test runner has none). *Trigger: the required checks exceed their time budget (Charter 12).
   Risk: the smoke tests boot the Host through `bin/system` and load plugins dynamically, so an import graph misses
   dependencies.*
+- [ ] A check-run planner inside the required-checks Verifier (`packages/verifiers/src/checks.ts` `verify` holds three strategies in one closure): the plan of what runs where, separated from the worktree and spawner that execute it. *Trigger: `verifiers.test.ts` blocks a change, after dp-6 has taken its "flaky" rule.*
 - [ ] Adaptive routing only on a measured need, such as quota exhaustion.
 - [ ] A fixed set of reproducible failure scenarios to compare System versions. *Trigger: a change to a retry or
   recovery rule that needs a before/after comparison the Host's records cannot give.*
