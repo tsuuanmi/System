@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { update } from '../../../bin/update.mjs'
+import { PENDING, finishPending, update } from '../../../bin/update.mjs'
 
 const SHA = 'b'.repeat(40)
 const OLD = 'a'.repeat(40)
@@ -22,6 +22,8 @@ function machine(options: { current?: string; checks?: number; build?: number; h
     waitMs: 60_000,
     log: (line: string) => { log.push(line) },
     write: (path: string, text: string) => { written.set(path, text) },
+    read: (path: string) => written.get(path),
+    remove: (path: string) => { written.delete(path) },
     exists: (path: string) => dirs.has(path) || links.has(path),
     readlink: (path: string) => links.get(path),
     switchLink: (path: string, target: string) => { links.set(path, target) },
@@ -185,4 +187,54 @@ test('a real afterInstall failure still switches back when the new release\'s cl
   assert.equal(await update(m.deps), 1)
   assert.equal(m.links.get('/i/current'), `releases/${OLD}`)
   assert.ok(m.log.some((line) => line.includes('failed: answers')))
+})
+
+test('with afterInstall checks, the switch leaves a pending record naming the commit, the release before and the task, and a passed check removes it', async () => {
+  const m = machine({ current: OLD, afterInstall: true })
+  let atSwitch: string | undefined
+  const switchLink = m.deps.switchLink
+  m.deps.switchLink = (path: string, target: string) => { atSwitch ??= m.written.get(`/i/${PENDING}`); switchLink(path, target) }
+  assert.equal(await update(m.deps), 0)
+  assert.deepEqual({ ...JSON.parse(atSwitch!), updatePid: undefined }, { commit: SHA, previous: `releases/${OLD}`, task: 'sha256:task', releaseCheck: 'work:checked', workflow: '/i/install-check.yaml', updatePid: undefined })
+  assert.equal(m.written.has(`/i/${PENDING}`), false)
+})
+
+test('a failed install check removes the record and switches back; a Host that never comes up removes it too', async () => {
+  const failed = machine({ current: OLD, afterInstall: true, installCheck: 1 })
+  assert.equal(await update(failed.deps), 1)
+  assert.equal(failed.links.get('/i/current'), `releases/${OLD}`)
+  assert.equal(failed.written.has(`/i/${PENDING}`), false)
+  const down = machine({ current: OLD, afterInstall: true, hostUp: false })
+  assert.equal(await update(down.deps), 1)
+  assert.equal(down.written.has(`/i/${PENDING}`), false)
+})
+
+test('without afterInstall checks, or on the first install, no record is left', async () => {
+  const plain = machine({ current: OLD })
+  assert.equal(await update(plain.deps), 0)
+  assert.equal(plain.written.has(`/i/${PENDING}`), false)
+  const first = machine({ afterInstall: true })
+  assert.equal(await update(first.deps), 0)
+  assert.equal(first.written.has(`/i/${PENDING}`), false)
+})
+
+test('finishPending: runs the check for a record of its own commit once the update that wrote it is gone, and a failure switches back', async () => {
+  const record = (commit: string) => JSON.stringify({ commit, previous: `releases/${OLD}`, task: 'sha256:task', workflow: '/i/install-check.yaml', updatePid: 4242 })
+  for (const [status, current, left] of [[0, `releases/${SHA}`, false], [1, `releases/${OLD}`, false]] as const) {
+    const m = machine({ current: SHA, installCheck: status })
+    m.written.set(`/i/${PENDING}`, record(SHA))
+    const deps = { install: '/i', commit: SHA, alive: () => false, run: m.deps.run, read: m.deps.read, write: m.deps.write, remove: m.deps.remove, switchLink: m.deps.switchLink, log: m.deps.log }
+    assert.equal(await finishPending(deps), status)
+    assert.equal(m.links.get('/i/current'), current)
+    assert.equal(m.written.has(`/i/${PENDING}`), left)
+  }
+  // A live update completes it itself; a record of another commit is not this Host's.
+  for (const [commit, alive] of [[SHA, true], [OLD, false]] as const) {
+    const m = machine({ current: SHA })
+    m.written.set(`/i/${PENDING}`, record(commit))
+    const deps = { install: '/i', commit: SHA, alive: () => alive, run: m.deps.run, read: m.deps.read, write: m.deps.write, remove: m.deps.remove, switchLink: m.deps.switchLink, log: m.deps.log }
+    assert.equal(await finishPending(deps), 0)
+    assert.ok(!m.ran.some((line) => line.includes('work submit')))
+    assert.equal(m.written.has(`/i/${PENDING}`), true)
+  }
 })

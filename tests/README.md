@@ -21,6 +21,9 @@ nothing else.
   through `system mcp` against a real Host with fake Workers.
 - [mcp-update.test.ts](mcp-update.test.ts) — one running `system mcp` calls
   tools across two atomic install-link switches and real Host upgrades.
+- [pending-install-check.test.ts](pending-install-check.test.ts) — upd-1: the real `update()`
+  killed after it switched `current`; the Host that starts on the new release runs the pending
+  install check itself, and a failed one switches `current` back.
 - [upgrade-rehearsal.test.ts](upgrade-rehearsal.test.ts) — rb-1 (run by the `upgrade` check, not smoke: it builds two releases):
   [tools/upgrade-rehearsal.mjs](../tools/upgrade-rehearsal.mjs) builds the last release (`origin/main`) in temporary homes, starts its Host
   and runs that install's `system update` to this commit, against a local `origin`; it passes only when the update keeps the new release
