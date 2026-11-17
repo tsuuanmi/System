@@ -13,7 +13,9 @@
 # same verify step failed earlier in the Work; a change to docs alone runs
 # `docs`. How the verifier selects checks: packages/verifiers/README.md.
 # One list for all of them, so `install` and `build` run whenever a later
-# check needs them.
+# check needs them. `'!**/*.md'` excludes Markdown (GitHub Actions' `!`: the last
+# matching pattern decides), so a README edit does not run the code checks; the
+# Charter comes after it, so it still does. `install-guide` keeps the runbook.
 checks:
   - name: docs
     run: python3 tools/docs.py check && python3 tools/docs.py sync --check && bash tools/smoke_bootstrap.sh
@@ -27,7 +29,7 @@ checks:
   - name: install
     run: corepack pnpm install --frozen-lockfile
     timeoutSeconds: 300
-    paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, eslint.config.js, docs/requirements/purpose.md]
+    paths: &code [packages/**, tests/**, test-support/**, bin/**, workflows/**, patches/**, .system/**, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, tsconfig.json, eslint.config.js, '!**/*.md', docs/requirements/purpose.md]
   - name: build
     run: corepack pnpm build
     timeoutSeconds: 300
@@ -59,7 +61,7 @@ checks:
     # tests/upgrade-rehearsal.test.ts runs it twice: this commit, and the shape of Escaped defect 7 (a key main refuses), which must fail.
     run: node --test --test-timeout=850000 tests/upgrade-rehearsal.test.ts
     timeoutSeconds: 900
-    paths: [bin/**, packages/host/**, packages/app/**, packages/verifiers/**, packages/work/**, .system/checks.yaml, workflows/**]
+    paths: [bin/**, packages/host/**, packages/app/**, packages/verifiers/**, packages/work/**, .system/checks.yaml, workflows/**, '!**/*.md']
   - name: install-guide
     # Item install-1: a new machine runs System from a clone with one guide. From an empty HOME and the commit under check it runs
     # the commands of the runbook's "Install and start" page (the `sh install` block: tools/install.sh), registers the fake Worker,
@@ -79,7 +81,7 @@ checks:
     # only when one of these paths differs between the two.
     run: corepack pnpm test:web
     timeoutSeconds: 600
-    paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/headed.ts]
+    paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/headed.ts, '!**/*.md']
 
 # Item fl-6: what `system update` runs on the installed release (Item fl-5, `release.install-check`), one check per
 # user-visible surface that broke only on the install (2026-11-14/15). Each is read-only. The command runs in a
