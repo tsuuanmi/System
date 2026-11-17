@@ -27,7 +27,9 @@ for entry in ${SYSTEM_NIGHT_REPOS:-$repo}; do
   fi
 done
 IFS=$old_ifs
-prompt=$(cat "$repo/tools/night-session.md"; printf '\nRepositories for this night:\n'; cat "$list")
+# The start time is taken here, by the launcher, so the session never asks the clock (its rules do not allow `date`).
+started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+prompt=$(cat "$repo/tools/night-session.md"; printf '\nRepositories for this night:\n'; cat "$list"; printf '\nSession started at: %s\n' "$started")
 if [ -s "$skipped" ]; then
   prompt=$(printf '%s\n\nSay in the night report that these entries of SYSTEM_NIGHT_REPOS were skipped:\n%s' "$prompt" "$(cat "$skipped")")
 fi

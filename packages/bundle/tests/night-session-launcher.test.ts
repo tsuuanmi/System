@@ -134,3 +134,12 @@ test('an entry that is not a git checkout is reported and skipped, not fatal', (
     rmSync(bad, { recursive: true, force: true })
   }
 })
+
+test('the prompt ends with the launcher\'s start time (ISO, UTC) and the prompt file names no date command', () => {
+  const r = run({ answer: 'report' })
+  assert.match(r.claudeArgs!, /^Session started at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/m)
+  const promptFile = readFileSync(join(repo, 'tools', 'night-session.md'), 'utf8')
+  assert.doesNotMatch(promptFile, /date -u|date \+|\$\(date/)
+  assert.match(promptFile, /do not run `date`/)
+  assert.match(promptFile, /session start time/)
+})
