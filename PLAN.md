@@ -143,6 +143,7 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   - Classifier (operator, 2026-11-17): rules first; a separate optional Classifier component, inspired by Jev's design (closed-label questions defined at call time, label probabilities and confidence, a "does any label apply" answer) but built on System's economy-tier Accounts, report-only until it passes a gate on labelled data (cls-1, cls-2); contracts as JSON Schema; Jev itself not adopted now.
     Evidence: work:3cb46bef (economy model as classifier; report sha256:9645d599fe3d30963d5d73aa4a6104677158e6dc20a582fe2113f59a265ddef6, citations passed) and work:bbbf12bc (Jev by TypeSafe AI; report sha256:02edfb76c7842b7552e94d309509f4b19a03269c61d0ab6e4b339f94691dcfff, citations not verified: its sources file failed to parse, web-1).
   - Dependencies and priority (operator, 2026-11-17): `after:` names only a real dependency (the later Item needs what the earlier one builds); priority is the order of lines in STATUS.md; independent Items run in parallel, each in its own worktree.
+  - Evening grilling (operator, 2026-11-17 evening): mcp-2, def-2, ms-2; the scheduled session runs on System only tonight (DNA has no open Items on origin/dev); Ubuntu 26.04 stays in section 4.
 - Order (priority, not dependency: STATUS order, real dependencies in after:): ns-2, mcp-1, rb-3, rb-4, in-1, in-2, ns-1, ns-3, install-1, rb-5, cls-1, cls-2, in-3, then the unattended-scale spike (operator, 2026-11-17; lim-1 and flaky-1 done, web-1 running).
 
 
