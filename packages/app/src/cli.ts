@@ -100,6 +100,8 @@ export interface WorkCommands {
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
   /** Store an `intent@1` Artifact; its ID. */
   newIntent(title: string, body: string, supersedes?: string): Promise<{ intent: string }>
+  /** Store an `escaped-defect@1` Artifact; its ID. */
+  newDefect(subject: string, foundBy: string, reason: string, date?: string): Promise<{ defect: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
   claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
@@ -363,6 +365,19 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  const defect = program.command('defect').description('Escaped defects, recorded so work report counts them')
+  defect.command('add <item-or-commit>')
+    .description('store an escaped-defect@1 Artifact naming the Item (its ID) or the merge commit (7 to 40 hex characters) that carried the defect, and print its ID alone on stdout')
+    .requiredOption('--found-by <work-or-text>', 'the Work ID that found it, or text')
+    .requiredOption('--reason <text>', 'what was wrong')
+    .option('--date <date>', 'when it was found (default now)')
+    .action((subject: string, options: { foundBy: string; reason: string; date?: string }) => {
+      select(async () => {
+        const created = await host.work().newDefect(subject, options.foundBy, options.reason, options.date)
+        io.out(`${created.defect}\n`)
+        return 0
+      })
+    })
   program.command('claim <item>')
     .description('claim an Item of the project\'s STATUS.md before submitting a Work for it: system status then shows it as doing, claimed by you since now; a Work submitted for the Item takes the claim over')
     .option('--repo <path>', 'a git repository of the project', '.')
@@ -534,7 +549,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
-    .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN section 2 (else that measure is unknown)')
+    .option('--escaped <n>', 'an explicit count of the Escaped defects of the range that replaces the recorded ones (`system defect add`); the report labels it an override')
     .option('--classify', 'with a Work ID: first ask the Classifier (the optional classifier row) for the failures no rule places, then report; a Work that has ended is classified by the Host anyway')
     .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string; classify?: boolean }) => {
       select(async () => {

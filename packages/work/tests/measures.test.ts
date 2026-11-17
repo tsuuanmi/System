@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { failureClass, parseCheckFailure } from '../src/failure-class.ts'
 import { rangeReport } from '../src/measures.ts'
+import type { EscapedDefect } from '../src/defect.ts'
 import type { WorkEvent, WorkRecord } from '../src/record.ts'
 
 const agent = { type: 'agent' as const, operatorId: 'tan' }
@@ -35,7 +36,7 @@ test('the five measures over a range, with their counts', () => {
   assert.deepEqual(r.verifiedSuccessRate, { rate: 2 / 3, accepted: 2, ended: 3 })
   // B fails unit (change-verdict) and quota; C's unit failure recurs, and nothing earlier had it.
   assert.deepEqual(r.recurringFailureRate, { rate: 1 / 3, recurring: 1, failures: 3 })
-  assert.deepEqual(r.escapedDefectRate, { rate: 1 / 2, escaped: 1, itemsMerged: 2 })
+  assert.deepEqual(r.escapedDefectRate, { rate: 1 / 2, escaped: 1, itemsMerged: 2, source: 'override (--escaped)' })
   assert.deepEqual(r.costPerVerifiedWork, { usd: 1, knownCostUsd: 2, accepted: 2, worksWithUnknownCost: 1 })
   assert.deepEqual(r.timeToVerifiedResolution, { medianMs: (3 * 3600_000 + 3600_000) / 2, p90Ms: 3 * 3600_000, accepted: 2 })
   assert.deepEqual(r.toolShare, { mean: 0.30000000000000004, attempts: 2 })
@@ -55,7 +56,7 @@ test('with nothing to divide by, or no input, a measure is unknown, never zero',
   assert.equal(empty.timeToVerifiedResolution.medianMs, 'unknown')
   assert.equal(empty.toolShare.mean, 'unknown')
   const noEscaped = rangeReport([A, C], { since: '2026-11-15' })
-  assert.deepEqual(noEscaped.escapedDefectRate, { rate: 'unknown', escaped: 'unknown', itemsMerged: 2 })
+  assert.deepEqual(noEscaped.escapedDefectRate, { rate: 'unknown', escaped: 'unknown', itemsMerged: 2, source: 'none' })
   const noCost = rangeReport([B], { since: '2026-11-15' })
   assert.equal(noCost.costPerVerifiedWork.usd, 'unknown')
 })
@@ -81,4 +82,35 @@ test('the same check on the same test recurs; two tests of one check do not; unk
   const unknown = rangeReport([work('p', '15', [attempt(T('15', '00:00:01'), 1, 'strange')]), work('q', '16', [attempt(T('16', '00:00:01'), 1, 'strange')])], { since: '2026-11-15' })
   assert.equal(unknown.unknownFailures, 2)
   assert.deepEqual(unknown.recurringFailureRate, { rate: 'unknown', recurring: 0, failures: 0 })
+})
+
+const human = { type: 'human' as const, operatorId: 'tan' }
+const reopenedBy = (at: string, caller: typeof human | typeof agent): Unnumbered => ({ type: 'reopened', at, caller, stepId: 'task', reason: 'again' }) as Unnumbered
+const withCommit = (r: WorkRecord, mergeCommit: string): WorkRecord => ({ ...r, state: { ...r.state, effects: { e: { state: 'applied', detail: { merged: 'true', mergeCommit } } } as never } })
+
+test('headline: Items merged per operator touch, touches by human callers only', () => {
+  const touched = merged(record('t', 'succeeded', [admitted(T('15'), 'h-1'), reopenedBy(T('15', '00:00:01'), human), reopenedBy(T('15', '00:00:02'), agent), terminal(T('15', '01:00:00'), 'succeeded')]))
+  const other = merged(record('u', 'succeeded', [admitted(T('16'), 'h-2'), reopenedBy(T('16', '00:00:01'), human), terminal(T('16', '01:00:00'), 'succeeded')]))
+  const r = rangeReport([touched, other], { since: '2026-11-15' })
+  assert.deepEqual(r.headline, { itemsMerged: 2, operatorTouches: 2, perTouch: 1 })
+  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15' }).headline, { itemsMerged: 2, operatorTouches: 0, perTouch: 'no touches' })
+  assert.deepEqual(rangeReport([OLD], { since: '2026-11-15' }).headline, { itemsMerged: 0, operatorTouches: 0, perTouch: 'no touches' })
+  assert.equal(JSON.stringify(rangeReport([A], { since: '2026-11-15' }).headline).includes('null'), false)
+})
+
+test('recorded defects count in the range of the merged Item, by Item or merge commit, and not outside it', () => {
+  const m = withCommit(record('m', 'succeeded', [admitted(T('15'), 'd-1'), terminal(T('15', '01:00:00'), 'succeeded')]), 'abc1234567890')
+  const n = merged(record('n', 'succeeded', [admitted(T('16'), 'd-2'), terminal(T('16', '01:00:00'), 'succeeded')]))
+  const old = merged(record('o', 'succeeded', [admitted(T('10'), 'd-0'), terminal(T('10', '01:00:00'), 'succeeded')]))
+  const defect = (subject: Partial<EscapedDefect>): EscapedDefect => ({ foundBy: 'work:z', reason: 'r', date: '2026-11-17', ...subject }) as EscapedDefect
+  const defects = [defect({ commit: 'abc1234' }), defect({ item: 'd-2' }), defect({ item: 'd-2', reason: 'second' }), defect({ item: 'd-0' }), defect({ item: 'd-9' })]
+  const r = rangeReport([m, n, old], { since: '2026-11-15', defects })
+  assert.deepEqual(r.escapedDefectRate, { rate: 3 / 2, escaped: 3, itemsMerged: 2, source: 'records' })
+  assert.deepEqual(rangeReport([m, n, old], { since: '2026-11-15', defects: [] }).escapedDefectRate, { rate: 0, escaped: 0, itemsMerged: 2, source: 'records' })
+  assert.equal(rangeReport([m, n, old], { since: '2026-11-10', until: '2026-11-15', defects }).escapedDefectRate.escaped, 1)
+})
+
+test('--escaped stays an override that the report labels', () => {
+  const r = rangeReport([A], { since: '2026-11-15', escaped: 4, defects: [{ item: 'x-1', foundBy: 'w', reason: 'r', date: '2026-11-17' }] })
+  assert.deepEqual(r.escapedDefectRate, { rate: 4, escaped: 4, itemsMerged: 1, source: 'override (--escaped)' })
 })

@@ -12,6 +12,7 @@ import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type ClaimTable, ty
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { git, pin, snapshot } from './git.ts'
+import { DEFECT_KIND, addDefect, defectSchema, storedDefects, type DefectInput, type EscapedDefect } from './defect.ts'
 import { INTENT_KIND, addIntent, intentSchema, type Intent } from './intent.ts'
 import { readStatus } from './status.ts'
 import { WorkError } from './errors.ts'
@@ -30,6 +31,7 @@ export * from './changed-tests.ts'
 export * from './host.ts'
 export * from './host-lock.ts'
 export * from './intent.ts'
+export * from './defect.ts'
 export * from './kinds.ts'
 export * from './lane.ts'
 export * from './headroom.ts'
@@ -92,6 +94,14 @@ export class WorkService {
   async newIntent(intent: Intent, caller: Caller): Promise<{ intent: string }> {
     return { intent: (await addIntent(this.artifacts, intent, { type: 'operator', ref: caller.operatorId })).id }
   }
+
+  /** Store an `escaped-defect@1` Artifact: a defect that escaped the Item or merge commit it names. */
+  async newDefect(defect: DefectInput, caller: Caller): Promise<{ defect: string }> {
+    return { defect: (await addDefect(this.artifacts, defect, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** The recorded Escaped defects. */
+  defects(): EscapedDefect[] { return storedDefects(this.artifacts) }
 
   /**
    * Store a `task@1` input; with a repository, first snapshot `ref` there as a
@@ -212,6 +222,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const artifacts = ctx.get('artifacts') as Artifacts
   artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
   artifacts.registerKind({ ...INTENT_KIND, content: intentSchema })
+  artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema })
   artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
   artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
   artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
