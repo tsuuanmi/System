@@ -14,17 +14,18 @@ import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLanguageLabel, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
-import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
-import { skip, root, site, blocks, web, run, text, sleep, evidenceOf } from './chatgpt-support.ts'
+import { sharedDisplay, skip, root, site, blocks, web, run, text, sleep, evidenceOf } from './chatgpt-support.ts'
 
 for (const end of ['a clean close', 'a SIGKILL'] as const) {
   test(`a profile that held several tabs opens one tab after ${end}, and its session cookie survives a clean one`, { skip, timeout: 120_000 }, async () => {
     const fake = await site()
     const config = web(fake)
-    const display = await startXvfb()
+    const display = sharedDisplay()
+    const open: Array<Awaited<ReturnType<typeof launch>>> = []
     try {
       const first = await launch(config, display)
+      open.push(first)
       await first.addCookies([{ name: 'kept', value: 'v', url: fake.origin }])
       for (let i = 0; i < 4; i++) await (await first.newPage()).goto(`${fake.origin}/?tab=${i}`)
       await sleep(1500)
@@ -36,21 +37,23 @@ for (const end of ['a clean close', 'a SIGKILL'] as const) {
         await sleep(1500)
       }
       const second = await launch(config, display)
+      open.push(second)
       await sleep(2500)
       assert.deepEqual(second.pages().map((page) => page.url()), ['about:blank'], 'nothing was restored')
       if (end === 'a clean close') assert.ok((await second.cookies(fake.origin)).some((cookie) => cookie.name === 'kept'), 'the session-only cookie is still there')
       await second.close()
     } finally {
-      await display.stop()
+      await Promise.all(open.map((context) => context.close().catch(() => {})))
     }
   })
 }
 
 test('the worker tab is opened first, every other page is closed, and a page that arrives late is closed too', { skip, timeout: 60_000 }, async () => {
   const fake = await site()
-  const display = await startXvfb()
+  const display = sharedDisplay()
+  let context: Awaited<ReturnType<typeof launch>> | undefined
   try {
-    const context = await launch(web(fake), display)
+    context = await launch(web(fake), display)
     for (let i = 0; i < 3; i++) await (await context.newPage()).goto(`${fake.origin}/?tab=${i}`)
     const tabs = await singleTab(context)
     assert.equal(tabs.initial, 4)
@@ -63,7 +66,7 @@ test('the worker tab is opened first, every other page is closed, and a page tha
     assert.equal(tabs.late(), 1)
     await context.close()
   } finally {
-    await display.stop()
+    await context?.close().catch(() => {})
   }
 })
 

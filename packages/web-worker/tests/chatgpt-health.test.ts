@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatgpt.ts'
-import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
+import { CHROME, skipHeaded, useSharedDisplay } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type WorkerRequest } from '@system/work'
 import { webDefaults, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
@@ -17,6 +17,7 @@ import { AccountHealth } from '../src/health.ts'
 import { recheck } from '../src/recheck.ts'
 
 const skip = skipHeaded
+useSharedDisplay()
 const root = mkdtempSync(join(tmpdir(), 'system-chatgpt-health-'))
 const fakes: FakeChatGpt[] = []
 after(async () => {
