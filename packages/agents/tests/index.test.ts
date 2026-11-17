@@ -36,7 +36,7 @@ test('with the web-worker row off, a web account is unavailable and the reason n
 test('with the row on, the account goes to its service with its offered capabilities and one slot, and is released with the row', async () => {
   const registered: WebRegistration[] = []
   let disposed = 0
-  const { accounts, unload } = await mount({ expect: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => { disposed += 1 }, unavailable: () => undefined } } })
+  const { accounts, unload } = await mount({ expect: () => {}, announced: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => { disposed += 1 }, unavailable: () => undefined } } })
   assert.equal(accounts[0]!.available, true)
   assert.deepEqual([accounts[0]!.command, accounts[0]!.version, accounts[0]!.capabilities], ['/chrome', '155', ['research', 'tier.standard']])
   assert.deepEqual([registered[0]!.capabilities, registered[0]!.maxConcurrentAttempts, registered[0]!.url], [['research', 'tier.standard'], 1, 'http://localhost/'])
@@ -46,7 +46,7 @@ test('with the row on, the account goes to its service with its offered capabili
 
 test('the capabilities the web-worker row reports (the tiers its Site map binds) are the account\'s', async () => {
   const offered = ['research', 'tier.economy', 'tier.standard', 'tier.frontier']
-  const { accounts } = await mount({ expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', capabilities: offered, dispose: () => {}, unavailable: () => undefined }) })
+  const { accounts } = await mount({ expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', capabilities: offered, dispose: () => {}, unavailable: () => undefined }) })
   assert.deepEqual(accounts[0]!.capabilities, offered)
 })
 
@@ -57,7 +57,7 @@ test('an account reports the model of each tier it configures, in tier order, fr
 
 test('an account the web-worker row says is not ready is unavailable with its reason, until it is ready again', async () => {
   let reason: string | undefined = 'needs sign-in since 05:10: run `system workers login web/chatgpt/default --remote`, then `system workers recheck web/chatgpt/default`'
-  const web = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => reason }) }
+  const web = { expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => reason }) }
   const first = await mount(web)
   assert.deepEqual([first.accounts[0]!.available, first.accounts[0]!.reason, first.accounts[0]!.version], [false, reason, '155'])
   reason = undefined
@@ -66,14 +66,14 @@ test('an account the web-worker row says is not ready is unavailable with its re
 })
 
 test('a service that refuses the account gives its reason', async () => {
-  const { accounts } = await mount({ expect: () => {}, register: async () => { throw new Error('Xvfb is not installed') } })
+  const { accounts } = await mount({ expect: () => {}, announced: () => {}, register: async () => { throw new Error('Xvfb is not installed') } })
   assert.deepEqual([accounts[0]!.available, accounts[0]!.reason], [false, 'Xvfb is not installed'])
 })
 
 test('an account whose registration is not done is listed as registering, and announced to the service until it is', async () => {
   const announced: Promise<unknown>[] = []
   let release!: () => void
-  const { before, started } = await mount({ expect: (_ref: string, done: Promise<unknown>) => { announced.push(done) }, register: () => new Promise((resolve) => { release = () => resolve({ command: '/chrome', version: async () => '155', dispose: () => {} }) }) }, true)
+  const { before, started } = await mount({ expect: (_ref: string, done: Promise<unknown>) => { announced.push(done) }, announced: () => {}, register: () => new Promise((resolve) => { release = () => resolve({ command: '/chrome', version: async () => '155', dispose: () => {} }) }) }, true)
   assert.deepEqual([before[0]!.available, before[0]!.reason], [false, REGISTERING])
   let done = false
   void announced[0]!.then(() => { done = true })
@@ -88,7 +88,7 @@ const ONE_CHROME = 'a web account runs one attempt at a time (one Chrome profile
 
 test('a web account has one slot whatever the row says, and an agent CLI account inherits the row', async () => {
   const registered: WebRegistration[] = []
-  const web = { expect: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined } } }
+  const web = { expect: () => {}, announced: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined } } }
   const resolved: unknown[] = []
   const subprocess = { resolveExecutable: async (name: string) => `/bin/${name}` }
   const credentials = { describe: async () => ({ configured: true }), resolve: async () => ({ value: 't' }) }
@@ -100,14 +100,14 @@ test('a web account has one slot whatever the row says, and an agent CLI account
 })
 
 test('a web account that sets its own maxConcurrentAttempts other than 1 is unavailable', async () => {
-  const web = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
+  const web = { expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
   const { accounts } = await mount(web, false, [{ maxConcurrentAttempts: 2 }, { ref: 'web/chatgpt/two', maxConcurrentAttempts: 1 }])
   assert.deepEqual([accounts[0]!.available, accounts[0]!.reason], [false, ONE_CHROME])
   assert.deepEqual([accounts[1]!.ref, accounts[1]!.available], ['web/chatgpt/two', true])
 })
 
 // WW-rename: the runtime is `web` with a `site`, and the ref says the same.
-const SERVICE = { expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
+const SERVICE = { expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
 
 test('a web account whose ref is not web/<site>/<name> with its own site is unavailable', async () => {
   const { accounts } = await mount(SERVICE, false, [{ ref: 'web/gemini/default' }, { ref: 'web/default' }, { site: undefined }, { ref: 'web/chatgpt/second' }])
@@ -187,7 +187,7 @@ test('the listing shows label, ignored-priority note and provider account from t
 test('a ref without a rename stays valid, and a web account has no provider account', async () => {
   const { accounts } = await cliMount([claude('claude-code/default')])
   assert.deepEqual([accounts[0].available, accounts[0].priority], [true, undefined])
-  const web = await mount({ expect: () => {}, register: async () => ({ command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined }) }, false, [{ label: 'w', priority: 'primary' }])
+  const web = await mount({ expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined }) }, false, [{ label: 'w', priority: 'primary' }])
   assert.deepEqual([web.accounts[0]!.available, web.accounts[0]!.providerAccount, web.accounts[0]!.note], [true, undefined, 'priority is ignored: routing goes by quota headroom'])
 })
 
@@ -313,7 +313,7 @@ test('a CLI Account registers with its Runtime abilities and what its profile gr
 
 test('a web Account is handed over with the web abilities, and its status lists them apart from its granted capabilities', async () => {
   const registered: WebRegistration[] = []
-  const { accounts } = await mount({ expect: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined } } })
+  const { accounts } = await mount({ expect: () => {}, announced: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined } } })
   assert.deepEqual(registered[0]!.abilities, ['web.search', 'web.browse'])
   assert.deepEqual((accounts[0] as any).abilities, ['web.search', 'web.browse'])
   assert.deepEqual(accounts[0]!.capabilities, ['research', 'tier.standard'])

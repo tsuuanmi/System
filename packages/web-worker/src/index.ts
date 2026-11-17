@@ -94,16 +94,24 @@ export function apply(ctx: Context, config: Config = {}): void {
   const failed = new Map<string, string>()
   const expect = (ref: string, done: Promise<unknown>) => {
     failed.delete(ref)
-    const entry = done.finally(() => { if (pending.get(ref) === entry) pending.delete(ref) })
+    // The reason is kept before the registration leaves `pending`, so no look in between finds the ref in neither.
+    const entry = done.catch((error: Error) => { failed.set(ref, error.message); throw error }).finally(() => { if (pending.get(ref) === entry) pending.delete(ref) })
     pending.set(ref, entry)
-    entry.catch((error: Error) => { failed.set(ref, error.message) })
+    entry.catch(() => {})
   }
+  // The agents row announces its accounts when it applies, which can be after the Host serves (it waits for its own services). Until it
+  // says `announced`, a ref nobody announced may still be coming: it is waited for, bounded, when that row is loaded (flaky-1).
+  let announce!: () => void
+  let isAnnounced = false
+  const announcedDone = new Promise<void>((resolve) => { announce = () => { isAnnounced = true; resolve() } })
+  const announced = () => { announce() }
+  const agentsComing = () => !isAnnounced && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-agents')
   const waitSeconds = config.registerWaitSeconds ?? 60
   const account = async (ref: string): Promise<{ web: WebConfig; health: AccountHealth }> => {
-    const waiting = pending.get(ref)
-    if (waiting) {
+    const deadline = Date.now() + waitSeconds * 1000
+    const bounded = async (waiting: Promise<unknown>) => {
       let timer: NodeJS.Timeout | undefined
-      const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${ref} is still registering after ${waitSeconds} s (system workers)`)), waitSeconds * 1000) })
+      const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${ref} is still registering after ${waitSeconds} s (system workers)`)), Math.max(0, deadline - Date.now())) })
       try {
         await Promise.race([waiting, late])
       } catch (error) {
@@ -112,6 +120,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         clearTimeout(timer)
       }
     }
+    if (!pending.has(ref) && !webs.has(ref) && !failed.has(ref) && agentsComing()) await bounded(announcedDone)
+    const waiting = pending.get(ref)
+    if (waiting) await bounded(waiting)
     const found = webs.get(ref)
     if (!found && failed.has(ref)) throw new Error(`${ref}: ${failed.get(ref)}`)
     if (!found) throw new Error(`${ref} is not a configured web account (system workers)`)
@@ -140,5 +151,5 @@ export function apply(ctx: Context, config: Config = {}): void {
     const { web, health } = await account(ref)
     return recheck(web, health)
   }
-  ctx.provide('webWorker', { register, expect, login, loginRemote, loginWait, recheck: recheckOf } satisfies WebWorkerService)
+  ctx.provide('webWorker', { register, expect, announced, login, loginRemote, loginWait, recheck: recheckOf } satisfies WebWorkerService)
 }

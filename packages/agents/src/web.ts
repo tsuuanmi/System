@@ -64,6 +64,8 @@ export interface WebWorkerService {
   register(account: WebRegistration): Promise<{ command: string; version: () => Promise<string>; capabilities?: string[]; dispose: () => void; unavailable: () => string | undefined }>
   /** Announce that the account's registration is in progress and ends with `done`: an operation on it waits, bounded, for it, and a rejection is its refusal reason. */
   expect(ref: string, done: Promise<unknown>): void
+  /** Say that every account of the `agents` row has been announced with `expect`: a ref not announced by now is not configured. */
+  announced(): void
   /** Sign a registered account in, by the contents of a cookie file or by hand in a window (needs a display). */
   login(ref: string, cookies: string | undefined): Promise<LoginReport>
   /** Start a remote sign-in (the viewer on 127.0.0.1, behind a token); one per account at a time. */
