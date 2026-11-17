@@ -73,7 +73,11 @@ export async function main(args: string[], home: string): Promise<number> {
       return 1
     }
   }
-  if (args[0] === 'mcp') return runMcp(args.slice(1), home, (who, onCode) => openCurrent(home, who, { onCode }))
+  if (args[0] === 'mcp') {
+    // The code version of this client, so a log shows which release serves a session (Item mcp-2: the front swaps it).
+    err(`system mcp: client code ${VERSION}\n`)
+    return runMcp(args.slice(1), home, (who, onCode) => openCurrent(home, who, { onCode }))
+  }
   let selected: Run | undefined
   const io = { out, err, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
   buildProgram(remoteHost({ open, err, reconnectMs: testMs('SYSTEM_WAIT_RECONNECT_MS'), retryMs: testMs('SYSTEM_WAIT_RETRY_MS') }), io, (run) => { selected = run }).parse(args, { from: 'user' })
