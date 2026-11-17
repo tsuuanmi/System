@@ -86,7 +86,8 @@ _Avoid_: available, unblocked, eligible
 
 **Blocked**:
 An Item not yet done that comes after an Item still not done. Read from the
-status list, never recorded.
+status list, never recorded. `after:` names a real dependency, never a priority;
+priority is the order of the status list.
 _Avoid_: waiting, held (a held Work awaits an Approval)
 
 **Task**:

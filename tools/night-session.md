@@ -45,7 +45,7 @@ wait, in step 6.
 
 1. Read the state of the repository: `mcp__system__status` with `repository`
    set to the repo and `state` set to `todo`. The lines come in STATUS order.
-   That order is the order you work in. Read any `note:` lines and put them in
+   That order is the order you work in: Ready Items are taken in STATUS order, and `after:` is a dependency, not a ranking. Read any `note:` lines and put them in
    the report.
 
 2. Take the first Ready `todo` Item you have not taken or skipped this night
