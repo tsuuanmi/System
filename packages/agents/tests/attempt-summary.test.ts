@@ -74,3 +74,15 @@ test('head and tail of a large log are kept, with a marker for the cut', () => {
   assert.match(kept, /\n\[… \d+ bytes cut by System …\]\n/)
   assert.equal(boundLog('small\n'), 'small\n')
 })
+
+test('overlapping tool calls sum their seconds: the ratio is tool-seconds per second and can pass 1', () => {
+  const s = summarizeAttempt('claude-code', [use('a', 'Bash', { command: 'x' }), use('b', 'Bash', { command: 'y' }), beat('a', 10), beat('b', 10), line({ type: 'result', duration_ms: 15_000 })].join('\n'))
+  assert.equal(s.toolSeconds, 20)
+  assert.equal(s.toolShare, 1.33)
+})
+
+test('a stream with no tools has no tool seconds per second', () => {
+  const s = summarizeAttempt('claude-code', line({ type: 'result', duration_ms: 15_000 }))
+  assert.equal(s.toolSeconds, 'unknown')
+  assert.equal(s.toolShare, 0)
+})

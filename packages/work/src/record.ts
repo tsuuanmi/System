@@ -48,7 +48,7 @@ export const attemptSummarySchema = z.object({
   /** The longest tool calls, longest first; for Bash the first 120 characters of the command. */
   longest: z.array(z.object({ tool: z.string(), seconds: z.number().nonnegative(), command: z.string().optional() }).strict()),
   toolSeconds: known(z.number().nonnegative()),
-  /** `toolSeconds` over the result's `duration_ms`. */
+  /** `toolSeconds` over the result's `duration_ms`: tool-seconds per second, not a share; parallel tool calls overlap, so it can pass 1. The name is kept for the records already written. */
   toolShare: known(z.number().nonnegative()),
   durationMs: known(z.number().nonnegative()),
   numTurns: known(z.number().int().nonnegative()),

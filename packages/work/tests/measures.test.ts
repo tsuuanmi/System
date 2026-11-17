@@ -39,7 +39,7 @@ test('the five measures over a range, with their counts', () => {
   assert.deepEqual(r.escapedDefectRate, { rate: 1 / 2, escaped: 1, itemsMerged: 2, source: 'override (--escaped)' })
   assert.deepEqual(r.costPerVerifiedWork, { usd: 1, knownCostUsd: 2, accepted: 2, worksWithUnknownCost: 1 })
   assert.deepEqual(r.timeToVerifiedResolution, { medianMs: (3 * 3600_000 + 3600_000) / 2, p90Ms: 3 * 3600_000, accepted: 2 })
-  assert.deepEqual(r.toolShare, { mean: 0.30000000000000004, attempts: 2 })
+  assert.deepEqual(r.toolSecondsPerSecond, { mean: 0.30000000000000004, attempts: 2 })
 })
 
 test('the range bounds are by admission: since inclusive, until exclusive', () => {
@@ -54,7 +54,7 @@ test('with nothing to divide by, or no input, a measure is unknown, never zero',
   assert.equal(empty.recurringFailureRate.rate, 'unknown')
   assert.equal(empty.costPerVerifiedWork.usd, 'unknown')
   assert.equal(empty.timeToVerifiedResolution.medianMs, 'unknown')
-  assert.equal(empty.toolShare.mean, 'unknown')
+  assert.equal(empty.toolSecondsPerSecond.mean, 'unknown')
   const noEscaped = rangeReport([A, C], { since: '2026-11-15' })
   assert.deepEqual(noEscaped.escapedDefectRate, { rate: 'unknown', escaped: 'unknown', itemsMerged: 2, source: 'none' })
   const noCost = rangeReport([B], { since: '2026-11-15' })
