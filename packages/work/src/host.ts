@@ -156,8 +156,8 @@ export class Host {
   }
 
   /** Claim an Item for a session before it submits a Work for it. */
-  claim(repository: string, item: string, caller: Caller, force?: boolean): Promise<Claim> {
-    return this.lane(() => this.controller.claim(repository, item, caller, force))
+  claim(repository: string, item: string, caller: Caller, force?: boolean, options: Idempotent = {}): Promise<Claim> {
+    return this.once({ commandId: options.commandId, op: 'claim', args: { repository, item, who: caller.operatorId, force: force === true } }, () => this.lane(() => this.controller.claim(repository, item, caller, force)))
   }
 
   run(workId: string, options: Starting = {}): Promise<WorkRecord> {

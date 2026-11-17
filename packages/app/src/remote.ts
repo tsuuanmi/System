@@ -1,19 +1,108 @@
 /**
- * A `ClientHost` over the Host's socket: every Work, Artifact, credential and
- * Worker call of the CLI becomes one JSON-RPC call to the matching operation
- * (see the API reference of @system/host). The CLI reads files itself and
- * sends their contents.
+ * The Host client: the one module that knows how to call the Host. A call is
+ * `call(method, params)` with a method of the operation table (see the API
+ * reference of @system/host); the table says whether it only reads and whether
+ * it takes a `commandId`, so the CLI and `system mcp` reach the Host by the same
+ * policy and a new row needs no mapping here. A read goes over the session (while
+ * the Host upgrades, over a read-only one); a write never does, carries a fresh
+ * `commandId` and is sent once more with it after `NotAnswering`. The CLI reads
+ * files itself and sends their contents.
  */
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, parseWorkflow, type Caller, type WorkRecord, type WorkState } from '@system/work'
+import { TERMINAL, parseWorkflow, type Caller, type WorkRecord, type WorkState, type z } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { MAX_FRAME, NotAnswering, NotRunning, RpcError, UPGRADING, fitsFrame, type Client } from '../../host/lib/index.js'
-import type { ClientHost, Followed, FollowOptions, WaitOptions, Waited, WorkCommands } from './cli.ts'
+import { NotAnswering, NotRunning, RpcError, UPGRADING, type Client, type Methods } from '../../host/lib/index.js'
+import { operations, type Services } from '../../host/lib/operations.js'
 import { caller } from './io.ts'
+
+/** The operation table of the code this client runs with: the one source of method names and params. */
+type Table = ReturnType<typeof operations>
+export type Method = keyof Table & string
+/** What a caller gives for `method`: the row's params, without the `commandId` the client adds. */
+export type Params<M extends Method> = Omit<z.input<NonNullable<Table[M]['params']>>, 'commandId'>
+/** What the row's handler answers. */
+export type Result<M extends Method> = Awaited<ReturnType<Table[M]['handler']>>
+
+/** What a command that follows a Work accepts: Ctrl-C detaches, or with this cancels the Work and goes on following it. */
+export interface FollowOptions {
+  cancelOnInterrupt?: boolean
+  /** Aborting it ends the following without a word; the result is `stopped`. */
+  signal?: AbortSignal
+  /** Keep reading across a Host restart or a slow Host, for up to `RECONNECT_MS` of one outage (`work wait`, which only watches). */
+  patient?: boolean
+  /** Told whether the last call failed (true) or was answered (false); for `waitFor`. */
+  outage?: (down: boolean) => void
+}
+
+/** What `work wait` accepts: with `any` it returns at the first Work that ended, otherwise when all have; after `timeoutMs` it gives up. */
+export interface WaitOptions {
+  any: boolean
+  timeoutMs?: number
+}
+
+/** The Works as they are when the wait returned, and the one whose ending decided it (none on a timeout or Ctrl-C). */
+export interface Waited {
+  records: WorkRecord[]
+  decided?: string
+  timedOut: boolean
+  /** The Host did not answer for the bound; the Works were not read. */
+  unreachable?: string
+}
+
+/** A Work's record once it is terminal, or `detached` when the operator left it running in the Host. */
+export type Followed = WorkRecord | 'detached' | 'stopped'
+
+export interface RemoteLoginView {
+  url: string
+  port: number
+  ssh: string
+  expiresAt: number
+}
+
+/** The Host as the CLI uses it: one call per table row, and the flows that are more than one call. */
+export interface HostClient {
+  /** One operation of the table; `timeout` overrides the connection's for this call. */
+  call<M extends Method>(method: M, params: Params<M>, options?: { timeout?: number }): Promise<Result<M>>
+  /** Start the Work in the Host and follow it until it is terminal. */
+  run(workId: string, follow?: FollowOptions): Promise<Followed>
+  retry(params: Params<'work.retry'>, follow?: FollowOptions): Promise<Followed>
+  /** A decision is a human's: its own connection says so. Then follow the Work. */
+  decide(params: Params<'approval.decide'>, operatorId: string): Promise<Followed>
+  /** Wait until nothing runs the Work, as after a cancel was requested. */
+  wait(workId: string): Promise<Followed>
+  /** Wait for every one of `workIds`, or with `any` the first, to end, be held or await approval. */
+  waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
+  /** The remote sign-in: `show` is given where to reach the viewer once it is up; resolves when it ends. Ctrl-C cancels it. */
+  loginRemote(ref: string, show: (view: RemoteLoginView) => void): Promise<{ signedIn: boolean; detail: string }>
+}
+
+/** What the call policy needs of a table row. */
+export interface Row {
+  /** It only reads: a repeat is harmless, and a read-only connection may serve it. */
+  read: boolean
+  /** Its params declare `commandId`: the Host does it once per id. */
+  takesId: boolean
+}
+
+/** The rows of a table, by method; for its shapes only (no handler runs). */
+export function rowsOf(table: Methods): Map<string, Row> {
+  return new Map(Object.entries(table).map(([name, row]) => [name, { read: row.read === true, takesId: 'commandId' in ((row.params as unknown as { shape?: object } | undefined)?.shape ?? {}) }]))
+}
+
+/** The rows of the code this client runs with. */
+export const rows = rowsOf(operations({} as Services))
+
+/** `params` of a write that takes a `commandId`, with one (the caller's, else a fresh one made now so that a repeat reuses it); reads and other writes unchanged. */
+export function withCommandId<P extends object>(row: Row | undefined, params: P, prefix = ''): P {
+  if (!row || row.read || !row.takesId) return params
+  return typeof (params as { commandId?: unknown }).commandId === 'string' ? params : { ...params, commandId: `${prefix}${randomUUID()}` }
+}
+
+/** Whether sending `params` again is harmless: a read, or a write with a `commandId` (the Host answers a repeat from its receipt). */
+export const repeatable = (row: Row | undefined, params: object): boolean => row?.read === true || typeof (params as { commandId?: unknown }).commandId === 'string'
 
 /** How often `work.events` is asked while following a Work (PROP-0004 C13). */
 export const POLL_MS = 1000
@@ -24,10 +113,6 @@ export const RECONNECT_MS = 10 * 60_000
 /** The cap of the backoff between the retries of a patient read. */
 const BACKOFF_CAP_MS = 10_000
 
-/** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
-const LOGIN_TIMEOUT = 11 * 60_000
-/** How long `workers.recheck` may take: a Chrome start and the page's own clocks. */
-const RECHECK_TIMEOUT = 3 * 60_000
 /** How long `workers.loginWait` may take: the viewer's session is 15 minutes, then the check. */
 const REMOTE_LOGIN_TIMEOUT = 17 * 60_000
 
@@ -43,18 +128,16 @@ export interface Remote {
   err(text: string): void
 }
 
-/** A call that changes something carries a fresh `commandId`; after a timeout it is sent once more with the same one, so the Host does it once. */
-async function mutate(client: Client, method: string, params: object): Promise<any> {
-  const commandId = randomUUID()
+/** A write: it carries a `commandId` when its row takes one, and after a timeout is sent once more with the same one, so the Host does it once. */
+async function mutate(client: Client, method: string, params: object, timeout?: number): Promise<any> {
+  const given = withCommandId(rows.get(method), params)
   try {
-    return await client.call(method, { ...params, commandId })
+    return await client.call(method, given, timeout)
   } catch (error) {
-    if (!(error instanceof NotAnswering)) throw error
-    return client.call(method, { ...params, commandId })
+    if (!(error instanceof NotAnswering) || !repeatable(rows.get(method), given)) throw error
+    return client.call(method, given, timeout)
   }
 }
-
-const base64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
 /** The Workflow files `text` uses (Sub-workflows), and the ones they use, read from `dir` once each, by name; one not beside it is left to the Host (`workflows/` at the input's base commit, else the Host's own). A file that does not parse is sent as it is: the Host says why. */
 export function usedFiles(text: string, dir: string, found: Record<string, string> = {}): Record<string, string> {
@@ -86,12 +169,12 @@ export function readWorkflowFile(path: string): { workflow: string; uses: Record
   return { workflow, uses: usedFiles(workflow, dirname(expanded)) }
 }
 
-export function remoteHost(remote: Remote): ClientHost {
+export function hostClient(remote: Remote): HostClient {
   let session: Promise<Client> | undefined
   const link = (): Promise<Client> => (session ??= remote.open(caller()))
   let reading: Promise<Client> | undefined
   /** A read goes over the session; while the Host waits on attempts to upgrade to other code, over a read-only one. */
-  const read = async (method: string, params?: object): Promise<any> => {
+  const read = async (method: string, params?: object, timeout?: number): Promise<any> => {
     let client: Client
     try {
       client = await link()
@@ -100,7 +183,7 @@ export function remoteHost(remote: Remote): ClientHost {
       session = undefined
       client = await (reading ??= remote.open(caller(), { readOnly: true }))
     }
-    return client.call(method, params)
+    return client.call(method, params, timeout)
   }
   /**
    * A read that outlives a Host's swap for new code: a connection it closed is opened again (`open` waits for the next Host), once.
@@ -137,7 +220,9 @@ export function remoteHost(remote: Remote): ClientHost {
       }
     }
   }
-  const change = async (method: string, params: object): Promise<any> => mutate(await link(), method, params)
+  /** A call of the table: a read goes over the session or the read-only one, a write over the session only. */
+  const call = async (method: string, params?: object, options?: { timeout?: number }): Promise<any> =>
+    rows.get(method)?.read ? read(method, params, options?.timeout) : mutate(await link(), method, params ?? {}, options?.timeout)
 
   /** Poll `work.events` until the Work is terminal. Ctrl-C detaches, or cancels first with `cancelOnInterrupt`. */
   async function follow(workId: string, options: FollowOptions = {}): Promise<Followed> {
@@ -152,7 +237,7 @@ export function remoteHost(remote: Remote): ClientHost {
     })
     const onInterrupt = () => {
       if (options.cancelOnInterrupt && !cancelling) {
-        cancelling = change('work.cancel', { workId, reason: 'cancelled by the operator: interrupted' })
+        cancelling = call('work.cancel', { workId, reason: 'cancelled by the operator: interrupted' })
         // A failure is raised when the Work has ended, below.
         cancelling.catch(() => {})
         return
@@ -183,35 +268,25 @@ export function remoteHost(remote: Remote): ClientHost {
     }
   }
 
-  const work: WorkCommands = {
-    admitFile(path, input, worker, force) {
-      const { workflow, uses } = readWorkflowFile(path)
-      return change('work.submit', { workflow, uses, input, worker, force, run: false })
-    },
-    admitTask: (capabilities, input, worker, force) => change('work.submit', { capabilities, input, worker, force, run: false }),
+  return {
+    call: call as HostClient['call'],
     async run(workId, options) {
-      await change('work.run', { workId })
+      await call('work.run', { workId })
       return follow(workId, options)
     },
-    get: (workId) => read('work.show', { workId }) as Promise<WorkRecord>,
-    list: (since) => read('work.list', since === undefined ? undefined : { since }),
-    report: (workId, classify) => read('work.report', { workId, ...(classify ? { classify } : {}) }),
-    rangeReport: (range) => read('work.report', range),
-    replay: (workId) => read('work.replay', { workId }) as Promise<{ state: WorkState; matches: boolean }>,
-    cancel: (workId, reason) => change('work.cancel', { workId, reason }),
-    async decide(workId, decision, operator, reason) {
+    async retry(params, options) {
+      await call('work.retry', params)
+      return follow(params.workId, options)
+    },
+    async decide(params, operator) {
       // A decision is a human's: its own connection says so, whoever the other calls are.
       const human = await remote.open({ type: 'human', operatorId: operator })
       try {
-        await mutate(human, 'approval.decide', { workId, decision, reason })
+        await mutate(human, 'approval.decide', params)
       } finally {
         human.close()
       }
-      return follow(workId)
-    },
-    async retry(workId, worker, reason, step, options) {
-      await change('work.retry', { workId, worker, reason, step })
-      return follow(workId, options)
+      return follow(params.workId)
     },
     wait: (workId) => follow(workId),
     async waitFor(workIds, { any, timeoutMs }: WaitOptions): Promise<Waited> {
@@ -251,43 +326,9 @@ export function remoteHost(remote: Remote): ClientHost {
         return { records: [], timedOut: false, unreachable: unreachable(error) }
       }
     },
-    async newTask(instructions, repository, ref, context, item, against, force) {
-      return read('task.new', { instructions, repository: repository && resolve(repository), ref, context, item, against, force })
-    },
-    newIntent: (title, body, supersedes, settledByOperator) => read('intent.new', { title, body, supersedes, ...(settledByOperator ? { settledByOperator } : {}) }),
-    newConfirmation: (subject, note, date) => read('artifact.confirm', { subject, note, ...(date === undefined ? {} : { date }) }),
-        newDefect: (subject, foundBy, reason, date, supersedes) => read('defect.add', { subject, foundBy, reason, ...(date === undefined ? {} : { date }), ...(supersedes === undefined ? {} : { supersedes }) }),
-    withdrawDefect: (withdraws, reason, date) => read('defect.withdraw', { withdraws, reason, ...(date === undefined ? {} : { date }) }),
-    claim: (repository, item, force) => change('item.claim', { repository: resolve(repository), item, force }),
-    status: (repository, state, item) => read('status', { repository: resolve(repository), state, item }),
-  }
-
-  return {
-    work: () => work,
-    artifacts: () => ({
-      async putFile(path: string, mediaType: string, classification: string): Promise<Envelope> {
-        if (!(CLASSIFICATIONS as readonly string[]).includes(classification)) throw new Error(`unknown classification ${classification}`)
-        const data = base64(readFileSync(path))
-        if (!fitsFrame(data)) throw new Error(`${path} is too large to send to the Host (${data.length} bytes in base64; a frame holds ${MAX_FRAME})`)
-        return read('artifact.put', { data, mediaType, classification })
-      },
-      async get(id: string): Promise<ReadResult> {
-        if (!CONTENT_ID_RE.test(id)) throw new Error(`not an Artifact ID: ${id}`)
-        return read('artifact.show', { id })
-      },
-      async readBytes(id: string) {
-        if (!CONTENT_ID_RE.test(id)) throw new Error(`not an Artifact ID: ${id}`)
-        return Buffer.from((await read('artifact.cat', { id })).data, 'base64')
-      },
-    }),
-    credentials: () => ({
-      set: async (name, value) => { await read('credentials.set', { name, value }) },
-      describe: async (name) => (await read('credentials.status', { names: [name] }))[0],
-    }),
-    workers: () => read('workers.list'),
     // A manual sign-in waits for the operator, so this call outlasts the usual answer time.
     loginRemote: async (ref, show) => {
-      show(await read('workers.loginRemote', { ref }))
+      show(await call('workers.loginRemote', { ref }))
       const client = await link()
       // Ctrl-C ends the session in the Host; the wait below then returns its report.
       const onInterrupt = () => { void client.call('workers.loginWait', { ref, cancel: true }).catch(() => {}) }
@@ -298,7 +339,5 @@ export function remoteHost(remote: Remote): ClientHost {
         process.off('SIGINT', onInterrupt)
       }
     },
-    recheck: async (ref) => (await link()).call('workers.recheck', { ref }, RECHECK_TIMEOUT) as any,
-    login: async (ref, cookies) => (await link()).call('workers.login', { ref, ...(cookies === undefined ? {} : { cookies }) }, LOGIN_TIMEOUT) as any,
   }
 }

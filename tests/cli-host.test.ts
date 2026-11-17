@@ -103,6 +103,16 @@ test('--cancel-on-interrupt cancels the Work at Ctrl-C and follows it to the end
   assert.equal(status(workId), 'cancelled')
 })
 
+test('a CLI write that is not a Work (system intent new) reaches a real Host through the client and is stored', () => {
+  const ran = system('intent', 'new', '--title', 'Through the client', '--body', 'Outcome.')
+  assert.equal(ran.status, 0, ran.stderr)
+  const id = ran.stdout.trim()
+  assert.match(id, /^sha256:[0-9a-f]{64}$/)
+  const shown = JSON.parse(system('artifact', 'show', id).stdout) as { envelope: { kind: string; content: { title: string } } }
+  assert.equal(shown.envelope.kind, 'intent')
+  assert.equal(shown.envelope.content.title, 'Through the client')
+})
+
 test('a timeout retries once with the same commandId: one Work', { timeout: 120_000 }, async () => {
   const proxyHome = join(home, 'proxy')
   mkdirSync(join(proxyHome, 'system'), { recursive: true })

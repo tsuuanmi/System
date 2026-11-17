@@ -55,8 +55,8 @@ a terminal, otherwise `agent`; `SYSTEM_CALLER=agent` lowers a terminal to `agent
   `doctor` and `system host`, which are the only commands of its program
   (`HostProcess`). It runs no Work itself.
 - [src/cli.ts](src/cli.ts) — the commander programs: `doctor` and `host`, and
-  the thin client's commands over a `ClientHost`.
-- [src/remote.ts](src/remote.ts) — the `ClientHost` over the Host's socket;
+  the thin client's commands over a `HostClient`.
+- [src/remote.ts](src/remote.ts) — the `HostClient` over the Host's socket, derived from the operation table (one call policy for the CLI and `system mcp`);
   [src/client.ts](src/client.ts) — the entry `bin/system` runs for it;
   [src/mcp.ts](src/mcp.ts) — `system mcp`;
   [src/io.ts](src/io.ts) — caller, secrets, confirmation and error lines.
