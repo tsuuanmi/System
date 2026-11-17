@@ -325,7 +325,14 @@ for (const flag of ['false', '1', '"true"']) {
 test('develop.yaml declares the retry on the checks of its Sub-workflow', () => {
   const spec = resolve(parseWorkflow(fixture('develop.yaml')), available, fixture)
   const implement = spec.steps.find((s) => s.id === 'implement')
-  assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks', 'publish'], max: 1 })
+  assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks', 'publish'], max: 1, rerunUnchanged: true })
+})
+
+test('hygiene.yaml declares the retry with rerunUnchanged on its implement step', () => {
+  const caps = { ...available, workers: new Set([...available.workers, 'tier.economy']) }
+  const spec = resolve(parseWorkflow(fixture('hygiene.yaml')), caps, fixture)
+  const implement = spec.steps.find((s) => s.id === 'implement')
+  assert.deepEqual(implement && 'retry' in implement && implement.retry, { onFail: ['checks.checks', 'publish'], max: 1, rerunUnchanged: true })
 })
 
 test('every shipped Workflow with a repo.write step judged by checks declares the retry on those checks', () => {

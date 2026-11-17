@@ -31,14 +31,14 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
   → `publish` (`git.publish`: the checked commit to `system/<work>`, one draft
   pull request) → `accept`. `implement`'s `retry` names `checks.checks` and
   `publish` (sc-7: a conflict or a failing check on the merge reopens it on the
-  base's new tip). Satisfied (ro-15; version 4): `implement` may also write the optional
+  base's new tip); it sets `rerunUnchanged` (sc-9: a flaky check is re-run on the same change, not failed as "no change"; version 9). Satisfied (ro-15; version 4): `implement` may also write the optional
   output `satisfied`, naming existing tests (`<test file> "<test name>"` per line)
   that show the Item already holds at the base; then `satisfied-check` runs exactly
   those tests on the Task's base, `checks`, `publish` and `accept` are skipped, and a
   pass ends the Work succeeded with the result "satisfied", publishing nothing.
 - [hygiene.yaml](hygiene.yaml) — `scout-docs`, `scout-code` and `scout-tree`
   (`repo.write`, `tier.economy`, in parallel, read-only) → `plan` (picks what
-  is worth doing) → `implement` (`retry` on `checks.checks` and `publish`, sc-7; version 4) → `checks` → `publish` → `accept`: one pull
+  is worth doing) → `implement` (`retry` on `checks.checks` and `publish`, sc-7, and `rerunUnchanged`, sc-9; version 5) → `checks` → `publish` → `accept`: one pull
   request of cleanup for any repository that has `.system/checks.yaml`. It fits a change that keeps behaviour.
 - [code-checks.yaml](code-checks.yaml) — `checks` (`code.required-checks`
   on the input change, criteria pinned from its base). A Sub-workflow of
