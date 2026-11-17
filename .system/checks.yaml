@@ -16,7 +16,7 @@
 # check needs them.
 checks:
   - name: docs
-    run: python3 tools/docs.py check && python3 tools/docs.py sync --check
+    run: python3 tools/docs.py check && python3 tools/docs.py sync --check && bash tools/smoke_bootstrap.sh
     timeoutSeconds: 120
   - name: statusmd
     # Item cm-4: STATUS.md has no problem (bad line, duplicate ID, unknown `after:` ID, cycle). No install needed: it
