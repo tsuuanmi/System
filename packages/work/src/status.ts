@@ -1,10 +1,8 @@
 /**
  * The status of a project (Item df-3): the Items of a repository's `STATUS.md`
- * (done as it says on the `origin/dev` tip, else `dev`) and the Works that carry them out.
+ * and the Works that carry them out, derived from a STATUS.md already read (see gate.ts, which reads it).
  * Nothing here is stored.
  */
-import { realpathSync } from 'node:fs'
-import { git, snapshot } from './git.ts'
 import { blockedBy, blockedText, parseStatus, type Item, type ParsedStatus } from './status-parse.ts'
 import type { LiveAttempt } from './live.ts'
 import type { Claim, WorkEvent, WorkRecord } from './record.ts'
@@ -12,57 +10,6 @@ import { summarize } from './summary.ts'
 
 export { parseStatus, type Item, type ParsedStatus } from './status-parse.ts'
 export { blockedText }
-
-export interface StatusFile extends ParsedStatus {
-  /** The repository's top level, as a Work's Task records it. */
-  repository: string
-  /** The tip it was read at. */
-  commit: string
-  /** The ref it was read from: `origin/dev` when the repository has it, else `dev`. */
-  ref: 'origin/dev' | 'dev'
-  /** One line saying which ref was read and, if git can tell, how old it is (never fetched here). */
-  note: string
-}
-
-/** When the remote-tracking ref was last updated (its newest reflog entry), if git has that. */
-async function refAge(repository: string, ref: string): Promise<string | undefined> {
-  try {
-    const at = (await git(repository, ['log', '-g', '-1', '--format=%cI', `refs/remotes/${ref}`])).trim()
-    const ms = Date.now() - Date.parse(at)
-    if (!at || Number.isNaN(ms)) return undefined
-    const hours = Math.max(0, Math.floor(ms / 3_600_000))
-    return `updated ${hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} days`} ago, ${at}`
-  } catch { return undefined }
-}
-
-/**
- * `STATUS.md` at the tip of `origin/dev` when the repository that contains
- * `path` has that remote-tracking ref, else of the local `dev`; read from git
- * and never from the working tree. It does not fetch: the note says how old
- * the ref is, when git can tell.
- */
-export async function readStatus(path: string): Promise<StatusFile> {
-  const top = realpathSync((await git(path, ['rev-parse', '--show-toplevel'])).trim())
-  const remote = await git(top, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/dev^{commit}']).then(() => true, () => false)
-  const ref = remote ? 'origin/dev' : 'dev'
-  const { repository, commit } = await snapshot(top, remote ? 'refs/remotes/origin/dev' : 'dev')
-  const age = remote ? await refAge(repository, ref) : undefined
-  const note = `read ${ref} (${commit.slice(0, 12)})${remote ? `, not fetched: ${age ?? 'age unknown'}` : ', no origin/dev here'}`
-  let text: string | undefined
-  try {
-    text = await git(repository, ['show', `${commit}:STATUS.md`])
-  } catch { /* none at that commit */ }
-  const parsed = text === undefined ? { aim: [], items: [], problems: [`no STATUS.md on ${ref} (${commit.slice(0, 12)}) in ${repository}`] } : parseStatus(text)
-  return { repository, commit, ref, note, ...parsed }
-}
-
-/** The refusal when a repository's STATUS.md cannot be read for a call that names an Item (one rule for task.new, item.claim and admission). */
-export const statusUnreadable = (repository: string, error: unknown): string =>
-  `STATUS.md of ${repository} could not be read: ${(error as Error).message}; to go on without it, give force`
-
-/** The refusal when the Item has no line in the STATUS.md that was read. */
-export const noItemLine = (item: string, status: Pick<StatusFile, 'ref' | 'repository'>): string =>
-  `Item ${item} has no line in STATUS.md on ${status.ref} of ${status.repository}; to go on without it, give force`
 
 type Admitted = Extract<WorkEvent, { type: 'admitted' }>
 export type ItemRef = NonNullable<Admitted['item']>
@@ -220,8 +167,7 @@ function earlierText(r: WorkRecord, commitOf: ((id: string) => string | undefine
 }
 
 /** What a Worker is told of an Item beyond its Task: the Item's line, and what each of the last earlier Works did and why it ended. */
-export async function itemNote(item: ItemRef, records: WorkRecord[], commitOf?: (id: string) => string | undefined): Promise<string> {
-  const status = item.repository ? await readStatus(item.repository).catch(() => undefined) : undefined
+export function itemNote(item: ItemRef, records: WorkRecord[], commitOf: ((id: string) => string | undefined) | undefined, status: Pick<ParsedStatus, 'items'> | undefined): string {
   const earlier = worksFor(records, item).slice(-MAX_EARLIER).reverse().flatMap((r) => earlierText(r, commitOf))
   return [
     itemLines(status ?? { items: [] }, item.repository, records, undefined, { item: item.id })[0]!,

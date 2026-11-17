@@ -10,7 +10,8 @@ import { WorkController, type SpecStore } from '../src/controller.ts'
 import type { Task } from '../src/kinds.ts'
 import { fold, type WorkEvent, type WorkRecord } from '../src/record.ts'
 import { Capabilities, type WorkerRequest } from '../src/registry.ts'
-import { itemLines, parseStatus, readStatus, workStatus } from '../src/status.ts'
+import { ItemGate, readStatus } from '../src/gate.ts'
+import { itemLines, parseStatus, workStatus } from '../src/status.ts'
 import { directTask, type ResolvedSpec } from '../src/workflow.ts'
 
 const caller = { type: 'human', operatorId: 'tan' } as const
@@ -141,6 +142,7 @@ function setup() {
     },
   })
   const controller = new WorkController(table, specs, capabilities)
+  const itemGate = new ItemGate({ records: () => controller.list(), commitOf: specs.commitOf })
   /** A stored Task over `repository`, naming `item` when given: the Tasks stored before Items have none. */
   const task = (repository: string, item?: string, instructions = 'do it'): string => {
     const base = id(`base ${repository}`)
@@ -150,13 +152,17 @@ function setup() {
     specs.stored.add(taskId)
     return taskId
   }
-  const admit = (input: string, force?: boolean) => controller.admit({ spec: directTask(['code-write'], true, capabilities.available()), input, caller, source: { kind: 'direct-task' }, ...(force ? { force } : {}) })
+  // As Host.submit does: the gate reads STATUS.md first, then the controller admits with its decision.
+  const admit = async (input: string, force?: boolean) => {
+    const admission = { spec: directTask(['code-write'], true, capabilities.available()), input, caller, source: { kind: 'direct-task' as const }, ...(force ? { force } : {}) }
+    return controller.admit(admission, { decide: await itemGate.deciding(controller.itemOf(admission), force) })
+  }
   const hold = () => {
     let open!: () => void
     gate = new Promise<void>((resolve) => { open = resolve })
     return () => { gate = undefined; open() }
   }
-  return { controller, table, specs, requests, task, admit, hold }
+  return { controller, table, specs, requests, task, admit, hold, itemGate }
 }
 
 /** Wait until the Work's live progress shows (up to 5 s), not a fixed time: a loaded machine is slower than 20 ms. */
@@ -435,26 +441,26 @@ test('the takeover context opens with the Item\'s line and marks an earlier Work
 
 test('a session can claim an Item before it submits a Work: status shows who and since when, and a Work for the Item takes the claim over', async () => {
   const dir = repository(STATUS)
-  const { controller, task, admit } = setup()
+  const { controller, task, admit, itemGate } = setup()
   const status = await readStatus(dir)
-  const line = () => itemLines(status, dir, controller.list(), () => [], { item: 'df-3' }, controller.claims())[0]
-  const claimed = await controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
+  const line = () => itemLines(status, dir, controller.list(), () => [], { item: 'df-3' }, itemGate.claims())[0]
+  const claimed = await itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
   assert.equal(claimed.who, 'session-a')
   assert.equal(line(), `[ ] df-3 The status of a project - doing: claimed by session-a since ${claimed.at}`)
-  assert.deepEqual(itemLines(status, dir, controller.list(), () => [], { state: 'doing' }, controller.claims()).length, 1)
-  assert.match(itemLines(status, dir, controller.list(), () => [], { item: 'df-4' }, controller.claims())[0]!, /todo: nobody/)
+  assert.deepEqual(itemLines(status, dir, controller.list(), () => [], { state: 'doing' }, itemGate.claims()).length, 1)
+  assert.match(itemLines(status, dir, controller.list(), () => [], { item: 'df-4' }, itemGate.claims())[0]!, /todo: nobody/)
 
   // The same session claims again; another one is refused, naming the first, unless it forces.
-  await controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
-  await assert.rejects(controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-b' }), (error: Error) => error.message.includes('session-a') && error.message.includes('force'))
-  assert.equal((await controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-b' }, true)).who, 'session-b')
+  await itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
+  await assert.rejects(itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-b' }), (error: Error) => error.message.includes('session-a') && error.message.includes('force'))
+  assert.equal((await itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-b' }, true)).who, 'session-b')
 
   // A Work submitted for the Item takes the claim over: the line shows the Work, not the claim.
   const work = await admit(task(dir, 'df-3'))
-  assert.deepEqual(controller.claims(), [])
+  assert.deepEqual(itemGate.claims(), [])
   assert.equal(line(), `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}`)
   // An Item with a running Work cannot be claimed.
-  await assert.rejects(controller.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' }), (error: Error) => error.message.includes(work.id))
+  await assert.rejects(itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' }), (error: Error) => error.message.includes(work.id))
 })
 
 test('an Item whose Work ended Satisfied is done, says "satisfied" and names the evidence; STATUS.md may still say [ ]', () => {

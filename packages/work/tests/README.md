@@ -1,6 +1,7 @@
 # @system/work tests
 
 - `workflow.test.ts` — both repository Workflow files, and every preflight refusal.
+- `gate.test.ts` — the Item gate over a fake STATUS.md reader, no git: Ready, Blocked, busy, claimed, unreadable, no line, `force`.
 - `controller.test.ts` — the controller over the shared in-memory Work table
   (durable before visible, like DSH); includes a second controller taking
   over a Work whose first host died mid-attempt, verdict binding, pinned

@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, blockedText, itemBlockedBy, itemLines, mergeCommitOf, noItemLine, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, statusUnreadable, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -243,12 +243,7 @@ export function operations(services: Services) {
       summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s STATUS.md cannot be read, when its `dev` has no line for the Item, and when the Item is Blocked (it comes after Items not done: `(after: id, id)` in its line; the refusal says "blocked by ...") unless `force` is true. When the Item\'s line has `(intent: <12 hex>)`, that `intent@1` Artifact is added to the Task\'s `context` (refused unless the prefix is exactly one stored `intent@1`).',
       params: z.object({ instructions: z.string().min(1), repository: z.string().min(1).optional(), ref: z.string().min(1).optional(), context: z.array(artifactId).default([]), item: z.string().regex(ITEM_ID).optional(), against: z.string().min(1).optional(), force: z.boolean().optional(), commandId }).strict(),
       async handler(host, p, caller) {
-        if (p.item && p.repository && !p.force) {
-          const status = await readStatus(p.repository).catch((error: unknown) => { throw new WorkError(statusUnreadable(p.repository!, error)) })
-          if (!status.items.some((i) => i.id === p.item)) throw new WorkError(noItemLine(p.item, status))
-          const why = itemBlockedBy(status, status.repository, host.view.list(), p.item)
-          if (why) throw new WorkError(`Item ${p.item} is ${blockedText(why)}; to store its Task on purpose, give force`)
-        }
+        await host.gate.checkTask(p.item, p.repository, p.force)
         return services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item, p.repository ? p.against : undefined)
       },
     },
@@ -294,13 +289,7 @@ export function operations(services: Services) {
       summary: 'Claim an Item of the repository\'s STATUS.md before submitting a Work for it: `{ repository, item, who, at }`, with `who` the caller\'s operator ID. `status` then shows the Item as `doing`, claimed by `who` since `at`; a Work submitted for the Item takes the claim over. Refused when STATUS.md cannot be read, the Item has no line in it, the Item has a running or held Work, or is claimed by another caller, unless `force` is true.',
       params: z.object({ repository: z.string().min(1), item: z.string().regex(ITEM_ID), force: z.boolean().optional(), commandId }).strict(),
       async handler(host, p, caller) {
-        if (p.force) {
-          const status = await readStatus(p.repository).catch(() => undefined)
-          return host.claim(status?.repository ?? p.repository, p.item, caller, true, { commandId: p.commandId })
-        }
-        const status = await readStatus(p.repository).catch((error: unknown) => { throw new WorkError(statusUnreadable(p.repository, error)) })
-        if (!status.items.some((i) => i.id === p.item)) throw new WorkError(noItemLine(p.item, status))
-        return host.claim(status.repository, p.item, caller, p.force, { commandId: p.commandId })
+        return host.claim(p.repository, p.item, caller, p.force, { commandId: p.commandId })
       },
     },
     'artifact.put': {

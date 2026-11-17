@@ -52,7 +52,7 @@ async function setup(t: TestContext, accounts: Account[], pinned?: string, retry
   const slots = new Slots(capabilities)
   // The plan adds a trailing quotaRetryMs constructor argument. Reflect keeps
   // this test seam compilable before that argument exists in production.
-  const newController = (): WorkController => Reflect.construct(WorkController, [table, specStore, capabilities, undefined, slots, undefined, undefined, 20])
+  const newController = (): WorkController => Reflect.construct(WorkController, [table, specStore, capabilities, undefined, slots, undefined, 20])
   let controller = newController()
   const spec = directTask(['research'], false, capabilities.available())
   if (retry) Object.assign(spec.steps[0]!, { retry: { onFail: ['task'], max: 1 } })

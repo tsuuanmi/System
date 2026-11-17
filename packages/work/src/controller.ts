@@ -16,7 +16,7 @@ import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts
 import type { Task, Verdict } from './kinds.ts'
 import { askVerifier, firstRunOf, refusedResult, settleVerdict, type VerifierPin } from './verification.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
-import { activeWork, blockedText, itemBlockedBy, itemNote, noItemLine, readStatus, statusUnreadable, whoHas } from './status.ts'
+import type { Decide } from './gate.ts'
 import type { QuotaReading } from './headroom.ts'
 import { withReasons, type ChangedTest } from './changed-tests.ts'
 import { type Capabilities, type EffectIntent, type EffectOutcome, type EffectPort, type Reconciled, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerResult } from './registry.ts'
@@ -29,22 +29,6 @@ export interface WorkTable {
   put(key: string, value: WorkRecord): Promise<void>
   update(key: string, fn: (current: WorkRecord) => WorkRecord): Promise<WorkRecord>
   keys(): IterableIterator<string>
-}
-
-/** The claims on Items: one key per Item of a repository (see `claimKey`). */
-export interface ClaimTable {
-  get(key: string): Claim | undefined
-  put(key: string, value: Claim): Promise<void>
-  delete(key: string): Promise<boolean>
-  keys(): IterableIterator<string>
-}
-
-const claimKey = (repository: string, item: string): string => `${repository}\n${item}`
-
-/** A claim table in memory, for a controller built without one. */
-function memoryClaims(): ClaimTable {
-  const rows = new Map<string, Claim>()
-  return { get: (key) => rows.get(key), put: async (key, value) => { rows.set(key, value) }, delete: async (key) => rows.delete(key), keys: () => rows.keys() }
 }
 
 /** The Artifact operations the controller needs. */
@@ -173,7 +157,6 @@ export interface CancelRequest {
 
 export class WorkController {
   private readonly table: WorkTable
-  private readonly claimed: ClaimTable
   private readonly specs: SpecStore
   private readonly capabilities: Capabilities
   /** The Works being run, and the cancel request a running Work polls; the Host owns every Work, so both live in memory. */
@@ -207,10 +190,9 @@ export class WorkController {
   /** Accounts that limited an attempt (ref -> passed over until their reset, ss-5). In memory only: after a restart the quota is read fresh and routing is as usual. */
   private readonly limitedAccounts = new Map<string, number>()
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims(), quotaRetryMs = QUOTA_RETRY_MS) {
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, quotaRetryMs = QUOTA_RETRY_MS) {
     this.quotaRetryMs = quotaRetryMs
     this.table = table
-    this.claimed = claims
     this.specs = specs
     this.capabilities = capabilities
     this.lane = lane
@@ -263,7 +245,7 @@ export class WorkController {
    * command's receipt is written with the record. The caller makes sure
    * `workId` is not taken.
    */
-  async admit(admission: Admission, options: { workId?: string; command?: Command } = {}): Promise<WorkRecord> {
+  async admit(admission: Admission, options: { workId?: string; command?: Command; decide?: Decide } = {}): Promise<WorkRecord> {
     const usesInput = admission.spec.steps.some((s) => refsOf(s).includes('$work.input'))
     if (usesInput && !admission.input) throw new WorkError('the workflow uses $work.input, but no input Artifact was given')
     if (admission.input && !this.specs.exists(admission.input)) throw new WorkError(`input ${admission.input} is not a stored Artifact`)
@@ -298,20 +280,11 @@ export class WorkController {
         throw new WorkError(`step ${s.id}: ${provider.ref} refuses its params: ${(error as Error).message}`)
       }
     }
-    const named = input ? this.specs.taskOf(input) : undefined
-    const item = named?.task.item ? { id: named.task.item, ...(named.repository ? { repository: named.repository } : {}) } : undefined
-    if (item && !admission.force) {
-      const busy = activeWork(this.list(), item)
-      if (busy) throw new WorkError(`Item ${item.id} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'}); to run another on purpose, give force (--force)`)
-    }
-    if (item?.repository && !admission.force) {
-      const status = await readStatus(item.repository).catch((error: unknown) => { throw new WorkError(statusUnreadable(item.repository!, error)) })
-      if (!status.items.some((i) => i.id === item.id)) throw new WorkError(noItemLine(item.id, status))
-      const why = itemBlockedBy(status, status.repository, this.list(), item.id)
-      if (why) throw new WorkError(`Item ${item.id} is ${blockedText(why)}; to run it on purpose, give force (--force)`)
-    }
+    const item = this.itemOf(admission)
+    // The Item gate decides (refuses, or gives the note) from a STATUS.md the Host read before the lane; the controller reads no STATUS.md.
+    const decision = item ? options.decide?.(item) : undefined
     // A Task that names an Item is read with the Item's status and its earlier Works added to its context.
-    const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list(), this.specs.commitOf?.bind(this.specs)), admission.caller) : input
+    const read = decision ? await this.specs.withNote(input!, decision.note, admission.caller) : input
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = options.workId ?? `work:${randomUUID()}`
     const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: read, ...(item ? { item } : {}), ...(admission.worker ? { worker: admission.worker } : {}), criteria, verifiers, source: admission.source }
@@ -320,29 +293,15 @@ export class WorkController {
       ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
     }
     await this.table.put(id, workRecordSchema.parse(record))
-    // A Work for the Item takes over a session's claim on it.
-    if (item?.repository) await this.claimed.delete(claimKey(item.repository, item.id))
+    await decision?.taken()
     this.changed(record)
     return record
   }
 
-  /** The claims on Items, by session. */
-  claims(): Claim[] {
-    return [...this.claimed.keys()].map((key) => this.claimed.get(key)!)
-  }
-
-  /**
-   * Claim an Item for `caller` before submitting a Work for it. Refused while a Work for the Item is running or held,
-   * and while another caller holds the claim unless `force`. Call it in the commit lane.
-   */
-  async claim(repository: string, item: string, caller: Caller, force = false): Promise<Claim> {
-    const busy = activeWork(this.list(), { id: item, repository })
-    if (busy) throw new WorkError(`Item ${item} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'})`)
-    const held = this.claimed.get(claimKey(repository, item))
-    if (held && held.who !== caller.operatorId && !force) throw new WorkError(`Item ${item} is claimed by ${held.who} since ${held.at}; to take it over on purpose, give force (--force)`)
-    const claim: Claim = { repository, item, who: caller.operatorId, at: this.now() }
-    await this.claimed.put(claimKey(repository, item), claim)
-    return claim
+  /** The Item the Task of an admission names, with its repository; undefined when it names none. */
+  itemOf(admission: Pick<Admission, 'input'>): { id: string; repository?: string } | undefined {
+    const named = admission.input ? this.specs.taskOf(admission.input) : undefined
+    return named?.task.item ? { id: named.task.item, ...(named.repository ? { repository: named.repository } : {}) } : undefined
   }
 
   get(workId: string): WorkRecord | undefined {
