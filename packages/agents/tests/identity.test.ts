@@ -3,7 +3,10 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
-import { readClaudeAccountId, readCodexAccountId } from '../src/identity.ts'
+import { adapterFor } from '../src/adapters/index.ts'
+
+const readClaudeAccountId = (dir: string) => adapterFor('claude-code')!.accountId(dir)
+const readCodexAccountId = (dir: string) => adapterFor('codex')!.accountId(dir)
 
 test('Claude: accountUuid wins over emailAddress; the email alone is used without a uuid', () => {
   assert.equal(readClaudeAccountId(fakeClaudeHome(undefined, { accountUuid: 'u', emailAddress: 'e@x' })), 'u')

@@ -416,7 +416,7 @@ export interface QuotaCache {
   observe(events: ReadonlyArray<QuotaEvent>): void
 }
 
-type Observed = { observedAt: number; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } }
+export type Observed = { observedAt: number; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } }
 
 /** `seed` is a saved event reading (after a restart); `persist` is handed each new one. */
 /** A reading older than this, or none, is probed before a step is dispatched (ss-5). */

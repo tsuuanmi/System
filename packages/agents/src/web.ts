@@ -78,3 +78,14 @@ export interface WebWorkerService {
 
 /** The reason of a `web` account, and of a login, when the row is off. */
 export const WEB_WORKER_DISABLED = 'the web-worker row is disabled'
+
+/** Whether a Runtime name is the web Runtime, served by the web-worker row and not by a CLI adapter. */
+export const isWebRuntime = (runtime: string): boolean => runtime === 'web'
+
+/** What is wrong with a web account's Site and ref, if anything: its ref is `web/<site>/<name>`; the web-worker row knows which Sites ship. */
+export function webRefProblem(account: { ref: string; site?: string }): string | undefined {
+  if (!account.site) return 'a web account names its site (site: chatgpt)'
+  const [runtime, site, name, ...rest] = account.ref.split('/')
+  if (!isWebRuntime(runtime ?? '') || site !== account.site || !name || rest.length) return `the ref ${account.ref} does not match site ${account.site}: a web account is web/<site>/<name>, here web/${account.site}/<name>`
+  return undefined
+}

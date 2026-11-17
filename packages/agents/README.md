@@ -41,6 +41,14 @@ the optional web-worker row) becomes a System Worker
       # A second account is another entry with its own ref and credential.
 ```
 
+### Runtime adapters
+
+Each CLI Runtime has one adapter in `src/adapters/` (`claude-code.ts`, `codex.ts`), found by Runtime name through `adapterFor` in
+`src/adapters/index.ts`. It holds that Runtime's invocation and flags, credential staging (`preflight`), output parse, progress, attempt
+summary, quota reader and account identity; `agent.ts`, `ask.ts` and `index.ts` ask it and never branch on a Runtime's name
+(`tests/adapters.test.ts` fails if one does). Adding a CLI Runtime is writing one adapter and registering it. The `web` Runtime has no
+adapter: the web-worker row serves it, and `web.ts` (`isWebRuntime`, `webRefProblem`) is its seam here.
+
 ### Abilities and grants
 
 A Runtime's **abilities** are declared in code (`RUNTIME_ABILITIES` in `src/runtimes.ts`), not in the profile: Claude Code `repo.read`,
@@ -250,7 +258,7 @@ model is recorded for it.
    - `codex exec --json --ephemeral --ignore-user-config --skip-git-repo-check [-m <model>]
      -s workspace-write -C work --add-dir out <prompt>`
    While it runs, its stdout is read every 0.5 s; when it grew, the attempt
-   reports its progress (`progressReader`: turns, the last tool, tokens so
+   reports its progress (the adapter's `progress()`: turns, the last tool, tokens so
    far) to the Host, which keeps it in memory only.
 4. **Capture**, the same rule for every domain: for a step with `repo.write`
    in a git workspace the first output slot is the working tree, committed on
