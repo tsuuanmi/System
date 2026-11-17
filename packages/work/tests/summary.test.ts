@@ -188,6 +188,16 @@ test('failed publishes classify recorded conflicts and unknown failures', () => 
   ], 1, 1)
 })
 
+test('cls-6: a default `change` carries the Classifier\'s answer only when every sample agreed on another class', () => {
+  const events = [{ type: 'effect-observed', at, stepId: 'publish', operationId: 'op:2', state: 'failed', reason: 'publish failed unexpectedly' }] as WorkEvent[]
+  const answer = (label: string, confidence: number) => () => ({ label, confidence, classification: id('c') })
+  const classifiedOf = (label: string, confidence: number) => summarize(record(events), answer(label, confidence)).failures[0]!.classified
+  assert.deepEqual(classifiedOf('flaky', 1)?.label, 'flaky')
+  assert.equal(classifiedOf('flaky', 0.67), undefined, 'not unanimous: the rules\' change stands')
+  assert.equal(classifiedOf('change', 1), undefined)
+  assert.equal(classifiedOf('unknown', 1), undefined)
+})
+
 for (const [reason, outside] of [
   ['Your workspace is out of credits', 'quota'],
   ['tests failed: 3 assertions', 'unknown'],

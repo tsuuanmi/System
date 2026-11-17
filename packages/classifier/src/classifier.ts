@@ -5,7 +5,7 @@
  */
 import type { Ask } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
-import { summarize, type ClassifiedFailure, type ClassifiedLookup, type Failure, type WorkRecord } from '@system/work'
+import { defaultChange, summarize, type ClassifiedFailure, type ClassifiedLookup, type Failure, type WorkRecord } from '@system/work'
 import { failureEvidence } from './evidence.ts'
 import { hashText, type LoadedQuestion } from './question.ts'
 import { CLASSIFICATION_KIND, classificationSchema, type Classification } from './schema.ts'
@@ -122,10 +122,10 @@ export function createClassifier({ artifacts, index, ask, questions }: Classifie
     failureLookup(question: string): ClassifiedLookup {
       return (failure, record) => classifier.lookup(question, failureEvidence(failure, record), failureText(failure))
     },
-    /** Classify the failures of `record` whose rules answer `unknown` and that have no answer yet, off the Account that failed. */
+    /** Classify the failures of `record` whose rules answer `unknown` or only the default `change` (cls-6) and that have no answer yet, off the Account that failed. */
     async classifyFailures(question: string, record: WorkRecord): Promise<void> {
       for (const failure of summarize(record).failures) {
-        if (!failure.unknown || failure.kind === 'touch') continue
+        if (!(failure.unknown || defaultChange(failure)) || failure.kind === 'touch') continue
         const text = failureEvidence(failure, record)
         if (classifier.lookup(question, text, failureText(failure))) continue
         const account = failedAccount(record, Number(failure.event.split('#')[1]))

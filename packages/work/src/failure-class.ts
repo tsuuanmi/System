@@ -28,3 +28,12 @@ export function failureClass(f: Pick<Failure, 'kind' | 'reason' | 'outside' | 'u
   const parsed = parseCheckFailure(f.reason)
   return parsed ? `change:${parsed.check}:${parsed.test ?? ''}` : `change-${f.kind}`
 }
+
+/**
+ * cls-6: whether the rules' class of `f` is only the default `change`: no Outside cause, not `unknown`, and nothing positive behind
+ * it (no failing test named, no base pass recorded in the reason). The hybrid asks the Classifier about exactly these.
+ */
+export function defaultChange(f: Pick<Failure, 'kind' | 'reason' | 'outside' | 'unknown'>): boolean {
+  if (f.outside || f.unknown || f.kind === 'touch') return false
+  return !parseCheckFailure(f.reason)?.test && !/\bthe base passed\b/i.test(f.reason)
+}

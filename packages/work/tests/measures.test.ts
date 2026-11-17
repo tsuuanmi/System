@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { failureClass, parseCheckFailure } from '../src/failure-class.ts'
+import { defaultChange, failureClass, parseCheckFailure } from '../src/failure-class.ts'
 import { rangeReport } from '../src/measures.ts'
 import { releaseTimes } from '../src/releases.ts'
 import type { EscapedDefect } from '../src/defect.ts'
@@ -72,6 +72,15 @@ test('a failure of the change is keyed by its check and first failing test', () 
   assert.equal(parseCheckFailure('unit failed'), undefined)
   assert.equal(failureClass({ kind: 'verdict', reason: unit('x'), outside: 'quota' }), 'quota')
   assert.equal(failureClass({ kind: 'attempt', reason: 'x', unknown: true }), 'unknown')
+})
+
+test('a failure of the change is the rules\' default unless it rests on positive evidence (cls-6)', () => {
+  assert.equal(defaultChange({ kind: 'verdict', reason: unit('x') }), false, 'a failing test is named')
+  assert.equal(defaultChange({ kind: 'verdict', reason: 'failed: unit: x (the base passed on re-run once; the first run failed on both: y)' }), false, 'a base pass is recorded')
+  assert.equal(defaultChange({ kind: 'verdict', reason: 'failed: build (exit 1)' }), true)
+  assert.equal(defaultChange({ kind: 'attempt', reason: 'no change: the Worker made none' }), true)
+  assert.equal(defaultChange({ kind: 'verdict', reason: unit('x'), outside: 'flaky' }), false, 'an Outside cause stands')
+  assert.equal(defaultChange({ kind: 'attempt', reason: 'x', unknown: true }), false, 'unknown is asked on its own')
 })
 
 test('the same check on the same test recurs; two tests of one check do not; unknown is counted apart', () => {
