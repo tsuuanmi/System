@@ -5,6 +5,7 @@
 import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
+import { storedOf } from './stored.ts'
 
 export const CONFIRMATION_KIND = { kind: 'confirmation', schemaVersion: 1 } as const
 export const confirmationSchema = z.object({
@@ -27,10 +28,5 @@ export async function addConfirmation(artifacts: Artifacts, input: ConfirmationI
 
 /** Every stored `confirmation@1`, for `rangeReport`. */
 export function storedConfirmations(artifacts: Artifacts): Confirmation[] {
-  const found: Confirmation[] = []
-  for (const id of artifacts.idsByPrefix(CONFIRMATION_KIND.kind, '')) {
-    const read = artifacts.get(id)
-    if (read.state === 'stored') found.push(read.envelope.content as Confirmation)
-  }
-  return found
+  return storedOf<Confirmation>(artifacts, CONFIRMATION_KIND.kind).map((s) => s.content)
 }

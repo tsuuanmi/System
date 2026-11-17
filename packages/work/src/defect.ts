@@ -13,6 +13,7 @@ import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifact
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { ITEM_ID } from './status-parse.ts'
+import { requireStored, storedOf } from './stored.ts'
 
 export const DEFECT_KIND = { kind: 'escaped-defect', schemaVersion: 1 } as const
 export const COMMIT_PREFIX = /^[0-9a-f]{7,40}$/
@@ -52,43 +53,26 @@ export function defectSubject(subject: string): { item: string } | { commit: str
   throw new WorkError(`${subject} is neither an Item ID nor a merge commit (7 to 40 lower-case hex characters)`)
 }
 
-/** `id` must be a stored `escaped-defect@1` Artifact. */
-function requireDefect(artifacts: Artifacts, id: string, what: string): void {
-  const read = artifacts.get(id)
-  if (read.state !== 'stored') throw new WorkError(`${what} ${id} is not a stored Artifact`)
-  if (read.envelope.kind !== DEFECT_KIND.kind || read.envelope.schemaVersion !== DEFECT_KIND.schemaVersion) throw new WorkError(`${what} ${id} is not an escaped-defect@1 Artifact`)
-}
-
 /** Store an `escaped-defect@1`; `supersedes`, when given, must be a stored `escaped-defect@1`. */
 export async function addDefect(artifacts: Artifacts, input: DefectInput, producer: { type: 'operator'; ref: string }, now: () => string = () => new Date().toISOString()): Promise<Envelope> {
   const content = defectSchema.parse({ ...defectSubject(input.subject), foundBy: input.foundBy, reason: input.reason, date: input.date ?? now(), ...(input.supersedes ? { supersedes: input.supersedes } : {}) })
-  if (content.supersedes) requireDefect(artifacts, content.supersedes, 'supersedes')
+  if (content.supersedes) requireStored(artifacts, content.supersedes, DEFECT_KIND, 'supersedes')
   return artifacts.put({ ...DEFECT_KIND, content, ...(content.supersedes ? { supersedes: [content.supersedes] } : {}), classification: 'local-private', producer })
 }
 
 /** Store an `escaped-defect-withdrawal@1`; `withdraws` must be a stored `escaped-defect@1`. */
 export async function withdrawDefect(artifacts: Artifacts, input: { withdraws: string; reason: string; date?: string }, producer: { type: 'operator'; ref: string }, now: () => string = () => new Date().toISOString()): Promise<Envelope> {
   const content = withdrawalSchema.parse({ withdraws: input.withdraws, reason: input.reason, date: input.date ?? now() })
-  requireDefect(artifacts, content.withdraws, 'withdraws')
+  requireStored(artifacts, content.withdraws, DEFECT_KIND, 'withdraws')
   return artifacts.put({ ...WITHDRAWAL_KIND, content, classification: 'local-private', producer })
 }
 
 /** Every stored `escaped-defect@1`, with its ID, for `rangeReport`. */
 export function storedDefects(artifacts: Artifacts): StoredDefect[] {
-  const found: StoredDefect[] = []
-  for (const id of artifacts.idsByPrefix(DEFECT_KIND.kind, '')) {
-    const read = artifacts.get(id)
-    if (read.state === 'stored') found.push({ ...(read.envelope.content as EscapedDefect), id })
-  }
-  return found
+  return storedOf<EscapedDefect>(artifacts, DEFECT_KIND.kind).map(({ id, content }) => ({ ...content, id }))
 }
 
 /** Every stored `escaped-defect-withdrawal@1`, for `rangeReport`. */
 export function storedWithdrawals(artifacts: Artifacts): DefectWithdrawal[] {
-  const found: DefectWithdrawal[] = []
-  for (const id of artifacts.idsByPrefix(WITHDRAWAL_KIND.kind, '')) {
-    const read = artifacts.get(id)
-    if (read.state === 'stored') found.push(read.envelope.content as DefectWithdrawal)
-  }
-  return found
+  return storedOf<DefectWithdrawal>(artifacts, WITHDRAWAL_KIND.kind).map((s) => s.content)
 }
