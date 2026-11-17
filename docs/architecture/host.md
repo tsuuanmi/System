@@ -244,7 +244,10 @@ attempt to do it.
   in flight to interrupt. The file is one use, not a queue.
 - **Clients.** The thin client retries the connection, and a hello refused as
   upgrading, for 3 s before it says "not running", and a client following a
-  Work opens a closed connection again once.
+  Work opens a closed connection again once. `system mcp` does the same for a
+  call that finds its connection closed by a Host restart: it reconnects (with
+  that retry) and sends the call once more, a write with the `commandId` it made
+  before the first send, so the Host runs it once; a second failure is reported.
 
 `host.status` reports the number of Works and the size of their records, for
 PLAN's growth budget.

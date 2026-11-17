@@ -5,13 +5,14 @@
  * on newer code, with `notifications/tools/list_changed`), with the row's zod params as JSON Schema and
  * its summary as the description; each call is forwarded over the socket. A call
  * that finds the connection closed (the Host restarted) reconnects once and is
- * sent again only if its repeat is idempotent: a read, or a write with a `commandId`. It
+ * sent again only if its repeat is idempotent: a read, or a write with a `commandId` (made here when the caller gave none). It
  * decides nothing: who may do what is the Host's, from the caller it declares.
  * Each Work is also a resource, `system://work/<id>`, whose reading
  * is `work.show`; a subscription is a `work.watch` on the connection, and the
  * Host's `work.changed` (see the Host README) becomes
  * `notifications/resources/updated`.
  */
+import { randomUUID } from 'node:crypto'
 import { parseArgs } from 'node:util'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -172,11 +173,14 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
   /**
    * Run a Host call for a request: a failure is the request's error. A connection that was open and is found closed
    * (the Host restarted, e.g. a `system update`) is opened again, with the version handshake, and the call is sent
-   * once more, but only when its repeat is idempotent: a read, or a write with a `commandId` (the Host answers a
+   * once more, but only when its repeat is idempotent: a read, or a write with a `commandId` (made before the first send; the Host answers a
    * repeat from its receipt). Any other write may have been done before the connection closed, so it reports the
    * error and the next call reconnects.
    */
-  const forwarded = async (method: string, params: object): Promise<unknown> => {
+  const forwarded = async (method: string, given: object): Promise<unknown> => {
+    // A write that takes a `commandId` gets one here, before the first send, so that the repeat reuses it.
+    const takesId = !reads.has(method) && current.some((tool) => tool.name === method && 'commandId' in ((tool.inputSchema.properties as object | undefined) ?? {}))
+    const params = takesId && typeof (given as { commandId?: unknown }).commandId !== 'string' ? { ...given, commandId: `mcp-${randomUUID()}` } : given
     const repeatable = reads.has(method) || typeof (params as { commandId?: unknown }).commandId === 'string'
     let client: Client
     try {
