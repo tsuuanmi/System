@@ -30,7 +30,7 @@ The share of a quota window above which an Account takes no new step.
 _Avoid_: limit, threshold
 
 **Outside failure**:
-A failure, hold or operator touch of a Work caused by its surroundings (machine load, an Account's quota, a Host restart, a conflict with other work, a slow Host), not by its change.
+A failure, hold or operator touch of a Work caused by its surroundings (machine load, an Account's quota, a Host restart, a conflict with other work, a slow Host), not by its change. A failure whose cause System cannot place is neither an Outside failure nor a failure of the change: its cause is unknown.
 _Avoid_: infra error, flake (a flake is one kind)
 
 **Worker**:
@@ -156,6 +156,12 @@ _Avoid_: no-op, skipped, already done
 A defect in a change that passed its checks and was accepted, found later by
 review or use.
 _Avoid_: false positive, regression
+
+**Recurring failure**:
+A failure that an earlier Work already had: the same check failing on the
+same first test, or the same Outside cause. Two failures of one step are not
+the same failure for that alone.
+_Avoid_: repeat, regression
 
 **Guardrail**:
 An enforced check (a test, a type, a lint rule, an API or a verifier) added

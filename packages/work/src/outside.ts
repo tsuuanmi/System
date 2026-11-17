@@ -2,9 +2,10 @@
  * Whether a recorded failure reason is an Outside failure (GLOSSARY): machine
  * load or a timeout, an Account's quota or rate limit, a Host restart or a lost
  * attempt, a conflict with other work at publish, a slow Host. Deterministic
- * from the reason text; a reason no pattern knows is a failure of the change
- * (`undefined`). The patterns live here and nowhere else.
+ * from the reason text; a verdict's reason is Outside only by the marker its Verifier writes, and an attempt reason no
+ * pattern knows is `unknown`. The patterns live here and nowhere else.
  */
+import { parseCheckFailure } from './failure-class.ts'
 import type { WorkEvent } from './record.ts'
 
 export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach'
@@ -42,11 +43,19 @@ export function outsideRun(events: readonly WorkEvent[], stepId: string): { coun
 }
 
 /**
- * `from: 'verdict'` is a verifier's reason: a check that timed out is a failure of the change, not a slow Host, unless the
- * base fails it too (the base re-run says so in the reason: `load`). Read at report time, so old records classify by the same rule.
+ * The Outside cause of a reason, or `undefined`. `from: 'verdict'` is a verifier's reason: it is Outside only by the marker
+ * its Verifier writes (the base re-run's "the base fails it too": `load`), never by a pattern, so a test's name cannot make
+ * it `restart` or `quota`. Otherwise the reason is a Worker attempt's, and the patterns apply, unless it is a check failure
+ * System wrote (`failed: <check>: ...`), which is a failure of the change. Read at report time, so old records classify by
+ * the same rule. An attempt reason no pattern knows is `unknown` to the report (`attemptCause`), not a failure of the change.
  */
 export function outsideCause(reason: string, from?: 'verdict'): OutsideCause | undefined {
   const held = /^step \S+ held after \d+ Outside failures in a row \(last cause: (\w+)\)/.exec(reason)
   if (held) return held[1] as OutsideCause
-  return PATTERNS.find(([cause, pattern]) => !(from === 'verdict' && cause === 'slow-host') && pattern.test(reason))?.[0]
+  if (from === 'verdict') return /the base fails it too/i.test(reason) ? 'load' : undefined
+  if (parseCheckFailure(reason)) return undefined
+  return PATTERNS.find(([, pattern]) => pattern.test(reason))?.[0]
 }
+
+/** The cause of a failed Worker attempt's reason for the report: an Outside cause, or `unknown` (neither Outside nor a failure of the change). */
+export const attemptCause = (reason: string): OutsideCause | 'unknown' => outsideCause(reason) ?? 'unknown'
