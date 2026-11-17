@@ -582,6 +582,9 @@ start the Host first, then add the server:
 claude mcp add system -- system mcp
 ```
 
+A session keeps `system mcp` for days: it follows the release `current` points to, so
+`system update` reaches it without a restart ([Host](../architecture/host.md)).
+
 The server's `instructions` tell a session in any repository when to use System
 and the steps. A change uses `develop.yaml`; a cleanup that keeps behaviour uses
 `hygiene.yaml`.
