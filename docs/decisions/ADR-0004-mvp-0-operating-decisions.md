@@ -14,7 +14,7 @@ related: [ADR-0001, ADR-0002, ADR-0003, ADR-0005, ADR-0006, RES-0003]
 [ADR-0001](ADR-0001-control-plane-on-dsh.md) to
 [ADR-0003](ADR-0003-artifact-ids-and-verification-contracts.md) fix the
 architecture but leave the operator model, Worker runtime, storage, effect
-executor and isolation open. The [MVP contract](../requirements/mvp.md) is
+executor and isolation open. The [MVP contract](../requirements/purpose.md) is
 broad; the first build should be the **smallest slice that proves the core
 claim**: work persists, Workers change, humans govern, and two domains run
 on one controller. This ADR records the choices for that slice (**MVP-0**)
@@ -125,7 +125,8 @@ A Website Worker drives a provider's web chat UI in a browser for
 brainstorming and research: **another Worker adapter behind the same
 contract**, with no controller change, weak usage data, and each provider's
 terms for automated web use reviewed before activation. Its first form is
-[PROP-0005](../proposals/PROP-0005-chatgpt-website-worker.md).
+PROP-0005 ([retired](../governance/retired.md); the Worker is in the
+[web-worker README](../../packages/web-worker/README.md)).
 
 The earlier reference implementation (`tsuuanmi/system`, commit `f199a27`)
 has working `website` Workers for ChatGPT and Gemini (patchright-driven

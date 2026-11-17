@@ -3,7 +3,7 @@
  * accounts the `agents` row hands it as Workers and owns their sign-in (`ctx.webWorker`: cookie import, a window,
  * the remote viewer). With the row off nothing of this package is loaded and those accounts are unavailable.
  */
-import { isAbsolute } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { shippedMap, shippedMapProblem } from '@system/web-driver'
@@ -15,7 +15,6 @@ import { webLogin } from './chatgpt-login.ts'
 import { discoverChrome } from './chrome.ts'
 import { XVFB_MISSING, findXvfb } from './display.ts'
 import { AccountHealth, HEALTH_DEFAULTS, unavailableReason, type HealthSettings } from './health.ts'
-import { moveAccountState, webStateDir } from './migrate.ts'
 import { recheck } from './recheck.ts'
 import { startRemoteLogin, type RemoteSession } from './remote-login.ts'
 
@@ -24,7 +23,6 @@ export * from './chatgpt-login.ts'
 export * from './remote-login.ts'
 export * from './display.ts'
 export * from './health.ts'
-export * from './migrate.ts'
 export * from './recheck.ts'
 
 export const name = 'system-web-worker'
@@ -51,14 +49,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     if ('procedures' in account) throw new Error('procedures was removed: the generic Procedures are the only path; delete the line')
     if ('headless' in account) throw new Error('headless is not an option: System always runs the browser headed, on a private display')
     if (!(account.site in SITES)) throw new Error(`unknown site ${account.site}; the shipped sites are: ${Object.keys(SITES).join(', ')}`)
-    // Per-Account state moves once from where the Runtime was `chatgpt-web`; only the default place does (a configured profileDir is the operator's).
     const name = account.ref.split('/')[2] ?? 'default'
     const system = systemPath(ctx)
-    if (!account.profileDir) moveAccountState(system, account.site, name, log)
     if (!findXvfb()) throw new Error(XVFB_MISSING)
     const browsers = systemPath(ctx, 'browsers')
     const command = discoverChrome(account.executablePath, { managedDir: browsers }).path
-    const profile = account.profileDir ?? webStateDir(system, account.site, name)
+    const profile = account.profileDir ?? join(system, 'web', account.site, name)
     const defaults = webDefaults(isAbsolute(profile) ? profile : systemPath(ctx, profile), account.site)
     const web: WebConfig = {
       ...defaults, ...(account.executablePath ? { executablePath: account.executablePath } : {}), managedDir: browsers, temporaryChat: account.temporaryChat ?? defaults.temporaryChat,

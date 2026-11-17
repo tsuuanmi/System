@@ -21,6 +21,6 @@ Architectural rationale: [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.m
 [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
 The product's why and scope live in the
 [Product Charter](../requirements/purpose.md) and
-[MVP requirements](../requirements/mvp.md).
+[MVP requirements](../requirements/purpose.md).
 DSH capability references, alternatives and experiments belong in
 [research](../research/RES-0003-dsh-control-plane-evaluation.md).

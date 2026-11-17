@@ -41,9 +41,6 @@ export const agentsDomain = defineDomain({
 /** `web` is the web Runtime, served by the `web-worker` row; its Site is the account's `site`. */
 export type AccountRuntime = Runtime | 'web'
 
-/** The reason of an account that still names the Runtime as it was called before the Site was a setting of it. */
-export const CHATGPT_WEB_RENAMED = 'the chatgpt-web runtime was renamed: use runtime: web, site: chatgpt, ref web/chatgpt/<name>'
-
 /** What is wrong with a web account's Site and ref, if anything: its ref is `web/<site>/<name>`; the web-worker row knows which Sites ship. */
 export function webRefProblem(account: { ref: string; site?: string }): string | undefined {
   if (!account.site) return 'a web account names its site (site: chatgpt)'
@@ -54,8 +51,7 @@ export function webRefProblem(account: { ref: string; site?: string }): string |
 
 export interface AccountConfig extends WebAccountSettings {
   ref: string
-  /** The Runtime; `chatgpt-web` is only read to be refused (CHATGPT_WEB_RENAMED). */
-  runtime: AccountRuntime | 'chatgpt-web'
+  runtime: AccountRuntime
   /** web: the Site (`chatgpt`), which picks the shipped UI map and the defaults; the ref is `web/<site>/<name>`. */
   site?: string
   capabilities: string[]
@@ -230,7 +226,6 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const observations = domain?.table('quota')
   for (const { account, status } of entries) {
     try {
-      if (account.runtime === 'chatgpt-web') throw new Error(CHATGPT_WEB_RENAMED)
       if (account.runtime === 'web') {
         const problem = webRefProblem(account)
         if (problem) throw new Error(problem)

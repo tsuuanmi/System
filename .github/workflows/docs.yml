@@ -7,7 +7,8 @@ on:
 
 jobs:
   docs:
-    runs-on: ubuntu-latest
+    # pinned like node-version; 26.04 changes how a timed-out check's kill is reported (exit 137), see PLAN section 4
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,14 +21,7 @@ jobs:
       - name: Verify generated indexes
         run: python3 tools/docs.py sync --check
       - name: Smoke test portable bootstrap
-        run: |
-          tmp="$(mktemp -d)"
-          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example" --plan
-          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
-          (cd "$tmp/independent" && python3 tools/docs.py check && python3 tools/docs.py sync --check)
-          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example"
-          python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example" --plan
-          test -z "$(python3 tools/bootstrap_docs.py --out "$tmp/independent" --name "Independent Example" --plan | grep -v '^unchanged ')"
+        run: bash tools/smoke_bootstrap.sh
       - name: Check covered-path impact
         if: github.event_name == 'pull_request'
         env:

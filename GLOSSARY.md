@@ -60,6 +60,12 @@ _Avoid_: persona, agent type
 
 ### Running and directing work
 
+**Operator**:
+The one person a System install works for: they own its profile and
+repositories, write Items, approve, deny and release. They may run System on
+more than one machine.
+_Avoid_: user, admin, team
+
 **Item**:
 A planned piece of a project's work, with a stable ID in the project's
 status list. An Item can get several Tasks over time (a request rewritten
@@ -113,21 +119,6 @@ _Avoid_: timeout, hang, failure
 The one long-lived System process on a machine that owns every Work; the
 CLI and agents act on Work only by asking it.
 _Avoid_: daemon, server, backend
-
-**Round**:
-One pass of a Debate in which each side answers having read the other
-sides' answers of the previous Round.
-_Avoid_: turn, iteration
-
-**Debate**:
-A Workflow of several Rounds between independent Workers, ended by a
-synthesis; the number of Rounds is fixed in the Workflow.
-_Avoid_: discussion, conversation (a Conversation is outside material)
-
-**Lane**:
-One of the k parallel branches of a fan-out Workflow, each on a capability of its
-own so that a profile gives it to its own Account; k is fixed in the Workflow.
-_Avoid_: track, thread, branch (a branch is a git term)
 
 **Release**:
 The operator merging `dev` into `main` after reading a release report. System

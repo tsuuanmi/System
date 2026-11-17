@@ -149,7 +149,7 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events. With `since` (a date or timestamp; `until` excludes, `escaped` is the Escaped defect count of PLAN 3e): the five measures of effect over every Work admitted in the range, each with its counts: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool share.',
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events. With `since` (a date or timestamp; `until` excludes, `escaped` is the Escaped defect count of PLAN section 2): the five measures of effect over every Work admitted in the range, each with its counts: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool share.',
       params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional() }).strict(),
       handler(host, p) {
         if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')

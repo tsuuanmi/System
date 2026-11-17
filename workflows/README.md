@@ -18,8 +18,7 @@ says in its result when the pack is wrong. The MCP `instructions`
 A step's `capabilities` are of three kinds (terms in [GLOSSARY.md](../GLOSSARY.md)):
 an **Ability** is what a Runtime can do (`repo.read`, `repo.write`, `web.search`,
 `web.browse`); a **Role** is a step's part in a Workflow, given to Accounts
-(`develop.implement`, `brainstorm.*`, `research.synthesis`, `research.plan`,
-`research.lane-*`, `review.second-opinion`); a **Tier** is a model class
+(`develop.implement`, `brainstorm.*`, `review.second-opinion`); a **Tier** is a model class
 (`tier.economy`, `tier.standard`, `tier.frontier`). `repo.write` is also what makes
 the working tree a step's output. The old names (`code-write`, `web-search`,
 `research.web`, `code.develop`) are unknown capabilities: a step needing one is refused at admission.
@@ -62,7 +61,7 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
 
 Comparison configurations for the Brainstorm evaluation, and the Workflows that
-are not canonical (`second-opinion.yaml`, `debate.yaml`, `research-fanout.yaml`),
+are not canonical (`second-opinion.yaml`),
 are in [experiments](experiments/README.md).
 
 ```sh
@@ -72,9 +71,12 @@ bin/system work submit --workflow workflows/research.yaml --input <artifactId>
 [`tools/web-canary`](../tools/web-canary) runs it on a fixed question for the
 `web` Accounts ([runbook](../docs/operations/runbook.md#the-web-canary)).
 
-Compatibility policy: criteria versions and Artifact kinds are never deleted (old records must replay).
+Compatibility policy: criteria versions and Artifact kinds are not deleted (old records must replay), except `citations-v1`, removed on 2026-11-16 by the operator (a Work pinned to it cannot be retried; `work replay` reads events only).
 A change across a release boundary is expand then contract, with a registered removal Item (the Q0 rule
 above: a new criteria version is pinned only in a later release). Nothing else keeps fallbacks or aliases.
+
+**Guardrail rule** (operator, 2026-11-15, Q8): each Escaped defect or recurring failure ends in an enforced test, type,
+lint, API or check that is proven to block it; prose is allowed only when that is impossible, with the reason.
 
 The vocabulary and preflight rules are in
 [workflow composition](../docs/architecture/workflow-composition.md).

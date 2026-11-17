@@ -9,6 +9,7 @@ reachability-depth: 3
 review-days: 365
 max-lines: 500
 reviewed: 2026-11-05
+related: [governance/documentation-architecture]
 ---
 
 # System documentation profile

@@ -128,7 +128,7 @@ the Work), and the controller stores the `verdict@1` Artifact itself after
 refusing, as `error`, a verdict about another subject or other criteria, a
 `pass` without evidence, unstored evidence, or a subject kind the verifier
 does not accept. A verdict whose subject has since been replaced counts as
-`stale`. Asking a verify step again (`work retry --step`, PROP-0006) runs it
+`stale`. Asking a verify step again (`work retry --step`, PROP-0006, [retired](../governance/retired.md)) runs it
 on the same subject with the same pinned criteria; the earlier verdict stays
 recorded and no longer counts. The two verifiers are described in
 [`@system/verifiers`](../../packages/verifiers/README.md).
@@ -162,4 +162,4 @@ while retaining a historical ID must give an explicit `expired` /
 `unavailable` state, not pretend the content exists.
 
 See [workflow composition](workflow-composition.md),
-and [MVP acceptance](../requirements/mvp.md).
+and [MVP acceptance](../requirements/purpose.md).

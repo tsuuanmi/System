@@ -88,7 +88,7 @@ criteria, with no universal review sequence. See
 ## Kernel / active-composition rule
 
 An MVP profile mounts only what is required to run the two
-[MVP workflows](../requirements/mvp.md#mandatory-end-to-end-acceptance-cases):
+[MVP workflows](../requirements/purpose.md#success-means):
 the System work services and the DSH hosting/execution capabilities needed
 to satisfy their contracts. Every additional plugin has an explicit reason and
 dependency. The complete list is determined by an actual profile dependency

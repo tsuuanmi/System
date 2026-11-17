@@ -75,6 +75,7 @@ ledger: governance/retired.md
 reachability-depth: 3
 review-days: 365
 max-lines: 500
+related: [governance/documentation-architecture]
 ---
 
 # {name} documentation profile

@@ -94,7 +94,8 @@ none, and routes its two independent proposals to different providers through
 role capabilities (`brainstorm.idea-a`, `brainstorm.idea-b`) that the profile
 gives to one account each. Research's `investigate` has `prefer: web.browse`, an
 [Ability](../../GLOSSARY.md) not a [Role](../../GLOSSARY.md) (see
-[workflows/README.md](../../workflows/README.md)). Since RES-0008 the two proposals also take
+[workflows/README.md](../../workflows/README.md)). Since the B3 evaluation (RES-0008,
+[retired](../governance/retired.md)) the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
 the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
@@ -113,7 +114,7 @@ turns the `criteria` name into an Artifact, recorded on the Work, or refuses
 the Work. **`system work retry --step <id>`** reruns a Worker step of failed,
 cancelled or held Work and resets every step after it, so a verdict never
 outlives its subject. On a verify step it asks the verifier again on the same
-subject with the same pinned criteria (PROP-0006 "verify again"), as after a
+subject with the same pinned criteria (PROP-0006 "verify again", [retired](../governance/retired.md)), as after a
 check failed for a reason outside the change; only a human asks it, so no
 agent keeps the luckiest of several runs; the earlier verdict stays in
 the record and no longer counts.
@@ -217,4 +218,4 @@ dependent admission fail with a clear missing-capability reason
 ([control plane](control-plane.md#kernel--active-composition-rule)).
 
 See [Artifact-ID handoff](artifact-verification.md),
-and [MVP requirements](../requirements/mvp.md).
+and [MVP requirements](../requirements/purpose.md).

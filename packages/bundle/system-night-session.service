@@ -1,4 +1,4 @@
-# The scheduled session (PLAN 3c, ss-2): one run of `claude -p` with tools/night-session.md.
+# The scheduled session (PLAN SS, section 1, ss-2): one run of `claude -p` with tools/night-session.md.
 # A template: the runbook's `sed` fills the @...@ marks; do not install it as it is.
 [Unit]
 Description=System scheduled session: Claude Code drives the todo Items

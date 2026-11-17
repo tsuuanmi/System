@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import type { Envelope, ReadResult } from '@system/artifacts'
-import { CONVERSATION_KIND, conversationSchema, type WorkRecord, type WorkState } from '@system/work'
+import { type WorkRecord, type WorkState } from '@system/work'
 import type { QuotaReport } from '@system/agents'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { RECONNECT_MS } from './remote.ts'
@@ -368,23 +368,6 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
-  const conversation = program.command('conversation').description('read a stored conversation')
-  conversation.command('show <id>')
-    .description('print a conversation\'s notice, what the operator asserted, and its parts')
-    .action((id: string) => {
-      select(async () => {
-        const read = await host.artifacts().get(id)
-        if (read.state !== 'stored' || read.envelope.kind !== CONVERSATION_KIND.kind) throw new Error(`${id} is not a stored conversation`)
-        const content = conversationSchema.parse(read.envelope.content)
-        io.out(`${content.notice}\n\n`)
-        for (const [key, value] of Object.entries(content.asserted)) io.out(`${key}: ${Array.isArray(value) ? value.join(', ') : value}\n`)
-        for (const o of read.occurrences) io.out(`added by ${o.producer.ref} at ${o.at}\n`)
-        if (read.envelope.lineage.supersedes) io.out(`corrects ${read.envelope.lineage.supersedes.join(', ')}\n`)
-        io.out('\n')
-        for (const p of content.parts) io.out(`${p.role.padEnd(10)} ${p.name}  ${p.bytes} bytes  ${p.artifact}\n`)
-        return 0
-      })
-    })
   const credentials = program.command('credentials').description('store Worker tokens in the DSH credential store; values are never printed')
   credentials.command('set <name>')
     .description('read a value without echo (or from piped stdin) and store it under <name>')
@@ -532,7 +515,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
-    .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN 3e (else that measure is unknown)')
+    .option('--escaped <n>', 'the Escaped defects of the range, counted by hand in PLAN section 2 (else that measure is unknown)')
     .action((workId: string | undefined, options: { since?: string; until?: string; escaped?: string }) => {
       select(async () => {
         if ((workId === undefined) === (options.since === undefined)) throw new Error('give a Work ID, or --since <date> for a range')

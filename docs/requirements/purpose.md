@@ -1,7 +1,8 @@
 ---
 type: requirement
 status: active
-reviewed: 2026-11-06
+reviewed: 2026-11-16
+related: [architecture/control-plane]
 ---
 
 # System Product Charter
@@ -14,14 +15,31 @@ across Worker runtimes, rather than being another general-purpose model loop.
 
 **Tagline:** Work persists. Workers change. Humans govern.
 
+System works for one **operator** (GLOSSARY Operator) across several
+repositories and possibly several machines. Other people or a team are a
+non-goal until a second operator exists. Installing System on a new machine
+(clone, then follow one guide or run one script) is a requirement, not a
+nicety.
+
 This is **the current product intent**, not a claim that the product has been
 implemented. The control-plane decision and selected DSH host are recorded in
 [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md).
 
 ## Mission
 
-Make AI work **durable, portable, verifiable and governable** across replaceable
-Workers, with minimal operator intervention and explicit authority.
+System turns the operator's Intents (what they want done, in plain prose) into
+results (verified changes in their repositories, verified research reports)
+with as little of the operator's attention as possible. Durable Work, Artifacts
+and Verdicts are how; P1 to P3 below are the constraints that hold while it
+does so.
+
+## Headline measure
+
+**Verified Items merged per operator touch**, read from the Host's records by
+`system work report`, not by hand. Verified Success Rate, Recurring Failure
+Rate, Escaped Defect Rate, Cost per Verified Work and Time to Verified
+Resolution are diagnostics. `work report` does not compute the headline measure
+yet; an Item will add it.
 
 ## Vision
 
@@ -90,20 +108,57 @@ evade policy.
 
 ## Success means
 
-- Two unrelated workflows reach verified outcomes through the same core with
-  **configuration files**, Worker capability and verifier policy differences only.
-- A failed or replaced Worker does not destroy work identity or evidence;
-  unknown external effects are reconciled or held for a decision.
-- Permission checks and egress restrictions remain enforced across optional
-  plugin boundaries.
-- The operator can see why an action happened, which Worker performed it,
-  the exact **Artifact IDs** created and consumed, and which verifier evidence
-  authorized the accepted result.
-- Operator interventions, task completion, restart behavior and usage
-  accounting can be measured. Numeric release targets require measurement
-  definitions and separately accepted evidence.
+Each criterion names the test that pins it today (`file`: "test name").
 
-For the minimum product acceptance checks, see [MVP](mvp.md).
+- **Work continuity:** a Work survives a killed Host and a Workflow file edit;
+  done steps never re-run. `tests/work.test.ts`: "the pinned spec survives a
+  Workflow file edit and a killed host; done steps never re-run".
+- **Replaceable Workers:** the controller and Workflow compiler name no domain,
+  Worker or verifier; a retry hands a cancelled attempt's partial output on.
+  `packages/work/tests/controller.test.ts`: "the controller and Workflow
+  compiler name no domain, Worker or verifier"; "a cancel during an attempt
+  keeps its partial output, and retry hands it on as previous".
+- **Effect integrity:** an effect records intent before and outcome after; an
+  unknown outcome is reconciled or held, never blindly retried.
+  `packages/work/tests/effects.test.ts`: "a host lost after the remote applied
+  the effect but before it was recorded: reconcile records it, nothing is
+  applied again"; "an outcome reconciliation cannot establish holds the Work
+  and applies nothing"; `tests/publish-crash.test.ts`: all three crash points.
+- **Authority:** only a human at a terminal approves; a denial fails the Work.
+  `tests/publish-approval.test.ts`: "marking the pull request ready waits for a
+  human at a terminal; an agent or a pipe cannot approve". Workers holding no
+  push credentials and egress limits: not pinned.
+- **Exact-subject verification:** a verdict about another subject, other
+  criteria or without evidence is never a pass; a changed subject voids the old
+  verdict. `packages/work/tests/controller.test.ts`: "a verdict about another
+  subject, other criteria, or without stored evidence is an error, never a
+  pass"; "retry --step after failed checks reruns the Worker and re-verifies the
+  new subject; the old verdict never counts".
+- **Two domains, one core:** Software Engineering and Research reach verified
+  outcomes through the same controller, with a code-tree checker and a
+  citation checker. `tests/work.test.ts`: "a direct Task, Software Engineering
+  and Research all succeed through one controller"; `tests/verify.test.ts`:
+  "Research: cited quotes found at their URLs pass, through the same
+  controller".
+- **Config-defined workflows:** invalid Workflows (duplicates, cycles, missing
+  outputs, unavailable capabilities) are refused before any Worker runs, and
+  the admitted spec is pinned. `packages/work/tests/workflow.test.ts`: "cycles
+  are refused with their path"; "capabilities no enabled Worker or verifier
+  provides are refused before any Worker runs"; `tests/work.test.ts`: "an
+  invalid Workflow is refused before any Worker runs, and no Work is created".
+- **Artifact handoff:** an attempt keeps the Artifacts it reports and replay
+  matches. `packages/work/tests/controller.test.ts`: "a succeeded attempt keeps
+  the Artifacts it reports beside its outputs, and replay matches".
+- **Optional plugins stay optional:** a disabled row is unavailable without
+  breaking the rest. `tests/web-worker-off.test.ts`: "the web-worker row is off
+  in the bundle". Disabling a plugin with in-flight work: not pinned.
+- **Accounting and operator touches:** usage the Worker does not report is
+  unknown, never zero; decisions, retries and cancels count as touches.
+  `packages/work/tests/controller.test.ts`: "usage a Worker does not report is
+  recorded as unknown, never zero"; `packages/work/tests/summary.test.ts`:
+  "human decisions, retries and cancels are touches; unknown usage is counted
+  apart, never as zero". Comparing usage with an oracle: not pinned.
+
 External reference targets R1–R5 are recorded in
 RES-0001 (retired; [ledger](../governance/retired.md)); they are **not** shipped
 System results or automatically adopted release thresholds.

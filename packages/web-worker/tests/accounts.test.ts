@@ -4,10 +4,8 @@
  * reason when it failed. No browser: the registrations here are held open by hand.
  */
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, test } from 'node:test'
+import { test } from 'node:test'
 import { shippedMap } from '@system/web-driver'
 import { apply, offeredTiers } from '../src/index.ts'
 
@@ -74,20 +72,4 @@ test('a web account offers the three tiers when the map binds Power', () => {
 test('an unknown site is refused with the list of shipped sites', { timeout: 10_000 }, async () => {
   const web = mount()
   await assert.rejects(web.register({ ref: 'web/gemini/default', site: 'gemini', capabilities: [] }), /unknown site gemini; the shipped sites are: chatgpt/)
-})
-
-const home = mkdtempSync(join(tmpdir(), 'system-accounts-'))
-after(() => rmSync(home, { recursive: true, force: true }))
-
-test('registering moves the old account directory once, and refuses to when both exist, naming both', { timeout: 20_000 }, async () => {
-  const web = mount(undefined, home)
-  const old = join(home, 'system', 'chatgpt-web', 'default')
-  const current = join(home, 'system', 'web', 'chatgpt', 'default')
-  mkdirSync(old, { recursive: true })
-  // It may be refused later for want of Xvfb or Chrome; the move came before.
-  await web.register({ ref: 'web/chatgpt/default', site: 'chatgpt', capabilities: [] }).catch(() => {})
-  assert.deepEqual([existsSync(old), existsSync(current)], [false, true])
-  mkdirSync(old, { recursive: true })
-  await assert.rejects(web.register({ ref: 'web/chatgpt/default', site: 'chatgpt', capabilities: [] }), (error: Error) => error.message.includes(old) && error.message.includes(current))
-  assert.equal(existsSync(old), true, 'nothing was deleted')
 })

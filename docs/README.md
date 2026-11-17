@@ -9,7 +9,7 @@ source and tests are the authority for implementation behavior.
 | Question | Canonical home | Authority |
 |---|---|---|
 | Why does System exist? | [Product Charter](requirements/purpose.md) | Accepted product intent |
-| What must the smallest product prove? | [MVP requirements](requirements/mvp.md) | Current acceptance contract |
+| What must the smallest product prove? | [MVP requirements](requirements/purpose.md) | Current acceptance contract |
 | Which responsibilities belong to System vs DSH? | [Control-plane architecture](architecture/README.md) | Selected target, not shipped |
 | Where does Workflow step order live? | [Workflow composition](architecture/workflow-composition.md) | External config, accepted target |
 | How do Workers exchange and verify results? | [Artifact-ID and verifier contracts](architecture/artifact-verification.md) | Accepted target, not implemented |

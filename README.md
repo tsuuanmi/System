@@ -25,7 +25,7 @@ ADR-0008); `system approve` is for a human at a terminal.
 
 - [Product Charter](docs/requirements/purpose.md) — mission, purposes and
   philosophy; authoritative product intent.
-- [MVP requirements](docs/requirements/mvp.md) — a shared core proven by
+- [MVP requirements](docs/requirements/purpose.md) — a shared core proven by
   **Software Engineering** and **Research** workflows.
 - [Control-plane architecture](docs/architecture/control-plane.md) —
   DSH-hosted logical ownership, plugin boundaries and active composition.
@@ -37,9 +37,8 @@ ADR-0008); `system approve` is for a human at a terminal.
   decision and alternatives.
 - [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)
   — upstream sources, risks and experiments.
-- [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff and no new Team engine.
+- [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff, no new Team engine, and the B3 evaluation result (RES-0008, retired).
 - [Work ownership and recovery](docs/architecture/work-ownership-and-recovery.md) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
-- [Brainstorm evaluation](docs/research/RES-0008-brainstorm-evaluation.md) — B3: five briefs, three arms, blind scores by a model judge.
 - [Next implementation plan](PLAN.md) — local-agent checklist and test gates.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
@@ -100,7 +99,6 @@ Brainstorm takes a brief the same way (`--workflow workflows/brainstorm.yaml`):
 Claude Code and Codex each write a proposal, then a synthesis compares them;
 `bin/system work show <work>` lists the three output Artifact IDs and
 `bin/system artifact cat <id>` prints one.
-`bin/system conversation show <id>` prints a `conversation@1` the web Worker stored.
 A step asks for a model tier with the capability `tier.economy`,
 `tier.standard` or `tier.frontier`.
 

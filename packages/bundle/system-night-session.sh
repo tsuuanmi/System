@@ -1,5 +1,5 @@
 #!/bin/sh
-# The scheduled session (PLAN 3c, ss-8, ss-9): `claude -p` with tools/night-session.md and exactly the tools it uses.
+# The scheduled session (PLAN SS, section 1, ss-8, ss-9): `claude -p` with tools/night-session.md and exactly the tools it uses.
 # Started by system-night-session.service; the allowlist and the prompt are checked against each other by
 # packages/bundle/tests/night-session-units.test.ts. Nothing here approves, denies, cancels, retries or releases.
 # The session's final answer is the night report (Markdown); this launcher stores it as an Artifact, prints its ID

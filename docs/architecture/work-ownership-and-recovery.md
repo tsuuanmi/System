@@ -2,6 +2,7 @@
 type: architecture
 status: active
 reviewed: 2026-11-07
+decided-by: [ADR-0007]
 ---
 
 # Runtime integrity: Work ownership, storage and recovery

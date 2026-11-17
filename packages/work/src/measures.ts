@@ -11,7 +11,7 @@ export type Unknown = 'unknown'
 export interface RangeOptions {
   since: string
   until?: string
-  /** Escaped defects of the range, counted by hand in PLAN 3e. */
+  /** Escaped defects of the range, counted by hand in PLAN section 2. */
   escaped?: number
 }
 
