@@ -18,6 +18,8 @@ export interface Services {
   artifact(id: string): unknown
   readBytes(id: string): Promise<Uint8Array>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], caller: Caller, item?: string, against?: string): Promise<{ task: string; base?: string }>
+  /** Store an `intent@1` Artifact. */
+  newIntent(intent: { title: string; body: string; supersedes?: string }, caller: Caller): Promise<{ intent: string }>
   /** A Workflow file a Workflow uses: `workflows/<name>` at the base commit of the `input` Task, else beside the Host's own code; undefined when neither has it. */
   workflowFile(name: string, input: string | undefined): string | undefined
   credentials: {
@@ -205,6 +207,12 @@ export function operations(services: Services): Methods {
         }
         return services.newTask(p.instructions, p.repository, p.repository ? p.ref ?? 'HEAD' : undefined, p.context, caller, p.item, p.repository ? p.against : undefined)
       },
+    },
+    'intent.new': {
+      agent: true,
+      summary: 'Store an `intent@1` Artifact, what the operator settled with a caller session before Items carry it out: `{ intent }`, the Artifact ID. `body` is Markdown (Outcome, Why, Constraints, Out of scope). With `supersedes`, the Intent replaces an earlier one, which must be a stored `intent@1` Artifact; a changed Intent is a new Intent.',
+      params: z.object({ title: z.string().min(1).max(200), body: z.string().min(1), supersedes: artifactId.optional() }).strict(),
+      handler: (_host, p, caller) => services.newIntent(p, caller),
     },
     status: {
       read: true,

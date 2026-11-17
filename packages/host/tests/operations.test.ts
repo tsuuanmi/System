@@ -40,6 +40,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       if (!data) throw new Error(`no Artifact ${id}`)
       return data
     },
+    async newIntent(intent) { return { intent: `intent:${intent.title}` } },
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
     workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
     credentials: {
@@ -165,6 +166,8 @@ test('every method of the table round-trips over the socket', async () => {
   // `force` and `item` are accepted by the rows; the refusal itself is the controller's (packages/work/tests/status.test.ts).
   await call('work.submit', { capabilities: ['repo.write'], input: input(f), force: true, run: false })
   await call('task.new', { instructions: 'x', item: 'p-2' })
+  assert.deepEqual(await call('intent.new', { title: 'Want', body: 'Outcome.' }), { intent: 'intent:Want' })
+  await assert.rejects(call('intent.new', { title: '', body: 'x' }), /-32602|invalid|title/i)
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
   await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3' }), /Item p-3 is blocked by p-2/)
   await call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3', force: true })

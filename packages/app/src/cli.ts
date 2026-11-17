@@ -98,6 +98,8 @@ export interface WorkCommands {
   /** The five measures of effect over the Works admitted in a range. */
   rangeReport(range: { since: string; until?: string; escaped?: number }): Promise<unknown>
   newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
+  /** Store an `intent@1` Artifact; its ID. */
+  newIntent(title: string, body: string, supersedes?: string): Promise<{ intent: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
   claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
@@ -342,6 +344,22 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against, options.force)
         if (created.base) io.err(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
+        return 0
+      })
+    })
+  const intent = program.command('intent').description('what the operator wants, stored before Items carry it out')
+  intent.command('new')
+    .description('store an intent@1 Artifact (title, Markdown body: Outcome, Why, Constraints, Out of scope) and print its ID alone on stdout')
+    .requiredOption('--title <title>', 'a short title')
+    .option('--body <markdown>', 'the body')
+    .option('--body-file <path>', 'read the body from a file')
+    .option('--supersedes <id>', 'the earlier intent@1 Artifact this one replaces')
+    .action((options: { title: string; body?: string; bodyFile?: string; supersedes?: string }) => {
+      select(async () => {
+        if (Boolean(options.body) === Boolean(options.bodyFile)) throw new Error('give exactly one of --body and --body-file')
+        const body = options.body ?? readFileSync(options.bodyFile!, 'utf8')
+        const created = await host.work().newIntent(options.title, body, options.supersedes)
+        io.out(`${created.intent}\n`)
         return 0
       })
     })

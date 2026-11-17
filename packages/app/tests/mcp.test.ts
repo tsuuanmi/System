@@ -248,7 +248,7 @@ test('a notice only wakes the client: one that was away reads work.events from i
 
 test('the initialize result carries instructions: the steps, the checks file and the human-only commands', { timeout: 120_000 }, async () => {
   const text = (await mcp()).getInstructions() ?? ''
-  for (const word of ['status', 'item_claim', 'task_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
+  for (const word of ['status', 'item_claim', 'task_new', 'intent_new', 'work_submit', '.system/checks.yaml', 'system approve', 'system deny', 'system work retry']) assert.ok(text.includes(word), `instructions lack ${word}`)
 })
 
 test('the instructions name develop.yaml as the Workflow for any change and only the canonical others', { timeout: 120_000 }, async () => {
