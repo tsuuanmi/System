@@ -18,10 +18,12 @@ code path routes, retries, holds or verifies on one. Only `system work report` r
   input hash and read, never asked again.
 - **Contracts** are JSON Schema in [`schemas/`](schemas), generated from the zod schemas of [schema.ts](src/schema.ts)
   (`node packages/classifier/src/generate.ts`); a test fails when they drift, and validates the shipped questions.
-- **First question:** `failure-cause`, asked only for a failure whose rules answer `unknown` (rb-3). `work report` shows
+- **First question:** `failure-cause` (version 2, cls-3), asked only for a failure whose rules answer `unknown` (rb-3). `work report` shows
   such a failure under the Classification's label as `classified` (`classifiedFailures`; the range report's
   `classifiedUnknownFailures`); the rule classes and counts are unchanged. A Work that ends is classified by the Host
-  in the background; `system work report <id> --classify` asks now.
+  in the background; `system work report <id> --classify` asks now. Its input is the Work's evidence ([evidence.ts](src/evidence.ts)):
+  the reason, each check's result on the change and the base re-run, whether a later verdict passed the same content, and the
+  next attempt's result; built from the record alone. Version 1 answers (made from the reason text) are still read.
 
 Tests: [vote](tests/vote.test.ts), [the core with a fake Runtime](tests/classifier.test.ts), [the schemas](tests/schemas.test.ts);
 the booted profile is [tests/classifier.test.ts](../../tests/classifier.test.ts).

@@ -1,12 +1,15 @@
-# The first Classifier question (cls-1): why did a failure happen? Asked only for a failure whose rules answer
-# `unknown` (packages/work/src/outside.ts); the answer feeds `work report` and nothing else.
+# The first Classifier question (cls-1, version 2 by cls-3): why did a failure happen? Asked only for a failure whose rules
+# answer `unknown` (packages/work/src/outside.ts); the answer feeds `work report` and nothing else. Version 1
+# Classifications stay as recorded.
 # Contract: packages/classifier/schemas/question.schema.json (generated from the zod schema).
 name: failure-cause
-version: 1
+version: 2
 instructions: |
-  You are given the recorded reason of one failure of a unit of automated software work (a Worker attempt, a
-  verification, a hold or a publish). Say which cause it shows. Choose the label whose description fits the reason
-  best; choose unknown when the reason does not say, or fits none of the others.
+  You are given the evidence of one failure of a unit of automated software work (a Worker attempt, a verification,
+  a hold or a publish): its recorded reason, each check's result on the change and on the base re-run, whether a later
+  verdict passed the same content, and what the next attempt of the step reported. The reason names only the first
+  failing test and can hide the decisive failure: read the check results too. Choose the label whose description fits
+  best; choose unknown when the evidence does not say, or fits none of the others.
 labels:
   - label: quota
     description: the Worker's Account ran out of credits, hit a usage or rate limit, or was refused for too many requests
@@ -15,11 +18,15 @@ labels:
   - label: conflict
     description: publishing the change failed because it conflicts with other work merged into the base branch
   - label: load
-    description: the machine was too busy or the base commit fails the same check too, so the change is not to blame
+    description: the machine was too busy, and the base commit fails the same check too, so the change is not to blame (when the base re-run passes, a timing-sensitive test that failed is flaky, not load)
   - label: slow-host
     description: a step or check timed out because the host was slow
   - label: attach
     description: attaching the text or files to the Worker's session failed
+  - label: flaky
+    description: a test failed at random on a correct change, such as a timing-sensitive test that fails while the machine is busy and passes on the base re-run or on a re-run of the same content; the test must stand load
+  - label: process
+    description: System itself caused the failure, not the change or its surroundings - its Workflow, a Verifier, a Runtime adapter, its install, or the caller's Task (a Task asking for output the check rejects, a Verifier misreading code as a citation, a Runtime keeping a code block's label in an output, a manual retry from an already-finished base, an install repository that fetched only main). A "no change" is process only when the previous change was correct (a later attempt with the same content passed); otherwise it is change
   - label: change
     description: the change itself is at fault, such as a failing test, a failed check or a refused verdict of the code
   - label: unknown
@@ -34,4 +41,19 @@ examples:
   # A publish refused for a conflict.
   - input: "publish: merge conflict with dev at abc123def456: packages/agents/README.md"
     label: conflict
+  # work:1e17f624: the caller's Task asked for tags the citation check rejects.
+  - input: 'verdict: failed: citations: 3 sources not found: [verified] tags in the Task'
+    label: process
+  # work:80d26f56: a correct change, then "no change" because rerunUnchanged was off; the same content passed later.
+  - input: "attempt: no change: the working tree is the same as the base commit abc1234\na later verdict passed the same content: yes"
+    label: process
+  # A "no change" while the previous change never passed.
+  - input: "attempt: no change: the working tree is the same as the base commit abc1234\na later verdict passed the same content: no"
+    label: change
+  # A timing test that failed under load and passed on the re-run of the same content.
+  - input: "verdict: failed: unit: a.test.ts \"waits\": timed out\na later verdict passed the same content: yes"
+    label: flaky
+  # work:d4420d46: the reason hides the decisive failure; the check results show changed-behaviour asserts.
+  - input: "verdict: failed: unit: x.test.ts \"y\": unable to read tree\nchecks on the change:\n- checks: fail: unit: asserts of changed behaviour fail in other tests\na later verdict passed the same content: no"
+    label: change
 samples: 3

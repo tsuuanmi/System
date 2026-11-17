@@ -6,6 +6,7 @@
 import type { Ask } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { summarize, type ClassifiedFailure, type ClassifiedLookup, type Failure, type WorkRecord } from '@system/work'
+import { failureEvidence } from './evidence.ts'
 import { hashText, type LoadedQuestion } from './question.ts'
 import { CLASSIFICATION_KIND, classificationSchema, type Classification } from './schema.ts'
 import { vote } from './vote.ts'
@@ -23,7 +24,7 @@ export interface ClassifierOptions {
   questions: readonly LoadedQuestion[]
 }
 
-/** The text a failure is classified from: its kind and recorded reason. */
+/** The text version 1 Classifications were made from: the failure's kind and recorded reason. Kept to read them. */
 export const failureText = (failure: Pick<Failure, 'kind' | 'reason'>): string => `${failure.kind}: ${failure.reason}`
 
 /** The prompt of one sample: the question, its labels, its examples and the text, asking for a JSON object only. */
@@ -90,10 +91,11 @@ export function createClassifier({ artifacts, index, ask, questions }: Classifie
 
   const classifier = {
     /** The recorded answer of `question` about `text`, if any. Never asks. */
-    lookup(question: string, text: string): ClassifiedFailure | undefined {
+    lookup(question: string, text: string, legacyText?: string): ClassifiedFailure | undefined {
       const q = byName.get(question)
       try {
-        return q && recorded(keyOf(q, text))
+        // A version 1 answer stays as recorded: it was made from the reason text alone, under the version-1 key.
+        return q && (recorded(keyOf(q, text)) ?? (legacyText === undefined ? undefined : recorded(`${q.name}@1:${hashText(legacyText)}`)))
       } catch {
         return undefined
       }
@@ -118,14 +120,14 @@ export function createClassifier({ artifacts, index, ask, questions }: Classifie
     },
     /** For `summarize` and `rangeReport`: the recorded answer of `question` about a failure. */
     failureLookup(question: string): ClassifiedLookup {
-      return (failure) => classifier.lookup(question, failureText(failure))
+      return (failure, record) => classifier.lookup(question, failureEvidence(failure, record), failureText(failure))
     },
     /** Classify the failures of `record` whose rules answer `unknown` and that have no answer yet, off the Account that failed. */
     async classifyFailures(question: string, record: WorkRecord): Promise<void> {
       for (const failure of summarize(record).failures) {
         if (!failure.unknown || failure.kind === 'touch') continue
-        const text = failureText(failure)
-        if (classifier.lookup(question, text)) continue
+        const text = failureEvidence(failure, record)
+        if (classifier.lookup(question, text, failureText(failure))) continue
         const account = failedAccount(record, Number(failure.event.split('#')[1]))
         await classifier.classify(question, text, { exclude: account ? [account] : [] })
       }

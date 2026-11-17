@@ -30,8 +30,12 @@ The share of a quota window above which an Account takes no new step.
 _Avoid_: limit, threshold
 
 **Outside failure**:
-A failure, hold or operator touch of a Work caused by its surroundings (machine load, an Account's quota, a Host restart, a conflict with other work, a slow Host), not by its change. A failure whose cause System cannot place is neither an Outside failure nor a failure of the change: its cause is unknown.
+A failure, hold or operator touch of a Work caused by its surroundings (machine load, an Account's quota, a Host restart, a conflict with other work, a slow Host), not by its change. A failure whose cause System cannot place is none of the three kinds (an Outside failure, a Process failure, a failure of the change): its cause is unknown.
 _Avoid_: infra error, flake (a flake is one kind)
+
+**Process failure**:
+A failure caused by System itself - its Workflow, a Verifier, a Runtime adapter, its install, or the caller's Task - not by the change and not by its surroundings. Examples: a Task that asks for `[verified]` tags the citation check rejects; a Verifier reading `?.[1]` inside code as a source id; a Runtime keeping a code block's "JSON" label in an output; "no change" after a correct change because `rerunUnchanged` was off; a retry from an already-finished base; an install repository that fetched only main.
+_Avoid_: system error, internal error
 
 **Worker**:
 An Account registered with System to run steps. A Worker is never a model.
