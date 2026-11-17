@@ -1,0 +1,202 @@
+{
+ "comment": "Stored reports (rules and hybrid only) for the gate test: pass = the fake always-change Classifier on the cls-2 fixture; the others change one thing each.",
+ "pass": {
+  "rules": {
+   "total": 41,
+   "correct": 24,
+   "accuracy": 0.5853658536585366,
+   "interval": [
+    0.433668353568366,
+    0.7224366917466984
+   ],
+   "unknownRate": 0.12195121951219512,
+   "confusion": {
+    "process": {
+     "change": 6,
+     "unknown": 3
+    },
+    "attach": {
+     "attach": 1
+    },
+    "change": {
+     "change": 21,
+     "unknown": 1
+    },
+    "conflict": {
+     "conflict": 2
+    },
+    "flaky": {
+     "change": 6
+    },
+    "quota": {
+     "unknown": 1
+    }
+   },
+   "changeToOutside": 0
+  },
+  "hybrid": {
+   "total": 41,
+   "correct": 25,
+   "accuracy": 0.6097560975609756,
+   "interval": [
+    0.45726583898692563,
+    0.7434406478467289
+   ],
+   "unknownRate": 0,
+   "confusion": {
+    "process": {
+     "change": 9
+    },
+    "attach": {
+     "attach": 1
+    },
+    "change": {
+     "change": 22
+    },
+    "conflict": {
+     "conflict": 2
+    },
+    "flaky": {
+     "change": 6
+    },
+    "quota": {
+     "change": 1
+    }
+   },
+   "changeToOutside": 0
+  }
+ },
+ "oneChangeToOutside": {
+  "rules": {
+   "total": 41,
+   "correct": 24,
+   "accuracy": 0.5853658536585366,
+   "interval": [
+    0.433668353568366,
+    0.7224366917466984
+   ],
+   "unknownRate": 0.12195121951219512,
+   "confusion": {
+    "process": {
+     "change": 6,
+     "unknown": 3
+    },
+    "attach": {
+     "attach": 1
+    },
+    "change": {
+     "change": 21,
+     "unknown": 1
+    },
+    "conflict": {
+     "conflict": 2
+    },
+    "flaky": {
+     "change": 6
+    },
+    "quota": {
+     "unknown": 1
+    }
+   },
+   "changeToOutside": 0
+  },
+  "hybrid": {
+   "total": 41,
+   "correct": 24,
+   "accuracy": 0.5853658536585366,
+   "interval": [
+    0.45726583898692563,
+    0.7434406478467289
+   ],
+   "unknownRate": 0,
+   "confusion": {
+    "process": {
+     "change": 9
+    },
+    "attach": {
+     "attach": 1
+    },
+    "change": {
+     "change": 21,
+     "quota": 1
+    },
+    "conflict": {
+     "conflict": 2
+    },
+    "flaky": {
+     "change": 6
+    },
+    "quota": {
+     "change": 1
+    }
+   },
+   "changeToOutside": 1
+  }
+ },
+ "lessAccurate": {
+  "rules": {
+   "total": 41,
+   "correct": 24,
+   "accuracy": 0.5853658536585366,
+   "interval": [
+    0.433668353568366,
+    0.7224366917466984
+   ],
+   "unknownRate": 0.12195121951219512,
+   "confusion": {
+    "process": {
+     "change": 6,
+     "unknown": 3
+    },
+    "attach": {
+     "attach": 1
+    },
+    "change": {
+     "change": 21,
+     "unknown": 1
+    },
+    "conflict": {
+     "conflict": 2
+    },
+    "flaky": {
+     "change": 6
+    },
+    "quota": {
+     "unknown": 1
+    }
+   },
+   "changeToOutside": 0
+  },
+  "hybrid": {
+   "total": 41,
+   "correct": 23,
+   "accuracy": 0.5609756097560976,
+   "interval": [
+    0.45726583898692563,
+    0.7434406478467289
+   ],
+   "unknownRate": 0,
+   "confusion": {
+    "process": {
+     "change": 9
+    },
+    "attach": {
+     "attach": 1
+    },
+    "change": {
+     "change": 22
+    },
+    "conflict": {
+     "conflict": 2
+    },
+    "flaky": {
+     "change": 6
+    },
+    "quota": {
+     "change": 1
+    }
+   },
+   "changeToOutside": 0
+  }
+ }
+}

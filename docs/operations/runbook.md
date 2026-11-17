@@ -67,6 +67,27 @@ server once for your user ([agents](#using-system-from-an-agent)):
 claude mcp add --scope user system -- ~/.local/bin/system mcp
 ```
 
+## Install gitleaks
+
+The `secrets` check of `.system/checks.yaml` ([tools/secrets-check.sh](../../tools/secrets-check.sh), Item rb-5) runs
+[gitleaks](https://github.com/gitleaks/gitleaks) on what a change adds to its base, with values redacted. The operator
+installs the binary (8.30.1 on 2026-11-17); a machine without it fails the check with "install gitleaks", never
+passes it.
+The check finds it in `$GITLEAKS_BIN`, on `PATH`, or at `~/.local/bin/gitleaks` of the user who runs the Host (the check
+itself has a throwaway `HOME`). It is not part of the `sh install` block above: that block is the commands a new machine
+runs for System itself, and the check needs gitleaks only to verify a change.
+
+```sh
+v=8.30.1
+d=$(mktemp -d) && cd "$d"
+curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz"
+curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_checksums.txt"
+grep " gitleaks_${v}_linux_x64.tar.gz\$" "gitleaks_${v}_checksums.txt" | sha256sum -c -
+tar -xzf "gitleaks_${v}_linux_x64.tar.gz" gitleaks
+install -D gitleaks ~/.local/bin/gitleaks
+~/.local/bin/gitleaks version
+```
+
 ## Stop, restart, status
 
 ```
@@ -107,7 +128,14 @@ Host that stopped itself for new code waits for its attempts first; see
   PATH, and prints the Work ID (a Verdict bound to the commit). When one fails
   it switches `current` back to the release before, asks the Host to run it, and
   names the failed check. Releases other than the current one and the one
-  before are removed.
+  before are removed;
+- the switch first writes `~/.system/pending-install-check.json` (the commit,
+  the release before, the task, the workflow), removed once the check passes or
+  `current` is switched back. When `system update` is killed after the switch
+  (the Host may wait a long time for a running attempt), the Host that starts on
+  that release finds the record and runs `system update --finish-pending`
+  itself: the same check and the same switch back, with no session. A live
+  `system update` completes its own check.
 
 While it upgrades the Host starts no new attempt and lets the running ones
 finish; Works can still be submitted and wait. The log lines, exit status,
@@ -121,7 +149,10 @@ there, not while the `.building` file `corepack pnpm build` keeps exists.
 A release is a pull request from `dev` to `main`, merged by the operator, then `system update`.
 The docs CI's `impact` check fails when the release changes a path a doc `covers:` without changing
 that doc ([the tool](../../tools/docs.py), [governance](../governance/documentation.md)). When the doc
-is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it.
+is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it. System's
+`docs` check runs the same impact check on every Work, so most are found earlier; its waivers are the
+lines of `.system/docs-waivers`, committed with the change. Clear that file's waiver lines in the release
+pull request (keep its comment line).
 Editing the body does not rerun CI: close and reopen the pull request.
 
 ## Rollback

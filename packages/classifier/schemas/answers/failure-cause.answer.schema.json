@@ -11,6 +11,8 @@
         "load",
         "slow-host",
         "attach",
+        "flaky",
+        "process",
         "change",
         "unknown"
       ]

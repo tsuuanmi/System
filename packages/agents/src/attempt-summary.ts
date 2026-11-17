@@ -1,6 +1,6 @@
 /**
  * What an attempt did, computed by System from the attempt's own output (fl-4): tool calls by name, the files read and
- * edited, the longest tool calls and the share of the attempt's time spent in tools. Pure: no clock, no I/O. A Runtime
+ * edited, the longest tool calls and the tool-seconds per second of the attempt (parallel tool calls overlap, so not a share). Pure: no clock, no I/O. A Runtime
  * whose log does not say something reports `unknown` for it, never a guess. Also the bound of the stored log: its head and its tail.
  */
 import type { AttemptSummary } from '@system/work'

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import type { WorkRecord } from '@system/work'
 import type { Ask } from '@system/agents'
-import { createClassifier, parseQuestion } from '../src/index.ts'
+import { createClassifier, failureEvidence, failureText, hashText, parseQuestion } from '../src/index.ts'
 
 const QUESTION = parseQuestion(`
 name: demo
@@ -110,9 +110,48 @@ test('classifyFailures asks only for failures whose rules answer unknown, off th
   await classifier.classifyFailures('demo', r)
   assert.equal(runtime.asked.length, 3, 'one unknown failure, three samples; the quota failure is placed by its rule')
   assert.deepEqual(runtime.asked[0]!.exclude, ['claude-code/c4'])
-  const found = classifier.failureLookup('demo')({ kind: 'attempt', reason: 'claude-code/c4 exit 1: something strange' })
+  const found = classifier.failureLookup('demo')({ event: 'observed#2', kind: 'attempt', reason: 'claude-code/c4 exit 1: something strange' }, r)
   assert.equal(found?.label, 'load')
-  assert.equal(classifier.failureLookup('demo')({ kind: 'attempt', reason: "claude-code/c4 exit 1: out of credits" }), undefined)
+  assert.equal(classifier.failureLookup('demo')({ event: 'observed#3', kind: 'attempt', reason: "claude-code/c4 exit 1: out of credits" }, r), undefined)
   await classifier.classifyFailures('demo', r)
   assert.equal(runtime.asked.length, 3, 'a second pass reads, never asks')
+})
+
+/** A fixture: the change `c` failed unit, the base re-run was inconclusive, the next attempt had the same content and passed. */
+function evidenceRecord(): WorkRecord {
+  const events = [
+    { type: 'admitted', at: '2026-11-17T00:00:00.000Z', caller: { type: 'agent', operatorId: 't' }, specId: id('a'), source: { kind: 'direct-task' } },
+    { type: 'verified', at: '2026-11-17T00:00:01.000Z', stepId: 'checks', attemptId: 'attempt:v1', subject: id('c'), criteria: 'c', verdict: 'fail', reason: 'failed: unit: a.test.ts "x": unable to read tree', verdictId: id('1') },
+    { type: 'verified', at: '2026-11-17T00:00:02.000Z', stepId: 'checks', attemptId: 'attempt:v2', subject: id('c'), criteria: 'c', verdict: 'inconclusive', reason: 'unit: the base fails it too (base abc)', verdictId: id('2'), rerunOf: id('1') },
+    { type: 'observed', at: '2026-11-17T00:00:03.000Z', stepId: 'task', attemptId: 'attempt:2', status: 'failed', outputs: {}, usage: { state: 'unknown' }, reason: 'something odd' },
+    { type: 'observed', at: '2026-11-17T00:00:04.000Z', stepId: 'task', attemptId: 'attempt:3', status: 'succeeded', outputs: {}, usage: { state: 'unknown' } },
+    { type: 'verified', at: '2026-11-17T00:00:05.000Z', stepId: 'checks', attemptId: 'attempt:v3', subject: id('c'), criteria: 'c', verdict: 'pass', reason: 'passed', verdictId: id('3') },
+  ].map((e, seq) => ({ ...e, seq }))
+  return { id: 'work:2', events, state: { status: 'succeeded', specId: id('a'), criteria: {}, steps: {}, effects: {}, results: {} } } as unknown as WorkRecord
+}
+
+test('the evidence has the checks on the change and the base re-run, whether a later verdict passed the same content, and the next attempt', () => {
+  const r = evidenceRecord()
+  const text = failureEvidence({ event: 'verified#1', kind: 'verdict', reason: 'failed: unit: a.test.ts "x": unable to read tree' }, r)
+  assert.match(text, /failed: unit: a\.test\.ts "x": unable to read tree/)
+  assert.match(text, /- checks: inconclusive \(re-run of the same change\) \[includes the base re-run\]: unit: the base fails it too/)
+  assert.match(text, /a later verdict passed the same content: yes/)
+  assert.equal(text, failureEvidence({ event: 'verified#1', kind: 'verdict', reason: 'failed: unit: a.test.ts "x": unable to read tree' }, evidenceRecord()), 'deterministic')
+  const attempt = failureEvidence({ event: 'observed#3', kind: 'attempt', reason: 'something odd' }, r)
+  assert.match(attempt, /next attempt of task: succeeded/)
+  assert.doesNotMatch(attempt, /later verdict/, 'no change to compare')
+})
+
+test('a failure is classified from its evidence; a version 1 answer recorded from the reason text is still found', async () => {
+  const { classifier, runtime, index } = build([say('load')])
+  const r = evidenceRecord()
+  await classifier.classifyFailures('demo', r) // the attempt failure is unknown by the rules
+  assert.match(runtime.asked[0]!.prompt, /next attempt of task: succeeded/)
+  const failure = { event: 'observed#3', kind: 'attempt' as const, reason: 'something odd' }
+  assert.equal(classifier.failureLookup('demo')(failure, r)?.label, 'load')
+  // A version 1 record: keyed by version 1 and the hash of the reason text.
+  const value = [...index.values()][0]!
+  index.clear()
+  index.set(`demo@1:${hashText(failureText(failure))}`, value)
+  assert.equal(classifier.failureLookup('demo')(failure, r)?.label, 'load')
 })

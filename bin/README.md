@@ -17,7 +17,8 @@
   passed its own required checks as a System Work on this machine (a change
   from the running release, so only the checks whose `paths` match the diff
   run; the first install runs all)
-  ([update.mjs](update.mjs); the
+  (and `system update --finish-pending`, run by a Host that starts on a release with a pending
+  install check: the same check and switch back) ([update.mjs](update.mjs); the
   [runbook](../docs/operations/runbook.md#install-and-start)).
 - `system host --supervise` (development, no systemd) stays as a small
   supervisor around `system host` and runs it again (through the install's

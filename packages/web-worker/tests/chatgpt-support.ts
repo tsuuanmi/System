@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import type { Artifacts } from '@system/artifacts'
 import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatgpt.ts'
-import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
+import { CHROME, skipHeaded, shared, useSharedDisplay } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLanguageLabel, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
@@ -18,6 +18,9 @@ import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 
 export const skip = skipHeaded
+useSharedDisplay()
+/** The file's shared display. */
+export const sharedDisplay = () => shared.display!
 export const root = mkdtempSync(join(tmpdir(), 'system-chatgpt-'))
 const fakes: FakeChatGpt[] = []
 /**

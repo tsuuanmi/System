@@ -8,8 +8,10 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
+import { startsBrowser } from '../../../test-support/browser-test.ts'
 import { CHROME_LOCK, discoverChrome, engineChromiumMajor, ensureChrome, installManagedChrome, managedChromePath } from '../src/chrome.ts'
 
+assert.ok(startsBrowser) // discoverChrome runs the stand-in `--version`: a browser start, so this file is in test:web
 const root = mkdtempSync(join(tmpdir(), 'system-chrome-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 

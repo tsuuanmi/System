@@ -35,10 +35,55 @@ steps:
       criteria: install-check-v1
 `
 
+/** The record a switch leaves while its afterInstall check has no passed verdict (Item upd-1). */
+export const PENDING = 'pending-install-check.json'
+
+/**
+ * Complete the install check the record names: submit the install-check Work with the NEW release's client (the Host runs it, and
+ * refuses an older client), remove the record on a pass, and on a failure switch `current` back to the release before and remove it
+ * (the Host then upgrades to that code). Called by `system update` once the Host runs the release, and by the Host that starts on it
+ * when the update was killed (`system update --finish-pending`). Resolves whether the check passed (true when no record).
+ */
+export async function finishInstallCheck({ install, run, read, write, remove, switchLink, log }) {
+  const text = read(join(install, PENDING))
+  if (!text) return true
+  const { commit, previous, task, workflow } = JSON.parse(text)
+  const newCli = join(install, 'releases', commit, 'bin', 'system')
+  // The workflow file is written by the update; a killed one may not have left it intact, so write it again.
+  write(workflow, INSTALL_CHECK_WORKFLOW)
+  log(`verifying the install of ${commit.slice(0, 12)} with its afterInstall checks, as a System Work`)
+  const installed = await run(process.execPath, [newCli, 'work', 'submit', '--workflow', workflow, '--input', task])
+  const installWork = installed.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
+  if (installed.status !== 0) {
+    const shown = installWork.startsWith('work:') ? (await run(process.execPath, [newCli, 'work', 'show', installWork])).stdout : installed.stdout
+    const reason = /"reason":\s*"((?:[^"\\]|\\.)*)"/.exec(shown)?.[1] ?? lastLine(shown)
+    switchLink(join(install, 'current'), previous)
+    remove(join(install, PENDING))
+    log(`the install checks of ${commit.slice(0, 12)} failed (${installWork}): ${reason}; switched back to ${previous}, asking the Host to run it`)
+    return false
+  }
+  remove(join(install, PENDING))
+  log(`the install checks of ${commit.slice(0, 12)} passed: ${installWork}`)
+  return true
+}
+
+/**
+ * `system update --finish-pending`, run by a Host that started on `commit` (its own release): complete the pending install check
+ * when the record is for that commit and the `system update` that wrote it is gone (a live one completes it itself).
+ */
+export async function finishPending({ install, commit, alive, ...deps }) {
+  const text = deps.read(join(install, PENDING))
+  if (!text) return 0
+  const record = JSON.parse(text)
+  if (record.commit !== commit) return 0
+  if (record.updatePid && alive(record.updatePid)) return 0
+  return (await finishInstallCheck({ install, ...deps })) ? 0 : 1
+}
+
 /** The last line of a command's output. */
 const lastLine = (text) => text.trim().split('\n').at(-1) ?? ''
 
-export async function update({ install, cli, origin, run, write, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
+export async function update({ install, cli, origin, run, write, read, remove, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
   const repo = join(install, 'repo')
   const link = join(install, 'current')
   // corepack beside the Node running this (Item ns-2); its `pnpm` shim finds `node` on the PATH `run` is given, which starts with that Node's directory.
@@ -79,6 +124,14 @@ export async function update({ install, cli, origin, run, write, exists, readlin
     }
     log(`the checks of ${commit.slice(0, 12)} passed: ${work} (${compared})`)
 
+    // The afterInstall checks of this commit, run against the installed release (not the checkout). When there are any, the switch
+    // leaves a record (Item upd-1): a killed update, or a Host that restarts, still finds the check to complete.
+    const listed = (await git('show', `${commit}:.system/checks.yaml`)).stdout
+    const pending = /^afterInstall:/m.test(listed) && before !== undefined
+    if (pending) {
+      write(join(install, 'install-check.yaml'), INSTALL_CHECK_WORKFLOW)
+      write(join(install, PENDING), JSON.stringify({ commit, previous: before, task, releaseCheck: work, workflow: join(install, 'install-check.yaml'), updatePid: process.pid }, null, 2))
+    }
     switchLink(link, `releases/${commit}`)
     if (!before) {
       log(`current is ${commit.slice(0, 12)}, the first install: link \`${join(link, 'bin', 'system')}\` as \`system\` on PATH, run \`system init\` and \`systemctl --user enable --now system\` (runbook, "Install and start")`)
@@ -90,6 +143,7 @@ export async function update({ install, cli, origin, run, write, exists, readlin
       if (await probe(release)) break
       if (now() >= until) {
         switchLink(link, before)
+        remove(join(install, PENDING))
         log(`the Host did not come up on ${commit.slice(0, 12)} within ${Math.round(waitMs / 60_000)} min; switched back to ${before}`)
         return 1
       }
@@ -97,25 +151,12 @@ export async function update({ install, cli, origin, run, write, exists, readlin
     }
     log(`the Host runs ${commit.slice(0, 12)}`)
 
-    // The `afterInstall` checks of this commit, run against the installed release (not the checkout).
-    const newCli = join(release, 'bin', 'system')
-    const listed = (await git('show', `${commit}:.system/checks.yaml`)).stdout
-    if (/^afterInstall:/m.test(listed)) {
-      write(join(install, 'install-check.yaml'), INSTALL_CHECK_WORKFLOW)
-      log(`verifying the install of ${commit.slice(0, 12)} with its afterInstall checks, as a System Work`)
-      // The Host now runs the new release and refuses an older client, so these calls use the new release's client.
-      const installed = await run(process.execPath, [newCli, 'work', 'submit', '--workflow', join(install, 'install-check.yaml'), '--input', task])
-      const installWork = installed.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
-      if (installed.status !== 0) {
-        const shown = installWork.startsWith('work:') ? (await run(process.execPath, [newCli, 'work', 'show', installWork])).stdout : installed.stdout
-        const reason = /"reason":\s*"((?:[^"\\]|\\.)*)"/.exec(shown)?.[1] ?? lastLine(shown)
-        switchLink(link, before)
-        log(`the install checks of ${commit.slice(0, 12)} failed (${installWork}): ${reason}; switched back to ${before}, asking the Host to run it`)
+    if (pending) {
+      if (!(await finishInstallCheck({ install, run, read, write, remove, switchLink, log }))) {
         const back = now() + waitMs
         while (!(await probe(join(install, before))) && now() < back) await sleep(5000)
         return 1
       }
-      log(`the install checks of ${commit.slice(0, 12)} passed: ${installWork}`)
     }
     for (const old of releases()) {
       if (`releases/${old}` === before || old === commit) continue

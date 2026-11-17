@@ -14,7 +14,6 @@ import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLanguageLabel, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
-import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
 import { skip, root, site, memory, web, account, request, task, run, text, conversationOf, sleep, evidenceOf } from './chatgpt-support.ts'
 
@@ -55,26 +54,6 @@ test('a launch that fails is recorded as such; the record exists before Chrome s
   assert.equal((await evidenceOf(artifacts, result)).stages[0].error, 'Chrome exited')
 })
 
-test('a succeeded attempt reports its evidence and conversation beside its outputs', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run({}, ['report'])
-  assert.equal(result.status, 'succeeded', result.reason)
-  assert.deepEqual(Object.keys(result.partial ?? {}).sort(), ['conversation', 'evidence'])
-  assert.equal(result.partial!.conversation, result.outputs.conversation)
-  const evidence = await evidenceOf(artifacts, result)
-  assert.ok(evidence.stages.some((stage: { stage: string }) => stage.stage === 'launch'))
-  assert.equal(conversationOf(artifacts, result, 'partial').content.parts.length, 2)
-})
-
-// WW2-iv: the record is still chatgpt-web-evidence@1 (the canary reads it), and names no page logic: there is one.
-test('the evidence names no page logic', { skip, timeout: 60_000 }, async () => {
-  const { artifacts, result } = await run({}, ['report'])
-  assert.equal(result.status, 'succeeded', result.reason)
-  const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
-  const evidence = JSON.parse(line.slice(line.indexOf('{')))
-  assert.equal(evidence.schema, 'chatgpt-web-evidence@1')
-  assert.equal('procedures' in evidence, false)
-})
-
 // The Procedures never send a prompt that may have been sent again.
 test('a send the page never shows is unknown: the attempt fails and nothing is resent', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result, fake } = await run({ dropSend: true }, ['report'])
@@ -87,14 +66,21 @@ test('a send the page never shows is unknown: the attempt fails and nothing is r
   assert.equal(evidence.promptSubmitted, false)
 })
 
-test('a good attempt records every stage in order, with times, page counts, viewport and that the prompt was submitted', { skip, timeout: 60_000 }, async () => {
+// web-4: one good attempt, one browser: the former "succeeded attempt reports its evidence and conversation", "evidence names no page logic", "good attempt records every stage" and the good half of "a send is an attempt first" tests.
+// WW2-iv: the record is still chatgpt-web-evidence@1 (the canary reads it), and names no page logic: there is one.
+test('a good attempt records every stage in order, with times, page counts, viewport and that the prompt was submitted, and reports its evidence and conversation beside its outputs', { skip, timeout: 60_000 }, async () => {
   const { artifacts, result } = await run({}, ['report'])
   assert.equal(result.status, 'succeeded', result.reason)
+  assert.deepEqual(Object.keys(result.partial ?? {}).sort(), ['conversation', 'evidence'])
+  assert.equal(result.partial!.conversation, result.outputs.conversation)
+  assert.equal(conversationOf(artifacts, result, 'partial').content.parts.length, 2)
   const line = (await text(artifacts, result.log!)).trim().split('\n').at(-1)!
   const evidence = JSON.parse(line.slice(line.indexOf('{')))
+  assert.equal(evidence.schema, 'chatgpt-web-evidence@1')
+  assert.equal('procedures' in evidence, false)
   assert.deepEqual(evidence.stages.map((stage: { stage: string; status: string }) => [stage.stage, stage.status]), STAGES.map((stage) => [stage, 'ok']))
   assert.ok(evidence.stages.every((stage: { elapsedMs: number }) => stage.elapsedMs >= 0))
-  assert.equal(evidence.promptSubmitted, true)
+  assert.deepEqual([evidence.promptSendAttempted, evidence.promptSubmitted], [true, true])
   assert.equal(evidence.launchTimeoutSeconds, 30)
   assert.equal(evidence.chrome, 'fake')
   assert.ok(evidence.pages.initial >= 1)
@@ -132,7 +118,7 @@ test('a cancel and the time limit end Chrome with a close, and leave the evidenc
     started: (fake) => { const poll = setInterval(() => { if (fake.sent.length) { clearInterval(poll); stop.abort() } }, 50) },
   })
   assert.equal(cancelled.result.status, 'cancelled')
-  const timedOut = await run({ thinkMs: 60_000 }, ['report'], { extra: { attemptTimeoutMinutes: 0.1 } })
+  const timedOut = await run({ thinkMs: 60_000 }, ['report'], { extra: { attemptTimeoutMinutes: 0.05 } })
   assert.equal(timedOut.result.status, 'failed')
   for (const { artifacts, result, fake } of [cancelled, timedOut]) {
     const evidence = await evidenceOf(artifacts, result)
@@ -211,11 +197,8 @@ test('the close stage is ok only when the browser process has exited', { timeout
   }
 })
 
-test('a send is an attempt first and a submission only once the page shows the user turn', { skip, timeout: 60_000 }, async () => {
-  const good = await run()
-  const line = (await text(good.artifacts, good.result.log!)).trim().split('\n').at(-1)!
-  const evidence = JSON.parse(line.slice(line.indexOf('{')))
-  assert.deepEqual([evidence.promptSendAttempted, evidence.promptSubmitted], [true, true])
+test('a launch that fails before any send claims neither an attempt nor a submission', { skip, timeout: 30_000 }, async () => {
+  // (The good half, [true, true], is asserted by the good-attempt test above.)
   // A launch that fails before any send: neither is claimed.
   const fake = await site()
   const { artifacts } = memory()

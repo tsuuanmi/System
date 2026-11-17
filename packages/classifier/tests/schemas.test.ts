@@ -33,7 +33,8 @@ test('the shipped question files validate against question.schema.json and the z
     assert.ok(parsed.labels.some((l) => l.label === 'unknown'), `${file} has unknown`)
   }
   const failure = loadQuestions(join(root, 'classifiers')).find((q) => q.name === 'failure-cause')!
-  assert.deepEqual(failure.labels.map((l) => l.label), ['quota', 'restart', 'conflict', 'load', 'slow-host', 'attach', 'change', 'unknown'])
+  assert.deepEqual(failure.labels.map((l) => l.label), ['quota', 'restart', 'conflict', 'load', 'slow-host', 'attach', 'flaky', 'process', 'change', 'unknown'])
+  assert.equal(failure.version, 2)
   assert.equal(failure.samples, 3)
 })
 

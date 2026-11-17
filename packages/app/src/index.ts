@@ -17,6 +17,7 @@ import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type Failure
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
+import { completePendingInstallCheck } from './pending-install-check.ts'
 import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
@@ -183,6 +184,8 @@ async function runHost(ctx: Context): Promise<number> {
       readBytes: (id) => artifacts.readBytes(id),
       newTask: (instructions, repository, ref, context, who, item, against) => work.newTask(instructions, repository, ref, who, context, item, against),
       newIntent: (intent, who) => work.newIntent(intent, who),
+      newDefect: (defect, who) => work.newDefect(defect, who),
+      defects: () => work.defects(),
       workflowFile: (name, input) => workflowFile(artifacts, name, input),
       credentials,
       workers: () => workersView(ctx),
@@ -198,6 +201,7 @@ async function runHost(ctx: Context): Promise<number> {
     throw error
   })
   if (stopAsked) void serving.stop()
+  else completePendingInstallCheck(codeRoot(), (line) => { process.stderr.write(`system host: ${line}\n`) })
   const status = await serving.exited
   stopClassifying?.()
   exitWithin(status, { log: (line) => { process.stderr.write(`system host: ${line}\n`) } })

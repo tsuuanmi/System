@@ -254,7 +254,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
           const spawned = spawner.spawn({
             argv: ['timeout', '-s', 'INT', '-k', '10', String(check.timeoutSeconds), '/bin/sh', '-c', check.run], cwd, signal: backstop, graceMs: 5000,
-            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), ...given.data, LANG: process.env.LANG, PATH: path, HOME: scratch, CI: '1' },
+            env: { ...Object.fromEntries(Object.keys(process.env).map((k) => [k, undefined])), ...given.data, SYSTEM_CHECK_BASE: checks.source.commit, LANG: process.env.LANG, PATH: path, HOME: scratch, CI: '1' },
           })
           const outcome = await spawned.done
           const leftovers = stopLeftovers(scratch)

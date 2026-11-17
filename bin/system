@@ -5,12 +5,12 @@
 // `doctor` run `dsh --profile system "$@"`, and every other command is a thin
 // client of the Host (packages/app/src/client.ts).
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { constants, homedir, userInfo } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { MIN_NODE, hostCommand, installProfile, installRoot, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
-import { update } from './update.mjs'
+import { finishPending, update } from './update.mjs'
 
 const PROFILE = 'system'
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -130,6 +130,8 @@ async function runUpdate(args) {
     origin,
     run: capture,
     write: (path, text) => writeFileSync(path, text),
+    read: (path) => { try { return readFileSync(path, 'utf8') } catch { return undefined } },
+    remove: (path) => rmSync(path, { force: true }),
     exists: existsSync,
     readlink: (link) => { try { return readlinkSync(link) } catch { return undefined } },
     switchLink: (link, target) => { rmSync(`${link}.new`, { force: true }); symlinkSync(target, `${link}.new`); renameSync(`${link}.new`, link) },
@@ -153,8 +155,32 @@ async function runUpdate(args) {
   })
 }
 
+/** `system update --finish-pending`: what a Host started on a release with a pending install check runs (Item upd-1); see update.mjs. */
+async function finishPendingCheck() {
+  const base = process.env.SYSTEM_INSTALL || join(homedir(), '.system')
+  const deps = {
+    install: base,
+    commit: basename(realpathSync(repo)),
+    alive: (pid) => { try { process.kill(pid, 0); return true } catch (error) { return error.code === 'EPERM' } },
+    run: (command, args) => new Promise((done) => {
+      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'inherit'], env: process.env })
+      let stdout = ''
+      child.stdout.on('data', (data) => { stdout += data; process.stdout.write(data) })
+      child.on('error', (error) => done({ status: 127, stdout: `${error.message}\n` }))
+      child.on('exit', (code) => done({ status: code ?? 1, stdout }))
+    }),
+    write: (path, text) => writeFileSync(path, text),
+    read: (path) => { try { return readFileSync(path, 'utf8') } catch { return undefined } },
+    remove: (path) => rmSync(path, { force: true }),
+    switchLink: (link, target) => { rmSync(`${link}.new`, { force: true }); symlinkSync(target, `${link}.new`); renameSync(`${link}.new`, link) },
+    log: (line) => process.stderr.write(`system update: ${line}\n`),
+  }
+  return finishPending(deps)
+}
+
 const args = process.argv.slice(2)
 if (args[0] === 'init') await init(args.slice(1))
+else if (args[0] === 'update' && args[1] === '--finish-pending') process.exit(await finishPendingCheck())
 else if (args[0] === 'update') process.exit(await runUpdate(args.slice(1)))
 else if (thin(args)) {
   // The Host's thin client does not boot DSH: no profile is needed to ask a Host.

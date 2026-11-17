@@ -21,6 +21,9 @@ nothing else.
   through `system mcp` against a real Host with fake Workers.
 - [mcp-update.test.ts](mcp-update.test.ts) — one running `system mcp` calls
   tools across two atomic install-link switches and real Host upgrades.
+- [pending-install-check.test.ts](pending-install-check.test.ts) — upd-1: the real `update()`
+  killed after it switched `current`; the Host that starts on the new release runs the pending
+  install check itself, and a failed one switches `current` back.
 - [upgrade-rehearsal.test.ts](upgrade-rehearsal.test.ts) — rb-1 (run by the `upgrade` check, not smoke: it builds two releases):
   [tools/upgrade-rehearsal.mjs](../tools/upgrade-rehearsal.mjs) builds the last release (`origin/main`) in temporary homes, starts its Host
   and runs that install's `system update` to this commit, against a local `origin`; it passes only when the update keeps the new release
@@ -59,10 +62,8 @@ nothing else.
   producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).
 - [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
   one Research Work on the operator's signed-in `web/chatgpt/default` profile.
-- [web-canary.test.ts](web-canary.test.ts) — WW4 (run by `corepack pnpm test:web`, not smoke): the canary Task has the same
-  Artifact ID every time, `work submit --worker` refuses an unregistered Worker, and
-  `tools/web-canary` runs and reports (each run classified as passed, worker-failed, verifier or other, the Worker step rate, older version apart, the WW gate)
-  through a fake `system` (`SYSTEM_BIN`) with scripted records; the timer units' fields.
+- [web-canary.test.ts](web-canary.test.ts) — WW4 (run by smoke; its report tests are in packages/web-worker/tests/canary-report.unit.test.ts, unit): the canary Task has the same
+  Artifact ID every time, and `work submit --worker` refuses an unregistered Worker (the Host tests; the report and timer-unit tests moved to the unit file above).
 - [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
   accounts (CLI pointed at the fake): two proposals by different providers
   from the brief alone, a synthesis of both exact proposal Artifacts, refusal

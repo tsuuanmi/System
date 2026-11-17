@@ -14,56 +14,18 @@ import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLanguageLabel, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
-import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
-import { skip, root, site, blocks, web, run, text, sleep, evidenceOf } from './chatgpt-support.ts'
-
-// WW1 defect 3: the 1.5 s of `timeouts.load` that this file gives a slow page used to be Chrome's launch timeout too, and failed under load.
-test('Chrome gets a launch clock of its own, 30 s unless configured, whatever the page clocks are', () => {
-  const defaults = webDefaults(join(root, 'p'))
-  assert.equal(launchTimeoutMs(defaults), 30_000)
-  assert.equal(launchTimeoutMs({ ...defaults, timeouts: { load: 1.5, answer: 5, stable: 0.5 } }), 30_000, 'the 1.5 s of a page test is not a launch clock')
-  assert.equal(launchTimeoutMs({ ...defaults, timeouts: { ...defaults.timeouts, launch: 5 } }), 5000)
-})
-
-// WW1 defect 1: a profile that held 14 tabs (5.5 GB) stalled Chrome's launch for the 60 s limit, so restore is prevented before launch.
-
-test('before launch the profile is told to open a new tab and its last exit is marked clean; sessions go, the signed-in state stays', () => {
-  const dir = join(root, 'prepare')
-  const keep = { Cookies: 'cookies', 'Login Data': 'logins', 'Local Storage/leveldb/000003.log': 'ls', 'IndexedDB/https_x/1.ldb': 'idb', 'Session Storage/000003.log': 'ss' }
-  for (const [name, data] of Object.entries(keep)) {
-    mkdirSync(join(dir, 'Default', name, '..'), { recursive: true })
-    writeFileSync(join(dir, 'Default', name), data)
-  }
-  mkdirSync(join(dir, 'Default', 'Sessions'), { recursive: true })
-  writeFileSync(join(dir, 'Default', 'Sessions', 'Session_13'), 'tabs')
-  writeFileSync(join(dir, 'Default', 'Preferences'), JSON.stringify({ session: { restore_on_startup: 1, startup_urls: ['https://a.test/'] }, profile: { exit_type: 'Crashed', exited_cleanly: false, name: 'kept' }, other: { x: 1 } }))
-  prepareProfile(dir)
-  const prefs = JSON.parse(readFileSync(join(dir, 'Default', 'Preferences'), 'utf8'))
-  assert.deepEqual(prefs, { session: { restore_on_startup: 5, startup_urls: ['https://a.test/'] }, profile: { exit_type: 'Normal', exited_cleanly: true, name: 'kept' }, other: { x: 1 } })
-  assert.ok(!existsSync(join(dir, 'Default', 'Sessions')))
-  for (const [name, data] of Object.entries(keep)) assert.equal(readFileSync(join(dir, 'Default', name), 'utf8'), data, name)
-  assert.deepEqual(readdirSync(join(dir, 'Default')).filter((name) => /tmp/i.test(name)), [], 'the atomic write leaves nothing behind')
-  prepareProfile(join(root, 'fresh-profile'))
-  assert.ok(!existsSync(join(root, 'fresh-profile', 'Default', 'Preferences')), 'a profile with no Preferences yet is left for Chrome to create')
-})
-
-test('a profile that a running Chrome holds is left alone', () => {
-  const dir = join(root, 'held')
-  mkdirSync(join(dir, 'Default', 'Sessions'), { recursive: true })
-  symlinkSync(`host-${process.pid}`, join(dir, 'SingletonLock'))
-  assert.equal(profileLockPid(dir), process.pid)
-  prepareProfile(dir)
-  assert.ok(existsSync(join(dir, 'Default', 'Sessions')))
-})
+import { sharedDisplay, skip, root, site, blocks, web, run, text, sleep, evidenceOf } from './chatgpt-support.ts'
 
 for (const end of ['a clean close', 'a SIGKILL'] as const) {
   test(`a profile that held several tabs opens one tab after ${end}, and its session cookie survives a clean one`, { skip, timeout: 120_000 }, async () => {
     const fake = await site()
     const config = web(fake)
-    const display = await startXvfb()
+    const display = sharedDisplay()
+    const open: Array<Awaited<ReturnType<typeof launch>>> = []
     try {
       const first = await launch(config, display)
+      open.push(first)
       await first.addCookies([{ name: 'kept', value: 'v', url: fake.origin }])
       for (let i = 0; i < 4; i++) await (await first.newPage()).goto(`${fake.origin}/?tab=${i}`)
       await sleep(1500)
@@ -75,21 +37,23 @@ for (const end of ['a clean close', 'a SIGKILL'] as const) {
         await sleep(1500)
       }
       const second = await launch(config, display)
+      open.push(second)
       await sleep(2500)
       assert.deepEqual(second.pages().map((page) => page.url()), ['about:blank'], 'nothing was restored')
       if (end === 'a clean close') assert.ok((await second.cookies(fake.origin)).some((cookie) => cookie.name === 'kept'), 'the session-only cookie is still there')
       await second.close()
     } finally {
-      await display.stop()
+      await Promise.all(open.map((context) => context.close().catch(() => {})))
     }
   })
 }
 
 test('the worker tab is opened first, every other page is closed, and a page that arrives late is closed too', { skip, timeout: 60_000 }, async () => {
   const fake = await site()
-  const display = await startXvfb()
+  const display = sharedDisplay()
+  let context: Awaited<ReturnType<typeof launch>> | undefined
   try {
-    const context = await launch(web(fake), display)
+    context = await launch(web(fake), display)
     for (let i = 0; i < 3; i++) await (await context.newPage()).goto(`${fake.origin}/?tab=${i}`)
     const tabs = await singleTab(context)
     assert.equal(tabs.initial, 4)
@@ -102,7 +66,7 @@ test('the worker tab is opened first, every other page is closed, and a page tha
     assert.equal(tabs.late(), 1)
     await context.close()
   } finally {
-    await display.stop()
+    await context?.close().catch(() => {})
   }
 })
 
@@ -186,25 +150,18 @@ test('the outside limit is a setting: a short remark outside the block is fine, 
 })
 
 // WW8a: the model and Power the page showed are recorded; WW8b: the Power is then selected from the step's tier.
-test('the evidence records the model and Power the page showed before, and a menu left open is closed before the insert', { skip, timeout: 120_000 }, async () => {
-  for (const menuOpen of [false, true]) {
-    const { artifacts, result, fake } = await run({ menuOpen }, ['report'])
-    assert.equal(result.status, 'succeeded', result.reason)
+// The levels come from the live menu (five on this page): economy is the first, standard the middle, frontier the last, no tier the middle.
+// web-4: also the former WW8a test: the evidence records the model and Power the page showed before (all runs), and a menu left open (the last run) is closed before the insert.
+test('a step selects the Power level of its tier before the send, the evidence says what was chosen and what the page showed before, and a menu left open is closed before the insert', { skip, timeout: 180_000 }, async () => {
+  for (const [tier, power, target] of [['economy', 'Instant', 'economy'], ['standard', 'Medium', 'standard'], ['frontier', 'Max', 'frontier'], [undefined, 'Medium', 'standard']] as const) {
+    const menuOpen = tier === undefined
+    const { artifacts, result, fake } = await run({ menuOpen }, ['report'], { tier })
+    assert.equal(result.status, 'succeeded', `${tier}: ${result.reason}`)
     const evidence = await evidenceOf(artifacts, result)
-    assert.deepEqual([evidence.model, evidence.powerBefore], ['Latest', 'Instant'], `menuOpen ${menuOpen}`)
+    assert.equal(evidence.model, 'Latest', `${tier}`)
     const observe = evidence.stages.find((stage: { stage: string }) => stage.stage === 'observe')
     assert.deepEqual([observe.status, typeof observe.elapsedMs], ['ok', 'number'])
     assert.equal(fake.sent[0]!.model, 'Latest', 'no model was selected')
-    assert.equal(fake.sent[0]!.menuOpen, false, 'the menu was closed before the insert')
-  }
-})
-
-// The levels come from the live menu (five on this page): economy is the first, standard the middle, frontier the last, no tier the middle.
-test('a step selects the Power level of its tier before the send, and the evidence says what was chosen', { skip, timeout: 180_000 }, async () => {
-  for (const [tier, power, target] of [['economy', 'Instant', 'economy'], ['standard', 'Medium', 'standard'], ['frontier', 'Max', 'frontier'], [undefined, 'Medium', 'standard']] as const) {
-    const { artifacts, result, fake } = await run({}, ['report'], { tier })
-    assert.equal(result.status, 'succeeded', `${tier}: ${result.reason}`)
-    const evidence = await evidenceOf(artifacts, result)
     assert.deepEqual([evidence.power, evidence.powerTarget, evidence.powerLevels, evidence.powerBefore], [power, target, 5, 'Instant'], `${tier}`)
     assert.deepEqual([fake.sent[0]!.power, fake.sent[0]!.menuOpen], [power, false], `${tier}`)
     const stages = evidence.stages.map((stage: { stage: string }) => stage.stage)

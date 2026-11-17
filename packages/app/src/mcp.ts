@@ -80,7 +80,9 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    these headings, so the Worker reads the named files first instead of
    exploring: Goal (what and why); Files to change and why (the files the
    Worker reads first); Tests to add or update; Invariants not to change;
-   Out of scope; Done when (what shows it is finished). Template:
+   Out of scope; Done when (what shows it is finished).
+   One Item fits one Worker attempt (about an hour): split a Done when with
+   several independent parts into several Items. Template:
    ~/.system/current/workflows/README.md.
 3. \`work_submit\` with the Workflow file
    ~/.system/current/workflows/develop.yaml for any change to a repository

@@ -8,7 +8,8 @@
 import { parseCheckFailure } from './failure-class.ts'
 import type { WorkEvent } from './record.ts'
 
-export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach'
+/** `flaky` and `process` (cls-3) are placed by structure in `summarize`, never by a reason's text: a check that passed on the re-run of the same change, and a "no change" after a correct change (a Process failure, GLOSSARY). */
+export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach' | 'flaky' | 'process'
 
 const PATTERNS: [OutsideCause, RegExp][] = [
   ['quota', /out of credits|rate[- ]limit|quota|usage limit|too many requests/i],
