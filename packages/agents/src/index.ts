@@ -91,6 +91,8 @@ export interface Config {
   accounts?: AccountConfig[]
   /** A test hook: the quota cache's lifetime (default 10 minutes) and clock. */
   quota?: { ttlMs?: number; now?: () => number }
+  /** How long the row waits for the web-worker row to provide its service, when that row is on but has not yet, in seconds (default 30). */
+  webWorkerWaitSeconds?: number
 }
 
 /** The configured models in tier order; a tier that is not a tier is left for the registration to refuse. */
@@ -178,7 +180,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const subprocess = ctx.get('subprocess') as SubprocessRuntime
   const credentials = ctx.get('credentials') as CredentialProvider
   // Optional: the web-worker row, listed before this one in the bundle; absent when it is disabled.
-  const webWorker = ctx.get('webWorker') as WebWorkerService | undefined
+  let webWorker = ctx.get('webWorker') as WebWorkerService | undefined
+  // Cordis applies rows that wait for the same services in no fixed order: the web-worker row, when it is on, may provide its service after this
+  // row applies. Its accounts are then handed to it when it does (bounded), never reported "disabled" and left unannounced (flaky-2).
+  const webWorkerComing = !webWorker && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-web-worker')
   const attempts = systemPath(ctx, 'attempts')
   const statuses: AccountStatus[] = []
   // The first registered ref of each provider account (runtime:id).
@@ -221,6 +226,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
   const ceiling = config.quotaCeilingPercent
   if (ceiling !== undefined && !(typeof ceiling === 'number' && ceiling >= 1 && ceiling <= 100)) throw new Error(`quotaCeilingPercent is ${String(ceiling)}; it must be a number from 1 to 100`)
+  let webWorkerLate: string | undefined
+  if (webWorkerComing && entries.some(({ account }) => account.runtime === 'web')) {
+    const seconds = config.webWorkerWaitSeconds ?? 30
+    let timer: NodeJS.Timeout | undefined
+    webWorker = await new Promise<WebWorkerService | undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), seconds * 1000)
+      ctx.inject(['webWorker'], (inner) => { resolve(inner.get('webWorker') as WebWorkerService | undefined) })
+    })
+    clearTimeout(timer)
+    if (!webWorker) webWorkerLate = `the web-worker row did not start within ${seconds} s`
+  }
   const outcomes = new Map<string, { done(): void; refuse(error: Error): void }>()
   for (const { account } of entries) {
     if (account.runtime !== 'web' || webRefProblem(account) || !webWorker) continue
@@ -242,7 +258,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       if (account.runtime === 'web') {
         const problem = webRefProblem(account)
         if (problem) throw new Error(problem)
-        if (!webWorker) throw new Error(WEB_WORKER_DISABLED)
+        if (!webWorker) throw new Error(webWorkerLate ?? WEB_WORKER_DISABLED)
       }
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
