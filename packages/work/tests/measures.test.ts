@@ -117,6 +117,18 @@ test('releaseTimes reads the merges of a fake git log (one committer date per li
   assert.deepEqual(releaseTimes(''), [])
 })
 
+test('superseded and withdrawn defects are not counted; a supersedes chain resolves to its latest', () => {
+  const n = merged(record('n', 'succeeded', [admitted(T('16'), 'd-2'), terminal(T('16', '01:00:00'), 'succeeded')]))
+  const d = (id: string, extra: Partial<EscapedDefect> = {}): EscapedDefect & { id: string } => ({ id, item: 'd-2', foundBy: 'w', reason: 'r', date: '2026-11-17', ...extra })
+  const count = (defects: (EscapedDefect & { id: string })[], withdrawals: { withdraws: string; reason: string; date: string }[] = []) =>
+    rangeReport([n], { since: '2026-11-15', defects, withdrawals }).escapedDefectRate.escaped
+  assert.equal(count([d('a'), d('b')]), 2)
+  assert.equal(count([d('a'), d('b', { supersedes: 'a' })]), 1, 'a superseded defect is not counted')
+  assert.equal(count([d('a'), d('b', { supersedes: 'a' }), d('c', { supersedes: 'b' })]), 1, 'a chain resolves to its latest')
+  assert.equal(count([d('a'), d('b')], [{ withdraws: 'a', reason: 'x', date: '2026-11-17' }]), 1, 'a withdrawn defect is not counted')
+  assert.equal(count([d('a'), d('b', { supersedes: 'a' })], [{ withdraws: 'b', reason: 'x', date: '2026-11-17' }]), 0, 'withdrawing the latest withdraws the chain')
+})
+
 test('recorded defects count in the range of the merged Item, by Item or merge commit, and not outside it', () => {
   const m = withCommit(record('m', 'succeeded', [admitted(T('15'), 'd-1'), terminal(T('15', '01:00:00'), 'succeeded')]), 'abc1234567890')
   const n = merged(record('n', 'succeeded', [admitted(T('16'), 'd-2'), terminal(T('16', '01:00:00'), 'succeeded')]))

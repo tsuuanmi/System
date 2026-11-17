@@ -103,7 +103,9 @@ export interface WorkCommands {
   /** Store a `confirmation@1` Artifact; its ID. */
   newConfirmation(subject: string, note: string, date?: string): Promise<{ confirmation: string }>
   /** Store an `escaped-defect@1` Artifact; its ID. */
-  newDefect(subject: string, foundBy: string, reason: string, date?: string): Promise<{ defect: string }>
+  newDefect(subject: string, foundBy: string, reason: string, date?: string, supersedes?: string): Promise<{ defect: string }>
+  /** Store an `escaped-defect-withdrawal@1` Artifact; its ID. */
+  withdrawDefect(withdraws: string, reason: string, date?: string): Promise<{ withdrawal: string }>
   /** Claim an Item of the project at `repository` before submitting a Work for it. */
   claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
   /** The lines of the status of the project at `repository` (see the Host's `status`). */
@@ -385,10 +387,22 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .requiredOption('--found-by <work-or-text>', 'the Work ID that found it, or text')
     .requiredOption('--reason <text>', 'what was wrong')
     .option('--date <date>', 'when it was found (default now)')
-    .action((subject: string, options: { foundBy: string; reason: string; date?: string }) => {
+    .option('--supersedes <id>', 'the earlier escaped-defect@1 Artifact this one replaces; it is no longer counted')
+    .action((subject: string, options: { foundBy: string; reason: string; date?: string; supersedes?: string }) => {
       select(async () => {
-        const created = await host.work().newDefect(subject, options.foundBy, options.reason, options.date)
+        const created = await host.work().newDefect(subject, options.foundBy, options.reason, options.date, options.supersedes)
         io.out(`${created.defect}\n`)
+        return 0
+      })
+    })
+  defect.command('withdraw <defect-id>')
+    .description('store an escaped-defect-withdrawal@1 Artifact: the escaped-defect@1 Artifact was recorded wrongly and is no longer counted; print its ID alone on stdout')
+    .requiredOption('--reason <text>', 'why the record is wrong')
+    .option('--date <date>', 'when (default now)')
+    .action((id: string, options: { reason: string; date?: string }) => {
+      select(async () => {
+        const created = await host.work().withdrawDefect(id, options.reason, options.date)
+        io.out(`${created.withdrawal}\n`)
         return 0
       })
     })

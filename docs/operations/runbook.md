@@ -250,7 +250,10 @@ the step. `system work report` shows the time a Work waited for a slot
 (`waitedForSlotMs`) and its rate-limited attempts (`rateLimitedAttempts`). Its
 `failures` classify each failure, verdict, hold, failed publish and touch as an
 Outside failure with its cause, or a failure of the change, from the recorded
-reason ([GLOSSARY](../../GLOSSARY.md); patterns in `packages/work/src/outside.ts`). To allow
+reason ([GLOSSARY](../../GLOSSARY.md); patterns in `packages/work/src/outside.ts`). The report counts
+only Escaped defects that no later one supersedes and none withdraws: correct a recorded defect with
+`system defect add ... --supersedes <defect-id>`, or retract it with `system defect withdraw <defect-id> --reason ...`.
+To allow
 more, set `maxConcurrentAttempts` (a whole number of at least 1, else the account
 is skipped and `system workers` says why) in the profile's `agents` row, then
 restart the Host:

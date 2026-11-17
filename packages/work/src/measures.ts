@@ -8,7 +8,7 @@ import { failureClass } from './failure-class.ts'
 import { laterPasses } from './later-pass.ts'
 import { summarize, type ClassifiedLookup } from './summary.ts'
 import { mergeCommitOf, wasMerged } from './status.ts'
-import type { EscapedDefect } from './defect.ts'
+import type { DefectWithdrawal, EscapedDefect } from './defect.ts'
 
 export type Unknown = 'unknown'
 export interface RangeOptions {
@@ -17,7 +17,9 @@ export interface RangeOptions {
   /** An explicit count of Escaped defects that replaces the recorded ones; the report labels it `override (--escaped)`. */
   escaped?: number
   /** The recorded `escaped-defect@1` Artifacts (ms-1): those whose Item or merge commit was merged in the range are the Escaped defects of the range. Without them (and without `escaped`) that measure is `unknown`. */
-  defects?: readonly EscapedDefect[]
+  defects?: readonly (EscapedDefect & { id?: string })[]
+  /** The recorded `escaped-defect-withdrawal@1` contents (def-2): a defect they name is not counted. */
+  withdrawals?: readonly DefectWithdrawal[]
   /** The recorded Classifications (cls-1): the `unknown` failures that have one are told apart in `classifiedUnknownFailures`; no measure changes. */
   classified?: ClassifiedLookup
   /** The stored `intent@1` Artifacts (when stored, who settled): those with `settledBy: 'operator'` stored in the range are operator acts. */
@@ -57,7 +59,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects, classified, intents, confirmations, releases }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -120,6 +122,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   }
   const operatorActs = parts.intentsSettled + parts.confirmations + parts.releases + parts.humanTouches
   resolution.sort((a, b) => a - b)
+  // def-2: a defect another one supersedes (a chain resolves to its latest) or a withdrawal names is not counted.
+  const gone = new Set<string>([...(recordedDefects ?? []).flatMap((d) => (d.supersedes ? [d.supersedes] : [])), ...(withdrawals ?? []).map((w) => w.withdraws)])
+  const defects = recordedDefects?.filter((d) => d.id === undefined || !gone.has(d.id))
   const recorded = defects?.filter((d) => (d.item !== undefined && mergedItems.has(d.item)) || (d.commit !== undefined && mergedCommits.some((c) => c.startsWith(d.commit!)))).length
   const count = escaped ?? recorded
   return {

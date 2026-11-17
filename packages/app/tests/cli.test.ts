@@ -39,7 +39,18 @@ test('defect add prints the Artifact ID alone', async () => {
   const work = { newDefect: async (...args: unknown[]) => { seen.push(args); return { defect: 'sha256:defect' } } }
   const result = await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke'], work)
   assert.equal(result.out, 'sha256:defect\n')
-  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined]])
+  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined, undefined]])
+  seen.length = 0
+  await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke', '--supersedes', 'sha256:old'], work)
+  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined, 'sha256:old']])
+})
+
+test('defect withdraw prints the Artifact ID alone', async () => {
+  const seen: unknown[] = []
+  const work = { withdrawDefect: async (...args: unknown[]) => { seen.push(args); return { withdrawal: 'sha256:w' } } }
+  const result = await system(['defect', 'withdraw', 'sha256:d', '--reason', 'wrong carrier'], work)
+  assert.equal(result.out, 'sha256:w\n')
+  assert.deepEqual(seen, [['sha256:d', 'wrong carrier', undefined]])
 })
 
 test('confirm prints the Artifact ID alone', async () => {

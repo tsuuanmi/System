@@ -25,9 +25,13 @@ export interface Services {
   /** The stored Intents (when, by whom settled) and confirmations, for the operator acts of `work.report`. */
   operatorActs(): { intents: { at: string; settledBy?: 'operator' }[]; confirmations: { date: string }[] }
   /** Store an `escaped-defect@1` Artifact. */
-  newDefect(defect: { subject: string; foundBy: string; reason: string; date?: string }, caller: Caller): Promise<{ defect: string }>
+  newDefect(defect: { subject: string; foundBy: string; reason: string; date?: string; supersedes?: string }, caller: Caller): Promise<{ defect: string }>
+  /** Store an `escaped-defect-withdrawal@1` Artifact. */
+  withdrawDefect(withdrawal: { withdraws: string; reason: string; date?: string }, caller: Caller): Promise<{ withdrawal: string }>
+  /** The recorded withdrawals of Escaped defects. */
+  defectWithdrawals(): { withdraws: string; reason: string; date: string }[]
   /** The recorded Escaped defects (`escaped-defect@1` content), for `work.report`. */
-  defects(): { item?: string; commit?: string; foundBy: string; reason: string; date: string }[]
+  defects(): { id: string; item?: string; commit?: string; foundBy: string; reason: string; date: string; supersedes?: string }[]
   /** A Workflow file a Workflow uses: `workflows/<name>` at the base commit of the `input` Task, else beside the Host's own code; undefined when neither has it. */
   workflowFile(name: string, input: string | undefined): string | undefined
   credentials: {
@@ -173,7 +177,7 @@ export function operations(services: Services): Methods {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator act, `headline`: Intents the operator settled, confirmations, releases (merges of `dev` into `main`) and human touches) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1).',
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator act, `headline`: Intents the operator settled, confirmations, releases (merges of `dev` into `main`) and human touches) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range and that no later defect supersedes and no withdrawal names: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1).',
       params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional(), classify: z.boolean().optional() }).strict(),
       async handler(host, p) {
         if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')
@@ -198,7 +202,7 @@ export function operations(services: Services): Methods {
         // Releases are merges of `dev` into `main` seen in each repository the Host knows Items for.
         const repositories = new Set(records.flatMap((r) => { const first = r.events[0]!; return first.type === 'admitted' && first.item?.repository ? [first.item.repository] : [] }))
         const releases = (await Promise.all([...repositories].map((repository) => releasesOf(repository)))).flat()
-        return rangeReport(records, { ...services.operatorActs(), releases, since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), ...(classifier ? { classified: classifier.lookup } : {}) })
+        return rangeReport(records, { ...services.operatorActs(), releases, since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), withdrawals: services.defectWithdrawals(), ...(classifier ? { classified: classifier.lookup } : {}) })
       },
     },
     'work.events': {
@@ -261,9 +265,15 @@ export function operations(services: Services): Methods {
     },
     'defect.add': {
       agent: true,
-      summary: 'Store an `escaped-defect@1` Artifact: a defect that escaped the Item (an Item ID) or the merge commit (7 to 40 hex characters) named by `subject`: `{ defect }`, the Artifact ID. `foundBy` is the Work ID that found it or text; `reason` says what was wrong; `date` (default now) is when it was found. `work.report` counts the recorded defects whose Item was merged in its range.',
-      params: z.object({ subject: z.string().min(1), foundBy: z.string().min(1).max(500), reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional() }).strict(),
+      summary: 'Store an `escaped-defect@1` Artifact: a defect that escaped the Item (an Item ID) or the merge commit (7 to 40 hex characters) named by `subject`: `{ defect }`, the Artifact ID. `foundBy` is the Work ID that found it or text; `reason` says what was wrong; `date` (default now) is when it was found. `work.report` counts the recorded defects whose Item was merged in its range. With `supersedes`, the defect replaces an earlier one, which must be a stored `escaped-defect@1` Artifact and is no longer counted; a wrong record is corrected, not edited.',
+      params: z.object({ subject: z.string().min(1), foundBy: z.string().min(1).max(500), reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional(), supersedes: artifactId.optional() }).strict(),
       handler: (_host, p, caller) => services.newDefect(p, caller),
+    },
+    'defect.withdraw': {
+      agent: true,
+      summary: 'Store an `escaped-defect-withdrawal@1` Artifact: the `escaped-defect@1` Artifact `withdraws` was recorded wrongly and is no longer counted by `work.report`: `{ withdrawal }`, the Artifact ID. `reason` says why; `date` (default now) is when. `withdraws` must be a stored `escaped-defect@1` Artifact.',
+      params: z.object({ withdraws: artifactId, reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional() }).strict(),
+      handler: (_host, p, caller) => services.withdrawDefect(p, caller),
     },
     status: {
       read: true,

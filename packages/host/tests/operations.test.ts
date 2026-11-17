@@ -42,9 +42,11 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
     },
     async newIntent(intent) { return { intent: `intent:${intent.title}` } },
     async newDefect(defect) { return { defect: `defect:${defect.subject}` } },
+    async withdrawDefect(w) { return { withdrawal: `withdrawal:${w.withdraws}` } },
     defects: () => [],
     async newConfirmation(confirmation) { return { confirmation: `confirmation:${confirmation.subject}` } },
     operatorActs: () => ({ intents: [], confirmations: [] }),
+    defectWithdrawals: () => [],
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
     workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
     credentials: {
@@ -174,6 +176,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(await call('intent.new', { title: 'Want', body: 'Outcome.', settledByOperator: true }), { intent: 'intent:Want' })
   assert.deepEqual(await call('artifact.confirm', { subject: `sha256:${'a'.repeat(64)}`, note: 'ok' }), { confirmation: `confirmation:sha256:${'a'.repeat(64)}` })
   assert.deepEqual(await call('defect.add', { subject: 'p-1', foundBy: 'work:x', reason: 'broke' }), { defect: 'defect:p-1' })
+  assert.deepEqual(await call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}`, reason: 'wrong' }), { withdrawal: `withdrawal:sha256:${'a'.repeat(64)}` })
+  await assert.rejects(call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}` }), /-32602|invalid|reason/i)
   await assert.rejects(call('defect.add', { subject: 'p-1', foundBy: 'work:x' }), /-32602|invalid|reason/i)
   await assert.rejects(call('intent.new', { title: '', body: 'x' }), /-32602|invalid|title/i)
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
