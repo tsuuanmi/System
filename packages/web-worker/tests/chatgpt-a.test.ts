@@ -14,9 +14,8 @@ import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { CONVERSATION_KIND, TASK_KIND, conversationSchema, taskSchema, type Conversation, type WorkerRequest, type WorkerResult } from '@system/work'
 import { CHROME_ARGS, IGNORED_DEFAULT_ARGS, chromeTmpdir, launch, launchTimeoutMs, parseBlocks, prepareProfile, stripLanguageLabel, stripLeaked, unblocked, profileLockPid, singleTab, webAttempt, webDefaults, webPrompt, webWorker, type WebAccount, type WebConfig } from '../src/chatgpt.ts'
-import { startXvfb } from '../src/display.ts'
 import { parseCookies, webLogin } from '../src/chatgpt-login.ts'
-import { skip, root, site, blocks, memory, web, account, request, task, run, text, conversationOf, evidenceOf } from './chatgpt-support.ts'
+import { sharedDisplay, skip, root, site, blocks, memory, web, account, request, task, run, text, conversationOf, evidenceOf } from './chatgpt-support.ts'
 
 
 test('Chrome starts when TMPDIR is too deep for its profile socket', { skip, timeout: 60_000 }, async () => {
@@ -26,14 +25,15 @@ test('Chrome starts when TMPDIR is too deep for its profile socket', { skip, tim
   const was = process.env.TMPDIR
   process.env.TMPDIR = deep
   const fake = await site()
-  const display = await startXvfb()
+  const display = sharedDisplay()
+  let context: Awaited<ReturnType<typeof launch>> | undefined
   try {
-    const context = await launch(web(fake), display)
+    context = await launch(web(fake), display)
     await context.close()
   } finally {
+    await context?.close().catch(() => {})
     if (was === undefined) delete process.env.TMPDIR
     else process.env.TMPDIR = was
-    await display.stop()
   }
 })
 

@@ -14,7 +14,8 @@ import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, 
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { discoverChrome, installManagedChrome } from '../packages/web-worker/src/chrome.ts'
-import { findXvfb } from '../packages/web-worker/src/display.ts'
+import { before, after } from 'node:test'
+import { findXvfb, startXvfb, type Display } from '../packages/web-worker/src/display.ts'
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -61,3 +62,31 @@ function reason(): string | false {
 }
 
 export const skipHeaded = reason()
+
+/**
+ * One private Xvfb for the whole test file (web-3b): started before the file's tests and stopped after them, and exported as `DISPLAY` and `XAUTHORITY`,
+ * which `acquireDisplay` (the Worker's attempts, `webLogin`) uses instead of starting an Xvfb of its own. Call it once at the top of a file.
+ * `started.xvfb` counts the Xvfb it started.
+ */
+export const shared: { display?: Display; xvfb: number } = { xvfb: 0 }
+export function useSharedDisplay(): void {
+  if (skipHeaded) return
+  const was: Record<string, string | undefined> = {}
+  before(async () => {
+    shared.display = await startXvfb()
+    shared.xvfb++
+    // The private Xvfb takes only its authority cookie, which the Chrome of an attempt inherits from the environment.
+    for (const [key, value] of Object.entries(shared.display.env)) {
+      was[key] = process.env[key]
+      process.env[key] = value
+    }
+  })
+  after(async () => {
+    for (const [key, value] of Object.entries(was)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await shared.display?.stop()
+    if (process.env.SYSTEM_TEST_COUNT) console.error(`xvfb-starts ${shared.xvfb}`)
+  })
+}

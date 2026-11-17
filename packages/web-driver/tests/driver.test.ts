@@ -6,40 +6,28 @@
  * Headed Chrome on a private Xvfb; no network, no account.
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { after, before, test } from 'node:test'
-import type { BrowserContext, Page } from 'patchright-core'
-import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
-import { launch, webDefaults } from '../../web-worker/src/chatgpt.ts'
-import { startXvfb, type Display } from '../../web-worker/src/display.ts'
+import { after, test } from 'node:test'
+import type { Page } from 'patchright-core'
+import { skipHeaded } from '../../../test-support/headed.ts'
+import { page, release } from './shared-chrome.ts'
 import { ChatGptWebDriver, Procedures, ProviderError, shippedMap, type DriverTimeouts } from '../src/index.ts'
 import { FakeChatGpt, type FakeOptions } from './fake-chatgpt.ts'
 
 const skip = skipHeaded
-const root = mkdtempSync(join(tmpdir(), 'system-driver-'))
-let display: Display
 const opened: Array<() => Promise<unknown>> = []
-before(async () => {
-  if (!skip) display = await startXvfb()
-})
 after(async () => {
   for (const close of opened) await close()
-  await display?.stop()
-  rmSync(root, { recursive: true, force: true })
 })
 
-let count = 0
-/** A fake site with `options`, a Chrome on a fresh profile, and a driver for the site; all closed after the file. */
-async function start(options: FakeOptions = {}, timeouts: DriverTimeouts = {}): Promise<{ fake: FakeChatGpt; page: Page; driver: ChatGptWebDriver; context: BrowserContext }> {
+/** A fake site with `options`, a tab of the file's shared Chrome (shared-chrome.ts), and a driver for the site; the site is stopped after the file. */
+async function start(options: FakeOptions = {}, timeouts: DriverTimeouts = {}): Promise<{ fake: FakeChatGpt; page: Page; driver: ChatGptWebDriver }> {
   const fake = new FakeChatGpt({ thinkMs: 100, ...options })
   await fake.start()
-  const context = await launch({ ...webDefaults(join(root, `profile-${count++}`)), executablePath: CHROME }, display)
-  opened.push(() => context.close().catch(() => {}), () => fake.stop())
+  const tab = await page()
+  opened.push(() => release(tab), () => fake.stop())
   const driver = new ChatGptWebDriver({ origin: fake.origin, timeouts: { readyMs: 8000, ...timeouts } })
   driver.healEnabled = () => false
-  return { fake, page: context.pages()[0] ?? await context.newPage(), driver, context }
+  return { fake, page: tab, driver }
 }
 
 
@@ -183,7 +171,7 @@ test('the mode wait ends at its deadline even when a page operation never return
 })
 
 test('a code block\'s text never starts with the header label the page also shows (web-1)', { skip, timeout: 60_000 }, async () => {
-  const { fake, page, context } = await start({ codeWidget: true, labelInCode: true, answer: () => 'Here.\n```JSON\n{"sources": []}\n```\n```report\nplain\n```' })
+  const { fake, page } = await start({ codeWidget: true, labelInCode: true, answer: () => 'Here.\n```JSON\n{"sources": []}\n```\n```report\nplain\n```' })
   const map = shippedMap()
   const procedures = new Procedures(page, { ...map, settings: { ...map.settings, modeReadyMs: 1500, modeSettleMs: 200, answerPollMs: 100, answerStableMs: 400, answerTimeoutMs: 20_000 } }, { origin: fake.origin, readyMs: 8000 })
   try {
@@ -201,6 +189,5 @@ test('a code block\'s text never starts with the header label the page also show
     assert.deepEqual(read.blocks, [{ label: 'JSON', code: '{"sources": []}' }, { label: 'report', code: 'plain' }])
   } finally {
     procedures.dispose()
-    await context.close().catch(() => undefined)
   }
 })
