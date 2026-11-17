@@ -603,9 +603,9 @@ test('a failed check says in one line which check, which test and its first erro
 
 test('a timed-out check names the test that was running', { timeout: 180_000 }, async () => {
   const hanging = "import { test } from 'node:test'\ntest('first', () => {})\ntest('waits forever', () => new Promise(() => { setInterval(() => {}, 1000) }))\n"
-  const result = await verdictOf('checks:\n  - name: unit\n    run: test ! -f hangs.test.mjs || node --test hangs.test.mjs\n    timeoutSeconds: 20\n', {}, { 'hangs.test.mjs': hanging })
+  const result = await verdictOf('checks:\n  - name: unit\n    run: test ! -f hangs.test.mjs || node --test hangs.test.mjs\n    timeoutSeconds: 3\n', {}, { 'hangs.test.mjs': hanging })
   assert.equal(result.verdict, 'fail')
-  assert.match(result.reason, /^failed: unit: timed out after 20 s while running hangs\.test\.mjs/)
+  assert.match(result.reason, /^failed: unit: timed out after 3 s while running hangs\.test\.mjs/)
 })
 
 test('engines.node ranges: the comparators package.json uses', async () => {
