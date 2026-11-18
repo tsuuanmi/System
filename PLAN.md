@@ -124,6 +124,8 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
 - **Decision:** DP runs now, with the operator present, in parallel where Items do not depend on each other. The scheduled session does not take dp-8, dp-9, dp-10 or dp-11.
 - **ADR fit:** ADR-0002 (one generic interpreter: do not split the controller per domain), ADR-0003, ADR-0007 and ADR-0012 (Item state derived, the Host never picks).
 - **Order:** by `after:`. The first parallel wave is dp-1, dp-2, dp-4, dp-5 and dp-10.
+- **Result:** dp-1..dp-11 merged on 2026-11-18. The active core grew from 4,840 to 5,117 lines because new modules were added before the code they replace was removed; dp-12 pays it back. 5 attempts ran past 60 minutes, so callers split Items by Done when (workflows/README).
+- **RC (Intent d4b301faf169):** 328 Works since 2026-11-10 had 130 failures, 64% of them recurring. The top classes were docs restating code (22), merge conflicts and lost work (11), objections to frozen tests (11) and unknown (29). Nothing turned a recurring class into a structural fix, so rc-1 adds that gate.
 
 ### RB — Release boundary (decided 2026-11-16)
 
