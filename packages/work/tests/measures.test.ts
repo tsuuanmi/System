@@ -135,9 +135,11 @@ test('headline: operator acts are Intents settled, confirmations, releases and h
   assert.equal(JSON.stringify(rangeReport([A], { since: '2026-11-15' }).headline).includes('null'), false)
 })
 
-test('releaseTimes reads the merges of a fake git log (one committer date per line, blank lines ignored)', () => {
-  assert.deepEqual(releaseTimes('2026-11-17T10:00:00+00:00\n\n2026-11-16T09:30:00+02:00\n'), ['2026-11-17T10:00:00.000Z', '2026-11-16T07:30:00.000Z'])
-  assert.deepEqual(releaseTimes(''), [])
+test('releaseTimes keeps the merges of a fake git log whose second parent is on dev (`%cI %P` per line, blank lines ignored)', () => {
+  const log = '2026-11-17T10:00:00+00:00 a1 d1\n\n2026-11-16T09:30:00+02:00 a2 f1\n2026-11-15T09:30:00+00:00 a3 d2\n'
+  assert.deepEqual(releaseTimes(log, new Set(['d1', 'd2'])), ['2026-11-17T10:00:00.000Z', '2026-11-15T09:30:00.000Z'])
+  assert.deepEqual(releaseTimes(log, new Set()), [])
+  assert.deepEqual(releaseTimes('', new Set(['d1'])), [])
 })
 
 test('superseded and withdrawn defects are not counted; a supersedes chain resolves to its latest', () => {

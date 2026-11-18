@@ -48,8 +48,8 @@ acts` when there are none). An operator act is:
   operator said so in that session; an Intent without it is not counted);
 - a `confirmation@1` the operator stored for an Artifact they confirmed, such as
   a dataset or a set of labels (`system confirm`, MCP `artifact.confirm`);
-- a release: a merge of `dev` into `main` seen in the repository (first-parent
-  merges of `main`), for each repository the Host knows Items for;
+- a release: a merge of `dev` into `main` seen in the repository (a first-parent
+  merge of `main` that merges `dev`), for each repository the Host knows Items for;
 - a human touch, as `summary.ts` counts them (human callers only).
 
 Conversation with a caller session is not seen by System: only what the caller
