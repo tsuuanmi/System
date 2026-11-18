@@ -3,7 +3,7 @@
  * and the Works that carry them out, derived from a STATUS.md already read (see gate.ts, which reads it).
  * Nothing here is stored.
  */
-import { blockedBy, blockedText, parseStatus, type Item, type ParsedStatus } from './status-parse.ts'
+import { blockedBy, blockedText, type Item, type ParsedStatus } from './status-parse.ts'
 import type { LiveAttempt } from './live.ts'
 import type { Claim, WorkEvent, WorkRecord } from './record.ts'
 import { summarize } from './summary.ts'

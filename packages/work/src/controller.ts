@@ -21,7 +21,7 @@ import type { Decide } from './gate.ts'
 import type { QuotaReading } from './headroom.ts'
 import { withReasons, type ChangedTest } from './changed-tests.ts'
 import { type Capabilities, type EffectIntent, type EffectOutcome, type EffectPort, type Reconciled, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerResult } from './registry.ts'
-import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
+import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
