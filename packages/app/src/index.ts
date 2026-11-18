@@ -18,6 +18,7 @@ import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type Failure
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
+import { checkStore } from './store-check.ts'
 import { completePendingInstallCheck } from './pending-install-check.ts'
 import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
@@ -226,6 +227,12 @@ export function apply(ctx: Context): void {
     dshVersion,
     probeStorage: () => probeStorage(ctx),
     probeHost: () => probeHost(dshHome(ctx)),
+    checkStore: () => {
+      const work = ctx.get('work') as WorkService | undefined
+      const artifacts = ctx.get('artifacts') as Artifacts | undefined
+      if (!work || !artifacts) throw new Error('the work and artifacts rows are not mounted (run `system doctor`)')
+      return checkStore({ works: work.records(), artifacts })
+    },
     runHost: () => runHost(ctx),
   }
   let selected: Run | undefined

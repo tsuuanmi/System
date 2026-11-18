@@ -148,6 +148,32 @@ export class Artifacts {
     return found
   }
 
+  /** Every stored Artifact ID, for the operator's store walk (`system doctor --store`); not for hot paths. */
+  ids(): string[] {
+    return [...this.records.keys()]
+  }
+
+  /**
+   * Read-only integrity check of one stored Artifact, for `system doctor --store`: a blob's bytes are read in full (the
+   * attachment store verifies the digest while reading) and must be as long as recorded; inline content must hash to its ID.
+   * Returns what is wrong, or the bytes read (0 for inline content).
+   */
+  async verify(id: string): Promise<{ problem: string } | { bytes: number; blob: boolean }> {
+    const record = this.records.get(id)
+    if (!record) return { problem: 'not stored' }
+    const { envelope } = record
+    if (artifactId(envelope) !== id || envelope.id !== id) return { problem: 'its ID is not the hash of its content' }
+    if (!envelope.blob) return { bytes: 0, blob: false }
+    try {
+      const data = await this.blobs.read(envelope.blob)
+      if (data === undefined) return { problem: `the bytes (${envelope.blob.attachmentId}) are no longer stored` }
+      if (data.byteLength !== envelope.blob.bytes) return { problem: `the bytes are ${data.byteLength} long, the record says ${envelope.blob.bytes}` }
+      return { bytes: data.byteLength, blob: true }
+    } catch (error) {
+      return { problem: `the bytes (${envelope.blob.attachmentId}) cannot be read: ${(error as Error).message}` }
+    }
+  }
+
   /** The bytes of a blob Artifact; `unavailable` when the record outlived them. */
   async readBytes(id: string): Promise<Uint8Array> {
     const read = this.get(id)

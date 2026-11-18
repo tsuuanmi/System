@@ -10,6 +10,7 @@ import type { WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/agents'
 import { MAX_FRAME, fitsFrame } from '../../host/lib/index.js'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
+import { formatStoreReport, type StoreReport } from './store-check.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
@@ -88,6 +89,8 @@ export interface WorkersView {
 
 /** What `doctor` and `host` run against: the process that boots DSH. */
 export interface HostProcess extends DoctorHost {
+  /** Walk every Work record and Artifact of the home, read-only (`doctor --store`). */
+  checkStore(): Promise<StoreReport>
   /** Run as the Host of this home until stopped by a signal or by new code on disk; resolves its exit status once it has stopped. */
   runHost(): Promise<number>
 }
@@ -108,8 +111,14 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
   program.command('doctor')
     .description('check the mounted composition and durable storage')
     .option('--json', 'print the report as JSON')
-    .action((options: { json?: boolean }) => {
+    .option('--store', 'instead of the composition check, walk every Work record and Artifact, read-only: each record folds, each Artifact a Work names is stored, each blob reads in full and matches its digest, each inline Artifact hashes to its ID; prints the counts and one line per problem, exits 1 on any. Safe beside a running Host (it opens SQLite as `doctor` always does and writes nothing)')
+    .action((options: { json?: boolean; store?: boolean }) => {
       select(async () => {
+        if (options.store) {
+          const report = await host.checkStore()
+          io.out(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatStoreReport(report))
+          return report.ok ? 0 : 1
+        }
         const report = await runDoctor(host)
         io.out(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report))
         return report.ok ? 0 : 1

@@ -171,6 +171,29 @@ release refuses a store whose records it does not know only if a later release
 changed the record schema (`git diff <commit>..<later> --
 packages/work/src/record.ts packages/artifacts/src` shows it).
 
+## Back up and restore
+
+The store is the only place that knows an Item is done. Copy, as one set:
+
+- `$DSH_HOME/system/state.sqlite` with its `-wal` and `-shm` files, or a copy
+  made with the Host stopped;
+- the attachment store the profile configures (`$DSH_HOME/attachments`);
+- the rest of `$DSH_HOME/system` (Account profiles);
+- the repositories, at the same absolute paths: a git-tree Artifact names its
+  repository by absolute path, and the pinned refs live in them.
+
+To restore, stop the Host, put those back (same paths), start the Host, and end
+with the check:
+
+```
+system doctor --store
+```
+
+It walks every Work and Artifact read-only (beside a running Host too): each
+record folds, each Artifact a Work names is stored, each blob reads in full and
+matches its digest. It prints the counts and one line per problem, and exits 0
+only when there is none. It repairs nothing.
+
 ## Changing the profile's config
 
 An entry of the profile's own patch (`$DSH_HOME/profiles/system/cordis.patch.yml`,
