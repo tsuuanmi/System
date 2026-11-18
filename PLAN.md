@@ -71,6 +71,7 @@
 | NM | Capability names: Abilities declared by Runtime adapters, Roles in the Workflows, the profile moved to the new names (2026-11-15) | [NM in the pinned file](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md) |
 | FL | Flow and verification: focused tests in implement (fl-1), a context pack per Task (fl-2), the unit-test slowdown found (fl-3), attempt summaries (fl-4), `afterInstall` checks and the install verdict (fl-5, fl-6), Guardrails for Escaped defects 1, 3 and 4 (fl-8 to fl-10), the five measures (fl-11); first install Verdict passed (work:e31e50fd) | close `a96b498`, release `edb4058`, [FL in the pinned file](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md) |
 | 2026-11-16/17 (RB, classes, Intent, measures) | About 40 Items, rb-1 to rb-5, lim-1, flaky-1, mcp-1, mcp-2, in-1 to in-3, cls-1 to cls-5, ms-1, ms-2, def-2, dc-1, install-1, tool-1, rsn-1 and others (STATUS.md in git history): the `upgrade` and `secrets` checks, the `docs` impact check, failure classes from structure, `flaky` and `process` causes, the Classifier component, Intents, defects and confirmations as Artifacts, the headline measure from records | `dev` merges to close commit `3ab10ae`; simplification pass in the next merge |
+| DP, RC (2026-11-18) | Deep modules: Host client, Item gate, Verification, structured failure causes, `WorkState` facts, next-move, Account admission, one attempt lifecycle, Runtime adapters; `controller.ts` 1,322 → 1,031 lines; dp-1..dp-12. Root causes of recurring failures: rp-1, flaky-2, rc-1, rc-2, rc-3, and the time-dependent intent test fix in work:5fd0b709 | release PR #411 (b98e992) |
 
 Who built them: PRs #5–#36 were System Works, apart from #34 and #35 (the operator's sessions); OC, CQ and the PRs after CQ
 were built by the operator's sessions directly; since DF, System Works build System's own Items.
@@ -91,7 +92,7 @@ budget is 4,285 lines under `docs/`. The older columns and the reasoning behind 
 | Tests, lines | 14,853 | not measured | not measured | 22,294 (`packages/*/tests`, `tests`, `test-support`; 16 fewer: two duplicate summary tests) | not re-measured |
 | Docs under `docs/`, lines (files) | 4,270 (42) | 4,382 (42) before, 4,284 (42) after the hygiene pass | 4,288 (42): 3 over the budget | 3,624 (35); PLAN.md 188 → 164, STATUS.md 34 | not re-measured |
 | Required checks | about 3 min 20 s of check time (docs 1 s, install 11 s, build 32 s, typecheck 10 s, unit 43 s, smoke 92 s) | not measured | not measured | install 1 s (warm), build 33 s, typecheck 10 s, lint 14 s, unit 81 s, smoke 102 s, docs 4 s; upgrade and install-guide not run in this pass | not re-measured |
-| Measures of effect (`system work report --since 2026-11-16T00:00:00Z`, 85 Works) | | | | Headline: 58 Items merged, 0 operator touches ("no touches"). Verified Success Rate 0.87 (71 of 82); Recurring Failure Rate 0.52 (15 of 29); Escaped Defect Rate 0.069 (4 of 58, from records); Cost per Verified Work $0.40 (5 Works of unknown cost); Time to Verified Resolution median 14.5 min (p90 49.1); tool-seconds per second 0.86 (91 attempts); 6 unknown failures | not re-measured |
+| Measures of effect (`system work report --since 2026-11-16T00:00:00Z`, 85 Works) | | | | Headline: 58 Items merged, 0 operator touches ("no touches"). Verified Success Rate 0.87 (71 of 82); Recurring Failure Rate 0.52 (15 of 29); Escaped Defect Rate 0.069 (4 of 58, from records); Cost per Verified Work $0.40 (5 Works of unknown cost); Time to Verified Resolution median 14.5 min (p90 49.1); tool-seconds per second 0.86 (91 attempts); 6 unknown failures | `system work report --since 2026-11-17T21:00:00Z`, 26 Works: 20 Items merged; 5 operator acts (4 Items per act); Verified Success Rate 0.88 (22 of 25); Recurring Failure Rate 0.53 (8 of 15); 0 escaped defects; Cost per Verified Work $0.66; Time to Verified Resolution median 16.8 min (p90 42) |
 
 Docs lean and tightly linked (operator, 2026-11-16): PLAN.md 657 → 166 lines; docs under `docs/` 4,162 → 3,501 lines
 (ADR-0009, PROP-0004 to PROP-0007 and RES-0008 retired to [the ledger](docs/governance/retired.md)).
@@ -114,19 +115,11 @@ A milestone closes only when every failure class that recurred 3 or more times i
 Items are in [STATUS.md](STATUS.md); the sections below keep only the decisions of milestones still open. Left to the
 operator (BS): the role `research.source` in the profile, so that `research-source.yaml` excludes web Accounts.
 
-### DP — Deepening pass (decided 2026-11-18)
+### DP and RC — closed 2026-11-18
 
-- **Aim:** concentrate rules that are written in several places, and that already disagree, behind deep modules that are testable through small interfaces (Charter 11 and 12). The source is the architecture review of 2026-11-18. Its seven candidates map to dp-1..dp-11.
-- **Decision:** a behaviour defect gets a develop Item with a red test first. The restructuring that follows is a hygiene Item that keeps behaviour.
-- **Decision:** a hygiene Item of DP does not grow the net lines of the active core (`packages/work/src` + `packages/artifacts/src`). Each records its lines before and after in its result. Growth is justified in DP's row of section 2.
-- **Decision:** when STATUS.md cannot be read, `admit`, `task.new` and `item.claim` all refuse a Task, Claim or Work that names an Item, unless `force` is set (dp-2). A Work without an Item is not affected.
-- **Decision:** the pinned-verifier version check stays an `error` refusal in the controller and a `hold` in the merge check. This is deliberate: a merge awaits an Approval.
-- **Decision:** no new GLOSSARY terms. "Item gate" and "Verification" are module names. Do not use "judge" (GLOSSARY lists it under Avoid for Classifier).
-- **Decision:** DP runs now, with the operator present, in parallel where Items do not depend on each other. The scheduled session does not take dp-8, dp-9, dp-10 or dp-11.
-- **ADR fit:** ADR-0002 (one generic interpreter: do not split the controller per domain), ADR-0003, ADR-0007 and ADR-0012 (Item state derived, the Host never picks).
-- **Order:** by `after:`. The first parallel wave is dp-1, dp-2, dp-4, dp-5 and dp-10.
-- **Result:** dp-1..dp-11 merged on 2026-11-18. The active core grew from 4,840 to 5,117 lines because new modules were added before the code they replace was removed; dp-12 pays it back. 5 attempts ran past 60 minutes, so callers split Items by Done when (workflows/README).
-- **RC (Intent d4b301faf169):** 328 Works since 2026-11-10 had 130 failures, 64% of them recurring. The top classes were docs restating code (22), merge conflicts and lost work (11), objections to frozen tests (11) and unknown (29). Nothing turned a recurring class into a structural fix, so rc-1 adds that gate.
+- **Decisions in force:** a defect is a develop Item with a red test, and a restructuring is behaviour-keeping. The pinned-verifier `error` in the controller and `hold` in the merge check is deliberate: a merge awaits an Approval. No "judge" term. Callers split Items by Done when.
+- **rc-1 close review (classes recurring 3 or more times):** `change:docs:` 7: root-cause Item rc-3; the implement step now runs the cheap docs checks, live from release b98e992, and every occurrence in the range came before that release. `conflict` 3: root-cause Item rp-1; a reopened step now keeps the passed change, and the conflicts themselves are Outside failures of parallel Works on hot files, which DP made smaller. `load` (2) is under the threshold.
+- **Measures at close:** 20 Items merged; 5 operator acts (3 Intents settled, 2 releases), 4 Items per act; Verified Success Rate 0.88 (22 of 25); Recurring Failure Rate 0.53 (8 of 15); 0 escaped defects in range; Cost per Verified Work $0.66; Time to Verified Resolution median 16.8 min (p90 42 min).
 
 ### RB — Release boundary (decided 2026-11-16)
 
