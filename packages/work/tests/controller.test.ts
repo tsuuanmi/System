@@ -1018,6 +1018,60 @@ test('Satisfied: an implement step that writes `satisfied` runs those tests on t
   assert.equal(h.controller.replay(done.id).matches, true)
 })
 
+/** A Worker that always writes `satisfied` as well; `changed(n)` says whether attempt n (from 1) changes the tree, and a reopened attempt hands back its `previous` change. */
+function satisfiedAlways(h: () => Harness, changed: (n: number) => boolean): Partial<WorkerPort> {
+  let n = 0
+  return { async run(request) {
+    n++
+    h().calls.push(request)
+    const outputs: Record<string, string> = {}
+    for (const slot of [...request.outputs, ...(request.optionalOutputs ?? [])]) {
+      const out = id(`${request.attemptId}/${slot}`)
+      h().specs.stored.add(out)
+      if (slot === 'change' && !changed(n)) h().specs.unchanged.set(out, 'abcdef0123456789')
+      outputs[slot] = out
+    }
+    return { status: 'succeeded', outputs }
+  } }
+}
+
+test('Satisfied: a reopened attempt that returns the same change and writes `satisfied` has it dropped; the check runs again on that change and the Work publishes it', async () => {
+  const specs = memorySpecs()
+  const verifier = scripted(specs, ['fail', 'pass'])
+  const h: Harness = harness({ specs, worker: satisfiedAlways(() => h, (n) => n === 1), verifier: { async verify(request) {
+    h.verdicts.push(`${request.stepId}:${request.subject}`)
+    return verifier.verify!(request)
+  } } })
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(done.state.result, undefined)
+  assert.equal(done.state.steps['satisfied-check']!.state, 'skipped')
+  assert.deepEqual(h.verdicts.map((v) => v.split(':')[0]), ['checks.checks', 'checks.checks'])
+  const observed = done.events.filter((e) => e.type === 'observed' && e.stepId === 'implement')
+  assert.equal(observed.length, 2)
+  const second = observed[1]!
+  assert.ok(second.type === 'observed')
+  assert.equal(second.outputs.satisfied, undefined)
+  assert.equal(second.outputs.change, observed[0]!.type === 'observed' ? observed[0]!.outputs.change : undefined)
+  assert.ok('unchangedAfter' in second && second.unchangedAfter)
+  assert.match(second.reason ?? '', /satisfied.*dropped/)
+  assert.equal(done.events.filter((e) => e.type === 'effect-intended').length, 1)
+  assert.equal(h.controller.replay(done.id).matches, true)
+})
+
+test('Satisfied: a first attempt that changes files and writes `satisfied` has it dropped; the change is checked and published as a normal change', async () => {
+  const h: Harness = harness({ worker: satisfiedAlways(() => h, () => true) })
+  const done = await runFixture(h, 'develop.yaml')
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(done.state.result, undefined)
+  assert.deepEqual(['satisfied-check', 'checks.checks', 'publish'].map((s) => done.state.steps[s]!.state), ['skipped', 'succeeded', 'succeeded'])
+  assert.equal(done.state.steps.implement!.outputs.satisfied, undefined)
+  const observed = done.events.findLast((e) => e.type === 'observed')
+  assert.ok(observed?.type === 'observed')
+  assert.match(observed.reason ?? '', /satisfied.*dropped/)
+  assert.equal(done.events.filter((e) => e.type === 'effect-intended').length, 1)
+})
+
 test('Satisfied: tests that do not pass on the base fail the Work, and nothing is published', async () => {
   const h: Harness = harness({ worker: satisfiedWorker(() => h, true), verdict: 'fail' })
   const done = await runFixture(h, 'develop.yaml')
