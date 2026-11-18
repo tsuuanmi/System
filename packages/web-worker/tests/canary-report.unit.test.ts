@@ -148,6 +148,12 @@ test('the report classifies each run, counts the Worker step apart, and holds th
     assert.match(all.stdout, /work:12 {2}web\/chatgpt\/a {2}verifier: 0 of 1 confirmed: s1 \(HTTP 403, quote unreadable\)/)
     assert.match(all.stdout, /work:37 {2}web\/chatgpt\/b {2}worker-failed: investigate: timed out/)
     assert.match(all.stdout, /gate: holds/)
+    // The cause of the timeouts under load was the number of `system` processes: each Work was read once per Task series
+    // (the current and each older one). Each Work is read once now: one `work list`, one `work show` per Work (54), the Task stores.
+    const made = s.calls()
+    const shows = made.filter((c) => c[0] === 'work' && c[1] === 'show').map((c) => c[2])
+    assert.equal(new Set(shows).size, shows.length, 'a Work is shown more than once')
+    assert.ok(made.length <= 60, `the report made ${made.length} system calls for the 52 Works, at most 60 allowed`)
   } finally {
     rmSync(s.dir, { recursive: true, force: true })
   }
