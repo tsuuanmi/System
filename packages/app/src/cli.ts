@@ -490,7 +490,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('report [workId]')
-    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the headline (Items merged per operator act: Intents settled, confirmations, releases, human touches) and the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
+    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the headline (Items merged per operator act: Intents settled, confirmations, releases, human touches) and the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts, and recurringClasses: the failure classes seen 2 or more times, most frequent first (top 10, with the latest Work as example)')
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
     .option('--escaped <n>', 'an explicit count of the Escaped defects of the range that replaces the recorded ones (`system defect add`); the report labels it an override')

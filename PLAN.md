@@ -107,6 +107,7 @@ a new one is added here as one line.
 Every milestone ends with a **simplification pass**: a System Work (Sonnet) proposes deletions and simplifications (dead
 code, unused abstractions, duplicated tests, docs that restate others), and the operator reviews it like any PR. The
 Sonnet code review's Standards axis also checks the code against Charter items 8, 11 and 12.
+A milestone closes only when every failure class that recurred 3 or more times in its range (`system work report --since <milestone start>`, `recurringClasses`) has a root-cause Item or a recorded reason in the milestone's section (rc-1).
 
 ## 3. Open work
 
