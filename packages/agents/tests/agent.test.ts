@@ -41,14 +41,14 @@ function account(runtime: 'claude-code' | 'codex', extra: Partial<Account> = {})
   }
 }
 
-async function task(artifacts: Artifacts, instructions: string, repository?: string): Promise<string> {
+async function task(artifacts: Artifacts, instructions: string, repository?: string, item?: string): Promise<string> {
   const producer = { type: 'operator' as const, ref: 'tester' }
   let base: string | undefined
   if (repository) {
     const tree = await snapshot(repository)
     base = (await artifacts.put({ ...GIT_TREE_KIND, content: tree, classification: 'local-private', producer })).id
   }
-  return (await artifacts.put({ ...TASK_KIND, content: { instructions, ...(base ? { base } : {}) }, inputs: base ? [base] : [], classification: 'local-private', producer })).id
+  return (await artifacts.put({ ...TASK_KIND, content: { instructions, ...(base ? { base } : {}), ...(item ? { item } : {}) }, inputs: base ? [base] : [], classification: 'local-private', producer })).id
 }
 
 function request(inputs: Record<string, string>, outputs: string[], signal = new AbortController().signal): WorkerRequest {
@@ -729,4 +729,40 @@ test('the attempt carries the summary System computed from the whole output', as
   assert.equal(result.status, 'succeeded', result.reason)
   assert.deepEqual(result.summary?.toolCalls, { Bash: 1, Read: 1 })
   assert.equal(result.summary?.runtime, 'claude-code')
+})
+
+async function messageOf(instructions: string, item?: string): Promise<{ message: string; attempt: string }> {
+  const { artifacts } = memory()
+  const repository = repo()
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, `attempts-msg-${Math.random().toString(16).slice(2)}`))
+  const req = request({ task: await task(artifacts, instructions, repository, item) }, ['change'])
+  const result = await worker.run(req)
+  assert.equal(result.status, 'succeeded', result.reason)
+  const message = execFileSync('git', ['-C', repository, 'log', '-1', '--format=%B', treeOf(artifacts, result.outputs.change!).commit], { encoding: 'utf8' })
+  return { message, attempt: req.attemptId }
+}
+
+test('a commit for a Task that names an Item says which Item: subject and Item trailer', async () => {
+  const { message, attempt } = await messageOf('FAKE:edit\n\n## Goal\nShow the Item in the commit.\n\n## Done when\nx\n', 'web-5')
+  const subject = message.split('\n')[0]!
+  assert.equal(subject, 'web-5: Show the Item in the commit')
+  const trailers = execFileSync('git', ['interpret-trailers', '--parse'], { input: message, encoding: 'utf8' })
+  assert.equal(trailers, `Item: web-5\nWork: work:test\nAttempt: ${attempt}\n`)
+})
+
+test('a commit for a Task that names no Item keeps the old message', async () => {
+  const { message, attempt } = await messageOf('FAKE:edit')
+  assert.equal(message, `system: implement output change\n\nWork: work:test\nAttempt: ${attempt}\n\n`)
+})
+
+test('a long or multi-line Goal is cut to one line of at most 72 characters at a word boundary', async () => {
+  const long = 'word '.repeat(40)
+  for (const instructions of [`FAKE:edit\n## Goal\n${long}\nsecond line`, `FAKE:edit ${long}`]) {
+    const { message } = await messageOf(instructions, 'web-5')
+    const subject = message.split('\n')[0]!
+    assert.ok(subject.startsWith('web-5: '))
+    assert.ok(subject.length <= 72, subject)
+    assert.ok(!subject.endsWith(' ') && !subject.endsWith('.'), subject)
+    assert.ok(subject.endsWith('word') || subject.endsWith('FAKE:edit'), subject)
+  }
 })
