@@ -16,5 +16,4 @@ Over a real Unix socket, with a Host on the in-memory stand-ins of
   version and runs the Works queued meanwhile; a client calling during the swap
   succeeds after its retry; a hello from the new code upgrades an idle Host; a
   change seen once is ignored; a stop while draining exits 0;
-- `api.test.ts`: the README's API reference equals the one generated from the
-  table; `SYSTEM_DOCS_WRITE=1 corepack pnpm test` rewrites it.
+- `api.test.ts`: every row of the table says what it does.
