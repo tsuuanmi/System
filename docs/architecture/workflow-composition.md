@@ -97,7 +97,11 @@ gives to one account each. Research's `investigate` has `prefer: web.browse`, an
 [workflows/README.md](../../workflows/README.md)). Since the B3 evaluation (RES-0008,
 [retired](../governance/retired.md)) the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
-the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier
+the one-shared-prompt variant is kept in `workflows/experiments/`.
+The `implement` instructions of `develop.yaml` and `hygiene.yaml` also tell the Worker to run the
+repository's cheap docs checks (`tools/docs.py check`, `sync --check`, `impact <base>`) before
+finishing, only when the repository has `tools/docs.py`, so Workflows stay generic.
+Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
 `approval: operator` replaces `operator-merge`, because System never merges
 (ADR-0004 decision 10).

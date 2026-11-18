@@ -7,7 +7,7 @@
 # scouts and the plan leave it unchanged and write their report as a file.
 schema: system.workflow/v1
 id: hygiene
-version: 5
+version: 6
 steps:
   - id: scout-docs
     capabilities: [repo.write, tier.economy]
@@ -80,6 +80,15 @@ steps:
       Make the changes in the plan, and nothing else. Behaviour must stay the
       same: where you remove code, the tests that remain must still pass.
       Update the docs a change makes stale, in the same change.
+      If the repository has tools/docs.py, before you finish run the cheap docs
+      checks the Verifier runs: `python3 tools/docs.py check`,
+      `python3 tools/docs.py sync --check` and
+      `python3 tools/docs.py impact <base> --waivers .system/docs-waivers`, where
+      <base> is the commit the workspace lists as "the working directory starts
+      from commit X" (the Task's base, or the new tip on a reopen). Fix every
+      finding by updating the doc; waive one only with a reason the Task allows.
+      A repository without tools/docs.py is not affected. This does not lift the
+      rule against running the full suite or the other checks.
       If your input has a base, your working directory is the base branch's
       current tip, because the publish of your previous change was refused (a
       conflict or failing checks on the merge): re-apply your previous change on it (git
