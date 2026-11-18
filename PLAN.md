@@ -13,6 +13,8 @@
   (MVP failure tests 3 and 4) wait for a Worker that runs untrusted code or content. The trigger is judged not met
   (2026-11-16): Workers run only the operator's own repositories with lockfile-pinned dependencies, and the Website
   Worker reads pages but runs no code from them; rb-5's secret scan and rb-4's permission-flag tests come before a sandbox.
+  Operator, 2026-11-18: the trigger is met for a spike (section 3, EV): a dry-run push from an attempt's environment
+  authenticated with the operator's SSH key, and Workers read web pages.
 
 **Standing decisions of finished milestones** (each has this one home; the reasoning is in the pinned file):
 
@@ -120,6 +122,29 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
 - **Decisions in force:** a defect is a develop Item with a red test, and a restructuring is behaviour-keeping. The pinned-verifier `error` in the controller and `hold` in the merge check is deliberate: a merge awaits an Approval. No "judge" term. Callers split Items by Done when.
 - **rc-1 close review (classes recurring 3 or more times):** `change:docs:` 7: root-cause Item rc-3; the implement step now runs the cheap docs checks, live from release b98e992, and every occurrence in the range came before that release. `conflict` 3: root-cause Item rp-1; a reopened step now keeps the passed change, and the conflicts themselves are Outside failures of parallel Works on hot files, which DP made smaller. `load` (2) is under the threshold.
 - **Measures at close:** 20 Items merged; 5 operator acts (3 Intents settled, 2 releases), 4 Items per act; Verified Success Rate 0.88 (22 of 25); Recurring Failure Rate 0.53 (8 of 15); 0 escaped defects in range; Cost per Verified Work $0.66; Time to Verified Resolution median 16.8 min (p90 42 min).
+
+### EV — Evolution review (decided 2026-11-18)
+
+- Records (file Artifacts; each lists its Works and report Artifacts): cycle 1
+  sha256:30fe596df98cf88e636ec83b9bf1467b7c724f30d90432d96f87577493b4c05a, round 2
+  sha256:8fcf3b5dd382a0f32dada2a197195357ea564d3a57f2b68d613df8de7a8c28a1. Items: web-5 and ms-3 (intent c24b484b860f);
+  flaky-3, auth-1, sat-1, store-1 and git-1 (intent 2c5c9b5c979d).
+- Decisions (operator, 2026-11-18):
+  - "Reliable" means an evening's Works reach a correct terminal state with no operator present and nothing merges that
+    its checks did not pass; it is judged by the existing measures. Model judgement does not move into the Host
+    (ADR-0012 stands).
+  - A caller may submit Works that write nothing to a repository (research, research-source, brainstorm, plan-items)
+    without asking, at most 8 a round. New Items are accepted in batches of at most 6. A review round that yields fewer
+    than 3 accepted Items ends the self-improvement, and work turns to product Intents.
+  - Sandbox: research into Claude Code's own sandbox first, then one spike Item. The operator protects `main` on GitHub.
+  - Reading Item state back from git waits for a second machine or a restore; git-1 only records the Item in the commit.
+  - research.yaml keeps `prefer: web.browse`; a caller pins a large question to a CLI Account with `worker`; reviewed
+    after 20 research Works from the release that carries web-5.
+  - One release per accepted batch.
+- Not built, each with its reason in the records: a merge-queue change (it would save 62 of 549 publish minutes), a
+  redesign of the documentation rule (rc-2, rc-3 and rp-1 are measured first), carrying on a lost verifier after a Host
+  kill (no occurrence in 768 Works), a fixed evaluation set (it shows only differences of about 20 points).
+- Open measurements: E1 to E4 of the cycle-1 record.
 
 ### RB — Release boundary (decided 2026-11-16)
 
