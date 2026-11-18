@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { processSpawner } from '../../../test-support/process.ts'
+import { GIT_SSH_REFUSAL } from '../src/runtimes.ts'
 import { askAccount, chooseAsker, type Account } from '../src/index.ts'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-agent.mjs')
@@ -41,4 +42,11 @@ test('chooseAsker takes the first Account that offers the tier and is not exclud
   assert.equal(second.ok && second.ref, 'claude-code/c', 'b has no economy model')
   const none = await ask('hi', { exclude: ['claude-code/a', 'claude-code/c'] })
   assert.deepEqual(none, { ok: false, reason: 'no Account offers the economy tier besides claude-code/a, claude-code/c' })
+})
+
+test('a single turn carries the refusing GIT_SSH_COMMAND', async () => {
+  let seen: Record<string, string | undefined> | undefined
+  const spy: typeof processSpawner = { spawn: (options) => { seen = options.env; return processSpawner.spawn(options) } }
+  await askAccount(account('claude-code/e', 'claude-code'), spy, root, 'say FAKE:env', { tier: 'economy' })
+  assert.equal(seen?.GIT_SSH_COMMAND, GIT_SSH_REFUSAL)
 })

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
+import { baseEnv } from '../src/runtimes.ts'
 import { adapterFor } from '../src/adapters/index.ts'
 
 const claude = adapterFor('claude-code')!
@@ -144,4 +149,22 @@ test('the registry is keyed by Runtime name: both CLI Runtimes have an adapter, 
 test('the credential of each adapter reaches the CLI only through its env', () => {
   assert.equal(claudeInvocation('claude', ws, 'p', 'tok').env.CLAUDE_CODE_OAUTH_TOKEN, 'tok')
   assert.equal(codexInvocation('codex', ws, 'p', '/h').env.CODEX_HOME, '/h')
+})
+
+test("an attempt's git over ssh is refused by GIT_SSH_COMMAND, without a network", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'system-ssh-'))
+  try {
+    const env = baseEnv({ root: dir, home: dir, work: dir } as never)
+    const git = (...args: string[]) => spawnSync('git', ['-C', dir, ...args], { env, encoding: 'utf8' })
+    execFileSync('git', ['init', '--quiet', dir], { env })
+    execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'x'], { env })
+    git('remote', 'add', 'origin', 'ssh://git@example.invalid/x.git')
+    for (const args of [['push', '--dry-run', 'origin', 'HEAD:refs/heads/x'], ['fetch', 'origin']]) {
+      const got = git(...args)
+      assert.notEqual(got.status, 0, args.join(' '))
+      assert.match(got.stderr, /System gives a Worker no push access\./, args.join(' '))
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

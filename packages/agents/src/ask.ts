@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { Tier } from '@system/work'
 import { adapterFor } from './adapters/index.ts'
 import type { Account, Spawner } from './agent.ts'
+import { GIT_SSH_REFUSAL } from './runtimes.ts'
 
 /** A turn's answer, or why there is none. */
 export type Asked =
@@ -43,6 +44,7 @@ export async function askAccount(account: Account, spawner: Spawner, root: strin
     for (const key of KEEP) if (process.env[key]) env[key] = process.env[key]
     env.HOME = home
     env.TMPDIR = home
+    env.GIT_SSH_COMMAND = GIT_SSH_REFUSAL
     const staged = pre.stage(dir)
     Object.assign(env, staged.env)
     const argv = adapter.askArgv({ command: account.command, prompt, model, work })

@@ -206,7 +206,7 @@ test('the agent sees a throwaway HOME, its own token and nothing else from the h
     const result = await worker.run(request({ task: await task(artifacts, 'FAKE:env', repository) }, ['change']))
     const tree = treeOf(artifacts, result.outputs.change!)
     const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${tree.commit}:ENV.json`], { encoding: 'utf8' })) as { keys: string[]; home: string }
-    assert.deepEqual(seen.keys.filter((k) => !['PATH', 'LANG', 'LC_ALL', 'TZ'].includes(k)), ['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', 'CLAUDE_CODE_OAUTH_TOKEN', 'HOME', 'TMPDIR'], 'a repo.write attempt also has its background tasks disabled')
+    assert.deepEqual(seen.keys.filter((k) => !['PATH', 'LANG', 'LC_ALL', 'TZ'].includes(k)), ['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', 'CLAUDE_CODE_OAUTH_TOKEN', 'GIT_SSH_COMMAND', 'HOME', 'TMPDIR'], 'a repo.write attempt also has its background tasks disabled')
     assert.match(seen.home, /attempts-3\/attempt_[0-9a-f]+\/home$/)
   } finally {
     delete process.env.SSH_AUTH_SOCK

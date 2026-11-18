@@ -35,8 +35,15 @@ export interface Parsed {
 /** Variables kept from the host environment; credentials come only from the account. */
 const KEEP = ['PATH', 'LANG', 'LC_ALL', 'TZ']
 
+/**
+ * A Guardrail against accident, not a sandbox: git inside an attempt (`git -C <dir> push`, `git fetch`) over ssh runs this and
+ * is refused, because OpenSSH finds ~/.ssh from the passwd entry, not from $HOME. An agent that unsets the variable gets past it.
+ * Needs no file outside the attempt.
+ */
+export const GIT_SSH_REFUSAL = `sh -c 'echo "System gives a Worker no push access." >&2; exit 1' --`
+
 export function baseEnv(ws: Workspace): Record<string, string> {
-  const env: Record<string, string> = { HOME: ws.home, TMPDIR: ws.home }
+  const env: Record<string, string> = { HOME: ws.home, TMPDIR: ws.home, GIT_SSH_COMMAND: GIT_SSH_REFUSAL }
   for (const key of KEEP) if (process.env[key]) env[key] = process.env[key]!
   // The repository's Node first on PATH, as a check gets it (fl-3): under the throwaway HOME `bin/system` cannot find a newer one itself.
   let bin: string | undefined
