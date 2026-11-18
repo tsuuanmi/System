@@ -590,3 +590,28 @@ test('an effect whose outcome stays unknown holds the Work when it is run', asyn
   assert.equal((await second.run(id)).state.status, 'held')
   await second.close()
 })
+
+test('a Work submit does not hold the commit lane while STATUS.md is being read', async () => {
+  const f = fixture()
+  let reading!: () => void
+  let started!: () => void
+  const began = new Promise<void>((go) => { started = go })
+  const slow = new Promise<void>((go) => { reading = go })
+  f.specStore.taskOf = () => ({ task: { instructions: 'x', base: 'sha256:' + 'b'.repeat(64), item: 'a-1' }, repository: '/repo' }) as never
+  f.specStore.withNote = async (input) => input
+  let reads = 0
+  const host = await f.startHost(newHome(), {
+    readStatus: async () => {
+      if (reads++ === 0) { started(); await slow }
+      return { repository: '/repo', commit: 'c'.repeat(12), ref: 'dev', note: 'read dev', aim: [], items: [{ id: 'a-1', title: 'One', done: false }], problems: [] }
+    },
+  })
+  const submit = host.submit({ ...f.admission('brainstorm.yaml'), force: false })
+  await began
+  // STATUS.md is being read: the lane is free, so a section runs now.
+  try {
+    assert.equal(await Promise.race([host.claim('/repo', 'a-2', caller, true).then(() => 'claimed', () => 'refused'), new Promise((r) => setTimeout(() => r('lane held'), 1000))]), 'claimed')
+  } finally { reading() }
+  assert.equal((await submit).state.status, 'running')
+  await host.close()
+})

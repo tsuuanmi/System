@@ -39,6 +39,8 @@ export interface RangeReport {
   /** Failures (not operator touches) whose class, by `failureClass` (the Outside cause, else the check and first failing test), occurred in an earlier Work of the range, over all failures; failures of `unknown` cause are counted apart (`unknownFailures`), in neither. */
   recurringFailureRate: { rate: number | Unknown; recurring: number; failures: number }
   unknownFailures: number
+  /** The failure classes (as `failureClass`; `unknown` is one class) seen 2 or more times in the range, most frequent first (ties: latest example first), at most 10; `example` is the latest Work that had the class. Turn each into a root-cause Item. */
+  recurringClasses: { class: string; count: number; example: string }[]
   /** Of those, the ones a Classification labels, by label; absent when none (the Classifier row is off, or has classified none). */
   classifiedUnknownFailures?: Record<string, number>
   /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts`: Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
@@ -72,6 +74,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   let knownCostUsd = 0
   let worksWithUnknownCost = 0
   const seen = new Set<string>()
+  const tally = new Map<string, { count: number; example: string; last: number }>()
   const merged = new Set<string>()
   const mergedItems = new Set<string>()
   const mergedCommits: string[] = []
@@ -102,6 +105,11 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     failures += classes.length
     recurring += classes.filter((c) => seen.has(c)).length
     for (const c of classes) seen.add(c)
+    for (const f of counted) {
+      const c = f.unknown ? 'unknown' : failureClass(f)
+      const t = tally.get(c)
+      tally.set(c, { count: (t?.count ?? 0) + 1, example: record.id, last: ms(record.events[0]!.at) })
+    }
     let unknownCost = false
     for (const event of record.events) {
       if (event.type !== 'observed') continue
@@ -125,8 +133,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const defects = recordedDefects?.filter((d) => d.id === undefined || !gone.has(d.id))
   const recorded = defects?.filter((d) => (d.item !== undefined && mergedItems.has(d.item)) || (d.commit !== undefined && mergedCommits.some((c) => c.startsWith(d.commit!)))).length
   const count = escaped ?? recorded
+  const recurringClasses = [...tally].filter(([, t]) => t.count >= 2).sort((a, b) => b[1].count - a[1].count || b[1].last - a[1].last).slice(0, 10).map(([c, t]) => ({ class: c, count: t.count, example: t.example }))
   return {
-    since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
+    since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures, recurringClasses, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
     headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs },

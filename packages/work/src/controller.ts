@@ -10,16 +10,18 @@ import { canonicalJson } from '@system/artifacts'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
-import { OUTSIDE_HOLD, outsideHoldReason, outsideRun } from './outside.ts'
-import { DEFAULT_LIMIT_MS, isQuotaLimited, quotaResetFrom } from './limits.ts'
+import { acceptMove, decisionOf, dependentsOf, nextMove, rerunOf, resolveRef, retryMove, settled, verdictOf, type Finish } from './next-move.ts'
+import { AccountAdmission, QUOTA_RETRY_MS } from './admission.ts'
+import { isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
+import { askVerifier, firstRunOf, refusedResult, settleVerdict, type VerifierPin } from './verification.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
-import { activeWork, blockedText, itemBlockedBy, itemNote, readStatus, whoHas } from './status.ts'
+import type { Decide } from './gate.ts'
 import type { QuotaReading } from './headroom.ts'
 import { withReasons, type ChangedTest } from './changed-tests.ts'
 import { type Capabilities, type EffectIntent, type EffectOutcome, type EffectPort, type Reconciled, type VerifierPort, type VerifyResult, type WorkerPort, type WorkerResult } from './registry.ts'
-import { TERMINAL, fold, workRecordSchema, type Caller, type Claim, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
+import { TERMINAL, fold, workRecordSchema, type Caller, type NewEvent, type Receipt, type WorkEvent, type WorkRecord, type WorkState } from './record.ts'
 import { isEffectStep, isVerifyStep, isWorkerStep, stepSchema, type ResolvedSpec, type Step } from './workflow.ts'
 
 /** The Work table: one key per Work, changed only by atomic `update`. */
@@ -28,22 +30,6 @@ export interface WorkTable {
   put(key: string, value: WorkRecord): Promise<void>
   update(key: string, fn: (current: WorkRecord) => WorkRecord): Promise<WorkRecord>
   keys(): IterableIterator<string>
-}
-
-/** The claims on Items: one key per Item of a repository (see `claimKey`). */
-export interface ClaimTable {
-  get(key: string): Claim | undefined
-  put(key: string, value: Claim): Promise<void>
-  delete(key: string): Promise<boolean>
-  keys(): IterableIterator<string>
-}
-
-const claimKey = (repository: string, item: string): string => `${repository}\n${item}`
-
-/** A claim table in memory, for a controller built without one. */
-function memoryClaims(): ClaimTable {
-  const rows = new Map<string, Claim>()
-  return { get: (key) => rows.get(key), put: async (key, value) => { rows.set(key, value) }, delete: async (key) => rows.delete(key), keys: () => rows.keys() }
 }
 
 /** The Artifact operations the controller needs. */
@@ -67,23 +53,8 @@ export interface SpecStore {
   withNote(id: string, note: string, caller: Caller): Promise<string>
 }
 
-/** A verdict counts only for the exact subject and criteria asked about, with stored evidence; anything else is `error`. The merge queue's re-check binds with it too. */
-export function bindVerdict(result: VerifyResult, subject: string, criteria: string, exists: (id: string) => boolean): Pick<VerifyResult, 'verdict' | 'reason' | 'evidence'> {
-  const evidence = [...new Set(result.evidence ?? [])]
-  const problems: string[] = []
-  if (result.subject !== subject) problems.push(`it judged ${result.subject}, not the subject ${subject}`)
-  if (result.criteria !== criteria) problems.push(`it used criteria ${result.criteria}, not the pinned ${criteria}`)
-  const missing = evidence.filter((id) => !exists(id))
-  if (missing.length) problems.push(`its evidence ${missing.join(', ')} is not stored`)
-  if (result.verdict === 'pass' && !evidence.length) problems.push('a pass needs evidence')
-  if (problems.length) return { verdict: 'error', reason: `verdict refused: ${problems.join('; ')} (verifier said ${result.verdict}: ${result.reason})`, evidence: evidence.filter(exists) }
-  return { verdict: result.verdict, reason: result.reason, evidence }
-}
-
 /** How often a running attempt checks for a cancel request. */
 const CANCEL_POLL_MS = 250
-/** A step waiting on quota is tried again at the earliest reset, or at least this often (a reading may have changed). */
-const QUOTA_RETRY_MS = 5 * 60_000
 
 export const SPEC_KIND = 'workflow-spec'
 export const SPEC_SCHEMA_VERSION = 1
@@ -164,7 +135,8 @@ interface VerifierAttempt {
   inputs: Record<string, string>
   /** Evidence of this step's earlier verdicts against the same criteria that were not a pass, oldest first. */
   earlier: string[]
-  refusal?: string
+  /** The verifier and version pinned at admission, if any. */
+  pin?: VerifierPin
 }
 
 /** What a listener of `onChange` is told after an event is committed. */
@@ -184,7 +156,6 @@ export interface CancelRequest {
 
 export class WorkController {
   private readonly table: WorkTable
-  private readonly claimed: ClaimTable
   private readonly specs: SpecStore
   private readonly capabilities: Capabilities
   /** The Works being run, and the cancel request a running Work polls; the Host owns every Work, so both live in memory. */
@@ -210,18 +181,18 @@ export class WorkController {
   private readonly waitingForCheck = new Map<string, { stepId: string; verifier: string; since: number }>()
   /** When each Worker step (`<work>/<step>`) first found every capable Account full, in memory only. */
   private readonly waitingForSlot = new Map<string, number>()
-  /** The Worker steps (`<work>/<step>`) whose capable, free Accounts are all over the quota ceiling, in memory only; `timer` tries them again. */
-  private readonly waitingForQuota = new Map<string, { workId: string; stepId: string; worker: string; since: number; until?: string; timer: NodeJS.Timeout }>()
+  /** Quota waits, limited Accounts and today's attempt counts (ss-5). */
+  private readonly accounts: AccountAdmission
   /** The running Worker attempts' progress, in memory only. */
   private readonly running: LiveAttempts
-  private readonly quotaRetryMs: number
-  /** Accounts that limited an attempt (ref -> passed over until their reset, ss-5). In memory only: after a restart the quota is read fresh and routing is as usual. */
-  private readonly limitedAccounts = new Map<string, number>()
 
-  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, claims: ClaimTable = memoryClaims(), quotaRetryMs = QUOTA_RETRY_MS) {
-    this.quotaRetryMs = quotaRetryMs
+  constructor(table: WorkTable, specs: SpecStore, capabilities: Capabilities, lane: Lane = noLane, slots: Slots = new Slots(capabilities), stallMinutes = DEFAULT_STALL_MINUTES, quotaRetryMs = QUOTA_RETRY_MS) {
+    this.accounts = new AccountAdmission({
+      retryMs: quotaRetryMs,
+      history: () => this.list().flatMap((r) => r.events.flatMap((e) => (e.type === 'dispatched' && e.executor === 'worker' ? [{ ref: e.selected, at: Date.parse(e.at) }] : []))),
+    })
+    this.accounts.onWake(() => this.notify())
     this.table = table
-    this.claimed = claims
     this.specs = specs
     this.capabilities = capabilities
     this.lane = lane
@@ -260,7 +231,7 @@ export class WorkController {
     const check = this.waitingForCheck.get(workId)
     return [
       ...this.running.of(workId),
-      ...[...this.waitingForQuota.values()].filter((w) => w.workId === workId).map((w) => waiting(w.stepId, w.worker, w.since, 'quota', w.until)),
+      ...this.accounts.waiting(workId).map((w) => waiting(w.stepId, w.worker, w.since, 'quota', w.until)),
       ...(check ? [waiting(check.stepId, check.verifier, check.since, 'a check slot')] : []),
     ]
   }
@@ -274,7 +245,7 @@ export class WorkController {
    * command's receipt is written with the record. The caller makes sure
    * `workId` is not taken.
    */
-  async admit(admission: Admission, options: { workId?: string; command?: Command } = {}): Promise<WorkRecord> {
+  async admit(admission: Admission, options: { workId?: string; command?: Command; decide?: Decide } = {}): Promise<WorkRecord> {
     const usesInput = admission.spec.steps.some((s) => refsOf(s).includes('$work.input'))
     if (usesInput && !admission.input) throw new WorkError('the workflow uses $work.input, but no input Artifact was given')
     if (admission.input && !this.specs.exists(admission.input)) throw new WorkError(`input ${admission.input} is not a stored Artifact`)
@@ -309,19 +280,11 @@ export class WorkController {
         throw new WorkError(`step ${s.id}: ${provider.ref} refuses its params: ${(error as Error).message}`)
       }
     }
-    const named = input ? this.specs.taskOf(input) : undefined
-    const item = named?.task.item ? { id: named.task.item, ...(named.repository ? { repository: named.repository } : {}) } : undefined
-    if (item && !admission.force) {
-      const busy = activeWork(this.list(), item)
-      if (busy) throw new WorkError(`Item ${item.id} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'}); to run another on purpose, give force (--force)`)
-    }
-    if (item?.repository && !admission.force) {
-      const status = await readStatus(item.repository).catch(() => undefined)
-      const why = status && itemBlockedBy(status, status.repository, this.list(), item.id)
-      if (why) throw new WorkError(`Item ${item.id} is ${blockedText(why)}; to run it on purpose, give force (--force)`)
-    }
+    const item = this.itemOf(admission)
+    // The Item gate decides (refuses, or gives the note) from a STATUS.md the Host read before the lane; the controller reads no STATUS.md.
+    const decision = item ? options.decide?.(item) : undefined
     // A Task that names an Item is read with the Item's status and its earlier Works added to its context.
-    const read = item ? await this.specs.withNote(input!, await itemNote(item, this.list(), this.specs.commitOf?.bind(this.specs)), admission.caller) : input
+    const read = decision ? await this.specs.withNote(input!, decision.note, admission.caller) : input
     const specId = await this.specs.putSpec(admission.spec, admission.caller)
     const id = options.workId ?? `work:${randomUUID()}`
     const admitted: WorkEvent = { type: 'admitted', seq: 0, at: this.now(), caller: admission.caller, specId, input: read, ...(item ? { item } : {}), ...(admission.worker ? { worker: admission.worker } : {}), criteria, verifiers, source: admission.source }
@@ -330,29 +293,15 @@ export class WorkController {
       ...(options.command ? { receipts: [{ commandId: options.command.id, args: options.command.args, result: { workId: id, status: 'running' } }] } : {}),
     }
     await this.table.put(id, workRecordSchema.parse(record))
-    // A Work for the Item takes over a session's claim on it.
-    if (item?.repository) await this.claimed.delete(claimKey(item.repository, item.id))
+    await decision?.taken()
     this.changed(record)
     return record
   }
 
-  /** The claims on Items, by session. */
-  claims(): Claim[] {
-    return [...this.claimed.keys()].map((key) => this.claimed.get(key)!)
-  }
-
-  /**
-   * Claim an Item for `caller` before submitting a Work for it. Refused while a Work for the Item is running or held,
-   * and while another caller holds the claim unless `force`. Call it in the commit lane.
-   */
-  async claim(repository: string, item: string, caller: Caller, force = false): Promise<Claim> {
-    const busy = activeWork(this.list(), { id: item, repository })
-    if (busy) throw new WorkError(`Item ${item} already has Work ${busy.id} (${busy.state.status}, ${whoHas(busy).account ?? 'no Worker yet'})`)
-    const held = this.claimed.get(claimKey(repository, item))
-    if (held && held.who !== caller.operatorId && !force) throw new WorkError(`Item ${item} is claimed by ${held.who} since ${held.at}; to take it over on purpose, give force (--force)`)
-    const claim: Claim = { repository, item, who: caller.operatorId, at: this.now() }
-    await this.claimed.put(claimKey(repository, item), claim)
-    return claim
+  /** The Item the Task of an admission names, with its repository; undefined when it names none. */
+  itemOf(admission: Pick<Admission, 'input'>): { id: string; repository?: string } | undefined {
+    const named = admission.input ? this.specs.taskOf(admission.input) : undefined
+    return named?.task.item ? { id: named.task.item, ...(named.repository ? { repository: named.repository } : {}) } : undefined
   }
 
   get(workId: string): WorkRecord | undefined {
@@ -462,7 +411,7 @@ export class WorkController {
       if (failures.length) throw failures[0]
     }
     this.waitingForCheck.delete(workId)
-    for (const key of [...this.waitingForQuota.keys()]) if (this.waitingForQuota.get(key)!.workId === workId) this.stopWaitingForQuota(key)
+    this.accounts.stopWork(workId)
     // A step may fail the Work while others are in flight: they are observed, after the terminal event.
     await Promise.all(flying)
     if (failures.length) throw failures[0]
@@ -573,12 +522,12 @@ export class WorkController {
     const spec = this.specOf(record)
     const step = options.step
       ? spec.steps.find((s) => s.id === options.step && (isWorkerStep(s) || isVerifyStep(s) || isEffectStep(s)))
-      : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => settled(record, d)))
+      : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => settled(record.state, d)))
     if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker, verify or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
     // Choosing among runs of a check would let an agent keep the lucky one: verifying again is the operator's.
     if (isVerifyStep(step) && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} should tell the operator`)
     if (!isWorkerStep(step) && options.worker) throw new WorkError(`${step.id} is ${isVerifyStep(step) ? 'a verify' : 'an effect'} step; --worker names Workers only`)
-    if (!(step.dependsOn ?? []).every((d) => settled(record, d))) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
+    if (!(step.dependsOn ?? []).every((d) => settled(record.state, d))) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]
     const reset = [step.id, ...dependentsOf(spec, step.id)]
     this.cancels.delete(workId)
@@ -601,6 +550,7 @@ export class WorkController {
       const events = [...current.events, next]
       return { ...current, events, state: fold(stepIds, events), ...(receipts.length ? { receipts: [...(current.receipts ?? []), ...receipts] } : {}) }
     })
+    if (event.type === 'dispatched' && event.executor === 'worker') this.accounts.count(event.selected)
     this.changed(updated)
     return updated
   }
@@ -656,31 +606,18 @@ export class WorkController {
     const event = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === operationId)
     if (event?.type !== 'effect-intended') throw new WorkError(`no recorded intent for ${operationId}`)
     const step = this.specOf(record).steps.find((s) => s.id === event.stepId)
-    // The Approval of the merge commit last held counts only if given after the hold: an earlier one was for another commit.
-    const held = record.events.findLast((e) => e.type === 'effect-observed' && e.operationId === operationId && e.held)
-    const decided = held?.type === 'effect-observed' ? record.events.findLast((e) => e.type === 'decided' && e.stepId === event.stepId) : undefined
-    const approvedMerge = held?.type === 'effect-observed' && decided?.type === 'decided' && decided.decision === 'approved' && decided.seq > held.seq ? held.held : undefined
-    const changedTests = this.changedTestsOf(record, event.subject)
+    const { approvedMerge } = record.state.effects[operationId]!, changedTests = record.state.changedTests?.[event.subject]
     return { operationId, workId: record.id, stepId: event.stepId, capability: event.capability, subject: event.subject, params: event.params, required: step && isEffectStep(step) ? this.requiredOf(record, step) : [],
       ...(approvedMerge ? { approvedMerge } : {}), ...(changedTests ? { changedTests } : {}) }
-  }
-
-  /** tr-1: the changed tests recorded for change `subject` (the latest attempt that produced it); undefined when no attempt of the record produced it, empty when it touched no test. */
-  private changedTestsOf(record: WorkRecord, subject: string): EffectIntent['changedTests'] {
-    const observed = record.events.findLast((e) => e.type === 'observed' && e.status === 'succeeded' && Object.values(e.outputs).includes(subject) && e.changedTests)
-      ?? record.events.findLast((e) => e.type === 'observed' && e.status === 'succeeded' && Object.values(e.outputs).includes(subject))
-    return observed?.type === 'observed' ? observed.changedTests ?? [] : undefined
   }
 
   /** The verify steps an effect step requires, with the criteria pinned for each at admission. */
   private requiredOf(record: WorkRecord, s: Extract<Step, { effect: unknown }>): NonNullable<EffectIntent['required']> {
     const spec = this.specOf(record)
-    const admitted = record.events[0]
-    const pinned = admitted?.type === 'admitted' ? admitted.verifiers : undefined
     return s.effect.requires.flatMap((id) => {
       const verify = spec.steps.find((t) => t.id === id)
       const criteria = record.state.criteria[id]
-      return verify && isVerifyStep(verify) && criteria ? [{ capability: verify.verify.capability, criteria, ...(pinned?.[id] ? { verifier: pinned[id] } : {}) }] : []
+      return verify && isVerifyStep(verify) && criteria ? [{ capability: verify.verify.capability, criteria, ...(record.state.verifiers?.[id] ? { verifier: record.state.verifiers[id] } : {}) }] : []
     })
   }
 
@@ -726,46 +663,28 @@ export class WorkController {
     if (applied.held) {
       // Nothing was published: the merge commit awaits an operator's Approval, and the Work is held on this step.
       const absent = await this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: 'absent', reason: applied.reason, detail: applied.detail, held: applied.held })
-      return this.finish(absent, 'held', `${intent.stepId}: merge commit ${applied.held} awaits operator approval: ${applied.reason}`, intent.stepId)
+      return this.finish(absent, 'held', `${intent.stepId}: merge commit ${applied.held} awaits operator approval: ${applied.reason}`, { awaiting: intent.stepId })
     }
-    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail, ...(applied.rejected ? { rejected: applied.rejected } : {}) })
+    return this.append(record, { type: 'effect-observed', stepId: intent.stepId, operationId: intent.operationId, state: applied.state, reason: applied.reason, detail: applied.detail, ...(applied.rejected ? { rejected: applied.rejected } : {}), ...(applied.cause ? { cause: applied.cause } : {}) })
   }
 
   /** In the lane: dispatch every ready step that can start now, in Workflow file order. */
   private async step(record: WorkRecord, busy: boolean): Promise<Turn> {
     const spec = this.specOf(record)
     const epoch = this.epoch
-    const done = (stepId: string) => settled(record, stepId)
-    if (!busy) record = await this.retryAutomatically(record, spec)
-    const failed = spec.steps.find((s) => ['failed', 'cancelled'].includes(record.state.steps[s.id]!.state))
-    // A failed step fails the Work once the attempts in flight have reported.
-    if (failed && busy) return { record, settles: [], waiting: true, epoch }
-    if (failed) return { record: await this.finish(record, 'failed', `step ${failed.id} ${record.state.steps[failed.id]!.state}`), settles: [], epoch }
-    // A `fail` or `error` verdict no retry reopened is the Work's outcome (inconclusive waits for the operator at the end):
-    // a step after it never starts, so nothing builds on, or publishes, what failed its check.
-    const verdicts = spec.steps.filter(isVerifyStep).map((s) => [s.id, this.verdictOf(record, spec, s.id)] as const)
-    const refused = verdicts.find(([stepId, verdict]) => (verdict === 'fail' || verdict === 'error') && spec.steps.some((s) => s.dependsOn?.includes(stepId)))
-    if (refused && busy) return { record, settles: [], waiting: true, epoch }
-    if (refused) return { record: await this.finish(record, 'failed', `verification did not pass: ${refused[0]}=${refused[1]}`), settles: [], epoch }
-    const ready = spec.steps.filter((s) => record.state.steps[s.id]!.state === 'pending' && (s.dependsOn ?? []).every(done))
-    // A step whose condition on an optional output is not met does not run (ro-15); what comes after it goes on.
-    const skipped = ready.flatMap((s) => { const why = skipReason(record, s); return why ? [{ stepId: s.id, why }] : [] })
-    if (skipped.length) {
-      for (const { stepId, why } of skipped) record = await this.append(record, { type: 'skipped', stepId, reason: why })
+    const retry = busy ? undefined : retryMove(record, spec)
+    // A reopening that rests on a failed effect stores its verdict first.
+    if (retry) record = await this.append(record, retry.verdict ? { ...retry.event, failure: await this.specs.putVerdict(retry.verdict) } : retry.event)
+    const move = nextMove(record, spec, busy)
+    if (move.move === 'wait') return { record, settles: [], waiting: true, epoch }
+    if (move.move === 'finish') return { record: await this.finish(record, move.outcome, move.reason, move), settles: [], epoch }
+    if (move.move === 'skip') {
+      for (const { stepId, reason } of move.steps) record = await this.append(record, { type: 'skipped', stepId, reason })
       return this.step(record, busy)
-    }
-    if (!ready.length && busy) return { record, settles: [], waiting: true, epoch }
-    if (!ready.length) return { record: await this.finishWithoutAccept(record, spec), settles: [], epoch }
-    // The third Outside failure in a row on a step holds the Work instead of dispatching it again (cm-2, anti-windup).
-    for (const next of ready) {
-      if (!isWorkerStep(next) && !isVerifyStep(next)) continue
-      const run = outsideRun(record.events, next.id)
-      if (run.count >= OUTSIDE_HOLD && !busy) return { record: await this.finish(record, 'held', outsideHoldReason(next.id, { count: run.count, cause: run.cause!, reason: run.reason! }), next.id), settles: [], epoch }
-      if (run.count >= OUTSIDE_HOLD) return { record, settles: [], waiting: true, epoch }
     }
     const settles: (() => Promise<WorkRecord>)[] = []
     let waiting = false
-    for (const next of ready) {
+    for (const next of move.steps) {
       let turn: Turn
       // Draining: an attempt is what an upgrade waits for, so none begins; accepting is no attempt.
       if (this.draining && (isWorkerStep(next) || isVerifyStep(next) || isEffectStep(next))) { waiting = true; continue }
@@ -790,7 +709,8 @@ export class WorkController {
       } else {
         // Accepting decides the Work: only when nothing else is running or was started.
         if (busy || settles.length || waiting) { waiting = true; continue }
-        return { record: await this.accept(record, next), settles, epoch }
+        const accepted = acceptMove(record, spec, next)
+        return { record: await this.finish(record, accepted.outcome, accepted.reason, accepted), settles, epoch }
       }
       record = turn.record
       settles.push(...turn.settles)
@@ -799,94 +719,23 @@ export class WorkController {
     return { record, settles, waiting: !settles.length && (waiting || busy), epoch }
   }
 
-  /**
-   * In the lane, with nothing in flight: the Workflow's `retry` (Item df-7; the rule is in
-   * [workflow composition](../../../docs/architecture/workflow-composition.md)). The count comes from
-   * recorded events; the latest step in dependency order with budget is reopened; a failed verdict
-   * is handed to the new attempt as input `failure`.
-   */
-  private async retryAutomatically(record: WorkRecord, spec: ResolvedSpec): Promise<WorkRecord> {
-    if (TERMINAL.has(record.state.status)) return record
-    const workers = spec.steps.filter(isWorkerStep)
-    const reopen = (s: (typeof workers)[number], reason: string, failure?: string): Promise<WorkRecord> => {
-      const previous = failure ? record.state.steps[s.id]!.outputs[s.outputs[0]!] : undefined
-      return this.append(record, { type: 'reopened', automatic: true, stepId: s.id, reason, ...(failure ? { failure } : {}), ...(previous ? { previous } : {}), reset: [s.id, ...dependentsOf(spec, s.id)] })
-    }
-    const autoReopens = (stepId: string, source: string): number => record.events.filter((e) => {
-      if (e.type !== 'reopened' || !e.automatic || e.stepId !== stepId) return false
-      if (e.failedEffect) return e.failedEffect === source
-      if (source === stepId) return !e.failure
-      return record.events.some((v) => v.type === 'verified' && v.stepId === source && v.verdictId === e.failure)
-    }).length
-    for (const v of spec.steps.filter(isVerifyStep)) {
-      if (this.verdictOf(record, spec, v.id) !== 'fail') continue
-      const verified = record.events.findLast((e) => e.type === 'verified' && e.stepId === v.id)
-      if (verified?.type !== 'verified') continue
-      const nearest = workers.findLast((s) => s.retry?.onFail.includes(v.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, v.id) < s.retry.max)
-      if (nearest) return reopen(nearest, `${v.id} failed: ${verified.reason}`, verified.verdictId)
-    }
-    // An effect step whose outcome was observed as a conflict or a failed merge check reopens the Worker step that lists it, on the base's new tip.
-    // An unknown or reconciled outcome never carries `rejected`, so it is never retried.
-    for (const e of spec.steps.filter(isEffectStep)) {
-      if (record.state.steps[e.id]!.state !== 'failed') continue
-      const observed = record.events.findLast((x) => x.type === 'effect-observed' && x.stepId === e.id)
-      const base = observed?.type === 'effect-observed' ? observed.detail?.base : undefined
-      if (observed?.type !== 'effect-observed' || observed.state !== 'failed' || !observed.rejected || (!base && observed.rejected !== 'build-output')) continue
-      const target = workers.findLast((s) => s.retry?.onFail.includes(e.id) && record.state.steps[s.id]!.state === 'succeeded' && autoReopens(s.id, e.id) < s.retry.max)
-      const previous = target && record.state.steps[target.id]!.outputs[target.outputs[0]!]
-      if (!target || !previous) continue
-      const failure = await this.specs.putVerdict({ subject: previous, criteria: previous, capability: 'publish', verifier: { ref: `step:${e.id}`, version: '1' }, verdict: 'fail', reason: observed.reason, evidence: [] })
-      return this.append(record, { type: 'reopened', automatic: true, failedEffect: e.id, stepId: target.id, reason: `${e.id} failed: ${observed.reason}`, failure, previous, ...(base ? { base } : {}), reset: [target.id, ...dependentsOf(spec, target.id)] })
-    }
-    for (const s of workers) {
-      if (!s.retry?.onFail.includes(s.id) || record.state.steps[s.id]!.state !== 'failed' || autoReopens(s.id, s.id) >= s.retry.max) continue
-      const observed = record.events.findLast((e) => e.type === 'observed' && e.stepId === s.id)
-      if (observed?.type === 'observed' && observed.retryable) return reopen(s, `${s.id} failed and may be tried afresh: ${observed.reason ?? 'no reason'}`)
-    }
-    return record
-  }
-
   private attemptTurn(record: WorkRecord, settle: (() => Promise<WorkRecord>) | undefined): Turn {
     return { record, settles: settle ? [settle] : [], epoch: this.epoch }
   }
 
-  /** Resolve a reference to an exact Artifact ID from recorded state. */
-  private resolveRef(record: WorkRecord, ref: string): string {
-    if (ref === '$work.input') return record.state.input!
-    // `$steps.<step>.<slot>`: a joined Sub-workflow's step ID has dots of its own.
-    const names = ref.split('.')
-    const id = record.state.steps[names.slice(1, -1).join('.')]?.outputs[names.at(-1)!]
-    if (!id) throw new WorkError(`${ref} has no recorded Artifact`)
-    return id
-  }
-
   /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead, `blocked` when its Account has no free slot. */
   private async dispatchWorker(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): Promise<{ record: WorkRecord; attempt?: WorkerAttempt; blocked?: boolean }> {
-    const inputs = Object.fromEntries(Object.entries(s.inputs ?? {}).map(([name, ref]) => [name, this.resolveRef(record, ref)]))
-    const reopened = record.events.findLast((e) => e.type === 'reopened' && e.stepId === s.id)
-    const takeover = reopened?.type === 'reopened' ? reopened : undefined
-    if (takeover?.previous) inputs.previous = takeover.previous
-    if (takeover?.failure) inputs.failure = takeover.failure
-    if (takeover?.base) inputs.base = takeover.base
+    const inputs = Object.fromEntries(Object.entries(s.inputs ?? {}).map(([name, ref]) => [name, resolveRef(record.state, ref)]))
+    const takeover = record.state.steps[s.id]!.reopening
+    for (const name of ['previous', 'failure', 'base'] as const) if (takeover?.[name]) inputs[name] = takeover[name]!
     const admitted = record.events[0]
     const only = takeover?.worker ?? (admitted?.type === 'admitted' ? admitted.worker : undefined)
     const waitKey = `${record.id}/${s.id}`
     // The readings are taken here, once, and recorded with the choice: replay reads the record, never the provider.
     const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
     const readings = await this.readQuotas(capable)
-    const route = this.capabilities.routeWorker(s.capabilities, only, (w) => this.slots.hasFree(w), readings, this.activeLimited(readings), this.attemptsToday(), s.prefer)
-    if (route.quotaWait) {
-      const was = this.waitingForQuota.get(waitKey)
-      if (!was || was.until !== route.quotaWait.resetsAt) {
-        if (was) clearTimeout(was.timer)
-        const delay = Math.min(this.quotaRetryMs, route.quotaWait.resetsAt ? Math.max(0, Date.parse(route.quotaWait.resetsAt) - Date.now()) : this.quotaRetryMs)
-        const timer = setTimeout(() => { this.waitingForQuota.delete(waitKey); this.notify() }, delay)
-        // A retry timer never keeps the process alive by itself.
-        timer.unref()
-        this.waitingForQuota.set(waitKey, { workId: record.id, stepId: s.id, worker: capable[0]!.ref, since: was?.since ?? Date.now(), ...(route.quotaWait.resetsAt ? { until: route.quotaWait.resetsAt } : {}), timer })
-      }
-      return { record, blocked: true }
-    }
+    const route = this.accounts.route(this.capabilities, { workId: record.id, stepId: s.id, key: waitKey }, s.capabilities, only, (w) => this.slots.hasFree(w), readings, s.prefer)
+    if (route.quotaWait) return { record, blocked: true }
     if (route.full) {
       if (!this.waitingForSlot.has(waitKey)) this.waitingForSlot.set(waitKey, Date.now())
       return { record, blocked: true }
@@ -894,9 +743,9 @@ export class WorkController {
     if (!route.selected) return { record: await this.finish(record, 'failed', `no enabled Worker ${only ? `${only} ` : ''}provides ${s.capabilities.join(', ')} for step ${s.id}`) }
     const attemptId = `attempt:${randomUUID()}`
     if (!this.slots.reserve(route.selected, attemptId)) return { record, blocked: true }
-    const waitedMs = this.waited(Math.min(this.waitingForSlot.get(waitKey) ?? Infinity, this.waitingForQuota.get(waitKey)?.since ?? Infinity))
+    const waitedMs = this.waited(Math.min(this.waitingForSlot.get(waitKey) ?? Infinity, this.accounts.waitingSince(waitKey) ?? Infinity))
     this.waitingForSlot.delete(waitKey)
-    this.stopWaitingForQuota(waitKey)
+    this.accounts.stop(waitKey)
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'worker', capability: s.capabilities.join(','),
@@ -909,38 +758,12 @@ export class WorkController {
     return { record, attempt: { workId: record.id, attemptId, step: s, worker: route.selected, inputs } }
   }
 
-  /** The Accounts still out of quota: a fresh readable reading of an Account is believed over the record of its limit. */
-  private activeLimited(readings: ReadonlyMap<string, QuotaReading>): ReadonlySet<string> {
-    const now = Date.now()
-    for (const [ref, until] of this.limitedAccounts) if (until <= now) this.limitedAccounts.delete(ref)
-    return new Set([...this.limitedAccounts.keys()].filter((ref) => !('windows' in (readings.get(ref) ?? {}))))
-  }
-
-  /** Worker attempts dispatched since 00:00 UTC, by Account (limited ones included); read from the table, never recorded. */
-  private attemptsToday(): Map<string, number> {
-    const start = new Date().setUTCHours(0, 0, 0, 0)
-    const counts = new Map<string, number>()
-    for (const record of this.list()) {
-      for (let i = record.events.length - 1; i >= 0; i--) {
-        const e = record.events[i]!
-        if (Date.parse(e.at) < start) break
-        if (e.type === 'dispatched' && e.executor === 'worker') counts.set(e.selected, (counts.get(e.selected) ?? 0) + 1)
-      }
-    }
-    return counts
-  }
-
   /** The quota of each of the Workers that has one; a reader that throws is an unreadable Account, never a failed step. */
   private async readQuotas(workers: readonly WorkerPort[]): Promise<Map<string, QuotaReading>> {
     const read = await Promise.all(workers.filter((w) => w.quota).map(async (w): Promise<[string, QuotaReading]> => {
       try { return [w.ref, await w.quota!()] } catch (error) { return [w.ref, { unreadable: (error as Error).message }] }
     }))
     return new Map(read)
-  }
-
-  private stopWaitingForQuota(key: string): void {
-    clearTimeout(this.waitingForQuota.get(key)?.timer)
-    this.waitingForQuota.delete(key)
   }
 
   /** `waitedMs` for a dispatch of a step that waited since `since`. */
@@ -974,6 +797,7 @@ export class WorkController {
     if (aborted) status = 'cancelled'
     const outputs = status === 'succeeded' ? result.outputs : {}
     let unchangedAfter: string | undefined
+    let noChange = false
     if (status === 'succeeded') {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = [...s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot])), ...(s.optionalOutputs ?? []).filter((slot) => outputs[slot] && !this.specs.exists(outputs[slot]))]
@@ -985,11 +809,12 @@ export class WorkController {
       if (status === 'succeeded' && s.outputs[0] && !s.mayBeEmpty && !holds && isJudged(spec, s.id, s.outputs[0])) {
         const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
         if (base) {
+          noChange = true
           const said = result.message?.replace(/\s+/g, ' ').trim()
-          unchangedAfter = s.retry?.rerunUnchanged ? this.failingCheckOf(this.require(workId), s) : undefined
+          unchangedAfter = rerunOf(this.require(workId), s)
           if (unchangedAfter) {
             // The step was reopened by a failing check and changed nothing: the check runs again on the change it failed.
-            outputs[s.outputs[0]] = this.latestReopening(this.require(workId), s.id)!.previous!
+            outputs[s.outputs[0]] = this.require(workId).state.steps[s.id]!.reopening!.previous!
             reason = `no change: ran the check again on the same change${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`
           } else [status, reason] = ['failed', `no change: the working tree is the same as the base commit ${base.slice(0, 7)}${said ? `. The Worker said: ${said.length > 300 ? `${said.slice(0, 300)}…` : said}` : ''}`]
         }
@@ -1001,7 +826,7 @@ export class WorkController {
     if (changeId && this.specs.changedTests) {
       try {
         const files = await this.specs.changedTests(changeId, this.require(workId).state.input)
-        if (files?.length) changedTests = unchangedAfter ? this.changedTestsOf(this.require(workId), changeId) : withReasons(files, result.message)
+        if (files?.length) changedTests = unchangedAfter ? this.require(workId).state.changedTests?.[changeId] : withReasons(files, result.message)
       } catch { /* a list that cannot be read is never a failure of the step */ }
     }
     const partial = Object.fromEntries(Object.entries(result.partial ?? {}).filter(([, id]) => this.specs.exists(id)))
@@ -1009,7 +834,7 @@ export class WorkController {
     const limited = status === 'failed' && !aborted && isQuotaLimited(reason)
     if (limited) {
       // Out until the reset the error gives, else 5 hours: no reader failing can put it back in routing sooner.
-      this.limitedAccounts.set(attempt.worker.ref, quotaResetFrom(reason, Date.now()) ?? Date.now() + DEFAULT_LIMIT_MS)
+      this.accounts.limit(attempt.worker.ref, quotaResetFrom(reason, Date.now()))
       // Drop the cached reading and read it again now; an unreadable Account is never a failure.
       try { await attempt.worker.quota?.(true) } catch { /* routing reads it again */ }
     }
@@ -1022,6 +847,8 @@ export class WorkController {
       ...(result.executor ? { worker: result.executor } : {}),
       ...(limited ? { limited: true as const } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),
+      ...(status === 'failed' && result.cause ? { cause: result.cause } : {}),
+      ...(noChange ? { noChange: true as const } : {}),
       ...(changedTests?.length ? { changedTests } : {}),
       // An Account that no longer offers the step's capabilities left routing because of this failure: another may take it (ro-12).
       ...(status === 'failed' && (result.retryable || s.capabilities.some((c) => !attempt.worker.capabilities.includes(c))) && !aborted ? { retryable: true as const } : {}),
@@ -1053,8 +880,8 @@ export class WorkController {
 
   /** In the lane: decide from the committed record and append `dispatched`; `attempt` is absent when the step failed instead, `blocked` when the verifier has no free check slot. */
   private async dispatchVerifier(record: WorkRecord, s: Extract<Step, { verify: unknown }>): Promise<{ record: WorkRecord; attempt?: VerifierAttempt; blocked?: boolean }> {
-    const subject = this.resolveRef(record, s.verify.subject)
-    const inputs = Object.fromEntries(Object.entries(s.verify.inputs ?? {}).map(([name, ref]) => [name, this.resolveRef(record, ref)]))
+    const subject = resolveRef(record.state, s.verify.subject)
+    const inputs = Object.fromEntries(Object.entries(s.verify.inputs ?? {}).map(([name, ref]) => [name, resolveRef(record.state, ref)]))
     const criteria = record.state.criteria[s.id]
     if (!criteria) return { record: await this.finish(record, 'failed', `step ${s.id} has no pinned criteria`) }
     const route = this.capabilities.routeVerifier(s.verify.capability)
@@ -1069,12 +896,7 @@ export class WorkController {
     const waiting = this.waitingForCheck.get(record.id)
     const waitedMs = this.waited(waiting?.stepId === s.id ? waiting.since : undefined)
     this.waitingForCheck.delete(record.id)
-    const kind = this.specs.kindOf(subject)
-    const admitted = record.events[0]
-    const pinned = admitted?.type === 'admitted' ? admitted.verifiers?.[s.id] : undefined
-    let refusal: string | undefined
-    if (pinned && (pinned.ref !== verifier.ref || pinned.version !== verifier.version)) refusal = `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`
-    else if (!kind || !verifier.accepts.includes(kind)) refusal = `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`
+    const pin = record.state.verifiers?.[s.id]
     try {
       record = await this.append(record, {
         type: 'dispatched', stepId: s.id, attemptId, executor: 'verifier', capability: s.verify.capability,
@@ -1085,117 +907,29 @@ export class WorkController {
       throw error
     }
     const earlier = record.events.flatMap((e) => e.type === 'verified' && e.stepId === s.id && e.criteria === criteria && e.verdict !== 'pass' ? e.evidence ?? [] : [])
-    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, earlier, refusal } }
+    return { record, attempt: { workId: record.id, attemptId, step: s, verifier, subject, criteria, inputs, earlier, pin } }
   }
 
   /** Outside the lane: ask the verifier, touching no Work state. */
-  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, inputs, earlier, refusal }: VerifierAttempt): Promise<VerifyResult> {
-    if (refusal) return { verdict: 'error', reason: refusal, subject, criteria, evidence: [] }
-    try {
-      return await verifier.verify({ workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria, ...(Object.keys(inputs).length ? { inputs } : {}), ...(earlier.length ? { earlier } : {}) })
-    } catch (error) {
-      return { verdict: 'error', reason: `the verifier threw: ${(error as Error).message}`, subject, criteria, evidence: [] }
-    }
-  }
-
-  private latestReopening(record: WorkRecord, stepId: string) {
-    const e = record.events.findLast((r) => r.type === 'reopened' && r.stepId === stepId)
-    return e?.type === 'reopened' ? e : undefined
-  }
-
-  /** The verdict of a check in `retry.onFail` that automatically reopened this step, with its change to hand back (`retry.rerunUnchanged`). */
-  private failingCheckOf(record: WorkRecord, s: Extract<Step, { capabilities: string[] }>): string | undefined {
-    const r = this.latestReopening(record, s.id)
-    if (!r?.automatic || !r.failure || r.failedEffect || !r.previous) return undefined
-    return record.events.some((v) => v.type === 'verified' && v.verdictId === r.failure && v.verdict === 'fail' && s.retry?.onFail.includes(v.stepId)) ? r.failure : undefined
+  private async executeVerifier({ workId, attemptId, step: s, verifier, subject, criteria, inputs, earlier, pin }: VerifierAttempt): Promise<VerifyResult> {
+    // A changed pin refuses the step with `error` (the merge check holds instead, for an Approval).
+    const asked = await askVerifier(this.specs, { verifier, pin, onPinMismatch: 'error', request: { workId, attemptId, stepId: s.id, capability: s.verify.capability, subject, criteria, ...(Object.keys(inputs).length ? { inputs } : {}), ...(earlier.length ? { earlier } : {}) } })
+    return 'refusal' in asked ? refusedResult(asked.refusal, subject, criteria) : asked.result
   }
 
   /** In the lane: read the committed record again and append the verdict. */
   private async observeVerifier({ workId, attemptId, step: s, verifier, subject, criteria }: VerifierAttempt, result: VerifyResult): Promise<WorkRecord> {
     const record = this.require(workId)
-    let bound = bindVerdict(result, subject, criteria, (id) => this.specs.exists(id))
-    // The second run of a check on the same change (`retry.rerunUnchanged`): a pass is flaky, a second fail is held for the operator as inconclusive.
-    const lastRun = record.events.findLast((e) => e.type === 'verified' && e.stepId === s.id)
-    const first = lastRun?.type === 'verified' && lastRun.verdict === 'fail' && lastRun.verdictId
-      && record.events.some((e) => e.type === 'observed' && e.seq > lastRun.seq && e.unchangedAfter === lastRun.verdictId) ? lastRun : undefined
-    if (first && bound.verdict === 'pass') bound = { ...bound, reason: `flaky: failed (${first.verdictId}) then passed on the same change; ${bound.reason}` }
-    else if (first && bound.verdict === 'fail') bound = { verdict: 'inconclusive', reason: `failed twice on the same change, held for an operator decision (verifier said fail: ${bound.reason}); first run ${first.verdictId}`, evidence: [...(first.evidence ?? []), ...(bound.evidence ?? [])] }
-    const verdictId = await this.specs.putVerdict({
-      subject, criteria, capability: s.verify.capability, verifier: { ref: verifier.ref, version: verifier.version },
-      verdict: bound.verdict, reason: bound.reason, evidence: bound.evidence,
-    })
+    // The second run of a check on the same change (`retry.rerunUnchanged`) settles against the first.
+    const first = firstRunOf(record.events, s.id)
+    const { verdictId, bound } = await settleVerdict(this.specs, { verifier, capability: s.verify.capability, subject, criteria, result, first })
     return this.append(record, {
       type: 'verified', stepId: s.id, attemptId, subject, criteria,
       verdict: bound.verdict, reason: bound.reason, verdictId, evidence: bound.evidence,
       ...(first ? { rerunOf: first.verdictId } : {}),
+      ...(result.cause ? { cause: result.cause } : {}),
       verifier: { ref: verifier.ref, version: verifier.version },
     })
-  }
-
-  /** A verify step's verdict about an output that has since changed no longer counts. */
-  private verdictOf(record: WorkRecord, spec: ResolvedSpec, stepId: string): string | undefined {
-    const s = spec.steps.find((step) => step.id === stepId)
-    const state = record.state.steps[stepId]!
-    if (!s || !isVerifyStep(s) || !state.verdict) return state.verdict
-    let current: string | undefined
-    try {
-      current = this.resolveRef(record, s.verify.subject)
-    } catch {
-      current = undefined
-    }
-    return current === state.subject ? state.verdict : 'stale'
-  }
-
-  /** With no accept step, every verify step still decides: missing evidence is never a pass. */
-  private finishWithoutAccept(record: WorkRecord, spec: ResolvedSpec): Promise<WorkRecord> {
-    const verifies = spec.steps.filter(isVerifyStep).filter((s) => record.state.steps[s.id]!.state !== 'skipped')
-    const verdicts = verifies.map((s) => [s.id, this.verdictOf(record, spec, s.id)] as const)
-    const bad = verdicts.filter(([, verdict]) => verdict !== 'pass' && verdict !== 'inconclusive')
-    if (bad.length) return this.finish(record, 'failed', `verification did not pass: ${bad.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
-    const unsure = verdicts.filter(([id, verdict]) => verdict === 'inconclusive' && !this.decisionOf(record, id))
-    if (unsure.length) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${unsure.map(([id]) => id).join(', ')}`)
-    // A passing verify step with `result` says the Item already holds: the Work ends Satisfied, with its verdict as the evidence.
-    const satisfying = verifies.find((s) => s.result && this.verdictOf(record, spec, s.id) === 'pass')
-    if (satisfying?.result) {
-      const verdictId = record.events.findLast((e) => e.type === 'verified' && e.stepId === satisfying.id)
-      return this.finish(record, 'succeeded', `${satisfying.result}: ${satisfying.id} passed`, undefined, { result: satisfying.result, evidence: { [`${satisfying.id}.verdict`]: verdictId?.type === 'verified' && verdictId.verdictId ? verdictId.verdictId : '' } })
-    }
-    return this.finish(record, 'succeeded', 'every step succeeded')
-  }
-
-  private accept(record: WorkRecord, s: Extract<Step, { accept: unknown }>): Promise<WorkRecord> {
-    const spec = this.specOf(record)
-    const verdicts = s.accept.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const)
-    const notPass = verdicts.filter(([, verdict]) => verdict !== 'pass')
-    // Missing evidence is never a pass; inconclusive is held for the operator, not failed (ADR-0003 decision 8).
-    if (notPass.some(([, verdict]) => verdict !== 'inconclusive')) {
-      return this.finish(record, 'failed', `required verification did not pass: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`)
-    }
-    // One approval serves an effect step that requires the same verify steps (df-25: publish's approval of an inconclusive verdict).
-    const decided = this.decisionOf(record, s.id) ?? (notPass.length ? this.effectDecisionOn(record, spec, notPass.map(([id]) => id)) : undefined)
-    if (notPass.length) {
-      if (!decided) return this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id)
-      return this.finish(record, 'succeeded', `accepted by ${decided.caller.operatorId} despite inconclusive ${notPass.map(([id]) => id).join(', ')}: ${decided.reason}`)
-    }
-    if (s.accept.approval === 'operator' && !decided) return this.finish(record, 'held', 'verification passed; awaiting operator approval', s.id)
-    return this.finish(record, 'succeeded', decided ? `accepted by ${decided.caller.operatorId}: ${decided.reason}` : `accepted on ${s.accept.requires.join(', ')}`)
-  }
-
-  /** The approval of an effect step that requires all of `verifyIds`, if any. */
-  private effectDecisionOn(record: WorkRecord, spec: ResolvedSpec, verifyIds: string[]): Extract<WorkEvent, { type: 'decided' }> | undefined {
-    for (const t of spec.steps) {
-      if (!isEffectStep(t) || !verifyIds.every((id) => t.effect.requires.includes(id))) continue
-      const found = this.decisionOf(record, t.id)
-      if (found) return found
-    }
-    return undefined
-  }
-
-  /** The operator's approval of a step since it was last reset, if any. */
-  private decisionOf(record: WorkRecord, stepId: string): Extract<WorkEvent, { type: 'decided' }> | undefined {
-    if (record.state.steps[stepId]!.decision !== 'approved') return undefined
-    const event = record.events.findLast((e) => e.type === 'decided' && e.stepId === stepId)
-    return event?.type === 'decided' ? event : undefined
   }
 
   /**
@@ -1212,13 +946,13 @@ export class WorkController {
 
   /** In the lane: decide from the committed record and append the intent; `attempt` is absent when the step failed or is held instead. */
   private async dispatchEffect(record: WorkRecord, spec: ResolvedSpec, s: Extract<Step, { effect: unknown }>): Promise<{ record: WorkRecord; attempt?: { provider: EffectPort; intent: EffectIntent } }> {
-    const subject = this.resolveRef(record, s.effect.subject)
-    const decided = this.decisionOf(record, s.id)
+    const subject = resolveRef(record.state, s.effect.subject)
+    const decided = decisionOf(record, s.id)
     // ADR-0004 decision 12: only a pass on this exact subject allows the effect; the one exception is an inconclusive verdict (a check the base fails too, df-25) that a human approved.
-    const notPass = s.effect.requires.map((stepId) => [stepId, this.verdictOf(record, spec, stepId)] as const).filter(([, verdict]) => verdict !== 'pass')
+    const notPass = s.effect.requires.map((stepId) => [stepId, verdictOf(record.state, spec, stepId)] as const).filter(([, verdict]) => verdict !== 'pass')
     const acceptedInconclusive = notPass.length > 0 && notPass.every(([, verdict]) => verdict === 'inconclusive')
     if (acceptedInconclusive && !decided) {
-      return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, s.id) }
+      return { record: await this.finish(record, 'held', `inconclusive verification needs an operator decision: ${notPass.map(([id]) => id).join(', ')}`, { awaiting: s.id, hold: 'inconclusive' }) }
     }
     if (notPass.length && !acceptedInconclusive) {
       return { record: await this.finish(record, 'failed', `${s.id} needs a passing verdict on its subject: ${notPass.map(([id, v]) => `${id}=${v ?? 'missing'}`).join(', ')}`) }
@@ -1227,14 +961,14 @@ export class WorkController {
     if (!provider) return { record: await this.finish(record, 'failed', `no enabled provider offers ${s.effect.capability} for step ${s.id}`) }
     const kind = this.specs.kindOf(subject)
     if (!kind || !provider.accepts.includes(kind)) return { record: await this.finish(record, 'failed', `${provider.ref} publishes ${provider.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}`) }
-    const changedTests = this.changedTestsOf(record, subject)
+    const changedTests = record.state.changedTests?.[subject]
     const intent: EffectIntent = {
       operationId: `op:${createHash('sha256').update(`${record.id}\n${s.id}\n${subject}`).digest('hex')}`,
       workId: record.id, stepId: s.id, capability: s.effect.capability, subject, params: { ...s.effect.params }, required: this.requiredOf(record, s),
       ...(changedTests ? { changedTests } : {}),
     }
     const why = provider.approval(intent)
-    if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, s.id) }
+    if (why && !decided) return { record: await this.finish(record, 'held', `${s.id} awaits operator approval: ${why}`, { awaiting: s.id }) }
     record = await this.append(record, {
       type: 'effect-intended', stepId: s.id, operationId: intent.operationId, capability: intent.capability, subject,
       params: intent.params, provider: { ref: provider.ref, version: provider.version },
@@ -1264,39 +998,14 @@ export class WorkController {
     }
   }
 
-  private finish(record: WorkRecord, outcome: 'succeeded' | 'failed' | 'held', reason: string, awaiting?: string, satisfied?: { result: 'satisfied'; evidence: Record<string, string> }): Promise<WorkRecord> {
+  private finish(record: WorkRecord, outcome: Finish['outcome'], reason: string, { awaiting, satisfied, hold }: Pick<Finish, 'awaiting' | 'satisfied' | 'hold'> = {}): Promise<WorkRecord> {
     const results: Record<string, string> = {}
     for (const [stepId, s] of Object.entries(record.state.steps)) {
       for (const [slot, id] of Object.entries(s.outputs)) results[`${stepId}.${slot}`] = id
     }
     for (const [name, id] of Object.entries(satisfied?.evidence ?? {})) if (id) results[name] = id
-    return this.append(record, { type: 'terminal', outcome, reason, results, ...(satisfied ? { result: satisfied.result } : {}), ...(awaiting ? { awaiting } : {}) })
+    return this.append(record, { type: 'terminal', outcome, reason, results, ...(satisfied ? { result: satisfied.result } : {}), ...(awaiting ? { awaiting } : {}), ...(hold ? { hold } : {}) })
   }
-}
-
-/** Whether a step is done for the steps after it: it succeeded, or its condition was not met and it was skipped. */
-function settled(record: WorkRecord, stepId: string): boolean {
-  return record.state.steps[stepId]!.state === 'succeeded' || record.state.steps[stepId]!.state === 'skipped'
-}
-
-/** Why a ready step does not run: its `when` output was not written, or its `unless` output was; undefined when it runs. */
-function skipReason(record: WorkRecord, s: Step): string | undefined {
-  const { when, unless } = s as { when?: string; unless?: string }
-  const written = (ref: string): boolean => {
-    const names = ref.split('.')
-    return !!record.state.steps[names.slice(1, -1).join('.')]?.outputs[names.at(-1)!]
-  }
-  if (when && !written(when)) return `${when} was not written`
-  if (unless && written(unless)) return `${unless} was written`
-  return undefined
-}
-
-/** Every step that depends, directly or not, on `stepId`, in spec order. */
-function dependentsOf(spec: ResolvedSpec, stepId: string): string[] {
-  const found = new Set<string>([stepId])
-  for (const s of spec.steps) if ((s.dependsOn ?? []).some((d) => found.has(d))) found.add(s.id)
-  found.delete(stepId)
-  return spec.steps.map((s) => s.id).filter((id) => found.has(id))
 }
 
 function lastReason(record: WorkRecord, stepId: string): string {

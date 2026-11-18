@@ -8,6 +8,7 @@ import type { LaterPass } from './later-pass.ts'
 import { defaultChange } from './failure-class.ts'
 import { attemptCause, outsideCause, type OutsideCause } from './outside.ts'
 import type { WorkRecord } from './record.ts'
+import { flakyFirstRuns } from './verification.ts'
 
 /** One failed attempt, failed or inconclusive verdict, hold, failed publish or operator touch, read from `event` (`<type>#<index>`); `outside` when its reason is an Outside failure, `unknown` when its cause cannot be placed, absent for a failure of the change. */
 export interface Failure { event: string; kind: 'attempt' | 'attempt-lost' | 'verdict' | 'hold' | 'publish' | 'touch'; reason: string; outside?: OutsideCause; unknown?: true; classified?: ClassifiedFailure }
@@ -62,7 +63,7 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
     failures.push({ event: `${record.events[index]!.type}#${index}`, kind, reason, ...(cause === 'unknown' ? { unknown: true as const } : cause ? { outside: cause } : {}) })
   }
   // cls-3: a check that failed and then passed on the re-run of the same change (`rerunOf`) is flaky.
-  const flakyVerdicts = new Set(record.events.flatMap((e) => (e.type === 'verified' && e.verdict === 'pass' && e.rerunOf ? [e.rerunOf] : [])))
+  const flakyVerdicts = flakyFirstRuns(record.events)
   // cls-3: a "no change" on a step reopened with a previous change that a later verdict passed unchanged is System's (a Process failure).
   const processAfterCorrectChange = (index: number, stepId: string): boolean => {
     const previous = record.events.slice(0, index).findLast((e) => e.type === 'reopened' && e.stepId === stepId)
@@ -72,12 +73,12 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
   const lastCause = () => failures.at(-1)?.unknown ? 'unknown' as const : failures.at(-1)?.outside
   const lastVerdict = () => failures.findLast((f) => f.kind === 'verdict')
   for (const [index, event] of record.events.entries()) {
-    if (event.type === 'observed' && event.status === 'failed') add(index, 'attempt', event.reason ?? '', event.rateLimited ? 'quota' : /^no change\b/.test(event.reason ?? '') && processAfterCorrectChange(index, event.stepId) ? 'process' : attemptCause(event.reason ?? ''))
+    if (event.type === 'observed' && event.status === 'failed') add(index, 'attempt', event.reason ?? '', event.rateLimited ? 'quota' : (event.noChange ?? /^no change\b/.test(event.reason ?? '')) && processAfterCorrectChange(index, event.stepId) ? 'process' : attemptCause(event.reason ?? '', event.cause))
     if (event.type === 'attempt-lost') add(index, 'attempt-lost', event.reason, 'restart')
-    if (event.type === 'verified' && (event.verdict === 'fail' || event.verdict === 'inconclusive')) add(index, 'verdict', event.reason, (event.verdictId && flakyVerdicts.has(event.verdictId)) || (event.verdict === 'fail' && later?.(event.subject, event.stepId, record, index)) ? 'flaky' : outsideCause(event.reason, 'verdict'))
-    if (event.type === 'effect-observed' && event.state === 'failed') add(index, 'publish', event.reason, event.rejected === 'conflict' ? 'conflict' : undefined)
-    if (event.type === 'terminal' && event.outcome === 'held' && event.reason !== 'verification passed; awaiting operator approval') {
-      add(index, 'hold', event.reason, /^inconclusive verification/.test(event.reason) ? (lastVerdict()?.unknown ? 'unknown' : lastVerdict()?.outside) : undefined)
+    if (event.type === 'verified' && (event.verdict === 'fail' || event.verdict === 'inconclusive')) add(index, 'verdict', event.reason, (event.verdictId && flakyVerdicts.has(event.verdictId)) || (event.verdict === 'fail' && later?.(event.subject, event.stepId, record, index)) ? 'flaky' : outsideCause(event.reason, 'verdict', event.cause))
+    if (event.type === 'effect-observed' && event.state === 'failed') add(index, 'publish', event.reason, event.rejected === 'conflict' ? 'conflict' : event.cause)
+    if (event.type === 'terminal' && event.outcome === 'held' && (event.hold ?? (event.reason === 'verification passed; awaiting operator approval' ? 'approval' : undefined)) !== 'approval') {
+      add(index, 'hold', event.reason, (event.hold ?? (/^inconclusive verification/.test(event.reason) ? 'inconclusive' : undefined)) === 'inconclusive' ? (lastVerdict()?.unknown ? 'unknown' : lastVerdict()?.outside) : undefined)
     }
     if (event.type === 'dispatched') {
       if (event.executor === 'worker') attempts += 1

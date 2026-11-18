@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildProgram, type ClientHost, type Run } from '../src/cli.ts'
+import { buildProgram, type Run } from '../src/cli.ts'
+import type { HostClient } from '../src/remote.ts'
+import { fakeHost } from './fake-host.ts'
 
 const record = (id: string, status: string, extra: object = {}) => ({ id, events: [], state: { status, ...extra } }) as any
 
 /** Run `system ...args` against a fake Host; returns the exit code, stdout and stderr. */
-async function system(args: string[], work: object, confirm: (prompt: string, expected: string) => Promise<string> = async () => 'tan') {
+async function system(args: string[], host: HostClient, confirm: (prompt: string, expected: string) => Promise<string> = async () => 'tan') {
   let out = ''
   let err = ''
   let run: Run | undefined
   const io = { out: (t: string) => { out += t }, err: (t: string) => { err += t }, confirmHuman: confirm } as any
-  const program = buildProgram({ work: () => work } as unknown as ClientHost, io, (r) => { run = r })
+  const program = buildProgram(host, io, (r) => { run = r })
   program.exitOverride()
   await program.parseAsync(['node', 'system', ...args])
   const code = await run!()
@@ -18,58 +20,56 @@ async function system(args: string[], work: object, confirm: (prompt: string, ex
 }
 
 test('task new prints the Task ID alone on stdout, and the base commit on stderr', async () => {
-  const result = await system(['task', 'new', '--text', 'x', '--repo', '.'], { newTask: async () => ({ task: 'sha256:task', base: 'sha256:base' }) })
+  const result = await system(['task', 'new', '--text', 'x', '--repo', '.'], fakeHost({ 'task.new': () => ({ task: 'sha256:task', base: 'sha256:base' }) }))
   assert.equal(result.out, 'sha256:task\n')
   assert.match(result.err, /base sha256:base/)
 })
 
 test('intent new prints the Intent ID alone and needs exactly one of --body and --body-file', async () => {
   const seen: unknown[] = []
-  const work = { newIntent: async (...args: unknown[]) => { seen.push(args); return { intent: 'sha256:intent' } } }
-  const result = await system(['intent', 'new', '--title', 'T', '--body', 'B', '--supersedes', 'sha256:old'], work)
+  const host = fakeHost({ 'intent.new': (params) => { seen.push(params); return { intent: 'sha256:intent' } } })
+  const result = await system(['intent', 'new', '--title', 'T', '--body', 'B', '--supersedes', 'sha256:old'], host)
   assert.equal(result.out, 'sha256:intent\n')
-  assert.deepEqual(seen, [['T', 'B', 'sha256:old', undefined]])
-  await system(['intent', 'new', '--title', 'T', '--body', 'B', '--settled-by-operator'], work)
-  assert.deepEqual(seen[1], ['T', 'B', undefined, true])
-  await assert.rejects(system(['intent', 'new', '--title', 'T'], work), /exactly one of --body and --body-file/)
+  assert.deepEqual(seen, [{ title: 'T', body: 'B', supersedes: 'sha256:old' }])
+  await system(['intent', 'new', '--title', 'T', '--body', 'B', '--settled-by-operator'], host)
+  assert.deepEqual(seen[1], { title: 'T', body: 'B', settledByOperator: true })
+  await assert.rejects(system(['intent', 'new', '--title', 'T'], host), /exactly one of --body and --body-file/)
 })
 
 test('defect add prints the Artifact ID alone', async () => {
   const seen: unknown[] = []
-  const work = { newDefect: async (...args: unknown[]) => { seen.push(args); return { defect: 'sha256:defect' } } }
-  const result = await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke'], work)
+  const host = fakeHost({ 'defect.add': (params) => { seen.push(params); return { defect: 'sha256:defect' } } })
+  const result = await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke'], host)
   assert.equal(result.out, 'sha256:defect\n')
-  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined, undefined]])
+  assert.deepEqual(seen, [{ subject: 'ms-1', foundBy: 'work:x', reason: 'broke' }])
   seen.length = 0
-  await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke', '--supersedes', 'sha256:old'], work)
-  assert.deepEqual(seen, [['ms-1', 'work:x', 'broke', undefined, 'sha256:old']])
+  await system(['defect', 'add', 'ms-1', '--found-by', 'work:x', '--reason', 'broke', '--supersedes', 'sha256:old'], host)
+  assert.deepEqual(seen, [{ subject: 'ms-1', foundBy: 'work:x', reason: 'broke', supersedes: 'sha256:old' }])
 })
 
 test('defect withdraw prints the Artifact ID alone', async () => {
   const seen: unknown[] = []
-  const work = { withdrawDefect: async (...args: unknown[]) => { seen.push(args); return { withdrawal: 'sha256:w' } } }
-  const result = await system(['defect', 'withdraw', 'sha256:d', '--reason', 'wrong carrier'], work)
+  const result = await system(['defect', 'withdraw', 'sha256:d', '--reason', 'wrong carrier'], fakeHost({ 'defect.withdraw': (params) => { seen.push(params); return { withdrawal: 'sha256:w' } } }))
   assert.equal(result.out, 'sha256:w\n')
-  assert.deepEqual(seen, [['sha256:d', 'wrong carrier', undefined]])
+  assert.deepEqual(seen, [{ withdraws: 'sha256:d', reason: 'wrong carrier' }])
 })
 
 test('confirm prints the Artifact ID alone', async () => {
   const seen: unknown[] = []
-  const work = { newConfirmation: async (...args: unknown[]) => { seen.push(args); return { confirmation: 'sha256:conf' } } }
-  const result = await system(['confirm', 'sha256:subject', '--note', 'checked'], work)
+  const result = await system(['confirm', 'sha256:subject', '--note', 'checked'], fakeHost({ 'artifact.confirm': (params) => { seen.push(params); return { confirmation: 'sha256:conf' } } }))
   assert.equal(result.out, 'sha256:conf\n')
-  assert.deepEqual(seen, [['sha256:subject', 'checked', undefined]])
+  assert.deepEqual(seen, [{ subject: 'sha256:subject', note: 'checked' }])
 })
 
 for (const verb of ['approve', 'deny'] as const) {
   test(`${verb} several Works asks for one typed confirmation and decides each`, async () => {
     const decided: string[] = []
     const asked: { prompt: string; expected: string }[] = []
-    const work = {
-      get: async (id: string) => record(id, 'held', { reason: 'awaiting', awaiting: 'publish' }),
-      decide: async (id: string, decision: string, who: string) => { decided.push(`${id} ${decision} ${who}`); return record(id, decision === 'approved' ? 'succeeded' : 'failed') },
-    }
-    const result = await system([verb, 'work:aaaaaaaa1', 'work:bbbbbbbb2', 'work:cccccccc3', '--reason', 'tidy'], work, async (prompt, expected) => { asked.push({ prompt, expected }); return 'tan' })
+    const host = fakeHost(
+      { 'work.show': ({ workId }) => record(workId, 'held', { reason: 'awaiting', awaiting: 'publish' }) },
+      { decide: async ({ workId, decision }, who) => { decided.push(`${workId} ${decision} ${who}`); return record(workId, decision === 'approved' ? 'succeeded' : 'failed') } },
+    )
+    const result = await system([verb, 'work:aaaaaaaa1', 'work:bbbbbbbb2', 'work:cccccccc3', '--reason', 'tidy'], host, async (prompt, expected) => { asked.push({ prompt, expected }); return 'tan' })
     assert.equal(asked.length, 1, 'one confirmation for all')
     assert.equal(asked[0]!.expected, `${verb} 3`)
     for (const id of ['work:aaaaaaaa1', 'work:bbbbbbbb2', 'work:cccccccc3']) assert.ok(asked[0]!.prompt.includes(id) || result.out.includes(id), id)
@@ -81,29 +81,29 @@ for (const verb of ['approve', 'deny'] as const) {
 
 test('deciding several Works refuses them all, deciding none, when one does not exist', async () => {
   const decided: string[] = []
-  const work = {
-    get: async (id: string) => (id === 'work:missing' ? undefined : record(id, 'held')),
-    decide: async (id: string) => { decided.push(id); return record(id, 'failed') },
-  }
-  await assert.rejects(system(['deny', 'work:a', 'work:missing', '--reason', 'x'], work), /no Work work:missing/)
+  const host = fakeHost(
+    { 'work.show': ({ workId }) => (workId === 'work:missing' ? undefined : record(workId, 'held')) },
+    { decide: async ({ workId }) => { decided.push(workId); return record(workId, 'failed') } },
+  )
+  await assert.rejects(system(['deny', 'work:a', 'work:missing', '--reason', 'x'], host), /no Work work:missing/)
   assert.deepEqual(decided, [])
 })
 
 test('claim records a claim on an Item of the repository', async () => {
   const seen: unknown[] = []
-  const result = await system(['claim', 'df-24', '--repo', '/r', '--force'], { claim: async (...args: unknown[]) => { seen.push(args); return { who: 'tan', at: 'T' } } })
-  assert.deepEqual(seen, [['/r', 'df-24', true]])
+  const result = await system(['claim', 'df-24', '--repo', '/r', '--force'], fakeHost({ 'item.claim': (params) => { seen.push(params); return { who: 'tan', at: 'T' } } }))
+  assert.deepEqual(seen, [{ repository: '/r', item: 'df-24', force: true }])
   assert.match(result.out, /df-24 claimed by tan/)
 })
 
 const specOf = (verifyId: string) => ({ state: 'stored', envelope: { content: { steps: [{ id: 'implement', worker: {} }, { id: verifyId, verify: { capability: 'checks' } }] } } })
 
 /** A fake Host for `work retry`: the spec has a verify step `checks`; `retried` collects the steps run again. */
-function retryHost(retried: string[]) {
-  return {
-    work: () => ({ get: async (id: string) => record(id, 'failed', { specId: 'sha256:spec' }), retry: async (_id: string, _w: unknown, _r: string, step: string | undefined) => { retried.push(String(step)); return 'detached' } }),
-    artifacts: () => ({ get: async () => specOf('checks') }),
-  }
+function retryHost(retried: string[]): HostClient {
+  return fakeHost(
+    { 'work.show': ({ workId }) => record(workId, 'failed', { specId: 'sha256:spec' }), 'artifact.show': () => specOf('checks') },
+    { retry: async ({ step }) => { retried.push(String(step)); return 'detached' } },
+  )
 }
 
 async function retry(args: string[], terminal: boolean) {
@@ -111,7 +111,7 @@ async function retry(args: string[], terminal: boolean) {
   let confirmed = 0
   const io = { out() {}, err() {}, confirmHuman: async (_p: string, _e: string) => { if (!terminal) throw new Error('this decision needs a human at a terminal'); confirmed++; return 'tan' } } as any
   let run: Run | undefined
-  const program = buildProgram(retryHost(retried) as unknown as ClientHost, io, (r) => { run = r })
+  const program = buildProgram(retryHost(retried), io, (r) => { run = r })
   program.exitOverride()
   await program.parseAsync(['node', 'system', 'work', 'retry', 'work:a', ...args])
   return { run: run!, retried, confirmed: () => confirmed }

@@ -633,13 +633,52 @@ for (const withBase of [true, false]) {
       const text = prompt(ws, req)
       if (withBase) {
         assert.ok(text.includes(`- base: the working directory starts from commit ${commit}`))
-        assert.match(text, /- previous: .*not the starting point/)
+        assert.match(text, /- previous: .*(already applied|did not apply cleanly)/)
         assert.doesNotMatch(text, /- previous: the working directory starts/)
       } else assert.ok(text.includes(`- previous: the working directory starts from commit ${commit}`))
     } finally { await cleanup(ws) }
   })
 }
 
+for (const conflict of [false, true]) {
+  test(`publish reopening applies the earlier change onto the new tip: ${conflict ? 'conflict is aborted' : 'clean'}`, async () => {
+    const { artifacts } = memory()
+    const repository = repo()
+    const commitAll = (m: string) => {
+      execFileSync('git', ['-C', repository, 'add', '.'])
+      execFileSync('git', ['-C', repository, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', m])
+    }
+    const input = await task(artifacts, 'reapply', repository)
+    const put = async () => (await artifacts.put({ ...GIT_TREE_KIND, content: await snapshot(repository), classification: 'local-private', producer: { type: 'system', ref: 'test' } })).id
+    const first = await snapshot(repository)
+    writeFileSync(join(repository, 'README.md'), 'changed by attempt\n')
+    writeFileSync(join(repository, 'DOC.md'), 'doc\n')
+    commitAll('change')
+    const previous = await put()
+    execFileSync('git', ['-C', repository, 'checkout', '--quiet', '--detach', first.commit])
+    writeFileSync(join(repository, conflict ? 'README.md' : 'TIP.md'), 'tip\n')
+    commitAll('tip')
+    const base = await put()
+    const req = request({ task: input, previous, base }, ['change'])
+    const ws = await prepare(artifacts, req, join(root, `ws-carry-${conflict}`))
+    try {
+      const status = execFileSync('git', ['-C', ws.work, 'status', '--porcelain'], { encoding: 'utf8' })
+      const text = prompt(ws, req)
+      assert.equal(execFileSync('git', ['-C', ws.work, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), ws.base!.commit)
+      if (conflict) {
+        assert.equal(status, '')
+        assert.equal(readFileSync(join(ws.work, 'README.md'), 'utf8'), 'tip\n')
+        assert.equal(existsSync(join(ws.work, 'DOC.md')), false)
+        assert.match(text, /- previous: .*did not apply cleanly/)
+      } else {
+        assert.equal(readFileSync(join(ws.work, 'README.md'), 'utf8'), 'changed by attempt\n')
+        assert.equal(readFileSync(join(ws.work, 'DOC.md'), 'utf8'), 'doc\n')
+        assert.equal(readFileSync(join(ws.work, 'TIP.md'), 'utf8'), 'tip\n')
+        assert.match(text, /- previous: .*already applied/)
+      }
+    } finally { await cleanup(ws) }
+  })
+}
 
 test('Claude attempt hook receives both unified windows', async (t) => {
   const ownRoot = mkdtempSync(join(tmpdir(), 'agent-unified-'))

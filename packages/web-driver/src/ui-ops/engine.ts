@@ -288,7 +288,7 @@ export class UiEngine {
     // The site's own failure (nm-4): say how much was pasted and what to change, counts only.
     const kb = Math.max(1, Math.round(Buffer.byteLength(body) / 1024))
     const stuck = /still being added/.test(seen)
-    throw new ProviderError('ui_drift', `${this.map.provider}: attach text failed: ${stuck ? 'the attachment was still being added' : 'neither the text nor one named attachment was found'} after ${attachWaitMs} ms (${seen}). The site did not finish taking an input of ${kb} KB as pasted text: ${stuck ? 'shorten the input, or raise timeouts.attach if the site is only slow' : 'shorten the input'}`)
+    throw new ProviderError('ui_drift', `${this.map.provider}: attach text failed: ${stuck ? 'the attachment was still being added' : 'neither the text nor one named attachment was found'} after ${attachWaitMs} ms (${seen}). The site did not finish taking an input of ${kb} KB as pasted text: ${stuck ? 'shorten the input, or raise timeouts.attach if the site is only slow' : 'shorten the input'}`, { attach: true })
   }
 
   /** Number of visible matches of a `many` element (or 0/1 for a `one` element). */

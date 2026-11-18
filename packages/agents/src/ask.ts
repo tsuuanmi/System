@@ -3,12 +3,12 @@
  * `Spawner`, the account's own credential and the parsers of its output. It is the shape of ss-5's quota probe (a
  * single economy turn in an empty directory) with the answer kept. It never throws: a turn that cannot answer is a refusal.
  */
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Tier } from '@system/work'
-import { digest, keepRefreshedAuth, rateLimitEvents, type Account, type Spawner } from './agent.ts'
-import { parseClaude, parseCodex } from './runtimes.ts'
+import { adapterFor } from './adapters/index.ts'
+import type { Account, Spawner } from './agent.ts'
 
 /** A turn's answer, or why there is none. */
 export type Asked =
@@ -28,9 +28,11 @@ export async function askAccount(account: Account, spawner: Spawner, root: strin
   const tier = options.tier ?? 'economy'
   const model = account.models?.[tier]
   if (!model) return { ok: false, reason: `${account.ref} has no ${tier} model` }
+  const adapter = adapterFor(account.runtime)!
   let dir: string | undefined
   try {
-    if (account.runtime === 'claude-code' && !(await account.token?.())) return { ok: false, reason: `${account.ref}: its token is not configured (system credentials set)` }
+    const pre = await adapter.preflight(account)
+    if ('failed' in pre) return { ok: false, reason: pre.failed }
     mkdirSync(root, { recursive: true })
     dir = mkdtempSync(join(root, 'ask-'))
     const work = join(dir, 'work')
@@ -41,21 +43,9 @@ export async function askAccount(account: Account, spawner: Spawner, root: strin
     for (const key of KEEP) if (process.env[key]) env[key] = process.env[key]
     env.HOME = home
     env.TMPDIR = home
-    let argv: string[]
-    let codexAuth: { attempt: string; account: string; before: string } | undefined
-    if (account.runtime === 'claude-code') {
-      env.CLAUDE_CODE_OAUTH_TOKEN = await account.token!()
-      argv = [account.command, '-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', model, '--no-session-persistence', '--strict-mcp-config', '--tools', '']
-    } else {
-      const source = join(account.codexHome ?? '', 'auth.json')
-      if (!existsSync(source)) return { ok: false, reason: `${account.ref}: no auth.json in ${account.codexHome} (codex login --device-auth)` }
-      const codexHome = join(dir, 'codex-home')
-      mkdirSync(codexHome, { mode: 0o700 })
-      copyFileSync(source, join(codexHome, 'auth.json'))
-      codexAuth = { attempt: join(codexHome, 'auth.json'), account: source, before: digest(source) }
-      env.CODEX_HOME = codexHome
-      argv = [account.command, 'exec', '--json', '--ephemeral', '--ignore-user-config', '--skip-git-repo-check', '-m', model, '-s', 'read-only', '-C', work, prompt]
-    }
+    const staged = pre.stage(dir)
+    Object.assign(env, staged.env)
+    const argv = adapter.askArgv({ command: account.command, prompt, model, work })
     const stop = new AbortController()
     const forward = () => stop.abort()
     if (options.signal?.aborted) forward()
@@ -68,12 +58,10 @@ export async function askAccount(account: Account, spawner: Spawner, root: strin
       options.signal?.removeEventListener('abort', forward)
     })
     const stdout = spawned.stdout()
-    if (account.runtime === 'claude-code' && account.onRateLimit) {
-      const events = rateLimitEvents(stdout)
-      if (events.length) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the turn */ }
-    }
-    const parsed = account.runtime === 'claude-code' ? parseClaude(stdout) : parseCodex(stdout)
-    if (codexAuth) keepRefreshedAuth(codexAuth)
+    const events = adapter.rateLimitEvents?.(stdout)
+    if (events?.length && account.onRateLimit) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the turn */ }
+    const parsed = adapter.parse(stdout)
+    staged.finish()
     if (timedOut) return { ok: false, reason: `${account.ref}: the turn timed out` }
     if (stop.signal.aborted) return { ok: false, reason: `${account.ref}: the turn was stopped` }
     if (outcome.exitCode !== 0 || !parsed.ok) {

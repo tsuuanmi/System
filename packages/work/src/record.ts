@@ -6,6 +6,7 @@
  */
 import { contentIdSchema } from '@system/artifacts'
 import { z } from 'zod'
+import { outsideNext, type OutsideRun } from './outside.ts'
 
 const at = z.string()
 const TERMINAL_STATUSES = ['succeeded', 'failed', 'held', 'cancelled'] as const
@@ -55,6 +56,11 @@ export const attemptSummarySchema = z.object({
 }).strict()
 export type AttemptSummary = z.infer<typeof attemptSummarySchema>
 
+/** Why a port's failure is Outside, said by the port that wrote the reason (cause-1): only `outside.ts` reads it; an event without one is classified by its text, as old records are. */
+export const PORT_CAUSES = ['attach', 'conflict', 'load'] as const
+export type PortCause = (typeof PORT_CAUSES)[number]
+const portCause = z.enum(PORT_CAUSES).optional()
+
 export type UsageObserved = Extract<z.infer<typeof usageSchema>, { state: 'observed' }>
 
 export const eventSchema = z.discriminatedUnion('type', [
@@ -98,6 +104,10 @@ export const eventSchema = z.discriminatedUnion('type', [
     limited: z.literal(true).optional(),
     /** The Worker says this failure may be tried afresh (`retry.onFail` names the step itself). */
     retryable: z.literal(true).optional(),
+    /** The Worker's own marker of an Outside failure (the web attach). */
+    cause: portCause,
+    /** The controller's own failure: the step changed nothing. */
+    noChange: z.literal(true).optional(),
     /** Old records only: never written (a later step's final message objected to an earlier step's output). */
     objection: z.string().optional(),
     /** A no-change attempt on a step reopened by this failing verdict, passed on as the same change (`retry.rerunUnchanged`): the check runs again on it. */
@@ -114,6 +124,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     verifier: z.object({ ref: z.string(), version: z.string() }).strict().optional(),
     /** The second run of the check on the same change; the id is the first run's verdict. */
     rerunOf: contentIdSchema.optional(),
+    /** The Verifier's marker of an Outside verdict (the base re-run: `load`). */
+    cause: portCause,
   }).strict(),
   z.object({
     /** A step whose `when`/`unless` condition on an optional output was not met: it does not run, and counts as done for the steps after it. */
@@ -161,6 +173,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     rejected: z.enum(['conflict', 'merge-check', 'build-output']).optional(),
     /** The merge commit the provider held for an operator's Approval (`EffectOutcome.held`); recorded with state `absent`: nothing was published. */
     held: contentIdSchema.optional(),
+    /** The provider's marker of an Outside failure (a conflict at publish). */
+    cause: portCause,
   }).strict(),
   z.object({
     type: z.literal('decided'), seq: z.number().int(), at, caller: storedCallerSchema,
@@ -174,6 +188,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     result: z.literal('satisfied').optional(),
     /** For `held`: the step whose operator decision `system approve` records. */
     awaiting: z.string().optional(),
+    /** For `held`, why the controller held: `approval` (awaiting the operator's Approval) or `inconclusive` (a verdict needs a decision). */
+    hold: z.enum(['approval', 'inconclusive']).optional(),
   }).strict(),
 ])
 
@@ -191,12 +207,17 @@ const stepState = z.object({
   subject: contentIdSchema.optional(),
   /** An operator's decision on this step (approval of an effect or of an inconclusive verdict). */
   decision: z.enum(['approved', 'denied']).optional(),
+  /** Derived by `fold`: the step's latest `reopened` event; the Outside failures in a row on it (cm-2), absent when the last thing was not one. */
+  reopening: z.object({ automatic: z.literal(true).optional(), failure: contentIdSchema.optional(), failedEffect: z.string().optional(), base: contentIdSchema.optional(), worker: z.string().optional(), previous: contentIdSchema.optional() }).strict().optional(),
+  outside: z.custom<OutsideRun>((v) => typeof v === 'object').optional(),
 }).strict()
 
 const effectState = z.object({
   stepId: z.string(),
   state: z.enum(['intended', 'applied', 'failed', 'absent', 'unknown']),
   detail: z.record(z.string(), z.string()).optional(),
+  held: contentIdSchema.optional(),
+  approvedMerge: contentIdSchema.optional(),
 }).strict()
 
 export const stateSchema = z.object({
@@ -213,6 +234,8 @@ export const stateSchema = z.object({
   /** Added with ro-15; set by a terminal event that carries it. */
   result: z.literal('satisfied').optional(),
   results: z.record(z.string(), contentIdSchema),
+  verifiers: z.record(z.string(), z.object({ ref: z.string(), version: z.string() }).strict()).optional(),
+  changedTests: z.record(z.string(), z.array(z.object({ path: z.string(), change: z.enum(['modified', 'deleted']), reason: z.string() }).strict())).optional(),
 }).strict()
 
 export type WorkState = z.infer<typeof stateSchema>
@@ -238,7 +261,7 @@ export const workRecordSchema = z.object({
   events: z.array(eventSchema).min(1),
   state: stateSchema,
   receipts: z.array(receipt).optional(),
-}).strict()
+}).strict().transform((r) => ({ ...r, state: fold(Object.keys(r.state.steps), r.events) }))
 
 export type WorkRecord = z.infer<typeof workRecordSchema>
 export type Receipt = z.infer<typeof receipt>
@@ -250,7 +273,8 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
   const first = events[0]
   if (!first || first.type !== 'admitted') throw new TypeError('a Work record starts with its admission')
   const steps: Record<string, StepState> = Object.fromEntries(stepIds.map((stepId) => [stepId, { state: 'pending', attempts: [], outputs: {} }]))
-  const state: WorkState = { status: 'running', specId: first.specId, input: first.input, criteria: { ...first.criteria }, steps, effects: {}, results: {} }
+  const changedTests: NonNullable<WorkState['changedTests']> = {}
+  const state: WorkState = { status: 'running', specId: first.specId, input: first.input, criteria: { ...first.criteria }, steps, effects: {}, results: {}, verifiers: { ...first.verifiers }, changedTests }
   for (const event of events.slice(1)) {
     switch (event.type) {
       case 'admitted':
@@ -266,6 +290,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         if (event.limited) { s.state = 'pending'; break }
         s.state = event.status
         if (event.status === 'succeeded') s.outputs = { ...event.outputs }
+        for (const subject of event.status === 'succeeded' ? Object.values(event.outputs) : []) if (event.changedTests || !changedTests[subject]) changedTests[subject] = event.changedTests ?? []
         if (event.partial) s.partial = { ...event.partial }
         break
       }
@@ -286,10 +311,12 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         delete state.awaiting
         for (const stepId of event.reset ?? []) {
           if (stepId === event.stepId) continue
-          steps[stepId] = { state: 'pending', attempts: steps[stepId]!.attempts, outputs: {} }
+          const { attempts, reopening } = steps[stepId]!
+          steps[stepId] = { state: 'pending', attempts, outputs: {}, ...(reopening ? { reopening } : {}) }
         }
         steps[event.stepId]!.state = 'pending'
         steps[event.stepId]!.outputs = {}
+        steps[event.stepId]!.reopening = Object.fromEntries(Object.entries({ automatic: event.automatic, failure: event.failure, failedEffect: event.failedEffect, base: event.base, worker: event.worker, previous: event.previous }).filter(([, v]) => v !== undefined))
         // A verify step asked again: its last verdict is recorded and no longer counts.
         delete steps[event.stepId]!.verdict
         delete steps[event.stepId]!.subject
@@ -299,14 +326,17 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         delete state.result
         state.results = {}
         break
-      case 'effect-intended':
+      case 'effect-intended': {
         steps[event.stepId]!.state = 'running'
-        state.effects[event.operationId] = { stepId: event.stepId, state: 'intended' }
+        const { held, approvedMerge } = state.effects[event.operationId] ?? {}
+        state.effects[event.operationId] = { stepId: event.stepId, state: 'intended', ...(held && { held }), ...(approvedMerge && { approvedMerge }) }
         break
+      }
       case 'effect-observed': {
         const effect = state.effects[event.operationId]!
         effect.state = event.state
         if (event.detail) effect.detail = { ...event.detail }
+        if (event.held) { effect.held = event.held; delete effect.approvedMerge }
         if (event.state === 'applied') steps[event.stepId]!.state = 'succeeded'
         if (event.state === 'failed') steps[event.stepId]!.state = 'failed'
         // A hold on an unknown outcome (no decision awaited) ends once the outcome is known.
@@ -318,6 +348,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
       }
       case 'decided':
         steps[event.stepId]!.decision = event.decision
+        for (const e of Object.values(state.effects)) if (e.stepId === event.stepId && e.held) event.decision === 'approved' ? e.approvedMerge = e.held : delete e.approvedMerge
         state.status = 'running'
         delete state.reason
         delete state.awaiting
@@ -329,6 +360,11 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         if (event.result) state.result = event.result
         if (event.awaiting) state.awaiting = event.awaiting
         break
+    }
+    for (const id of event.type === 'reopened' ? [event.stepId, ...(event.reset ?? [])] : 'stepId' in event ? [event.stepId] : []) {
+      const run = outsideNext(steps[id]!.outside, event, id)
+      if (run) steps[id]!.outside = run
+      else delete steps[id]!.outside
     }
   }
   return state

@@ -113,13 +113,15 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
   - **Implemented (H4b-1):** the CLI is a thin client (`packages/app`:
-    `remote.ts` is a `ClientHost` over the socket, `client.ts` its entry, run by
+    `remote.ts` is the Host client over the socket, derived from the
+    operation table (one `call(method, params)`; `system mcp` uses its call policy too), `client.ts` its entry, run by
     `bin/system` for every command but `init`, `host` and `doctor`, without
     booting DSH). `buildProgram` is its commands; `doctor` and `host` are a program of their own (`buildHostProgram`),
     run in the DSH process.
   - It reads the Workflow file and sends its contents. A call that changes
     something carries a fresh `commandId`, sent once more with the same one
-    after a timeout (10 s: "not answering").
+    after a timeout (10 s: "not answering"); a write never goes over the
+    read-only connection a Host upgrading to other code serves reads on.
   - Following, exit codes (0, 1, 3, 5), Ctrl-C detaching (or
     `--cancel-on-interrupt`) and the "not running" line are in the
     [runbook](../operations/runbook.md#following-a-work-and-detaching).

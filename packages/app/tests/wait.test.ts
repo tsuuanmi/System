@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Client } from '../../host/lib/index.js'
-import { buildProgram, type ClientHost, type Run, type WaitOptions, type Waited } from '../src/cli.ts'
-import { remoteHost } from '../src/remote.ts'
+import { buildProgram, type Run } from '../src/cli.ts'
+import { hostClient, type WaitOptions, type Waited } from '../src/remote.ts'
+import { fakeHost } from './fake-host.ts'
 import { NotAnswering, NotRunning } from '../../host/lib/index.js'
 
 const record = (id: string, status: string, extra: object = {}) => ({ id, events: [], state: { status, ...extra } }) as any
@@ -10,7 +11,7 @@ const record = (id: string, status: string, extra: object = {}) => ({ id, events
 /** Run `system work wait ...args` against a fake `waitFor`; returns the exit code and what was printed. */
 async function wait(args: string[], waited: Waited | ((ids: string[], options: WaitOptions) => Waited)) {
   let seen: { ids: string[]; options: WaitOptions } | undefined
-  const host = { work: () => ({ waitFor: async (ids: string[], options: WaitOptions) => { seen = { ids, options }; return typeof waited === 'function' ? waited(ids, options) : waited } }) } as unknown as ClientHost
+  const host = fakeHost({}, { waitFor: async (ids, options) => { seen = { ids, options }; return typeof waited === 'function' ? waited(ids, options) : waited } })
   let out = ''
   let err = ''
   let run: Run | undefined
@@ -106,7 +107,7 @@ function fakeRemote(status: Record<string, string>, opened: { readOnly: (boolean
     } as Client
   }
   const remote = { open: open as any, err: () => {}, retryMs: 5, reconnectMs: options.reconnectMs }
-  return remoteHost(remote).work()
+  return hostClient(remote)
 }
 
 // These structural types keep the tests compilable before Waited gains the field.
@@ -160,7 +161,7 @@ test('non-patient reads still fail at once', async () => {
   for (const method of ['wait', 'get'] as const) {
     const calls: string[] = []
     const work = fakeRemote({}, undefined, 0, { never: true, calls })
-    await assert.rejects(async () => work[method]('work:a'), NotAnswering)
+    await assert.rejects(async () => (method === 'wait' ? work.wait('work:a') : work.call('work.show', { workId: 'work:a' })), NotAnswering)
     assert.deepEqual(calls, [method === 'wait' ? 'work.events' : 'work.show'], 'no retry for a non-patient read')
   }
 })

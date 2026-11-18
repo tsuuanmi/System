@@ -51,14 +51,17 @@ export class ProviderError extends Error {
    * holding `undefined` is defined on every error).
    */
   declare readonly siteError?: true
+  /** The site did not finish taking the pasted input (`attachText`): the caller's marker of an Outside failure; set only when true, like `siteError`. */
+  declare readonly attach?: true
 
-  constructor(kind: ProviderErrorKind, message: string, options?: ErrorOptions & { feature?: string; siteError?: boolean }) {
+  constructor(kind: ProviderErrorKind, message: string, options?: ErrorOptions & { feature?: string; siteError?: boolean; attach?: boolean }) {
     super(message, options)
     this.name = 'ProviderError'
     this.kind = kind
     this.disposition = dispositionOf(kind)
     this.feature = options?.feature
     if (options?.siteError === true) this.siteError = true
+    if (options?.attach === true) this.attach = true
   }
 }
 

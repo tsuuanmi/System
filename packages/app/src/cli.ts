@@ -3,12 +3,24 @@
  * runs it once the host has started and then asks the launcher to exit.
  */
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Command } from 'commander'
-import type { Envelope, ReadResult } from '@system/artifacts'
-import { type WorkRecord, type WorkState } from '@system/work'
+import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
+import type { WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/agents'
+import { MAX_FRAME, fitsFrame } from '../../host/lib/index.js'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
-import { RECONNECT_MS } from './remote.ts'
+import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
+
+/** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
+const LOGIN_TIMEOUT = 11 * 60_000
+/** How long `workers.recheck` may take: a Chrome start and the page's own clocks. */
+const RECHECK_TIMEOUT = 3 * 60_000
+
+/** The optional fields of a call, left out when not given (the table's params are strict). */
+const given = <T extends object>(fields: T): T => Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as T
+
+const base64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
 /** A repeatable option's values, in order. */
 function collect(value: string, previous: string[]): string[] {
@@ -32,86 +44,6 @@ export interface CliIo {
   confirmHuman(prompt: string, expected: string): Promise<string>
 }
 
-/** The credential operations the CLI offers; values go in, never out. */
-export interface CredentialCommands {
-  set(name: string, value: string): Promise<void>
-  describe(name: string): Promise<{ configured: boolean; source?: string }>
-}
-
-/** The Artifact operations the CLI offers, resolved against the running host. */
-export interface ArtifactCommands {
-  putFile(path: string, mediaType: string, classification: string): Promise<Envelope>
-  get(id: string): Soon<ReadResult>
-  readBytes(id: string): Promise<Uint8Array>
-}
-
-/** What a command that follows a Work accepts: Ctrl-C detaches, or with this cancels the Work and goes on following it. */
-export interface FollowOptions {
-  cancelOnInterrupt?: boolean
-  /** Aborting it ends the following without a word; the result is `stopped`. */
-  signal?: AbortSignal
-  /** Keep reading across a Host restart or a slow Host, for up to `RECONNECT_MS` of one outage (`work wait`, which only watches). */
-  patient?: boolean
-  /** Told whether the last call failed (true) or was answered (false); for `waitFor`. */
-  outage?: (down: boolean) => void
-}
-
-/** What `work wait` accepts: with `any` it returns at the first Work that ended, otherwise when all have; after `timeoutMs` it gives up. */
-export interface WaitOptions {
-  any: boolean
-  timeoutMs?: number
-}
-
-/** The Works as they are when the wait returned, and the one whose ending decided it (none on a timeout or Ctrl-C). */
-export interface Waited {
-  records: WorkRecord[]
-  decided?: string
-  timedOut: boolean
-  /** The Host did not answer for the bound; the Works were not read. */
-  unreachable?: string
-}
-
-/** A Work's record once it is terminal, or `detached` when the operator left it running in the Host. */
-export type Followed = WorkRecord | 'detached' | 'stopped'
-
-/** A value now, or when the Host has answered. */
-type Soon<T> = T | Promise<T>
-
-/** The Work operations the CLI offers. */
-export interface WorkCommands {
-  admitFile(path: string, input: string | undefined, worker?: string, force?: boolean): Promise<WorkRecord>
-  admitTask(capabilities: string[], input: string | undefined, worker?: string, force?: boolean): Promise<WorkRecord>
-  /** Start the Work in the Host and follow it until it is terminal. */
-  run(workId: string, follow?: FollowOptions): Promise<Followed>
-  get(workId: string): Soon<WorkRecord | undefined>
-  list(since?: string): Soon<{ id: string; status: string; specId: string; item?: string }[]>
-  replay(workId: string): Soon<{ state: WorkState; matches: boolean }>
-  cancel(workId: string, reason: string): Promise<'requested' | WorkRecord>
-  decide(workId: string, decision: 'approved' | 'denied', operatorId: string, reason: string): Promise<Followed>
-  retry(workId: string, worker: string | undefined, reason: string, step: string | undefined, follow?: FollowOptions): Promise<Followed>
-  /** Wait until nothing runs the Work, as after a cancel was requested. */
-  wait(workId: string): Promise<Followed>
-  /** Wait for every one of `workIds`, or with `any` the first, to end, be held or await approval. */
-  waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
-  /** A Work's measurements. */
-  report(workId: string, classify?: boolean): Promise<unknown>
-  /** The five measures of effect over the Works admitted in a range. */
-  rangeReport(range: { since: string; until?: string; escaped?: number }): Promise<unknown>
-  newTask(instructions: string, repository: string | undefined, ref: string | undefined, context: string[], item?: string, against?: string, force?: boolean): Promise<{ task: string; base?: string }>
-  /** Store an `intent@1` Artifact; its ID. */
-  newIntent(title: string, body: string, supersedes?: string, settledByOperator?: boolean): Promise<{ intent: string }>
-  /** Store a `confirmation@1` Artifact; its ID. */
-  newConfirmation(subject: string, note: string, date?: string): Promise<{ confirmation: string }>
-  /** Store an `escaped-defect@1` Artifact; its ID. */
-  newDefect(subject: string, foundBy: string, reason: string, date?: string, supersedes?: string): Promise<{ defect: string }>
-  /** Store an `escaped-defect-withdrawal@1` Artifact; its ID. */
-  withdrawDefect(withdraws: string, reason: string, date?: string): Promise<{ withdrawal: string }>
-  /** Claim an Item of the project at `repository` before submitting a Work for it. */
-  claim(repository: string, item: string, force?: boolean): Promise<{ who: string; at: string }>
-  /** The lines of the status of the project at `repository` (see the Host's `status`). */
-  status(repository: string, state: string | undefined, item: string | undefined): Promise<string[]>
-}
-
 export interface LoginView {
   signedIn: boolean
   detail: string
@@ -123,13 +55,6 @@ export interface RecheckView {
   ready: boolean
   state: string
   detail: string
-}
-
-export interface RemoteLoginView {
-  url: string
-  port: number
-  ssh: string
-  expiresAt: number
 }
 
 /** An account's note, label and provider account ID (never a credential), for the end of its line; a web account has no provider account. */
@@ -159,19 +84,6 @@ export function quotaLine(quota: QuotaReport, now: number): string {
 export interface WorkersView {
   registered: string[]
   accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
-}
-
-/** What the thin client's commands run against: the Host, over its socket. */
-export interface ClientHost {
-  artifacts(): ArtifactCommands
-  work(): WorkCommands
-  credentials(): CredentialCommands
-  workers(): Promise<WorkersView>
-  login(ref: string, cookies: string | undefined): Promise<LoginView>
-  /** Check an account that is quarantined or cooling down, sending nothing; ready again only when the check passes. */
-  recheck(ref: string): Promise<RecheckView>
-  /** The remote sign-in: `show` is given where to reach the viewer once it is up; resolves when it ends. Ctrl-C cancels it. */
-  loginRemote(ref: string, show: (view: RemoteLoginView) => void): Promise<LoginView>
 }
 
 /** What `doctor` and `host` run against: the process that boots DSH. */
@@ -214,8 +126,12 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
 }
 
 /** Build the thin client's program: every other command, over the Host's socket. */
-export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => void): Command {
+export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => void): Command {
   const program = newProgram()
+  const artifactId = (id: string): string => {
+    if (!CONTENT_ID_RE.test(id)) throw new Error(`not an Artifact ID: ${id}`)
+    return id
+  }
   const artifact = program.command('artifact').description('store and read immutable Artifacts by ID')
   artifact.command('put <file>')
     .description('store a file as an Artifact of kind file@1 and print its ID')
@@ -223,7 +139,10 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--classification <level>', 'public | operator-shared | local-private', 'local-private')
     .action((file: string, options: { mediaType: string; classification: string }) => {
       select(async () => {
-        const envelope = await host.artifacts().putFile(file, options.mediaType, options.classification)
+        if (!(CLASSIFICATIONS as readonly string[]).includes(options.classification)) throw new Error(`unknown classification ${options.classification}`)
+        const data = base64(readFileSync(file))
+        if (!fitsFrame(data)) throw new Error(`${file} is too large to send to the Host (${data.length} bytes in base64; a frame holds ${MAX_FRAME})`)
+        const envelope = await host.call('artifact.put', { data, mediaType: options.mediaType, classification: options.classification as (typeof CLASSIFICATIONS)[number] }) as Envelope
         io.out(`${envelope.id}\n`)
         return 0
       })
@@ -232,7 +151,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('print an Artifact envelope and its occurrences as JSON')
     .action((id: string) => {
       select(async () => {
-        const read = await host.artifacts().get(id)
+        const read = await host.call('artifact.show', { id: artifactId(id) }) as ReadResult
         io.out(`${JSON.stringify(read, null, 2)}\n`)
         return read.state === 'stored' ? 0 : 1
       })
@@ -241,16 +160,15 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('write the bytes of a blob Artifact to stdout')
     .action((id: string) => {
       select(async () => {
-        io.write(await host.artifacts().readBytes(id))
+        io.write(Buffer.from((await host.call('artifact.cat', { id: artifactId(id) })).data, 'base64'))
         return 0
       })
     })
   const decide = (decision: 'approved' | 'denied') => (workIds: string[], options: { reason: string }) => {
     select(async () => {
-      const commands = host.work()
-      const records = []
+      const records: WorkRecord[] = []
       for (const workId of workIds) {
-        const record = await commands.get(workId)
+        const record = await host.call('work.show', { workId })
         if (!record) throw new Error(`no Work ${workId}`)
         io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
         records.push(record)
@@ -264,7 +182,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       let code = 0
       for (const workId of workIds) {
         try {
-          const outcome = exitOf(await commands.decide(workId, decision, operatorId, options.reason))
+          const outcome = exitOf(await host.decide({ workId, decision, reason: options.reason }, operatorId))
           code = code || outcome
         } catch (error) {
           if (workIds.length === 1) throw error
@@ -287,7 +205,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('registered Workers, and each configured agent account with why it is or is not available')
     .action(() => {
       select(async () => {
-        const { registered, accounts } = await host.workers()
+        const { registered, accounts } = await host.call('workers.list', {}) as WorkersView
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}${identityOf(a)} (${a.runtime})\n`)
@@ -317,7 +235,8 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
           io.out(`${ref}: ${report.signedIn ? 'signed in' : `not signed in: ${report.detail}`}\n`)
           return report.signedIn ? 0 : 1
         }
-        const report = await host.login(ref, options.cookies === undefined ? undefined : readFileSync(options.cookies, 'utf8'))
+        const cookies = options.cookies === undefined ? undefined : readFileSync(options.cookies, 'utf8')
+        const report = await host.call('workers.login', given({ ref, cookies }), { timeout: LOGIN_TIMEOUT }) as LoginView
         if (report.imported !== undefined) io.out(`imported ${report.imported} cookie(s), skipped ${report.skipped ?? 0} of other sites\n`)
         io.out(`${ref}: ${report.signedIn ? 'signed in' : `not signed in: ${report.detail}`}\n`)
         return report.signedIn ? 0 : 1
@@ -327,7 +246,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('check a web account that is quarantined or cooling down (sign-in, Chat mode, temporary chat), sending nothing, and make it ready again only when the check passes; operators only')
     .action((ref: string) => {
       select(async () => {
-        const report = await host.recheck(ref)
+        const report = await host.call('workers.recheck', { ref }, { timeout: RECHECK_TIMEOUT }) as RecheckView
         io.out(`${ref}: ${report.ready ? 'ready' : `not ready (${report.state})`}: ${report.detail}\n`)
         return report.ready ? 0 : 1
       })
@@ -347,7 +266,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       select(async () => {
         if (Boolean(options.text) === Boolean(options.file)) throw new Error('give exactly one of --text and --file')
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
-        const created = await host.work().newTask(instructions, options.repo, options.repo ? options.ref : undefined, options.context, options.item, options.against, options.force)
+        const created = await host.call('task.new', given({ instructions, repository: options.repo && resolve(options.repo), ref: options.repo ? options.ref : undefined, context: options.context, item: options.item, against: options.against, force: options.force }))
         if (created.base) io.err(`base ${created.base}\n`)
         io.out(`${created.task}\n`)
         return 0
@@ -365,7 +284,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       select(async () => {
         if (Boolean(options.body) === Boolean(options.bodyFile)) throw new Error('give exactly one of --body and --body-file')
         const body = options.body ?? readFileSync(options.bodyFile!, 'utf8')
-        const created = await host.work().newIntent(options.title, body, options.supersedes, options.settledByOperator)
+        const created = await host.call('intent.new', given({ title: options.title, body, supersedes: options.supersedes, ...(options.settledByOperator ? { settledByOperator: true } : {}) }))
         io.out(`${created.intent}\n`)
         return 0
       })
@@ -376,7 +295,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--date <date>', 'when it was confirmed (default now)')
     .action((subject: string, options: { note: string; date?: string }) => {
       select(async () => {
-        const created = await host.work().newConfirmation(subject, options.note, options.date)
+        const created = await host.call('artifact.confirm', given({ subject, note: options.note, date: options.date }))
         io.out(`${created.confirmation}\n`)
         return 0
       })
@@ -390,7 +309,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--supersedes <id>', 'the earlier escaped-defect@1 Artifact this one replaces; it is no longer counted')
     .action((subject: string, options: { foundBy: string; reason: string; date?: string; supersedes?: string }) => {
       select(async () => {
-        const created = await host.work().newDefect(subject, options.foundBy, options.reason, options.date, options.supersedes)
+        const created = await host.call('defect.add', given({ subject, foundBy: options.foundBy, reason: options.reason, date: options.date, supersedes: options.supersedes }))
         io.out(`${created.defect}\n`)
         return 0
       })
@@ -401,7 +320,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--date <date>', 'when (default now)')
     .action((id: string, options: { reason: string; date?: string }) => {
       select(async () => {
-        const created = await host.work().withdrawDefect(id, options.reason, options.date)
+        const created = await host.call('defect.withdraw', given({ withdraws: id, reason: options.reason, date: options.date }))
         io.out(`${created.withdrawal}\n`)
         return 0
       })
@@ -412,7 +331,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--force', 'take over an Item another session has claimed')
     .action((item: string, options: { repo: string; force?: boolean }) => {
       select(async () => {
-        const claim = await host.work().claim(options.repo, item, options.force)
+        const claim = await host.call('item.claim', given({ repository: resolve(options.repo), item, force: options.force })) as { who: string; at: string }
         io.out(`${item} claimed by ${claim.who} since ${claim.at}\n`)
         return 0
       })
@@ -425,7 +344,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .action((options: { repo: string; state?: string; item?: string }) => {
       select(async () => {
         if (options.state && !['todo', 'doing', 'done'].includes(options.state)) throw new Error('--state is todo, doing or done')
-        for (const line of await host.work().status(options.repo, options.state, options.item)) io.out(`${line}\n`)
+        for (const line of await host.call('status', given({ repository: resolve(options.repo), state: options.state as 'todo' | 'doing' | 'done' | undefined, item: options.item }))) io.out(`${line}\n`)
         return 0
       })
     })
@@ -436,7 +355,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       select(async () => {
         const value = await io.readSecret(`${name}: `)
         if (!value) throw new Error('no value given; nothing stored')
-        await host.credentials().set(name, value)
+        await host.call('credentials.set', { name, value })
         io.out(`stored ${name}\n`)
         return 0
       })
@@ -447,7 +366,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       select(async () => {
         let missing = 0
         for (const name of names) {
-          const info = await host.credentials().describe(name)
+          const info = (await host.call('credentials.status', { names: [name] }))[0]!
           if (!info.configured) missing += 1
           io.out(`${name}  ${info.configured ? `configured (${info.source})` : 'not configured'}\n`)
         }
@@ -467,13 +386,10 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .action((options: { workflow?: string; capability?: string[]; input?: string; worker?: string; force?: boolean; run: boolean; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         if (Boolean(options.workflow) === Boolean(options.capability)) throw new Error('give exactly one of --workflow and --capability')
-        const commands = host.work()
-        const admitted = options.workflow
-          ? await commands.admitFile(options.workflow, options.input, options.worker, options.force)
-          : await commands.admitTask(options.capability!, options.input, options.worker, options.force)
+        const admitted = await host.call('work.submit', given({ ...(options.workflow ? readWorkflowFile(options.workflow) : { capabilities: options.capability }), input: options.input, worker: options.worker, force: options.force, run: false }))
         io.out(`${admitted.id}\n`)
         if (!options.run) return 0
-        return exitOf(await commands.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))
+        return exitOf(await host.run(admitted.id, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
   work.command('cancel <workId>')
@@ -482,22 +398,22 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--wait', 'wait until the running host has recorded the cancellation')
     .action((workId: string, options: { reason: string; wait?: boolean }) => {
       select(async () => {
-        const outcome = await host.work().cancel(workId, options.reason)
+        const outcome = await host.call('work.cancel', { workId, reason: options.reason })
         if (outcome !== 'requested') {
           io.out(`${workId} cancelled\n`)
           return exitCode(outcome.state.status)
         }
         io.out(`${workId}: cancellation requested from the running host\n`)
         if (!options.wait) return 0
-        if (await host.work().wait(workId) !== 'detached') io.out(`${workId}: the running host has stopped; see system work show\n`)
+        if (await host.wait(workId) !== 'detached') io.out(`${workId}: the running host has stopped; see system work show\n`)
         return 0
       })
     })
   /** Whether `step` of the Work's pinned spec is a verify step. */
   const isVerifyStep = async (workId: string, step: string): Promise<boolean> => {
-    const record = await host.work().get(workId)
+    const record = await host.call('work.show', { workId })
     if (!record) throw new Error(`no Work ${workId}`)
-    const read = await host.artifacts().get(record.state.specId)
+    const read = await host.call('artifact.show', { id: record.state.specId }) as ReadResult
     const steps = read.state === 'stored' ? (read.envelope.content as { steps?: object[] }).steps ?? [] : []
     return steps.some((s) => (s as { id?: string }).id === step && 'verify' in s)
   }
@@ -511,7 +427,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
       select(async () => {
         // Choosing among runs of a check is the operator's (ADR-0011): the same typed confirmation as `system approve`.
         if (options.step && await isVerifyStep(workId, options.step)) await io.confirmHuman(`Verifying again is a human's decision. Type exactly ${shortCode(workId)} to run ${options.step} again\n> `, shortCode(workId))
-        return exitOf(await host.work().retry(workId, options.worker, options.reason, options.step, { cancelOnInterrupt: options.cancelOnInterrupt }))
+        return exitOf(await host.retry(given({ workId, worker: options.worker, reason: options.reason, step: options.step }), { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
   work.command('run <workId>')
@@ -519,7 +435,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--cancel-on-interrupt', 'at Ctrl-C cancel the Work and follow it to its end (without it, Ctrl-C detaches)')
     .action((workId: string, options: { cancelOnInterrupt?: boolean }) => {
       select(async () => {
-        return exitOf(await host.work().run(workId, { cancelOnInterrupt: options.cancelOnInterrupt }))
+        return exitOf(await host.run(workId, { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })
   work.command('wait <workId...>')
@@ -534,7 +450,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
           if (!Number.isFinite(minutes) || minutes <= 0) throw new Error('--timeout takes a positive number of minutes')
           timeoutMs = minutes * 60_000
         }
-        const waited = await host.work().waitFor(workIds, { any: Boolean(options.any), timeoutMs })
+        const waited = await host.waitFor(workIds, { any: Boolean(options.any), timeoutMs })
         for (const { id, state } of waited.records) {
           const why = state.reason ?? (state.status === 'held' && state.awaiting ? `awaiting ${state.awaiting}` : undefined)
           io.out(`${id}  ${state.status}${why ? `  ${why}` : ''}\n`)
@@ -558,7 +474,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('print the Work record (events and state) as JSON')
     .action((workId: string) => {
       select(async () => {
-        const record = await host.work().get(workId)
+        const record = await host.call('work.show', { workId })
         if (!record) throw new Error(`no Work ${workId}`)
         io.out(`${JSON.stringify(record, null, 2)}\n`)
         return 0
@@ -569,12 +485,12 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .option('--since <iso>', 'only the Works admitted at or after this date or timestamp (inclusive)')
     .action((options: { since?: string }) => {
       select(async () => {
-        for (const work of await host.work().list(options.since)) io.out(`${work.id}  ${work.status.padEnd(21)}  ${work.specId}${work.item ? `  ${work.item}` : ''}\n`)
+        for (const work of await host.call('work.list', given({ since: options.since }))) io.out(`${work.id}  ${work.status.padEnd(21)}  ${work.specId}${work.item ? `  ${work.item}` : ''}\n`)
         return 0
       })
     })
   work.command('report [workId]')
-    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the headline (Items merged per operator act: Intents settled, confirmations, releases, human touches) and the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts')
+    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the headline (Items merged per operator act: Intents settled, confirmations, releases, human touches) and the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts, and recurringClasses: the failure classes seen 2 or more times, most frequent first (top 10, with the latest Work as example)')
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
     .option('--escaped <n>', 'an explicit count of the Escaped defects of the range that replaces the recorded ones (`system defect add`); the report labels it an override')
@@ -585,18 +501,18 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
         if (workId !== undefined && (options.until !== undefined || options.escaped !== undefined)) throw new Error('--until and --escaped go with --since')
         if (workId === undefined && options.classify) throw new Error('--classify goes with a Work ID')
         if (workId !== undefined) {
-          let report = await host.work().report(workId, options.classify)
+          let report: unknown = await host.call('work.report', given({ workId, classify: options.classify || undefined }))
           // The Host bounds a call; classification still going on is asked about again until it is done.
           for (let n = 0; options.classify && (report as { classifying?: boolean }).classifying && n < 600; n += 1) {
             await new Promise((resolve) => setTimeout(resolve, 1000))
-            report = await host.work().report(workId, true)
+            report = await host.call('work.report', { workId, classify: true })
           }
           io.out(`${JSON.stringify(report, null, 2)}\n`)
           return 0
         }
         const escaped = options.escaped === undefined ? undefined : Number(options.escaped)
         if (escaped !== undefined && !(Number.isInteger(escaped) && escaped >= 0)) throw new Error('--escaped is a count')
-        io.out(`${JSON.stringify(await host.work().rangeReport({ since: options.since!, ...(options.until === undefined ? {} : { until: options.until }), ...(escaped === undefined ? {} : { escaped }) }), null, 2)}\n`)
+        io.out(`${JSON.stringify(await host.call('work.report', { since: options.since!, ...(options.until === undefined ? {} : { until: options.until }), ...(escaped === undefined ? {} : { escaped }) }), null, 2)}\n`)
         return 0
       })
     })
@@ -604,7 +520,7 @@ export function buildProgram(host: ClientHost, io: CliIo, select: (run: Run) => 
     .description('fold the recorded events again and compare with the stored state; runs nothing')
     .action((workId: string) => {
       select(async () => {
-        const replayed = await host.work().replay(workId)
+        const replayed = await host.call('work.replay', { workId }) as { state: unknown; matches: boolean }
         io.out(`${JSON.stringify(replayed, null, 2)}\n`)
         return replayed.matches ? 0 : 1
       })

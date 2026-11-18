@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
-import { Host, TERMINAL, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
+import { Host, type HostOptions, TERMINAL, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
 import { memoryWorkTable } from './memory.ts'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -66,7 +66,7 @@ export interface Fixture {
   /** A Workflow file of workflows/ by name, as the CLI sends the files a Workflow uses. */
   files(name: string): string
   /** Start a Host over this fixture's table, Artifacts and Workers, locked to `home`; `stallMinutes` as the Host takes it. */
-  startHost(home: string, options?: { stallMinutes?: number }): Promise<Host>
+  startHost(home: string, options?: { stallMinutes?: number; readStatus?: HostOptions['readStatus'] }): Promise<Host>
 }
 
 /** The two Accounts of the fake Workers: Brainstorm's proposals use different ones, as the bundle's do. */

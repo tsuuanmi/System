@@ -228,6 +228,7 @@ test('a red: key of another repository\'s checks.yaml is ignored, with a note in
   assert.match(result.reason, /note: red: in \.system\/checks\.yaml is ignored/)
   const failing = await verifyChange('checks:\n  - name: bad\n    run: "false"\n    red: fail\n', { 'NOTES.md': 'x\n' }, true)
   assert.equal(failing.result.verdict, 'fail', failing.result.reason)
+  assert.equal(failing.result.cause, undefined, 'a plain failure is not Outside')
   assert.match(failing.result.reason, /note: red: in \.system\/checks\.yaml is ignored/)
 })
 
@@ -236,6 +237,7 @@ test('a check the base fails too is inconclusive, with the evidence of both runs
   assert.equal(result.verdict, 'inconclusive')
   assert.match(result.reason, /broken/)
   assert.match(result.reason, /the base fails it too/)
+  assert.equal(result.cause, 'load')
   assert.match(result.reason, /also on a re-run/)
   assert.equal(result.evidence.length, 7)
   assert.notEqual(commits[0], base)

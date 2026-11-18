@@ -9,7 +9,7 @@ import type { Artifacts } from '@system/artifacts'
 import { TASK_KIND, taskSchema } from '@system/work'
 import { fixture, workflowFile, type Fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { NOT_ALLOWED, VERSION, connect, serve, tableOf, type Client } from '../src/index.ts'
+import { NOT_ALLOWED, VERSION, connect, serve, tableOf, type Client, type Methods } from '../src/index.ts'
 import { operations, type Services } from '../src/operations.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-host-ops-'))
@@ -69,7 +69,7 @@ async function started(options: { setup?: (f: Fixture) => void; stallMinutes?: n
   mkdirSync(home)
   const host = await f.startHost(home, { stallMinutes: options.stallMinutes })
   const svc = services(f, artifacts)
-  const table = operations(svc)
+  const table: Methods = operations(svc)
   const path = join(sockets, `${count++}.sock`)
   const server = await serve(host, { path, methods: table })
   after(async () => { await server.close(); await host.close() })
@@ -163,9 +163,14 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal(lines[4], 'note: line 4: not an Item line (- [ ] <id> <title>)')
   assert.deepEqual(((await call('status', { repository: project, state: 'todo', item: 'p-2' })) as string[]).filter((l) => !l.startsWith('note: read ')), ['[ ] p-2 Second - todo: nobody', 'note: line 4: not an Item line (- [ ] <id> <title>)'])
   // A claim before a Work: status shows who and since when; an Item that is not in STATUS.md cannot be claimed.
-  const claimed = await call('item.claim', { repository: project, item: 'p-2', commandId: 'c-1' }) as { who: string; at: string }
+  const claimed = await call('item.claim', { repository: project, item: 'p-2', commandId: 'c-claim' }) as { who: string; at: string }
   assert.equal(claimed.who, 'tan')
   assert.equal(((await call('status', { repository: project, item: 'p-2' })) as string[])[0], `[ ] p-2 Second - doing: claimed by tan since ${claimed.at}`)
+  // The same commandId twice is one claim: the repeat is answered from the first (same `at`), not made again.
+  const first = await call('item.claim', { repository: project, item: 'p-3', commandId: 'c-twice' }) as { who: string; at: string }
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  assert.deepEqual(await call('item.claim', { repository: project, item: 'p-3', commandId: 'c-twice' }), first)
+  await assert.rejects(call('item.claim', { repository: project, item: 'p-2', commandId: 'c-twice' }), /different arguments/)
   await assert.rejects(call('item.claim', { repository: project, item: 'p-9' }), /p-9 has no line in STATUS\.md/)
   await assert.rejects(call('status', { repository: project, item: 'Bad' }), /-32602|invalid|item/i)
   await assert.rejects(call('task.new', { instructions: 'x', item: 'Bad' }), /-32602|invalid|item/i)
@@ -183,6 +188,13 @@ test('every method of the table round-trips over the socket', async () => {
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
   await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3' }), /Item p-3 is blocked by p-2/)
   await call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-3', force: true })
+  // An unreadable STATUS.md refuses both calls alike, unless `force`.
+  const nogit = realpathSync(mkdtempSync(join(dir, 'nogit-')))
+  const unreadable = new RegExp(`STATUS\\.md of ${nogit} could not be read.*force`)
+  await assert.rejects(call('task.new', { instructions: 'x', repository: nogit, item: 'p-2' }), unreadable)
+  await assert.rejects(call('item.claim', { repository: nogit, item: 'p-2' }), unreadable)
+  await call('task.new', { instructions: 'x', repository: nogit, item: 'p-2', force: true })
+  await assert.rejects(call('task.new', { instructions: 'x', repository: project, ref: 'dev', item: 'p-9' }), /p-9 has no line in STATUS\.md/)
   const status = await call('host.status') as { works: number; recordBytes: number }
   assert.equal(status.works, 4)
   assert.ok(status.recordBytes > 0)
@@ -200,7 +212,7 @@ test('work.list takes `since` (admission time, inclusive) and shows the Item of 
   const plain = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
   await new Promise((resolve) => setTimeout(resolve, 5))
   naming = true
-  const itemWork = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false }) as { id: string }
+  const itemWork = await client.call('work.submit', { capabilities: ['repo.write'], input: input(f), run: false, force: true }) as { id: string }
   const rows = async (params?: unknown) => await client.call('work.list', params) as { id: string; item?: string }[]
   const at = async (id: string) => ((await client.call('work.show', { workId: id })) as { events: { at: string }[] }).events[0]!.at
   assert.deepEqual((await rows()).map((r) => [r.id, r.item]), [[plain.id, undefined], [itemWork.id, 'ns-9']])

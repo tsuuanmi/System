@@ -466,3 +466,18 @@ test('develop.yaml implement reads the files a context pack names first, widens 
   assert.match(text, /pack is wrong.*say so in (your|the) result/i)
   assert.match(text, /without (these|the) headings.*as (before|usual)|no headings.*as (before|usual)/i, 'a Task without the headings works as before')
 })
+
+for (const file of ['develop.yaml', 'hygiene.yaml']) {
+  test(`${file} implement tells the Worker to run the docs checks against its base when the repository has tools/docs.py`, () => {
+    const caps = { ...available, workers: new Set([...available.workers, 'tier.economy']) }
+    const spec = resolve(parseWorkflow(fixture(file)), caps, fixture)
+    const implement = spec.steps.find((s) => s.id === 'implement') as { instructions?: string }
+    const text = (implement.instructions ?? '').replace(/\s+/g, ' ')
+    assert.match(text, /docs\.py impact/)
+    assert.match(text, /docs\.py check/)
+    assert.match(text, /docs\.py sync --check/)
+    assert.match(text, /\.system\/docs-waivers/)
+    assert.match(text, /has tools\/docs\.py/)
+    assert.match(text, /working directory starts from commit/)
+  })
+}

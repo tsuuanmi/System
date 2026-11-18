@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: active
-reviewed: 2026-11-05
+reviewed: 2026-11-18
 decided-by: [ADR-0002, ADR-0006]
 covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*.yaml]
 ---
@@ -97,7 +97,11 @@ gives to one account each. Research's `investigate` has `prefer: web.browse`, an
 [workflows/README.md](../../workflows/README.md)). Since the B3 evaluation (RES-0008,
 [retired](../governance/retired.md)) the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
-the one-shared-prompt variant is kept in `workflows/experiments/`. Compared with the earlier
+the one-shared-prompt variant is kept in `workflows/experiments/`.
+The `implement` instructions of `develop.yaml` and `hygiene.yaml` also tell the Worker to run the
+repository's cheap docs checks (`tools/docs.py check`, `sync --check`, `impact <base>`) before
+finishing, only when the repository has `tools/docs.py`, so Workflows stay generic.
+Compared with the earlier
 sketch, `inputs` binds Artifacts explicitly, `version` is required, and
 `approval: operator` replaces `operator-merge`, because System never merges
 (ADR-0004 decision 10).
@@ -205,6 +209,21 @@ attempt by the Host on start, once its process is confirmed gone; otherwise on
 `system work run`, see [Start, stop and recovery](host.md#start-stop-and-recovery));
 completed steps are never re-run. `system work replay` folds the events again and
 compares the result with the stored state.
+
+**Derived facts (state).** `fold` computes, once, what readers used to re-scan
+the events for: the verifiers pinned at admission (`state.verifiers`), a step's
+latest reopening (`reopening`), the Outside failures in a row on a step
+(`outside`), the changed tests of each change (`changedTests`) and the merge
+commit an Approval covers (`effects[].approvedMerge`). A record stored without
+them folds to the same facts when it is opened; no event gained a required field.
+
+**Why a failure is Outside (cause-1).** The port that writes a failure's reason
+also says its cause, as an optional `cause` (`attach`, `conflict` or `load`) on
+the `observed`, `verified` and `effect-observed` events; the controller's own
+failures carry `noChange` on `observed` and `hold` (`approval`, `inconclusive`)
+on `terminal`. `outside.ts` is the only reader: it takes `cause` first and
+matches the reason's words only for events without one, so old records
+classify as before and a rewording elsewhere changes no hold.
 
 DAG support should emerge from `dependsOn` only. Do not require a
 DAG-specific user abstraction for a one-step task.

@@ -1,7 +1,8 @@
 /** The attempt summary System computes from a Claude Code stream-json log, and the head+tail bound of the stored log. */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { boundLog, summarizeAttempt } from '../src/attempt-summary.ts'
+import { boundLog } from '../src/attempt-summary.ts'
+import { summarizeAttempt } from '../src/adapters/index.ts'
 
 const line = (event: unknown) => JSON.stringify(event)
 const use = (id: string, name: string, input: Record<string, unknown>) => line({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] } })

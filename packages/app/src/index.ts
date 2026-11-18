@@ -3,6 +3,7 @@
  * after the host has started, and exits through the launcher's shutdown path.
  */
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,18 +16,19 @@ import type { Artifacts, Classification } from '@system/artifacts'
 import { WEB_WORKER_DISABLED, type AgentsService, type QuotaReport, type WebWorkerService } from '@system/agents'
 import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type FailureClassifier, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { buildHostProgram, type CredentialCommands, type HostProcess, type Run, type WorkersView } from './cli.ts'
+import { buildHostProgram, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
 import { completePendingInstallCheck } from './pending-install-check.ts'
 import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
+import type { Services } from '../../host/lib/operations.js'
 import { exitWithin, serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
 
-/** A one-record domain the doctor writes and reads back. */
+/** A domain whose records the doctor writes, reads back and deletes, one per probe. */
 const doctorDomain = defineDomain({
   name: 'system_doctor',
   version: 1,
@@ -44,7 +46,11 @@ function dshVersion(): string {
   }
 }
 
-async function probeStorage(ctx: Context): Promise<StorageStatus> {
+/**
+ * Write a record and read it back. The key is this probe's own: every `system` command probes the one store, and a
+ * shared key let another process's write land between this write and read ("read back a different record" under load).
+ */
+export async function probeStorage(ctx: Context): Promise<StorageStatus> {
   const hub = ctx.get('storage') as Storage | undefined
   const domains = ctx.get('storageDomain') as DomainFacility | undefined
   if (!hub || !domains) return { ok: false, backend: REQUIRED_BACKEND, detail: 'storage services unavailable' }
@@ -56,8 +62,10 @@ async function probeStorage(ctx: Context): Promise<StorageStatus> {
   const domain = await domains.open(doctorDomain)
   try {
     const at = new Date().toISOString()
-    await domain.table('probe').put('last', { at })
-    const read = domain.table('probe').get('last')
+    const key = `probe-${process.pid}-${randomUUID()}`
+    await domain.table('probe').put(key, { at })
+    const read = domain.table('probe').get(key)
+    await domain.table('probe').delete(key)
     return read?.at === at
       ? { ok: true, backend: REQUIRED_BACKEND, detail: 'durable write and read back' }
       : { ok: false, backend: REQUIRED_BACKEND, detail: 'read back a different record' }
@@ -106,7 +114,7 @@ async function probeHost(home: string): Promise<HostStatus> {
   }
 }
 
-function credentialCommands(ctx: Context): CredentialCommands {
+function credentialCommands(ctx: Context): Services['credentials'] {
   const store = ctx.get('credentials') as CredentialProvider | undefined
   if (!store) throw new Error('the credentials row is not mounted (run `system doctor`)')
   return {

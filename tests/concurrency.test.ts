@@ -6,6 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import { rmSync, statSync, writeFileSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { systemCli } from '../test-support/cli.ts'
@@ -55,6 +56,19 @@ test('parallel commands that all find the store missing create it together witho
   const store = join(cli.home, 'system', 'state.sqlite')
   const fresh = () => { for (const suffix of ['', '-wal', '-shm']) rmSync(store + suffix, { force: true }) }
   assert.deepEqual(await rounds(12, 0, 6, fresh), [])
+})
+
+test('a boot waits for a writer that holds the store longer than a loaded machine takes to schedule it', { timeout: 120_000 }, async () => {
+  // A lock holder stalled by CPU or disk load (several Works running checks) can keep the store
+  // for seconds; the bound a boot waits is only a bound, so it must outlast such a stall.
+  // The stall is simulated, not hoped for: this process holds the write lock for 7 s.
+  const stalled = 7_000
+  assert.equal((await runAsync(['doctor'])).status, 0, 'the store exists')
+  const db = new DatabaseSync(join(cli.home, 'system', 'state.sqlite'))
+  db.exec('BEGIN IMMEDIATE')
+  const release = new Promise<void>((resolve) => setTimeout(() => { db.exec('COMMIT'); db.close(); resolve() }, stalled))
+  const [ran] = await Promise.all([runAsync(['doctor']), release])
+  assert.deepEqual([ran.status, ran.stderr.trim()], [0, ''])
 })
 
 test('a boot does not rewrite the profile root config another booting host may be reading', async () => {

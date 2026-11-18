@@ -12,8 +12,9 @@
  */
 import { createHash } from 'node:crypto'
 import { hashDomain } from '@system/artifacts'
-import { WorkController, type Admission, type CancelRequest, type ClaimTable, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
+import { WorkController, type Admission, type CancelRequest, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
+import { ItemGate, type ClaimTable, type GateOptions } from './gate.ts'
 import { acquireHostLock, type HostLock } from './host-lock.ts'
 import { commitLane, type Lane } from './lane.ts'
 import type { Capabilities } from './registry.ts'
@@ -26,6 +27,8 @@ export interface HostOptions {
   table: WorkTable
   /** Session claims on Items; in memory when not given. */
   claims?: ClaimTable
+  /** Reads a repository's STATUS.md for the Item gate; default git (a test replaces it). */
+  readStatus?: GateOptions['readStatus']
   specs: SpecStore
   capabilities: Capabilities
   /** How long a running attempt may be quiet before it is reported stalled; default `DEFAULT_STALL_MINUTES`. */
@@ -52,7 +55,9 @@ interface Seen {
 export class Host {
   private readonly controller: WorkController
   /** Reads, `onChange`, `drain` and `held`: not `run`, `cancel` or `decide`, which only the commit lane and `commandId` may reach. */
-  readonly view: Pick<WorkController, 'get' | 'list' | 'claims' | 'live' | 'replay' | 'onChange' | 'drain' | 'held'>
+  readonly view: Pick<WorkController, 'get' | 'list' | 'live' | 'replay' | 'onChange' | 'drain' | 'held'> & { claims(): Claim[] }
+  /** Whether an Item may get a Task, a Claim or a Work. */
+  readonly gate: ItemGate
   private readonly lock: HostLock
   private readonly lane: Lane
   /**
@@ -75,8 +80,10 @@ export class Host {
       return section()
     })
     this.slots = new Slots(options.capabilities)
-    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes, options.claims)
-    this.view = this.controller
+    this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes)
+    const c = this.controller
+    this.gate = new ItemGate({ records: () => c.list(), claims: options.claims, readStatus: options.readStatus, commitOf: options.specs.commitOf?.bind(options.specs) })
+    this.view = { get: c.get.bind(c), list: c.list.bind(c), live: c.live.bind(c), replay: c.replay.bind(c), onChange: c.onChange.bind(c), drain: c.drain.bind(c), held: c.held.bind(c), claims: () => this.gate.claims() }
   }
 
   /** Take the lock for `options.home`, then recover, then accept operations. Refuses when another Host holds the home. */
@@ -152,12 +159,19 @@ export class Host {
   /** Admit a Work. With a `commandId` its ID derives from it, and the same submit again returns that Work. */
   submit(admission: Admission, options: Idempotent = {}): Promise<WorkRecord> {
     const workId = options.commandId ? workIdOf(options.commandId) : undefined
-    return this.once({ commandId: options.commandId, op: 'submit', args: admission }, (command) => this.lane(() => this.controller.admit(admission, { workId, command })))
+    // STATUS.md is read before the lane (git); the decision that touches the record stays in it, so "busy" is race-free.
+    return this.once({ commandId: options.commandId, op: 'submit', args: admission }, async (command) => {
+      const decide = await this.gate.deciding(this.controller.itemOf(admission), admission.force)
+      return this.lane(() => this.controller.admit(admission, { workId, command, decide }))
+    })
   }
 
   /** Claim an Item for a session before it submits a Work for it. */
-  claim(repository: string, item: string, caller: Caller, force?: boolean): Promise<Claim> {
-    return this.lane(() => this.controller.claim(repository, item, caller, force))
+  claim(repository: string, item: string, caller: Caller, force?: boolean, options: Idempotent = {}): Promise<Claim> {
+    return this.once({ commandId: options.commandId, op: 'claim', args: { repository, item, who: caller.operatorId, force: force === true } }, async () => {
+      const top = await this.gate.claimTarget(repository, item, force)
+      return this.lane(() => this.gate.claim(top, item, caller, force))
+    })
   }
 
   run(workId: string, options: Starting = {}): Promise<WorkRecord> {

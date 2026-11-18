@@ -78,5 +78,9 @@ test('settledBy is optional and only `operator`; it is stored as given', async (
   assert.deepEqual(envelope.content, { title: 'Settled', body, settledBy: 'operator' })
   assert.deepEqual(storedIntents(artifacts), [{ at: envelope.createdAt, settledBy: 'operator' }])
   const plain = await addIntent(artifacts, { title: 'Plain', body }, producer)
-  assert.deepEqual(storedIntents(artifacts).find((i) => i.at === plain.createdAt)?.settledBy, undefined)
+  // Two Intents may share a millisecond, so `at` cannot tell them apart: compare the whole list, whatever its order.
+  const stored = storedIntents(artifacts)
+  assert.equal(stored.length, 2)
+  assert.deepEqual(stored.filter((i) => i.at === envelope.createdAt && i.settledBy === 'operator').length, 1)
+  assert.deepEqual(stored.filter((i) => i.settledBy === undefined), [{ at: plain.createdAt }])
 })

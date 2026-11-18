@@ -1,1 +1,2 @@
 # Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (runbook, Release).
+docs-unchanged: docs/operations/runbook.md — internal race fix in store creation; no operator-visible behaviour changed

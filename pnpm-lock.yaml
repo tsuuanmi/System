@@ -170,7 +170,7 @@ overrides:
 
 patchedDependencies:
   '@deepseek-ai/dsh-app-boot@0.2.2-rc.1': cd5924fdb2e1c9aa7befb51942a98833d10b5921774c2c9edc8c133518d12b5d
-  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1': 18fbd5991a9e93a432e0d5a971732daa603276e11ff20463d16d765792ec442e
+  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1': f6a8374eb8ab62c2b136d3d4eab23575f1d72011b698da2e2aa7c9bde659b9da
   '@deepseek-ai/dsh@0.2.2-rc.1': b6f44a691c4b037bf837ae3e84be4785b8d2e3a43475b98202f6afc9e4dadfbc
 
 importers:
@@ -296,7 +296,7 @@ importers:
         version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
       '@deepseek-ai/dsh-storage-sqlite':
         specifier: 0.2.2-rc.1
-        version: 0.2.2-rc.1(patch_hash=18fbd5991a9e93a432e0d5a971732daa603276e11ff20463d16d765792ec442e)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
+        version: 0.2.2-rc.1(patch_hash=f6a8374eb8ab62c2b136d3d4eab23575f1d72011b698da2e2aa7c9bde659b9da)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
       '@deepseek-ai/dsh-subprocess-local':
         specifier: 0.2.2-rc.1
         version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-subprocess@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-http-proxy@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)))(@deepseek-ai/dsh-timeout@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
@@ -8104,7 +8104,7 @@ snapshots:
       '@deepseek-ai/dsh-storage': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/schemastery': 3.19.0
 
-  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1(patch_hash=18fbd5991a9e93a432e0d5a971732daa603276e11ff20463d16d765792ec442e)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))':
+  '@deepseek-ai/dsh-storage-sqlite@0.2.2-rc.1(patch_hash=f6a8374eb8ab62c2b136d3d4eab23575f1d72011b698da2e2aa7c9bde659b9da)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))':
     dependencies:
       '@deepseek-ai/cordis': 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
       '@deepseek-ai/dsh-storage': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)

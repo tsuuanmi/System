@@ -230,3 +230,34 @@ test('a clean run has no failures of either class', () => {
     { type: 'terminal', at, outcome: 'succeeded', reason: 'ok', results: {} },
   ], [], 0, 0)
 })
+
+// cause-1: the ports' `cause` and the controller's markers decide; the old text rules stay only for events without them.
+test('a recorded cause classifies reworded attach, load and conflict reasons; old text still does', () => {
+  const effect = (reason: string, cause?: 'conflict'): Unnumbered => ({ type: 'effect-observed', at, stepId: 'publish', operationId: 'op', state: 'failed', reason, ...(cause ? { cause } : {}) })
+  failures([
+    { ...failedAttempt('the site did not take the paste'), cause: 'attach' } as Unnumbered,
+    { ...verdict('inconclusive', 'unit is red on the base as well'), cause: 'load' } as Unnumbered,
+    effect('the merge was refused', 'conflict'),
+    failedAttempt('the site did not take the paste'),
+    verdict('inconclusive', 'unit is red on the base as well'),
+    effect('the merge was refused'),
+  ], [
+    { event: 'observed#0', kind: 'attempt', reason: 'the site did not take the paste', outside: 'attach' },
+    { event: 'verified#1', kind: 'verdict', reason: 'unit is red on the base as well', outside: 'load' },
+    { event: 'effect-observed#2', kind: 'publish', reason: 'the merge was refused', outside: 'conflict' },
+    { event: 'observed#3', kind: 'attempt', reason: 'the site did not take the paste', unknown: true },
+    { event: 'verified#4', kind: 'verdict', reason: 'unit is red on the base as well' },
+    { event: 'effect-observed#5', kind: 'publish', reason: 'the merge was refused' },
+  ], 3, 2, 1)
+})
+
+test('the controller markers decide a hold and a no-change; the text is the fallback for old events', () => {
+  const approval = (marked: boolean): Unnumbered => ({ type: 'terminal', at, outcome: 'held', reason: marked ? 'waiting for the operator' : 'verification passed; awaiting operator approval', results: {}, ...(marked ? { hold: 'approval' as const } : {}) })
+  assert.equal(summarize(record([approval(true)])).failures.length, 0)
+  assert.equal(summarize(record([approval(false)])).failures.length, 0)
+  const reason = 'a verdict needs you'
+  failures([verdict('inconclusive', 'the base fails it too (base abc)'), { ...held(reason, 'verify'), hold: 'inconclusive' } as Unnumbered], [
+    { event: 'verified#0', kind: 'verdict', reason: 'the base fails it too (base abc)', outside: 'load' },
+    { event: 'terminal#1', kind: 'hold', reason, outside: 'load' },
+  ], 2, 0)
+})

@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-09
+reviewed: 2026-11-18
 covers: [tools/install.sh, bin/system, bin/service.mjs, bin/update.mjs, packages/app/src/index.ts, packages/app/src/client.ts, packages/host/src/process.ts]
 ---
 
@@ -507,9 +507,10 @@ system: the System Host for <home> is not answering (...): see docs/operations/r
 ```
 
 The socket accepts connections but a call got no answer in 10 seconds. A call
-that changes something (`submit`, `run`, `retry`, `cancel`, `approve`) is sent
-once more with the same `commandId`, so the Host does it once: look at
-`system work list` before sending it again yourself.
+that changes something (every write: `submit`, `run`, `retry`, `cancel`,
+`approve`, `task new`, `intent new`, `item claim`, ...) carries a fresh
+`commandId` and is sent once more with the same one, so the Host does it once:
+look at `system work list` before sending it again yourself.
 
 Every command but `system work wait` fails at once with this. `system work wait`
 keeps waiting with a backoff; after 10 minutes unreachable (or its `--timeout`)

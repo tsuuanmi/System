@@ -84,14 +84,14 @@ budget is +10% per milestone from 3,403 lines ([ADR-0010](docs/decisions/ADR-001
 budget is 4,285 lines under `docs/`. The older columns and the reasoning behind them are in
 [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md#2-growth-and-feedback-budgets-charter-11-and-12).
 
-| Measure | CM close | TR release (`41cbfea`, 2026-11-14) | FL close (`a96b498`, 2026-11-16) | 2026-11-17 close (after this pass) |
-|---|---|---|---|---|
-| Active core, lines | 4,183 (+7.3% on RO's 3,900, within +10%) | 4,280 (`packages/work/src` + `packages/artifacts/src`): a docs-only pass | 4,401, measured at `a052973`, which only adds documentation | 4,857 before → 4,840 after the simplification pass (one reader for the operator records, two one-use wrappers); cls-6 then took it to 4,853; 4,840 after this change (−13: comments restating code or another file's; budget ≤ 4,841) |
-| All package source, lines | 14,799 | not measured | not measured | 17,098 (`packages/*/src`; 17,115 before) |
-| Tests, lines | 14,853 | not measured | not measured | 22,294 (`packages/*/tests`, `tests`, `test-support`; 16 fewer: two duplicate summary tests) |
-| Docs under `docs/`, lines (files) | 4,270 (42) | 4,382 (42) before, 4,284 (42) after the hygiene pass | 4,288 (42): 3 over the budget | 3,624 (35); PLAN.md 188 → 164, STATUS.md 34 |
-| Required checks | about 3 min 20 s of check time (docs 1 s, install 11 s, build 32 s, typecheck 10 s, unit 43 s, smoke 92 s) | not measured | not measured | install 1 s (warm), build 33 s, typecheck 10 s, lint 14 s, unit 81 s, smoke 102 s, docs 4 s; upgrade and install-guide not run in this pass |
-| Measures of effect (`system work report --since 2026-11-16T00:00:00Z`, 85 Works) | | | | Headline: 58 Items merged, 0 operator touches ("no touches"). Verified Success Rate 0.87 (71 of 82); Recurring Failure Rate 0.52 (15 of 29); Escaped Defect Rate 0.069 (4 of 58, from records); Cost per Verified Work $0.40 (5 Works of unknown cost); Time to Verified Resolution median 14.5 min (p90 49.1); tool-seconds per second 0.86 (91 attempts); 6 unknown failures |
+| Measure | CM close | TR release (`41cbfea`, 2026-11-14) | FL close (`a96b498`, 2026-11-16) | 2026-11-17 close (after this pass) | DP close (2026-11-18) |
+|---|---|---|---|---|---|
+| Active core, lines | 4,183 (+7.3% on RO's 3,900, within +10%) | 4,280 (`packages/work/src` + `packages/artifacts/src`): a docs-only pass | 4,401, measured at `a052973`, which only adds documentation | 4,857 before → 4,840 after the simplification pass (one reader for the operator records, two one-use wrappers); cls-6 then took it to 4,853; 4,840 after this change (−13: comments restating code or another file's; budget ≤ 4,841) | 4,840 before → 5,117 at the peak (new modules first, the code they replace later) → 5,117 after dp-12 (unused imports only, 0 lines): over the 4,841 budget by 276. The remainder stays because a re-read of every core file found no code the DP modules left behind: each `events` scan that remains (`next-move.ts`, `verification.ts`, `status.ts`, `host.ts`) reads facts `WorkState` does not hold, and the one-use helpers left are named steps whose inlining would only lengthen the function that calls them. Going lower would harm clarity; the budget is revisited when an Item deletes a feature, not a helper. |
+| All package source, lines | 14,799 | not measured | not measured | 17,098 (`packages/*/src`; 17,115 before) | not re-measured |
+| Tests, lines | 14,853 | not measured | not measured | 22,294 (`packages/*/tests`, `tests`, `test-support`; 16 fewer: two duplicate summary tests) | not re-measured |
+| Docs under `docs/`, lines (files) | 4,270 (42) | 4,382 (42) before, 4,284 (42) after the hygiene pass | 4,288 (42): 3 over the budget | 3,624 (35); PLAN.md 188 → 164, STATUS.md 34 | not re-measured |
+| Required checks | about 3 min 20 s of check time (docs 1 s, install 11 s, build 32 s, typecheck 10 s, unit 43 s, smoke 92 s) | not measured | not measured | install 1 s (warm), build 33 s, typecheck 10 s, lint 14 s, unit 81 s, smoke 102 s, docs 4 s; upgrade and install-guide not run in this pass | not re-measured |
+| Measures of effect (`system work report --since 2026-11-16T00:00:00Z`, 85 Works) | | | | Headline: 58 Items merged, 0 operator touches ("no touches"). Verified Success Rate 0.87 (71 of 82); Recurring Failure Rate 0.52 (15 of 29); Escaped Defect Rate 0.069 (4 of 58, from records); Cost per Verified Work $0.40 (5 Works of unknown cost); Time to Verified Resolution median 14.5 min (p90 49.1); tool-seconds per second 0.86 (91 attempts); 6 unknown failures | not re-measured |
 
 Docs lean and tightly linked (operator, 2026-11-16): PLAN.md 657 → 166 lines; docs under `docs/` 4,162 → 3,501 lines
 (ADR-0009, PROP-0004 to PROP-0007 and RES-0008 retired to [the ledger](docs/governance/retired.md)).
@@ -107,11 +107,26 @@ a new one is added here as one line.
 Every milestone ends with a **simplification pass**: a System Work (Sonnet) proposes deletions and simplifications (dead
 code, unused abstractions, duplicated tests, docs that restate others), and the operator reviews it like any PR. The
 Sonnet code review's Standards axis also checks the code against Charter items 8, 11 and 12.
+A milestone closes only when every failure class that recurred 3 or more times in its range (`system work report --since <milestone start>`, `recurringClasses`) has a root-cause Item or a recorded reason in the milestone's section (rc-1).
 
 ## 3. Open work
 
 Items are in [STATUS.md](STATUS.md); the sections below keep only the decisions of milestones still open. Left to the
 operator (BS): the role `research.source` in the profile, so that `research-source.yaml` excludes web Accounts.
+
+### DP — Deepening pass (decided 2026-11-18)
+
+- **Aim:** concentrate rules that are written in several places, and that already disagree, behind deep modules that are testable through small interfaces (Charter 11 and 12). The source is the architecture review of 2026-11-18. Its seven candidates map to dp-1..dp-11.
+- **Decision:** a behaviour defect gets a develop Item with a red test first. The restructuring that follows is a hygiene Item that keeps behaviour.
+- **Decision:** a hygiene Item of DP does not grow the net lines of the active core (`packages/work/src` + `packages/artifacts/src`). Each records its lines before and after in its result. Growth is justified in DP's row of section 2.
+- **Decision:** when STATUS.md cannot be read, `admit`, `task.new` and `item.claim` all refuse a Task, Claim or Work that names an Item, unless `force` is set (dp-2). A Work without an Item is not affected.
+- **Decision:** the pinned-verifier version check stays an `error` refusal in the controller and a `hold` in the merge check. This is deliberate: a merge awaits an Approval.
+- **Decision:** no new GLOSSARY terms. "Item gate" and "Verification" are module names. Do not use "judge" (GLOSSARY lists it under Avoid for Classifier).
+- **Decision:** DP runs now, with the operator present, in parallel where Items do not depend on each other. The scheduled session does not take dp-8, dp-9, dp-10 or dp-11.
+- **ADR fit:** ADR-0002 (one generic interpreter: do not split the controller per domain), ADR-0003, ADR-0007 and ADR-0012 (Item state derived, the Host never picks).
+- **Order:** by `after:`. The first parallel wave is dp-1, dp-2, dp-4, dp-5 and dp-10.
+- **Result:** dp-1..dp-11 merged on 2026-11-18. The active core grew from 4,840 to 5,117 lines because new modules were added before the code they replace was removed; dp-12 pays it back. 5 attempts ran past 60 minutes, so callers split Items by Done when (workflows/README).
+- **RC (Intent d4b301faf169):** 328 Works since 2026-11-10 had 130 failures, 64% of them recurring. The top classes were docs restating code (22), merge conflicts and lost work (11), objections to frozen tests (11) and unknown (29). Nothing turned a recurring class into a structural fix, so rc-1 adds that gate.
 
 ### RB — Release boundary (decided 2026-11-16)
 
@@ -120,7 +135,7 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   - The unattended-scale spike (isolation in section 0) comes after the Items still open in STATUS.md (operator, 2026-11-17).
   - The Classifier stays report-only until it passes cls-2's gate on labelled data; contracts are JSON Schema, and Jev is not adopted now (section 4).
   - Left to the operator (BS): the role `research.source` in the profile.
-  - Decision (2026-11-18): the Classifier stays off and report-only after two real evaluations failed the gate (hybrid 63.4% both times; report Artifacts sha256:4613d1ee… and sha256:74e1452b…). Default unless the operator decides otherwise: delete packages/classifier if the gate still fails when the labelled set has grown past 80 failures (Charter 9).
+  - Decision (2026-11-18): the Classifier stays off and report-only after two real evaluations failed the gate (hybrid 63.4% both times; report Artifacts sha256:4613d1ee… and sha256:74e1452b…). Operator decision (2026-11-18): keep the code, off; re-evaluate when the labelled set has grown past 80 failures, and delete packages/classifier then if the gate still fails (Charter 9).
 - Order (priority, not dependency): the Items still open in STATUS.md, then the unattended-scale spike.
 
 
@@ -149,6 +164,7 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   are the standards; Node's test runner has none). *Trigger: the required checks exceed their time budget (Charter 12).
   Risk: the smoke tests boot the Host through `bin/system` and load plugins dynamically, so an import graph misses
   dependencies.*
+- [ ] A check-run planner inside the required-checks Verifier (`packages/verifiers/src/checks.ts` `verify` holds three strategies in one closure): the plan of what runs where, separated from the worktree and spawner that execute it. *Trigger: `verifiers.test.ts` blocks a change, after dp-6 has taken its "flaky" rule.*
 - [ ] Adaptive routing only on a measured need, such as quota exhaustion.
 - [ ] A fixed set of reproducible failure scenarios to compare System versions. *Trigger: a change to a retry or
   recovery rule that needs a before/after comparison the Host's records cannot give.*

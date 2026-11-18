@@ -7,7 +7,7 @@
 # skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 9
+version: 10
 steps:
   - id: implement
     capabilities: [repo.write, develop.implement, tier.standard]
@@ -33,6 +33,16 @@ steps:
       build and typecheck, and fix your change until they pass. Do not run the
       repository's full test suite or its other checks: the checks step runs
       them after you.
+
+      If the repository has tools/docs.py, before you finish run the cheap docs
+      checks the Verifier runs: `python3 tools/docs.py check`,
+      `python3 tools/docs.py sync --check` and
+      `python3 tools/docs.py impact <base> --waivers .system/docs-waivers`, where
+      <base> is the commit the workspace lists as "the working directory starts
+      from commit X" (the Task's base, or the new tip on a reopen). Fix every
+      finding by updating the doc; waive one only with a reason the Task allows.
+      A repository without tools/docs.py is not affected. This does not lift the
+      rule against running the full suite or the other checks.
 
       A bug fix starts with a test that reproduces the bug. Test the risky
       cases your change touches when they apply: a reopened step, a Host

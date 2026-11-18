@@ -6,7 +6,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Artifacts } from '@system/artifacts'
-import { bindVerdict, putVerdict, type Capabilities, type EffectIntent, type VerifyResult } from '@system/work'
+import { askVerifier, putVerdict, settleVerdict, type Capabilities, type EffectIntent, type VerificationStore } from '@system/work'
 import { githubPublisher, type MergeCheck, type PublishConfig } from './github.ts'
 
 export * from './github.ts'
@@ -27,7 +27,11 @@ export interface Config extends Partial<PublishConfig> {
  * holds the merge for an Approval of that commit.
  */
 export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (subject: string, intent: EffectIntent) => Promise<MergeCheck> {
-  const exists = (id: string) => artifacts.get(id).state === 'stored'
+  const store: VerificationStore = {
+    exists: (id) => artifacts.get(id).state === 'stored',
+    kindOf: (id) => { const stored = artifacts.get(id); return stored.state === 'stored' ? stored.envelope.kind : undefined },
+    putVerdict: (verdict) => putVerdict(artifacts, verdict),
+  }
   return async (subject, intent) => {
     const evidence: string[] = []
     const verdicts: string[] = []
@@ -36,19 +40,15 @@ export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (s
       if (!pinned) return { verdict: 'error', reason: `no verifier is pinned for ${capability} at admission`, evidence, verdicts }
       const verifier = capabilities.verifierFor(pinned.ref)
       if (!verifier || !verifier.capabilities.includes(capability)) return { verdict: 'error', reason: `${pinned.ref}@${pinned.version}, pinned for ${capability} at admission, is not registered`, evidence, verdicts }
-      if (verifier.version !== pinned.version) {
-        hold ??= `pinned ${pinned.ref}@${pinned.version} at admission; ${verifier.ref}@${verifier.version} is enabled now`
-        continue
+      // Deliberate (PLAN DP decision: a merge awaits an Approval): a changed verifier version holds the merge; the controller refuses a step with `error` instead.
+      const asked = await askVerifier(store, { verifier, pin: pinned, onPinMismatch: 'hold', request: { workId: intent.workId, attemptId: `merge:${intent.operationId}`, stepId: intent.stepId, capability, subject, criteria } })
+      if ('refusal' in asked) {
+        if (asked.refusal.verdict === 'hold') { hold ??= asked.refusal.reason; continue }
+        return { verdict: 'error', reason: asked.refusal.reason, evidence, verdicts }
       }
-      let result: VerifyResult
-      try {
-        result = await verifier.verify({ workId: intent.workId, attemptId: `merge:${intent.operationId}`, stepId: intent.stepId, capability, subject, criteria })
-      } catch (error) {
-        return { verdict: 'error', reason: `the verifier threw: ${(error as Error).message}`, evidence, verdicts }
-      }
-      const bound = bindVerdict(result, subject, criteria, exists)
-      evidence.push(...bound.evidence)
-      verdicts.push(await putVerdict(artifacts, { subject, criteria, capability, verifier: { ref: verifier.ref, version: verifier.version }, verdict: bound.verdict, reason: bound.reason, evidence: bound.evidence }))
+      const { bound, verdictId } = await settleVerdict(store, { verifier, capability, subject, criteria, result: asked.result })
+      evidence.push(...bound.evidence ?? [])
+      verdicts.push(verdictId)
       if (bound.verdict === 'inconclusive') hold ??= `inconclusive: ${bound.reason}`
       else if (bound.verdict !== 'pass') return { verdict: bound.verdict, reason: bound.reason, evidence, verdicts }
     }

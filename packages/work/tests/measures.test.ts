@@ -94,6 +94,20 @@ test('the same check on the same test recurs; two tests of one check do not; unk
   assert.deepEqual(unknown.recurringFailureRate, { rate: 'unknown', recurring: 0, failures: 0 })
 })
 
+test('recurringClasses: classes seen 2+ times, by count, latest example, top 10, unknown as one class', () => {
+  const work = (name: string, day: string, reasons: Unnumbered[]) => record(name, 'failed', [admitted(T(day)), ...reasons, terminal(T(day, '01:00:00'), 'failed')])
+  const fail = (day: string, t: string) => verdictFail(T(day, '00:00:01'), unit(t))
+  const strange = (day: string) => attempt(T(day, '00:00:02'), 1, 'strange')
+  const r = rangeReport([work('p', '15', [fail('15', 't1'), fail('15', 't2'), strange('15')]), work('q', '16', [fail('16', 't1'), strange('16')]), work('r', '17', [fail('17', 't1'), fail('17', 't3')])], { since: '2026-11-15' })
+  assert.deepEqual(r.recurringClasses, [
+    { class: failureClass({ kind: 'verdict', reason: unit('t1') }), count: 3, example: 'work:r' },
+    { class: 'unknown', count: 2, example: 'work:q' },
+  ])
+  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15' }).recurringClasses.length, 0, 'a class seen once is not listed')
+  const many = Array.from({ length: 12 }, (_, i) => [work(`m${i}a`, '15', [fail('15', `k${i}`)]), work(`m${i}b`, '16', [fail('16', `k${i}`)])]).flat()
+  assert.equal(rangeReport(many, { since: '2026-11-15' }).recurringClasses.length, 10)
+})
+
 const human = { type: 'human' as const, operatorId: 'tan' }
 const reopenedBy = (at: string, caller: typeof human | typeof agent): Unnumbered => ({ type: 'reopened', at, caller, stepId: 'task', reason: 'again' }) as Unnumbered
 const withCommit = (r: WorkRecord, mergeCommit: string): WorkRecord => ({ ...r, state: { ...r.state, effects: { e: { state: 'applied', detail: { merged: 'true', mergeCommit } } } as never } })

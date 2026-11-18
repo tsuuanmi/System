@@ -9,7 +9,7 @@ import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { Capabilities, VERDICT_KIND, verdictSchema, type EffectIntent, type VerifierPort, type VerifyRequest, type VerifyResult } from '@system/work'
 import { mergeCheck } from '../src/index.ts'
 
-async function world(version = '1') {
+async function world(version = '1', accepts = ['file']) {
   const { artifacts } = memoryArtifacts({ ...VERDICT_KIND, content: verdictSchema })
   const put = async (text: string) => (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(text), mediaType: 'text/plain', classification: 'local-private', producer: { type: 'system', ref: 't' } })).id
   const subject = await put('merge commit')
@@ -19,7 +19,7 @@ async function world(version = '1') {
   const asked: VerifyRequest[] = []
   let answer: (request: VerifyRequest) => Partial<VerifyResult> = () => ({})
   const verifier: VerifierPort = {
-    ref: 'unit-runner', version, capabilities: ['unit'], accepts: [],
+    ref: 'unit-runner', version, capabilities: ['unit'], accepts,
     criteria: async () => criteria,
     async verify(request) {
       asked.push(request)
@@ -98,4 +98,21 @@ test('a verifier that throws gives an error verdict on the merge, never a pass, 
   assert.equal(done.verdict, 'error')
   assert.match(done.reason, /the verifier threw: boom/)
   assert.deepEqual(done.verdicts, [])
+})
+
+test('a pinned verifier that does not judge the subject\'s kind gives an error and is not asked', async () => {
+  const w = await world('1', ['workflow-spec'])
+  const done = await w.check(w.subject, w.intent)
+  assert.equal(done.verdict, 'error')
+  assert.equal(done.reason, 'unit-runner judges workflow-spec, not file')
+  assert.equal(w.asked.length, 0)
+  assert.deepEqual(done.verdicts, [])
+})
+
+test('a subject that is not a stored Artifact gives an error and is not asked', async () => {
+  const w = await world()
+  const done = await w.check('sha256:' + 'e'.repeat(64), w.intent)
+  assert.equal(done.verdict, 'error')
+  assert.match(done.reason, /not a missing Artifact/)
+  assert.equal(w.asked.length, 0)
 })
