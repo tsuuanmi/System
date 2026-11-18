@@ -97,6 +97,11 @@ export class WorkService {
     return Host.start({ home, capabilities: this.capabilities, ...this.storage, stallMinutes: this.config.stallMinutes })
   }
 
+  /** The Work table's keys and records, read-only, for the operator's store walk (`system doctor --store`). */
+  records(): Pick<WorkTable, 'keys' | 'get'> {
+    return this.storage.table
+  }
+
   /** Store an `intent@1` Artifact: what the operator settled with a caller session. */
   async newIntent(intent: Intent, caller: Caller): Promise<{ intent: string }> {
     return { intent: (await addIntent(this.artifacts, intent, { type: 'operator', ref: caller.operatorId })).id }
