@@ -6,8 +6,8 @@ index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..dcab42ee7fb1e0d5bb1ba70a048fa6b3
  		await createDatabaseFile(actual);
  	}
  	const db = new DatabaseSync(actual);
-+	// System patch: wait for another process's write lock instead of failing with "database is locked".
-+	db.exec("PRAGMA busy_timeout = 5000");
++	// System patch: wait for another process's write lock instead of failing with "database is locked" (60 s: only a bound, a holder stalled by load keeps the store for seconds).
++	db.exec("PRAGMA busy_timeout = 60000");
  	try {
  		configureDatabase(db, actual, journalMode);
  		return db;
@@ -19,12 +19,12 @@ index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..dcab42ee7fb1e0d5bb1ba70a048fa6b3
 +	// System patch: switching a new file to WAL needs an exclusive lock and returns
 +	// SQLITE_BUSY without consulting busy_timeout, so retry while another process
 +	// creates the same database; skip the switch once it is already in place.
-+	for (let waited = 0;; waited += 25) try {
++	for (const started = Date.now();;) try {
 +		const mode = String(db.prepare("PRAGMA journal_mode").get().journal_mode).toUpperCase();
 +		if (mode !== journalMode.toUpperCase()) db.exec(`PRAGMA journal_mode = ${journalMode.toUpperCase()}`);
 +		break;
 +	} catch (error) {
-+		if (!/database is locked/.test(String(error?.message)) || waited >= 5e3) throw error;
++		if (!/database is locked/.test(String(error?.message)) || Date.now() - started >= 6e4) throw error;
 +		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
 +	}
  	const { user_version: onDisk } = db.prepare("PRAGMA user_version").get();
