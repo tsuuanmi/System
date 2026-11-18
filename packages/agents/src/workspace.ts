@@ -20,7 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Artifacts, Envelope } from '@system/artifacts'
-import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, addWorktree, captureTree, pin, removeWorktree, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
+import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, addWorktree, git, captureTree, pin, removeWorktree, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
 
 export interface Workspace {
   root: string
@@ -56,12 +56,14 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
   // `base` (the base branch's new tip after a refused publish) wins as the starting tree, then `previous` (a takeover's partial output); then inputs in name order.
   const rank = (name: string) => (name === 'base' ? 0 : name === 'previous' ? 1 : 2)
   const names = Object.keys(request.inputs).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1))
+  let carried: { name: string; commit: string } | undefined
   for (const name of names) {
     const envelope = envelopeOf(artifacts, request.inputs[name]!)
     if (envelope.kind === GIT_TREE_KIND.kind) {
       const start = !ws.base
       if (start) ws.base = envelope.content as GitTreeContent
       const commit = (envelope.content as GitTreeContent).commit
+      if (!start && name === 'previous' && ws.base!.repository === (envelope.content as GitTreeContent).repository) carried = { name, commit }
       ws.listed.push({ name, where: start ? `the working directory starts from commit ${commit}` : `commit ${commit} of the repository of the working directory (git show or cherry-pick it); not the starting point` })
     } else if (envelope.kind === TASK_KIND.kind) {
       const task = envelope.content as Task
@@ -80,9 +82,29 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
       ws.listed.push({ name, where: path })
     }
   }
-  if (ws.base) await addWorktree(ws.base.repository, ws.work, ws.base.commit)
-  else mkdirSync(ws.work, { mode: 0o700 })
+  if (ws.base) {
+    await addWorktree(ws.base.repository, ws.work, ws.base.commit)
+    if (carried && names[0] === 'base') {
+      const entry = ws.listed.find((i) => i.name === carried!.name)!
+      entry.where = await carryOver(ws.work, carried.commit)
+        ? `commit ${carried.commit}, your earlier change: already applied to the working directory (rebased onto the new tip) because its publish was refused; read the failure for what failed and fix what remains`
+        : `commit ${carried.commit}, your earlier change: it did not apply cleanly onto the new tip, so the working directory is the new tip without it; its publish was refused, so carry the change over (git show or cherry-pick it) and never give up its intent`
+    }
+  } else mkdirSync(ws.work, { mode: 0o700 })
   return ws
+}
+
+/** Apply the change of `commit` to the worktree, uncommitted; on a conflict leave the worktree as it was. */
+async function carryOver(work: string, commit: string): Promise<boolean> {
+  try {
+    await git(work, ['cherry-pick', '--no-commit', commit])
+    return true
+  } catch {
+    await git(work, ['cherry-pick', '--quit']).catch(() => undefined)
+    await git(work, ['reset', '--hard', 'HEAD']).catch(() => undefined)
+    await git(work, ['clean', '-fdq']).catch(() => undefined)
+    return false
+  }
 }
 
 /** Write one context Artifact read-only under `in/context/`. */

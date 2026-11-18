@@ -245,7 +245,10 @@ model is recorded for it.
    commit an input names (`base` first, then `previous`, then a `git-tree@1` input or a
    task's `base`; a git-tree input that is not the starting point is listed in the
    prompt as a commit of the same repository, to show or cherry-pick), or an empty
-   directory.
+   directory. When both `base` and `previous` are given (a refused publish), the
+   change of `previous` is cherry-picked, uncommitted, onto `base`; the prompt says
+   it is already applied, or, if it conflicted (aborted, tree left at `base`), that
+   it must be carried over.
 2. **Environment:** every host variable is removed except `PATH`, `LANG`,
    `LC_ALL` and `TZ`; `PATH` starts with the Node the work tree's `engines.node` asks
    for, as a check's does (fl-3). The agent gets `HOME`, `TMPDIR` and its account's
