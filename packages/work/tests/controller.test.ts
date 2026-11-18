@@ -953,6 +953,22 @@ test('a Worker failure is tried afresh only when the Worker says so, and with no
   }
 })
 
+test('a missing-output failure marked retryable is tried once more, and the Work fails when the second attempt misses too', async () => {
+  const reason = 'web/chatgpt/default wrote no output block for sources'
+  for (const secondMisses of [false, true]) {
+    let n = 0
+    const h = harness({ worker: { async run(r) {
+      if (n++ === 0 || secondMisses) return { status: 'failed', outputs: {}, reason, retryable: true as const }
+      const outputs = Object.fromEntries(r.outputs.map((slot) => [slot, id(`${r.attemptId}/${slot}`)]))
+      for (const out of Object.values(outputs)) h.specs.stored.add(out)
+      return { status: 'succeeded', outputs }
+    } } })
+    const done = await runRetrying(h)
+    assert.equal(done.state.status, secondMisses ? 'failed' : 'succeeded', String(secondMisses))
+    assert.equal(n, 2)
+  }
+})
+
 test('a step with no retry declared is never tried again by itself', async () => {
   const specs = memorySpecs()
   const h = harness({ specs, verifier: scripted(specs, ['fail']) })

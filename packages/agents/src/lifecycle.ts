@@ -107,7 +107,7 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
     else {
       const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
       if (outcome.failure !== undefined) result = { status: 'failed', outputs: {}, ...kept, reason: outcome.failure, ...(outcome.cause ? { cause: outcome.cause } : {}), ...common }
-      else if (captured?.missing.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote no output ${noun} for ${captured.missing.join(', ')}`, ...common }
+      else if (captured?.missing.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote no output ${noun} for ${captured.missing.join(', ')}`, retryable: true, ...common }
       else result = { status: 'succeeded', outputs: captured?.outputs ?? {}, ...(outcome.partial ? { partial: outcome.partial } : {}), ...(outcome.message ? { message: outcome.message } : {}), ...common }
     }
     const more = await o.settle?.(result)

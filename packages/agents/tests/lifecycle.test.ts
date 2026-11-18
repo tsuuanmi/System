@@ -87,10 +87,15 @@ test('a declared output the turn did not write fails the attempt, naming it; one
   const missing = await run(request(['report', 'extra']), async (ctx) => { writeFileSync(join(ctx.ws.outputs, 'report'), 'done'); return {} })
   assert.equal(missing.result.status, 'failed')
   assert.equal(missing.result.reason, 'x/y wrote no output file for extra')
+  assert.equal(missing.result.retryable, true)
   assert.deepEqual(missing.result.outputs, {})
   assert.ok(missing.result.partial?.report)
   const block = await run(request(['a']), async () => ({ captured: { outputs: {}, missing: ['a'] } }), { outputNoun: 'block', files: false })
   assert.equal(block.result.reason, 'x/y wrote no output block for a')
+  assert.equal(block.result.retryable, true)
+  const web = await run(request(['sources']), async () => ({ captured: { outputs: {}, missing: ['sources'] } }), { outputNoun: 'block', files: false, ref: 'web/chatgpt/default' })
+  assert.equal(web.result.reason, 'web/chatgpt/default wrote no output block for sources')
+  assert.equal(web.result.retryable, true)
 })
 
 test('the turn\'s own failure fails the attempt with the usage and summary it reported', async () => {
