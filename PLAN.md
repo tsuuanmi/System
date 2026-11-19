@@ -211,3 +211,16 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   artifacts.ts, index.ts) and is recorded in section 2 at the next close; from now on a context pack says that the
   active core does not grow, or that the result gives the lines and why. Next: sb-1 (intent 5f27ce2334c1), a spike of
   Claude Code's own sandbox, off by default.
+- sb-1 merged on its first Work (work:0363e8eb, commit 9d7a153, not released): the Account option `sandbox` of the
+  Claude Code Runtime builds the settings in packages/agents/src/adapters/sandbox.ts (deny the passwd home; allow the
+  attempt's directories, the repository's git directory and the toolchain on PATH; `failIfUnavailable`; no
+  unsandboxed command). No Account has it on. The active core stayed at 5,191 lines.
+- Open for the operator (sb-1): Claude Code documents no way to leave Bash's network open under its sandbox, so with
+  the option on Bash reaches only the hosts in the option's `allowedDomains` (none by default; WebFetch and WebSearch
+  are outside the sandbox). The Intent 5f27ce2334c1 said the network stays as it is: turning the option on for an
+  Account therefore needs the operator's decision on the hosts (a changed Intent is a new Intent).
+- Not verified (sb-1): the gated test "Claude Code under the sandbox option cannot read the real home or write outside
+  the worktree, and can still commit and run node --test" (tests/real-agents.test.ts) needs `SYSTEM_REAL_AGENTS=1` and
+  the Account's token in `CLAUDE_CODE_OAUTH_TOKEN`, which a caller session does not hold; nobody has run it. What a
+  throwaway HOME does to the sandbox's paths and whether `corepack pnpm install` works under it are undetermined
+  until it runs.
