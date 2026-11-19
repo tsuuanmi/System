@@ -224,3 +224,18 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   the Account's token in `CLAUDE_CODE_OAUTH_TOKEN`, which a caller session does not hold; nobody has run it. What a
   throwaway HOME does to the sandbox's paths and whether `corepack pnpm install` works under it are undetermined
   until it runs.
+- Operator, 2026-11-19: the review of System itself ends here (8 Items for 4 operator acts, 2.0 Items per act against
+  4.25 before; two nights in a row the scheduled session found no `todo` Item). The next return is sought in the
+  product DNA through System. ROI stays as section 0 defines it, with the product's own measure counted. Record: file
+  Artifact sha256:5b8c7fb8da223989d3919069eac14232cdff192d186ac08909af1c64ef83da41 (Brainstorm work:60d6e265).
+- DNA Intent 8f320a604aa5 (settled by the operator): a green base (the `dependency-policy` advisory), the T2
+  evaluation as a check of DNA's `.system/checks.yaml` bound to the commit (about 16 minutes a run; machine paths
+  through the Host's `checkEnv`; no change to System), then one batch of at most 6 product Items run by the scheduled
+  session and released once, with the operator's minutes noted. Handed to the DNA caller session "DNA 100K" on
+  2026-11-19; its Items live in DNA's STATUS.md.
+- Stays the operator's in that work: how the advisory is cleared, the evaluation check's fail rule and error budget,
+  re-baselining, adjudication, the Items, approvals and releases. Held-out batches are never read by a Work. No
+  unpublished probes by the scheduled session for now.
+- Duties apart from that ranking, both the operator's: run sb-1's gated test (it needs the Account's token) before any
+  rise of the night limit or of the number of repositories; put `codex` back on the Host's PATH (both Codex Accounts
+  are unavailable, so the two Brainstorm proposals come from one Provider).
