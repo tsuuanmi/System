@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, writesRepository, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { adapterFor } from './adapters/index.ts'
+import type { SandboxOption } from './adapters/sandbox.ts'
 import type { QuotaEvent, QuotaReport } from './quota.ts'
 import type { Runtime } from './runtimes.ts'
 import { runAttempt } from './lifecycle.ts'
@@ -67,6 +68,8 @@ export interface Account {
   attemptTimeoutMinutes?: number
   /** What one attempt may spend before it is stopped and fails "over budget" (PROP-0007 decision 2). */
   attemptBudget?: AttemptBudget
+  /** claude-code, a spike, off by default: run the attempt's Bash in Claude Code's sandbox (adapters/sandbox.ts). */
+  sandbox?: SandboxOption
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
   /** From this share of a quota window used the account is not chosen (the row's `quotaCeilingPercent`; routing's default is 80). */
@@ -135,7 +138,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const { ws } = ctx
       const text = prompt(ws, request)
       const staged = pre.stage(ws.root)
-      const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env })
+      const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env, ...(account.sandbox ? { sandbox: account.sandbox } : {}) })
       // Remove every host variable the agent was not given (SSH agent, tokens, ...).
       const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
       Object.assign(env, invocation.env)

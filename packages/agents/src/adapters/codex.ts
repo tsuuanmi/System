@@ -6,10 +6,12 @@ import type { AttemptSummary, Progress } from '@system/work'
 import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { createQuotaCache, readCodexQuota } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
+import { SANDBOX_RUNTIME_ONLY } from './sandbox.ts'
 import { readCodexAccountId } from '../identity.ts'
 import type { CliAdapter, InvocationInput } from './types.ts'
 
-function invocation({ command, ws, prompt, model, env }: InvocationInput): Invocation {
+function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
+  if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
   return {
     argv: [
       command, 'exec', '--json', '--ephemeral', '--ignore-user-config', '--skip-git-repo-check',

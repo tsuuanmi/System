@@ -34,6 +34,7 @@ the optional web-worker row) becomes a System Worker
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
         maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
+        # sandbox: true                 # spike, off by default, Claude Code only: Bash runs in Claude Code's sandbox (adapters/README.md)
       - ref: codex/default
         runtime: codex
         capabilities: [code.tests]

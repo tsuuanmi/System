@@ -12,7 +12,8 @@ import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, z, tierCapability, type Capabilities, type Tier } from '@system/work'
 import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
 import { chooseAsker, type Ask } from './ask.ts'
-import { adapterFor } from './adapters/index.ts'
+import { adapterFor, checkSandbox } from './adapters/index.ts'
+import type { SandboxOption } from './adapters/sandbox.ts'
 import type { QuotaCache, QuotaReport } from './quota.ts'
 import { RUNTIME_ABILITIES, type Runtime } from './runtimes.ts'
 import { WEB_WORKER_DISABLED, isWebRuntime, webRefProblem, type WebAccountSettings, type WebWorkerService } from './web.ts'
@@ -69,6 +70,8 @@ export interface AccountConfig extends WebAccountSettings {
   maxConcurrentAttempts?: number
   /** What one attempt may spend (input tokens, minutes) before it is stopped as over budget; overrides the row's. */
   attemptBudget?: AttemptBudget
+  /** claude-code only, a spike, off by default: `true`, or `{ allowRead, allowedDomains }`; Bash then runs in Claude Code's sandbox (adapters/README.md). */
+  sandbox?: SandboxOption
 }
 
 export interface Config {
@@ -247,6 +250,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const observations = domain?.table('quota')
   for (const { account, status } of entries) {
     try {
+      const sandbox = checkSandbox(account.runtime, account.sandbox)
       if (isWebRuntime(account.runtime)) {
         const problem = webRefProblem(account)
         if (problem) throw new Error(problem)
@@ -279,7 +283,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const command = await subprocess.resolveExecutable(account.command ?? adapter.defaultCommand)
         status.command = command
         askVersion = lazyVersion(subprocess, command)
-        const resolved: Account = { ref: account.ref, runtime: account.runtime as Runtime, capabilities: [...new Set([...status.abilities, ...offered])], command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
+        const resolved: Account = { ref: account.ref, runtime: account.runtime as Runtime, capabilities: [...new Set([...status.abilities, ...offered])], command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, ...(sandbox ? { sandbox } : {}), maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
         // The adapter checks the credential and sets the Account's hooks; the provider's account ID comes from the account's own files: unknown leaves it registered; a known one registers once.
         const { quota: cache, providerAccount: id } = await adapter.register({ account, resolved, command, credentials, home: (relative) => systemPath(ctx, relative), quota: { ttlMs: config.quota?.ttlMs, now: config.quota?.now }, observations })
         quotas.set(account.ref, cache)
