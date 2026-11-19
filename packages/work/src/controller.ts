@@ -798,6 +798,7 @@ export class WorkController {
     const outputs = status === 'succeeded' ? result.outputs : {}
     let unchangedAfter: string | undefined
     let noChange = false
+    let dropped: string | undefined
     if (status === 'succeeded') {
       // A Worker's word is not its output: every declared slot must name a stored Artifact.
       const missing = [...s.outputs.filter((slot) => !outputs[slot] || !this.specs.exists(outputs[slot])), ...(s.optionalOutputs ?? []).filter((slot) => outputs[slot] && !this.specs.exists(outputs[slot]))]
@@ -805,6 +806,17 @@ export class WorkController {
       // A change that is judged or published must be one: a Worker that changed nothing fails here, not three steps later.
       // Only a first output that a later verify or effect step takes as its subject, so a read-only step's `checkout` stays unchanged.
       // A step that wrote its optional output has said the Item already holds: its change is meant to be the base (Satisfied, ro-15).
+      // It counts only from an attempt that started from the Task's base and changed nothing: one that was handed a previous change
+      // starts from that change, so "holds at the base" says nothing about the Task's base, and one that changed files says the opposite.
+      const written = (s.optionalOutputs ?? []).filter((slot) => outputs[slot])
+      if (status === 'succeeded' && written.length && s.outputs[0] && !s.mayBeEmpty && isJudged(spec, s.id, s.outputs[0])) {
+        const why = this.require(workId).state.steps[s.id]?.reopening?.previous ? 'the attempt was reopened with a previous change, so it did not start from the Task\'s base'
+          : !this.specs.unchangedBase(outputs[s.outputs[0]]!) ? 'the attempt changed files' : undefined
+        if (why) {
+          for (const slot of written) delete outputs[slot]
+          dropped = `${written.join(', ')} dropped: ${why}`
+        }
+      }
       const holds = (s.optionalOutputs ?? []).some((slot) => outputs[slot])
       if (status === 'succeeded' && s.outputs[0] && !s.mayBeEmpty && !holds && isJudged(spec, s.id, s.outputs[0])) {
         const base = this.specs.unchangedBase(outputs[s.outputs[0]]!)
@@ -820,6 +832,7 @@ export class WorkController {
         }
       }
     }
+    if (dropped) reason = reason ? `${reason}. ${dropped}` : dropped
     // tr-1: disclosure only; a change that edits or deletes an existing test is listed with the Worker's reason, and nothing here holds the step.
     let changedTests: ReturnType<typeof withReasons> | undefined
     const changeId = status === 'succeeded' ? outputs[s.outputs[0] ?? ''] : undefined

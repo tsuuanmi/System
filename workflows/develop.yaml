@@ -7,7 +7,7 @@
 # skipped, and a pass ends the Work succeeded with the result "satisfied", publishing nothing. Without it the Work goes on as before.
 schema: system.workflow/v1
 id: develop
-version: 10
+version: 11
 steps:
   - id: implement
     capabilities: [repo.write, develop.implement, tier.standard]
@@ -67,14 +67,17 @@ steps:
       cherry-pick or git diff, then apply), resolve the conflicts, read the
       failure for what failed, and never give up the intent of the change.
 
-      Only when the Item already holds at your working directory's base, so that
-      there is nothing to change: leave the tree as it is and also write the
-      output "satisfied", a text file naming the existing tests that show it, one
-      per line as `<test file> "<test name>"` (the file relative to the
-      repository, the name as the test runner reports it). They are run on the
-      base, and a pass ends the Work Satisfied with nothing published. Write it
-      only when you have run those tests yourself and seen them pass, and never
-      when you changed anything: otherwise leave it out.
+      Only when the Item already holds at the Task's base (the commit your first
+      attempt started from), so that there is nothing to change: leave the tree
+      as it is and also write the output "satisfied", a text file naming the
+      existing tests that show it, one per line as `<test file> "<test name>"`
+      (the file relative to the repository, the name as the test runner
+      reports it). They are run on the Task's base, and a pass ends the Work
+      Satisfied with nothing published. Write it only when you have run those
+      tests yourself and seen them pass, and never when you changed anything:
+      otherwise leave it out. An attempt that was given a previous change or a
+      failure never writes `satisfied`: when the failure is not the change's
+      fault (a flaky test), it leaves the change as it is.
 
   - id: satisfied-check
     dependsOn: [implement]

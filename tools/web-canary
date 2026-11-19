@@ -69,7 +69,12 @@ function accounts() {
 const OLD_REF = /^chatgpt-web\/([^/]+)$/
 const accountOf = (ref) => ref.replace(OLD_REF, 'web/chatgpt/$1')
 
-const show = (workId) => JSON.parse(ok(['work', 'show', workId]))
+// The report reads the Works of each Task series from one list; a Work is read once, not once per series (each read is a process).
+const shown = new Map()
+const show = (workId) => {
+  if (!shown.has(workId)) shown.set(workId, JSON.parse(ok(['work', 'show', workId])))
+  return shown.get(workId)
+}
 const seconds = (record) => (Date.parse(record.events.at(-1).at) - Date.parse(record.events[0].at)) / 1000
 
 function runAll() {
@@ -138,9 +143,12 @@ function section(runs) {
   return { names, total }
 }
 
+let listedWorks
+const evidenceReads = new Map()
 /** The finished Works whose input is `input`, oldest first. */
 function runsOf(input, since) {
-  const listed = ok(['work', 'list']).split('\n').filter(Boolean).map((line) => line.split(/\s+/)[0])
+  listedWorks ??= ok(['work', 'list']).split('\n').filter(Boolean).map((line) => line.split(/\s+/)[0])
+  const listed = listedWorks
   const runs = []
   for (const workId of listed) {
     const record = show(workId)
@@ -148,7 +156,7 @@ function runsOf(input, since) {
     if (admitted.input !== input || record.state.status === 'running') continue
     if (since && Date.parse(admitted.at) < since) continue
     const evidenceId = record.state.steps[WORKER_STEP]?.partial?.evidence
-    const read = evidenceId ? sys(['artifact', 'cat', evidenceId]) : undefined
+    const read = evidenceId ? (evidenceReads.get(evidenceId) ?? evidenceReads.set(evidenceId, sys(['artifact', 'cat', evidenceId])).get(evidenceId)) : undefined
     const evidence = read?.status === 0 ? JSON.parse(read.stdout) : undefined
     const asked = record.events.findLast((e) => e.type === 'dispatched' && e.stepId === WORKER_STEP)?.capability?.split(',').find((c) => c.startsWith('tier.'))
     runs.push({ workId, at: admitted.at, account: accountOf(admitted.worker ?? 'unknown'), evidence, target: evidence?.powerTarget ?? asked?.slice('tier.'.length), ...classify(record) })

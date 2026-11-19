@@ -30,6 +30,8 @@ export interface Workspace {
   work: string
   base?: GitTreeContent
   instructions?: string
+  /** The Item the Task names, if any. */
+  item?: string
   /** Name -> where the agent finds it, for the prompt. */
   listed: { name: string; where: string }[]
   /** The Task's context files, listed under their own notice. */
@@ -68,6 +70,7 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
     } else if (envelope.kind === TASK_KIND.kind) {
       const task = envelope.content as Task
       ws.instructions = task.instructions
+      ws.item = task.item
       if (task.base && !ws.base) ws.base = envelopeOf(artifacts, task.base).content as GitTreeContent
       ws.listed.push({ name, where: 'the instructions above' })
       for (const [i, id] of (task.context ?? []).entries()) await writeContext(artifacts, ws, `context-${i + 1}`, envelopeOf(artifacts, id))
@@ -183,6 +186,32 @@ export interface Captured {
   missing: string[]
 }
 
+const SUBJECT_MAX = 72
+
+/** The first line of the Task's Goal (the text after a `## Goal` heading, else the first non-empty line). */
+function goalLine(instructions: string): string {
+  const lines = instructions.split('\n').map((l) => l.trim())
+  const heading = lines.findIndex((l) => /^#{1,6}\s+goal\s*$/i.test(l))
+  const from = heading >= 0 ? lines.slice(heading + 1) : lines
+  return from.find((l) => l !== '' && !(heading >= 0 && l.startsWith('#'))) ?? ''
+}
+
+/** The commit message: for a Task that names an Item, `<item>: <goal line>` and an `Item:` trailer before `Work:` and `Attempt:`. */
+export function commitMessage(ws: Workspace, request: WorkerRequest, slot: string): string {
+  const trailers = `Work: ${request.workId}\nAttempt: ${request.attemptId}`
+  if (!ws.item) return `system: ${request.stepId} output ${slot}\n\n${trailers}`
+  const prefix = `${ws.item}: `
+  let text = goalLine(ws.instructions ?? '').replace(/\s+/g, ' ')
+  if (prefix.length + text.length > SUBJECT_MAX) {
+    const room = text.slice(0, SUBJECT_MAX - prefix.length + 1)
+    const space = room.lastIndexOf(' ')
+    text = space > 0 ? room.slice(0, space) : room.slice(0, SUBJECT_MAX - prefix.length)
+  }
+  text = text.replace(/[\s.]+$/, '')
+  const subject = text ? prefix + text : `${ws.item}: ${request.stepId} output ${slot}`
+  return `${subject}\n\nItem: ${ws.item}\n${trailers}`
+}
+
 /** Capture what the attempt produced; partial captures keep whatever exists. */
 export async function capture(artifacts: Artifacts, ws: Workspace, request: WorkerRequest, producer: string): Promise<Captured> {
   const tree = treeSlot(ws, request)
@@ -195,7 +224,7 @@ export async function capture(artifacts: Artifacts, ws: Workspace, request: Work
   for (const slot of [...request.outputs, ...(request.optionalOutputs ?? [])]) {
     const optional = !request.outputs.includes(slot)
     if (slot === tree) {
-      const captured = await captureTree(ws.base!.repository, ws.work, ws.base!.commit, `system: ${request.stepId} output ${slot}\n\nWork: ${request.workId}\nAttempt: ${request.attemptId}`)
+      const captured = await captureTree(ws.base!.repository, ws.work, ws.base!.commit, commitMessage(ws, request, slot))
       await pin(captured.repository, captured.commit)
       outputs[slot] = (await artifacts.put({ ...GIT_TREE_KIND, ...common, content: captured, subject: { type: 'git-commit', ref: captured.commit } })).id
       continue

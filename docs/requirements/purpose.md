@@ -48,8 +48,8 @@ acts` when there are none). An operator act is:
   operator said so in that session; an Intent without it is not counted);
 - a `confirmation@1` the operator stored for an Artifact they confirmed, such as
   a dataset or a set of labels (`system confirm`, MCP `artifact.confirm`);
-- a release: a merge of `dev` into `main` seen in the repository (first-parent
-  merges of `main`), for each repository the Host knows Items for;
+- a release: a merge of `dev` into `main` seen in the repository (a first-parent
+  merge of `main` that merges `dev`), for each repository the Host knows Items for;
 - a human touch, as `summary.ts` counts them (human callers only).
 
 Conversation with a caller session is not seen by System: only what the caller
@@ -141,8 +141,10 @@ Each criterion names the test that pins it today (`file`: "test name").
   and applies nothing"; `tests/publish-crash.test.ts`: all three crash points.
 - **Authority:** only a human at a terminal approves; a denial fails the Work.
   `tests/publish-approval.test.ts`: "marking the pull request ready waits for a
-  human at a terminal; an agent or a pipe cannot approve". Workers holding no
-  push credentials and egress limits: not pinned.
+  human at a terminal; an agent or a pipe cannot approve".
+  `packages/agents/tests/runtimes.test.ts`: "an attempt's git over ssh is refused by GIT_SSH_COMMAND, without a
+  network" (a Guardrail against accident, not a sandbox: an agent that unsets the variable gets past it). Egress limits:
+  not pinned.
 - **Exact-subject verification:** a verdict about another subject, other
   criteria or without evidence is never a pass; a changed subject voids the old
   verdict. `packages/work/tests/controller.test.ts`: "a verdict about another
