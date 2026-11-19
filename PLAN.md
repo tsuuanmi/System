@@ -197,3 +197,17 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
 - [ ] Jev (TypeSafe AI) or another hosted decision model as a Classifier backend. *Trigger: the economy-model
   Classifier fails cls-2's gate; before any trial, its data retention terms are confirmed (the research found them
   inconsistent) and the report's citations verified.*
+- Batch 2 merged on the first Work of each Item (flaky-3, auth-1, git-1, sat-1, store-1; record: file Artifact
+  sha256:0fe9f86c7ad91a2ac3dd6550b74ada812a438a471327e5bf8099c9f89395c0d0, which also holds the sandbox research and
+  probe). Release 6baf5f2 (pull request #423) carries both batches; its install check is work:448ecf91.
+- Operator, 2026-11-19: for this batch the caller session protected `main` on GitHub (a pull request is required,
+  administrators included, no force push, no deletion), opened and merged the release pull request and ran
+  `system update`, on the operator's instruction in that session. This is not a standing permission: a Release stays
+  the operator's.
+- Measured after the release: `system work report --since 2026-11-10T00:00:00Z` reads 40 releases and 3.58 Items per
+  operator act (80 and 2.10 before ms-3); `system doctor --store` on the operator's home is ok (786 Works, 10,969
+  Artifacts, 1,969 blobs, 142 MB read in 4.4 s).
+- Operator, 2026-11-19: the active core grew from 5,126 to 5,191 lines in this review (releases.ts, controller.ts,
+  artifacts.ts, index.ts) and is recorded in section 2 at the next close; from now on a context pack says that the
+  active core does not grow, or that the result gives the lines and why. Next: sb-1 (intent 5f27ce2334c1), a spike of
+  Claude Code's own sandbox, off by default.
