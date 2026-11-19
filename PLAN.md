@@ -228,11 +228,15 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   4.25 before; two nights in a row the scheduled session found no `todo` Item). The next return is sought in the
   product DNA through System. ROI stays as section 0 defines it, with the product's own measure counted. Record: file
   Artifact sha256:5b8c7fb8da223989d3919069eac14232cdff192d186ac08909af1c64ef83da41 (Brainstorm work:60d6e265).
-- DNA Intent 8f320a604aa5 (settled by the operator): a green base (the `dependency-policy` advisory), the T2
-  evaluation as a check of DNA's `.system/checks.yaml` bound to the commit (about 16 minutes a run; machine paths
-  through the Host's `checkEnv`; no change to System), then one batch of at most 6 product Items run by the scheduled
-  session and released once, with the operator's minutes noted. Handed to the DNA caller session "DNA 100K" on
-  2026-11-19; its Items live in DNA's STATUS.md.
+- DNA Intent 432602283824 (settled by the operator in the DNA session, 2026-11-19; it supersedes 8f320a604aa5, which
+  made the full T2 evaluation the check): a green base (chrono replaced by jiff, `deny.toml` unchanged, Item deps-2);
+  DNA's existing regression gate (`tools/gates.sh regress`, 589 samples, about 20 s) as the per-change check of DNA's
+  `.system/checks.yaml`, with a chain of intents (one intent file per output-changing Item, named by its Item id) that
+  the operator records once at the release; the full T2 evaluation at night or at a release, not per Work (a run took
+  970 s with a cold cache, twice per Work, and a raw-count rule would have failed a correct change); then one batch of
+  at most 6 product Items run by the scheduled session and released once, with the operator's minutes noted. The
+  machine paths reach the gate through the Host's `checkEnv`; no change to System. The DNA caller session "DNA 100K"
+  carries it; its Items live in DNA's STATUS.md.
 - Stays the operator's in that work: how the advisory is cleared, the evaluation check's fail rule and error budget,
   re-baselining, adjudication, the Items, approvals and releases. Held-out batches are never read by a Work. No
   unpublished probes by the scheduled session for now.
