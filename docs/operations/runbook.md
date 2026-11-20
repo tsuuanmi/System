@@ -430,7 +430,9 @@ report and print its ID. A "permission" refusal names a rule to fix in the scrip
 By default the session works on this repository. `SYSTEM_NIGHT_REPOS` (paths of
 checkouts separated by `:`) names the repositories instead; the launcher passes
 the list to the prompt in that order, and an entry that is not a git checkout is
-reported (stderr, and the night report) and skipped. The limits (6 Items over all
+reported (stderr, and the night report) and skipped. Before the prompt the
+launcher runs `git fetch origin dev` in each of them (60 s at most); a failure is
+logged on stderr and the night goes on with the `origin/dev` it has. The limits (6 Items over all
 repositories) do not change. To add DNA, keep this repository first and set it in
 the installed unit, with an `Environment=` line or a drop-in
 (`systemctl --user edit system-night-session`):
@@ -612,7 +614,15 @@ system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 `status` derives each Item's state from git and the Work records ([app
 README](../../packages/app/README.md)). While a Work for an Item runs or is held,
 `work submit` for it is refused, naming that Work; `--force` allows parallel
-work on purpose. `task new --item` is refused when the Item has no line in
+work on purpose. `status` fetches `origin dev` first when the last fetch of the
+repository is more than 3 minutes old (bounded to 20 s; a failed fetch is no
+refusal: the `note:` line says it failed and how old the ref is). `task new --ref
+<branch>` for a local branch with an `origin/<branch>` fetches it too and is
+refused, naming both commits, when the branch lacks commits of the origin (use
+`--ref origin/<branch>`); a failed fetch is reported on stderr as a `note:`. An
+`origin/...` ref or a commit is not checked. `work report --since` with a date
+that has no zone reads it as UTC and prints that instant (`sinceUtc`, and on
+stderr). `task new --item` is refused when the Item has no line in
 `STATUS.md` on `dev`; it and `work submit` are refused for a Blocked Item unless
 `--force`. Works do not edit `STATUS.md`: done is derived.
 
