@@ -165,6 +165,17 @@ A Classifier's recorded answer: label, label distribution, confidence, model and
 question version.
 _Avoid_: verdict, decision
 
+**Triage**:
+Writes a diagnosis of a failed step, as an Artifact, for the step that is
+reopened and for the operator; never accepts, verifies again or changes what
+the controller does.
+_Avoid_: judge, brain, agent
+
+**Model check**:
+A Verifier backed by a model whose Verdict can only be fail or inconclusive,
+never pass; runs in shadow until its precision is measured.
+_Avoid_: AI review, judge
+
 **Satisfied**:
 A Work's outcome when its Item already holds at the Task's base, shown by a
 test that a Verifier ran there; nothing is merged and the Item counts as done.

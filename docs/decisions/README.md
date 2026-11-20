@@ -43,4 +43,9 @@ acceptance does not imply its code exists.
   accepted — The Host carries admitted Works on and never picks an Item or creates a Work; picking, writing the Task and
   submitting is a caller's act (scheduled sessions included); Items stay in each repository's STATUS.md with derived
   state, and a database is reconsidered only on three stated triggers.
+- [ADR-0013 — Models decide what to try; deterministic checks decide what is
+  accepted](ADR-0013-models-decide-what-to-try.md) — accepted — Models decide what to try; deterministic checks decide
+  what is accepted. A model may choose what to try next and may block (fail or inconclusive), never accept; every model
+  decision is an Artifact; Triage v1 only writes a diagnosis and a hold recommendation; a Model check runs in shadow
+  until its precision is measured.
 <!-- docs:end index:decision -->

@@ -26,7 +26,7 @@
   advisory within one OS user ([ADR-0011](docs/decisions/ADR-0011-human-caller-needs-a-terminal.md)) (CM, 2026-11-14).
 - ROI of an Item is what it improves in later Items (Items merged on their first Work, cost per merged Item, operator
   minutes per Item, Escaped defects) over its own cost and operator minutes. Invariants are prose in a Task and the
-  changed tests are disclosed, never frozen tests or a model review. Order after TR: bootstrap, then unattended scale (TR, 2026-11-14).
+  changed tests are disclosed, never frozen tests or a model review (model review: see ADR-0013). Order after TR: bootstrap, then unattended scale (TR, 2026-11-14).
 - Bootstrap is read-only first (`plan`, `check`; `apply` waits); the first checks file is a draft a human commits,
   because admission refuses a Work without one; several repositories on one Host are accepted under today's limits:
   GitHub `origin`, `dev`, one token (BS, overnight session 2026-11-15, the operator may change them).
