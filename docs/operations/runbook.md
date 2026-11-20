@@ -118,7 +118,11 @@ Host that stopped itself for new code waits for its attempts first; see
   so `paths` selects the checks by the files that differ between the two
   releases; the first install checks the whole commit. When the release that runs now knows the
   criteria `repo-checks-release-v1`, the check is of the event `release` (a check's `on:`), by a
-  workflow `update` writes; otherwise `code-checks.yaml` (event `pull_request`);
+  workflow `update` writes; otherwise `code-checks.yaml` (event `pull_request`).
+  This repository's release check runs `upgrade` and `install-guide`, which a Work's
+  checks do not run ([ADR-0014](../decisions/ADR-0014-checks-in-tiers-by-event.md)); a
+  failure there leaves `current` where it was, and `system work report` counts it as a
+  late-caught defect;
 - it switches `current` (a new link renamed over it), then asks the Host as a
   client of the new code, which makes the Host drain and restart on it (below);
 - if the Host does not run the new code within `--wait` (default 75 minutes,
@@ -494,6 +498,12 @@ System merges a Work's change into `dev` only through its merge queue
 A conflict fails the publish step naming the files; a check that fails on the
 merge names it in the reason. Do not require pull requests in `dev`'s branch
 protection: the push would be refused.
+
+**Batch size (ct-3).** The `effects` row's `mergeBatchSize` (in `~/.system/profile.yml`, next to `mergeInto`)
+is how many waiting changes the queue checks as one batch. It is a whole number of at least 1, default 1, which is
+one change at a time; an invalid value stops the Host at start. Set it, restart the Host, and watch the first batches:
+a passing batch shows one `merge_group` check and outcomes with `detail.batch`; a failing one is split, so the change
+at fault is refused with its own reason. Set it back to 1 to return to the old behaviour.
 
 A hand push to `dev` can run the fast checks first: in your checkout run
 `git config core.hooksPath tools/hooks` (`tools/hooks/pre-push`; bypass once with `git push --no-verify`).

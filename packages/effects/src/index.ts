@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Artifacts } from '@system/artifacts'
 import { askVerifier, putVerdict, settleVerdict, type Capabilities, type EffectIntent, type VerificationStore } from '@system/work'
-import { githubPublisher, type MergeCheck, type PublishConfig } from './github.ts'
+import { githubPublisher, validMergeBatchSize, type MergeCheck, type PublishConfig } from './github.ts'
 
 export * from './github.ts'
 
@@ -62,6 +62,7 @@ export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (s
 }
 
 export function apply(ctx: Context, config: Config = {}): void {
+  if (config.mergeBatchSize !== undefined && !validMergeBatchSize(config.mergeBatchSize)) throw new Error(`mergeBatchSize must be a whole number of at least 1, not ${String(config.mergeBatchSize)}`)
   const capabilities = ctx.get('capabilities') as Capabilities
   const credentials = ctx.get('credentials') as CredentialProvider
   const ref = credentialRef(config.tokenRef ?? 'GITHUB_TOKEN')
@@ -71,7 +72,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       token: async () => (await credentials.resolve(ref))?.value,
       check: mergeCheck(capabilities, ctx.get('artifacts') as Artifacts),
     },
-    { remote: config.remote ?? 'origin', base: config.base ?? 'main', mergeInto: config.mergeInto ?? [], apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository },
+    { remote: config.remote ?? 'origin', base: config.base ?? 'main', mergeInto: config.mergeInto ?? [], apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository, mergeBatchSize: config.mergeBatchSize },
   )
   const dispose = capabilities.registerEffect(publisher)
   ctx.effect(() => dispose, 'effect registrations')

@@ -30,3 +30,22 @@ test('lint runs after install, on TypeScript files and the config', () => {
   assert.ok(checks.map((check) => check.name).indexOf('install') < checks.indexOf(lint))
   assert.ok(lint.paths?.includes('eslint.config.js'))
 })
+
+// ct-2, ADR-0014 decision 2: which checks each event runs.
+const runsOn = (event: 'pull_request' | 'merge_group' | 'release') => checks.filter((check) => !check.on || check.on.includes(event)).map((check) => check.name)
+
+test('pull_request runs neither upgrade nor install-guide', () => {
+  const names = runsOn('pull_request')
+  assert.ok(!names.includes('upgrade') && !names.includes('install-guide'))
+  for (const name of ['secrets', 'lint', 'smoke', 'web', 'unit']) assert.ok(names.includes(name), name)
+})
+
+test('merge_group runs neither smoke, lint, secrets nor web', () => {
+  const names = runsOn('merge_group')
+  for (const name of ['smoke', 'lint', 'secrets', 'web', 'upgrade', 'install-guide']) assert.ok(!names.includes(name), name)
+  for (const name of ['docs', 'statusmd', 'install', 'build', 'typecheck', 'unit']) assert.ok(names.includes(name), name)
+})
+
+test('release runs every check', () => {
+  assert.deepEqual(runsOn('release'), checks.map((check) => check.name))
+})

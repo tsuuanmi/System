@@ -187,3 +187,14 @@ test('ir-6: a flaky failure is keyed by its check and test; two Works failing th
   assert.equal(failureClass({ kind: 'verdict', reason: 'failed: unit: it broke', outside: 'flaky' }), 'flaky:unit:')
   assert.equal(failureClass({ kind: 'verdict', reason: 'inconclusive: x', outside: 'flaky' }), 'flaky')
 })
+
+test('ct-2: a failed release verdict on a check the Works skip is a late-caught defect', () => {
+  const rel = (name: string, reason: string, criteria = 'repo-checks-release-v1') => record(name, 'failed', [admitted(T('18')), { ...verdictFail(T('18', '00:00:03'), reason), criteria } as Unnumbered, terminal(T('18', '00:10:00'), 'failed')])
+  const lateChecks = new Set(['upgrade', 'install-guide'])
+  const count = (...rs: WorkRecord[]) => rangeReport(rs, { since: '2026-11-15', lateChecks }).lateCaughtDefects
+  assert.deepEqual(count(rel('u', 'failed: upgrade (exit 1)')), { count: 1, checks: ['upgrade'] })
+  assert.deepEqual(count(rel('n', 'failed: unit (exit 1)')), { count: 0, checks: [] })
+  assert.deepEqual(count(rel('p', 'failed: upgrade (exit 1)', 'repo-checks-v2')), { count: 0, checks: [] })
+  assert.deepEqual(count(rel('a', 'failed: upgrade (exit 1)'), rel('b', 'failed: install-guide (exit 1)'), rel('c', 'failed: upgrade (exit 1)')), { count: 3, checks: ['install-guide', 'upgrade'] })
+  assert.deepEqual(rangeReport([rel('x', 'failed: upgrade (exit 1)')], { since: '2026-11-15' }).lateCaughtDefects, { count: 0, checks: [] })
+})

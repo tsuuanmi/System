@@ -96,8 +96,10 @@ checks:
   otherwise, so an older Host is never sent a name it refuses. `on:` combines with `paths` (both must select the
   check), a check that failed earlier in the Work runs again, and `install` and `build`
   still run when a later check chosen needs them. A run where no check is chosen is
-  `inconclusive`. This repository's `.system/checks.yaml` does not use `on:` until a
-  release knows it (ct-2).
+  `inconclusive`. This repository's `.system/checks.yaml` uses `on:` to run
+  the heavy checks (upgrade, install-guide) on `release` only and smoke, lint, secrets and web
+  not on `merge_group`; which checks each event runs is
+  [ADR-0014](../../docs/decisions/ADR-0014-checks-in-tiers-by-event.md) decision 2.
 - **Paths** (decision 5): a check with `paths` (globs, as GitHub Actions'
   `paths` filter, matched by `path.matchesGlob`) runs only when
   `git diff --name-only <base> <subject>` names a file they include: the patterns
