@@ -35,7 +35,7 @@ checks:
     timeoutSeconds: 120
   - name: core-budget
     # Item ir-2: the active core (the .ts lines of packages/work/src and packages/artifacts/src) may not grow against the Work's base
-    # (SYSTEM_CHECK_BASE, never an absolute number) unless the change adds a `core +<delta>: <reason>` line to PLAN.md §2. Unset (a local run), it passes.
+    # (SYSTEM_CHECK_BASE, never an absolute number) unless the `core +<delta>: <reason>` lines the change adds to PLAN.md §2 sum to at least the growth. Unset (a local run), it passes.
     run: sh tools/core-budget.sh
     timeoutSeconds: 60
     paths: [packages/work/src/**, packages/artifacts/src/**, PLAN.md]
