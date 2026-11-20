@@ -733,11 +733,14 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   // The secrets check (Item rb-5) has no `paths`: a secret can be added anywhere, so it runs for every change and is left out of the lists below.
   const secrets = own.checks.find((c) => c.name === 'secrets')!
   for (const touched of [['docs/architecture/host.md'], ['packages/work/src/controller.ts'], ['STATUS.md']]) assert.ok(selected(secrets, touched), touched.join())
-  const run = (touched: string[]) => own.checks.filter((c) => c.name !== 'secrets' && selected(c, touched)).map((c) => c.name)
+  // The core-budget check (Item ir-2) has its own `paths`: the core's sources and PLAN.md only; it needs no install, so it is left out of the lists below.
+  const budget = own.checks.find((c) => c.name === 'core-budget')!
+  for (const [touched, runs] of [[['packages/work/src/controller.ts'], true], [['packages/artifacts/src/store.ts'], true], [['PLAN.md'], true], [['packages/host/src/host.ts'], false], [['docs/architecture/host.md'], false]] as const) assert.equal(selected(budget, [...touched]), runs, touched.join())
+  const run = (touched: string[]) => own.checks.filter((c) => c.name !== 'secrets' && c.name !== 'core-budget' && selected(c, touched)).map((c) => c.name)
   assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
   // Markdown among code paths runs no code check (2026-11-17), unless the check names it (the runbook, the Charter).
   assert.deepEqual(run(['packages/web-worker/README.md', 'packages/web-driver/README.md']), ['docs'])
-  const all = own.checks.map((c) => c.name).filter((name) => name !== 'secrets')
+  const all = own.checks.map((c) => c.name).filter((name) => name !== 'secrets' && name !== 'core-budget')
   // The upgrade rehearsal (Item rb-1) has its own `paths`: the release surface only, so it is not in `main` below.
   // The install guide check (Item install-1) has its own `paths` too: bin, the bundle, the runbook, the script.
   const main = all.filter((name) => name !== 'web' && name !== 'statusmd' && name !== 'upgrade' && name !== 'install-guide')

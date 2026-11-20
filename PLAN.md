@@ -84,7 +84,7 @@ Record the measures at the end of every milestone. The measures of effect (Verif
 Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution) and the headline measure, verified Items merged per operator touch) come from `system work report --since <date>`, not by hand;
 Escaped defects are recorded with `system defect add` (`escaped-defect@1`), and `--escaped <n>` is only an override the report labels. Growth above budget is justified in the milestone's row or paid for by removal. The core
 budget is +10% per milestone from 3,403 lines ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)); the docs
-budget is 4,285 lines under `docs/`. The older columns and the reasoning behind them are in
+budget is 4,285 lines under `docs/`. The `core-budget` check reads the core against the Work's base, not these numbers: growth fails unless the change adds a line `core +<delta>: <reason>` to this section. The older columns and the reasoning behind them are in
 [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md#2-growth-and-feedback-budgets-charter-11-and-12).
 
 | Measure | CM close | TR release (`41cbfea`, 2026-11-14) | FL close (`a96b498`, 2026-11-16) | 2026-11-17 close (after this pass) | DP close (2026-11-18) |
