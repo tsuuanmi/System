@@ -16,4 +16,7 @@ The generated index below is the authoritative list of current research.
 - [RES-0012 — Reuse-first research of 2026-11-14](RES-0012-reuse-first-research-2026-11-14.md) — active — Reuse-first
   research of 2026-11-14 (five Research Works and a synthesis at baseline b789061): which findings became CM Items and
   which did not yet.
+- [RES-0013 — Fresh-context, artifact-driven AI engineering
+  workflow](RES-0013-fresh-context-artifact-driven-ai-engineering.md) — active — Research fresh-context execution,
+  durable Artifact handoff, vertical Work slices, feedback and independent verification.
 <!-- docs:end index:research -->
