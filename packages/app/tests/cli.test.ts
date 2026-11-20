@@ -136,3 +136,18 @@ test('retry of a Worker step needs no confirmation', async () => {
   assert.equal(confirmed(), 0)
   assert.deepEqual(retried, ['implement'])
 })
+
+test('work report --since with a date that has no zone says the UTC instant it uses, in the JSON and on stderr', async () => {
+  const seen: unknown[] = []
+  const host = fakeHost({ 'work.report': (params) => { seen.push(params); return { works: 0 } } })
+  const day = await system(['work', 'report', '--since', '2026-11-18'], host)
+  assert.equal(JSON.parse(day.out).sinceUtc, '2026-11-18T00:00:00.000Z')
+  assert.match(day.err, /2026-11-18T00:00:00\.000Z/)
+  assert.match(day.err, /UTC/)
+  const time = await system(['work', 'report', '--since', '2026-11-18T10:30'], host)
+  assert.equal(JSON.parse(time.out).sinceUtc, '2026-11-18T10:30:00.000Z')
+  const zoned = await system(['work', 'report', '--since', '2026-11-18T10:30:00+02:00'], host)
+  assert.equal(JSON.parse(zoned.out).sinceUtc, undefined)
+  assert.equal(zoned.err, '')
+  assert.deepEqual(seen[0], { since: '2026-11-18' })
+})

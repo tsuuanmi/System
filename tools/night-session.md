@@ -68,7 +68,7 @@ wait, in step 6.
 
 4. Claim it, then store its Task:
    - `mcp__system__item_claim` with `repository` and `item` `<id>`.
-   - `mcp__system__task_new` with `repository`, `ref` `dev`, `item` `<id>` and
+   - `mcp__system__task_new` with `repository`, `ref` `origin/dev` (the commit `status` read), `item` `<id>` and
      `instructions`: `Carry out Item <id> of STATUS.md: <the Item's line as
      status shows it>`. Its result is `{ task, base }`; keep `task` (an
      Artifact ID). The Task carries the Item's line and its earlier Works'

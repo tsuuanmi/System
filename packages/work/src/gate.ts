@@ -7,7 +7,7 @@
  */
 import { realpathSync } from 'node:fs'
 import { WorkError } from './errors.ts'
-import { git, snapshot } from './git.ts'
+import { fetchOrigin, git, snapshot } from './git.ts'
 import { parseStatus, type ParsedStatus } from './status-parse.ts'
 import type { Caller, Claim, WorkRecord } from './record.ts'
 import { activeWork, blockedText, itemBlockedBy, itemNote, whoHas, type ItemRef } from './status.ts'
@@ -27,7 +27,7 @@ export interface StatusFile extends ParsedStatus {
   commit: string
   /** The ref it was read from: `origin/dev` when the repository has it, else `dev`. */
   ref: 'origin/dev' | 'dev'
-  /** One line saying which ref was read and, if git can tell, how old it is (never fetched here). */
+  /** One line saying which ref was read, whether `origin dev` was fetched for it and, if git can tell, how old the ref is. */
   note: string
 }
 
@@ -42,19 +42,40 @@ async function refAge(repository: string, ref: string): Promise<string | undefin
   } catch { return undefined }
 }
 
+/** `status` fetches `origin dev` when the last fetch of the repository (by this process) is older than this. */
+export const STATUS_FETCH_MAX_AGE_MS = 3 * 60_000
+const lastFetch = new Map<string, number>()
+
+export interface ReadStatusOptions {
+  /** Fetch again when the last fetch is older than this (default `STATUS_FETCH_MAX_AGE_MS`); 0 always fetches. */
+  fetchAfterMs?: number
+  /** Bound on the fetch. */
+  fetchTimeoutMs?: number
+}
+
 /**
  * `STATUS.md` at the tip of `origin/dev` when the repository that contains
  * `path` has that remote-tracking ref, else of the local `dev`; read from git
- * and never from the working tree. It does not fetch: the note says how old
- * the ref is, when git can tell.
+ * and never from the working tree. Before reading it fetches `origin dev`
+ * unless that was done within `fetchAfterMs`; a failed fetch is no refusal: the
+ * ref it has is read and the note says the fetch failed and how old the ref is.
  */
-export async function readStatus(path: string): Promise<StatusFile> {
+export async function readStatus(path: string, options: ReadStatusOptions = {}): Promise<StatusFile> {
   const top = realpathSync((await git(path, ['rev-parse', '--show-toplevel'])).trim())
+  const was = lastFetch.get(top)
+  const maxAge = options.fetchAfterMs ?? STATUS_FETCH_MAX_AGE_MS
+  let fetched = was !== undefined && Date.now() - was < maxAge ? `fetched ${Math.round((Date.now() - was) / 1000)} s ago` : undefined
+  let failed: string | undefined
+  if (!fetched) {
+    const result = await fetchOrigin(top, 'dev', options.fetchTimeoutMs)
+    if (result.state === 'fetched') { lastFetch.set(top, Date.now()); fetched = 'fetched just now' } else if (result.state === 'failed') failed = result.error
+  }
   const remote = await git(top, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/dev^{commit}']).then(() => true, () => false)
   const ref = remote ? 'origin/dev' : 'dev'
   const { repository, commit } = await snapshot(top, remote ? 'refs/remotes/origin/dev' : 'dev')
-  const age = remote ? await refAge(repository, ref) : undefined
-  const note = `read ${ref} (${commit.slice(0, 12)})${remote ? `, not fetched: ${age ?? 'age unknown'}` : ', no origin/dev here'}`
+  const age = remote && !fetched ? await refAge(repository, ref) : undefined
+  const how = fetched ?? (failed ? `fetch failed (${failed}), not fetched: ${age ?? 'age unknown'}` : `not fetched: ${age ?? 'age unknown'}`)
+  const note = `read ${ref} (${commit.slice(0, 12)})${remote ? `, ${how}` : ', no origin/dev here'}`
   let text: string | undefined
   try {
     text = await git(repository, ['show', `${commit}:STATUS.md`])
