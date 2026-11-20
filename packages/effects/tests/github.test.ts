@@ -18,6 +18,8 @@ const root = mkdtempSync(join(tmpdir(), 'system-effects-'))
 interface Pull { number: number; head: string; base: string; draft: boolean; title: string; node_id: string; merged?: boolean; mergeCommit?: string }
 const calls: string[] = []
 let pulls: Pull[] = []
+/** Milliseconds a pulls lookup for a head branch is held back, so a test can reorder the members of a batch. */
+let pullDelay: Record<string, number> = {}
 let api = ''
 let bareOf = ''
 let server: Server
@@ -37,7 +39,8 @@ before(async () => {
       if (req.method === 'GET' && url.pathname === '/repos/tester/scratch/pulls') {
         const head = url.searchParams.get('head')!.split(':')[1]
         const state = url.searchParams.get('state') ?? 'open'
-        return send(200, pulls.filter((p) => p.head === head && (state === 'all' || !p.merged)).map(view))
+        const answer = () => send(200, pulls.filter((p) => p.head === head && (state === 'all' || !p.merged)).map(view))
+        return pullDelay[head!] ? void setTimeout(answer, pullDelay[head!]) : answer()
       }
       if (req.method === 'POST' && url.pathname === '/repos/tester/scratch/pulls') {
         const input = JSON.parse(body) as { head: string; base: string; draft: boolean; title: string }
@@ -551,15 +554,41 @@ test('ct-3: a batch of 3 that passes costs one check run and one push, and recor
   assert.equal(new Set(outcomes.map((o) => o.detail.batch)).size, 1)
   assert.equal(outcomes[0]!.detail.batch, finalCommit)
   assert.match(outcomes[0]!.reason, /batch of 3/)
-  // A chain: tip + a + b + c.
-  assert.deepEqual(parents(bare, finalCommit).includes(c!.commit), true)
+  // A chain, in whatever order the members reached the queue: every member's change and merge commit is under the checked commit.
+  const isAncestor = (x: string, y: string) => { try { execFileSync('git', ['-C', bare, 'merge-base', '--is-ancestor', x, y]); return true } catch { return false } }
   for (const [o, x, i] of [[outcomes[0]!, a!, 0], [outcomes[1]!, b!, 1], [outcomes[2]!, c!, 2]] as const) {
     assert.equal(o.detail.commit, x.commit)
     assert.equal(o.detail.merged, 'true')
     assert.equal(remoteRef(`system/${ids[i]!.slice(5)}`), o.detail.mergeCommit)
-    assert.equal(execFileSync('git', ['-C', bare, 'merge-base', '--is-ancestor', o.detail.mergeCommit!, finalCommit]).length, 0)
+    assert.ok(isAncestor(o.detail.mergeCommit!, finalCommit))
+    assert.ok(isAncestor(x.commit, finalCommit), 'the change is in the checked commit')
   }
-  assert.equal(outcomes[2]!.detail.mergeCommit, finalCommit)
+  const merges = outcomes.map((o) => o.detail.mergeCommit!)
+  assert.equal(merges.filter((m) => m === finalCommit).length, 1, 'exactly one member merges last')
+  const chain = [...merges].sort((m, n) => (m === n ? 0 : isAncestor(m, n) ? -1 : 1))
+  for (let i = 0; i + 1 < chain.length; i++) assert.ok(isAncestor(chain[i]!, chain[i + 1]!), 'the merge commits form one chain')
+  assert.equal(chain[2], finalCommit)
+})
+
+test('ct-3: a batch of 3 passes in reversed member order too', async () => {
+  fresh()
+  pullDelay = { 'system/1111-aaaa': 50, 'system/2222-bbbb': 25 }
+  try {
+    const artifacts = store()
+    const { work, run, bare, remoteRef } = setup()
+    const [blocker, a, b, c] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }, { 'B.md': 'b\n' }, { 'C.md': 'c\n' }])
+    const q = batching(artifacts, work, 3)
+    const { outcomes } = await q.together(blocker!.subject, [a!, b!, c!].map((x, i) => ({ subject: x.subject, work: ids[i]! })))
+    assert.deepEqual(outcomes.map((o) => o.state), ['applied', 'applied', 'applied'])
+    assert.equal(q.checked.length, 2)
+    const finalCommit = q.checked[1]!
+    assert.equal(remoteRef('main'), finalCommit)
+    assert.equal(outcomes.filter((o) => o.detail.mergeCommit === finalCommit).length, 1, 'exactly one member merges last')
+    for (const [o, x] of [[outcomes[0]!, a!], [outcomes[1]!, b!], [outcomes[2]!, c!]] as const) {
+      assert.equal(o.detail.commit, x.commit)
+      execFileSync('git', ['-C', bare, 'merge-base', '--is-ancestor', o.detail.mergeCommit!, finalCommit])
+    }
+  } finally { pullDelay = {} }
 })
 
 test('ct-3: a batch of 3 with one change at fault is split; the two good ones merge, the bad one is refused with its own reason', async () => {
@@ -586,12 +615,20 @@ test('ct-3: a change that conflicts inside a batch fails with a conflict; the ot
   const [blocker, a, x, y] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }, { 'SAME.md': 'one\n' }, { 'SAME.md': 'two\n' }])
   const q = batching(artifacts, work, 3)
   const { outcomes } = await q.together(blocker!.subject, [a!, x!, y!].map((s, i) => ({ subject: s.subject, work: ids[i]! })))
-  assert.deepEqual(outcomes.map((o) => o.state), ['applied', 'applied', 'failed'])
-  assert.match(outcomes[2]!.reason, /merge conflict with main at [0-9a-f]{12}: SAME\.md/)
-  assert.equal(outcomes[2]!.cause, 'conflict')
-  assert.equal((outcomes[2] as { rejected?: string }).rejected, 'conflict')
+  assert.equal(outcomes[0]!.state, 'applied')
+  // Which of x and y reaches the queue first is not fixed: one merges, the other conflicts with it.
+  const [won, lost] = outcomes[1]!.state === 'applied' ? [x!, outcomes[2]!] : [y!, outcomes[1]!]
+  const winner = outcomes[1]!.state === 'applied' ? outcomes[1]! : outcomes[2]!
+  assert.equal(winner.state, 'applied')
+  assert.equal(winner.detail.commit, won.commit)
+  assert.equal(lost.state, 'failed')
+  assert.match(lost.reason, /merge conflict with main at [0-9a-f]{12}: SAME\.md/)
+  assert.equal(lost.cause, 'conflict')
+  assert.equal((lost as { rejected?: string }).rejected, 'conflict')
   const tree = execFileSync('git', ['-C', work, 'ls-tree', '-r', '--name-only', remoteRef('main')], { encoding: 'utf8' }).split('\n')
   assert.ok(tree.includes('A.md') && tree.includes('SAME.md'))
+  const same = execFileSync('git', ['-C', work, 'show', `${remoteRef('main')}:SAME.md`], { encoding: 'utf8' })
+  assert.equal(same, won === x ? 'one\n' : 'two\n')
 })
 
 test('ct-3: a change with an approved merge commit is never batched', async () => {
