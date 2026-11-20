@@ -80,6 +80,7 @@ export class Host {
       return section()
     })
     this.slots = new Slots(options.capabilities)
+    options.capabilities.slots = this.slots
     this.controller = new WorkController(options.table, options.specs, options.capabilities, this.lane, this.slots, options.stallMinutes)
     const c = this.controller
     this.gate = new ItemGate({ records: () => c.list(), claims: options.claims, readStatus: options.readStatus, commitOf: options.specs.commitOf?.bind(options.specs) })

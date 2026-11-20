@@ -3,6 +3,7 @@
  * routing read it. Routing is by capability, never by domain or vendor.
  */
 import { DEFAULT_QUOTA_CEILING_PERCENT, rankByHeadroom, type QuotaReading } from './headroom.ts'
+import { Slots } from './slots.ts'
 import type { AttemptSummary, ExecutorRecord, PortCause, UsageObserved } from './record.ts'
 import type { AvailableCapabilities } from './workflow.ts'
 
@@ -210,6 +211,8 @@ const add = <P>(list: P[], port: P): (() => void) => {
 }
 
 export class Capabilities {
+  /** The Host's slots (the Host sets it at start): the merge queue's re-check takes its check slots here. */
+  slots: Slots = new Slots(this)
   private readonly workers: WorkerPort[] = []
   private readonly verifiers: VerifierPort[] = []
   private readonly effects: EffectPort[] = []
