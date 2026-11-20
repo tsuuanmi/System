@@ -27,3 +27,6 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 tools/docs.py impact "origin/${{ github.base_ref }}"
+      - name: Release has no docs waivers
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        run: python3 tools/check-docs-waivers.py
