@@ -496,6 +496,11 @@ protection: the push would be refused.
 A hand push to `dev` can run the fast checks first: in your checkout run
 `git config core.hooksPath tools/hooks` (`tools/hooks/pre-push`; bypass once with `git push --no-verify`).
 System's own publish pushes from attempt worktrees with `core.hooksPath=/dev/null`, so the hook never runs for it.
+The hook acts only on a push to the remote named `origin` whose URL is not a local path or a `file:` URL,
+and it clears every inherited `GIT_*` repository variable before a check runs,
+so it cannot change the operator's repository.
+The sandbox Account option (sb-1) is the second guard: in a sandbox, a linked worktree cannot write
+the main repository's `config` or `hooks/`; its gated test is still the operator's.
 
 ## Another home
 

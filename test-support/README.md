@@ -2,6 +2,7 @@
 
 Helpers shared by the tests, so each stand-in has one implementation:
 
+- [clean-git-env.mjs](clean-git-env.mjs) — preloaded by the test scripts: removes `GIT_DIR` and the other repository-pointing variables a git hook sets, so a test never changes the real repository.
 - [memory.ts](memory.ts) — the Artifact record table, blob store, Artifact
   store and Work table in memory (durable before visible, an `update` atomic,
   like DSH), and
