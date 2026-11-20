@@ -4,7 +4,7 @@
  * never zero. Admission decides the range: `since` inclusive, `until` exclusive.
  */
 import type { WorkRecord } from './record.ts'
-import { failureClass } from './failure-class.ts'
+import { failureClass, parseCheckFailure } from './failure-class.ts'
 import { laterPasses } from './later-pass.ts'
 import { summarize, type ClassifiedLookup } from './summary.ts'
 import { mergeCommitOf, wasMerged } from './status.ts'
@@ -31,6 +31,8 @@ export interface RangeOptions {
   releases?: readonly string[]
   /** The active core's lines at the range's start and end (`activeCoreLines`, from git); a trend, never a gate (ADR-0015). */
   activeCoreLines?: CoreLines
+  /** ct-2 (ADR-0014): the names of the checks whose `on:` lacks `pull_request` (a Work's checks step skips them); a failed `release` verdict on one is a late-caught defect. Without it none is counted. */
+  lateChecks?: ReadonlySet<string>
 }
 
 export interface RangeReport {
@@ -52,6 +54,8 @@ export interface RangeReport {
   headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts' }
   /** Escaped defects over distinct Items merged; `source` says where the count comes from: recorded `escaped-defect@1` Artifacts, the `--escaped` override, or `none` (no input). */
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number; source: 'records' | 'override (--escaped)' | 'none' }
+  /** ct-2 (ADR-0014): failed release verdicts (criteria `repo-checks-release-v1`) whose failing check the Works skip (`on:` without `pull_request`), with the check names; the trade-off of tiers by event, made visible. */
+  lateCaughtDefects: { count: number; checks: string[] }
   /** The API-equivalent cost estimate of every attempt in the range that reports one, over accepted Works; a lower bound when `worksWithUnknownCost` is above 0, `unknown` when no cost is known. */
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; worksWithUnknownCost: number }
   /** Admission to acceptance of the accepted Works. */
@@ -65,7 +69,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, activeCoreLines }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, activeCoreLines, lateChecks }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -86,6 +90,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   let operatorTouches = 0
   const resolution: number[] = []
   const shares: number[] = []
+  const late: string[] = []
   for (const record of inRange) {
     const status = record.state.status
     if (status !== 'running' && status !== 'held') ended += 1
@@ -117,6 +122,10 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     }
     let unknownCost = false
     for (const event of record.events) {
+      if (event.type === 'verified' && event.verdict === 'fail' && event.criteria === 'repo-checks-release-v1') {
+        const check = parseCheckFailure(event.reason)?.check
+        if (check !== undefined && lateChecks?.has(check)) late.push(check)
+      }
       if (event.type !== 'observed') continue
       if (event.usage.state === 'observed' && event.usage.costUsd !== undefined) knownCostUsd += event.usage.costUsd
       else unknownCost = true
@@ -145,6 +154,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
     headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs },
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
+    lateCaughtDefects: { count: late.length, checks: [...new Set(late)].sort() },
     costPerVerifiedWork: { usd: accepted === 0 || (knownCostUsd === 0 && worksWithUnknownCost > 0) ? 'unknown' : knownCostUsd / accepted, knownCostUsd, accepted, worksWithUnknownCost },
     timeToVerifiedResolution: resolution.length === 0 ? { medianMs: 'unknown', p90Ms: 'unknown', accepted } : { medianMs: (resolution[Math.floor((resolution.length - 1) / 2)]! + resolution[Math.floor(resolution.length / 2)]!) / 2, p90Ms: percentile(resolution, 0.9), accepted },
     toolSecondsPerSecond: { mean: shares.length === 0 ? 'unknown' : shares.reduce((a, b) => a + b, 0) / shares.length, attempts: shares.length },

@@ -12,6 +12,10 @@
 # change touches code, its tests, its tooling or the Charter, or a check of the
 # same verify step failed earlier in the Work; a change to docs alone runs
 # `docs`. How the verifier selects checks: packages/verifiers/README.md.
+# `on:` (ADR-0014, docs/decisions/ADR-0014-checks-in-tiers-by-event.md; the selection is in packages/verifiers/README.md "Events"):
+# a check without `on:` runs on every event (docs, statusmd, install, build, typecheck, unit); secrets, lint, smoke and web run on
+# `pull_request` (a Work's checks step) and `release` (`system update`), not on the merge re-check (`merge_group`); upgrade and
+# install-guide run on `release` only. `on:` and `paths` both must select a check.
 # One list for all of them, so `install` and `build` run whenever a later
 # check needs them. `'!**/*.md'` excludes Markdown (GitHub Actions' `!`: the last
 # matching pattern decides), so a README edit does not run the code checks; the
@@ -29,6 +33,7 @@ checks:
     timeoutSeconds: 60
     paths: [STATUS.md, tools/check-status.ts, packages/work/src/status-parse.ts, .system/checks.yaml]
   - name: secrets
+    on: [pull_request, release]
     # Item rb-5: gitleaks on what the change adds to its base (`$SYSTEM_CHECK_BASE..HEAD`, never the whole history), values redacted. No `paths`:
     # a secret can be added anywhere. The binary is the operator's (runbook, "Install gitleaks"): a machine without it fails closed.
     run: sh tools/secrets-check.sh
@@ -46,6 +51,7 @@ checks:
     timeoutSeconds: 300
     paths: *code
   - name: lint
+    on: [pull_request, release]
     # Item fl-10 (Escaped defect 4): only `@typescript-eslint/no-floating-promises` and `@typescript-eslint/return-await` ('in-try-catch'), over the sources and tests.
     run: corepack pnpm lint
     timeoutSeconds: 300
@@ -55,6 +61,7 @@ checks:
     timeoutSeconds: 300
     paths: *code
   - name: smoke
+    on: [pull_request, release]
     # The booted-profile smoke tests (bin/system against throwaway DSH homes,
     # test files in parallel); they caught what the unit tests missed when the
     # lock format changed.
@@ -62,6 +69,7 @@ checks:
     timeoutSeconds: 600
     paths: *code
   - name: upgrade
+    on: [release]
     # Item rb-1: rehearse the release. An install of the last release (`origin/main`) in temporary homes runs ITS `system update` to this
     # commit and must keep it, with its afterInstall Verdict passed (Escaped defects 3, 7, 8 and fl-6 showed only on such an update).
     # Offline; tools/upgrade-rehearsal.mjs says what it replaces (each check's `run`, so the update does not run the suite and itself).
@@ -70,6 +78,7 @@ checks:
     timeoutSeconds: 900
     paths: [bin/**, packages/host/**, packages/app/**, packages/verifiers/**, packages/work/**, .system/checks.yaml, workflows/**, '!**/*.md']
   - name: install-guide
+    on: [release]
     # Item install-1: a new machine runs System from a clone with one guide. From an empty HOME and the commit under check it runs
     # the commands of the runbook's "Install and start" page (the `sh install` block: tools/install.sh), registers the fake Worker,
     # starts the Host without systemd and runs one Work to `succeeded`; tests/install-guide.test.ts also shows a broken command fails.
@@ -78,6 +87,7 @@ checks:
     timeoutSeconds: 900
     paths: [bin/**, packages/bundle/**, docs/operations/runbook.md, tools/install.sh, tests/install-guide.test.ts, .system/checks.yaml]
   - name: web
+    on: [pull_request, release]
     # The Website Worker's tests, which drive a real headed Chrome on Xvfb
     # (milestone WW). Kept out of unit and smoke so the main path stays fast and
     # System is tested without the web Runtime. They run only when the Website

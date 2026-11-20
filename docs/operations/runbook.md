@@ -118,7 +118,11 @@ Host that stopped itself for new code waits for its attempts first; see
   so `paths` selects the checks by the files that differ between the two
   releases; the first install checks the whole commit. When the release that runs now knows the
   criteria `repo-checks-release-v1`, the check is of the event `release` (a check's `on:`), by a
-  workflow `update` writes; otherwise `code-checks.yaml` (event `pull_request`);
+  workflow `update` writes; otherwise `code-checks.yaml` (event `pull_request`).
+  This repository's release check runs `upgrade` and `install-guide`, which a Work's
+  checks do not run ([ADR-0014](../decisions/ADR-0014-checks-in-tiers-by-event.md)); a
+  failure there leaves `current` where it was, and `system work report` counts it as a
+  late-caught defect;
 - it switches `current` (a new link renamed over it), then asks the Host as a
   client of the new code, which makes the Host drain and restart on it (below);
 - if the Host does not run the new code within `--wait` (default 75 minutes,
