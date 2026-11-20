@@ -152,7 +152,7 @@ that doc ([the tool](../../tools/docs.py), [governance](../governance/documentat
 is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it. System's
 `docs` check runs the same impact check on every Work, so most are found earlier; its waivers are the
 lines of `.system/docs-waivers`, committed with the change. Clear that file's waiver lines in the release
-pull request (keep its comment line).
+pull request (keep its comment line); the docs CI fails a pull request into `main` that leaves one.
 Editing the body does not rerun CI: close and reopen the pull request.
 
 ## Rollback
