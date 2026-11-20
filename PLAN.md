@@ -107,6 +107,8 @@ after FL's Workflow went live (14 Works) 0.93, $0.11, median 5.1 min (p90 9.5).
 (number 9 withdrawn as miscounted), one paragraph each in [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md#3e-tr--trust-decided-2026-11-14);
 a new one is added here as one line.
 
+core +2: ct-1, `VerifyRequest.event`, the event a verification runs on, so the merge queue's re-check can name `merge_group` to the verifier (a check's `on:`).
+
 Every milestone ends with a **simplification pass**: a System Work (Sonnet) proposes deletions and simplifications (dead
 code, unused abstractions, duplicated tests, docs that restate others), and the operator reviews it like any PR. The
 Sonnet code review's Standards axis also checks the code against Charter items 8, 11 and 12.

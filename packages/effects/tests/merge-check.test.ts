@@ -116,3 +116,10 @@ test('a subject that is not a stored Artifact gives an error and is not asked', 
   assert.match(done.reason, /not a missing Artifact/)
   assert.equal(w.asked.length, 0)
 })
+
+test('the merge re-check asks the verifier for the merge_group event (ct-1)', async () => {
+  const w = await world()
+  assert.equal((await w.check(w.subject, w.intent)).verdict, 'pass')
+  assert.equal(w.asked.length, 1)
+  assert.equal(w.asked[0]!.event, 'merge_group')
+})

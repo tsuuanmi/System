@@ -28,6 +28,11 @@ export const CHECKS_FILE = '.system/checks.yaml'
 export const REPO_CHECKS = 'repo-checks-v1'
 /** `repo-checks-v1` with one difference: a run where no check ran (every one filtered out by `paths`) is `inconclusive`, not `pass`. */
 export const REPO_CHECKS_V2 = 'repo-checks-v2'
+/** `repo-checks-v2` for a release checked against the running one (`system update`): the event of its run is `release`. */
+export const REPO_CHECKS_RELEASE = 'repo-checks-release-v1'
+/** The events a check can name with `on:` (GitHub Actions' `on:`): a Work's checks step, the merge queue's re-check, a release check by `system update`. */
+export const CHECK_EVENTS = ['pull_request', 'merge_group', 'release'] as const
+export type CheckEvent = (typeof CHECK_EVENTS)[number]
 /**
  * The small mode (ro-15, Satisfied): the Task's base is not judged by the repository's checks but by exactly the tests the verify step's input
  * `tests` names (one `<test file> "<test name>"` per line), run with `node --test-name-pattern <file>` (the file itself, not `--test`, which counts the file as a test that passed) after the pinned setup checks named in `SETUP_CHECKS`.
@@ -35,19 +40,23 @@ export const REPO_CHECKS_V2 = 'repo-checks-v2'
  */
 export const SATISFIED_TESTS = 'satisfied-tests-v1'
 export const SETUP_CHECKS = ['install', 'build']
-export const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, SATISFIED_TESTS] as const
+export const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, REPO_CHECKS_RELEASE, SATISFIED_TESTS] as const
+/** The event a verify step's criteria name stands for when its request names none: `release` for the release criteria, otherwise `pull_request`. */
+export const eventOfCriteria = (name: string): CheckEvent => name === REPO_CHECKS_RELEASE ? 'release' : 'pull_request'
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
 /** The top-level keys of a checks file and the keys of one check: the one place that lists them. The schemas below must have exactly these keys (`satisfies`), and criteria-pins.test.ts reads them from `main` (Escaped defect 7: a file uses only keys the last release knows). */
 export const CHECKS_FILE_KEYS = ['checks', 'afterInstall'] as const
-export const CHECK_KEYS = ['name', 'run', 'timeoutSeconds', 'paths', 'red'] as const
+export const CHECK_KEYS = ['name', 'run', 'timeoutSeconds', 'paths', 'on', 'red'] as const
 const checkSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9-]*$/),
   run: z.string().min(1),
   timeoutSeconds: z.number().int().positive().max(3600).default(600),
   /** Globs (GitHub Actions' `paths`, with `!` exclusions: the last pattern matching a file decides): the check runs only when the change touches an included file or it failed earlier in the Work; without it, always. */
   paths: z.array(z.string().min(1)).min(1).optional(),
+  /** The events the check runs on (GitHub Actions' `on:`); without it, on every event. */
+  on: z.array(z.enum(CHECK_EVENTS)).min(1).optional(),
   /** Ignored: read for old files and old `checks@1` (a verdict reason notes it). */
   red: z.enum(['pass', 'fail']).optional(),
 } satisfies Record<(typeof CHECK_KEYS)[number], z.ZodTypeAny>).strict()
@@ -113,11 +122,13 @@ export function stopLeftovers(home: string): string[] {
 }
 
 /**
- * Whether a check runs for a change touching `touched` (paths relative to the repository): always without `paths`.
+ * Whether a check runs for `event` on a change touching `touched` (paths relative to the repository): always without `on` and `paths`.
+ * `on` names the events the check runs on; both must select it.
  * As GitHub Actions: the patterns are read in order, a file is included when the last pattern matching it is a positive one and
  * excluded when it is a `!` pattern; the check runs when at least one touched file is included.
  */
-export const selected = (check: { paths?: string[] }, touched: readonly string[]): boolean => {
+export const selected = (check: { paths?: string[]; on?: readonly CheckEvent[] }, touched: readonly string[], event: CheckEvent = 'pull_request'): boolean => {
+  if (check.on && !check.on.includes(event)) return false
   const paths = check.paths
   if (!paths) return true
   const included = (file: string): boolean => paths.reduce((in_, glob) => glob.startsWith('!') ? (matchesGlob(file, glob.slice(1)) ? false : in_) : (matchesGlob(file, glob) ? true : in_), false)
@@ -306,12 +317,17 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             : verdict('pass', `the ${listed.length} named test(s) passed on ${tree.commit}: ${listed.map(({ file, name }) => `${file} "${name}"`).join(', ')}`, evidence)
         }
         const failedNames: string[] = []
-        const chosen = checks.checks.filter((check) => asItIs || selected(check, touched) || failedBefore.has(check.name))
+        // The event comes from the request (the merge queue names `merge_group`), else from the criteria (`repo-checks-release-v1`), else `pull_request`.
+        const event = request.event ?? eventOfCriteria(checks.name)
+        const picked = (check: Checks['checks'][number]): boolean => asItIs ? !check.on || check.on.includes(event) : selected(check, touched, event)
+        // The setup checks (install, build) still run when a later check chosen needs them, whatever `on` and `paths` say of them.
+        const needsSetup = checks.checks.some((check) => !SETUP_CHECKS.includes(check.name) && (picked(check) || failedBefore.has(check.name)))
+        const chosen = checks.checks.filter((check) => picked(check) || failedBefore.has(check.name) || (needsSetup && SETUP_CHECKS.includes(check.name)))
         for (const check of checks.checks) if (!chosen.includes(check)) skipped.push(check.name)
         for (const check of chosen) {
           const result = await runCheck(check, worktree, tree.commit)
           evidence.push(result.id)
-          ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s${!asItIs && !selected(check, touched) ? ' (failed earlier)' : ''}`)
+          ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s${!picked(check) ? ' (failed earlier)' : ''}`)
           if (result.failed) {
             failed.push(result.failed)
             failedNames.push(check.name)
