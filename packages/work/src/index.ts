@@ -11,7 +11,7 @@ import type { Artifacts, Envelope } from '@system/artifacts'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
-import { snapshot } from './git.ts'
+import { freshBranch, snapshot } from './git.ts'
 import { DEFECT_KIND, WITHDRAWAL_KIND, addDefect, defectSchema, storedDefects, storedWithdrawals, withdrawDefect, withdrawalSchema, type DefectInput, type DefectWithdrawal, type StoredDefect } from './defect.ts'
 import { INTENT_KIND, addIntent, intentSchema, storedIntents, type Intent } from './intent.ts'
 import { CONFIRMATION_KIND, addConfirmation, confirmationSchema, storedConfirmations, type ConfirmationInput } from './confirmation.ts'
@@ -36,6 +36,7 @@ export * from './host-lock.ts'
 export * from './intent.ts'
 export * from './defect.ts'
 export * from './confirmation.ts'
+export * from './core-lines.ts'
 export * from './releases.ts'
 export * from './kinds.ts'
 export * from './lane.ts'
@@ -137,7 +138,7 @@ export class WorkService {
    * Store a `task@1` input; with a repository, first snapshot `ref` there as a
    * `git-tree@1` Artifact the task starts from.
    */
-  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string, against?: string): Promise<{ task: string; base?: string }> {
+  async newTask(instructions: string, repository: string | undefined, ref: string | undefined, caller: Caller, context: string[] = [], item?: string, against?: string): Promise<{ task: string; base?: string; note?: string }> {
     const producer = { type: 'operator' as const, ref: caller.operatorId }
     let base: string | undefined
     let intent: string | undefined
@@ -154,7 +155,9 @@ export class WorkService {
         intent = found[0]
       }
     }
+    let note: string | undefined
     if (repository) {
+      note = await freshBranch(repository, ref)
       const tree = await snapshot(repository, ref)
       // `against`: the commit this one is a change from; the verifier's touched files are the diff between the two.
       if (against) tree.parent = (await snapshot(repository, against)).commit
@@ -168,7 +171,7 @@ export class WorkService {
       ...TASK_KIND, content: { instructions, ...(base ? { base } : {}), ...(context.length ? { context } : {}), ...(item ? { item } : {}) }, inputs: [...(base ? [base] : []), ...context],
       classification: 'local-private', producer,
     })
-    return { task: task.id, base }
+    return { task: task.id, base, ...(note ? { note } : {}) }
   }
 }
 

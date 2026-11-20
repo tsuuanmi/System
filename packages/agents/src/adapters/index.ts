@@ -7,6 +7,7 @@ import { unknownSummary } from '../attempt-summary.ts'
 import type { Runtime } from '../runtimes.ts'
 import { claudeCode } from './claude-code.ts'
 import { codex, keepRefreshedAuth } from './codex.ts'
+import { SANDBOX_RUNTIME_ONLY, parseSandbox, type SandboxOption } from './sandbox.ts'
 import type { CliAdapter } from './types.ts'
 
 export type { CliAdapter, InvocationInput, Preflight, RegisterInput, Staged } from './types.ts'
@@ -22,4 +23,11 @@ export function adapterFor(runtime: string): CliAdapter | undefined {
 /** What an attempt did, from its output; a Runtime with no adapter reports every part unknown. */
 export function summarizeAttempt(runtime: Runtime | 'web', output: string): AttemptSummary {
   return adapterFor(runtime)?.summarize(output) ?? unknownSummary(runtime)
+}
+
+/** The Account's `sandbox` option, checked: refused on a Runtime that does not have it (Codex, web), or when its shape is wrong. */
+export function checkSandbox(runtime: string, value: unknown): SandboxOption | undefined {
+  if (value === undefined) return undefined
+  if (!adapterFor(runtime)?.sandboxes) throw new Error(SANDBOX_RUNTIME_ONLY)
+  return parseSandbox(value)
 }

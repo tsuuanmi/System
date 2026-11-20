@@ -114,7 +114,7 @@ evade policy.
    its code and docs grew too large to change safely). System manages growth
    with measures it tests: the size of the active core and of the docs is
    recorded at every milestone, growth beyond the agreed budget is justified
-   or paid for by removal, and every milestone ends with a pass that proposes
+   or paid for by removal (a trend, not a gate: ADR-0015), and every milestone ends with a pass that proposes
    deletions and simplifications.
 12. **Fast, accurate, testable feedback loops:** a change is checked quickly
    and exactly enough to iterate many times. The required checks stay within

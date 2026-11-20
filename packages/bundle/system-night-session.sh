@@ -27,6 +27,14 @@ for entry in ${SYSTEM_NIGHT_REPOS:-$repo}; do
   fi
 done
 IFS=$old_ifs
+# Every repository the session works on gets a fresh `origin/dev` before the prompt (explicit refspec: an origin that
+# fetches only main would not update it). A failure is logged and the night goes on with the ref it has.
+while IFS= read -r line; do
+  entry=${line#- }
+  [ -n "$entry" ] || continue
+  if command -v timeout >/dev/null 2>&1; then fetch="timeout 60 git"; else fetch="git"; fi
+  $fetch -C "$entry" fetch --quiet origin +refs/heads/dev:refs/remotes/origin/dev </dev/null || echo "$entry: fetch of origin dev failed; the session reads the origin/dev it has" >&2
+done < "$list"
 # The start time is taken here, by the launcher, so the session never asks the clock (its rules do not allow `date`).
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 prompt=$(cat "$repo/tools/night-session.md"; printf '\nRepositories for this night:\n'; cat "$list"; printf '\nSession started at: %s\n' "$started")

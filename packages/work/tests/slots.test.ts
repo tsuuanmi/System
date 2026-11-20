@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { CLAUDE, CODEX, SPARE, assertConsistent, caller, fixture, seeded } from '../../../test-support/fixture.ts'
 import type { WorkRecord } from '../src/record.ts'
+import { Slots } from '../src/slots.ts'
+import { Capabilities, type VerifierPort } from '../src/registry.ts'
 import { summarize } from '../src/summary.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-slots-'))
@@ -375,4 +377,19 @@ test('a step waits when every capable Account is full; the time it waited is rec
   } finally {
     await host.close()
   }
+})
+
+test('withCheck waits for a free check slot and releases it on a throw', async () => {
+  const verifier = { ref: 'v', maxConcurrentChecks: 1 } as VerifierPort
+  const slots = new Slots(new Capabilities())
+  let release!: () => void
+  const first = slots.withCheck(verifier, 'a', () => new Promise<void>((resolve) => { release = resolve }))
+  let ran = false
+  const second = slots.withCheck(verifier, 'b', async () => { ran = true; throw new Error('boom') })
+  await new Promise((r) => setTimeout(r, 5))
+  assert.equal(ran, false)
+  release()
+  await first
+  await assert.rejects(second, /boom/)
+  assert.equal(slots.reserveCheck(verifier, 'c'), true)
 })

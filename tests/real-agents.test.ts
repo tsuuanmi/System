@@ -10,11 +10,12 @@
  * test starts `system host` for the profile and stops it after.
  */
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import { adapterFor } from '../packages/agents/src/adapters/index.ts'
 import { systemCli } from '../test-support/cli.ts'
 
 const enabled = process.env.SYSTEM_REAL_AGENTS === '1'
@@ -96,4 +97,47 @@ test('a cancelled Claude Code attempt is taken over by Codex from its partial tr
   assert.equal(observed[1]!.usage?.state, 'observed')
   assert.deepEqual([observed[1]!.worker?.tier, observed[1]!.worker?.model], ['economy', 'gpt-6-luna'])
   assert.equal(system(['work', 'replay', workId]).status, 0)
+})
+
+test('Claude Code under the sandbox option cannot read the real home or write outside the worktree, and can still commit and run node --test', { skip: !enabled && 'set SYSTEM_REAL_AGENTS=1', timeout: 600_000 }, () => {
+  // Needs the account's token in CLAUDE_CODE_OAUTH_TOKEN; the attempt is shaped like the Host's: a throwaway HOME and a linked worktree of a temporary repository.
+  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN
+  assert.ok(token, 'export CLAUDE_CODE_OAUTH_TOKEN (the Claude Code account\'s token) to run this test')
+  const root = mkdtempSync(join(tmpdir(), 'system-sandbox-'))
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  try {
+    const repo = join(root, 'repo')
+    mkdirSync(repo)
+    git(repo, 'init', '--quiet')
+    writeFileSync(join(repo, 'README.md'), 'scratch\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '--quiet', '-m', 'base')
+    const ws = { root, home: join(root, 'home'), inputs: join(root, 'in'), outputs: join(root, 'out'), work: join(root, 'work'), listed: [], context: [] }
+    for (const dir of [ws.home, ws.inputs, ws.outputs]) mkdirSync(dir, { recursive: true, mode: 0o700 })
+    git(repo, 'worktree', 'add', '--quiet', '--detach', ws.work)
+    const realHome = userInfo().homedir
+    const outside = join(tmpdir(), `system-sandbox-outside-${process.pid}`)
+    const result = join(ws.outputs, 'result.txt')
+    const prompt = [
+      'Run these shell commands exactly, one at a time, and write one line per command to ' + result + ' as `<label>: <outcome>`. Print nothing else of their output; never print file content.',
+      `1. label ssh: run  test -r ${realHome}/.ssh && echo readable || echo denied`,
+      `2. label write-outside: run  touch ${outside} 2>/dev/null && echo written || echo denied`,
+      `3. label commit: in ${ws.work} run  echo x > x.txt && git add x.txt && git commit -q -m x && echo committed || echo failed`,
+      `4. label node-test: in ${ws.work} run  echo "require('node:test')('t', () => {})" > t.test.js && node --test t.test.js >/dev/null 2>&1 && echo passed || echo failed`,
+      'Then stop.',
+    ].join('\n')
+    const { argv, env } = adapterFor('claude-code')!.invocation({ command: 'claude', ws, prompt, model: 'haiku', codeWrite: true, env: { CLAUDE_CODE_OAUTH_TOKEN: token }, sandbox: true })
+    assert.ok(argv.includes('--settings'))
+    const ran = spawnSync(argv[0]!, argv.slice(1), { cwd: ws.work, env, encoding: 'utf8', timeout: 540_000 })
+    assert.equal(ran.status, 0, ran.stderr)
+    assert.ok(existsSync(result), 'the agent wrote no result')
+    const lines = readFileSync(result, 'utf8')
+    assert.match(lines, /^ssh: denied/m, lines)
+    assert.match(lines, /^write-outside: denied/m, lines)
+    assert.equal(existsSync(outside), false)
+    assert.match(lines, /^commit: committed/m, lines)
+    assert.match(lines, /^node-test: passed/m, lines)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

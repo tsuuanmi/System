@@ -116,7 +116,9 @@ Host that stopped itself for new code waits for its attempts first; see
   commit. A failed build or check leaves `current` where it was. With a
   `current`, the commit is checked as a change from the release that runs now,
   so `paths` selects the checks by the files that differ between the two
-  releases; the first install checks the whole commit;
+  releases; the first install checks the whole commit. When the release that runs now knows the
+  criteria `repo-checks-release-v1`, the check is of the event `release` (a check's `on:`), by a
+  workflow `update` writes; otherwise `code-checks.yaml` (event `pull_request`);
 - it switches `current` (a new link renamed over it), then asks the Host as a
   client of the new code, which makes the Host drain and restart on it (below);
 - if the Host does not run the new code within `--wait` (default 75 minutes,
@@ -152,7 +154,7 @@ that doc ([the tool](../../tools/docs.py), [governance](../governance/documentat
 is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it. System's
 `docs` check runs the same impact check on every Work, so most are found earlier; its waivers are the
 lines of `.system/docs-waivers`, committed with the change. Clear that file's waiver lines in the release
-pull request (keep its comment line).
+pull request (keep its comment line); the docs CI fails a pull request into `main` that leaves one.
 Editing the body does not rerun CI: close and reopen the pull request.
 
 ## Rollback
@@ -428,7 +430,9 @@ report and print its ID. A "permission" refusal names a rule to fix in the scrip
 By default the session works on this repository. `SYSTEM_NIGHT_REPOS` (paths of
 checkouts separated by `:`) names the repositories instead; the launcher passes
 the list to the prompt in that order, and an entry that is not a git checkout is
-reported (stderr, and the night report) and skipped. The limits (6 Items over all
+reported (stderr, and the night report) and skipped. Before the prompt the
+launcher runs `git fetch origin dev` in each of them (60 s at most); a failure is
+logged on stderr and the night goes on with the `origin/dev` it has. The limits (6 Items over all
 repositories) do not change. To add DNA, keep this repository first and set it in
 the installed unit, with an `Environment=` line or a drop-in
 (`systemctl --user edit system-night-session`):
@@ -494,6 +498,11 @@ protection: the push would be refused.
 A hand push to `dev` can run the fast checks first: in your checkout run
 `git config core.hooksPath tools/hooks` (`tools/hooks/pre-push`; bypass once with `git push --no-verify`).
 System's own publish pushes from attempt worktrees with `core.hooksPath=/dev/null`, so the hook never runs for it.
+The hook acts only on a push to the remote named `origin` whose URL is not a local path or a `file:` URL,
+and it clears every inherited `GIT_*` repository variable before a check runs,
+so it cannot change the operator's repository.
+The sandbox Account option (sb-1) is the second guard: in a sandbox, a linked worktree cannot write
+the main repository's `config` or `hooks/`; its gated test is still the operator's.
 
 ## Another home
 
@@ -605,7 +614,15 @@ system status [--repo <path>] [--state todo|doing|done] [--item <id>]
 `status` derives each Item's state from git and the Work records ([app
 README](../../packages/app/README.md)). While a Work for an Item runs or is held,
 `work submit` for it is refused, naming that Work; `--force` allows parallel
-work on purpose. `task new --item` is refused when the Item has no line in
+work on purpose. `status` fetches `origin dev` first when the last fetch of the
+repository is more than 3 minutes old (bounded to 20 s; a failed fetch is no
+refusal: the `note:` line says it failed and how old the ref is). `task new --ref
+<branch>` for a local branch with an `origin/<branch>` fetches it too and is
+refused, naming both commits, when the branch lacks commits of the origin (use
+`--ref origin/<branch>`); a failed fetch is reported on stderr as a `note:`. An
+`origin/...` ref or a commit is not checked. `work report --since` with a date
+that has no zone reads it as UTC and prints that instant (`sinceUtc`, and on
+stderr). `task new --item` is refused when the Item has no line in
 `STATUS.md` on `dev`; it and `work submit` are refused for a Blocked Item unless
 `--force`. Works do not edit `STATUS.md`: done is derived.
 

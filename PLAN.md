@@ -26,7 +26,7 @@
   advisory within one OS user ([ADR-0011](docs/decisions/ADR-0011-human-caller-needs-a-terminal.md)) (CM, 2026-11-14).
 - ROI of an Item is what it improves in later Items (Items merged on their first Work, cost per merged Item, operator
   minutes per Item, Escaped defects) over its own cost and operator minutes. Invariants are prose in a Task and the
-  changed tests are disclosed, never frozen tests or a model review. Order after TR: bootstrap, then unattended scale (TR, 2026-11-14).
+  changed tests are disclosed, never frozen tests or a model review (model review: see ADR-0013). Order after TR: bootstrap, then unattended scale (TR, 2026-11-14).
 - Bootstrap is read-only first (`plan`, `check`; `apply` waits); the first checks file is a draft a human commits,
   because admission refuses a Work without one; several repositories on one Host are accepted under today's limits:
   GitHub `origin`, `dev`, one token (BS, overnight session 2026-11-15, the operator may change them).
@@ -82,10 +82,10 @@ were built by the operator's sessions directly; since DF, System Works build Sys
 
 Record the measures at the end of every milestone. The measures of effect (Verified Success Rate, Recurring Failure Rate,
 Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution) and the headline measure, verified Items merged per operator touch) come from `system work report --since <date>`, not by hand;
-Escaped defects are recorded with `system defect add` (`escaped-defect@1`), and `--escaped <n>` is only an override the report labels. Growth above budget is justified in the milestone's row or paid for by removal. The core
-budget is +10% per milestone from 3,403 lines ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)); the docs
-budget is 4,285 lines under `docs/`. The older columns and the reasoning behind them are in
+Escaped defects are recorded with `system defect add` (`escaped-defect@1`), and `--escaped <n>` is only an override the report labels. The active core's lines and the docs' are a trend recorded here at each milestone, never a gate ([ADR-0015](docs/decisions/ADR-0015-changeability-is-measured-not-budgeted.md)); `work report --since` shows the core's lines at the range's start and end. The older columns and the reasoning behind them are in
 [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md#2-growth-and-feedback-budgets-charter-11-and-12).
+
+core +71: ir-4 fresh dev: fetch before status and task.new
 
 | Measure | CM close | TR release (`41cbfea`, 2026-11-14) | FL close (`a96b498`, 2026-11-16) | 2026-11-17 close (after this pass) | DP close (2026-11-18) |
 |---|---|---|---|---|---|
@@ -197,3 +197,51 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
 - [ ] Jev (TypeSafe AI) or another hosted decision model as a Classifier backend. *Trigger: the economy-model
   Classifier fails cls-2's gate; before any trial, its data retention terms are confirmed (the research found them
   inconsistent) and the report's citations verified.*
+- Batch 2 merged on the first Work of each Item (flaky-3, auth-1, git-1, sat-1, store-1; record: file Artifact
+  sha256:0fe9f86c7ad91a2ac3dd6550b74ada812a438a471327e5bf8099c9f89395c0d0, which also holds the sandbox research and
+  probe). Release 6baf5f2 (pull request #423) carries both batches; its install check is work:448ecf91.
+- Operator, 2026-11-19: for this batch the caller session protected `main` on GitHub (a pull request is required,
+  administrators included, no force push, no deletion), opened and merged the release pull request and ran
+  `system update`, on the operator's instruction in that session. This is not a standing permission: a Release stays
+  the operator's.
+- Measured after the release: `system work report --since 2026-11-10T00:00:00Z` reads 40 releases and 3.58 Items per
+  operator act (80 and 2.10 before ms-3); `system doctor --store` on the operator's home is ok (786 Works, 10,969
+  Artifacts, 1,969 blobs, 142 MB read in 4.4 s).
+- Operator, 2026-11-19: the active core grew from 5,126 to 5,191 lines in this review (releases.ts, controller.ts,
+  artifacts.ts, index.ts) and is recorded in section 2 at the next close; from now on a context pack says that the
+  active core does not grow, or that the result gives the lines and why. Next: sb-1 (intent 5f27ce2334c1), a spike of
+  Claude Code's own sandbox, off by default.
+- sb-1 merged on its first Work (work:0363e8eb, commit 9d7a153, not released): the Account option `sandbox` of the
+  Claude Code Runtime builds the settings in packages/agents/src/adapters/sandbox.ts (deny the passwd home; allow the
+  attempt's directories, the repository's git directory and the toolchain on PATH; `failIfUnavailable`; no
+  unsandboxed command). No Account has it on. The active core stayed at 5,191 lines.
+- Open for the operator (sb-1): Claude Code documents no way to leave Bash's network open under its sandbox, so with
+  the option on Bash reaches only the hosts in the option's `allowedDomains` (none by default; WebFetch and WebSearch
+  are outside the sandbox). The Intent 5f27ce2334c1 said the network stays as it is: turning the option on for an
+  Account therefore needs the operator's decision on the hosts (a changed Intent is a new Intent).
+- Not verified (sb-1): the gated test "Claude Code under the sandbox option cannot read the real home or write outside
+  the worktree, and can still commit and run node --test" (tests/real-agents.test.ts) needs `SYSTEM_REAL_AGENTS=1` and
+  the Account's token in `CLAUDE_CODE_OAUTH_TOKEN`, which a caller session does not hold; nobody has run it. What a
+  throwaway HOME does to the sandbox's paths and whether `corepack pnpm install` works under it are undetermined
+  until it runs.
+- Operator, 2026-11-19: the review of System itself ends here (8 Items for 4 operator acts, 2.0 Items per act against
+  4.25 before; two nights in a row the scheduled session found no `todo` Item). The next return is sought in the
+  product DNA through System. ROI stays as section 0 defines it, with the product's own measure counted. Record: file
+  Artifact sha256:5b8c7fb8da223989d3919069eac14232cdff192d186ac08909af1c64ef83da41 (Brainstorm work:60d6e265).
+- DNA Intent 432602283824 (settled by the operator in the DNA session, 2026-11-19; it supersedes 8f320a604aa5, which
+  made the full T2 evaluation the check): a green base (chrono replaced by jiff, `deny.toml` unchanged, Item deps-2);
+  DNA's existing regression gate (`tools/gates.sh regress`, 589 samples, about 20 s) as the per-change check of DNA's
+  `.system/checks.yaml`, with a chain of intents (one intent file per output-changing Item, named by its Item id) that
+  the operator records once at the release; the full T2 evaluation at night or at a release, not per Work (a run took
+  970 s with a cold cache, twice per Work, and a raw-count rule would have failed a correct change); then one batch of
+  at most 6 product Items run by the scheduled session and released once, with the operator's minutes noted. The
+  machine paths reach the gate through the Host's `checkEnv`; no change to System. The DNA caller session "DNA 100K"
+  carries it; its Items live in DNA's STATUS.md.
+- Stays the operator's in that work: how the advisory is cleared, the evaluation check's fail rule and error budget,
+  re-baselining, adjudication, the Items, approvals and releases. Held-out batches are never read by a Work. No
+  unpublished probes by the scheduled session for now.
+- Duties apart from that ranking, both the operator's: run sb-1's gated test (it needs the Account's token) before any
+  rise of the night limit or of the number of repositories; put `codex` back on the Host's PATH (both Codex Accounts
+  are unavailable, so the two Brainstorm proposals come from one Provider).
+- IR (intent 6bb1d7c3f7a5, superseding 92cc952b1a96; operator, 2026-11-20, "Đồng ý toàn bộ" to option (b)): the 2026-11-19 decision stands; only IR batch 1 is opened (ir-1 to ir-6: ADR-0013 and five deterministic Guardrails, from 328 Works since 2026-11-10 with 64% of failures recurring), then work returns to DNA. Batches 2 and 3 (context-pack and file-overlap warnings, `guardrail.yaml`, a Model check of Done when, Triage in shadow and its gate, a doc-truth Model check) open only when `recurringClasses` on DNA's Works ask for them. Triage v1 only writes a diagnosis the reopened step reads and a hold recommendation; the controller is unchanged and rerunning a check stays the operator's (RO). The docs rule does not change in this range (EV's E3). Coordinated with the EV session (system-1b) on 2026-11-20. Batch 1 grew to 8 with ir-7 (core-budget measured the wrong base) and ir-8 (the pre-push hook changed the operator's repository), both fixing defects the batch itself found (operator, 2026-11-20). ir-9 (operator, 2026-11-20): "bỏ phần chặn, giữ số đo …"; the line budget becomes a trend.
+- CT (intent 469fd00fd3dd; operator, 2026-11-20): checks in tiers by event; the decision and its trade-off are in [ADR-0014](docs/decisions/ADR-0014-checks-in-tiers-by-event.md). Order: ct-1, then a release, then ct-2; ct-3 after ir-3. Worker slots rise with the release that carries ir-3 and ct-1.

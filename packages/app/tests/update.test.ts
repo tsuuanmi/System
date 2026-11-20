@@ -238,3 +238,19 @@ test('finishPending: runs the check for a record of its own commit once the upda
     assert.equal(m.written.has(`/i/${PENDING}`), true)
   }
 })
+
+test('a running release that knows the release criteria is checked on the release event; an older one with the file code-checks.yaml (ct-1)', async () => {
+  const known = machine({ current: OLD })
+  known.written.set(`/i/releases/${OLD}/packages/verifiers/src/checks.ts`, "export const REPO_CHECKS_RELEASE = 'repo-checks-release-v1'\n")
+  assert.equal(await update(known.deps), 0)
+  const submit = known.ran.find((line) => line.includes('work submit'))!
+  assert.ok(submit.includes('--workflow /i/release-check.yaml --input sha256:task'), submit)
+  assert.match(known.written.get('/i/release-check.yaml')!, /criteria: repo-checks-release-v1/)
+  assert.match(known.written.get('/i/release-check.yaml')!, /capability: code\.required-checks/)
+
+  const older = machine({ current: OLD })
+  older.written.set(`/i/releases/${OLD}/packages/verifiers/src/checks.ts`, "export const REPO_CHECKS_V2 = 'repo-checks-v2'\n")
+  assert.equal(await update(older.deps), 0)
+  assert.ok(older.ran.some((line) => line.includes(`--workflow /i/releases/${SHA}/workflows/code-checks.yaml`)))
+  assert.ok(!older.written.has('/i/release-check.yaml'))
+})

@@ -31,7 +31,7 @@ acceptance does not imply its code exists.
 - [ADR-0008 — A `dev` integration branch System may merge into](ADR-0008-dev-integration-branch.md) — accepted —
   System's own changes integrate into a `dev` branch that System may update and merge into once the required checks
   pass; only the operator merges `dev` into `main`.
-- [ADR-0010 — The core budget, measured from OC](ADR-0010-core-budget-rebaselined.md) — accepted — The active core's
+- [ADR-0010 — The core budget, measured from OC](ADR-0010-core-budget-rebaselined.md) — superseded — The active core's
   growth budget is measured from 3,403 lines (after milestone OC) instead of the PR #3 baseline of 2,317, at +10% per
   milestone, and growth over it is paid back within the same milestone; removing features to shrink the core is planned
   separately.
@@ -43,4 +43,17 @@ acceptance does not imply its code exists.
   accepted — The Host carries admitted Works on and never picks an Item or creates a Work; picking, writing the Task and
   submitting is a caller's act (scheduled sessions included); Items stay in each repository's STATUS.md with derived
   state, and a database is reconsidered only on three stated triggers.
+- [ADR-0013 — Models decide what to try; deterministic checks decide what is
+  accepted](ADR-0013-models-decide-what-to-try.md) — accepted — Models decide what to try; deterministic checks decide
+  what is accepted. A model may choose what to try next and may block (fail or inconclusive), never accept; every model
+  decision is an Artifact; Triage v1 only writes a diagnosis and a hold recommendation; a Model check runs in shadow
+  until its precision is measured.
+- [ADR-0014 — Checks in tiers by event](ADR-0014-checks-in-tiers-by-event.md) — accepted — A check may name the events
+  it runs on with GitHub Actions' on, so the heavy checks (upgrade, install-guide) run once per release instead of once
+  per Work; accepted trade-off - a defect only those checks catch can reach dev, and system update still refuses a
+  release whose checks fail.
+- [ADR-0015 — Changeability is measured, not budgeted in lines](ADR-0015-changeability-is-measured-not-budgeted.md) —
+  accepted — Charter 11 (stay changeable) is judged by Items merged on their first Work, the Recurring Failure Rate and
+  the Time to Verified Resolution; the active core's lines are a trend recorded at each milestone and shown by work
+  report, never a gate; supersedes ADR-0010.
 <!-- docs:end index:decision -->

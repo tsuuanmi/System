@@ -3,6 +3,7 @@
  * routing read it. Routing is by capability, never by domain or vendor.
  */
 import { DEFAULT_QUOTA_CEILING_PERCENT, rankByHeadroom, type QuotaReading } from './headroom.ts'
+import { Slots } from './slots.ts'
 import type { AttemptSummary, ExecutorRecord, PortCause, UsageObserved } from './record.ts'
 import type { AvailableCapabilities } from './workflow.ts'
 
@@ -98,6 +99,8 @@ export interface VerifyRequest {
   inputs?: Record<string, string>
   /** Evidence IDs of the verdicts this verify step gave earlier in the Work that were not a `pass`, oldest first. */
   earlier?: string[]
+  /** The event the verification runs on (GitHub Actions' event names, `on:` of a check); set by the caller, such as the merge queue's `merge_group`; absent: the verifier's own default. */
+  event?: 'pull_request' | 'merge_group' | 'release'
 }
 
 /**
@@ -210,6 +213,8 @@ const add = <P>(list: P[], port: P): (() => void) => {
 }
 
 export class Capabilities {
+  /** The Host's slots (the Host sets it at start): the merge queue's re-check takes its check slots here. */
+  slots: Slots = new Slots(this)
   private readonly workers: WorkerPort[] = []
   private readonly verifiers: VerifierPort[] = []
   private readonly effects: EffectPort[] = []

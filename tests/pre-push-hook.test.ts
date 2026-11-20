@@ -32,14 +32,16 @@ before(() => {
   const nodeDir = join(home, '.nvm', 'versions', 'node', 'v99.0.0', 'bin')
   stub(nodeDir, 'node', check)
   stub(nodeDir, 'corepack', check) // corepack is run beside the chosen Node, not from PATH (Item ns-2)
-  env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
   const remote = join(root, 'remote.git')
+  // `origin` must not be a local path (the hook skips those, Escaped defect 01d80c6a): an ssh URL, reached through a stand-in that runs the command on the bare repository.
+  writeFileSync(join(root, 'ssh.mjs'), `import { spawnSync } from 'node:child_process'\nconst command = process.argv.at(-1).replace(/'[^']*'/, () => "'${remote}'")\nprocess.exit(spawnSync('/bin/sh', ['-c', command], { stdio: 'inherit' }).status ?? 1)\n`)
+  env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_SSH_COMMAND: `${process.execPath} ${join(root, 'ssh.mjs')}`, GIT_SSH_VARIANT: 'simple' }
   repo = join(root, 'repo')
   mkdirSync(repo)
   sh(root, 'git', ['init', '--quiet', '--bare', remote])
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ engines: { node: '>=99' } }))
   sh(repo, 'git', ['init', '--quiet', '-b', 'main'])
-  sh(repo, 'git', ['remote', 'add', 'origin', remote])
+  sh(repo, 'git', ['remote', 'add', 'origin', 'git@github.com:o/r.git'])
   sh(repo, 'git', ['config', 'core.hooksPath', dirname(hook)])
   sh(repo, 'git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'c'])
 })
@@ -52,7 +54,7 @@ test('a push to dev with a failing check is refused, naming the check', () => {
   assert.notEqual(r.status, 0)
   assert.match(r.stderr, /refusing the push to dev: 'corepack pnpm typecheck' failed/)
   assert.match(r.stderr, /--no-verify/)
-  assert.notEqual(sh(repo, 'git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/dev']).status, 0)
+  assert.notEqual(sh(repo, 'git', ['ls-remote', '--exit-code', join(root, 'remote.git'), 'refs/heads/dev']).status, 0)
 })
 
 test('a push to dev passes when the checks pass', () => {

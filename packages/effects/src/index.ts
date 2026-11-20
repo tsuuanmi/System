@@ -3,6 +3,7 @@
  * 10). Today one: `git.publish` for GitHub. Its token comes from the DSH
  * credential store; Worker environments never contain it.
  */
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Artifacts } from '@system/artifacts'
@@ -41,7 +42,9 @@ export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (s
       const verifier = capabilities.verifierFor(pinned.ref)
       if (!verifier || !verifier.capabilities.includes(capability)) return { verdict: 'error', reason: `${pinned.ref}@${pinned.version}, pinned for ${capability} at admission, is not registered`, evidence, verdicts }
       // Deliberate (PLAN DP decision: a merge awaits an Approval): a changed verifier version holds the merge; the controller refuses a step with `error` instead.
-      const asked = await askVerifier(store, { verifier, pin: pinned, onPinMismatch: 'hold', request: { workId: intent.workId, attemptId: `merge:${intent.operationId}`, stepId: intent.stepId, capability, subject, criteria } })
+      const attemptId = `merge:${intent.operationId}`
+      // The same check slots as the checks step (df-14): at most `maxConcurrentChecks` suites run at once, merge re-checks included.
+      const asked = await askVerifier(store, { verifier, pin: pinned, onPinMismatch: 'hold', request: { workId: intent.workId, attemptId, stepId: intent.stepId, capability, subject, criteria, event: 'merge_group' }, around: (run) => capabilities.slots.withCheck(verifier, `${attemptId}:${randomUUID()}`, run) })
       if ('refusal' in asked) {
         if (asked.refusal.verdict === 'hold') { hold ??= asked.refusal.reason; continue }
         return { verdict: 'error', reason: asked.refusal.reason, evidence, verdicts }

@@ -92,7 +92,7 @@ async function rehearse(scratch) {
   const ssh = join(scratch, 'ssh.mjs')
   writeFileSync(ssh, SSH_STANDIN(origin))
   const gitEnv = { GIT_SSH_COMMAND: `${process.execPath} ${ssh}`, GIT_SSH_VARIANT: 'simple' }
-  git('push', '-q', origin, `${old}:refs/heads/main`)
+  git('-c', 'core.hooksPath=/dev/null', 'push', '-q', origin, `${old}:refs/heads/main`)
   // The install `system update` leaves: repo/, releases/<commit>, current.
   mkdirSync(join(install, 'releases'), { recursive: true })
   sh('git', ['clone', '-q', '--no-checkout', ORIGIN_URL, join(install, 'repo')], { env: { ...process.env, ...gitEnv } })
@@ -113,7 +113,7 @@ async function rehearse(scratch) {
   try {
     await host.listening
     log('the last release\'s Host is up; publishing the commit under check as main (and dev) of the local origin')
-    git('push', '-q', '--force', origin, `${next}:refs/heads/main`, `${next}:refs/heads/dev`)
+    git('-c', 'core.hooksPath=/dev/null', 'push', '-q', '--force', origin, `${next}:refs/heads/main`, `${next}:refs/heads/dev`)
     const updated = await new Promise((done) => {
       const child = spawn(process.execPath, [cli, 'update', '--wait', '5'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
       let output = ''

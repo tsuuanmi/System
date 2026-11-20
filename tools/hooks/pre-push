@@ -1,6 +1,14 @@
 #!/bin/sh
 # Runs the fast checks before a hand push to `dev` (Item rb-2). Enable with
 # `git config core.hooksPath tools/hooks`. Skip once with `git push --no-verify`.
+# Only a hand push to the real `origin` is checked (Escaped defect 01d80c6a): a push to another remote name, or to a local path or
+# file URL (a stand-in origin, as tools/upgrade-rehearsal.mjs pushes to), does nothing.
+[ "$1" = "origin" ] || exit 0
+case "$2" in /*|./*|../*|file:*) exit 0;; esac
+# Git runs a hook with GIT_DIR and friends set to the real repository; a check that runs git (a test's `git init --bare`) would act on it.
+for var in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do
+  case "$var" in GIT_CONFIG_*|GIT_SSH*|GIT_TERMINAL_PROMPT|GIT_ASKPASS|GIT_TRACE*|GIT_AUTHOR_*|GIT_COMMITTER_*|GIT_EXEC_PATH) ;; *) unset "$var" ;; esac
+done
 here=$(cd "$(dirname "$0")" && pwd) || exit 1
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
   [ "$remote_ref" = "refs/heads/dev" ] || continue

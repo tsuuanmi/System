@@ -2,7 +2,7 @@
  * The class of a failure for the Recurring Failure Rate (GLOSSARY: Recurring failure), from structure and never from
  * test names: a failure of the change is its check and first failing test, parsed here and nowhere else from the reason
  * System writes (`failed: <check>: <file> "<test>"`, see packages/verifiers/src/reasons.ts); an Outside failure is its
- * cause; a failure whose cause System cannot place is `unknown`.
+ * cause, except a flaky check failure, which keeps its check and test too (`flaky:<check>:<file> "<test>"`); a failure whose cause System cannot place is `unknown`.
  */
 import type { Failure } from './summary.ts'
 
@@ -21,8 +21,12 @@ export function parseCheckFailure(reason: string): CheckFailure | undefined {
   return { check: head[1]!, ...(test ? { test } : {}) }
 }
 
-/** The class of one failure (not a touch): the cause when Outside, `unknown`, else the check and first failing test, else the kind. */
+/** The class of one failure (not a touch): the cause when Outside (`flaky` adds its check and test), `unknown`, else the check and first failing test, else the kind. */
 export function failureClass(f: Pick<Failure, 'kind' | 'reason' | 'outside' | 'unknown'>): string {
+  if (f.outside === 'flaky') {
+    const parsed = parseCheckFailure(f.reason)
+    return parsed ? `flaky:${parsed.check}:${parsed.test ?? ''}` : 'flaky'
+  }
   if (f.outside) return f.outside
   if (f.unknown) return 'unknown'
   const parsed = parseCheckFailure(f.reason)

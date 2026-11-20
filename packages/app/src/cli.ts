@@ -135,6 +135,14 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
 }
 
 /** Build the thin client's program: every other command, over the Host's socket. */
+/** The UTC instant a date or timestamp without a zone stands for (the Host compares ISO UTC strings), or undefined when it names a zone. */
+export function zonelessUtc(text: string): string | undefined {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(text)
+  if (!date && !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(text)) return undefined
+  const at = new Date(date ? text : `${text.replace(' ', 'T')}Z`)
+  return Number.isNaN(at.getTime()) ? undefined : at.toISOString()
+}
+
 export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => void): Command {
   const program = newProgram()
   const artifactId = (id: string): string => {
@@ -277,6 +285,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         const instructions = options.text ?? readFileSync(options.file!, 'utf8')
         const created = await host.call('task.new', given({ instructions, repository: options.repo && resolve(options.repo), ref: options.repo ? options.ref : undefined, context: options.context, item: options.item, against: options.against, force: options.force }))
         if (created.base) io.err(`base ${created.base}\n`)
+        if (created.note) io.err(`note: ${created.note}\n`)
         io.out(`${created.task}\n`)
         return 0
       })
@@ -521,7 +530,11 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         }
         const escaped = options.escaped === undefined ? undefined : Number(options.escaped)
         if (escaped !== undefined && !(Number.isInteger(escaped) && escaped >= 0)) throw new Error('--escaped is a count')
-        io.out(`${JSON.stringify(await host.call('work.report', { since: options.since!, ...(options.until === undefined ? {} : { until: options.until }), ...(escaped === undefined ? {} : { escaped }) }), null, 2)}\n`)
+        const report = await host.call('work.report', { since: options.since!, ...(options.until === undefined ? {} : { until: options.until }), ...(escaped === undefined ? {} : { escaped }) })
+        // A date with no zone is read as UTC, not as the caller's local time: say which instant that is.
+        const sinceUtc = zonelessUtc(options.since!)
+        if (sinceUtc) io.err(`system: --since ${options.since} has no zone and is read as UTC: ${sinceUtc}\n`)
+        io.out(`${JSON.stringify(sinceUtc ? { ...(report as object), sinceUtc } : report, null, 2)}\n`)
         return 0
       })
     })

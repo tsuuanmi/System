@@ -49,17 +49,19 @@ export interface AskInput {
   /** Deliberate (PLAN DP decision: a merge awaits an Approval): the controller refuses a changed pin with `error`, the merge check `hold`s. */
   onPinMismatch: 'error' | 'hold'
   request: VerifyRequest
+  /** Wraps the `verify` call only (the merge check takes a check slot there); the controller's checks step took its slot before. */
+  around?: <T>(run: () => Promise<T>) => Promise<T>
 }
 
 /** Check the pin and `accepts` against the subject's kind, then ask the verifier; a throw is a refusal with an `error` verdict. */
-export async function askVerifier(store: Pick<VerificationStore, 'kindOf'>, { verifier, pin, onPinMismatch, request }: AskInput): Promise<{ refusal: Refusal } | { result: VerifyResult }> {
+export async function askVerifier(store: Pick<VerificationStore, 'kindOf'>, { verifier, pin, onPinMismatch, request, around }: AskInput): Promise<{ refusal: Refusal } | { result: VerifyResult }> {
   if (pin && (pin.ref !== verifier.ref || pin.version !== verifier.version)) {
     return { refusal: { kind: 'pin', verdict: onPinMismatch, reason: `pinned ${pin.ref}@${pin.version} at admission; ${verifier.ref}@${verifier.version} is enabled now` } }
   }
   const kind = store.kindOf(request.subject)
   if (!kind || !verifier.accepts.includes(kind)) return { refusal: { kind: 'accepts', verdict: 'error', reason: `${verifier.ref} judges ${verifier.accepts.join(', ')}, not ${kind ?? 'a missing Artifact'}` } }
   try {
-    return { result: await verifier.verify(request) }
+    return { result: await (around ? around(() => verifier.verify(request)) : verifier.verify(request)) }
   } catch (error) {
     return { refusal: { kind: 'threw', verdict: 'error', reason: `the verifier threw: ${(error as Error).message}` } }
   }
