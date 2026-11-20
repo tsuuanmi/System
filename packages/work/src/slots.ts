@@ -26,6 +26,8 @@ export class Slots {
   private readonly held = new Map<string, Set<string>>()
   /** Lost attempts whose process may still run, by attempt ID: they keep their slot until settled. */
   private readonly lost = new Map<string, { account: string; attempt: LostAttempt }>()
+  /** Callers of `withCheck` waiting for a slot of an account, in order. */
+  private readonly waiters = new Map<string, Array<{ limit: number; attemptId: string; go: () => void }>>()
   private freed: () => void = () => {}
 
   constructor(capabilities: Capabilities) {
@@ -52,6 +54,25 @@ export class Slots {
     return verifier.maxConcurrentChecks === undefined || this.take(checkAccount(verifier), verifier.maxConcurrentChecks, attemptId)
   }
 
+  /**
+   * Run `fn` holding a check slot of the verifier, waiting for one when all are taken (waiting is not a failure);
+   * the slot is released when `fn` returns or throws. Runs at once when the verifier sets no `maxConcurrentChecks`.
+   */
+  async withCheck<T>(verifier: VerifierPort, attemptId: string, fn: () => Promise<T>): Promise<T> {
+    const limit = verifier.maxConcurrentChecks
+    if (limit === undefined) return fn()
+    const account = checkAccount(verifier)
+    const queue = this.waiters.get(account) ?? []
+    if (queue.length || !this.take(account, limit, attemptId)) {
+      await new Promise<void>((go) => { this.waiters.set(account, [...queue, { limit, attemptId, go }]) })
+    }
+    try {
+      return await fn()
+    } finally {
+      this.release(account, attemptId)
+    }
+  }
+
   private take(account: string, limit: number, attemptId: string): boolean {
     const held = this.held.get(account) ?? new Set<string>()
     if (held.size >= limit) return false
@@ -60,7 +81,12 @@ export class Slots {
   }
 
   release(account: string, attemptId: string): void {
-    if (this.held.get(account)?.delete(attemptId)) this.freed()
+    if (!this.held.get(account)?.delete(attemptId)) return
+    const queue = this.waiters.get(account) ?? []
+    while (queue.length && this.take(account, queue[0]!.limit, queue[0]!.attemptId)) queue.shift()!.go()
+    if (queue.length) this.waiters.set(account, queue)
+    else this.waiters.delete(account)
+    this.freed()
   }
 
   /** Keep `account`'s slot for a lost attempt until it is settled. */
