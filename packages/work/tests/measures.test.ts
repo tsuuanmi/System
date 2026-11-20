@@ -170,3 +170,20 @@ test('--escaped stays an override that the report labels', () => {
   const r = rangeReport([A], { since: '2026-11-15', escaped: 4, defects: [{ item: 'x-1', foundBy: 'w', reason: 'r', date: '2026-11-17' }] })
   assert.deepEqual(r.escapedDefectRate, { rate: 4, escaped: 4, itemsMerged: 1, source: 'override (--escaped)' })
 })
+
+test('ir-6: a flaky failure is keyed by its check and test; two Works failing the same flaky test are one class', () => {
+  const fv = (n: string, v: 'fail' | 'pass', reason: string, extra: object = {}): Unnumbered => ({ type: 'verified', at: T('15', '00:00:01'), stepId: 'checks', attemptId: 'a', subject: id('c'), criteria: 'c', verdict: v, reason, verdictId: id(n), ...extra }) as unknown as Unnumbered
+  const work = (name: string, day: string, reasons: string[]) => {
+    const events: Unnumbered[] = [admitted(T(day))]
+    reasons.forEach((reason, i) => events.push(fv(`${name}${i}`, 'fail', reason), fv(`${name}${i}r`, 'pass', 'passed', { rerunOf: id(`${name}${i}`) })))
+    return record(name, 'succeeded', [...events, terminal(T(day, '01:00:00'), 'succeeded')])
+  }
+  const x = 'failed: unit: x.test.ts "name": boom'
+  const same = rangeReport([work('1', '15', [x]), work('2', '16', [x])], { since: '2026-11-15' })
+  assert.deepEqual(same.recurringClasses, [{ class: 'flaky:unit:x.test.ts "name"', count: 2, example: 'work:2' }])
+  const different = rangeReport([work('3', '15', [x]), work('4', '16', ['failed: unit: y.test.ts "other": boom'])], { since: '2026-11-15' })
+  assert.deepEqual(different.recurringClasses, [])
+  assert.equal(failureClass({ kind: 'verdict', reason: 'failed: unit: x.test.ts "a": b', outside: 'flaky' }), 'flaky:unit:x.test.ts "a"')
+  assert.equal(failureClass({ kind: 'verdict', reason: 'failed: unit: it broke', outside: 'flaky' }), 'flaky:unit:')
+  assert.equal(failureClass({ kind: 'verdict', reason: 'inconclusive: x', outside: 'flaky' }), 'flaky')
+})
