@@ -77,6 +77,12 @@ was checked against a tip that had moved. Decision 2 now reads:
   publish step then fails with that message. The outcome is reconciled by
   reading whether `dev` holds the change.
 
+## Amendment (2026-11-20): checks in tiers
+
+"The required checks" of decision 2 are those of the `pull_request` and
+`merge_group` events; the full set runs at release. See
+[ADR-0014](ADR-0014-checks-in-tiers-by-event.md).
+
 ## Consequences
 
 - System's verified changes reach `dev` without waiting. The operator

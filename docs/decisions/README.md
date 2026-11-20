@@ -48,4 +48,8 @@ acceptance does not imply its code exists.
   what is accepted. A model may choose what to try next and may block (fail or inconclusive), never accept; every model
   decision is an Artifact; Triage v1 only writes a diagnosis and a hold recommendation; a Model check runs in shadow
   until its precision is measured.
+- [ADR-0014 — Checks in tiers by event](ADR-0014-checks-in-tiers-by-event.md) — accepted — A check may name the events
+  it runs on with GitHub Actions' on, so the heavy checks (upgrade, install-guide) run once per release instead of once
+  per Work; accepted trade-off - a defect only those checks catch can reach dev, and system update still refuses a
+  release whose checks fail.
 <!-- docs:end index:decision -->
