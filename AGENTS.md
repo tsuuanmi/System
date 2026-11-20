@@ -54,7 +54,8 @@ test stand-ins. Changes to this repository are checked by
   11): growth is fine, but losing the ability to change is not.
   - Prefer deleting or simplifying to adding a layer.
   - Record growth of the active core and the docs at each milestone in
-    [PLAN.md](PLAN.md), and justify growth beyond its budget.
+    [PLAN.md](PLAN.md) as a trend ([ADR-0015](docs/decisions/ADR-0015-changeability-is-measured-not-budgeted.md));
+    changeability is judged by first-Work merges, recurring failures and time to resolution.
   - Never let docs restate what code, tests or another doc already say.
 - **Fast, testable feedback** (Charter 12):
   - Every behavior change comes with a test that failed first.

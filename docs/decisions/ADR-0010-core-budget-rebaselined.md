@@ -1,13 +1,17 @@
 ---
 id: ADR-0010
 type: decision
-status: accepted
+status: superseded
 date: 2026-11-07
 summary: The active core's growth budget is measured from 3,403 lines (after milestone OC) instead of the PR #3 baseline of 2,317, at +10% per milestone, and growth over it is paid back within the same milestone; removing features to shrink the core is planned separately.
-related: [ADR-0007]
+related: [ADR-0007, ADR-0015]
 ---
 
 # The core budget, measured from OC
+
+Superseded 2026-11-20 by
+[ADR-0015](ADR-0015-changeability-is-measured-not-budgeted.md): the core's lines
+are a trend, not a budget.
 
 ## Context
 

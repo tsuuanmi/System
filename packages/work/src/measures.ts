@@ -9,6 +9,7 @@ import { laterPasses } from './later-pass.ts'
 import { summarize, type ClassifiedLookup } from './summary.ts'
 import { mergeCommitOf, wasMerged } from './status.ts'
 import type { DefectWithdrawal, EscapedDefect } from './defect.ts'
+import type { CoreLines } from './core-lines.ts'
 
 export type Unknown = 'unknown'
 export interface RangeOptions {
@@ -28,6 +29,8 @@ export interface RangeOptions {
   confirmations?: readonly { date: string }[]
   /** The merge times of `dev` into `main` in the repositories the Host knows Items for (`releasesOf`): those in the range are operator acts. */
   releases?: readonly string[]
+  /** The active core's lines at the range's start and end (`activeCoreLines`, from git); a trend, never a gate (ADR-0015). */
+  activeCoreLines?: CoreLines
 }
 
 export interface RangeReport {
@@ -39,6 +42,8 @@ export interface RangeReport {
   /** Failures (not operator touches) whose class, by `failureClass` (the Outside cause, else the check and first failing test), occurred in an earlier Work of the range, over all failures; failures of `unknown` cause are counted apart (`unknownFailures`), in neither. */
   recurringFailureRate: { rate: number | Unknown; recurring: number; failures: number }
   unknownFailures: number
+  /** The active core's lines (.ts of packages/work/src and packages/artifacts/src on `dev`) at the range's start and end; `unknown` without git. A trend (ADR-0015). */
+  activeCoreLines: CoreLines
   /** The failure classes (as `failureClass`; `unknown` is one class) seen 2 or more times in the range, most frequent first (ties: latest example first), at most 10; `example` is the latest Work that had the class. Turn each into a root-cause Item. */
   recurringClasses: { class: string; count: number; example: string }[]
   /** Of those, the ones a Classification labels, by label; absent when none (the Classifier row is off, or has classified none). */
@@ -60,7 +65,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, activeCoreLines }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -135,7 +140,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const count = escaped ?? recorded
   const recurringClasses = [...tally].filter(([, t]) => t.count >= 2).sort((a, b) => b[1].count - a[1].count || b[1].last - a[1].last).slice(0, 10).map(([c, t]) => ({ class: c, count: t.count, example: t.example }))
   return {
-    since, ...(until === undefined ? {} : { until }), works: inRange.length, unknownFailures, recurringClasses, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
+    since, ...(until === undefined ? {} : { until }), works: inRange.length, activeCoreLines: activeCoreLines ?? 'unknown', unknownFailures, recurringClasses, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
     headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs },

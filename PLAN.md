@@ -82,9 +82,7 @@ were built by the operator's sessions directly; since DF, System Works build Sys
 
 Record the measures at the end of every milestone. The measures of effect (Verified Success Rate, Recurring Failure Rate,
 Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution) and the headline measure, verified Items merged per operator touch) come from `system work report --since <date>`, not by hand;
-Escaped defects are recorded with `system defect add` (`escaped-defect@1`), and `--escaped <n>` is only an override the report labels. Growth above budget is justified in the milestone's row or paid for by removal. The core
-budget is +10% per milestone from 3,403 lines ([ADR-0010](docs/decisions/ADR-0010-core-budget-rebaselined.md)); the docs
-budget is 4,285 lines under `docs/`. The `core-budget` check reads the core against the Work's base, not these numbers: growth fails unless the `core +<delta>: <reason>` lines the change adds to this section sum to at least the growth; the base is the tip a merge goes into on the merge re-check, the Work's base otherwise. The older columns and the reasoning behind them are in
+Escaped defects are recorded with `system defect add` (`escaped-defect@1`), and `--escaped <n>` is only an override the report labels. The active core's lines and the docs' are a trend recorded here at each milestone, never a gate ([ADR-0015](docs/decisions/ADR-0015-changeability-is-measured-not-budgeted.md)); `work report --since` shows the core's lines at the range's start and end. The older columns and the reasoning behind them are in
 [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md#2-growth-and-feedback-budgets-charter-11-and-12).
 
 core +71: ir-4 fresh dev: fetch before status and task.new
@@ -108,8 +106,6 @@ after FL's Workflow went live (14 Works) 0.93, $0.11, median 5.1 min (p90 9.5).
 **Escaped defects** are counted by hand, each with the Work that caused it and the Work that fixed it: 10 up to FL's close
 (number 9 withdrawn as miscounted), one paragraph each in [PLAN.md at `97a1adb`](https://github.com/tsuuanmi/System/blob/97a1adb2756e31eed15434fb9916b83dd2fa7255/PLAN.md#3e-tr--trust-decided-2026-11-14);
 a new one is added here as one line.
-
-core +2: ct-1, `VerifyRequest.event`, the event a verification runs on, so the merge queue's re-check can name `merge_group` to the verifier (a check's `on:`).
 
 Every milestone ends with a **simplification pass**: a System Work (Sonnet) proposes deletions and simplifications (dead
 code, unused abstractions, duplicated tests, docs that restate others), and the operator reviews it like any PR. The

@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, activeCoreLines, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -177,7 +177,7 @@ export function operations(services: Services) {
     'work.report': {
       read: true,
       agent: true,
-      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp, read as UTC when it has no zone; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator act, `headline`: Intents the operator settled, confirmations, releases (merges of `dev` into `main`) and human touches) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range and that no later defect supersedes and no withdrawal names: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1).',
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp, read as UTC when it has no zone; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator act, `headline`: Intents the operator settled, confirmations, releases (merges of `dev` into `main`) and human touches) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range and that no later defect supersedes and no withdrawal names: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, `activeCoreLines` (the active core lines on `dev` at the start and end of the range, from git, a trend; `unknown` without git), and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1).',
       params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional(), classify: z.boolean().optional() }).strict(),
       async handler(host, p) {
         if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')
@@ -202,7 +202,8 @@ export function operations(services: Services) {
         // Releases are merges of `dev` into `main` seen in each repository the Host knows Items for.
         const repositories = new Set(records.flatMap((r) => { const first = r.events[0]!; return first.type === 'admitted' && first.item?.repository ? [first.item.repository] : [] }))
         const releases = (await Promise.all([...repositories].map((repository) => releasesOf(repository)))).flat()
-        return rangeReport(records, { ...services.operatorActs(), releases, since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), withdrawals: services.defectWithdrawals(), ...(classifier ? { classified: classifier.lookup } : {}) })
+        const coreLines = await activeCoreLines([...repositories], p.since!, p.until)
+        return rangeReport(records, { ...services.operatorActs(), releases, activeCoreLines: coreLines, since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), withdrawals: services.defectWithdrawals(), ...(classifier ? { classified: classifier.lookup } : {}) })
       },
     },
     'work.events': {
