@@ -732,8 +732,9 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   const own = checksFileSchema.parse(parse(readFileSync(new URL('../../../.system/checks.yaml', import.meta.url), 'utf8')))
   // The secrets check (Item rb-5) has no `paths`: a secret can be added anywhere, so it runs for every change and is left out of the lists below.
   const secrets = own.checks.find((c) => c.name === 'secrets')!
-  for (const touched of [['docs/architecture/host.md'], ['packages/work/src/controller.ts'], ['STATUS.md']]) assert.ok(selected(secrets, touched), touched.join())
-  const run = (touched: string[]) => own.checks.filter((c) => c.name !== 'secrets' && selected(c, touched)).map((c) => c.name)
+  for (const touched of [['docs/architecture/host.md'], ['packages/work/src/controller.ts'], ['STATUS.md']]) assert.ok(selected(secrets, touched, 'release'), touched.join())
+  // `paths` are checked on the `release` event here, which `on:` leaves every check (ADR-0014; the per-event selection is tests/repo-checks.test.ts).
+  const run = (touched: string[]) => own.checks.filter((c) => c.name !== 'secrets' && selected(c, touched, 'release')).map((c) => c.name)
   assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
   // Markdown among code paths runs no code check (2026-11-17), unless the check names it (the runbook, the Charter).
   assert.deepEqual(run(['packages/web-worker/README.md', 'packages/web-driver/README.md']), ['docs'])
