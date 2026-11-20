@@ -84,6 +84,20 @@ checks:
   its time limit the runner prints what it was running:
   `<check>: timed out after <n> s while running <file> "<test>"`. Other
   commands keep `<check> (exit <n>)`. Several failures are joined by `; `.
+- **Events** (ct-1): a check with `on:` (a non-empty list of `pull_request`,
+  `merge_group`, `release`, as GitHub Actions' `on:`; any other name is refused at
+  admission) runs only on a verification of one of those events; a check without it
+  runs on every event. The event comes from the request, never from a check's name:
+  `VerifyRequest.event` when the caller sets it (the merge queue's re-check is
+  `merge_group`), else the criteria's (`repo-checks-release-v1` is `release`, every
+  other criteria `pull_request`, so a Work's checks step is `pull_request`).
+  `system update` submits the release check with `repo-checks-release-v1` when the
+  running release's `checks.ts` knows that name, and `code-checks.yaml` (`pull_request`)
+  otherwise, so an older Host is never sent a name it refuses. `on:` combines with `paths` (both must select the
+  check), a check that failed earlier in the Work runs again, and `install` and `build`
+  still run when a later check chosen needs them. A run where no check is chosen is
+  `inconclusive`. This repository's `.system/checks.yaml` does not use `on:` until a
+  release knows it (ct-2).
 - **Paths** (decision 5): a check with `paths` (globs, as GitHub Actions'
   `paths` filter, matched by `path.matchesGlob`) runs only when
   `git diff --name-only <base> <subject>` names a file they include: the patterns
@@ -105,7 +119,7 @@ checks:
 - **Criteria names** (df-26): the name a verify step gives is pinned in
   `checks@1`. `repo-checks-v1` (the rule above), `repo-checks-v2` (`code-checks.yaml`: v1, except that a run where no
   check ran, every one limited by `paths` the change does not touch, is `inconclusive`: "no check ran: every
-  check in .system/checks.yaml is limited by paths the change does not touch"; earlier pins keep v1) and
+  check in .system/checks.yaml is limited by paths the change does not touch"; earlier pins keep v1), `repo-checks-release-v1` (v2 on the event `release`, ct-1, written by `system update`) and
   `satisfied-tests-v1` (ro-15, `develop.yaml`'s `satisfied-check`: the same pinned file, but only
   the setup checks `install` and `build`, then exactly the tests of the input `tests`, one
   `<test file> "<test name>"` per line, each run as `node <file>` with that name; a test that

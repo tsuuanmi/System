@@ -10,7 +10,8 @@
 //      the evidence is a Work bound to the exact commit (the Host's `code.required-checks`). With a
 //      `current`, the commit is a change from it (`task new --against`, the base's `parent`): the
 //      verifier runs the checks `paths` selects for the files that differ between the two releases, from
-//      the new commit's own `.system/checks.yaml`; the first install checks the whole commit;
+//      the new commit's own `.system/checks.yaml`; the first install checks the whole commit. As the event `release` (a check's
+//      `on:`, Item ct-1) when the running release's verifiers know `repo-checks-release-v1`, else as `pull_request`;
 //   4. switch `current` (a new link renamed over it, so the switch is atomic);
 //   5. ask the Host, as a client of the new code, until it runs it: a hello of other code makes a Host
 //      whose `current` changed drain and exit 75, and the unit starts the new code (D). If it does not
@@ -33,6 +34,23 @@ steps:
       capability: release.install-check
       subject: $work.input
       criteria: install-check-v1
+`
+
+/**
+ * The Work of the release check when the running Host knows the criteria `repo-checks-release-v1` (Item ct-1): the checks that name
+ * `on: [release]` run, and those that name only other events do not. Written here, not a file of the repository, so no Workflow pins
+ * the new criteria before the running release knows it (the Q0 rule); an older running Host gets `code-checks.yaml`, as before.
+ */
+const RELEASE_CHECK_WORKFLOW = `# Written by \`system update\` (Item ct-1); not a file of the repository, so no Workflow pins the criteria (Q0).
+schema: system.workflow/v1
+id: release-check
+version: 1
+steps:
+  - id: checks
+    verify:
+      capability: code.required-checks
+      subject: $work.input
+      criteria: repo-checks-release-v1
 `
 
 /** The record a switch leaves while its afterInstall check has no passed verdict (Item upd-1). */
@@ -113,7 +131,10 @@ export async function update({ install, cli, origin, run, write, read, remove, e
     const running = before?.startsWith('releases/') ? before.slice('releases/'.length) : undefined
     log(`checking ${commit.slice(0, 12)} with its required checks, as a System Work${running ? `, as a change from the running release ${running.slice(0, 12)}` : ' (the first install: the whole commit)'}`)
     const task = (await must('system task new', run(cli, ['task', 'new', '--text', `Release check of ${commit} for the install`, '--repo', repo, '--ref', commit, ...(running ? ['--against', running] : [])]))).trim()
-    const checked = await run(cli, ['work', 'submit', '--workflow', join(release, 'workflows', 'code-checks.yaml'), '--input', task])
+    // The release event (ct-1) only when the Host that runs now knows its criteria: its checks.ts names it.
+    const knowsRelease = running !== undefined && (read(join(install, 'releases', running, 'packages', 'verifiers', 'src', 'checks.ts')) ?? '').includes('repo-checks-release-v1')
+    if (knowsRelease) write(join(install, 'release-check.yaml'), RELEASE_CHECK_WORKFLOW)
+    const checked = await run(cli, ['work', 'submit', '--workflow', knowsRelease ? join(install, 'release-check.yaml') : join(release, 'workflows', 'code-checks.yaml'), '--input', task])
     const work = checked.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
     // The verdict names the checks it skipped; the Work record carries it.
     const skipped = work.startsWith('work:') ? /skipped: ([\w.-]+(?:, [\w.-]+)*)/.exec((await run(cli, ['work', 'show', work])).stdout)?.[1] : undefined

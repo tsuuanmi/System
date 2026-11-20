@@ -99,6 +99,8 @@ export interface VerifyRequest {
   inputs?: Record<string, string>
   /** Evidence IDs of the verdicts this verify step gave earlier in the Work that were not a `pass`, oldest first. */
   earlier?: string[]
+  /** The event the verification runs on (GitHub Actions' event names, `on:` of a check); set by the caller, such as the merge queue's `merge_group`; absent: the verifier's own default. */
+  event?: 'pull_request' | 'merge_group' | 'release'
 }
 
 /**

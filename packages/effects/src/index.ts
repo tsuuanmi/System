@@ -44,7 +44,7 @@ export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (s
       // Deliberate (PLAN DP decision: a merge awaits an Approval): a changed verifier version holds the merge; the controller refuses a step with `error` instead.
       const attemptId = `merge:${intent.operationId}`
       // The same check slots as the checks step (df-14): at most `maxConcurrentChecks` suites run at once, merge re-checks included.
-      const asked = await askVerifier(store, { verifier, pin: pinned, onPinMismatch: 'hold', request: { workId: intent.workId, attemptId, stepId: intent.stepId, capability, subject, criteria }, around: (run) => capabilities.slots.withCheck(verifier, `${attemptId}:${randomUUID()}`, run) })
+      const asked = await askVerifier(store, { verifier, pin: pinned, onPinMismatch: 'hold', request: { workId: intent.workId, attemptId, stepId: intent.stepId, capability, subject, criteria, event: 'merge_group' }, around: (run) => capabilities.slots.withCheck(verifier, `${attemptId}:${randomUUID()}`, run) })
       if ('refusal' in asked) {
         if (asked.refusal.verdict === 'hold') { hold ??= asked.refusal.reason; continue }
         return { verdict: 'error', reason: asked.refusal.reason, evidence, verdicts }

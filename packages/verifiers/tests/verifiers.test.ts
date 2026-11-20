@@ -15,7 +15,7 @@ import { processSpawner } from '../../../test-support/process.ts'
 import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
 import { parseCheckFailure } from '../../work/src/failure-class.ts'
 import { failureLine } from '../src/reasons.ts'
-import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, requiredChecks } from '../src/checks.ts'
+import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, parseChecksFile, requiredChecks } from '../src/checks.ts'
 import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'system-verifiers-'))
@@ -119,7 +119,7 @@ test('an unknown criteria name refuses admission, naming the known ones: a typo 
   const verifier = requiredChecks(artifacts, processSpawner)
   const { task } = await taskOn(artifacts, repo(CHECKS))
   for (const name of ['v1', 'red-vl', 'repo-checks-v3', 'red-v1', 'tests-frozen-v1']) {
-    await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' }), /unknown criteria .*known: repo-checks-v1, repo-checks-v2, satisfied-tests-v1$/, name)
+    await assert.rejects(verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' }), /unknown criteria .*known: repo-checks-v1, repo-checks-v2, repo-checks-release-v1, satisfied-tests-v1$/, name)
   }
   await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
 })
@@ -900,4 +900,98 @@ test('v3: a prose [s9] not in sources still fails, and a citation only inside co
   const hidden = await citeV2(oneSource(), 'See `[s1]` only.', 'citations-v3')
   assert.equal(hidden.result.verdict, 'fail')
   assert.match(hidden.result.reason, /sources not cited in the report: s1/)
+})
+
+/** ct-1: `on:` names the events a check runs on (GitHub Actions' `on:`); the event comes from the request or the criteria name, never from a check's name. */
+const EVENT_CHECKS = 'checks:\n  - name: always\n    run: "true"\n  - name: pr\n    run: "true"\n    on: [pull_request]\n  - name: merge\n    run: "true"\n    on: [merge_group]\n  - name: rel\n    run: "true"\n    on: [release]\n  - name: pr-and-merge\n    run: "true"\n    on: [pull_request, merge_group]\n'
+
+async function eventWorld(yaml: string) {
+  const artifacts = store()
+  const repository = repo(yaml)
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const pin = (name: string) => verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' })
+  let n = 0
+  const verify = async (subject: string, criteria: string, extra: { event?: 'pull_request' | 'merge_group' | 'release'; earlier?: string[] } = {}) =>
+    verifier.verify({ workId: 'w', attemptId: `${RUN}-ev${n++}`, stepId: 'checks', capability: 'code.required-checks', subject, criteria, ...extra })
+  return { artifacts, repository, tree, pin, verify }
+}
+const ranOf = (reason: string) => /run: (.*?)(?:; skipped|$)/.exec(reason)![1]!.split(', ').map((x) => x.split(' ')[0])
+
+test('on: a file with and without it; a check without on runs on every event, and the default event is pull_request', async () => {
+  const w = await eventWorld(EVENT_CHECKS)
+  const subject = await change(w.artifacts, w.repository, w.tree.commit, { 'docs/a.md': 'x\n' })
+  const v2 = await w.pin('repo-checks-v2')
+  assert.deepEqual(ranOf((await w.verify(subject, v2)).reason), ['always', 'pr', 'pr-and-merge'])
+  const plain = await eventWorld(CHECKS)
+  const plainSubject = await change(plain.artifacts, plain.repository, plain.tree.commit, { 'docs/a.md': 'x\n' })
+  const plainCriteria = await plain.pin('repo-checks-v2')
+  const names = ['value-is-good', 'prints']
+  for (const event of [undefined, 'pull_request', 'merge_group', 'release'] as const) {
+    assert.deepEqual(ranOf((await plain.verify(plainSubject, plainCriteria, event ? { event } : {})).reason), names, String(event))
+  }
+})
+
+test('on: each of the three events selects exactly its checks (request event, or the release criteria)', async () => {
+  const w = await eventWorld(EVENT_CHECKS)
+  const subject = await change(w.artifacts, w.repository, w.tree.commit, { 'docs/a.md': 'x\n' })
+  const v2 = await w.pin('repo-checks-v2')
+  assert.deepEqual(ranOf((await w.verify(subject, v2, { event: 'pull_request' })).reason), ['always', 'pr', 'pr-and-merge'])
+  assert.deepEqual(ranOf((await w.verify(subject, v2, { event: 'merge_group' })).reason), ['always', 'merge', 'pr-and-merge'])
+  assert.deepEqual(ranOf((await w.verify(subject, v2, { event: 'release' })).reason), ['always', 'rel'])
+  const release = await w.pin('repo-checks-release-v1')
+  assert.deepEqual(ranOf((await w.verify(subject, release)).reason), ['always', 'rel'])
+  assert.deepEqual(ranOf((await w.verify(subject, release, { event: 'merge_group' })).reason), ['always', 'merge', 'pr-and-merge'], 'a request event wins over the criteria')
+  const skipped = await w.verify(subject, release)
+  assert.match(skipped.reason, /skipped: pr, merge, pr-and-merge$/)
+})
+
+test('on: combines with paths, and a check that failed earlier in the Work runs again on its event only', async () => {
+  const yaml = 'checks:\n  - name: always\n    run: "true"\n  - name: gate\n    run: test -f ok.txt\n    paths: ["src/**"]\n    on: [release]\n'
+  const artifacts = store()
+  const repository = repo(yaml, { 'ok.txt': 'ok\n' })
+  const { task, tree } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  let n = 0
+  const w = {
+    artifacts, repository, tree,
+    pin: (name: string) => verifier.criteria({ capability: 'code.required-checks', name, input: task, operatorId: 't' }),
+    verify: (subject: string, criteria: string, extra: { event?: 'pull_request' | 'merge_group' | 'release'; earlier?: string[] } = {}) => verifier.verify({ workId: 'w', attemptId: `${RUN}-pe${n++}`, stepId: 'checks', capability: 'code.required-checks', subject, criteria, ...extra }),
+  }
+  const v2 = await w.pin('repo-checks-v2')
+  const bad = await w.verify(await change(w.artifacts, w.repository, w.tree.commit, { 'src/a.ts': 'x\n', 'ok.txt': null }), v2, { event: 'release' })
+  assert.equal(bad.verdict, 'fail', bad.reason)
+  assert.match(bad.reason, /gate/)
+  const src = await change(w.artifacts, w.repository, w.tree.commit, { 'src/a.ts': 'x\n', 'ok.txt': 'ok\n' })
+  const docs = await change(w.artifacts, w.repository, w.tree.commit, { 'docs/n.md': 'n\n', 'ok.txt': 'ok\n' })
+  assert.deepEqual(ranOf((await w.verify(src, v2, { event: 'release' })).reason), ['always', 'gate'], 'event and path both match')
+  assert.deepEqual(ranOf((await w.verify(src, v2, { event: 'pull_request' })).reason), ['always'], 'path matches, event does not')
+  assert.deepEqual(ranOf((await w.verify(docs, v2, { event: 'release' })).reason), ['always'], 'event matches, path does not')
+  const again = await w.verify(docs, v2, { event: 'release', earlier: bad.evidence })
+  assert.match(again.reason, /run: always [\d.]+ s, gate [\d.]+ s \(failed earlier\)$/)
+  const otherEvent = await w.verify(docs, v2, { event: 'pull_request', earlier: bad.evidence })
+  assert.match(otherEvent.reason, /run: always [\d.]+ s, gate [\d.]+ s \(failed earlier\)$/, 'a failed check runs again as today, whatever the event')
+})
+
+test('on: a run where no check is chosen for the event stays inconclusive', async () => {
+  const w = await eventWorld('checks:\n  - name: rel\n    run: "true"\n    on: [release]\n')
+  const subject = await change(w.artifacts, w.repository, w.tree.commit, { 'docs/a.md': 'x\n' })
+  const result = await w.verify(subject, await w.pin('repo-checks-v2'), { event: 'merge_group' })
+  assert.equal(result.verdict, 'inconclusive', result.reason)
+  assert.equal(result.evidence.length, 0)
+})
+
+test('on: setup checks (install, build) run whenever a later chosen check needs them', async () => {
+  const w = await eventWorld('checks:\n  - name: install\n    run: "true"\n    on: [release]\n  - name: unit\n    run: "true"\n    on: [pull_request]\n')
+  const subject = await change(w.artifacts, w.repository, w.tree.commit, { 'docs/a.md': 'x\n' })
+  assert.deepEqual(ranOf((await w.verify(subject, await w.pin('repo-checks-v2'), { event: 'pull_request' })).reason), ['install', 'unit'])
+})
+
+test('on: the schema accepts the three events and refuses an unknown one, an empty list and a string', () => {
+  for (const event of ['pull_request', 'merge_group', 'release']) assert.ok(!('problem' in parseChecksFile(`checks:\n  - name: a\n    run: x\n    on: [${event}]\n`)), event)
+  for (const bad of ['[push]', '[]', 'release', '[pull_request, nightly]']) {
+    const parsed = parseChecksFile(`checks:\n  - name: a\n    run: x\n    on: ${bad}\n`)
+    assert.ok('problem' in parsed, bad)
+    assert.match((parsed as { problem: string }).problem, /on/, bad)
+  }
 })
