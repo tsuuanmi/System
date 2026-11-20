@@ -73,6 +73,9 @@ was checked against a tip that had moved. Decision 2 now reads:
   meanwhile, the change is merged and checked again on the new tip. GitHub's
   merge endpoint is no longer used: it merges onto whatever the tip is then.
   GitHub marks the pull request merged when `dev` holds its head.
+- `dev` still moves only to a commit whose required checks passed, now possibly
+  a batch's: several waiting changes chained on the tip and checked once, split
+  when the check fails (ct-3, [ADR-0014](ADR-0014-checks-in-tiers-by-event.md)); the default is one change.
 - A branch protection that requires pull requests refuses the push; the
   publish step then fails with that message. The outcome is reconciled by
   reading whether `dev` holds the change.

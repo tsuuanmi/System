@@ -485,6 +485,171 @@ test('the pull request body lists the changed tests with the Worker\'s reasons, 
   assert.match((pulls[0] as unknown as { body: string }).body, /Changed tests: none/)
 })
 
+// ct-3: the merge queue checks waiting changes as one batch (`mergeBatchSize`, default 1).
+/** main moves ahead by hand (so every change below needs a merge), then `files` become one change each on the old base; each is a stored subject. */
+async function waitingChanges(artifacts: Artifacts, work: string, run: (...args: string[]) => string, files: Record<string, string>[]) {
+  const base = run('rev-parse', 'HEAD~1')
+  run('checkout', '--quiet', '--detach', base)
+  writeFileSync(join(work, 'AHEAD.md'), 'ahead\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'ahead')
+  run('push', '--quiet', 'origin', 'HEAD:main')
+  const subjects: { subject: string; commit: string }[] = []
+  for (const change of files) {
+    run('checkout', '--quiet', '--detach', base)
+    for (const [path, text] of Object.entries(change)) writeFileSync(join(work, path), text)
+    run('add', '.')
+    run('commit', '--quiet', '-m', Object.keys(change).join(','))
+    subjects.push({ subject: await subjectOf(artifacts, work), commit: run('rev-parse', 'HEAD') })
+  }
+  return subjects
+}
+
+/** A publisher with a batch size whose check fails a commit holding BAD.md; `blocker` holds the queue until released, so the changes applied meanwhile wait together. */
+function batching(artifacts: Artifacts, work: string, size: number | undefined) {
+  const checked: string[] = []
+  let release = () => {}
+  const gate = new Promise<void>((r) => { release = r })
+  let first = true
+  const publisher = githubPublisher(artifacts, {
+    token: async () => undefined,
+    async check(subject) {
+      const read = artifacts.get(subject)
+      const commit = read.state === 'stored' ? (read.envelope.content as { commit: string }).commit : ''
+      checked.push(commit)
+      if (first) { first = false; await gate }
+      const files = execFileSync('git', ['-C', work, 'ls-tree', '-r', '--name-only', commit], { encoding: 'utf8' }).split('\n')
+      return files.includes('BAD.md') ? { verdict: 'fail', reason: 'BAD.md breaks the build', evidence: [] } : { verdict: 'pass', reason: 'all checks passed', evidence: [] }
+    },
+  }, mergeConfig({ mergeBatchSize: size }))
+  /** Apply the blocker, then the others while it is checked; release once they all wait. */
+  async function together(blocker: string, others: { subject: string; work: string }[]) {
+    const pending = publisher.apply(intent(blocker, merging, 'work:0000-blok'))
+    while (checked.length === 0) await new Promise((r) => setTimeout(r, 10))
+    const applies = others.map((o) => publisher.apply(intent(o.subject, merging, o.work)))
+    while (calls.filter((c) => c.startsWith('GET /repos/tester/scratch/pulls')).length < others.length + 1) await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 100))
+    release()
+    return { blocked: await pending, outcomes: await Promise.all(applies) }
+  }
+  return { publisher, checked, together }
+}
+const ids = ['work:1111-aaaa', 'work:2222-bbbb', 'work:3333-cccc']
+
+test('ct-3: a batch of 3 that passes costs one check run and one push, and records three applied outcomes naming the batch', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, bare, remoteRef } = setup()
+  const [blocker, a, b, c] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }, { 'B.md': 'b\n' }, { 'C.md': 'c\n' }])
+  const q = batching(artifacts, work, 3)
+  const { blocked, outcomes } = await q.together(blocker!.subject, [a!, b!, c!].map((x, i) => ({ subject: x.subject, work: ids[i]! })))
+  assert.equal(blocked.state, 'applied', blocked.reason)
+  assert.equal(q.checked.length, 2, 'the blocker\'s check, then one for the whole batch')
+  const finalCommit = q.checked[1]!
+  assert.deepEqual(outcomes.map((o) => o.state), ['applied', 'applied', 'applied'])
+  assert.equal(remoteRef('main'), finalCommit, 'main moved once, to the checked commit')
+  assert.equal(new Set(outcomes.map((o) => o.detail.batch)).size, 1)
+  assert.equal(outcomes[0]!.detail.batch, finalCommit)
+  assert.match(outcomes[0]!.reason, /batch of 3/)
+  // A chain: tip + a + b + c.
+  assert.deepEqual(parents(bare, finalCommit).includes(c!.commit), true)
+  for (const [o, x, i] of [[outcomes[0]!, a!, 0], [outcomes[1]!, b!, 1], [outcomes[2]!, c!, 2]] as const) {
+    assert.equal(o.detail.commit, x.commit)
+    assert.equal(o.detail.merged, 'true')
+    assert.equal(remoteRef(`system/${ids[i]!.slice(5)}`), o.detail.mergeCommit)
+    assert.equal(execFileSync('git', ['-C', bare, 'merge-base', '--is-ancestor', o.detail.mergeCommit!, finalCommit]).length, 0)
+  }
+  assert.equal(outcomes[2]!.detail.mergeCommit, finalCommit)
+})
+
+test('ct-3: a batch of 3 with one change at fault is split; the two good ones merge, the bad one is refused with its own reason', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, remoteRef } = setup()
+  const [blocker, a, bad, c] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }, { 'BAD.md': 'x\n' }, { 'C.md': 'c\n' }])
+  const q = batching(artifacts, work, 3)
+  const { outcomes } = await q.together(blocker!.subject, [a!, bad!, c!].map((x, i) => ({ subject: x.subject, work: ids[i]! })))
+  assert.deepEqual(outcomes.map((o) => o.state), ['applied', 'failed', 'applied'])
+  assert.match(outcomes[1]!.reason, /BAD\.md breaks the build/)
+  assert.equal((outcomes[1] as { rejected?: string }).rejected, 'merge-check')
+  assert.equal(outcomes[1]!.detail.commit, bad!.commit)
+  assert.equal(execFileSync('git', ['-C', work, 'ls-tree', '--name-only', remoteRef('main')], { encoding: 'utf8' }).includes('BAD.md'), false)
+  const tree = execFileSync('git', ['-C', work, 'ls-tree', '-r', '--name-only', remoteRef('main')], { encoding: 'utf8' }).split('\n')
+  assert.ok(tree.includes('A.md') && tree.includes('C.md'))
+  assert.ok(q.checked.length >= 4, 'the blocker, the batch, then the halves')
+})
+
+test('ct-3: a change that conflicts inside a batch fails with a conflict; the others merge', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, remoteRef } = setup()
+  const [blocker, a, x, y] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }, { 'SAME.md': 'one\n' }, { 'SAME.md': 'two\n' }])
+  const q = batching(artifacts, work, 3)
+  const { outcomes } = await q.together(blocker!.subject, [a!, x!, y!].map((s, i) => ({ subject: s.subject, work: ids[i]! })))
+  assert.deepEqual(outcomes.map((o) => o.state), ['applied', 'applied', 'failed'])
+  assert.match(outcomes[2]!.reason, /merge conflict with main at [0-9a-f]{12}: SAME\.md/)
+  assert.equal(outcomes[2]!.cause, 'conflict')
+  assert.equal((outcomes[2] as { rejected?: string }).rejected, 'conflict')
+  const tree = execFileSync('git', ['-C', work, 'ls-tree', '-r', '--name-only', remoteRef('main')], { encoding: 'utf8' }).split('\n')
+  assert.ok(tree.includes('A.md') && tree.includes('SAME.md'))
+})
+
+test('ct-3: a change with an approved merge commit is never batched', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run, remoteRef } = setup()
+  const [, a] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }])
+  // Hold, then approve: the held merge of `a` on main's tip is pushed as it is, though the size is 3.
+  const probe = githubPublisher(artifacts, { token: async () => undefined, check: async () => ({ verdict: 'hold', reason: 'inconclusive: flaky', evidence: [] }) }, mergeConfig())
+  const held = await probe.apply(intent(a!.subject, merging, ids[0]!)) as EffectOutcome & { held?: string }
+  assert.ok(held.held)
+  const tip = remoteRef('main')
+  const q = batching(artifacts, work, 3)
+  const done = await q.publisher.apply({ ...intent(a!.subject, merging, ids[0]!), approvedMerge: held.held })
+  assert.equal(done.state, 'applied', done.reason)
+  assert.deepEqual(q.checked, [], 'the approved commit is pushed with no check, as a single')
+  assert.equal(parents(work, done.detail.mergeCommit!)[0], tip)
+  assert.equal(done.detail.batch, undefined)
+})
+
+test('ct-3: a Host restart mid-batch reconciles by reading the base, never by merging again', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, run } = setup()
+  const [blocker, a, b, c] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }, { 'B.md': 'b\n' }, { 'C.md': 'c\n' }])
+  const q = batching(artifacts, work, 3)
+  const subjects = [a!, b!, c!]
+  const before = await Promise.all(subjects.map((s, i) => q.publisher.reconcile(intent(s.subject, merging, ids[i]!))))
+  assert.deepEqual(before.map((r) => r.state), ['absent', 'absent', 'absent'])
+  await q.together(blocker!.subject, subjects.map((s, i) => ({ subject: s.subject, work: ids[i]! })))
+  // A new Host: a fresh publisher, which has no memory of the batch. It checks and merges nothing.
+  const restarted = batching(artifacts, work, 3)
+  const after = await Promise.all(subjects.map((s, i) => restarted.publisher.reconcile(intent(s.subject, merging, ids[i]!))))
+  assert.deepEqual(after.map((r) => r.state), ['applied', 'applied', 'applied'])
+  assert.deepEqual(restarted.checked, [])
+  assert.equal(calls.filter((c2) => c2.startsWith('PUT ')).length, 0)
+})
+
+test('ct-3: a mergeBatchSize that is not a whole number of at least 1 is refused', () => {
+  for (const bad of [0, -1, 1.5, Number.NaN, '3' as unknown as number]) {
+    assert.throws(() => githubPublisher(store(), { token: async () => undefined }, mergeConfig({ mergeBatchSize: bad })), /mergeBatchSize must be a whole number of at least 1/)
+  }
+})
+
+test('ct-3: with size 1 (and with the option absent) waiting changes are checked one by one, each on its own merge', async () => {
+  for (const size of [1, undefined]) {
+    fresh()
+    const artifacts = store()
+    const { work, run } = setup()
+    const [blocker, a, b] = await waitingChanges(artifacts, work, run, [{ 'B0.md': '0\n' }, { 'A.md': 'a\n' }, { 'B.md': 'b\n' }])
+    const q = batching(artifacts, work, size)
+    const { outcomes } = await q.together(blocker!.subject, [a!, b!].map((s, i) => ({ subject: s.subject, work: ids[i]! })))
+    assert.deepEqual(outcomes.map((o) => o.state), ['applied', 'applied'])
+    assert.equal(q.checked.length, 3)
+    assert.equal(outcomes[0]!.detail.batch, undefined)
+  }
+})
+
 // fl-8: build and cache output is never published, whatever .gitignore says.
 function commitFiles(run: (...args: string[]) => string, work: string, files: Record<string, string>) {
   for (const [path, text] of Object.entries(files)) {
