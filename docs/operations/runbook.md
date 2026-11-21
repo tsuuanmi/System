@@ -499,11 +499,8 @@ A conflict fails the publish step naming the files; a check that fails on the
 merge names it in the reason. Do not require pull requests in `dev`'s branch
 protection: the push would be refused.
 
-**Batch size (ct-3).** The `effects` row's `mergeBatchSize` (in `~/.system/profile.yml`, next to `mergeInto`)
-is how many waiting changes the queue checks as one batch. It is a whole number of at least 1, default 1, which is
-one change at a time; an invalid value stops the Host at start. Set it, restart the Host, and watch the first batches:
-a passing batch shows one `merge_group` check and outcomes with `detail.batch`; a failing one is split, so the change
-at fault is refused with its own reason. Set it back to 1 to return to the old behaviour.
+The queue merges one change at a time; a profile that still sets `mergeBatchSize`
+stops the Host at start (the option was removed, ct-4).
 
 A hand push to `dev` can run the fast checks first: in your checkout run
 `git config core.hooksPath tools/hooks` (`tools/hooks/pre-push`; bypass once with `git push --no-verify`).

@@ -27,7 +27,6 @@ The controller records `effect-intended` before `apply` and
     apiUrl: https://api.github.com
     repository: owner/name           # optional; parsed from a github.com remote
     tokenRef: GITHUB_TOKEN           # system credentials set GITHUB_TOKEN
-    mergeBatchSize: 1                # optional; changes the merge queue checks as one batch (ct-3), default 1
 ```
 
 - **Apply:** push the exact `git-tree` commit to `system/<work>` with a
@@ -74,17 +73,7 @@ The controller records `effect-intended` before `apply` and
   `checkedOn` (the tip it was checked with). GitHub's merge endpoint is not
   used. A branch protection requiring pull requests refuses the push, which
   is `failed` with git's message.
-- **Batches (ct-3, `mergeBatchSize`):** `1`, the default and the whole of the
-  above, is one change at a time. With N > 1 the head of a base's queue takes up
-  to N changes waiting for it and chains them on the tip (tip + c1 + c2 ...). It
-  runs the re-check once on the final commit (`merge_group`, in a check slot),
-  and on a pass pushes the base to it with a lease on the tip; each Work records
-  its own `applied` outcome with `detail.batch`, the commit the batch was checked
-  on. On a fail or a `hold` the batch is split in two and each half checked, the
-  first first, down to single changes, which behave as above. A change whose merge
-  conflicts, and one that already is in the base, leaves the batch and goes alone
-  afterwards; a change with an approved merge commit is never batched. A restart
-  reconciles by reading whether the base holds each change, never by merging again.
+- **One at a time:** the queue merges one change at a time; the batch mode of ct-3 was removed (ct-4), and a profile that still sets `mergeBatchSize` stops the Host at start.
 - **Build output (fl-8):** before any push, apply lists the files the change
   adds to its base (`git diff --diff-filter=A`; the base is the change's
   parent, else the merge base with the remote-tracking base branch). A
