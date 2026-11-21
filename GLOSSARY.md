@@ -134,6 +134,12 @@ The operator merging `dev` into `main` after reading a release report. System
 never makes a Release.
 _Avoid_: deploy, ship; checkpoint (a milestone's internal gate)
 
+**Batch**:
+The Items under one Intent that are run and then released once. The operator
+accepts a Batch in one act and notes the product's own measure before and after
+it.
+_Avoid_: lot, sprint; merge group (changes a merge queue checks together)
+
 **Scheduled session**:
 A caller session started on a schedule, with no operator present, that picks
 Ready Items and carries them through Works within fixed limits; it never

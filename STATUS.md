@@ -1,5 +1,5 @@
 # System status
-Aim: System is a durable work control plane on DSH.
+Aim: System is the gate and the ledger for the work one operator delegates to AI Workers, hosted on DSH.
 Done Items of finished milestones (SC to FL) were removed on 2026-11-17; they are in git history and PLAN section 1.
 - [ ] rb-1 A check `upgrade` in `.system/checks.yaml` rehearses a release: it builds an install of the last release (`main`) in a temporary home, runs that install's `system update` to the commit under check, and requires the update to keep the new release with its afterInstall Verdict passed; `paths` limit it to bin/, packages/host, packages/app, packages/verifiers, packages/work, .system/checks.yaml and workflows/ (3 of the last 4 Escaped defects were release-boundary defects that only an update from the previous release shows)
 - [ ] rb-2 A git `pre-push` hook (tools/hooks/pre-push, enabled with `git config core.hooksPath tools/hooks`) runs the fast checks (docs, statusmd, typecheck, unit) before a push to `dev` made by hand; System's own publish is not affected (the operator's emergency commit b2d4e0d reached dev without checks and left a failing test)
