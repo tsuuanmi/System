@@ -349,6 +349,58 @@ test('a Work submitted for one Worker runs its Worker steps only there, and is r
   assert.equal(free.events.find((e) => e.type === 'dispatched')?.type === 'dispatched' && free.events.find((e) => e.type === 'dispatched')!.selected, 'fake')
 })
 
+test('an unpinned Work is refused at admit when no registered Account provides all capabilities of a Worker step, even with force', async () => {
+  const table = memoryWorkTable()
+  const specs = memorySpecs()
+  const capabilities = new Capabilities()
+  const noop = async (): Promise<WorkerResult> => ({ status: 'succeeded', outputs: {} })
+  capabilities.registerWorker({ ref: 'partial-a', capabilities: ['research', 'web.search'], run: noop })
+  capabilities.registerWorker({ ref: 'partial-b', capabilities: ['tier.standard'], run: noop })
+  capabilities.registerVerifier({
+    ref: 'fake-verifier',
+    version: '1',
+    capabilities: ['research.citation-check'],
+    accepts: ['output'],
+    async criteria(request) {
+      const c = id(`criteria/${request.name}`)
+      specs.stored.add(c)
+      return c
+    },
+    async verify(request) { return { verdict: 'pass', reason: 'ok', subject: request.subject, criteria: request.criteria, evidence: [] } },
+  })
+  const controller = new WorkController(table, specs, capabilities)
+  const spec = resolve(parseWorkflow(fixture('research.yaml')), capabilities.available(), fixture)
+  const taskId = id('task-unpinned-refusal')
+  specs.stored.add(taskId)
+  await assert.rejects(
+    () => controller.admit({ spec, input: taskId, force: true, caller, source: { kind: 'workflow-file' } }),
+    /no registered Account provides web\.search, tier\.standard for step investigate \(closest: partial-a lacks tier\.standard\)/,
+  )
+  const unknownSpec = directTask(['no.such.capability'], false, { workers: new Set(['no.such.capability']), verifiers: new Set(), effects: new Set() })
+  await assert.rejects(
+    () => controller.admit({ spec: unknownSpec, caller, source: { kind: 'direct-task' } }),
+    /no registered Account provides no\.such\.capability for step task \(closest: partial-a lacks no\.such\.capability\)/,
+  )
+  assert.equal(controller.list().length, 0)
+})
+
+test('an unpinned Work whose only capable Account is over its Ceiling is admitted', async () => {
+  const table = memoryWorkTable()
+  const specs = memorySpecs()
+  const capabilities = new Capabilities()
+  capabilities.registerWorker({
+    ref: 'capped',
+    capabilities: ['research'],
+    quotaCeilingPercent: 80,
+    quota: async () => ({ observedAt: '2026-11-10T00:00:00Z', windows: { five_hour: { percentUsed: 95 } } }),
+    run: async () => ({ status: 'succeeded', outputs: {} }),
+  })
+  const controller = new WorkController(table, specs, capabilities)
+  const spec = directTask(['research'], false, capabilities.available())
+  const admitted = await controller.admit({ spec, caller, source: { kind: 'direct-task' } })
+  assert.equal(admitted.events[0]!.type, 'admitted')
+})
+
 test('a cancel during an attempt keeps its partial output, and retry hands it on as previous', async () => {
   const h = harness({
     worker: {

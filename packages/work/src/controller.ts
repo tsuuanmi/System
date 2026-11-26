@@ -256,6 +256,15 @@ export class WorkController {
         const missing = s.capabilities.filter((c) => !this.capabilities.workerFor(admission.worker!)!.capabilities.includes(c))
         if (missing.length) throw new WorkError(`${admission.worker} does not provide ${s.capabilities.join(', ')} for step ${s.id} (lacks ${missing.join(', ')})`)
       }
+    } else {
+      const workers = this.capabilities.workerRefs().map((ref) => this.capabilities.workerFor(ref)!)
+      for (const s of admission.spec.steps.filter(isWorkerStep)) {
+        const gaps = workers.map((w) => ({ ref: w.ref, missing: s.capabilities.filter((c) => !w.capabilities.includes(c)) }))
+        if (gaps.some((g) => g.missing.length === 0)) continue
+        const closest = gaps.reduce<typeof gaps[number] | undefined>((best, g) => (!best || g.missing.length < best.missing.length ? g : best), undefined)
+        const detail = closest ? `closest: ${closest.ref} lacks ${closest.missing.join(', ')}` : 'no Accounts registered'
+        throw new WorkError(`no registered Account provides ${s.capabilities.join(', ')} for step ${s.id} (${detail})`)
+      }
     }
     // Pin every verify step's criteria now: later edits to a repository or a verifier's defaults cannot change them.
     const criteria: Record<string, string> = {}
