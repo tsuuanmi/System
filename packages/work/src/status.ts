@@ -111,12 +111,23 @@ export function itemBlockedBy(status: Pick<ParsedStatus, 'items'>, repository: s
 }
 
 /**
+ * When an Item is Idle (GLOSSARY): claimed with no active Work, or an active Work that is not held and has no live entry (no
+ * attempt, no quota or check-slot wait). Its claim time or the Work's last event time; undefined when it is not idle. Report only.
+ */
+function idleSince(active: WorkRecord[], claim: Claim | undefined, live: ((workId: string) => LiveAttempt[]) | undefined): string | undefined {
+  if (!active.length) return claim?.at
+  if (!live) return undefined
+  const idle = active.filter((r) => r.state.status !== 'held' && !quotaWait(r) && live(r.id).length === 0)
+  return idle.length === active.length ? idle.map((r) => r.events.at(-1)!.at).sort().at(-1) : undefined
+}
+
+/**
  * One line per Item, as `[x] <id> <title> - <state>`: `done` (ticked in
  * STATUS.md, or a Work for it was merged into `dev` or ended Satisfied; with the last merged or
  * succeeded Work and its final Artifact, when there is one), `doing` (each Work
  * running or held: which step, on which Account, since when, and the progress
  * the Host holds for it, or why it is held; or a session's claim: who, since when) or `todo: nobody`; a `todo` Item that comes after Items not done (`(after: id, id)` in STATUS.md) reads `todo (blocked by <ids>)`, or `todo (blocked: cycle)`. An Item only
- * the Works name is shown as not in STATUS.md. Without `live`, no progress. A done Item whose last merged Work's merge commit `released` says is not in the running release reads `done, not yet released`.
+ * the Works name is shown as not in STATUS.md. A `doing` Item claimed with no active Work, or whose active Work is not held and neither runs nor waits (needs `live`), ends `; idle since <time>` (claim time, or the Work's last event). Without `live`, no progress. A done Item whose last merged Work's merge commit `released` says is not in the running release reads `done, not yet released`.
  */
 export function itemLines(
   status: Pick<ParsedStatus, 'items'>, repository: string | undefined, records: WorkRecord[],
@@ -138,12 +149,13 @@ export function itemLines(
     const claim = claims.find((c) => c.item === item.id && c.repository === repository)
     const state = isDone(item, works) ? 'done' : active.length || claim ? 'doing' : 'todo'
     if (filter.state && filter.state !== state) continue
+    const idle = state === 'doing' ? idleSince(active, claim, live) : undefined
     const blocked = state === 'todo' ? itemBlockedBy(status, repository, records, item.id) : undefined
     const last = merged.at(-1) ?? satisfied.at(-1) ?? works.findLast((r) => r.state.status === 'succeeded')
     const outside = works.reduce((n, r) => n + summarize(r).outsideFailures, 0)
     const text = state === 'done'
       ? `done${satisfied.length && !merged.length ? ', satisfied' : ''}${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, finalArtifactOf(last)].filter(Boolean).join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
-      : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}`
+      : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}${idle ? `; idle since ${idle}` : ''}`
         : blocked ? `todo (${blockedText(blocked)})` : 'todo: nobody'
     lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}${'intent' in item && item.intent ? ` (intent: ${item.intent})` : ''}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }

@@ -12,6 +12,7 @@ import { fold, type WorkEvent, type WorkRecord } from '../src/record.ts'
 import { Capabilities, type WorkerRequest } from '../src/registry.ts'
 import { ItemGate, readStatus } from '../src/gate.ts'
 import { itemLines, parseStatus, workStatus } from '../src/status.ts'
+import type { LiveAttempt } from '../src/live.ts'
 import { directTask, type ResolvedSpec } from '../src/workflow.ts'
 
 const caller = { type: 'human', operatorId: 'tan' } as const
@@ -185,7 +186,7 @@ test('each state: done from dev, doing from a running Work with its live progres
   const release = hold()
   const work = await admit(task(dir, 'df-3'))
   // Admitted and never run: still doing (it blocks the Item), but said not to be running.
-  assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}`)
+  assert.equal(lines()[1], `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}; idle since ${work.events.at(-1)!.at}`)
   assert.equal(workStatus(controller.get(work.id)!), 'admitted, not running')
   const running = controller.run(work.id)
   await settle(() => controller.live(work.id))
@@ -446,7 +447,7 @@ test('a session can claim an Item before it submits a Work: status shows who and
   const line = () => itemLines(status, dir, controller.list(), () => [], { item: 'df-3' }, itemGate.claims())[0]
   const claimed = await itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
   assert.equal(claimed.who, 'session-a')
-  assert.equal(line(), `[ ] df-3 The status of a project - doing: claimed by session-a since ${claimed.at}`)
+  assert.equal(line(), `[ ] df-3 The status of a project - doing: claimed by session-a since ${claimed.at}; idle since ${claimed.at}`)
   assert.deepEqual(itemLines(status, dir, controller.list(), () => [], { state: 'doing' }, itemGate.claims()).length, 1)
   assert.match(itemLines(status, dir, controller.list(), () => [], { item: 'df-4' }, itemGate.claims())[0]!, /todo: nobody/)
 
@@ -458,7 +459,7 @@ test('a session can claim an Item before it submits a Work: status shows who and
   // A Work submitted for the Item takes the claim over: the line shows the Work, not the claim.
   const work = await admit(task(dir, 'df-3'))
   assert.deepEqual(itemGate.claims(), [])
-  assert.equal(line(), `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}`)
+  assert.equal(line(), `[ ] df-3 The status of a project - doing: ${work.id} admitted, not running since ${work.events[0]!.at}; idle since ${work.events.at(-1)!.at}`)
   // An Item with a running Work cannot be claimed.
   await assert.rejects(itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' }), (error: Error) => error.message.includes(work.id))
 })
@@ -614,4 +615,38 @@ test('a Work waiting on quota shows the wait and its reset from the record alone
   const line = (records: WorkRecord[]) => itemLines(status, dir, records, () => [], { item: 'df-3' })[0]
   assert.match(line(waiting('2026-11-10T05:00:00.000Z'))!, /doing: .* step task since .*; quota wait until 2026-11-10T05:00:00\.000Z$/)
   assert.match(line(waiting())!, /; quota wait, reset unknown$/)
+  assert.doesNotMatch(line(waiting())!, /idle/, 'a quota wait is a wait')
+})
+
+test('idle: a claimed Item with no Work, or a Work that neither runs nor waits, says idle since; a running, waiting or held Work does not', async () => {
+  const dir = repository(STATUS)
+  const { controller, task, admit, hold, itemGate } = setup()
+  const status = await readStatus(dir)
+  const line = (live: (id: string) => LiveAttempt[]) => itemLines(status, dir, controller.list(), live, { item: 'df-3' }, itemGate.claims())[0]!
+  const claimed = await itemGate.claim(dir, 'df-3', { type: 'agent', operatorId: 'session-a' })
+  assert.match(line(() => []), new RegExp(`claimed by session-a since ${claimed.at}; idle since ${claimed.at}$`))
+  assert.equal(itemGate.claims().length, 1, 'report only: the Claim is kept')
+
+  const release = hold()
+  const work = await admit(task(dir, 'df-3'))
+  const attempt = (extra: Partial<LiveAttempt>): LiveAttempt => ({ stepId: 'task', attemptId: 'a1', worker: 'fake/claude', startedAt: work.events[0]!.at, lastActivityAt: work.events[0]!.at, elapsedSeconds: 0, quietSeconds: 0, stalled: false, ...extra })
+  assert.match(line(() => []), /idle since /)
+  assert.doesNotMatch(line(() => [attempt({})]), /idle/)
+  assert.doesNotMatch(line(() => [attempt({ attemptId: '', waiting: 'quota' })]), /idle/)
+  assert.doesNotMatch(line(() => [attempt({ attemptId: '', waiting: 'a check slot' })]), /idle/)
+  assert.doesNotMatch(itemLines(status, dir, controller.list(), undefined, { item: 'df-3' }, itemGate.claims())[0]!, /idle/, 'without live data nothing is known')
+  release()
+  await controller.run(work.id)
+})
+
+test('idle: a held Work awaits a human and is not reported idle', async () => {
+  const dir = repository(STATUS)
+  const { controller, task, admit } = setup()
+  const status = await readStatus(dir)
+  const work = await admit(task(dir, 'df-3'))
+  const record = controller.get(work.id)!
+  const held = { ...record, state: { ...record.state, status: 'held' as const, reason: 'needs a human' } }
+  const text = itemLines(status, dir, [held], () => [], { item: 'df-3' })[0]!
+  assert.match(text, /held: needs a human/)
+  assert.doesNotMatch(text, /idle/)
 })

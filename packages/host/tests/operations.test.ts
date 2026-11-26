@@ -165,7 +165,7 @@ test('every method of the table round-trips over the socket', async () => {
   // A claim before a Work: status shows who and since when; an Item that is not in STATUS.md cannot be claimed.
   const claimed = await call('item.claim', { repository: project, item: 'p-2', commandId: 'c-claim' }) as { who: string; at: string }
   assert.equal(claimed.who, 'tan')
-  assert.equal(((await call('status', { repository: project, item: 'p-2' })) as string[])[0], `[ ] p-2 Second - doing: claimed by tan since ${claimed.at}`)
+  assert.equal(((await call('status', { repository: project, item: 'p-2' })) as string[])[0], `[ ] p-2 Second - doing: claimed by tan since ${claimed.at}; idle since ${claimed.at}`)
   // The same commandId twice is one claim: the repeat is answered from the first (same `at`), not made again.
   const first = await call('item.claim', { repository: project, item: 'p-3', commandId: 'c-twice' }) as { who: string; at: string }
   await new Promise((resolve) => setTimeout(resolve, 25))
