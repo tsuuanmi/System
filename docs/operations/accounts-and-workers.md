@@ -3,7 +3,7 @@ type: operations
 status: active
 reviewed: 2026-11-26
 summary: The profile config, Accounts and their slots, and the Antigravity and web Workers.
-covers: [packages/bundle/cordis.patch.yml, packages/bundle/system-web-canary.service, packages/bundle/system-web-canary.timer]
+covers: [packages/bundle/system-web-canary.service, packages/bundle/system-web-canary.timer]
 ---
 
 # Accounts and Workers
