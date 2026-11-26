@@ -76,7 +76,7 @@ full ID. The compiler's refusals (recursion, depth, a Sub-workflow with an accep
 steps once joined) are in `workflow.ts`. The resolved spec has no `uses` left, so the
 controller, replay, per-step retry, slots and budgets apply as written. 
 The CLI sends the used files it finds beside the using file; the Host reads the rest
-([runbook](../operations/runbook.md#using-system-from-an-agent)).
+([runbook](../operations/using-system.md#using-system-from-an-agent)).
 
 Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
 another schema version, duplicate steps, unknown or self dependencies, cycles

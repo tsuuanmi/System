@@ -124,7 +124,7 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
     read-only connection a Host upgrading to other code serves reads on.
   - Following, exit codes (0, 1, 3, 5), Ctrl-C detaching (or
     `--cancel-on-interrupt`) and the "not running" line are in the
-    [runbook](../operations/runbook.md#following-a-work-and-detaching).
+    [runbook](../operations/using-system.md#following-a-work-and-detaching).
   - `approve` and `deny` keep the terminal confirmation and send
     `approval.decide` after it, on a connection whose caller is human.
   - `doctor` still boots DSH and also reports whether a Host answers.
@@ -135,7 +135,7 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   client; the log is the truth, so a notice sent while it was away loses
   nothing, and a watch on a Work that already ended replies with its final
   `{ status, seq }`. `system mcp` turns it into MCP resource subscriptions (the
-  [runbook](../operations/runbook.md#using-system-from-an-agent)).
+  [runbook](../operations/using-system.md#using-system-from-an-agent)).
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact
   subject at a terminal, and the Host checks that subject again before it

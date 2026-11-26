@@ -20,7 +20,7 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
 | `verifiers` | `@system/verifiers` | `verifiers` | no | `code.required-checks`, `research.citation-check` (ADR-0003, ADR-0004) |
 | `effects` | `@system/effects` | `effects` | no | `git.publish` to GitHub (ADR-0004 decision 10): push, a pull request, and a merge only into `mergeInto` (`dev`, ADR-0008); token `GITHUB_TOKEN` |
-| `web-worker` | `@system/web-worker` | `webWorker` | no, **off** | the `web` Runtime for accounts of the `agents` row; enable with `disabled: false` ([runbook](../../docs/operations/runbook.md#the-web-account)); off, such accounts are unavailable ("the web-worker row is disabled") and nothing of the browser is loaded |
+| `web-worker` | `@system/web-worker` | `webWorker` | no, **off** | the `web` Runtime for accounts of the `agents` row; enable with `disabled: false` ([runbook](../../docs/operations/accounts-and-workers.md#the-web-account)); off, such accounts are unavailable ("the web-worker row is disabled") and nothing of the browser is loaded |
 | `agents` | `@system/agents` | `agents` | no | Claude Code and Codex accounts as Workers (ADR-0004, ADR-0005); accounts without a CLI or credential are skipped; Brainstorm roles are account capabilities |
 | `classifier` | `@system/classifier` | `classifier` | no, **off** | answers closed questions (`classifiers/*.yaml`) about an Artifact with an economy-tier Account of `agents`, recorded as `classification@1`; report-only (`work report`); enable with `disabled: false`; off, reports are as before |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
@@ -39,7 +39,7 @@ is listed before `agents`, which reads its service when it starts; `classifier` 
 for a systemd user timer that runs [`tools/web-canary`](../../tools/web-canary)
 every six hours, with a random delay and a catch-up after downtime. They are not
 part of the profile and `system init` does not install them; the
-[runbook](../../docs/operations/runbook.md#the-web-canary) says how.
+[runbook](../../docs/operations/accounts-and-workers.md#the-web-canary) says how.
 
 ## Night session units
 
@@ -48,13 +48,13 @@ part of the profile and `system init` does not install them; the
 nightly user timer that runs `claude -p` (through [`system-night-session.sh`](system-night-session.sh), which gives it `--allowedTools`, stores its answer as the report and sends the ID) with
 [`tools/night-session.md`](../../tools/night-session.md); not installed by
 `system init`, off until enabled, not run late. See the
-[runbook](../../docs/operations/runbook.md#the-scheduled-sessions-prompt).
+[runbook](../../docs/operations/scheduled-session.md#the-scheduled-sessions-prompt).
 
 ## Changing a row's config
 
 An entry of the profile's own patch with `config` merges into this bundle's
 config of that row instead of replacing it, accounts by `ref`
-([runbook](../../docs/operations/runbook.md#changing-the-profiles-config)).
+([runbook](../../docs/operations/accounts-and-workers.md#changing-the-profiles-config)).
 
 ## Disabling a row
 
