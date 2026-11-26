@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: active
-reviewed: 2026-11-26
+reviewed: 2026-11-27
 decided-by: [ADR-0002, ADR-0006]
 covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*.yaml]
 ---
@@ -97,7 +97,8 @@ gives to one account each. Research's `investigate` has `prefer: web.browse`, an
 [workflows/README.md](../../workflows/README.md)). Since the B3 evaluation (RES-0008,
 [retired](../governance/retired.md)) the two proposals also take
 different stances (pragmatist and skeptic) through their step instructions;
-the one-shared-prompt variant is kept in `workflows/experiments/`.
+the one-shared-prompt variant and other non-canonical Workflows (such as `review-replay.yaml`) are kept in
+[workflows/experiments/](../../workflows/experiments/README.md).
 The `implement` instructions of `develop.yaml` and `hygiene.yaml` also tell the Worker to run the
 repository's cheap docs checks (`tools/docs.py check`, `sync --check`, `impact <base>`) before
 finishing, only when the repository has `tools/docs.py`, so Workflows stay generic.
