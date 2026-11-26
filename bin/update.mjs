@@ -56,13 +56,48 @@ steps:
 /** The record a switch leaves while its afterInstall check has no passed verdict (Item upd-1). */
 export const PENDING = 'pending-install-check.json'
 
+const DEFAULT_WAIT_MS = 75 * 60_000
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'held'])
+
+/**
+ * Wait for `workId` by polling `work show` until it reaches a terminal state (`succeeded`, `failed`, `cancelled`, `held`)
+ * or `waitMs` elapses. Fails closed (no terminal status, with `error`) when the Work cannot be read or times out.
+ */
+async function waitForWork({ show, workId, sleep, now, waitMs }) {
+  const until = now() + waitMs
+  for (;;) {
+    const shown = await show()
+    if (shown.status !== 0) {
+      return { status: undefined, stdout: shown.stdout, error: `cannot read ${workId}: status ${shown.status}` }
+    }
+    let record
+    try {
+      record = JSON.parse(shown.stdout)
+    } catch {
+      return { status: undefined, stdout: shown.stdout, error: `cannot read ${workId}: invalid JSON` }
+    }
+    const status = record?.state?.status
+    if (typeof status !== 'string') {
+      return { status: undefined, stdout: shown.stdout, error: `cannot read ${workId}: missing state.status` }
+    }
+    if (TERMINAL.has(status)) {
+      return { status, stdout: shown.stdout, reason: typeof record.state.reason === 'string' ? record.state.reason : undefined }
+    }
+    if (now() >= until) {
+      return { status: undefined, stdout: shown.stdout, error: `timed out waiting for ${workId} (${status})` }
+    }
+    await sleep(5000)
+  }
+}
+
 /**
  * Complete the install check the record names: submit the install-check Work with the NEW release's client (the Host runs it, and
  * refuses an older client), remove the record on a pass, and on a failure switch `current` back to the release before and remove it
  * (the Host then upgrades to that code). Called by `system update` once the Host runs the release, and by the Host that starts on it
  * when the update was killed (`system update --finish-pending`). Resolves whether the check passed (true when no record).
  */
-export async function finishInstallCheck({ install, run, read, write, remove, switchLink, log }) {
+export async function finishInstallCheck({ install, run, read, write, remove, switchLink, log, sleep = defaultSleep, now = Date.now, waitMs = DEFAULT_WAIT_MS }) {
   const text = read(join(install, PENDING))
   if (!text) return true
   const { commit, previous, task, workflow } = JSON.parse(text)
@@ -71,10 +106,17 @@ export async function finishInstallCheck({ install, run, read, write, remove, sw
   write(workflow, INSTALL_CHECK_WORKFLOW)
   log(`verifying the install of ${commit.slice(0, 12)} with its afterInstall checks, as a System Work`)
   const installed = await run(process.execPath, [newCli, 'work', 'submit', '--workflow', workflow, '--input', task])
-  const installWork = installed.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
-  if (installed.status !== 0) {
-    const shown = installWork.startsWith('work:') ? (await run(process.execPath, [newCli, 'work', 'show', installWork])).stdout : installed.stdout
-    const reason = /"reason":\s*"((?:[^"\\]|\\.)*)"/.exec(shown)?.[1] ?? lastLine(shown)
+  const installWork = installed.stdout.split('\n').find((line) => line.startsWith('work:'))?.trim()
+  if (!installWork) {
+    const reason = lastLine(installed.stdout) || 'no Work ID printed'
+    switchLink(join(install, 'current'), previous)
+    remove(join(install, PENDING))
+    log(`the install checks of ${commit.slice(0, 12)} failed (no Work ID printed): ${reason}; switched back to ${previous}, asking the Host to run it`)
+    return false
+  }
+  const result = await waitForWork({ show: () => run(process.execPath, [newCli, 'work', 'show', installWork]), workId: installWork, sleep, now, waitMs })
+  if (result.status !== 'succeeded') {
+    const reason = result.error ?? result.reason ?? (/"reason":\s*"((?:[^"\\]|\\.)*)"/.exec(result.stdout)?.[1] ?? (lastLine(result.stdout) || result.status))
     switchLink(join(install, 'current'), previous)
     remove(join(install, PENDING))
     log(`the install checks of ${commit.slice(0, 12)} failed (${installWork}): ${reason}; switched back to ${previous}, asking the Host to run it`)
@@ -135,12 +177,18 @@ export async function update({ install, cli, origin, run, write, read, remove, e
     const knowsRelease = running !== undefined && (read(join(install, 'releases', running, 'packages', 'verifiers', 'src', 'checks.ts')) ?? '').includes('repo-checks-release-v1')
     if (knowsRelease) write(join(install, 'release-check.yaml'), RELEASE_CHECK_WORKFLOW)
     const checked = await run(cli, ['work', 'submit', '--workflow', knowsRelease ? join(install, 'release-check.yaml') : join(release, 'workflows', 'code-checks.yaml'), '--input', task])
-    const work = checked.stdout.split('\n').find((line) => line.startsWith('work:')) ?? '(no Work ID printed)'
+    const work = checked.stdout.split('\n').find((line) => line.startsWith('work:'))?.trim()
+    if (!work) {
+      const compared = running ? `compared with ${running.slice(0, 12)}; skipped: none` : 'whole commit, none skipped'
+      log(`the checks of ${commit.slice(0, 12)} failed (no Work ID printed; ${compared}); current stays ${before ?? 'unset'}`)
+      return 1
+    }
+    const result = await waitForWork({ show: () => run(cli, ['work', 'show', work]), workId: work, sleep, now, waitMs })
     // The verdict names the checks it skipped; the Work record carries it.
-    const skipped = work.startsWith('work:') ? /skipped: ([\w.-]+(?:, [\w.-]+)*)/.exec((await run(cli, ['work', 'show', work])).stdout)?.[1] : undefined
+    const skipped = /skipped: ([\w.-]+(?:, [\w.-]+)*)/.exec(result.stdout)?.[1]
     const compared = running ? `compared with ${running.slice(0, 12)}; skipped: ${skipped ?? 'none'}` : 'whole commit, none skipped'
-    if (checked.status !== 0) {
-      log(`the checks of ${commit.slice(0, 12)} failed (${work}; ${compared}); current stays ${before ?? 'unset'}`)
+    if (result.status !== 'succeeded') {
+      log(`the checks of ${commit.slice(0, 12)} failed (${work}${result.error ? `: ${result.error}` : ''}; ${compared}); current stays ${before ?? 'unset'}`)
       return 1
     }
     log(`the checks of ${commit.slice(0, 12)} passed: ${work} (${compared})`)
@@ -173,7 +221,7 @@ export async function update({ install, cli, origin, run, write, read, remove, e
     log(`the Host runs ${commit.slice(0, 12)}`)
 
     if (pending) {
-      if (!(await finishInstallCheck({ install, run, read, write, remove, switchLink, log }))) {
+      if (!(await finishInstallCheck({ install, run, read, write, remove, switchLink, log, sleep, now, waitMs }))) {
         const back = now() + waitMs
         while (!(await probe(join(install, before))) && now() < back) await sleep(5000)
         return 1

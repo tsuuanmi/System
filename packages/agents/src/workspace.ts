@@ -184,6 +184,8 @@ export function prompt(ws: Workspace, request: WorkerRequest): string {
 export interface Captured {
   outputs: Record<string, string>
   missing: string[]
+  /** Declared outputs written with no content (0 bytes or only whitespace); they fail the attempt like a missing one, and an optional one is not written. */
+  empty?: string[]
 }
 
 const SUBJECT_MAX = 72
@@ -217,6 +219,7 @@ export async function capture(artifacts: Artifacts, ws: Workspace, request: Work
   const tree = treeSlot(ws, request)
   const outputs: Record<string, string> = {}
   const missing: string[] = []
+  const empty: string[] = []
   const common = {
     inputs: Object.values(request.inputs), classification: 'local-private' as const,
     producer: { type: 'worker' as const, ref: producer }, workId: request.workId, attemptId: request.attemptId,
@@ -235,9 +238,13 @@ export async function capture(artifacts: Artifacts, ws: Workspace, request: Work
       continue
     }
     const data = readFileSync(path)
+    if (!data.toString('utf8').trim()) {
+      if (!optional) empty.push(slot)
+      continue
+    }
     outputs[slot] = (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, ...common, data, mediaType: mediaTypeOf(data) })).id
   }
-  return { outputs, missing }
+  return { outputs, missing, empty }
 }
 
 export function mediaTypeOf(data: Buffer): string {

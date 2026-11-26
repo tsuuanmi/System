@@ -113,7 +113,11 @@ Host that stopped itself for new code waits for its attempts first; see
   `corepack pnpm build` there;
 - it checks that commit by a Work, `workflows/code-checks.yaml` on a task whose
   base is the commit, and prints the Work ID: the evidence, bound to the exact
-  commit. A failed build or check leaves `current` where it was. With a
+  commit. Both the release check and the `afterInstall` check below are judged
+  by the Work's recorded terminal state (`succeeded` passes; `failed`,
+  `cancelled`, `held`, a missing Work ID or an unreadable Work fails closed; a
+  still-running Work is followed within `--wait`), not by the `work submit`
+  client's exit status. A failed build or check leaves `current` where it was. With a
   `current`, the commit is checked as a change from the release that runs now,
   so `paths` selects the checks by the files that differ between the two
   releases; the first install checks the whole commit. When the release that runs now knows the
