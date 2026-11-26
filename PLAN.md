@@ -116,6 +116,8 @@ Checks per Work (RES-0018, Item chk-reuse-1): before reuse, 2026-11-26 (29 merge
 where a pass with byte-identical inputs exists (a retry of a reopened step, a Work on a base already checked), so the after figure is taken with
 `system work report` over the Works merged since this Item and recorded here with the Work count, next to the before.
 
+Checks run in parallel (Item chk-par-1, 2026-11-27): measured, not adopted. Typecheck, lint, unit and smoke write nothing into the worktree and together took 53 s against 121 s in sequence, but the leak sweep keyed by the one `HOME` and the load on a Host that runs checks of two Works at once block it (reasons in [packages/verifiers/README.md](packages/verifiers/README.md)). Checks per Work are unchanged by this Item: median 3.7 min, p90 14.3 min (the before of chk-reuse-1).
+
 ## 3. Open work
 
 Items are in [STATUS.md](STATUS.md); the sections below keep only the decisions of milestones still open. Left to the
