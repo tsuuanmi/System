@@ -83,6 +83,7 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
       const path = join(ws.inputs, `${name}.json`)
       writeFileSync(path, JSON.stringify(envelope.content, null, 2), { mode: 0o400 })
       ws.listed.push({ name, where: path })
+      if (name === 'failure' && envelope.kind === 'verdict') writeFailingChecks(artifacts, ws, envelope.content as { evidence?: string[] })
     }
   }
   if (ws.base) {
@@ -95,6 +96,30 @@ export async function prepare(artifacts: Artifacts, request: WorkerRequest, root
     }
   } else mkdirSync(ws.work, { mode: 0o700 })
   return ws
+}
+
+/**
+ * Item reopen-1: each failing check-run Artifact of a failing verdict as `in/failure-<n>-<check>.txt` (its command, the commit it ran on,
+ * its exit code and output tails), listed by name in the prompt, so a reopened step reads what failed, not only the reason line.
+ */
+function writeFailingChecks(artifacts: Artifacts, ws: Workspace, verdict: { evidence?: string[] }): void {
+  let n = 0
+  for (const id of verdict.evidence ?? []) {
+    const read = artifacts.get(id)
+    if (read.state !== 'stored' || read.envelope.kind !== 'check-run') continue
+    const run = read.envelope.content as { name: string; run: string; commit: string; exitCode: number | null; signal: string | null; timedOut: boolean; stdoutTail: string; stderrTail: string }
+    if (run.exitCode === 0 && !run.timedOut) continue
+    const file = `failure-${++n}-${run.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60)}.txt`
+    const text = [
+      `check: ${run.name}`, `command: ${run.run}`, `commit: ${run.commit}`,
+      `exit code: ${run.exitCode ?? `none (signal ${run.signal})`}${run.timedOut ? ' (timed out)' : ''}`,
+      '', '--- stdout (tail) ---', run.stdoutTail, '--- stderr (tail) ---', run.stderrTail,
+    ].join('\n')
+    const path = join(ws.inputs, file)
+    checkSize(`failure ${file}`, Buffer.byteLength(text))
+    writeFileSync(path, text, { mode: 0o400 })
+    ws.listed.push({ name: `failure-${n}`, where: `${path} (failing check ${run.name}: command, exit code and output tail)` })
+  }
 }
 
 /** Apply the change of `commit` to the worktree, uncommitted; on a conflict leave the worktree as it was. */
