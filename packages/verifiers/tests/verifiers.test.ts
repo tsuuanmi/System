@@ -845,23 +845,46 @@ async function withCheckEnv(run: string, checkEnv: Record<string, string>) {
   const verifier = requiredChecks(artifacts, processSpawner, Date.now, checkEnv)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
-  const read = artifacts.get(result.evidence[0]!)
-  return { result, run: (read.state === 'stored' ? read.envelope.content : {}) as { stdoutTail: string; checkEnv?: string[] } }
+  const read = result.evidence[0] ? artifacts.get(result.evidence[0]) : undefined
+  return { result, run: (read?.state === 'stored' ? read.envelope.content : {}) as { stdoutTail: string; checkEnv?: string[]; nodeVersion?: string; nodePath?: string; pnpmVersion?: string } }
 }
 
 test('checkEnv: a check sees a configured variable; HOME is still a fresh directory', async () => {
-  const { result, run } = await withCheckEnv('echo "$RUSTUP_HOME $HOME"', { RUSTUP_HOME: '/opt/rustup-test' })
+  const dir = mkdtempSync(join(tmpdir(), 'rustup-test-'))
+  const { result, run } = await withCheckEnv('echo "$RUSTUP_HOME $HOME"', { RUSTUP_HOME: dir })
   assert.equal(result.verdict, 'pass', result.reason)
   const [rustup, home] = run.stdoutTail.trim().split(' ')
-  assert.equal(rustup, '/opt/rustup-test')
+  assert.equal(rustup, dir)
   assert.match(home!, /system-checks-/)
   assert.notEqual(home, process.env.HOME)
 })
 
 test('checkEnv: the evidence lists the names and never the values', async () => {
-  const { run } = await withCheckEnv('echo ok', { CARGO_HOME: '/secret/value/one', CARGO_TARGET_DIR: '/secret/value/two' })
-  assert.deepEqual(run.checkEnv, ['CARGO_HOME', 'CARGO_TARGET_DIR'])
-  assert.doesNotMatch(JSON.stringify(run), /secret\/value/)
+  const dir = mkdtempSync(join(tmpdir(), 'secret-value-'))
+  const { run } = await withCheckEnv('echo ok', { CARGO_HOME: dir, CARGO_TARGET_DIR: tmpdir(), OTHER: '/secret/value/three' })
+  assert.deepEqual(run.checkEnv, ['CARGO_HOME', 'CARGO_TARGET_DIR', 'OTHER'])
+  assert.doesNotMatch(JSON.stringify(run), /secret-value|secret\/value/)
+})
+
+test('nodever-1: a check run records the Node version, the Node path and the pnpm version it used', async () => {
+  const { result, run } = await withCheckEnv('echo ok', {})
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.equal(run.nodeVersion, process.version)
+  assert.equal(run.nodePath, process.execPath)
+  assert.ok(run.pnpmVersion === undefined || /^\d+\.\d+/.test(run.pnpmVersion), String(run.pnpmVersion))
+  assert.ok(checkRunSchema.safeParse({ name: 'x', run: 'x', commit: 'c', exitCode: 0, signal: null, timedOut: false, durationMs: 0, stdoutTail: '', stderrTail: '' }).success, 'older records still parse')
+})
+
+test('nodever-1: a *_HOME or *_DIR checkEnv path that does not exist fails at once naming it, running nothing', async () => {
+  const missing = join(tmpdir(), 'no-such-dir-nodever-1')
+  for (const name of ['RUSTUP_HOME', 'CARGO_TARGET_DIR']) {
+    const { result } = await withCheckEnv('echo ran', { [name]: missing })
+    assert.notEqual(result.verdict, 'pass')
+    assert.match(result.reason, new RegExp(`${name}.*${missing}`))
+    assert.deepEqual(result.evidence, [], 'no check ran')
+  }
+  const { result } = await withCheckEnv('echo ran', { MODE: 'x', SOME_PATH: missing, HOME_X: missing })
+  assert.equal(result.verdict, 'pass', 'other names are not checked')
 })
 
 test('checkEnv: HOME, PATH, CI and malformed names are refused', () => {

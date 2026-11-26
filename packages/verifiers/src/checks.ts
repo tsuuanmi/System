@@ -15,7 +15,7 @@
  */
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, matchesGlob, normalize, sep } from 'node:path'
 import type { Spawner } from '@system/agents'
@@ -93,6 +93,10 @@ export const checkRunSchema = z.object({
   leftovers: z.array(z.string()).optional(),
   /** The names (never the values) of the machine-level `checkEnv` variables the check was given. */
   checkEnv: z.array(z.string()).optional(),
+  /** Item nodever-1: the Node and pnpm the check ran with, and the Node's path (absent in older records, and pnpm when it could not be run). */
+  nodeVersion: z.string().optional(),
+  nodePath: z.string().optional(),
+  pnpmVersion: z.string().optional(),
   /** Item chk-reuse-1: the hash of this check's inputs (its definition, the files its `paths` select, the toolchain); a pass with a key can be reused by a later run with the same key. */
   key: z.string().optional(),
   durationMs: z.number().int().nonnegative(),
@@ -103,6 +107,35 @@ export const checkRunSchema = z.object({
 /** The verifiers row's `checkEnv`: variables every check is given on top of its minimal environment (Item df-2). */
 export const checkEnvSchema = z.record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
   .refine((env) => !['HOME', 'PATH', 'CI'].some((k) => k in env), { message: 'HOME, PATH and CI cannot be set' })
+
+/** The first `node` on `path` that runs: where it is and its version (what a check's `node` is). */
+function nodeOn(path: string): { path: string; version: string } | undefined {
+  for (const dir of path.split(':').filter(Boolean)) {
+    const candidate = join(dir, 'node')
+    if (candidate === process.execPath) return { path: candidate, version: process.version }
+    try {
+      return { path: candidate, version: execFileSync(candidate, ['--version'], { encoding: 'utf8' }).trim() }
+    } catch {
+      // Not here or not executable; try the next directory on PATH.
+    }
+  }
+  return undefined
+}
+
+/** The pnpm a check's `pnpm` is on `path`, run as a check runs it (a throwaway HOME); undefined when it cannot be run. */
+function pnpmOn(path: string, home: string): string | undefined {
+  try {
+    return execFileSync('pnpm', ['--version'], { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'ignore'], env: { PATH: path, HOME: home, CI: '1', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' } }).trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Item nodever-1: the first `checkEnv` variable named `*_HOME` or `*_DIR` whose path does not exist, as `NAME=path`. */
+function missingEnvPath(env: Record<string, string>): string | undefined {
+  const name = Object.keys(env).find((k) => /(_HOME|_DIR)$/.test(k) && !existsSync(env[k]!))
+  return name ? `${name}=${env[name]}` : undefined
+}
 
 /** A display server or browser: what a check's own tests leak, and what then holds a Worker's pipes and profile. */
 const LEAKED = /^(Xvfb|chrome|chromium|chrome-headless-shell)$/
@@ -210,17 +243,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     let toolchain: string | undefined
     const toolchainOf = async (commit: string): Promise<string> => {
       if (toolchain !== undefined) return toolchain
-      let node = ''
-      for (const dir of path.split(':').filter(Boolean)) {
-        const candidate = join(dir, 'node')
-        if (candidate === process.execPath) { node = process.version; break }
-        try {
-          node = execFileSync(candidate, ['--version'], { encoding: 'utf8' }).trim()
-          break
-        } catch {
-          // Not here or not executable; try the next directory on PATH.
-        }
-      }
+      const node = nodeOn(path)?.version ?? ''
       let pnpm = ''
       try {
         pnpm = String((JSON.parse(await git(repository, ['show', `${commit}:package.json`])) as { packageManager?: string }).packageManager ?? '')
@@ -300,6 +323,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const tree = contentOf<GitTreeContent>(artifacts, treeId, 'git-tree')
       const checks = contentOf<Checks>(artifacts, request.criteria, CHECKS_KIND.kind)
       const ignoredRed = checks.checks.some((check) => check.red)
+      // Item nodever-1: a configured *_HOME or *_DIR that is not there fails now, not later inside a check.
+      const missing = missingEnvPath(given.data)
+      if (missing) return verdict('error', `checkEnv names a path that does not exist: ${missing} (fix the verifiers row's checkEnv)`, [])
       const scratch = scratchOf(request.attemptId)
       rmSync(scratch, { recursive: true, force: true })
       mkdirSync(scratch)
@@ -326,6 +352,8 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           return verdict('error', (error as Error).message, [])
         }
         const path = [bin, process.env.PATH].filter(Boolean).join(':')
+        const node = nodeOn(path)
+        const pnpmVersion = pnpmOn(path, scratch)
         const reuse = reuser(tree.repository, checks, extra, path)
         // What the change touches against the base its checks were pinned from (PROP-0007 decision 5); a commit checked as it is runs them all.
         // A tree that names its parent is a change from that commit (a captured change; a release against the running one); otherwise from the commit the checks were pinned from.
@@ -358,6 +386,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
             name: check.name, run: check.run, commit, exitCode: outcome.exitCode, signal: outcome.signal,
             timedOut: backstop.aborted || outcome.exitCode === 124, durationMs: Math.max(0, Math.round(now() - started)),
             ...(key ? { key } : {}), stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}), ...(extra.length ? { checkEnv: extra } : {}),
+            ...(node ? { nodeVersion: node.version, nodePath: node.path } : {}), ...(pnpmVersion ? { pnpmVersion } : {}),
           }
           const id = (await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id
           let failure: string | undefined
