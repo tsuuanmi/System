@@ -24,7 +24,7 @@ const SETTINGS = `${JSON.stringify({ permissions: { allow: ['command(*)'], deny:
 function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
   return {
-    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', 'accept-edits', '--sandbox', '--add-dir', ws.outputs],
+    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', 'accept-edits', '--sandbox', '--add-dir', ws.inputs, '--add-dir', ws.outputs],
     env: { ...baseEnv(ws), ...env },
   }
 }
@@ -35,11 +35,15 @@ const QUOTA = /RESOURCE_EXHAUSTED|\bquota\b|exhausted your capacity/i
 const LIMITED = /rate.?limit|too many requests|\b429\b|quota exceeded/i
 const failureText = (error: string) => (QUOTA.test(error) && !LIMITED.test(error) ? `quota exceeded: ${error}` : error)
 
-/** The `result` event decides: SUCCESS is ok; a tool that ended in ERROR (a denied `git push`) is only a step of the run. Its usage is the run's total. */
+/** The `result` event decides: SUCCESS is ok; a tool that ended in ERROR (a denied `git push`) is only a step of the run, and so are denied actions when the run still answered (without a response they fail the attempt, since headless mode cannot prompt). Its usage is the run's total. */
 function parse(stdout: string): Parsed {
   const result = jsonEvents(stdout).findLast((event) => event.event === 'result')?.result
   if (!result) return { ok: false, message: `unreadable Antigravity output: ${stdout.slice(0, 200)}` }
   if (result.status !== 'SUCCESS') return { ok: false, message: failureText(String(result.error ?? result.response ?? result.status)) }
+  const denied: string[] = Array.isArray(result.denied_actions) ? result.denied_actions.map((d: any) => String(d?.action ?? d?.display_name ?? 'unknown')) : []
+  if (denied.length > 0 && !String(result.response ?? '').trim()) {
+    return { ok: false, message: `agy denied ${[...new Set(denied)].join(', ')} (headless mode cannot prompt) and ended with no response` }
+  }
   const u = result.usage ?? {}
   const input = count(u.input_tokens)
   const output = count(u.output_tokens)

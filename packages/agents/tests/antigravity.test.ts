@@ -41,6 +41,20 @@ test('parse: a tool that ends in ERROR (git push denied by a rule) does not fail
   assert.ok(parsed.usage && parsed.usage.inputTokens > 0)
 })
 
+test('parse: a run that ended with denied actions and no response fails naming them, not as an empty success', () => {
+  const parsed = adapter.parse(fixture('stream-denied-read.jsonl'))
+  assert.equal(parsed.ok, false)
+  assert.match(parsed.message, /read_file/)
+  assert.match(parsed.message, /headless/)
+})
+
+test('parse: denied actions with a response are only noted, the run stays ok', () => {
+  const line = JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'done', denied_actions: [{ action: 'read_file' }] } })
+  const parsed = adapter.parse(line)
+  assert.equal(parsed.ok, true)
+  assert.equal(parsed.message, 'done')
+})
+
 test('parse: an ERROR result fails with its text; a quota or 429 error is one the controller records as limited, with its reset', () => {
   const result = (error: string) => JSON.stringify({ event: 'result', result: { status: 'ERROR', error } })
   assert.deepEqual([adapter.parse(result('boom')).ok, adapter.parse(result('boom')).message], [false, 'boom'])
@@ -55,9 +69,9 @@ test('parse: an ERROR result fails with its text; a quota or 429 error is one th
   assert.equal(adapter.parse('not json').ok, false)
 })
 
-test('the argv is accept-edits in the sandbox, adds the outputs directory, and never skips permissions', () => {
+test('the argv is accept-edits in the sandbox, adds the inputs and outputs directories, and never skips permissions', () => {
   const { argv, env } = adapter.invocation({ command: 'agy', ws, prompt: 'do it', model: 'gemini-3.8-flash-low', codeWrite: true, env: { HOME: '/homes/a1' } })
-  assert.deepEqual(argv, ['agy', '-p', 'do it', '--output-format', 'stream-json', '--model', 'gemini-3.8-flash-low', '--mode', 'accept-edits', '--sandbox', '--add-dir', '/ws/out'])
+  assert.deepEqual(argv, ['agy', '-p', 'do it', '--output-format', 'stream-json', '--model', 'gemini-3.8-flash-low', '--mode', 'accept-edits', '--sandbox', '--add-dir', '/ws/in', '--add-dir', '/ws/out'])
   assert.equal(argv.includes('--dangerously-skip-permissions'), false)
   assert.equal(argv.includes('auto'), false)
   assert.equal(env.HOME, '/homes/a1')
