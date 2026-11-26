@@ -15,7 +15,7 @@ The web Runtime's own tests are in [web-worker](../../web-worker/tests/README.md
 The booted profile is covered by [tests/agents.test.ts](../../../tests/README.md),
 and the real CLIs by the credential-gated `tests/real-agents.test.ts`.
 
-[quota.test.ts](quota.test.ts) specifies the sc-3 parsers and ten-minute cache;
+[quota.test.ts](quota.test.ts) specifies the sc-3 parsers, schemas (fixture [codex-0.171.0-rate-limits.json](codex-0.171.0-rate-limits.json), a real answer) and ten-minute cache;
 [quota-read.test.ts](quota-read.test.ts) checks CLI protocols and process cleanup;
 [quota-row.test.ts](quota-row.test.ts) checks per-account reads on the agents row.
 The synthetic fixtures and CLIs live in [test-support](../../../test-support/README.md).
