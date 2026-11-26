@@ -135,6 +135,7 @@ export function operations(services: Services) {
       handler: (host, p, caller) => started(host, p.workId, (go) => host.retry(p.workId, { step: p.step, worker: p.worker, reason: p.reason, caller, commandId: p.commandId, started: go })),
     },
     'work.cancel': {
+      destructive: true,
       authority: 'caller',
       summary: 'Stop Work: its record once cancelled, or `"requested"` while a run is stopping its attempt.',
       params: z.object({ workId, reason: z.string().default('cancelled by the operator'), commandId }).strict(),
@@ -374,6 +375,7 @@ export function operations(services: Services) {
       handler: async (_host, p) => Promise.all(p.names.map(async (name: string) => ({ name, ...await services.credentials.describe(name) }))),
     },
     'credentials.set': {
+      destructive: true,
       authority: 'operator',
       summary: 'Store a value under a name in the DSH credential store. Nothing returns it.',
       params: z.object({ name: z.string().min(1), value: z.string().min(1), commandId }).strict(),

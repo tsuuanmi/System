@@ -65,7 +65,7 @@ await serving.stop()                                // server, then the Host cor
 ## API reference
 
 The operation table in `src/operations.ts` is the reference: each row's name,
-params schema, summary, `authority`, and `read` flag. Agents see the `caller`
+params schema, summary, `authority`, `read` flag and `destructive` flag (the MCP `readOnlyHint`/`destructiveHint`; `system schema` prints the table). Agents see the `caller`
 rows as the `system mcp` tool descriptions; people see it in `system <command> --help`.
 
 ## Errors

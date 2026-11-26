@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { callerSchema, type Caller, type Host, type WorkChange, type z } from '@system/work'
+import { callerSchema, type Caller, type Host, type WorkChange, z } from '@system/work'
 
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -114,6 +114,8 @@ export interface Method {
   authority: Authority
   /** It only reads: while the Host upgrades, a read-only connection of any code version may call it. */
   read?: boolean
+  /** A write that destroys or overwrites what it touches (MCP `destructiveHint`); meaningless for a read. */
+  destructive?: boolean
 }
 export type Methods = Record<string, Method>
 
@@ -151,6 +153,32 @@ const builtin = (version: string): Methods => ({
     },
   },
 })
+
+/** The MCP tool annotations of a row: the one place they are derived from the table. */
+export const annotationsOf = (row: Method): { readOnlyHint: boolean; destructiveHint: boolean } => ({ readOnlyHint: row.read === true, destructiveHint: row.read !== true && row.destructive === true })
+
+/** A row's JSON Schema of its params, as an MCP tool and `system schema` give it. */
+export const paramsSchemaOf = (row: Method): { type: 'object'; [key: string]: unknown } => z.toJSONSchema(row.params ?? z.object({}).strict(), { io: 'input' }) as { type: 'object'; [key: string]: unknown }
+
+/** One printed row of the operation table (`system schema`). */
+export interface OperationSchema {
+  name: string
+  summary: string
+  authority: Authority
+  access: 'read' | 'write'
+  destructive: boolean
+  params: { type: 'object'; [key: string]: unknown }
+}
+
+/** The operation table as data: each operation's name, summary, Authority, read or write, destructive and params. */
+export const schemaOf = (table: Methods): OperationSchema[] => Object.entries(table).map(([name, row]) => ({
+  name,
+  summary: row.summary ?? '',
+  authority: row.authority,
+  access: row.read === true ? 'read' : 'write',
+  destructive: annotationsOf(row).destructiveHint,
+  params: paramsSchemaOf(row),
+}))
 
 /** The whole table a Host serves: the built-in rows and `extra`. */
 export const tableOf = (extra: Methods = {}, version: string = VERSION): Methods => ({ ...builtin(version), ...extra })

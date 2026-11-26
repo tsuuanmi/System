@@ -8,7 +8,8 @@ import { Command } from 'commander'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
 import { TERMINAL, type WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/agents'
-import { MAX_FRAME, fitsFrame } from '../../host/lib/index.js'
+import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '../../host/lib/index.js'
+import { operations, type Services } from '../../host/lib/operations.js'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
@@ -362,6 +363,14 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       select(async () => {
         const claim = await host.call('item.claim', given({ repository: resolve(options.repo), item, force: options.force })) as { who: string; at: string }
         io.out(`${item} claimed by ${claim.who} since ${claim.at}\n`)
+        return 0
+      })
+    })
+  program.command('schema')
+    .description('print the operation table as JSON: each operation\'s name, summary, Authority, read or write, whether a write is destructive, and its parameters (the MCP tools and their annotations come from the same table); needs no Host')
+    .action(() => {
+      select(async () => {
+        io.out(`${JSON.stringify(schemaOf(tableOf(operations({} as Services))), null, 2)}\n`)
         return 0
       })
     })
