@@ -63,6 +63,10 @@ test stand-ins. Changes to this repository are checked by
     DF features passed their unit tests and failed at first real use.
   - Keep `.system/checks.yaml` within its time budget.
   - Treat a flaky test as a defect to fix before new features.
+  - A Worker never skips a flaky test, adds a sleep or retries it until it
+    passes. When the Item cannot find the root cause, it deletes the test,
+    writes why in the Item's result and records an Escaped defect; the
+    behaviour the test guarded keeps a deterministic test.
 - **Standards and determinism** (Charter 8): before inventing a format or
   mechanism, name the existing standard you considered (git, JSON Schema,
   MCP, systemd...). What System records stays deterministic and
