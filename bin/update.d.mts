@@ -25,6 +25,9 @@ export interface FinishDeps {
   remove: UpdateDeps['remove']
   switchLink: UpdateDeps['switchLink']
   log: UpdateDeps['log']
+  sleep?: UpdateDeps['sleep']
+  now?: UpdateDeps['now']
+  waitMs?: UpdateDeps['waitMs']
 }
 export function finishInstallCheck(deps: FinishDeps & { install: string }): Promise<boolean>
 export function finishPending(deps: FinishDeps & { install: string; commit: string; alive(pid: number): boolean }): Promise<number>

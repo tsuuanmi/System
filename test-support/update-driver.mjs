@@ -25,7 +25,7 @@ process.exitCode = await update({
     if (command === 'git' && args.includes('worktree')) return answer
     if (/corepack$/.test(command)) return answer
     if (args[0] === 'work' && args.some((a) => a.endsWith('code-checks.yaml'))) return { status: 0, stdout: 'work:release-check\n' }
-    if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:release-check') return answer
+    if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:release-check') return { status: 0, stdout: JSON.stringify({ state: { status: 'succeeded' } }) }
     return capture(command, args, cwd)
   },
   write: (path, text) => writeFileSync(path, text),

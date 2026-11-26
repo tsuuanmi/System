@@ -48,7 +48,8 @@ function machine(options: { current?: string; checks?: number; build?: number; h
       if (command === 'node') return { status: 1, stdout: 'node: too old\n' }
       if (command === process.execPath && args[0] === `/i/releases/${SHA}/bin/system`) { command = '/cli/bin/system'; args = args.slice(1) }
       if (args[0] === 'work' && args.some((a) => a.endsWith('install-check.yaml'))) return { status: options.installCheck ?? 0, stdout: 'work:installed\n' }
-      if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:installed') return { status: 0, stdout: '{"reason": "failed: answers: no such command"}' }
+      if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:installed') return { status: 0, stdout: JSON.stringify({ state: { status: (options.installCheck ?? 0) === 0 ? 'succeeded' : 'failed', reason: 'failed: answers: no such command' } }) }
+      if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:checked') return { status: 0, stdout: JSON.stringify({ state: { status: (options.checks ?? 0) === 0 ? 'succeeded' : 'failed' } }) }
       if (args[0] === 'work') return { status: options.checks ?? 0, stdout: 'work:checked\n' }
       if (command === join(dirname(process.execPath), 'corepack') && args.includes('build')) return { status: options.build ?? 0, stdout: '' }
       return { status: 0, stdout: '' }
@@ -133,7 +134,7 @@ test('with a current release, the new commit is checked as a change from it, and
   const m = machine({ current: OLD })
   const run = m.deps.run
   m.deps.run = async (command: string, args: string[], cwd?: string) => {
-    if (args[0] === 'work' && args[1] === 'show') { m.ran.push(args.join(' ')); return { status: 0, stdout: '{"reason": "all 4 check(s) run passed on x; run: docs 1.0 s; skipped: web, smoke"}' } }
+    if (args[0] === 'work' && args[1] === 'show') { m.ran.push(args.join(' ')); return { status: 0, stdout: JSON.stringify({ state: { status: 'succeeded', reason: 'all 4 check(s) run passed on x; run: docs 1.0 s; skipped: web, smoke' } }) } }
     return run(command, args, cwd)
   }
   assert.equal(await update(m.deps), 0)
@@ -253,4 +254,123 @@ test('a running release that knows the release criteria is checked on the releas
   assert.equal(await update(older.deps), 0)
   assert.ok(older.ran.some((line) => line.includes(`--workflow /i/releases/${SHA}/workflows/code-checks.yaml`)))
   assert.ok(!older.written.has('/i/release-check.yaml'))
+})
+
+test('release check: non-zero work submit with a Work that succeeds still switches current (upd-2)', async () => {
+  const m = machine({ current: OLD })
+  const run = m.deps.run
+  let shows = 0
+  m.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (args[0] === 'work' && args[1] === 'submit') { m.ran.push(args.join(' ')); return { status: 1, stdout: 'work:checked\n' } }
+    if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:checked') {
+      m.ran.push(args.join(' '))
+      shows++
+      return { status: 0, stdout: JSON.stringify({ state: { status: shows === 1 ? 'running' : 'succeeded' } }) }
+    }
+    return run(command, args, cwd)
+  }
+  assert.equal(await update(m.deps), 0)
+  assert.equal(shows, 2)
+  assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
+  assert.ok(m.log.some((line) => line.includes('passed: work:checked')))
+})
+
+test('release check: work submit exiting 0 for a failed/cancelled/held Work fails the update and keeps current (upd-2)', async () => {
+  for (const status of ['failed', 'cancelled', 'held'] as const) {
+    const m = machine({ current: OLD })
+    const run = m.deps.run
+    m.deps.run = async (command: string, args: string[], cwd?: string) => {
+      if (args[0] === 'work' && args[1] === 'submit') { m.ran.push(args.join(' ')); return { status: 0, stdout: 'work:checked\n' } }
+      if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:checked') {
+        m.ran.push(args.join(' '))
+        return { status: 0, stdout: JSON.stringify({ state: { status } }) }
+      }
+      return run(command, args, cwd)
+    }
+    assert.equal(await update(m.deps), 1, status)
+    assert.equal(m.links.get('/i/current'), `releases/${OLD}`, status)
+    assert.ok(m.log.some((line) => line.includes('failed (work:checked')), status)
+  }
+})
+
+test('release check: missing Work ID or unreadable Work fails closed naming what is missing (upd-2)', async () => {
+  const noId = machine({ current: OLD })
+  const runNoId = noId.deps.run
+  noId.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (args[0] === 'work' && args[1] === 'submit') return { status: 0, stdout: '' }
+    return runNoId(command, args, cwd)
+  }
+  assert.equal(await update(noId.deps), 1)
+  assert.equal(noId.links.get('/i/current'), `releases/${OLD}`)
+  assert.ok(noId.log.some((line) => line.includes('no Work ID printed')))
+
+  const unreadable = machine({ current: OLD })
+  const runUnreadable = unreadable.deps.run
+  unreadable.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (args[0] === 'work' && args[1] === 'submit') return { status: 0, stdout: 'work:missing\n' }
+    if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:missing') return { status: 1, stdout: 'no Work work:missing\n' }
+    return runUnreadable(command, args, cwd)
+  }
+  assert.equal(await update(unreadable.deps), 1)
+  assert.equal(unreadable.links.get('/i/current'), `releases/${OLD}`)
+  assert.ok(unreadable.log.some((line) => line.includes('work:missing')))
+})
+
+test('install check: non-zero work submit with a Work that succeeds keeps current and removes pending record (upd-2)', async () => {
+  const m = machine({ current: OLD, afterInstall: true })
+  const run = m.deps.run
+  let shows = 0
+  m.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (args[1] === 'work' && args[2] === 'submit') { m.ran.push(args.join(' ')); return { status: 1, stdout: 'work:installed\n' } }
+    if (args[1] === 'work' && args[2] === 'show' && args[3] === 'work:installed') {
+      m.ran.push(args.join(' '))
+      shows++
+      return { status: 0, stdout: JSON.stringify({ state: { status: shows === 1 ? 'running' : 'succeeded' } }) }
+    }
+    return run(command, args, cwd)
+  }
+  assert.equal(await update(m.deps), 0)
+  assert.equal(shows, 2)
+  assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
+  assert.equal(m.written.has(`/i/${PENDING}`), false)
+  assert.ok(m.log.some((line) => line.includes('install checks') && line.includes('passed: work:installed')))
+})
+
+test('install check: work submit exiting 0 for a failed/cancelled/held Work switches back; missing ID or unreadable Work fails closed (upd-2)', async () => {
+  for (const status of ['failed', 'cancelled', 'held'] as const) {
+    const m = machine({ current: OLD, afterInstall: true })
+    const run = m.deps.run
+    m.deps.run = async (command: string, args: string[], cwd?: string) => {
+      if (args[1] === 'work' && args[2] === 'submit') return { status: 0, stdout: 'work:installed\n' }
+      if (args[1] === 'work' && args[2] === 'show' && args[3] === 'work:installed') return { status: 0, stdout: JSON.stringify({ state: { status, reason: `ended ${status}` } }) }
+      return run(command, args, cwd)
+    }
+    assert.equal(await update(m.deps), 1, status)
+    assert.equal(m.links.get('/i/current'), `releases/${OLD}`, status)
+    assert.equal(m.written.has(`/i/${PENDING}`), false, status)
+    assert.ok(m.log.some((line) => line.includes('work:installed') && line.includes('switched back')), status)
+  }
+
+  const noId = machine({ current: OLD, afterInstall: true })
+  const runNoId = noId.deps.run
+  noId.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (args[1] === 'work' && args[2] === 'submit') return { status: 0, stdout: '' }
+    return runNoId(command, args, cwd)
+  }
+  assert.equal(await update(noId.deps), 1)
+  assert.equal(noId.links.get('/i/current'), `releases/${OLD}`)
+  assert.equal(noId.written.has(`/i/${PENDING}`), false)
+  assert.ok(noId.log.some((line) => line.includes('no Work ID printed')))
+
+  const unreadable = machine({ current: OLD, afterInstall: true })
+  const runUnreadable = unreadable.deps.run
+  unreadable.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (args[1] === 'work' && args[2] === 'submit') return { status: 0, stdout: 'work:missing-install\n' }
+    if (args[1] === 'work' && args[2] === 'show' && args[3] === 'work:missing-install') return { status: 1, stdout: 'no Work work:missing-install\n' }
+    return runUnreadable(command, args, cwd)
+  }
+  assert.equal(await update(unreadable.deps), 1)
+  assert.equal(unreadable.links.get('/i/current'), `releases/${OLD}`)
+  assert.equal(unreadable.written.has(`/i/${PENDING}`), false)
+  assert.ok(unreadable.log.some((line) => line.includes('work:missing-install')))
 })
