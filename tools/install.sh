@@ -30,13 +30,13 @@ if [ "${INSTALL_WEB:-}" = 1 ]; then command -v Xvfb >/dev/null || fail "Xvfb is 
 
 release="$install/releases/$commit"
 mkdir -p "$install/releases"
-if [ ! -d "$install/release/.git" ] && [ ! -f "$install/release/HEAD" ]; then
+if [ ! -d "$install/source/.git" ] && [ ! -f "$install/source/HEAD" ]; then
   origin=$(git -C "$root" remote get-url origin 2>/dev/null || echo "$root")
-  git clone --quiet --no-checkout "$origin" "$install/release"
+  git clone --quiet --no-checkout "$origin" "$install/source"
 fi
 # The commit may be one origin does not have (a branch not pushed yet): take it from this clone.
-git -C "$install/release" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$install/release" fetch --quiet "$root" "$commit"
-[ -d "$release" ] || git -C "$install/release" worktree add --quiet --detach "$release" "$commit"
+git -C "$install/source" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$install/source" fetch --quiet "$root" "$commit"
+[ -d "$release" ] || git -C "$install/source" worktree add --quiet --detach "$release" "$commit"
 echo "install: building $commit in $release"
 (cd "$release" && corepack pnpm install --frozen-lockfile && corepack pnpm build)
 ln -sfn "releases/$commit" "$install/current.new" && mv -T "$install/current.new" "$install/current"

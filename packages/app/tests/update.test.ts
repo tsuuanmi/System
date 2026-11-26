@@ -10,7 +10,7 @@ const OLD = 'a'.repeat(40)
 function machine(options: { current?: string; checks?: number; build?: number; hostUp?: boolean; releases?: string[]; afterInstall?: boolean; installCheck?: number; skew?: boolean } = {}) {
   const ran: string[] = []
   const links = new Map<string, string>(options.current ? [['/i/current', `releases/${options.current}`]] : [])
-  const dirs = new Set<string>(['/i/release', ...(options.releases ?? (options.current ? [options.current] : [])).map((r) => `/i/releases/${r}`)])
+  const dirs = new Set<string>(['/i/source', ...(options.releases ?? (options.current ? [options.current] : [])).map((r) => `/i/releases/${r}`)])
   const log: string[] = []
   const written = new Map<string, string>()
   let probes = 0
@@ -62,17 +62,17 @@ test('a new commit of main is built, checked by a System Work on that commit, th
   assert.equal(await update(m.deps), 0)
   const order = m.ran.map((line) => line.split(' ').slice(0, 4).join(' '))
   assert.deepEqual(order, [
-    'git -C /i/release fetch',
-    'git -C /i/release rev-parse',
-    `git -C /i/release worktree`,
+    'git -C /i/source fetch',
+    'git -C /i/source rev-parse',
+    `git -C /i/source worktree`,
     'corepack pnpm install --frozen-lockfile',
     'corepack pnpm build @/i/releases/' + SHA,
     '/cli/bin/system task new --text',
     '/cli/bin/system work submit --workflow',
     '/cli/bin/system work show work:checked',
-    'git -C /i/release show',
+    'git -C /i/source show',
   ])
-  assert.ok(m.ran.some((line) => line.includes(`--repo /i/release --ref ${SHA}`)))
+  assert.ok(m.ran.some((line) => line.includes(`--repo /i/source --ref ${SHA}`)))
   assert.ok(m.ran.some((line) => line.includes(`--workflow /i/releases/${SHA}/workflows/code-checks.yaml --input sha256:task`)))
   assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
   assert.ok(m.probes() >= 1)
@@ -117,16 +117,16 @@ test('the first install makes current and says how to start the Host, without as
 
 test('a missing repository is cloned from the origin first', async () => {
   const m = machine({ current: OLD })
-  m.dirs.delete('/i/release')
+  m.dirs.delete('/i/source')
   assert.equal(await update(m.deps), 0)
-  assert.equal(m.ran[0], 'git clone --no-checkout git@example:o/System.git /i/release')
+  assert.equal(m.ran[0], 'git clone --no-checkout git@example:o/System.git /i/source')
 })
 
 test('after a switch, only the current release and the one before stay', async () => {
   const m = machine({ current: OLD, releases: [OLD, 'c'.repeat(40), 'd'.repeat(40)] })
   assert.equal(await update(m.deps), 0)
   assert.deepEqual(m.deps.releases().sort(), [OLD, SHA].sort())
-  assert.ok(m.ran.some((line) => line.startsWith(`git -C /i/release worktree remove --force /i/releases/${'c'.repeat(40)}`)))
+  assert.ok(m.ran.some((line) => line.startsWith(`git -C /i/source worktree remove --force /i/releases/${'c'.repeat(40)}`)))
 })
 
 test('with a current release, the new commit is checked as a change from it, and the log says what it was compared with and what was skipped', async () => {
