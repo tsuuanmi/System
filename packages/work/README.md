@@ -3,7 +3,8 @@
 The `work` row: durable Work, the Workflow file compiler and the generic Work
 Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-workflows.md),
 [ADR-0004](../../docs/decisions/ADR-0004-mvp-0-operating-decisions.md) decision 9,
-[architecture](../../docs/architecture/workflow-composition.md)).
+[architecture](../../docs/architecture/workflow-composition.md),
+[record](../../docs/architecture/work-record.md)).
 
 - **Injects:** `storageDomain`, `artifacts`. **Provides:** `ctx.capabilities`
   (the Worker and verifier registry) and `ctx.work` (the Host core's storage).
