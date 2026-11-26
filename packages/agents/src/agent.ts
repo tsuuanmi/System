@@ -192,7 +192,9 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
   const pre = await adapter.preflight(account)
   if ('failed' in pre) return { status: 'failed', outputs: {}, reason: pre.failed, executor }
   let stdout = () => ''
+  const secrets = [await account.token?.()]
   return runAttempt({
+    secrets,
     artifacts, ref: account.ref, executor, request, dir: join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')),
     timeoutMinutes: account.attemptTimeoutMinutes, cancelReason: 'cancelled; the agent was stopped',
     log: () => stdout(),

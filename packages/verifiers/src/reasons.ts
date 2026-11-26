@@ -4,6 +4,8 @@
  */
 import { basename } from 'node:path'
 
+import { maskValues } from '@system/agents'
+
 export { nodeBin, satisfies } from '@system/agents'
 
 /** The file a test runner location names: `test at file:///a/b.test.ts:3:1` gives `b.test.ts`. */
@@ -52,8 +54,7 @@ const OWN_ERROR_MAX = 300
 
 /** The last non-empty lines of `text` that fit in `OWN_ERROR_MAX` characters, on one line, each `secrets` value masked. */
 export function lastLines(text: string, secrets: readonly string[] = []): string {
-  let clean = text
-  for (const secret of secrets) if (secret.length >= 3) clean = clean.split(secret).join('[redacted]')
+  const clean = maskValues(text, secrets)
   const lines = clean.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
   const picked: string[] = []
   let size = 0
