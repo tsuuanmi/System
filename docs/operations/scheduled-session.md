@@ -35,8 +35,8 @@ checkouts separated by `:`) names the repositories instead; the launcher passes
 the list to the prompt in that order, and an entry that is not a git checkout is
 reported (stderr, and the night report) and skipped. Before the prompt the
 launcher runs `git fetch origin dev` in each of them (60 s at most); a failure is
-logged on stderr and the night goes on with the `origin/dev` it has. The limits (6 Items over all
-repositories) do not change. To add DNA, keep this repository first and set it in
+logged on stderr and the night goes on with the `origin/dev` it has. There is no cap on the number of Items
+(operator, 2026-11-26; it was 6 over all repositories). To add DNA, keep this repository first and set it in
 the installed unit, with an `Environment=` line or a drop-in
 (`systemctl --user edit system-night-session`):
 

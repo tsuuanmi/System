@@ -164,6 +164,13 @@ Source of each: Intent 3aa77fd4dfd7 and RES-0014. The identity and P2 are in the
 - The caller session carries DNA's supply loop: evidence, `plan-items` proposing at most 6 Items, one Intent, the
   scheduled session, one release. The error budget, adjudication, re-baselining, approvals and releases stay the
   operator's.
+- Release delegated (operator, 2026-11-26): release stays the Operator's Authority and is delegated to a caller session
+  on conditions: the release pull request's CI passes and `system update`'s release check and install check pass; any
+  failure stops the release, records an Escaped defect and is fixed through a Work. Never approve, deny or verify again.
+  A release by a caller is not an operator act in the headline (ms-4); the delegation itself is.
+- No Item caps (operator, 2026-11-26): the scheduled session and a Claude Code `/goal` session take every Ready `todo`
+  Item, and new Items are no longer accepted in batches of at most 6 (EV); each Item is still one Worker attempt with a
+  test that fails first, and the Operator still settles the Intent behind it.
 - Reopened by: Items per operator act on product Batches staying under 3.6 after three Batches; DNA Batches where the
   operator's minutes are mostly running the loop and the loop cannot be a Workflow plus repository checks; sb-1's
   real-agent test failing in a way configuration cannot fix; late-caught or escaped defects rising under ADR-0014's
@@ -184,7 +191,7 @@ Source of each: Intent 3aa77fd4dfd7 and RES-0014. The identity and P2 are in the
 
 - Ranking: turn on the scheduled session; ns-2 Guardrail; ns-1 DNA; ns-3.
 - Decisions (operator, 2026-11-16):
-  - The scheduled session runs with SS's limits (6 Items a night, Ready `todo` only, no approve, no release) for System now and DNA after ns-1.
+  - The scheduled session runs with SS's limits (Ready `todo` only, no approve, no release; the 6-Item cap was removed by the operator on 2026-11-26) for System and DNA.
   - Unattended-scale isolation (bubblewrap, ADR-0011) is required before raising those limits or adding more repositories, not before turning the session on.
   - pstack's trial and the attempt-summary accuracy work are deferred until data asks for them.
 - Facts: the timer had never been installed (installed by the operator on 2026-11-16 per the runbook); System and DNA had no `todo` Items, so the session's value depends on a queue of Ready Items written by the operator or a caller session.

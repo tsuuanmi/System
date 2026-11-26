@@ -72,7 +72,7 @@ _Avoid_: persona, agent type
 Who may call an operation: the Operator at a terminal (approve, deny, verify
 again, release), a caller session (submit, claim, store an Intent), or a
 Worker (no Host operation: it only writes its outputs). Declared once for
-each operation.
+each operation. The Operator may delegate release to a caller session.
 _Avoid_: permission, role (a Role is a Workflow capability), scope
 
 **Operator**:
