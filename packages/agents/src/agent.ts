@@ -201,6 +201,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const text = prompt(ws, request)
       const staged = pre.stage(ws.root)
       const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env, ...(account.sandbox ? { sandbox: account.sandbox } : {}) })
+      executor.scope = invocation.scope
       // Remove every host variable the agent was not given (SSH agent, tokens, ...).
       const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
       Object.assign(env, invocation.env)

@@ -78,7 +78,7 @@ test('a code change is captured from the working tree as one pinned commit on th
   assert.deepEqual(readdirSync(attempts), [], 'the attempt directory and worktree are removed')
   assert.equal(execFileSync('git', ['-C', repository, 'worktree', 'list'], { encoding: 'utf8' }).trim().split('\n').length, 1)
   assert.deepEqual(result.usage, { inputTokens: 258, cacheReadTokens: 120, cacheWriteTokens: 35, outputTokens: 25, costUsd: 0.75, source: 'claude-code modelUsage (includes subagents) over 1 result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate' })
-  assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake', servedModels: ['served-default', 'served-subagent'] })
+  assert.deepEqual(result.executor, { ref: 'claude-code/default', account: 'default', command: fake, version: 'fake', servedModels: ['served-default', 'served-subagent'], scope: { permissionMode: 'acceptEdits', allowedTools: ['Bash', 'WebSearch', 'WebFetch'], disallowedTools: ['Bash(git push:*)', 'Bash(gh:*)', 'Monitor'], sandbox: false } })
   assert.equal(artifacts.get(result.log!).state, 'stored')
 })
 

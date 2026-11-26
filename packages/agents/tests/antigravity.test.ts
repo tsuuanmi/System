@@ -1,6 +1,7 @@
 /** The Antigravity Runtime (ag-2), from real outputs of `agy` 1.5.18 kept in fixtures/antigravity/: invocation, parse, limits, staging, quota. */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -77,6 +78,16 @@ test('the argv is accept-edits in the sandbox, adds the inputs and outputs direc
   assert.equal(env.HOME, '/homes/a1')
   assert.equal('DBUS_SESSION_BUS_ADDRESS' in env, false)
   assert.throws(() => adapter.invocation({ command: 'agy', ws, prompt: 'p', codeWrite: false, env: {}, sandbox: true }), /sandbox/)
+})
+
+test('the recorded scope is the mode and sandbox of the argv and the sha256 of the staged settings bytes', async () => {
+  const { argv, scope } = adapter.invocation({ command: 'agy', ws, prompt: 'p', codeWrite: false, env: {} })
+  const home = join(root, 'scope-home')
+  const pre = await adapter.preflight(account({ agyHome: home }))
+  assert.ok('stage' in pre)
+  pre.stage(join(root, 'attempt'))
+  const bytes = readFileSync(join(home, '.gemini', 'antigravity-cli', 'settings.json'))
+  assert.deepEqual(scope, { permissionMode: argv[argv.indexOf('--mode') + 1], sandbox: argv.includes('--sandbox'), settingsSha256: createHash('sha256').update(bytes).digest('hex') })
 })
 
 test('preflight needs an agyHome; staging writes the settings file with exactly the allow and deny rules, idempotently', async () => {

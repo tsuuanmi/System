@@ -12,13 +12,15 @@ import type { CliAdapter, InvocationInput } from './types.ts'
 
 function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
+  const mode = 'workspace-write'
   return {
     argv: [
       command, 'exec', '--json', '--ephemeral', '--ignore-user-config', '--skip-git-repo-check',
       ...(model ? ['-m', model] : []),
-      '-s', 'workspace-write', '-C', ws.work, '--add-dir', ws.outputs, prompt,
+      '-s', mode, '-C', ws.work, '--add-dir', ws.outputs, prompt,
     ],
     env: { ...baseEnv(ws), ...env },
+    scope: { sandbox: mode },
   }
 }
 

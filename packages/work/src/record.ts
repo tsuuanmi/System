@@ -27,10 +27,20 @@ const storedCallerSchema = z.discriminatedUnion('type', [
 const candidate = z.object({ ref: z.string(), selected: z.boolean(), reason: z.string() }).strict()
 
 /** Which account, binary and version ran an attempt (ADR-0005 decision 5). */
+/** The tool scope an attempt ran with: what its Runtime's flags and staged settings allowed (RES-0015). No token, no environment value. */
+export const scopeSchema = z.object({
+  permissionMode: z.string().optional(), allowedTools: z.array(z.string()).optional(), disallowedTools: z.array(z.string()).optional(),
+  /** Codex: the `-s` mode; Claude Code and Antigravity: whether the sandbox is on. */
+  sandbox: z.union([z.string(), z.boolean()]).optional(),
+  /** sha256 (hex) of the settings bytes the Runtime ran with. */
+  settingsSha256: z.string().optional(),
+}).strict()
+
 export const executorSchema = z.object({
   ref: z.string(), account: z.string().optional(), command: z.string().optional(), version: z.string().optional(),
   /** The tier the step asked for, the model configured for it, and the models the CLI reports it served. */
   tier: z.string().optional(), model: z.string().optional(), servedModels: z.array(z.string()).optional(),
+  scope: scopeSchema.optional(),
 }).strict()
 
 export const usageSchema = z.union([
