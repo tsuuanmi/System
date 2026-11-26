@@ -39,7 +39,7 @@ place), apart from any checkout you develop in:
 
 ```
 ~/.system/
-  repo/                          a clone of the origin
+  release/                       a clone of the origin
   releases/<commit>/             one built install per commit of main; never edit one
   current -> releases/<commit>   the code the Host runs
   profile.yml                    this machine's Accounts and Effects: the Host's --patch

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The one script of a new machine (runbook "Install and start", Item install-1): from a clone of System, build the install
-# `system update` would leave (`$SYSTEM_INSTALL`, default ~/.system: repo/, releases/<commit>/, current) for the commit this
+# `system update` would leave (`$SYSTEM_INSTALL`, default ~/.system: release/, releases/<commit>/, current) for the commit this
 # clone has checked out, and write the profile with `system init`. It never enables or starts the Host. Needs git, corepack and
 # Node >=24.9 (an older Node on PATH is replaced by the newest Node 24 under ~/.nvm, as bin/system does).
 # Set INSTALL_WEB=1 to also require Xvfb (the web Worker only).
@@ -30,13 +30,13 @@ if [ "${INSTALL_WEB:-}" = 1 ]; then command -v Xvfb >/dev/null || fail "Xvfb is 
 
 release="$install/releases/$commit"
 mkdir -p "$install/releases"
-if [ ! -d "$install/repo/.git" ] && [ ! -f "$install/repo/HEAD" ]; then
+if [ ! -d "$install/release/.git" ] && [ ! -f "$install/release/HEAD" ]; then
   origin=$(git -C "$root" remote get-url origin 2>/dev/null || echo "$root")
-  git clone --quiet --no-checkout "$origin" "$install/repo"
+  git clone --quiet --no-checkout "$origin" "$install/release"
 fi
 # The commit may be one origin does not have (a branch not pushed yet): take it from this clone.
-git -C "$install/repo" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$install/repo" fetch --quiet "$root" "$commit"
-[ -d "$release" ] || git -C "$install/repo" worktree add --quiet --detach "$release" "$commit"
+git -C "$install/release" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$install/release" fetch --quiet "$root" "$commit"
+[ -d "$release" ] || git -C "$install/release" worktree add --quiet --detach "$release" "$commit"
 echo "install: building $commit in $release"
 (cd "$release" && corepack pnpm install --frozen-lockfile && corepack pnpm build)
 ln -sfn "releases/$commit" "$install/current.new" && mv -T "$install/current.new" "$install/current"
