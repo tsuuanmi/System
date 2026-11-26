@@ -53,7 +53,7 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       async set(name, value) { seen.credentials!.push([name, value]) },
       async describe(name) { return name === 'known' ? { configured: true, source: 'store' } : { configured: false } },
     },
-    async workers() { return { registered: f.capabilities.workerRefs(), accounts: [] } },
+    async workers() { return { registered: f.capabilities.workerRefs(), accounts: f.capabilities.workerRefs().map((ref) => ({ ref, runtime: 'fake', available: true, reason: 'registered', quota: { unreadable: 'fake' } })) } },
     async login(ref, cookies) { seen.logins!.push([ref, cookies]); return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 } },
     async loginRemote(ref) { seen.logins!.push([ref, 'remote']); return { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 } },
     async recheck(ref) { seen.logins!.push([ref, 'recheck']); return { ready: false, state: 'needs-sign-in', detail: 'signed out' } },
@@ -140,6 +140,19 @@ test('every method of the table round-trips over the socket', async () => {
   await assert.rejects(call('work.submit', { capabilities: ['repo.write'], input: input(f), worker: 'fake/codex' }), /fake\/codex does not provide repo.write/)
 
   assert.deepEqual((await call('workers.list') as { registered: string[] }).registered, ['fake/claude', 'fake/codex'])
+  // The room line's data: both fake Accounts have a free slot and no readable quota.
+  assert.deepEqual((await call('workers.list') as { room: unknown }).room, { accounts: 2, free: 2, unknown: ['fake/claude', 'fake/codex'], ready: [] })
+  const statusRepo = mkdtempSync(join(dir, 'status-'))
+  const sgit = (...args: string[]) => execFileSync('git', ['-C', statusRepo, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  sgit('init', '--quiet', '-b', 'dev')
+  writeFileSync(join(statusRepo, 'STATUS.md'), '# S\n\nAim: x\n\n## Items\n\n- [ ] rm-1 Ready\n- [ ] rm-2 Blocked (after: rm-1)\n- [x] rm-3 Done\n')
+  sgit('add', '.')
+  sgit('commit', '--quiet', '-m', 'status')
+  assert.deepEqual((await call('workers.list', { repository: statusRepo }) as { room: { ready: unknown } }).room.ready, [{ repository: realpathSync(statusRepo), count: 1 }])
+  const both = (await call('workers.list', { repository: [statusRepo, join(dir, 'nowhere')] }) as { room: { ready: { count?: number; error?: string }[] } }).room.ready
+  assert.equal(both[0]!.count, 1)
+  assert.equal(both[1]!.count, undefined)
+  assert.ok(both[1]!.error)
   assert.deepEqual(await call('workers.login', { ref: 'web/chatgpt/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
   assert.deepEqual(svc.seen.logins, [['web/chatgpt/default', 'the file']])
   assert.deepEqual(await call('workers.loginRemote', { ref: 'web/chatgpt/default' }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })

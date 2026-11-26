@@ -11,7 +11,7 @@ import type { Task } from '../src/kinds.ts'
 import { fold, type WorkEvent, type WorkRecord } from '../src/record.ts'
 import { Capabilities, type WorkerRequest } from '../src/registry.ts'
 import { ItemGate, readStatus } from '../src/gate.ts'
-import { itemLines, parseStatus, workStatus } from '../src/status.ts'
+import { itemLines, parseStatus, readyCount, workStatus } from '../src/status.ts'
 import type { LiveAttempt } from '../src/live.ts'
 import { directTask, type ResolvedSpec } from '../src/workflow.ts'
 
@@ -649,4 +649,9 @@ test('idle: a held Work awaits a human and is not reported idle', async () => {
   const text = itemLines(status, dir, [held], () => [], { item: 'df-3' })[0]!
   assert.match(text, /held: needs a human/)
   assert.doesNotMatch(text, /idle/)
+})
+
+test('readyCount counts todo Items that are not Blocked, not done and not doing', () => {
+  const status = parseStatus('# S\n\n## Items\n\n- [ ] a-1 Ready one\n- [ ] a-2 Ready two\n- [ ] a-3 Blocked (after: a-1)\n- [x] a-4 Done\n- [ ] a-5 Cycle x (after: a-6)\n- [ ] a-6 Cycle y (after: a-5)\n')
+  assert.equal(readyCount(status, '/r', []), 2)
 })

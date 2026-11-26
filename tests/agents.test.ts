@@ -75,6 +75,14 @@ test('both configured accounts are registered, with the CLI version', () => {
   assert.match(out.stdout, /claude-code\/default\s+available\s+0\.0\.0-fake \(Claude Code\)/)
 })
 
+test('system workers ends with the room line, with Ready Items for --repo', () => {
+  const out = system(['workers', '--repo', gitRepo])
+  assert.equal(out.status, 0, out.stderr)
+  const last = out.stdout.trimEnd().split('\n').at(-1)!
+  assert.match(last, /^room: 2 of 2 Accounts free \(slot and Headroom under Ceiling\)/)
+  assert.match(last, /; Ready Items: repo-\w+ unknown$/)
+})
+
 test('a direct Task runs Claude Code in its own worktree and records the exact resulting commit', () => {
   const ran = system(['work', 'submit', '--capability', 'repo.write', '--input', newTask('FAKE:edit')])
   assert.equal(ran.status, 0, ran.stderr)
@@ -200,8 +208,9 @@ test('workers shows a readable quota from the real Host and one quota line per a
   assert.equal(out.status, 0, out.stderr)
   assert.doesNotMatch(out.stdout, /fake-token|SECRET-ACCESS|SECRET-REFRESH/)
   assert.match(out.stdout, /quota: 5h 17% \(resets [^)]*\), read /)
-  const blocks = out.stdout.trimEnd().split(/\n(?=\S)/).slice(1)
+  const blocks = out.stdout.trimEnd().split(/\n(?=\S)/).slice(1, -1)
   assert.equal(blocks.length, 2)
+  assert.match(out.stdout.trimEnd().split('\n').at(-1)!, /^room: /)
   for (const block of blocks) assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
   assert.match(out.stdout, /quota: unreadable - a web account has no quota reader/)
 })

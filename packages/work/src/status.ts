@@ -162,6 +162,10 @@ export function itemLines(
   return lines
 }
 
+/** How many Items of the repository's STATUS.md are Ready: todo, with nobody on them and not Blocked (the `todo: nobody` lines of `itemLines`). */
+export const readyCount = (status: Pick<ParsedStatus, 'items'>, repository: string | undefined, records: WorkRecord[]): number =>
+  itemLines(status, repository, records, undefined, { state: 'todo' }).filter((line) => line.endsWith(' - todo: nobody')).length
+
 /** The most recent earlier Works a Worker is told of in detail. */
 const MAX_EARLIER = 3
 

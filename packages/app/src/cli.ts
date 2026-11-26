@@ -3,7 +3,7 @@
  * runs it once the host has started and then asks the launcher to exit.
  */
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
 import type { WorkRecord } from '@system/work'
@@ -64,6 +64,13 @@ function identityOf(a: WorkersView['accounts'][number]): string {
   return parts.length ? ` [${parts.join(', ')}]` : ''
 }
 
+/** `room: 3 of 8 Accounts free (slot and Headroom under Ceiling); Ready Items: System 5`; an Account with unreadable quota is counted when it has a slot, and listed apart. */
+export function roomLine(room: NonNullable<WorkersView['room']>): string {
+  const unknown = room.unknown.length ? `; quota unknown: ${room.unknown.join(', ')}` : ''
+  const ready = room.ready.map((r) => `${basename(r.repository)} ${r.count ?? 'unknown'}`).join(', ')
+  return `room: ${room.free} of ${room.accounts} Accounts free (slot and Headroom under Ceiling)${unknown}${ready ? `; Ready Items: ${ready}` : ''}`
+}
+
 /** `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, ending ` (from the last attempt)` for a reading told by an attempt's rate-limit event, or why it is unreadable. Reset times are local. */
 export function quotaLine(quota: QuotaReport, now: number): string {
   if ('unreadable' in quota) return `quota: unreadable - ${quota.unreadable}`
@@ -84,6 +91,8 @@ export function quotaLine(quota: QuotaReport, now: number): string {
 
 export interface WorkersView {
   registered: string[]
+  /** How many Accounts could take one more parallel Work: see `workers.list`. */
+  room?: { accounts: number; free: number; unknown: string[]; ready: { repository: string; count?: number; error?: string }[] }
   accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
@@ -219,10 +228,11 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .requiredOption('--reason <text>', 'why')
     .action(decide('denied'))
   const workers = program.command('workers')
-    .description('registered Workers, and each configured agent account with why it is or is not available')
-    .action(() => {
+    .description('registered Workers, and each configured agent account with why it is or is not available; the last line says how many Accounts have room for more parallel Works')
+    .option('--repo <path>', 'a project whose Ready Items the room line counts (repeatable)', (path: string, all: string[] = []) => [...all, path])
+    .action((options: { repo?: string[] }) => {
       select(async () => {
-        const { registered, accounts } = await host.call('workers.list', {}) as WorkersView
+        const { registered, accounts, room } = await host.call('workers.list', given({ repository: options.repo?.map((path) => resolve(path)) })) as unknown as WorkersView
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}${identityOf(a)} (${a.runtime})\n`)
@@ -233,6 +243,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
           if (models.length) io.out(`  models: ${models.map(([tier, model]) => `${tier}=${model}`).join(', ')}\n`)
           if (a.quota) io.out(`  ${quotaLine(a.quota, Date.now())}\n`)
         }
+        if (room) io.out(`${roomLine(room)}\n`)
         return 0
       })
     })

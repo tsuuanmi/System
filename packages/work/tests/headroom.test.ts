@@ -103,3 +103,16 @@ test('unreadable Accounts tie by fewest attempts, then registration order', asyn
 test('a readable Account under the ceiling still beats unreadable ones with fewer attempts', async () => {
   assert.equal((await rank([candidate('blind', { unreadable: 'x' }, 0), candidate('readable', reading(70), 5)])).selected, 'readable')
 })
+
+test('room counts the Accounts with a free slot and Headroom under the Ceiling, and lists an unreadable one apart', async () => {
+  const { roomOf } = await import(new URL('../src/headroom.ts', import.meta.url).href)
+  assert.equal(typeof roomOf, 'function')
+  const room = roomOf([
+    { ref: 'full', slot: false, reading: reading(10), ceiling: 80 },
+    { ref: 'over', slot: true, reading: reading(85), ceiling: 80 },
+    { ref: 'free', slot: true, reading: reading(10), ceiling: 80 },
+    { ref: 'blind', slot: true, reading: { unreadable: 'no reader' }, ceiling: 80 },
+    { ref: 'blind-full', slot: false, reading: undefined, ceiling: 80 },
+  ])
+  assert.deepEqual(room, { accounts: 5, free: 2, unknown: ['blind'] })
+})

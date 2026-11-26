@@ -74,3 +74,17 @@ test('workers shows an Account\'s abilities on their own line, before the roles 
   assert.equal(await run!(), 0)
   assert.match(output, /\n  abilities: repo\.read, repo\.write\n  capabilities: research, tier\.standard\n/)
 })
+
+test('workers ends with the room line, after every account line, and passes --repo through', async () => {
+  const seen: unknown[] = []
+  const room = { accounts: 8, free: 3, unknown: ['web/chatgpt/x'], ready: [{ repository: '/w/System', count: 5 }, { repository: '/w/Other', error: 'no STATUS.md' }] }
+  let output = ''
+  let run: cli.Run | undefined
+  const program = cli.buildProgram(fakeHost({ 'workers.list': (params) => { seen.push(params); return { registered: ['codex/x1'], accounts: [{ ref: 'codex/x1', runtime: 'codex', available: true, reason: 'registered' }], room } } }), { out: (text: string) => { output += text } } as Parameters<typeof cli.buildProgram>[1], (selected) => { run = selected })
+  program.exitOverride()
+  await program.parseAsync(['node', 'system', 'workers', '--repo', '/w/System', '--repo', '/w/Other'])
+  assert.equal(await run!(), 0)
+  assert.deepEqual(seen, [{ repository: ['/w/System', '/w/Other'] }])
+  assert.ok(output.endsWith('room: 3 of 8 Accounts free (slot and Headroom under Ceiling); quota unknown: web/chatgpt/x; Ready Items: System 5, Other unknown\n'), output)
+  assert.ok(output.indexOf('codex/x1') < output.indexOf('room:'))
+})

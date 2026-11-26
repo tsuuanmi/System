@@ -262,6 +262,17 @@ The old ref is retired: do not give it to another Account. Records keep it.
 `system workers` also prints a `quota:` line under each account; see the
 [agents README](../../packages/agents/README.md#quota).
 
+`system workers` ends with one line that says whether there is room for more
+parallel Works; `--repo <path>` (repeatable) adds the Ready Items of that
+project's `STATUS.md`. It is information for you: the Host never picks an Item.
+
+```
+room: 3 of 8 Accounts free (slot and Headroom under Ceiling); Ready Items: System 5
+```
+
+An Account whose quota cannot be read counts as free when it has a free slot,
+and is listed after the count as `quota unknown: <refs>`.
+
 `system work report --since <ISO>` prints the headline: Items merged per
 operator act. An operator act is an Intent the operator settled (store it with
 `system intent new ... --settled-by-operator`, only when they said so in that
