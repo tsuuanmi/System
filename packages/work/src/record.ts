@@ -71,6 +71,10 @@ export const PORT_CAUSES = ['attach', 'conflict', 'load'] as const
 export type PortCause = (typeof PORT_CAUSES)[number]
 const portCause = z.enum(PORT_CAUSES).optional()
 
+/** finish-1: structured final result reported by Codex and Antigravity attempts. */
+export const finalResultSchema = z.object({ status: z.enum(['done', 'blocked']), reason: z.string() }).strict()
+export type FinalResult = z.infer<typeof finalResultSchema>
+
 export type UsageObserved = Extract<z.infer<typeof usageSchema>, { state: 'observed' }>
 
 export const eventSchema = z.discriminatedUnion('type', [
@@ -107,6 +111,8 @@ export const eventSchema = z.discriminatedUnion('type', [
     log: contentIdSchema.optional(),
     /** fl-4: what the attempt did (tool calls, files, longest calls, tool share), computed by System from its log; absent in old records and for Runtimes with no log. */
     summary: attemptSummarySchema.optional(),
+    /** finish-1: structured final result reported by Codex and Antigravity attempts. */
+    finalResult: finalResultSchema.optional(),
     worker: executorSchema.optional(),
     /** Old records only: the attempt failed on a rate limit of its Account (the step stayed failed). */
     rateLimited: z.literal(true).optional(),

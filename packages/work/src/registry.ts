@@ -4,7 +4,7 @@
  */
 import { DEFAULT_QUOTA_CEILING_PERCENT, rankByHeadroom, type QuotaReading } from './headroom.ts'
 import { Slots } from './slots.ts'
-import type { AttemptSummary, ExecutorRecord, PortCause, UsageObserved } from './record.ts'
+import type { AttemptSummary, ExecutorRecord, FinalResult, PortCause, UsageObserved } from './record.ts'
 import type { AvailableCapabilities } from './workflow.ts'
 
 /** What a Worker gets for one attempt: exact Artifact IDs only, no transcript. */
@@ -55,6 +55,8 @@ export interface WorkerResult {
   log?: string
   /** fl-4: what the attempt did, computed by System from its output; recorded with the observed event. */
   summary?: AttemptSummary
+  /** finish-1: structured final result reported by Codex and Antigravity attempts. */
+  finalResult?: FinalResult
   executor?: ExecutorRecord
 }
 

@@ -6,8 +6,9 @@ import type { AttemptSummary, Progress } from '@system/work'
 import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { AGY_GROUPS, createQuotaCache, readAntigravityQuota, type AgyQuotaGroup } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
+import { applyFinalResult, FINAL_RESULT_SCHEMA } from './final-result.ts'
 import { SANDBOX_RUNTIME_ONLY } from './sandbox.ts'
-import type { CliAdapter, InvocationInput } from './types.ts'
+import type { CliAdapter, InvocationInput, ParseOptions } from './types.ts'
 
 /** Where `agy` reads its login and its permission rules, under the Account's HOME. */
 const CONFIG = ['.gemini', 'antigravity-cli'] as const
@@ -27,7 +28,7 @@ const MODE = 'accept-edits'
 function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
   return {
-    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', MODE, '--sandbox', '--add-dir', ws.inputs, '--add-dir', ws.outputs],
+    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', MODE, '--sandbox', '--add-dir', ws.inputs, '--add-dir', ws.outputs, '--json-schema', FINAL_RESULT_SCHEMA],
     env: { ...baseEnv(ws), ...env },
     // The settings bytes `writeSettings` stages are SETTINGS.
     scope: { permissionMode: MODE, sandbox: true, settingsSha256: createHash('sha256').update(SETTINGS).digest('hex') },
@@ -41,7 +42,7 @@ const LIMITED = /rate.?limit|too many requests|\b429\b|quota exceeded/i
 const failureText = (error: string) => (QUOTA.test(error) && !LIMITED.test(error) ? `quota exceeded: ${error}` : error)
 
 /** The `result` event decides: SUCCESS is ok; a tool that ended in ERROR (a denied `git push`) is only a step of the run, and so are denied actions when the run still answered (without a response they fail the attempt, since headless mode cannot prompt). Its usage is the run's total. */
-function parse(stdout: string): Parsed {
+function parse(stdout: string, options?: ParseOptions): Parsed {
   const result = jsonEvents(stdout).findLast((event) => event.event === 'result')?.result
   if (!result) return { ok: false, message: `unreadable Antigravity output: ${stdout.slice(0, 200)}` }
   if (result.status !== 'SUCCESS') return { ok: false, message: failureText(String(result.error ?? result.response ?? result.status)) }
@@ -53,16 +54,16 @@ function parse(stdout: string): Parsed {
   const input = count(u.input_tokens)
   const output = count(u.output_tokens)
   const cached = count(u.cache_read_tokens)
-  return {
-    ok: true,
-    message: String(result.response ?? '').trimEnd(),
-    usage: input === undefined || output === undefined ? undefined : {
-      inputTokens: input + (cached ?? 0),
-      ...(cached === undefined ? {} : { cacheReadTokens: cached }),
-      outputTokens: output,
-      source: 'antigravity result usage over the run (input_tokens is fresh; inputTokens adds cache_read_tokens)',
-    },
+  const usage = input === undefined || output === undefined ? undefined : {
+    inputTokens: input + (cached ?? 0),
+    ...(cached === undefined ? {} : { cacheReadTokens: cached }),
+    outputTokens: output,
+    source: 'antigravity result usage over the run (input_tokens is fresh; inputTokens adds cache_read_tokens)',
   }
+  const response = String(result.response ?? '').trimEnd()
+  const base: Parsed = { ok: true, message: response, usage }
+  if (options?.structured === false) return base
+  return applyFinalResult(base, response.trim() ? response : undefined)
 }
 
 /** Progress as the stream grows: a turn is a finished agent response with usage, the last tool the last tool step. */

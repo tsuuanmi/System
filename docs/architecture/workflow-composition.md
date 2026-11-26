@@ -233,6 +233,12 @@ carry an optional `scope` describing the tool bounds the attempt ran with
 of any staged settings bytes; never tokens or environment values). Records
 stored without `scope` parse and fold unchanged.
 
+**Structured final result (finish-1).** An `observed` event may carry an
+optional `finalResult` (`{ status: 'done' | 'blocked', reason }`) reported by
+Codex and Antigravity attempts. When `status` is `blocked`, the attempt fails
+with the Worker's own `reason` rather than "no change" or a missing output.
+Records stored without `finalResult` parse and fold unchanged.
+
 DAG support should emerge from `dependsOn` only. Do not require a
 DAG-specific user abstraction for a one-step task.
 

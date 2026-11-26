@@ -43,6 +43,12 @@ export interface RegisterInput {
   observations?: { get(ref: string): Observed | undefined; put(ref: string, observed: Observed): Promise<unknown> }
 }
 
+export interface ParseOptions {
+  /** When false (e.g. `ask`), skip the structured final-result check. */
+  structured?: boolean
+  ws?: Workspace
+}
+
 export interface CliAdapter {
   readonly runtime: Runtime
   /** The CLI's name, resolved on PATH when the account names none. */
@@ -54,7 +60,7 @@ export interface CliAdapter {
   readonly sandboxes?: boolean
   /** One turn with no tools in an empty directory (cls-1). */
   askArgv(input: { command: string; prompt: string; model: string; work: string }): string[]
-  parse(stdout: string): Parsed
+  parse(stdout: string, options?: ParseOptions): Parsed
   /** A reader of the stdout so far, called as it grows. */
   progress(): (stdout: string) => Progress
   summarize(output: string): AttemptSummary

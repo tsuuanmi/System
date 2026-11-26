@@ -62,7 +62,7 @@ export async function askAccount(account: Account, spawner: Spawner, root: strin
     const stdout = spawned.stdout()
     const events = adapter.rateLimitEvents?.(stdout)
     if (events?.length && account.onRateLimit) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the turn */ }
-    const parsed = adapter.parse(stdout)
+    const parsed = adapter.parse(stdout, { structured: false })
     staged.finish()
     if (timedOut) return { ok: false, reason: `${account.ref}: the turn timed out` }
     if (stop.signal.aborted) return { ok: false, reason: `${account.ref}: the turn was stopped` }
