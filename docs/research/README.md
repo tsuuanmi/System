@@ -19,4 +19,8 @@ The generated index below is the authoritative list of current research.
 - [RES-0014 — What kind of system System should be](RES-0014-what-system-should-be.md) — active — What kind of system
   System should be next - its stated identity against its records of 2026-11-10 to 2026-11-21 and primary sources on
   comparable systems; four candidate identities and one recommendation.
+- [RES-0015 — What System can take from Orca](RES-0015-orca-study.md) — active — What System can port or learn from Orca
+  (stablyai/orca, MIT) at commit 196cf89 - nine Research Works and read-only subagent studies checked against System's
+  dev at b0162e4; the operator's grilling of 2026-11-26 settled Antigravity Workers and Work-lifecycle Items (ag-1 to
+  st-1).
 <!-- docs:end index:research -->

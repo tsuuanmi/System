@@ -93,11 +93,11 @@ async function rehearse(scratch) {
   writeFileSync(ssh, SSH_STANDIN(origin))
   const gitEnv = { GIT_SSH_COMMAND: `${process.execPath} ${ssh}`, GIT_SSH_VARIANT: 'simple' }
   git('-c', 'core.hooksPath=/dev/null', 'push', '-q', origin, `${old}:refs/heads/main`)
-  // The install `system update` leaves: release/, releases/<commit>, current.
+  // The install `system update` leaves: source/, releases/<commit>, current.
   mkdirSync(join(install, 'releases'), { recursive: true })
-  sh('git', ['clone', '-q', '--no-checkout', ORIGIN_URL, join(install, 'release')], { env: { ...process.env, ...gitEnv } })
+  sh('git', ['clone', '-q', '--no-checkout', ORIGIN_URL, join(install, 'source')], { env: { ...process.env, ...gitEnv } })
   const release = join(install, 'releases', old)
-  sh('git', ['-C', join(install, 'release'), 'worktree', 'add', '-q', '--detach', release, old])
+  sh('git', ['-C', join(install, 'source'), 'worktree', 'add', '-q', '--detach', release, old])
   log(`building the last release in ${release}`)
   // corepack beside this Node, and that Node first on PATH for its shim (Item ns-2).
   const corepack = join(dirname(process.execPath), 'corepack')

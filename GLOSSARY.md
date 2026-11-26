@@ -42,8 +42,10 @@ An Account registered with System to run steps. A Worker is never a model.
 _Avoid_: agent, model, bot
 
 **Provider**:
-The company whose models a Runtime uses, such as Anthropic or OpenAI.
-_Avoid_: vendor, Worker
+The company that holds an Account's sign-in and quota, such as Anthropic,
+OpenAI or Google. The models a Runtime serves may come from other companies;
+who made a model is a property of the model, not of the Account.
+_Avoid_: vendor, Worker, model maker
 
 **Tier**:
 A capability that selects how capable a model a Worker uses for a step:
@@ -87,6 +89,11 @@ Work for the Item takes it over. It never expires: it ends only when taken
 over, by that Work or by another session that claims the Item anyway.
 _Avoid_: lock, lease, assignment
 
+**Idle**:
+An Item that is claimed or in progress while no Work for it runs or waits;
+shown by `status`, never ended by System.
+_Avoid_: stale, abandoned, expired
+
 **Ready**:
 An Item not yet done whose every Item it comes after is done; the Items a
 session may pick next.
@@ -118,6 +125,11 @@ _Avoid_: child Work, nested run, subroutine
 A human's yes or no on what a held Work awaits; the only one of these that
 lets a Work go on.
 _Avoid_: decision, sign-off
+
+**Quota wait**:
+A running Work whose next step waits for an Account's quota to reset;
+recorded with the time it expects to go on. Not a hold: no human is needed.
+_Avoid_: waiting, paused, blocked
 
 **Stall**:
 A running attempt that has reported nothing for longer than the Host allows;
