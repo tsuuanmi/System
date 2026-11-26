@@ -14,9 +14,11 @@ Codex, or the `web` Runtime, which drives a signed-in Site in a browser.
 _Avoid_: agent, engine, tool
 
 **Account**:
-One signed-in identity of a Runtime, with its own credential and the
-capabilities the profile gives it. Each Account is a distinct account of its
-Provider, so two Accounts never share one quota.
+One quota of a signed-in identity of a Runtime, with its credential and the
+capabilities the profile gives it. Two Accounts never share one quota; when a
+Provider gives one sign-in several quotas (Antigravity: one for Gemini models,
+one for Claude and GPT models), each quota is its own Account, limited to the
+models that quota covers.
 _Avoid_: login, user, key
 
 **Headroom**:
