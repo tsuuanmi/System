@@ -211,10 +211,15 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
     const toolchainOf = async (commit: string): Promise<string> => {
       if (toolchain !== undefined) return toolchain
       let node = ''
-      try {
-        node = execFileSync('node', ['--version'], { env: { PATH: path }, encoding: 'utf8' }).trim()
-      } catch {
-        // No node on PATH: the key then carries none, and a check that needs it fails anyway.
+      for (const dir of path.split(':').filter(Boolean)) {
+        const candidate = join(dir, 'node')
+        if (candidate === process.execPath) { node = process.version; break }
+        try {
+          node = execFileSync(candidate, ['--version'], { encoding: 'utf8' }).trim()
+          break
+        } catch {
+          // Not here or not executable; try the next directory on PATH.
+        }
       }
       let pnpm = ''
       try {
