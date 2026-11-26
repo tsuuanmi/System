@@ -222,6 +222,9 @@ importers:
       '@system/work':
         specifier: workspace:*
         version: link:../work
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.1.0
