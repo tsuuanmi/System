@@ -27,4 +27,7 @@ The generated index below is the authoritative list of current research.
   Orca study (2026-11-26), aimed at the day's own records - merge conflicts, docs-impact failures, an empty Worker
   output, unknown costs, a model comparison - with six Research Works, seven subagent studies and a scan of the stored
   Artifacts; Items redact-1 to runbook-1.
+- [RES-0017 — What System can take from Paseo and Paradev](RES-0017-paseo-paradev-study.md) — active — What System can
+  take from Paseo (getpaseo/paseo, Apache-2.0) and Paradev (paradevai/paradev, MIT), read on 2026-11-26 by eleven
+  subagent studies and one probe of agyhome-1's design; candidates only, none settled.
 <!-- docs:end index:research -->
