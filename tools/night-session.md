@@ -26,9 +26,9 @@ wait, in step 6.
 
 ## Limits (all of them are absolute)
 
-- **At most 6 Items in a night**, counted over all repositories together. An
-  Item counts once you have submitted a Work for it. There is no money cap for
-  now (operator, 2026-11-14).
+- **No cap on the number of Items in a night** (operator, 2026-11-26; it was 6):
+  take every Ready `todo` Item of every repository in turn until none is left.
+  There is no money cap for now (operator, 2026-11-14).
 - **Never write or edit an Item.** Do not edit `STATUS.md` or `PLAN.md`, do not
   commit or push anything yourself. Items are the operator's. What you think
   should be an Item goes in the report as a proposal.
@@ -55,7 +55,7 @@ wait, in step 6.
    in the report what blocks it, and do not `force` it. An Item that comes
    after an Item you finish tonight is Ready only once that one is done, so
    read the status again before taking it. Stop the repository when none is left, or the night
-   when 6 Items are counted.
+   when no Ready `todo` Item is left.
 
 3. Decide whether to skip it, before you claim anything:
    - Its Work is **held**: `mcp__system__status` with `item` `<id>` shows it
@@ -127,7 +127,7 @@ The report has these parts, in this order:
 - **Works with no Item:** read `work_list` with `since`; any Work on the Host this night
   that names no Item (not one you submitted) goes here with its Account and
   cost, so the operator sees where quota went.
-- **Why the night ended:** 6 Items, no `todo` left, or a Host that did not answer.
+- **Why the night ended:** no Ready `todo` left, or a Host that did not answer.
 - **Items you propose:** one line each, for the operator to write if they agree.
 - **For the operator:** the commands only they run, exactly:
   `system work approve <work>` for each held Work, and the release.

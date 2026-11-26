@@ -30,4 +30,8 @@ The generated index below is the authoritative list of current research.
 - [RES-0017 — What System can take from Paseo and Paradev](RES-0017-paseo-paradev-study.md) — active — What System can
   take from Paseo (getpaseo/paseo, Apache-2.0) and Paradev (paradevai/paradev, MIT), read on 2026-11-26 by eleven
   subagent studies and one probe of agyhome-1's design; candidates only, none settled.
+- [RES-0018 — Review, verification and source control at Anthropic, against
+  System](RES-0018-anthropic-review-verification-source-control.md) — active — Three Anthropic posts of 2026-10 and
+  2026-11 on code review, verification and source control at agent scale, read against System's records of 2026-11-26;
+  what they change in the decisions on smoke, the merge queue, gates that need a person and model review.
 <!-- docs:end index:research -->
