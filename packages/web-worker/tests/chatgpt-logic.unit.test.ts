@@ -138,7 +138,7 @@ test('webPrompt splits a prompt into its header and its fenced body, and keeps a
   mkdirSync(dir, { recursive: true })
   const file = join(dir, 'context-1')
   writeFileSync(file, NOTE)
-  const ws = { root: dir, home: dir, inputs: dir, outputs: dir, work: dir, instructions: 'Review it.', listed: [], context: [{ name: 'context-1', where: file }] }
+  const ws = { root: dir, home: dir, inputs: dir, outputs: dir, work: dir, instructions: 'Review it.', listed: [], context: [{ name: 'context-1', where: file, artifact: `sha256:${'a'.repeat(64)}`, kind: 'file@1' }] }
   const req = request({}, ['report'])
   const split = webPrompt(ws, req, 4000)
   assert.ok(split.body)
