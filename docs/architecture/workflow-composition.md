@@ -240,6 +240,14 @@ Codex and Antigravity attempts. When `status` is `blocked`, the attempt fails
 with the Worker's own `reason` rather than "no change" or a missing output.
 Records stored without `finalResult` parse and fold unchanged.
 
+**Usage outcome (usage-1).** An `observed` event's `usage` record may carry an
+optional `outcome` (`known`, `partial` or `unavailable`), a `reason` and an
+`origin` (`stream`, `transcript` or `none`) saying where the counts were read.
+`known` has tokens and cost; `partial` has tokens without a cost or a cache
+split; `unavailable` has nothing. `work report` counts the outcomes per Runtime
+(`costCoverage`) instead of reading unknown cost as zero. Records stored
+without them parse, and `usageOutcome` derives the outcome from what they hold.
+
 DAG support should emerge from `dependsOn` only. Do not require a
 DAG-specific user abstraction for a one-step task.
 
