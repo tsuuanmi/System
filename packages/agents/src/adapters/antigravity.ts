@@ -63,7 +63,24 @@ function parse(stdout: string, options?: ParseOptions): Parsed {
   const response = String(result.response ?? '').trimEnd()
   const base: Parsed = { ok: true, message: response, usage }
   if (options?.structured === false) return base
-  return applyFinalResult(base, response.trim() ? response : undefined)
+  // agy 1.5.18 puts the schema-shaped JSON in the last `agent_response` step and a prose summary in `result.response`.
+  const stepText = lastAgentResponse(stdout)
+  const structured = stepText !== undefined && isJson(stepText) ? stepText : response
+  return applyFinalResult(base, structured.trim() ? structured : undefined)
+}
+
+const isJson = (text: string) => { try { JSON.parse(text); return true } catch { return false } }
+
+/** The accumulated `text_delta` of the last `agent_response` step (all events with its `step_index`), or undefined when there is none. */
+function lastAgentResponse(stdout: string): string | undefined {
+  let index: unknown
+  let text = ''
+  for (const { step_update: step } of jsonEvents(stdout)) {
+    if (step?.step_type !== 'agent_response') continue
+    if (step.step_index !== index) { index = step.step_index; text = '' }
+    if (typeof step.text_delta === 'string') text += step.text_delta
+  }
+  return index === undefined ? undefined : text.trim()
 }
 
 /** Progress as the stream grows: a turn is a finished agent response with usage, the last tool the last tool step. */

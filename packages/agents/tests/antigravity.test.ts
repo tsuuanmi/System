@@ -63,6 +63,38 @@ test('parse: a SUCCESS result without the structured final result fails naming i
   }
 })
 
+test('parse: agy 1.5.18 puts the structured result in the last agent_response step, the result response is prose (work:85c3d99f)', () => {
+  const parsed = adapter.parse(fixture('stream-structured-in-step.jsonl'))
+  assert.equal(parsed.ok, true)
+  assert.equal(parsed.finalResult?.status, 'done')
+  assert.match(parsed.finalResult!.reason, /^Applied the exact diff from context-1/)
+  assert.equal(parsed.message, parsed.finalResult!.reason)
+})
+
+test('parse: structured text streamed in several deltas of the last agent_response step is joined; a blocked one fails with its reason', () => {
+  const step = (state: string, text: string) => JSON.stringify({ step_update: { step_index: 3, state, step_type: 'agent_response', text_delta: text } })
+  const stream = [
+    JSON.stringify({ step_update: { step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'prose first' } }),
+    step('ACTIVE', '{"reason":"no ac'), step('DONE', 'cess","status":"blocked"}'),
+    JSON.stringify({ step_update: { step_index: 4, state: 'DONE', step_type: 'finish' } }),
+    JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'a prose summary' } }),
+  ].join('\n')
+  const parsed = adapter.parse(stream)
+  assert.equal(parsed.ok, false)
+  assert.deepEqual(parsed.finalResult, { status: 'blocked', reason: 'no access' })
+  assert.equal(parsed.message, 'no access')
+})
+
+test('parse: prose in the last agent_response step and in the result response fails naming the structured result', () => {
+  const stream = [
+    JSON.stringify({ step_update: { step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'just prose' } }),
+    JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'also prose' } }),
+  ].join('\n')
+  const parsed = adapter.parse(stream)
+  assert.equal(parsed.ok, false)
+  assert.match(parsed.message, /structured final result/)
+})
+
 test('parse: a run that ended with denied actions and no response fails naming them, not as an empty success', () => {
   const parsed = adapter.parse(fixture('stream-denied-read.jsonl'))
   assert.equal(parsed.ok, false)
