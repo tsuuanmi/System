@@ -124,8 +124,10 @@ function nodeOn(path: string): { path: string; version: string } | undefined {
 
 /** The pnpm a check's `pnpm` is on `path`, run as a check runs it (a throwaway HOME); undefined when it cannot be run. */
 function pnpmOn(path: string, home: string): string | undefined {
+  const bin = path.split(':').filter(Boolean).map((dir) => join(dir, 'pnpm')).find((candidate) => existsSync(candidate))
+  if (!bin) return undefined
   try {
-    return execFileSync('pnpm', ['--version'], { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'ignore'], env: { PATH: path, HOME: home, CI: '1', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' } }).trim() || undefined
+    return execFileSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'ignore'], env: { PATH: path, HOME: home, CI: '1', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' } }).trim() || undefined
   } catch {
     return undefined
   }
