@@ -85,6 +85,40 @@ test('work wait refuses a timeout that is not a positive number', async () => {
   assert.match(bad.message, /--timeout/)
 })
 
+for (const [status, code] of [['succeeded', 0], ['failed', 1], ['held', 3], ['cancelled', 5]] as const) {
+  test(`work wait --json prints one JSON object per Work and exits ${code} for ${status}`, async () => {
+    const result = await wait(['work:a', '--json'], { records: [record('work:a', status, { reason: 'because' })], decided: 'work:a', timedOut: false })
+    assert.equal(result.code, code)
+    assert.deepEqual(JSON.parse(result.out.trim()), { id: 'work:a', status, outcome: status, exitCode: code, reason: 'because' })
+  })
+}
+
+test('work wait --json prints held with awaiting and exits 3', async () => {
+  const result = await wait(['work:a', '--json'], { records: [record('work:a', 'held', { awaiting: 'ship' })], decided: 'work:a', timedOut: false })
+  assert.equal(result.code, 3)
+  assert.deepEqual(JSON.parse(result.out.trim()), { id: 'work:a', status: 'held', outcome: 'held', exitCode: 3, awaiting: 'ship', reason: 'awaiting ship' })
+})
+
+test('work wait --json prints one NDJSON object per Work across multiple Works and on timeout', async () => {
+  const result = await wait(['work:a', 'work:b', '--timeout', '2', '--json'], { records: [record('work:a', 'succeeded'), record('work:b', 'running')], timedOut: true })
+  assert.equal(result.code, 4)
+  const lines = result.out.trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(lines, [
+    { id: 'work:a', status: 'succeeded', outcome: 'succeeded', exitCode: 0 },
+    { id: 'work:b', status: 'running', outcome: 'timeout', exitCode: 4 },
+  ])
+})
+
+test('work wait --json prints one object per Work with outcome unreachable and exits 6 when Host is unreachable', async () => {
+  const result = await wait(['work:a', 'work:b', '--json'], { records: [], timedOut: false, unreachable: 'x' })
+  assert.equal(result.code, 6)
+  const lines = result.out.trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(lines, [
+    { id: 'work:a', outcome: 'unreachable', exitCode: 6, reason: 'x' },
+    { id: 'work:b', outcome: 'unreachable', exitCode: 6, reason: 'x' },
+  ])
+})
+
 /** A Host whose `work.events`/`work.show` answer from `status`. */
 function fakeRemote(status: Record<string, string>, opened: { readOnly: (boolean | undefined)[] } = { readOnly: [] }, down = 0, options: { late?: number; never?: boolean; lateFinalShow?: number; reconnectMs?: number; calls?: string[] } = {}) {
   let late = options.late ?? 0

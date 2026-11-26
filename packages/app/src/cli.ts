@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import type { WorkRecord } from '@system/work'
+import { TERMINAL, type WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/agents'
 import { MAX_FRAME, fitsFrame } from '../../host/lib/index.js'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
@@ -468,10 +468,11 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('wait <workId...>')
-    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work. Exit: with --any the code of the first Work to end; otherwise the worst among the Works (failed, cancelled, held, succeeded; 0 succeeded, 1 failed, 3 held, 5 cancelled), 4 on timeout, 6 when the Host stayed unreachable')
+    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work (or one JSON object per Work with --json). Exit: with --any the code of the first Work to end; otherwise the worst among the Works (failed, cancelled, held, succeeded; 0 succeeded, 1 failed, 3 held or awaiting the Operator, 5 cancelled), 4 on timeout, 6 when the Host stayed unreachable')
     .option('--any', 'return at the first Work that ended, not when all have')
     .option('--timeout <minutes>', 'give up after this many minutes (exit 4; exit 6 if the Host was unreachable)')
-    .action((workIds: string[], options: { any?: boolean; timeout?: string }) => {
+    .option('--json', 'print one JSON object per Work (NDJSON)')
+    .action((workIds: string[], options: { any?: boolean; timeout?: string; json?: boolean }) => {
       select(async () => {
         let timeoutMs: number | undefined
         if (options.timeout !== undefined) {
@@ -480,13 +481,25 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
           timeoutMs = minutes * 60_000
         }
         const waited = await host.waitFor(workIds, { any: Boolean(options.any), timeoutMs })
-        for (const { id, state } of waited.records) {
-          const why = state.reason ?? (state.status === 'held' && state.awaiting ? `awaiting ${state.awaiting}` : undefined)
-          io.out(`${id}  ${state.status}${why ? `  ${why}` : ''}\n`)
-        }
         if (waited.unreachable !== undefined) {
+          if (options.json) {
+            for (const workId of workIds) {
+              io.out(`${JSON.stringify({ id: workId, outcome: 'unreachable', exitCode: EXIT_HOST_UNREACHABLE, reason: waited.unreachable })}\n`)
+            }
+          }
           io.err(`system: the System Host did not answer for ${Math.round((timeoutMs === undefined ? RECONNECT_MS : Math.min(timeoutMs, RECONNECT_MS)) / 60_000 * 10) / 10} minutes; the Works were not read and may still be running (exit ${EXIT_HOST_UNREACHABLE}); see docs/operations/runbook.md, "The Host is not answering"\n`)
           return EXIT_HOST_UNREACHABLE
+        }
+        for (const { id, state } of waited.records) {
+          const why = state.reason ?? (state.status === 'held' && state.awaiting ? `awaiting ${state.awaiting}` : undefined)
+          if (options.json) {
+            const isTimeout = waited.timedOut && !TERMINAL.has(state.status)
+            const outcome = isTimeout ? 'timeout' : state.status
+            const code = isTimeout ? 4 : exitCode(state.status)
+            io.out(`${JSON.stringify({ id, status: state.status, outcome, exitCode: code, ...(state.awaiting ? { awaiting: state.awaiting } : {}), ...(why ? { reason: why } : {}) })}\n`)
+          } else {
+            io.out(`${id}  ${state.status}${why ? `  ${why}` : ''}\n`)
+          }
         }
         if (waited.timedOut) {
           io.err(`system: timed out after ${options.timeout} minutes; the Works above had not ended (exit 4)\n`)

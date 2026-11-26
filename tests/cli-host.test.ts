@@ -289,3 +289,37 @@ test('work wait survives a Host restart', { timeout: 120_000 }, async () => {
   assert.equal(result.status, 5, result.stderr)
   assert.doesNotMatch(result.stderr, /not running/)
 })
+
+test('work wait --json through a real Host exits with distinct codes and prints one object per Work', { timeout: 120_000 }, async () => {
+  writeFileSync(hold, '')
+  const doneRun = system('work', 'submit', '--capability', 'repo.write', '--no-run')
+  assert.equal(doneRun.status, 0, doneRun.stderr)
+  const doneId = doneRun.stdout.trim()
+  assert.equal(system('work', 'run', doneId).status, 0)
+  const waitedDone = system('work', 'wait', doneId, '--json')
+  assert.equal(waitedDone.status, 0, waitedDone.stderr)
+  assert.deepEqual(JSON.parse(waitedDone.stdout.trim()), { id: doneId, status: 'succeeded', outcome: 'succeeded', exitCode: 0, reason: 'every step succeeded' })
+
+  rmSync(hold, { force: true })
+  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write'])
+  const runId = await admitted(run)
+  run.child.kill('SIGINT')
+  await run.done
+
+  const waitedTimeout = system('work', 'wait', doneId, runId, '--timeout', '0.01', '--json')
+  assert.equal(waitedTimeout.status, 4, waitedTimeout.stderr)
+  const timeoutRows = waitedTimeout.stdout.trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(timeoutRows, [
+    { id: doneId, status: 'succeeded', outcome: 'succeeded', exitCode: 0, reason: 'every step succeeded' },
+    { id: runId, status: 'running', outcome: 'timeout', exitCode: 4 },
+  ])
+
+  const cancelled = system('work', 'cancel', runId)
+  assert.ok(cancelled.status === 0 || cancelled.status === 5, cancelled.stderr)
+  const waitedCancelled = system('work', 'wait', runId, '--json')
+  assert.equal(waitedCancelled.status, 5, waitedCancelled.stderr)
+  const cancelledJson = JSON.parse(waitedCancelled.stdout.trim())
+  assert.equal(cancelledJson.id, runId)
+  assert.equal(cancelledJson.outcome, 'cancelled')
+  assert.equal(cancelledJson.exitCode, 5)
+})

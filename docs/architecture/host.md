@@ -134,7 +134,7 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   each append and admission, and nothing polls storage. A notice only wakes the
   client; the log is the truth, so a notice sent while it was away loses
   nothing, and a watch on a Work that already ended replies with its final
-  `{ status, seq }`. `system mcp` turns it into MCP resource subscriptions (the
+  `{ status, outcome, seq }`. `system mcp` turns it into MCP resource subscriptions (the
   [runbook](../operations/using-system.md#using-system-from-an-agent)).
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact

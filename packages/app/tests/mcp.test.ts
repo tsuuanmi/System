@@ -471,3 +471,22 @@ test('the bootstrap steps cite a section that exists in documentation-architectu
   assert.match(INSTRUCTIONS, /STATUS\.md/)
   assert.match(INSTRUCTIONS, /Only a human approves/)
 })
+
+test('work.watch (MCP work_watch) names the same outcome as system work wait', { timeout: 120_000 }, async () => {
+  const client = await mcp()
+  const running = await call(client, 'work.submit', { workflow, run: false })
+  assert.equal(running.error, undefined, running.error)
+  const watchedRunning = await call(client, 'work.watch', { workId: running.value.id })
+  assert.equal(watchedRunning.error, undefined, watchedRunning.error)
+  assert.equal(watchedRunning.value.outcome, 'running')
+
+  await call(client, 'work.run', { workId: running.value.id })
+  await until('work to succeed', async () => (await call(client, 'work.show', { workId: running.value.id })).value.state.status === 'succeeded')
+  const watchedDone = await call(client, 'work.watch', { workId: running.value.id })
+  assert.equal(watchedDone.value.outcome, 'succeeded')
+
+  const cancelled = await call(client, 'work.submit', { workflow, run: false })
+  await call(client, 'work.cancel', { workId: cancelled.value.id, reason: 'stop' })
+  const watchedCancelled = await call(client, 'work.watch', { workId: cancelled.value.id })
+  assert.equal(watchedCancelled.value.outcome, 'cancelled')
+})

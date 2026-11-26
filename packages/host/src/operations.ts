@@ -92,11 +92,11 @@ async function started(host: Host, id: string, begin: (started: () => void) => P
 const watching = z.object({ workId }).strict()
 
 /** Add to or remove from what the connection watches; the reply is where the Work stands now. */
-function watch(host: Host, p: z.infer<typeof watching>, link: Link, on: boolean): { status: string; seq: number } {
+function watch(host: Host, p: z.infer<typeof watching>, link: Link, on: boolean): { status: string; outcome: string; seq: number } {
   const record = known(host, p.workId)
   link.works[on ? 'add' : 'delete'](p.workId)
   if (on) link.listen()
-  return { status: record.state.status, seq: record.events.at(-1)!.seq }
+  return { status: record.state.status, outcome: record.state.status, seq: record.events.at(-1)!.seq }
 }
 
 export function operations(services: Services) {
@@ -221,7 +221,7 @@ export function operations(services: Services) {
     'work.watch': {
       read: true,
       authority: 'caller',
-      summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, seq }` of the Work now.',
+      summary: 'Keep this connection subscribed: the Host sends the notification `work.changed { workId, status, seq }` (no `id`) when the Work becomes terminal, is held, or starts awaiting approval, and `work.changed { workId, status, seq, stalled: true }` when one of its attempts has been quiet for `stallMinutes`. A notice only wakes the client: read `work.events` from your cursor. Replies `{ status, outcome, seq }` of the Work now.',
       params: watching,
       handler: (host, p, _caller, link) => watch(host, p, link, true),
     },

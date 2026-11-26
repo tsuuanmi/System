@@ -113,8 +113,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal(work.state.status, 'running')
   assert.deepEqual((await call('work.list') as { id: string }[]).map((r) => r.id), [work.id])
   assert.equal(((await call('work.show', { workId: work.id })) as { id: string }).id, work.id)
-  assert.deepEqual(await call('work.watch', { workId: work.id }), { status: 'running', seq: 0 })
-  assert.deepEqual(await call('work.unwatch', { workId: work.id }), { status: 'running', seq: 0 })
+  assert.deepEqual(await call('work.watch', { workId: work.id }), { status: 'running', outcome: 'running', seq: 0 })
+  assert.deepEqual(await call('work.unwatch', { workId: work.id }), { status: 'running', outcome: 'running', seq: 0 })
   assert.equal((await call('work.cancel', { workId: work.id, reason: 'stop' }) as { state: { status: string } }).state.status, 'cancelled')
   await call('work.retry', { workId: work.id, reason: 'again' })
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
@@ -421,7 +421,7 @@ test('work.watch sends one work.changed when the Work finishes, and one when it 
   const { f, open } = await started()
   const { client, notices } = await listening(open)
   const done = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
-  assert.deepEqual(await client.call('work.watch', { workId: done.id }), { status: 'running', seq: 0 })
+  assert.deepEqual(await client.call('work.watch', { workId: done.id }), { status: 'running', outcome: 'running', seq: 0 })
   await client.call('work.run', { workId: done.id })
   await settled('the notice', () => notices.length > 0)
   const last = (await events(client, done.id)).events.at(-1)!
@@ -497,7 +497,7 @@ test('a client that missed the notice reads on from its cursor and loses nothing
   assert.equal(missed.events.at(-1)!.type, 'terminal')
   assert.equal(missed.events.length, all.events.length - cursor - 1)
   // Watching a Work that already ended says so in the reply, which is the same wake-up.
-  assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', seq: all.events.at(-1)!.seq })
+  assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', outcome: 'succeeded', seq: all.events.at(-1)!.seq })
 })
 
 test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 120_000 }, async () => {
