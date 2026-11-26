@@ -38,6 +38,8 @@ export interface TurnOutcome {
   message?: string
   usage?: Omit<UsageObserved, 'state'>
   summary?: WorkerResult['summary']
+  /** finish-1: structured final result when the Runtime reports one. */
+  finalResult?: WorkerResult['finalResult']
   /** The outputs the turn stored itself; absent when the lifecycle captures `out/<slot>` files. */
   captured?: { outputs: Record<string, string>; missing: string[]; empty?: string[] }
   /** Extra partial outputs, kept whatever the status (and, alone, on success). */
@@ -105,7 +107,7 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
     else if (stoppedFor) result = stopped(stoppedFor, 'failed')
     else if (timedOut) result = stopped(`attempt exceeded its time limit of ${limit} minutes`, 'failed')
     else {
-      const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
+      const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.finalResult ? { finalResult: outcome.finalResult } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
       if (outcome.failure !== undefined) result = { status: 'failed', outputs: {}, ...kept, reason: outcome.failure, ...(outcome.cause ? { cause: outcome.cause } : {}), ...common }
       else if (captured?.missing.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote no output ${noun} for ${captured.missing.join(', ')}`, retryable: true, ...common }
       else if (captured?.empty?.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote an empty output ${noun}: ${captured.empty.map((slot) => `output ${slot} is empty`).join(', ')}`, retryable: true, ...common }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -215,10 +215,30 @@ test('the sandbox option is refused on a Codex Account and checked for unknown k
   assert.equal(checkSandbox('claude-code', true), true)
 })
 
-test('the Codex Runtime runs in the workspace-write sandbox, never a wider one', () => {
-  const { argv } = codexInvocation('codex', ws, 'do it', '/codex-home')
+test('the Codex Runtime runs in the workspace-write sandbox, never a wider one, and passes --output-schema and -o', () => {
+  const { argv } = codexInvocation('codex', sbWs, 'do it', '/codex-home')
   assert.equal(argv[argv.indexOf('-s') + 1], 'workspace-write')
   assert.equal(argv.some((a) => /danger|bypass|read-only/.test(a)), false)
+  assert.equal(argv[argv.indexOf('--output-schema') + 1], join('/fake/home/.dsh/attempt', 'final-result.schema.json'))
+  assert.equal(argv[argv.indexOf('-o') + 1], join('/fake/home/.dsh/attempt', 'final-result.json'))
+})
+
+test('Codex parse reads structured done and blocked outcomes from fixtures and fails on missing result', () => {
+  const codexFixture = (name: string) => readFileSync(join(import.meta.dirname, 'fixtures', 'codex', name), 'utf8')
+  const done = parseCodex(codexFixture('stream-done.jsonl'))
+  assert.equal(done.ok, true)
+  assert.equal(done.message, 'implemented the change')
+  assert.deepEqual(done.finalResult, { status: 'done', reason: 'implemented the change' })
+  assert.equal(done.usage?.inputTokens, 1500)
+
+  const blocked = parseCodex(codexFixture('stream-blocked.jsonl'))
+  assert.equal(blocked.ok, false)
+  assert.equal(blocked.message, 'missing required context artifact')
+  assert.deepEqual(blocked.finalResult, { status: 'blocked', reason: 'missing required context artifact' })
+
+  const missing = parseCodex([line({ type: 'item.completed', item: { type: 'agent_message', text: 'plain text' } }), line({ type: 'turn.completed', usage: { input_tokens: 10, output_tokens: 2 } })].join('\n'))
+  assert.equal(missing.ok, false)
+  assert.match(missing.message, /structured final result/i)
 })
 
 test('the registry is keyed by Runtime name: both CLI Runtimes have an adapter, `web` has none', () => {

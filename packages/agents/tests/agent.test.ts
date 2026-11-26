@@ -835,3 +835,51 @@ test('a long or multi-line Goal is cut to one line of at most 72 characters at a
     assert.ok(subject.endsWith('word') || subject.endsWith('FAKE:edit'), subject)
   }
 })
+
+test('Codex structured final result: done, blocked (Worker own reason, never no-change), missing result, and kept in the attempt record', async () => {
+  const { artifacts } = memory()
+  const repository = repo()
+  const table = memoryWorkTable()
+  const specs: SpecStore = {
+    async putSpec(spec) { return (await artifacts.put({ kind: 'note-spec', schemaVersion: 1, content: spec, classification: 'public', producer: { type: 'operator', ref: 't' } })).id },
+    getSpec: (id) => { const r = artifacts.get(id); return r.state === 'stored' ? r.envelope.content as ResolvedSpec : undefined },
+    exists: (id) => artifacts.get(id).state === 'stored',
+    taskOf: () => undefined,
+    withNote: async () => { throw new Error('no Item in this test') },
+    unchangedBase: () => undefined,
+    kindOf: (id) => { const r = artifacts.get(id); return r.state === 'stored' ? r.envelope.kind : undefined },
+    putVerdict: async () => { throw new Error('no verify step in this test') },
+  }
+  artifacts.registerKind({ kind: 'note-spec', schemaVersion: 1, content: resolvedSpecSchema })
+  const codexHome = join(root, 'codex-finish')
+  mkdirSync(codexHome)
+  writeFileSync(join(codexHome, 'auth.json'), '{}')
+  const capabilities = new Capabilities()
+  capabilities.registerWorker(agentWorker(account('codex', { codexHome }), artifacts, processSpawner, join(root, 'attempts-finish')))
+  const controller = new WorkController(table, specs, capabilities)
+  const spec = resolve(parseWorkflow('schema: system.workflow/v1\nid: finish-test\nversion: 1\nsteps:\n  - id: implement\n    capabilities: [repo.write]\n    inputs: {task: $work.input}\n    outputs: [change]\n'), capabilities.available())
+
+  // 1. done: finalResult is kept in WorkerResult and in the WorkRecord's observed event
+  const doneAdmitted = await controller.admit({ spec, input: await task(artifacts, 'FAKE:edit', repository), caller: { type: 'human', operatorId: 't' }, source: { kind: 'workflow-file' } })
+  const doneWork = await controller.run(doneAdmitted.id)
+  assert.equal(doneWork.state.status, 'succeeded', doneWork.state.reason)
+  const doneObs = doneWork.events.find((e) => e.type === 'observed')
+  assert.equal(doneObs?.type, 'observed')
+  assert.deepEqual(doneObs.finalResult, { status: 'done', reason: 'done' })
+
+  // 2. blocked: fails with Worker's own reason (never "no change" or missing output) and keeps finalResult in observed
+  const blockedAdmitted = await controller.admit({ spec, input: await task(artifacts, 'FAKE:blocked=missing context artifact ID', repository), caller: { type: 'human', operatorId: 't' }, source: { kind: 'workflow-file' } })
+  const blockedWork = await controller.run(blockedAdmitted.id)
+  assert.equal(blockedWork.state.status, 'failed')
+  const blockedObs = blockedWork.events.find((e) => e.type === 'observed')
+  assert.equal(blockedObs?.type, 'observed')
+  assert.match(blockedObs.reason!, /missing context artifact ID/)
+  assert.equal(/no change|wrote no output/i.test(blockedObs.reason!), false)
+  assert.deepEqual(blockedObs.finalResult, { status: 'blocked', reason: 'missing context artifact ID' })
+
+  // 3. missing structured result: fails naming it
+  const missingWorker = agentWorker(account('codex', { codexHome }), artifacts, processSpawner, join(root, 'attempts-finish-missing'))
+  const missingResult = await missingWorker.run(request({ task: await task(artifacts, 'FAKE:edit FAKE:no-result', repository) }, ['change']))
+  assert.equal(missingResult.status, 'failed')
+  assert.match(missingResult.reason!, /structured final result/i)
+})

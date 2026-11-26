@@ -231,15 +231,16 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       // Even a rejected or stopped attempt tells the truth about quota.
       const events = adapter.rateLimitEvents?.(out)
       if (events?.length && account.onRateLimit) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
-      const parsed = adapter.parse(out)
+      const parsed = adapter.parse(out, { ws })
       staged.finish()
       if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
       const summary = adapter.summarize(out)
+      const finalResult = parsed.finalResult ? { finalResult: parsed.finalResult } : {}
       if (done.exitCode !== 0 || !parsed.ok) {
         const why = done.signal ? `signal ${done.signal}` : `exit ${done.exitCode}`
-        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, summary, usage: parsed.usage }
+        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...finalResult, summary, usage: parsed.usage }
       }
-      return { ...(parsed.message ? { message: parsed.message } : {}), summary, usage: parsed.usage }
+      return { ...(parsed.message ? { message: parsed.message } : {}), ...finalResult, summary, usage: parsed.usage }
     },
   })
 }

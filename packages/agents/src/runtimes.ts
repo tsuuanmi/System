@@ -2,7 +2,7 @@
  * How each agent CLI is invoked headless and how its output is read
  * (ADR-0004 decision 6, ADR-0005). Pure functions; spawning is the adapter's.
  */
-import type { ExecutorRecord } from '@system/work'
+import type { ExecutorRecord, FinalResult } from '@system/work'
 import { nodeBin } from './node.ts'
 import type { Workspace } from './workspace.ts'
 
@@ -33,6 +33,8 @@ export interface Invocation {
 export interface Parsed {
   ok: boolean
   message: string
+  /** finish-1: structured final result when the Runtime reports one. */
+  finalResult?: FinalResult
   /** Models the CLI says it used, when it says. */
   servedModels?: string[]
   /** `inputTokens` is the total; fresh input is it minus the cache fields, which are absent when the CLI did not split them. */

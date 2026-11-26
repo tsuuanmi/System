@@ -873,6 +873,7 @@ export class WorkController {
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.summary ? { summary: result.summary } : {}),
+      ...(result.finalResult ? { finalResult: result.finalResult } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
       ...(limited ? { limited: true as const } : {}),
       ...(unchangedAfter ? { unchangedAfter } : {}),
