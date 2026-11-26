@@ -3,6 +3,7 @@
  * never by hand; records are only read. A measure with nothing to divide by, or an input nobody gave, is `unknown`,
  * never zero. Admission decides the range: `since` inclusive, `until` exclusive.
  */
+import { costCoverage, type CostCoverage } from './usage.ts'
 import type { WorkRecord } from './record.ts'
 import { failureClass, parseCheckFailure } from './failure-class.ts'
 import { laterPasses } from './later-pass.ts'
@@ -60,6 +61,8 @@ export interface RangeReport {
   lateCaughtDefects: { count: number; checks: string[] }
   /** The API-equivalent cost estimate of every attempt in the range that reports one, over accepted Works; a lower bound when `worksWithUnknownCost` is above 0, `unknown` when no cost is known. */
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; worksWithUnknownCost: number }
+  /** usage-1: attempts of the range per Runtime by usage outcome (`known`: tokens and cost; `partial`: tokens without cost or cache split; `unavailable`: none), so cost the Runtime did not report is not read as zero. */
+  costCoverage: CostCoverage
   /** Admission to acceptance of the accepted Works. */
   timeToVerifiedResolution: { medianMs: number | Unknown; p90Ms: number | Unknown; accepted: number }
   /** Mean of the attempts' tool-seconds per second (the record's `toolShare`): parallel tool calls overlap, so it is not a share and can pass 1. */
@@ -157,6 +160,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs, releasesByCaller: callerReleases?.filter(inRangeAt).length ?? 0 },
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
     lateCaughtDefects: { count: late.length, checks: [...new Set(late)].sort() },
+    costCoverage: costCoverage(inRange),
     costPerVerifiedWork: { usd: accepted === 0 || (knownCostUsd === 0 && worksWithUnknownCost > 0) ? 'unknown' : knownCostUsd / accepted, knownCostUsd, accepted, worksWithUnknownCost },
     timeToVerifiedResolution: resolution.length === 0 ? { medianMs: 'unknown', p90Ms: 'unknown', accepted } : { medianMs: (resolution[Math.floor((resolution.length - 1) / 2)]! + resolution[Math.floor(resolution.length / 2)]!) / 2, p90Ms: percentile(resolution, 0.9), accepted },
     toolSecondsPerSecond: { mean: shares.length === 0 ? 'unknown' : shares.reduce((a, b) => a + b, 0) / shares.length, attempts: shares.length },

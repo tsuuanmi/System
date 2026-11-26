@@ -43,9 +43,13 @@ export const executorSchema = z.object({
   scope: scopeSchema.optional(),
 }).strict()
 
+/** usage-1: absent in records written before the outcome existed (`usageOutcome` derives it). */
+const usageOutcomeFields = {
+  outcome: z.enum(['known', 'partial', 'unavailable']).optional(), reason: z.string().optional(), origin: z.enum(['stream', 'transcript', 'none']).optional(),
+}
 export const usageSchema = z.union([
-  z.object({ state: z.literal('unknown') }).strict(),
-  z.object({ state: z.literal('observed'), inputTokens: z.number().int().nonnegative(), cacheReadTokens: z.number().int().nonnegative().optional(), cacheWriteTokens: z.number().int().nonnegative().optional(), outputTokens: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), source: z.string() }).strict(),
+  z.object({ state: z.literal('unknown'), ...usageOutcomeFields }).strict(),
+  z.object({ state: z.literal('observed'), inputTokens: z.number().int().nonnegative(), cacheReadTokens: z.number().int().nonnegative().optional(), cacheWriteTokens: z.number().int().nonnegative().optional(), outputTokens: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), source: z.string(), ...usageOutcomeFields }).strict(),
 ])
 
 export type ExecutorRecord = z.infer<typeof executorSchema>

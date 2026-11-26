@@ -271,10 +271,10 @@ test('a Worker that disappears after admission fails the Work with a missing-cap
   assert.match(done.state.reason!, /no enabled Worker provides web.search, tier.standard/)
 })
 
-test('usage a Worker does not report is recorded as unknown, never zero', async () => {
+test('usage a Worker does not report is recorded as unavailable with a reason, never zero', async () => {
   const done = await runFixture(harness(), 'research.yaml')
   const observed = done.events.find((e) => e.type === 'observed')
-  assert.deepEqual(observed && 'usage' in observed && observed.usage, { state: 'unknown' })
+  assert.deepEqual(observed && 'usage' in observed && observed.usage, { state: 'unknown', outcome: 'unavailable', reason: 'the Worker reported no usage', origin: 'none' })
 })
 
 test('the attempt summary a Worker computed is recorded with the observed event, and absent when it gave none', async () => {

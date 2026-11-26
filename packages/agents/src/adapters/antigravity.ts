@@ -45,8 +45,8 @@ const failureText = (error: string) => (QUOTA.test(error) && !LIMITED.test(error
 /** The `result` event decides: SUCCESS is ok; a tool that ended in ERROR (a denied `git push`) is only a step of the run, and so are denied actions when the run still answered (without a response they fail the attempt, since headless mode cannot prompt). Its usage is the run's total. */
 function parse(stdout: string, options?: ParseOptions): Parsed {
   const result = jsonEvents(stdout).findLast((event) => event.event === 'result')?.result
-  if (!result) return { ok: false, message: `unreadable Antigravity output: ${stdout.slice(0, 200)}` }
-  if (result.status !== 'SUCCESS') return { ok: false, message: failureText(String(result.error ?? result.response ?? result.status)) }
+  if (!result) return { ok: false, message: `unreadable Antigravity output: ${stdout.slice(0, 200)}`, usageGap: 'antigravity printed no result event' }
+  if (result.status !== 'SUCCESS') return { ok: false, message: failureText(String(result.error ?? result.response ?? result.status)), usageGap: `the antigravity run ended ${String(result.status)} without usage counts` }
   const denied: string[] = Array.isArray(result.denied_actions) ? result.denied_actions.map((d: any) => String(d?.action ?? d?.display_name ?? 'unknown')) : []
   if (denied.length > 0 && !String(result.response ?? '').trim()) {
     return { ok: false, message: `agy denied ${[...new Set(denied)].join(', ')} (headless mode cannot prompt) and ended with no response` }
@@ -62,7 +62,7 @@ function parse(stdout: string, options?: ParseOptions): Parsed {
     source: 'antigravity result usage over the run (input_tokens is fresh; inputTokens adds cache_read_tokens)',
   }
   const response = String(result.response ?? '').trimEnd()
-  const base: Parsed = { ok: true, message: response, usage }
+  const base: Parsed = { ok: true, message: response, usage, ...(usage ? {} : { usageGap: 'the antigravity result carried no input and output token counts' }) }
   if (options?.structured === false) return base
   // agy 1.5.18 puts the schema-shaped JSON in the last `agent_response` step and a prose summary in `result.response`.
   const stepText = lastAgentResponse(stdout)

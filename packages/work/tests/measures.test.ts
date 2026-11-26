@@ -215,3 +215,9 @@ test('ct-2: a failed release verdict on a check the Works skip is a late-caught 
   assert.deepEqual(count(rel('a', 'failed: upgrade (exit 1)'), rel('b', 'failed: install-guide (exit 1)'), rel('c', 'failed: upgrade (exit 1)')), { count: 3, checks: ['install-guide', 'upgrade'] })
   assert.deepEqual(rangeReport([rel('x', 'failed: upgrade (exit 1)')], { since: '2026-11-15' }).lateCaughtDefects, { count: 0, checks: [] })
 })
+
+test('costCoverage: attempts with a known, partial and unavailable cost are counted per Runtime, so unknown cost is not read as zero (usage-1)', () => {
+  const sel = (r: WorkRecord, runtime: string): WorkRecord => ({ ...r, events: r.events.map((e) => (e.type === 'dispatched' ? { ...e, selected: `${runtime}/a` } : e)) })
+  const r = rangeReport([sel(A, 'claude-code'), sel(B, 'codex'), sel(C, 'claude-code')], { since: '2026-11-15' })
+  assert.deepEqual(r.costCoverage, { 'claude-code': { known: 0, partial: 2, unavailable: 0 }, codex: { known: 0, partial: 0, unavailable: 1 } })
+})

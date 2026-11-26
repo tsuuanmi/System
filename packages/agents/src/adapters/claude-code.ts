@@ -92,11 +92,12 @@ function parse(stdout: string): Parsed {
     }
   }
   const last = results.at(-1)
-  if (!last) return { ok: false, message: `unreadable Claude Code output: ${stdout.slice(0, 200)}` }
+  if (!last) return { ok: false, message: `unreadable Claude Code output: ${stdout.slice(0, 200)}`, usageGap: 'claude-code printed no result event' }
   /** `modelUsage` counts subagents, `usage` does not; use it when every result has it (a result that has none leaves the whole stream on `usage`). */
   const byModel = results.every((r) => r.modelUsage && Object.keys(r.modelUsage).length > 0)
   const usage = totalUsage(results, byModel)
   return {
+    ...(usage ? {} : { usageGap: 'claude-code result events carried no input and output token counts' }),
     ok: last.is_error === false,
     message: String(last.result ?? last.subtype ?? ''),
     servedModels: results.some((r) => r.modelUsage) ? [...new Set(results.flatMap((r) => Object.keys(r.modelUsage ?? {})))].sort() : undefined,

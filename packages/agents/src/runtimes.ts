@@ -31,6 +31,8 @@ export interface Invocation {
 }
 
 export interface Parsed {
+  /** Why `usage` is absent, when it is (usage-1). */
+  usageGap?: string
   ok: boolean
   message: string
   /** finish-1: structured final result when the Runtime reports one. */

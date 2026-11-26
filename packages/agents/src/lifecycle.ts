@@ -38,6 +38,7 @@ export interface TurnOutcome {
   cause?: PortCause
   message?: string
   usage?: Omit<UsageObserved, 'state'>
+  usageGap?: string
   summary?: WorkerResult['summary']
   /** finish-1: structured final result when the Runtime reports one. */
   finalResult?: WorkerResult['finalResult']
@@ -103,14 +104,14 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
     const partial = { ...captured?.outputs, ...outcome.partial }
     const kept = captured || Object.keys(partial).length ? { partial } : {}
     // A stopped turn's output is incomplete, so its usage is unknown rather than a partial count.
-    const stopped = (reason: string, status: WorkerResult['status']): Omit<WorkerResult, 'executor' | 'log'> => ({ status, outputs: {}, ...kept, reason, ...(outcome.summary ? { summary: outcome.summary } : {}) })
+    const stopped = (reason: string, status: WorkerResult['status']): Omit<WorkerResult, 'executor' | 'log'> => ({ status, outputs: {}, ...kept, reason, usageGap: 'the attempt was stopped before the Runtime reported usage', ...(outcome.summary ? { summary: outcome.summary } : {}) })
     const noun = o.outputNoun ?? 'file'
     let result: Omit<WorkerResult, 'executor' | 'log'>
     if (request.signal.aborted) result = stopped(o.cancelReason, 'cancelled')
     else if (stoppedFor) result = stopped(stoppedFor, 'failed')
     else if (timedOut) result = stopped(`attempt exceeded its time limit of ${limit} minutes`, 'failed')
     else {
-      const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.finalResult ? { finalResult: outcome.finalResult } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
+      const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.finalResult ? { finalResult: outcome.finalResult } : {}), ...(outcome.usage ? { usage: outcome.usage } : outcome.usageGap ? { usageGap: outcome.usageGap } : {}) }
       if (outcome.failure !== undefined) result = { status: 'failed', outputs: {}, ...kept, reason: outcome.failure, ...(outcome.cause ? { cause: outcome.cause } : {}), ...common }
       else if (captured?.missing.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote no output ${noun} for ${captured.missing.join(', ')}`, retryable: true, ...common }
       else if (captured?.empty?.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote an empty output ${noun}: ${captured.empty.map((slot) => `output ${slot} is empty`).join(', ')}`, retryable: true, ...common }
