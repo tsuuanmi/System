@@ -316,6 +316,69 @@ A Host that stops with attempts running holds their Account slots until the
 process is gone ([host.md](../architecture/host.md)). If a
 slot never clears, find the process with `pgrep -fa claude` or `pgrep -fa codex`.
 
+## Antigravity Accounts
+
+How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter details live in the
+[adapters README](../../packages/agents/src/adapters/README.md)):
+
+1. Install or update the CLI with `agy update` (1.5.18 or later; 1.4.6 lacked what System uses).
+2. Create the Account's home `~/.dsh/system/antigravity/<name>` (mode 700) and sign in from a terminal:
+
+   ```sh
+   mkdir -m 700 -p ~/.dsh/system/antigravity/<name>
+   cd ~/.dsh/system/antigravity/<name> && env -u DBUS_SESSION_BUS_ADDRESS HOME=$PWD agy
+   ```
+
+   Without the session bus, the login is stored as a mode 0600 file
+   `.gemini/antigravity-cli/antigravity-oauth-token` in that home, never in the desktop keyring shared by
+   all Accounts. A Google account that `agy -p /usage` calls "not eligible" must be verified in a browser
+   first.
+3. One sign-in is two Accounts ([GLOSSARY](../../GLOSSARY.md)): one with `"quotaGroup": "gemini"` and one
+   with `"quotaGroup": "3p"` (Claude and GPT), both sharing `"agyHome": "antigravity/<name>"`. Each lists
+   only the models of its group under `models` (`economy`, `standard`, `frontier`), checked with
+   `HOME=~/.dsh/system/antigravity/<name> agy models`. Example `~/.system/profile.yml` entry (JSON):
+
+   ```json
+   [
+     {
+       "id": "agents",
+       "config": {
+         "accounts": [
+           {
+             "ref": "antigravity/a1",
+             "runtime": "antigravity",
+             "agyHome": "antigravity/a1",
+             "quotaGroup": "gemini",
+             "capabilities": ["develop.implement", "research"],
+             "models": {
+               "economy": "gemini-3.8-flash-medium",
+               "standard": "gemini-4-hydrogen-medium",
+               "frontier": "gemini-4-hydrogen-high"
+             }
+           },
+           {
+             "ref": "antigravity/a1-3p",
+             "runtime": "antigravity",
+             "agyHome": "antigravity/a1",
+             "quotaGroup": "3p",
+             "capabilities": ["develop.implement", "research"],
+             "models": {
+               "economy": "claude-sonnet-4-6",
+               "standard": "claude-sonnet-4-6",
+               "frontier": "claude-opus-4-6-thinking"
+             }
+           }
+         ]
+       }
+     }
+   ]
+   ```
+
+4. Restart the Host (`systemctl --user restart system`) and check `system workers`: both refs are
+   `available` with a `quota:` line.
+5. System writes `<home>/.gemini/antigravity-cli/settings.json` before each attempt (allow `command(*)`,
+   deny `command(git push)` and `command(gh)`); do not edit it.
+
 ## The web account
 
 A Worker that runs a step in the operator's signed-in ChatGPT web session
