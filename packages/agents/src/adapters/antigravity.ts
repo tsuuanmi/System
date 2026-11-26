@@ -1,7 +1,7 @@
 /** The Antigravity Runtime (`agy`): how its CLI is invoked, staged, read and measured (Item ag-2, RES-0015). */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { isAbsolute, join, resolve } from 'node:path'
 import type { AttemptSummary, Progress } from '@system/work'
 import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { AGY_GROUPS, createQuotaCache, readAntigravityQuota, type AgyQuotaGroup } from '../quota.ts'
@@ -22,8 +22,9 @@ const SETTINGS = `${JSON.stringify({ permissions: { allow: ['command(*)'], deny:
 const MODE = 'accept-edits'
 
 /**
- * `cwd` is the checkout (agy has no cwd flag) and HOME the Account's, which the staged env sets; `--mode auto` is refused for these Accounts, so
- * `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed (baseEnv has none), so the token is read from a file.
+ * `cwd` is the checkout (agy has no cwd flag) and HOME the attempt's throwaway `ws.home` (with `.gemini` linked to `agyHome/.gemini`);
+ * `--mode auto` is refused for these Accounts, so `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed
+ * (baseEnv has none), so the token is read from a file.
  */
 function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
@@ -132,7 +133,18 @@ export const antigravity: CliAdapter = {
   async preflight(account) {
     const home = account.agyHome
     if (!home) return { failed: `${account.ref}: no agyHome (the Account home holding .gemini/antigravity-cli)` }
-    return { stage: () => { writeSettings(home); return { env: { HOME: home }, finish() {} } } }
+    return {
+      stage(dir) {
+        writeSettings(home)
+        // Run with the attempt's throwaway HOME so caches/stores do not accumulate in agyHome; only `.gemini` is linked to the Account's state.
+        const attemptHome = join(dir, 'home')
+        mkdirSync(attemptHome, { recursive: true, mode: 0o700 })
+        const link = join(attemptHome, '.gemini')
+        rmSync(link, { recursive: true, force: true })
+        symlinkSync(resolve(home, '.gemini'), link)
+        return { env: {}, finish() {} }
+      },
+    }
   },
   invocation,
   // agy has no verified way to run a turn without tools, and the staged rules allow every command: no Classifier question runs on it.

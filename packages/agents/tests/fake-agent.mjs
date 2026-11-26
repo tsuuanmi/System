@@ -113,7 +113,10 @@ if (!codex && has('turns') && args.includes('stream-json')) {
 const background = /FAKE:background=(\S+)/.exec(prompt)?.[1]
 const refused = process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === '1' && args.slice(args.indexOf('--disallowedTools')).includes('Monitor')
 if (!codex && background && !refused) writeFileSync(background, String(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], { detached: true, stdio: 'ignore' }).pid))
-if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, dbus: process.env.DBUS_SESSION_BUS_ADDRESS, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
+const homeFile = /FAKE:home=(\S+)/.exec(prompt)?.[1]
+const homeFilesBefore = homeFile && process.env.HOME ? readdirSync(process.env.HOME).sort() : undefined
+if (homeFile && process.env.HOME) writeFileSync(join(process.env.HOME, homeFile), 'attempt-file\n')
+if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, dbus: process.env.DBUS_SESSION_BUS_ADDRESS, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], ...(homeFilesBefore ? { homeFilesBefore } : {}), model }))
 if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : agy ? 'agy' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {
