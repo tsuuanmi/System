@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
@@ -569,14 +570,14 @@ test('a check that leaves an Xvfb or Chrome behind fails, naming it; the leftove
 
 /** A repository whose checks are `checks`, with `files` beside them (package.json, test files), and a change on it; returns the verdict. */
 /** `added` goes into the change itself, not the base: a check on it that fails the change passes the base. */
-async function verdictOf(checks: string, files: Record<string, string>, added: Record<string, string> = {}) {
+async function verdictOf(checks: string, files: Record<string, string>, added: Record<string, string> = {}, spawner: Spawner = processSpawner) {
   const artifacts = store()
   const repository = repo(checks)
   for (const [path, text] of Object.entries(files)) writeFileSync(join(repository, path), text)
   execFileSync('git', ['-C', repository, 'add', '.'])
   if (Object.keys(files).length) execFileSync('git', ['-C', repository, 'commit', '--quiet', '-m', 'files'], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   const { task, tree } = await taskOn(artifacts, repository)
-  const verifier = requiredChecks(artifacts, processSpawner)
+  const verifier = requiredChecks(artifacts, spawner)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const subject = await change(artifacts, repository, tree.commit, { 'NOTES.md': 'added\n', ...added })
   return verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'checks', capability: 'code.required-checks', subject, criteria })
@@ -604,8 +605,30 @@ test('a failed check says in one line which check, which test and its first erro
 })
 
 test('a timed-out check names the test that was running', { timeout: 180_000 }, async () => {
-  const hanging = "import { test } from 'node:test'\ntest('first', () => {})\ntest('waits forever', () => new Promise(() => { setInterval(() => {}, 1000) }))\n"
-  const result = await verdictOf('checks:\n  - name: unit\n    run: test ! -f hangs.test.mjs || node --test hangs.test.mjs\n    timeoutSeconds: 3\n', {}, { 'hangs.test.mjs': hanging })
+  const hanging = "import { writeFileSync } from 'node:fs'\nimport { test } from 'node:test'\ntest('first', () => {})\ntest('waits forever', () => {\n  writeFileSync('started', '')\n  return new Promise(() => { setInterval(() => {}, 1000) })\n})\n"
+  // Interrupt only after the hanging test writes `started`, so a slow runner never times out before `node --test` enters it.
+  const runner = [
+    "const { spawn } = require('node:child_process');",
+    "const { existsSync } = require('node:fs');",
+    "const child = spawn('/bin/sh', ['-c', process.argv[1]], { detached: true, stdio: 'inherit' });",
+    'let timedOut = false;',
+    'const poll = setInterval(() => {',
+    "  if (!timedOut && existsSync('started')) {",
+    '    timedOut = true;',
+    '    clearInterval(poll);',
+    "    try { process.kill(-child.pid, 'SIGINT') } catch {}",
+    '  }',
+    '}, 20);',
+    "process.on('SIGTERM', () => { try { process.kill(-child.pid, 'SIGTERM') } catch {} });",
+    "child.on('exit', (code) => { clearInterval(poll); process.exit(timedOut ? 124 : (code ?? 1)) });",
+  ].join(' ')
+  const waitForStart: Spawner = {
+    spawn(spec) {
+      if (spec.argv[0] !== 'timeout' || spec.argv[6] !== '/bin/sh' || spec.argv[7] !== '-c') return processSpawner.spawn(spec)
+      return processSpawner.spawn({ ...spec, argv: ['node', '-e', runner, spec.argv[8]!] })
+    },
+  }
+  const result = await verdictOf('checks:\n  - name: unit\n    run: test ! -f hangs.test.mjs || node --test hangs.test.mjs\n    timeoutSeconds: 3\n', {}, { 'hangs.test.mjs': hanging }, waitForStart)
   assert.equal(result.verdict, 'fail')
   assert.match(result.reason, /^failed: unit: timed out after 3 s while running hangs\.test\.mjs/)
 })
