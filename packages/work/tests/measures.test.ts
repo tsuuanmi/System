@@ -221,3 +221,23 @@ test('costCoverage: attempts with a known, partial and unavailable cost are coun
   const r = rangeReport([sel(A, 'claude-code'), sel(B, 'codex'), sel(C, 'claude-code')], { since: '2026-11-15' })
   assert.deepEqual(r.costCoverage, { 'claude-code': { known: 0, partial: 2, unavailable: 0 }, codex: { known: 0, partial: 0, unavailable: 1 } })
 })
+
+const reopen = (at: string, automatic = true): Unnumbered => ({ type: 'reopened', at, stepId: 'task', reason: 'checks failed', ...(automatic ? { automatic: true } : { caller: { type: 'human', operatorId: 'tan' } }) }) as unknown as Unnumbered
+
+test('reopen rounds (rounds-1): per Work, in total, median and p90 to pass, and Works failed after the cap', async () => {
+  const { summarize } = await import('../src/summary.ts')
+  const P0 = record('p0', 'succeeded', [admitted(T('20')), terminal(T('20', '01:00:00'), 'succeeded')])
+  const P1 = record('p1', 'succeeded', [admitted(T('21')), reopen(T('21', '00:10:00')), terminal(T('21', '01:00:00'), 'succeeded')])
+  const P3 = record('p3', 'succeeded', [admitted(T('22')), reopen(T('22', '00:10:00')), reopen(T('22', '00:20:00'), false), reopen(T('22', '00:30:00')), terminal(T('22', '01:00:00'), 'succeeded')])
+  const F = record('f', 'failed', [admitted(T('23')), reopen(T('23', '00:10:00')), verdictFail(T('23', '00:20:00'), 'unit failed'), terminal(T('23', '01:00:00'), 'failed')])
+  const G = record('g', 'failed', [admitted(T('24')), verdictFail(T('24', '00:20:00'), 'unit failed'), terminal(T('24', '01:00:00'), 'failed')])
+  assert.equal(summarize(P1).reopenRounds, 1)
+  assert.equal(summarize(P0).reopenRounds, 0)
+  const r = rangeReport([P0, P1, P3, F, G], { since: '2026-11-20' }).reopenRounds
+  assert.deepEqual(r.perWork, [{ work: 'work:p0', rounds: 0, status: 'succeeded' }, { work: 'work:p1', rounds: 1, status: 'succeeded' }, { work: 'work:p3', rounds: 3, status: 'succeeded' }, { work: 'work:f', rounds: 1, status: 'failed' }, { work: 'work:g', rounds: 0, status: 'failed' }])
+  assert.equal(r.total, 5)
+  assert.deepEqual({ median: r.medianToPass, p90: r.p90ToPass, passed: r.passed }, { median: 1, p90: 3, passed: 3 })
+  assert.deepEqual(r.failedAfterCap, ['work:f'])
+  const none = rangeReport([G], { since: '2026-11-20' }).reopenRounds
+  assert.deepEqual({ median: none.medianToPass, p90: none.p90ToPass, failed: none.failedAfterCap }, { median: 'unknown', p90: 'unknown', failed: [] })
+})

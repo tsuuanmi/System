@@ -65,6 +65,8 @@ export interface RangeReport {
   costCoverage: CostCoverage
   /** Admission to acceptance of the accepted Works. */
   timeToVerifiedResolution: { medianMs: number | Unknown; p90Ms: number | Unknown; accepted: number }
+  /** rounds-1: reopened steps per Work and in total; `medianToPass`/`p90ToPass` are over the succeeded Works (rounds before success); `failedAfterCap` are the failed Works that were automatically reopened (develop.yaml `retry max`) and still failed. */
+  reopenRounds: { total: number; perWork: { work: string; rounds: number; status: WorkRecord['state']['status'] }[]; passed: number; medianToPass: number | Unknown; p90ToPass: number | Unknown; failedAfterCap: string[] }
   /** Mean of the attempts' tool-seconds per second (the record's `toolShare`): parallel tool calls overlap, so it is not a share and can pass 1. */
   toolSecondsPerSecond: { mean: number | Unknown; attempts: number }
 }
@@ -94,6 +96,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const mergedCommits: string[] = []
   let operatorTouches = 0
   const resolution: number[] = []
+  const rounds: RangeReport['reopenRounds']['perWork'] = []
+  const toPass: number[] = []
+  const failedAfterCap: string[] = []
   const shares: number[] = []
   const late: string[] = []
   for (const record of inRange) {
@@ -112,6 +117,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
       if (commit) mergedCommits.push(commit)
     }
     const summary = summarize(record, classified, later)
+    rounds.push({ work: record.id, rounds: summary.reopenRounds, status })
+    if (status === 'succeeded') toPass.push(summary.reopenRounds)
+    if (status === 'failed' && record.events.some((e) => e.type === 'reopened' && e.automatic)) failedAfterCap.push(record.id)
     operatorTouches += summary.operatorTouches
     const counted = summary.failures.filter((f) => f.kind !== 'touch')
     unknownFailures += counted.filter((f) => f.unknown).length
@@ -152,6 +160,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const defects = recordedDefects?.filter((d) => d.id === undefined || !gone.has(d.id))
   const recorded = defects?.filter((d) => (d.item !== undefined && mergedItems.has(d.item)) || (d.commit !== undefined && mergedCommits.some((c) => c.startsWith(d.commit!)))).length
   const count = escaped ?? recorded
+  toPass.sort((a, b) => a - b)
   const recurringClasses = [...tally].filter(([, t]) => t.count >= 2).sort((a, b) => b[1].count - a[1].count || b[1].last - a[1].last).slice(0, 10).map(([c, t]) => ({ class: c, count: t.count, example: t.example }))
   return {
     since, ...(until === undefined ? {} : { until }), works: inRange.length, activeCoreLines: activeCoreLines ?? 'unknown', unknownFailures, recurringClasses, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
@@ -163,6 +172,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     costCoverage: costCoverage(inRange),
     costPerVerifiedWork: { usd: accepted === 0 || (knownCostUsd === 0 && worksWithUnknownCost > 0) ? 'unknown' : knownCostUsd / accepted, knownCostUsd, accepted, worksWithUnknownCost },
     timeToVerifiedResolution: resolution.length === 0 ? { medianMs: 'unknown', p90Ms: 'unknown', accepted } : { medianMs: (resolution[Math.floor((resolution.length - 1) / 2)]! + resolution[Math.floor(resolution.length / 2)]!) / 2, p90Ms: percentile(resolution, 0.9), accepted },
+    reopenRounds: { total: rounds.reduce((n, r) => n + r.rounds, 0), perWork: rounds, passed: toPass.length, medianToPass: toPass.length === 0 ? 'unknown' : (toPass[Math.floor((toPass.length - 1) / 2)]! + toPass[Math.floor(toPass.length / 2)]!) / 2, p90ToPass: toPass.length === 0 ? 'unknown' : percentile(toPass, 0.9), failedAfterCap },
     toolSecondsPerSecond: { mean: shares.length === 0 ? 'unknown' : shares.reduce((a, b) => a + b, 0) / shares.length, attempts: shares.length },
   }
 }

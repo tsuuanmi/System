@@ -28,6 +28,8 @@ export interface WorkSummary {
   status: WorkRecord['state']['status']
   durationMs: number
   attempts: number
+  /** rounds-1: the `reopened` events (the Workflow's `retry` and a caller's retry): rounds a step was redone. */
+  reopenRounds: number
   /** Time steps waited for a free Account or check slot, summed. */
   waitedForSlotMs: number
   /** Worker attempts that failed because their Account was out of quota (`limited`, or the old `rateLimited`). */
@@ -120,5 +122,5 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
       counts[answer.label] = (counts[answer.label] ?? 0) + 1
     }
   }
-  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, waitedForSlotMs, rateLimitedAttempts, operatorTouches: touches.length, touches, failures, ...(Object.keys(counts).length ? { classifiedFailures: counts } : {}), outsideFailures: failures.filter((f) => f.outside).length, changeFailures: failures.filter((f) => !f.outside && !f.unknown).length, unknownFailures: failures.filter((f) => f.unknown).length, usage }
+  return { id: record.id, status: record.state.status, durationMs: last - first, attempts, reopenRounds: record.events.filter((e) => e.type === 'reopened').length, waitedForSlotMs, rateLimitedAttempts, operatorTouches: touches.length, touches, failures, ...(Object.keys(counts).length ? { classifiedFailures: counts } : {}), outsideFailures: failures.filter((f) => f.outside).length, changeFailures: failures.filter((f) => !f.outside && !f.unknown).length, unknownFailures: failures.filter((f) => f.unknown).length, usage }
 }
