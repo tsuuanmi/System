@@ -523,12 +523,13 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('show <workId>')
-    .description('print the Work record (events and state) as JSON; a held Work first states its decision: the step, reason, options and the command for each')
+    .description('print the Work record (events and state) as JSON; a held Work first states its decision on stderr: the step, reason, options and the command for each')
     .action((workId: string) => {
       select(async () => {
         const record = await host.call('work.show', { workId })
         if (!record) throw new Error(`no Work ${workId}`)
-        io.out(holdDecision(record) ?? '')
+        // On stderr, above the record in a terminal: stdout stays the record's JSON for every reader that parses it.
+        io.err(holdDecision(record) ?? '')
         io.out(`${JSON.stringify(record, null, 2)}\n`)
         return 0
       })
