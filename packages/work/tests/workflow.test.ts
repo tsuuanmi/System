@@ -70,6 +70,20 @@ test('plan-items.yaml compiles to one read-only Worker step writing items, and t
   assert.match(readFileSync(join(repo, 'tools', 'night-session.md'), 'utf8'), /Never run `workflows\/plan-items\.yaml`/)
 })
 
+test('experiments/review-replay.yaml is one read-only frontier step that reads REVIEW.md and lists findings with severity, with no verify, accept or effect', () => {
+  const file = readFileSync(join(repo, 'workflows', 'experiments', 'review-replay.yaml'), 'utf8')
+  const spec = resolve(parseWorkflow(file), { ...available, workers: new Set([...available.workers, 'tier.frontier']) })
+  assert.equal(spec.workflow.id, 'review-replay')
+  assert.deepEqual(spec.steps.map((s) => s.id), ['review'])
+  const step = spec.steps[0] as { capabilities: string[]; inputs: Record<string, string>; outputs: string[]; instructions?: string }
+  assert.deepEqual(step.capabilities, ['repo.read', 'tier.frontier'])
+  assert.deepEqual(step.inputs, { task: '$work.input' })
+  assert.deepEqual(step.outputs, ['findings'])
+  assert.match(step.instructions ?? '', /REVIEW\.md/)
+  assert.match(step.instructions ?? '', /severity/i)
+  assert.match(step.instructions ?? '', /Do not change any file/)
+})
+
 test('the Brainstorm file: two proposals from the brief alone, then a synthesis of both exact proposals', () => {
   const roles: AvailableCapabilities = { ...available, workers: new Set(['brainstorm.idea-a', 'brainstorm.idea-b', 'brainstorm.synthesis']) }
   const spec = resolve(parseWorkflow(fixture('brainstorm.yaml')), roles)

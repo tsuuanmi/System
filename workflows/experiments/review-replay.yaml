@@ -1,0 +1,31 @@
+# Review replay (rev-1, RES-0018). One read-only frontier Worker reviews a diff given as the Task's context and lists
+# findings with severity. The Task's base is the commit the diff was made on, so the Worker's checkout, and the REVIEW.md
+# in it, are that commit's: the review rules are those of the base, not of today. It is a measurement, never a gate: no
+# verify, accept or effect step, and nothing is held or merged on its findings (PLAN section 4: a model review in a
+# separate optional Workflow). Replays and their scores are recorded in docs/research/RES-0019-model-review-replay.md.
+schema: system.workflow/v1
+id: review-replay
+version: 1
+steps:
+  - id: review
+    capabilities: [repo.read, tier.frontier]
+    inputs:
+      task: $work.input
+    outputs: [findings]
+    instructions: |
+      Review the diff in the Task's context as a careful senior reviewer who
+      did not write it. Do not change any file. The checkout is the commit the
+      diff was made on: if it has a REVIEW.md at its root, read it and follow
+      its rules; if not, say so in the first line of "findings". Read the
+      code the diff touches and what calls it, not the diff alone. Do not run
+      the repository's tests or checks.
+
+      Write the output "findings" as Markdown: one item per finding, most
+      severe first, each as
+      - [<severity>] <file>:<line> <one-sentence defect>. Breaks when: <the
+        concrete input or state that makes it fail>.
+      <severity> is one of blocker (breaks a check, a build or a release),
+      major (wrong behaviour in use), minor (wrong in a rare case) or nit.
+      Report only defects you can state a failing input or state for; do not
+      list style preferences or risks as findings. Say "none found" rather
+      than invent any. Quote code exactly when you refer to it.

@@ -34,4 +34,8 @@ The generated index below is the authoritative list of current research.
   System](RES-0018-anthropic-review-verification-source-control.md) — active — Three Anthropic posts of 2026-10 and
   2026-11 on code review, verification and source control at agent scale, read against System's records of 2026-11-26;
   what they change in the decisions on smoke, the merge queue, gates that need a person and model review.
+- [RES-0019 — Model review replay (rev-1)](RES-0019-model-review-replay.md) — active — Protocol and record of replaying
+  a frontier model review (workflows/experiments/review-replay.yaml) on the diffs of two Escaped defects of 2026-11-26
+  (st-1, ag-2) and ten clean merged Works, to measure recall and false alarms before any adoption; nothing is gated on
+  it.
 <!-- docs:end index:research -->
