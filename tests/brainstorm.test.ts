@@ -6,10 +6,11 @@
  * proposal Artifacts; no verifier.
  */
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import { VERSION, connectHello } from '../packages/host/src/index.ts'
 import { fakeAgent, repo, systemCli, type Running } from '../test-support/cli.ts'
 
 const cli = systemCli('system-brainstorm')
@@ -25,6 +26,15 @@ const accounts = bundle[0]!.insert.find((row) => row.id === 'agents')!.config!.a
 type Event = { type: string; seq: number; at: string; stepId?: string; selected?: string; inputs?: Record<string, string>; status?: string; outputs?: Record<string, string> }
 type WorkView = { events: Event[]; state: { status: string; reason?: string; specId: string; steps: Record<string, { state: string; outputs: Record<string, string> }> } }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as WorkView
+/** Fast read of a Work over the Host socket, for polling loops (avoids spawning `bin/system` every 100 ms). */
+async function showRpc(workId: string): Promise<WorkView> {
+  const client = await connectHello(cli.socket, { version: VERSION, caller: { type: 'human', operatorId: 'tester' }, retry: 5_000 })
+  try {
+    return await client.call('work.show', { workId }) as WorkView
+  } finally {
+    client.close()
+  }
+}
 /** Who produced an Artifact, in which Work: its recorded occurrences. */
 const producers = (id: string) => (JSON.parse(system(['artifact', 'show', id]).stdout) as { occurrences: { producer: { ref: string }; workId?: string }[] }).occurrences.map((o) => [o.producer.ref, o.workId])
 const text = (id: string) => system(['artifact', 'cat', id]).stdout
@@ -98,7 +108,9 @@ test('a brief yields two independent proposals and a synthesis of exactly those 
 })
 
 test('the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both', { timeout: 300_000 }, () => {
-  const input = brief('FAKE:outputs FAKE:sign FAKE:delay=8000')
+  // Both proposals wait at the barrier until both have entered, proving overlap without a fixed sleep.
+  const barrier = mkdtempSync(join(home, 'barrier-'))
+  const input = brief(`FAKE:outputs FAKE:sign FAKE:barrier=${barrier}:2`)
   const ran = system(['work', 'submit', '--workflow', BRAINSTORM, '--input', input])
   assert.equal(ran.status, 0, ran.stderr)
   const record = show(ran.stdout.trim())
@@ -112,29 +124,15 @@ test('the two proposals overlap in time: both are dispatched before either is ob
   assert.equal(system(['work', 'replay', ran.stdout.trim()]).status, 0)
 })
 
-test('without a Codex account the Work is refused before any Worker runs: no same-provider substitute', { timeout: 300_000 }, async () => {
-  const noCodex = join(home, 'no-codex.yml')
-  writeFileSync(noCodex, `- id: agents\n  config: ${JSON.stringify({ $patch: 'replace', accounts: accounts.filter((a) => a.runtime !== 'codex').map((a) => ({ ...a, command: fakeAgent })) })}\n`)
-  const before = system(['work', 'list']).stdout.trim().split('\n').filter(Boolean).length
-  const input = brief('FAKE:outputs')
-  await cli.start({ args: ['--patch', noCodex] })
-  const ran = system(['work', 'submit', '--workflow', BRAINSTORM, '--input', input])
-  await cli.start()
-  assert.equal(ran.status, 1)
-  assert.match(ran.stderr, /step idea-b needs Worker capability brainstorm\.idea-b, which no enabled Worker provides/)
-  assert.equal(ran.stdout.trim(), '')
-  assert.equal(system(['work', 'list']).stdout.trim().split('\n').filter(Boolean).length, before, 'no Work was admitted')
-})
-
 test('a stop after the first proposal reuses it: the retry runs only the second proposal and the synthesis', { timeout: 300_000 }, async () => {
   const marker = join(home, `hang-${Date.now()}`)
   const input = brief(`FAKE:outputs FAKE:sign FAKE:hang=idea-b:${marker}`)
   const { workId, submit } = await submitting(input)
-  for (let i = 0; i < 1800 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
-  for (let i = 0; i < 1800 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !dispatched(await showRpc(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 50))
+  for (let i = 0; i < 1800 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 50))
   assert.ok(existsSync(marker), 'idea-b started')
   // idea-a and idea-b run in parallel (H5): wait for idea-a to finish while idea-b hangs.
-  for (let i = 0; i < 1800 && !show(workId).state.steps['idea-a']!.outputs.proposal; i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !(await showRpc(workId)).state.steps['idea-a']!.outputs.proposal; i++) await new Promise((r) => setTimeout(r, 50))
   const first = show(workId).state.steps['idea-a']!.outputs.proposal!
   assert.ok(first, 'idea-a finished while idea-b hangs')
 
@@ -158,12 +156,12 @@ test('after the Host is killed mid-step, the restarted Host dispatches the lost 
   const marker = join(home, `hang-kill-${Date.now()}`)
   const input = brief(`FAKE:outputs FAKE:sign FAKE:hang=idea-b:${marker}`)
   const { workId, submit } = await submitting(input)
-  for (let i = 0; i < 1800 && !dispatched(show(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !dispatched(await showRpc(workId)).some((e) => e.stepId === 'idea-b'); i++) await new Promise((r) => setTimeout(r, 50))
   // Kill only once the agent is inside idea-b: it creates the marker when it starts to hang.
-  for (let i = 0; i < 1800 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !existsSync(marker); i++) await new Promise((r) => setTimeout(r, 50))
   assert.ok(existsSync(marker), 'idea-b started')
   // idea-a runs beside it on the other Account: the kill comes once it is recorded, so only idea-b is lost.
-  for (let i = 0; i < 1800 && !show(workId).events.some((e) => e.type === 'observed' && e.stepId === 'idea-a'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && !(await showRpc(workId)).events.some((e) => e.type === 'observed' && e.stepId === 'idea-a'); i++) await new Promise((r) => setTimeout(r, 50))
   process.kill(await cli.pid(), 'SIGKILL')
   assert.notEqual((await submit.done).status, 0, 'the killed Host did not finish the Work')
   // The hanging agent outlived the Host: the restarted Host verifies it (pid, group, start time), ends it and runs the step again.
@@ -174,7 +172,7 @@ test('after the Host is killed mid-step, the restarted Host dispatches the lost 
   await cli.start()
 
   // The lost attempt's process was ended by the Host, so it runs the Work again without `work run`.
-  for (let i = 0; i < 1800 && show(workId).state.status !== 'succeeded'; i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1800 && (await showRpc(workId)).state.status !== 'succeeded'; i++) await new Promise((r) => setTimeout(r, 50))
   const done = show(workId)
   assert.equal(done.state.status, 'succeeded')
   for (let waited = 0; waited < 20_000 && agents.some(alive); waited += 50) await new Promise((r) => setTimeout(r, 50))
@@ -197,4 +195,17 @@ test('editing the Workflow file after admission changes nothing for an admitted 
   const after = show(workId)
   assert.equal(after.state.specId, pinned)
   assert.deepEqual(Object.keys(after.state.steps), ['idea-a', 'idea-b', 'synthesis'])
+})
+
+test('without a Codex account the Work is refused before any Worker runs: no same-provider substitute', { timeout: 300_000 }, async () => {
+  const noCodex = join(home, 'no-codex.yml')
+  writeFileSync(noCodex, `- id: agents\n  config: ${JSON.stringify({ $patch: 'replace', accounts: accounts.filter((a) => a.runtime !== 'codex').map((a) => ({ ...a, command: fakeAgent })) })}\n`)
+  const before = system(['work', 'list']).stdout.trim().split('\n').filter(Boolean).length
+  const input = brief('FAKE:outputs')
+  await cli.start({ args: ['--patch', noCodex] })
+  const ran = system(['work', 'submit', '--workflow', BRAINSTORM, '--input', input])
+  assert.equal(ran.status, 1)
+  assert.match(ran.stderr, /step idea-b needs Worker capability brainstorm\.idea-b, which no enabled Worker provides/)
+  assert.equal(ran.stdout.trim(), '')
+  assert.equal(system(['work', 'list']).stdout.trim().split('\n').filter(Boolean).length, before, 'no Work was admitted')
 })

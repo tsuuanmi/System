@@ -13,7 +13,7 @@ import { socketPath } from '../../host/lib/process.js'
 import { bootstrapMain } from './bootstrap.ts'
 import { buildProgram, type Run } from './cli.ts'
 import { confirmHuman, errorLine, explain, readSecret } from './io.ts'
-import { runMcp, type Code } from './mcp.ts'
+import type { Code } from './mcp.ts'
 import { hostClient } from './remote.ts'
 
 /** How long a command keeps trying while the Host is away, in milliseconds: the swap of an upgrade takes a moment. */
@@ -54,7 +54,7 @@ export async function openCurrent(home: string, who: Caller, { onCode, ...option
   }
 }
 
-/** A test-only override in milliseconds (SYSTEM_WAIT_RECONNECT_MS, SYSTEM_WAIT_RETRY_MS: the outage bound and first retry wait of `work wait`); unset or not a positive number is none. */
+/** A test-only override in milliseconds (SYSTEM_WAIT_RECONNECT_MS, SYSTEM_WAIT_RETRY_MS, SYSTEM_CALL_TIMEOUT_MS, SYSTEM_CONNECT_RETRY_MS); unset or not a positive number is none. */
 function testMs(name: string): number | undefined {
   const value = Number(process.env[name])
   return Number.isFinite(value) && value > 0 ? value : undefined
@@ -64,7 +64,9 @@ function testMs(name: string): number | undefined {
 export async function main(args: string[], home: string): Promise<number> {
   const out = (text: string) => { process.stdout.write(text) }
   const err = (text: string) => { process.stderr.write(text) }
-  const open = (who: Caller, options: { readOnly?: boolean } = {}): Promise<Client> => connectHello(socketPath(home), { version: VERSION, caller: who, retry: CONNECT_RETRY, ...options })
+  const retry = testMs('SYSTEM_CONNECT_RETRY_MS') ?? CONNECT_RETRY
+  const timeout = testMs('SYSTEM_CALL_TIMEOUT_MS')
+  const open = (who: Caller, options: { readOnly?: boolean } = {}): Promise<Client> => connectHello(socketPath(home), { version: VERSION, caller: who, retry, ...(timeout === undefined ? {} : { timeout }), ...options })
   if (args[0] === 'bootstrap') {
     try {
       return await bootstrapMain(args, out)
@@ -76,6 +78,7 @@ export async function main(args: string[], home: string): Promise<number> {
   if (args[0] === 'mcp') {
     // The code version of this client, so a log shows which release serves a session (Item mcp-2: the front swaps it).
     err(`system mcp: client code ${VERSION}\n`)
+    const { runMcp } = await import('./mcp.ts')
     return runMcp(args.slice(1), home, (who, onCode) => openCurrent(home, who, { onCode }))
   }
   let selected: Run | undefined

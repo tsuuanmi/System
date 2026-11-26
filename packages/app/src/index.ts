@@ -180,8 +180,11 @@ async function runHost(ctx: Context): Promise<number> {
     if (record) void classifier.failures.classify(record).catch(() => {})
   })
   const credentials = credentialCommands(ctx)
+  const pollOverride = Number(process.env.SYSTEM_UPGRADE_POLL_MS)
+  const upgradePoll = Number.isFinite(pollOverride) && pollOverride > 0 ? pollOverride : undefined
   serving = await serveHost({
     host, home,
+    ...(upgradePoll === undefined ? {} : { upgradePoll }),
     log: (line) => { process.stderr.write(`system host: ${line}\n`) },
     services: {
       capabilities,

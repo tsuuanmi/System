@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import { VERSION, connectHello } from '../packages/host/src/index.ts'
 import { fakeCodexHome } from '../test-support/accounts.ts'
 import { codexRateLimits, fakeQuotaCli } from '../test-support/quota.ts'
 import { fakeAgent, systemCli } from '../test-support/cli.ts'
@@ -21,6 +22,14 @@ const system = (args: string[], input?: string) => cli.run(args, { input })
 
 type Record = { events: { type: string; selected?: string; inputs?: { previous?: string }; worker?: { ref: string; version?: string }; status?: string }[]; state: { status: string; reason?: string; steps: { task: { outputs: { result?: string }; partial?: { result?: string } } } } }
 const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as Record
+async function showRpc(workId: string): Promise<Record> {
+  const client = await connectHello(cli.socket, { version: VERSION, caller: { type: 'human', operatorId: 'tester' }, retry: 5_000 })
+  try {
+    return await client.call('work.show', { workId }) as Record
+  } finally {
+    client.close()
+  }
+}
 const tree = (id: string) => (JSON.parse(system(['artifact', 'show', id]).stdout) as { envelope: { content: { commit: string; parent: string } } }).envelope.content
 
 let gitRepo = ''
@@ -109,9 +118,9 @@ test('cancel from another process stops the attempt, keeps its partial tree, and
     if (submit.stdout().trim()) workId = submit.stdout().trim().split('\n')[0]!
   }
   assert.ok(workId, 'the submit printed its Work ID')
-  for (let i = 0; i < 1200 && !show(workId).events.some((e) => e.type === 'dispatched'); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1200 && !(await showRpc(workId)).events.some((e) => e.type === 'dispatched'); i++) await new Promise((r) => setTimeout(r, 50))
   // The agent has its SIGTERM handler in place: a cancel before that would leave no partial output.
-  for (let i = 0; i < 1200 && !existsSync(ready); i++) await new Promise((r) => setTimeout(r, 100))
+  for (let i = 0; i < 1200 && !existsSync(ready); i++) await new Promise((r) => setTimeout(r, 50))
   assert.ok(existsSync(ready), 'the agent is running')
 
   // A second `work run` is refused while the Host runs the Work.

@@ -10,7 +10,7 @@ export const mainOf = (bare: string) => execFileSync('git', ['-C', bare, 'rev-pa
 
 export type Event = { type: string; state?: string; reason?: string; detail?: Record<string, string>; subject?: string }
 
-export function publishHarness(prefix: string) {
+export function createPublishEnv(prefix: string) {
   const cli = systemCli(prefix)
   const { home, env } = cli
   /** The process ID of the running Host, for a fake remote or a hook to kill. */
@@ -20,8 +20,8 @@ export function publishHarness(prefix: string) {
   const SE = join(home, 'software-engineering-draft.yaml')
   const servers: ChildProcess[] = []
 
-
   const system = (args: string[]) => cli.run(args)
+  const systemAsync = (args: string[]) => cli.runAsync(args).done
 
   /** Start the Host again, for a profile written since it started; its process ID is where the killers look. */
   async function restart() {
@@ -85,8 +85,8 @@ export function publishHarness(prefix: string) {
   }
   const commitOf = (artifactId: string) => (JSON.parse(system(['artifact', 'show', artifactId]).stdout) as { envelope: { content: { commit: string } } }).envelope.content.commit
 
-  before(async () => {
-    assert.equal(system(['init']).status, 0)
+  async function init() {
+    assert.equal((await systemAsync(['init'])).status, 0)
     await restart()
     const merging = readFileSync(SE_MERGE, 'utf8')
     assert.ok(merging.includes('      params: { merge: true }\n'))
@@ -95,14 +95,21 @@ export function publishHarness(prefix: string) {
     for (const [name, value] of [['CLAUDE_CODE_OAUTH_TOKEN', 'fake'], ['GITHUB_TOKEN', 'ghs_test']]) {
       assert.equal(cli.run(['credentials', 'set', name!], { input: `${value}\n`, terminal: true }).status, 0)
     }
-  })
+  }
 
-  after(async () => {
+  async function close() {
     await cli.stop()
     for (const s of servers) s.kill()
     rmSync(home, { recursive: true, force: true })
-  })
+  }
 
-  return { cli, home, env, hostPid, SE, SE_MERGE, system, restart, github, profile, project, show, assertRecovered, commitOf }
+  return { cli, home, env, hostPid, SE, SE_MERGE, system, systemAsync, restart, github, profile, project, show, assertRecovered, commitOf, init, close }
+}
+
+export function publishHarness(prefix: string) {
+  const h = createPublishEnv(prefix)
+  before(() => h.init())
+  after(() => h.close())
+  return h
 }
 

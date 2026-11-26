@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { Client } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
 import { StdioClientTransport } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { codeVersionAt } from '../packages/host/src/index.ts'
-import { repo, systemCli } from '../test-support/cli.ts'
+import { copyRelease, repo, systemCli } from '../test-support/cli.ts'
 
 const FAKES = `- id: verifiers
   disabled: true
@@ -25,7 +25,7 @@ test('after the install moves to a second release and the Host restarts, status 
   const base = realpathSync(mkdtempSync('/tmp/sm-front-'))
   const home = join(base, 'home')
   const current = join(base, 'current')
-  const cli = systemCli('mcp-front', { HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_NO_SERVICE: '1' }, join(home, '.dsh'), join(current, 'bin', 'system'))
+  const cli = systemCli('mcp-front', { HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_NO_SERVICE: '1', SYSTEM_UPGRADE_POLL_MS: '100' }, join(home, '.dsh'), join(current, 'bin', 'system'))
   delete cli.env.SYSTEM_CODE
   const client = new Client({ name: 'front-smoke', version: '0' })
   const move = (n: number) => {
@@ -42,8 +42,7 @@ test('after the install moves to a second release and the Host restarts, status 
     mkdirSync(join(base, 'releases'), { recursive: true })
     for (const n of [1, 2]) {
       const release = join(base, 'releases', `r${n}`)
-      mkdirSync(release)
-      execFileSync('cp', ['-a', '--reflink=auto', ...['bin', 'packages', 'node_modules', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'patches', 'workflows'].map((name) => join(repo, name)), release], { timeout: 60_000 })
+      copyRelease(release)
       if (n > 1) {
         const file = join(release, 'packages', 'app', 'lib', 'client.js')
         const original = readFileSync(file, 'utf8')
