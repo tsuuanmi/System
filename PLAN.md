@@ -112,6 +112,10 @@ code, unused abstractions, duplicated tests, docs that restate others), and the 
 Sonnet code review's Standards axis also checks the code against Charter items 8, 11 and 12.
 A milestone closes only when every failure class that recurred 3 or more times in its range (`system work report --since <milestone start>`, `recurringClasses`) has a root-cause Item or a recorded reason in the milestone's section (rc-1).
 
+Checks per Work (RES-0018, Item chk-reuse-1): before reuse, 2026-11-26 (29 merged Works), median 3.7 min and p90 14.3 min. After: not yet measured; reuse applies only
+where a pass with byte-identical inputs exists (a retry of a reopened step, a Work on a base already checked), so the after figure is taken with
+`system work report` over the Works merged since this Item and recorded here with the Work count, next to the before.
+
 ## 3. Open work
 
 Items are in [STATUS.md](STATUS.md); the sections below keep only the decisions of milestones still open. Left to the

@@ -13,7 +13,7 @@ import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
-import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, captureTree, putVerdict, verdictSchema, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
 import { parseCheckFailure } from '../../work/src/failure-class.ts'
 import { failureLine } from '../src/reasons.ts'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, parseChecksFile, requiredChecks } from '../src/checks.ts'
@@ -54,7 +54,7 @@ after(() => {
 
 const store = () => memoryArtifacts(
   { ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema }, { ...CHECKS_KIND, content: checksSchema },
-  { ...CHECK_RUN_KIND, content: checkRunSchema }, { ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema }, { ...CITATION_CHECK_KIND, content: citationCheckSchema },
+  { ...CHECK_RUN_KIND, content: checkRunSchema }, { ...VERDICT_KIND, content: verdictSchema }, { ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema }, { ...CITATION_CHECK_KIND, content: citationCheckSchema },
 ).artifacts
 const producer = { type: 'operator' as const, ref: 'tester' }
 
@@ -1028,4 +1028,71 @@ test('on: the schema accepts the three events and refuses an unknown one, an emp
     assert.ok('problem' in parsed, bad)
     assert.match((parsed as { problem: string }).problem, /on/, bad)
   }
+})
+
+// Item chk-reuse-1: a pass is reused when the inputs of the check are byte-identical.
+const REUSE = 'checks:\n  - name: install\n    run: "true"\n  - name: unit\n    run: test -f ok.txt\n    paths: ["**", "!**/*.md"]\n  - name: smoke\n    run: test -f ok.txt\n    paths: ["**", "!**/*.md"]\n'
+const reuseRepo = () => repo(REUSE, { 'ok.txt': 'ok\n', 'pnpm-lock.yaml': 'lock: 1\n', 'package.json': '{"packageManager":"pnpm@1.0.0"}\n' })
+/** A failed earlier check-run of `name`, so the check runs again whatever `paths` selects (as a reopened step's retry). */
+const failedEarlier = async (artifacts: Artifacts, names: string[]): Promise<string[]> => Promise.all(names.map(async (name) => (await artifacts.put({ ...CHECK_RUN_KIND, content: { name, run: 'x', commit: 'a'.repeat(40), exitCode: 1, signal: null, timedOut: false, durationMs: 1, stdoutTail: '', stderrTail: '' }, classification: 'local-private', producer })).id))
+async function verified(artifacts: Artifacts, verifier: ReturnType<typeof requiredChecks>, criteria: string, subject: string, attempt: string, extra: { earlier?: string[]; event?: 'release' } = {}) {
+  const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-${attempt}`, stepId: 'checks', capability: 'code.required-checks', subject, criteria, ...extra })
+  const verdictId = await putVerdict(artifacts, { subject, criteria, capability: 'code.required-checks', verifier: { ref: verifier.ref, version: verifier.version }, verdict: result.verdict, reason: result.reason, evidence: result.evidence })
+  return { ...result, verdictId }
+}
+
+test('a docs-only change reuses unit and smoke from its base\'s pass, naming the earlier verdict', async () => {
+  const artifacts = store()
+  const repository = reuseRepo()
+  const { task, tree, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const first = await verified(artifacts, verifier, criteria, treeId, 'r1')
+  assert.equal(first.verdict, 'pass', first.reason)
+  assert.doesNotMatch(first.reason, /reused/)
+  const docsOnly = await change(artifacts, repository, tree.commit, { 'docs/n.md': 'n\n' })
+  const second = await verified(artifacts, verifier, criteria, docsOnly, 'r2', { earlier: await failedEarlier(artifacts, ['unit', 'smoke']) })
+  assert.equal(second.verdict, 'pass', second.reason)
+  assert.match(second.reason, new RegExp(`unit pass \\(reused ${first.verdictId}\\)`))
+  assert.match(second.reason, new RegExp(`smoke pass \\(reused ${first.verdictId}\\)`))
+  assert.deepEqual(second.evidence.slice().sort(), first.evidence.slice(1).sort(), 'the reused runs are the earlier evidence; install did not run again')
+})
+
+test('a changed lockfile or a changed selected file does not reuse', async () => {
+  const artifacts = store()
+  const repository = reuseRepo()
+  const { task, tree, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  await verified(artifacts, verifier, criteria, treeId, 'l1')
+  for (const [n, files] of [['l2', { 'pnpm-lock.yaml': 'lock: 2\n' }], ['l3', { 'src/a.ts': 'x\n' }]] as const) {
+    const changed = await change(artifacts, repository, tree.commit, files)
+    const result = await verified(artifacts, verifier, criteria, changed, n, { earlier: await failedEarlier(artifacts, ['unit', 'smoke']) })
+    assert.equal(result.verdict, 'pass', result.reason)
+    assert.doesNotMatch(result.reason, /reused/, n)
+  }
+})
+
+test('a failed verdict is not reused, and neither is a pass of the release event', async () => {
+  const artifacts = store()
+  const repository = repo(REUSE, { 'package.json': '{}\n' })
+  const { task, tree, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const failed = await verified(artifacts, verifier, criteria, treeId, 'f1')
+  assert.equal(failed.verdict, 'fail')
+  const again = await verified(artifacts, verifier, criteria, treeId, 'f2')
+  assert.equal(again.verdict, 'fail')
+  assert.doesNotMatch(again.reason, /reused/)
+  // A pass, then the release event over the same inputs: every check runs.
+  const good = repo(REUSE, { 'ok.txt': 'ok\n', 'package.json': '{}\n' })
+  const goodTask = await taskOn(artifacts, good)
+  const goodCriteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: goodTask.task, operatorId: 't' })
+  const pass = await verified(artifacts, verifier, goodCriteria, goodTask.treeId, 'f3')
+  assert.equal(pass.verdict, 'pass', pass.reason)
+  const release = await verified(artifacts, verifier, goodCriteria, goodTask.treeId, 'f4', { event: 'release' })
+  assert.equal(release.verdict, 'pass', release.reason)
+  assert.doesNotMatch(release.reason, /reused/)
+  assert.match(release.reason, /run: install [\d.]+ s, unit [\d.]+ s, smoke [\d.]+ s$/)
+  void tree
 })

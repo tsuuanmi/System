@@ -13,6 +13,8 @@
  * (sc-13: load, not the change, often fails a check; the re-run is one, never more, and the evidence holds all runs in order: change, base, change, base). If the change then passes, the
  * verdict follows it (`pass`); if the base now passes and the change still fails, the change's failure counts (`fail`); `error` when the checks could not be run at all.
  */
+import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, matchesGlob, normalize, sep } from 'node:path'
@@ -91,6 +93,8 @@ export const checkRunSchema = z.object({
   leftovers: z.array(z.string()).optional(),
   /** The names (never the values) of the machine-level `checkEnv` variables the check was given. */
   checkEnv: z.array(z.string()).optional(),
+  /** Item chk-reuse-1: the hash of this check's inputs (its definition, the files its `paths` select, the toolchain); a pass with a key can be reused by a later run with the same key. */
+  key: z.string().optional(),
   durationMs: z.number().int().nonnegative(),
   stdoutTail: z.string(),
   stderrTail: z.string(),
@@ -133,9 +137,14 @@ export const selected = (check: { paths?: string[]; on?: readonly CheckEvent[] }
   if (check.on && !check.on.includes(event)) return false
   const paths = check.paths
   if (!paths) return true
-  const included = (file: string): boolean => paths.reduce((in_, glob) => glob.startsWith('!') ? (matchesGlob(file, glob.slice(1)) ? false : in_) : (matchesGlob(file, glob) ? true : in_), false)
-  return touched.some(included)
+  return touched.some((file) => pathIncluded(paths, file))
 }
+
+/** Whether `paths` (read in order, `!` excludes, the last pattern matching `file` decides) include `file`. */
+const pathIncluded = (paths: readonly string[], file: string): boolean => paths.reduce((in_, glob) => glob.startsWith('!') ? (matchesGlob(file, glob.slice(1)) ? false : in_) : (matchesGlob(file, glob) ? true : in_), false)
+
+/** Item chk-reuse-1: the files whose change invalidates every check's pass when the checks install dependencies: package manifests and the lockfile. */
+const isManifest = (file: string): boolean => /(^|\/)package\.json$/.test(file) || file === 'pnpm-lock.yaml' || file === 'pnpm-workspace.yaml'
 
 /** The throwaway directory (and HOME) of one verify attempt: its name carries the attempt ID, so a later Host can tell whether the run is gone. */
 const scratchOf = (attemptId: string): string => join(tmpdir(), `system-checks-${attemptId.replace(/[^A-Za-z0-9-]/g, '-')}`)
@@ -184,6 +193,70 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
   const producer = { type: 'verifier' as const, ref: 'code.required-checks' }
   const diffNames = async (repository: string, from: string, to: string): Promise<string[]> =>
     from === to ? [] : (await git(repository, ['diff', '--name-only', '--no-renames', from, to])).split('\n').filter(Boolean)
+
+  /**
+   * Item chk-reuse-1: the key of a check on a commit is the hash of its definition, the toolchain (the Node on PATH, the pnpm of `packageManager`) and the tree of the
+   * files its `paths` select (every file without `paths`), plus the package manifests and the lockfile when the checks install dependencies. `find` returns the
+   * earlier passing run with that key and a `pass` verdict that holds it as evidence (the controller stores verdicts, so a run no verdict names is not reused).
+   */
+  const reuser = (repository: string, checks: Checks, extraNames: string[], path: string) => {
+    const lists = new Map<string, Promise<{ file: string; entry: string }[]>>()
+    const listOf = (commit: string) => {
+      if (!lists.has(commit)) {
+        lists.set(commit, git(repository, ['ls-tree', '-r', '-z', commit]).then((out) => out.split('\0').filter(Boolean).map((line) => ({ file: line.slice(line.indexOf('\t') + 1), entry: line }))))
+      }
+      return lists.get(commit)!
+    }
+    let toolchain: string | undefined
+    const toolchainOf = async (commit: string): Promise<string> => {
+      if (toolchain !== undefined) return toolchain
+      let node = ''
+      try {
+        node = execFileSync('node', ['--version'], { env: { PATH: path }, encoding: 'utf8' }).trim()
+      } catch {
+        // No node on PATH: the key then carries none, and a check that needs it fails anyway.
+      }
+      let pnpm = ''
+      try {
+        pnpm = String((JSON.parse(await git(repository, ['show', `${commit}:package.json`])) as { packageManager?: string }).packageManager ?? '')
+      } catch {
+        // No readable package.json: no pnpm version to record.
+      }
+      toolchain = `${node} ${pnpm}`
+      return toolchain
+    }
+    const installs = checks.checks.some((check) => SETUP_CHECKS.includes(check.name))
+    const keyOf = async (check: Checks['checks'][number], commit: string): Promise<string> => {
+      const files = (await listOf(commit)).filter(({ file }) => (check.paths ? pathIncluded(check.paths, file) : true) || (installs && isManifest(file))).map(({ entry }) => entry).sort()
+      const { name, run, timeoutSeconds, paths, on } = check
+      return createHash('sha256').update(JSON.stringify({ definition: { name, run, timeoutSeconds, paths, on }, env: extraNames, toolchain: await toolchainOf(commit), files })).digest('hex')
+    }
+    let passes: Map<string, string> | undefined
+    const find = async (check: Checks['checks'][number], commit: string): Promise<{ run: string; verdict: string } | undefined> => {
+      const key = await keyOf(check, commit)
+      if (!passes) {
+        // Evidence ID to the pass verdict that holds it (a verdict that ran it, over one that itself reused it).
+        passes = new Map()
+        for (const id of artifacts.idsByKind('verdict')) {
+          const read = artifacts.get(id)
+          if (read.state !== 'stored') continue
+          const verdict = read.envelope.content as { verdict: string; reason: string; evidence: string[]; verifier: { ref: string } }
+          if (verdict.verdict !== 'pass' || verdict.verifier.ref !== 'code.required-checks') continue
+          for (const evidence of verdict.evidence) if (!passes.has(evidence) || !verdict.reason.includes('(reused ')) passes.set(evidence, id)
+        }
+      }
+      for (const id of artifacts.idsByKind(CHECK_RUN_KIND.kind)) {
+        const verdict = passes.get(id)
+        if (!verdict) continue
+        const read = artifacts.get(id)
+        if (read.state !== 'stored') continue
+        const run = read.envelope.content as z.infer<typeof checkRunSchema>
+        if (run.key === key && run.name === check.name && run.exitCode === 0 && !run.timedOut && !run.leftovers?.length) return { run: id, verdict }
+      }
+      return undefined
+    }
+    return { keyOf, find }
+  }
 
   return {
     ref: 'code.required-checks',
@@ -248,6 +321,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           return verdict('error', (error as Error).message, [])
         }
         const path = [bin, process.env.PATH].filter(Boolean).join(':')
+        const reuse = reuser(tree.repository, checks, extra, path)
         // What the change touches against the base its checks were pinned from (PROP-0007 decision 5); a commit checked as it is runs them all.
         // A tree that names its parent is a change from that commit (a captured change; a release against the running one); otherwise from the commit the checks were pinned from.
         // It is also a change from the Task's base, so a reopened step's second attempt is selected by everything changed since the base, not only since the previous attempt.
@@ -265,6 +339,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         /** One check on one commit's worktree: the change and the base run it the same way, so "fails" means the same on both. */
         const runCheck = async (check: Checks['checks'][number], cwd: string, commit: string): Promise<{ id: string; failed?: string; ms: number }> => {
           const started = now()
+          const key = SETUP_CHECKS.includes(check.name) ? undefined : await reuse.keyOf(check, commit)
           // `timeout` interrupts the whole group first, so a test runner says what it was running; the abort is the backstop.
           const backstop = AbortSignal.timeout((check.timeoutSeconds + 20) * 1000)
           const spawned = spawner.spawn({
@@ -277,7 +352,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
           const run = {
             name: check.name, run: check.run, commit, exitCode: outcome.exitCode, signal: outcome.signal,
             timedOut: backstop.aborted || outcome.exitCode === 124, durationMs: Math.max(0, Math.round(now() - started)),
-            stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}), ...(extra.length ? { checkEnv: extra } : {}),
+            ...(key ? { key } : {}), stdoutTail: tail(spawned.stdout()), stderrTail: tail(spawned.stderr()), ...(leftovers.length ? { leftovers } : {}), ...(extra.length ? { checkEnv: extra } : {}),
           }
           const id = (await artifacts.put({ ...CHECK_RUN_KIND, content: run, inputs: [request.subject, request.criteria], classification: 'local-private', producer })).id
           let failure: string | undefined
@@ -326,9 +401,27 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         const picked = (check: Checks['checks'][number]): boolean => asItIs ? !check.on || check.on.includes(event) : selected(check, touched, event)
         // The setup checks (install, build) still run when a later check chosen needs them, whatever `on` and `paths` say of them.
         const needsSetup = checks.checks.some((check) => !SETUP_CHECKS.includes(check.name) && (picked(check) || failedBefore.has(check.name)))
-        const chosen = checks.checks.filter((check) => picked(check) || failedBefore.has(check.name) || (needsSetup && SETUP_CHECKS.includes(check.name)))
-        for (const check of checks.checks) if (!chosen.includes(check)) skipped.push(check.name)
-        for (const check of chosen) {
+        const wanted = checks.checks.filter((check) => picked(check) || failedBefore.has(check.name) || (needsSetup && SETUP_CHECKS.includes(check.name)))
+        // Item chk-reuse-1: a check whose inputs are byte-identical to an earlier pass is not run again (never on the release event); the setup checks are never reused (they make node_modules and dist for the later checks), and run only when a later check still runs.
+        const reused = new Map<string, { run: string; verdict: string }>()
+        if (event !== 'release') {
+          for (const check of wanted) {
+            if (SETUP_CHECKS.includes(check.name)) continue
+            const found = await reuse.find(check, tree.commit)
+            if (found) reused.set(check.name, found)
+          }
+        }
+        const stillNeedsSetup = wanted.some((check) => !SETUP_CHECKS.includes(check.name) && !reused.has(check.name))
+        const chosen = wanted.filter((check) => !reused.has(check.name) && (!SETUP_CHECKS.includes(check.name) || stillNeedsSetup))
+        for (const check of checks.checks) if (!wanted.includes(check) || (SETUP_CHECKS.includes(check.name) && !chosen.includes(check))) skipped.push(check.name)
+        for (const check of wanted) {
+          const earlierPass = reused.get(check.name)
+          if (earlierPass) {
+            evidence.push(earlierPass.run)
+            ran.push(`${check.name} pass (reused ${earlierPass.verdict})`)
+            continue
+          }
+          if (!chosen.includes(check)) continue
           const result = await runCheck(check, worktree, tree.commit)
           evidence.push(result.id)
           ran.push(`${check.name} ${(result.ms / 1000).toFixed(1)} s${!picked(check) ? ' (failed earlier)' : ''}`)
