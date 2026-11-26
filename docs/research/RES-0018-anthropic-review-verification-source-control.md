@@ -48,3 +48,47 @@ Each post was read by a page reader; its figures are Anthropic's own, not indepe
 Checks per Work on 2026-11-26 (29 merged Works): median 3.7 min, p90 14.3 min; smoke 52 minutes of the day, build 23,
 unit 17, web 9 (three runs; it is already limited by path). A Work's checks run in order in one worktree so that
 install and build are shared, so running them in parallel needs care.
+
+## The lifecycle of one change
+
+None of the three posts describes one lifecycle end to end; this is assembled from all three and is not Anthropic's
+own diagram. In order: decide to build (a person; not recorded) → the agent writes, guided by CLAUDE.md → it runs
+tests, build, lint and an end-to-end `verify` skill before the commit, a fresh-context subagent reviews the diff, and
+it must "show the output" → the commit is stamped with how it was verified (which can be "none"; gate modes off,
+observe, enforce; after two blocks in a session the next commit passes) → a PR template with Testing, Risk and How to
+revert → required CI → parallel bug-hunting review with verifier voting, findings tagged Important, Nit or
+Pre-existing, every finding answered; after three rounds the reviewer asks to reconsider the approach, and a check
+still failing after three rounds brings in a person → a separate security review → a risk tier set by the change (low:
+no person; medium: one; high: two; sensitive paths and CI files always a person; an agent's approval never counts; an
+approval binds one commit) → a merge queue against the latest main → flags, internal use first → `latest`, then
+`stable` → watch, revert, on-call, with bisect and revert through source-control APIs → each revert or incident
+becomes an eval case. New review rules need two PRs, a diff a person can read, three agents trying to disprove them
+and a human-approved PR; rules are pruned. REVIEW.md is read from the base branch. At more than 30,000 changes a day a
+merge is a compare-and-swap on one ref with no global lock, tests run after merge and before deploy, and Claude fixes
+conflicts; "a proper merge queue doesn't make much sense at agent scale".
+
+| Anthropic stage | System's |
+|---|---|
+| decide to build (not recorded) | Intent: System records it; Anthropic does not |
+| agent writes with CLAUDE.md | Task context pack |
+| agent runs checks, "show the output" | Host-run checks: System does not take the Worker's word |
+| approval binds one commit | Verdict bound to an Artifact |
+| changes can't modify their checks | checks and gates read from the base (gate-1) |
+| three rounds, then a person | reopen cap (develop.yaml `retry max: 1`, then fail) |
+| AI review, voted | Model check in shadow (rev-1) |
+| low tier: no person | auto-merge into dev, a person at release |
+| high tier and sensitive paths | gate-1 |
+| merge queue (dropped at scale) | kept: RES-0018's own decision, because of scale |
+| `latest` then `stable` | dev and main, the `system update` rehearsal and afterInstall |
+| revert and incident | Escaped defect; no revert path yet ([revert-1](../../STATUS.md)) |
+| eval case from each miss | Guardrail; no eval set yet ([evalset-1](../../STATUS.md)) |
+| flaky tests deleted with a reason | flaky-pol-1 |
+
+Principles, as quoted: "Everything is reversible", "Blast radius sets the bar", "The change sets the tier, not the
+author", "Whoever prompted the change is on the hook for it", "Review has to converge". Anthropic's measures: merged
+PRs doubled from June to September, reverts fell by more than 40%, and review rounds to pass fell from 2.08 to 1.32.
+
+**Conclusion.** Human attention is allocated by risk, and safety comes from reversibility as much as from gates.
+System's gaps are a release revert path ([revert-1](../../STATUS.md)), an eval set of misses
+([evalset-1](../../STATUS.md)) and measured rounds ([rounds-1](../../STATUS.md)); they are Items under Intent
+`sha256:25a45ced0d2aaab001a43701a50208d288625dd5d0eb0bb4b3f0e18a83169b64`.
