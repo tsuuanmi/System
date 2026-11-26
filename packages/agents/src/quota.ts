@@ -72,9 +72,22 @@ const CODEX_RATE_LIMITS_SCHEMA = {
   },
 } as const
 
+/** Antigravity's `/usage` answer: groups of buckets, each a window's remaining share and reset (1.5.18). A malformed bucket anywhere refuses the answer. */
+const AGY_USAGE_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['command'],
+  properties: { command: { type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['groups'], properties: { groups: { type: 'array', items: { $ref: '#/$defs/group' } } } } } } },
+  $defs: {
+    group: { type: 'object', required: ['name', 'buckets'], properties: { name: { type: 'string' }, buckets: { type: 'array', items: { $ref: '#/$defs/bucket' } } } },
+    bucket: { type: 'object', required: ['window', 'remaining_fraction', 'reset_time'], properties: { window: { type: 'string' }, remaining_fraction: { type: 'number', minimum: 0, maximum: 1 }, reset_time: { type: 'string' } } },
+  },
+} as const
+
 const ajv = new Ajv2020({ strict: true, allErrors: false, validateFormats: false })
 const claudeUsageValid = ajv.compile(CLAUDE_USAGE_SCHEMA)
 const codexRateLimitsValid = ajv.compile(CODEX_RATE_LIMITS_SCHEMA)
+const agyUsageValid = ajv.compile(AGY_USAGE_SCHEMA)
 /** The schema error of an answer, or undefined when it matches. */
 function schemaError(validate: ValidateFunction, answer: unknown, label: string): string | undefined {
   if (validate(answer)) return undefined
@@ -158,6 +171,31 @@ export function quotaFromRateLimits(result: unknown, observedAt: number): QuotaR
     windows[name] = windowOf(usedPercent, resetsAt === null ? undefined : resetsAt * 1000, observedAt)
   }
   if (Object.keys(windows).length === 0) return { unreadable: 'it reports no window of 300 or 10080 minutes' }
+  return report(windows, observedAt)
+}
+
+/** The group an Antigravity Account draws on, as its profile names it (`quotaGroup`) and as `/usage` names it. */
+export const AGY_GROUPS = { gemini: 'Gemini Models', '3p': 'Claude and GPT models' } as const
+export type AgyQuotaGroup = keyof typeof AGY_GROUPS
+/** A window not yet started is reported as the Unix epoch: its reset is unknown, not past. */
+const EPOCH_RESET = 0
+
+/** Antigravity's `/usage` answer, read for the Account's one group (an Account is one group); used share = 1 - remaining_fraction. */
+export function quotaFromAgyUsage(answer: unknown, group: AgyQuotaGroup, observedAt: number): QuotaReport {
+  const refused = schemaError(agyUsageValid, answer, 'usage')
+  if (refused) return { unreadable: refused }
+  const groups = (answer as { command: { data: { groups: Array<{ name: string; buckets: Array<{ window: string; remaining_fraction: number; reset_time: string }> }> } } }).command.data.groups
+  const found = groups.filter((g) => g.name === AGY_GROUPS[group])
+  if (found.length !== 1) return { unreadable: `its usage answer has ${found.length} groups named "${AGY_GROUPS[group]}", not one` }
+  const windows: Partial<Record<QuotaWindowName, QuotaWindow>> = {}
+  for (const bucket of found[0]!.buckets) {
+    const name: QuotaWindowName | undefined = bucket.window === '5h' ? 'five_hour' : bucket.window === 'weekly' ? 'seven_day' : undefined
+    if (!name) continue
+    if (windows[name]) return { unreadable: `two ${bucket.window} buckets in "${AGY_GROUPS[group]}"` }
+    if (!ISO.test(bucket.reset_time) || !Number.isFinite(Date.parse(bucket.reset_time))) return { unreadable: `its ${bucket.window} reset_time is not an ISO 8601 time` }
+    const reset = Date.parse(bucket.reset_time)
+    windows[name] = windowOf((1 - bucket.remaining_fraction) * 100, reset === EPOCH_RESET ? undefined : reset, observedAt)
+  }
   return report(windows, observedAt)
 }
 
@@ -453,6 +491,39 @@ export async function readCodexQuota(options: CodexQuotaOptions): Promise<QuotaR
       },
     })
     return 'fail' in outcome ? failed(outcome) : withVersion(quotaFromRateLimits(outcome.value, now()), cliVersion)
+  } catch (error) {
+    return { unreadable: `the read failed: ${String((error as Error).message).slice(0, 200)}` }
+  }
+}
+
+export interface AntigravityQuotaOptions extends ReadOptions {
+  /** The Account's `agyHome`, passed as HOME (the token is read from it by `agy`, never by System). */
+  home: string
+  group: AgyQuotaGroup
+}
+
+/** `agy -p /usage --output-format json` with the Account's HOME and no session bus (so no keyring is asked), and no model turn. */
+export async function readAntigravityQuota(options: AntigravityQuotaOptions): Promise<QuotaReport> {
+  try {
+    if (!existsSync(options.home)) return { unreadable: `its agyHome ${options.home} does not exist` }
+    const now = options.now ?? Date.now
+    const outcome = await exchange({
+      command: options.command,
+      args: ['-p', '/usage', '--output-format', 'json', '--print-timeout', '30s'],
+      env: env({ HOME: options.home }),
+      cwd: options.home,
+      start: [],
+      signal: options.signal,
+      timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      onMessage(message) {
+        if (message.status === 'ERROR' || message.error !== undefined) {
+          const said = typeof message.error === 'string' ? message.error : JSON.stringify(message.error ?? message)
+          return { fail: `usage failed: ${said.slice(0, 200)}`, retryAfterMs: retryAfterOf(said) }
+        }
+        return { value: message }
+      },
+    })
+    return 'fail' in outcome ? failed(outcome) : quotaFromAgyUsage(outcome.value, options.group, now())
   } catch (error) {
     return { unreadable: `the read failed: ${String((error as Error).message).slice(0, 200)}` }
   }

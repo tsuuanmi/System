@@ -5,6 +5,7 @@
 import type { AttemptSummary } from '@system/work'
 import { unknownSummary } from '../attempt-summary.ts'
 import type { Runtime } from '../runtimes.ts'
+import { antigravity } from './antigravity.ts'
 import { claudeCode } from './claude-code.ts'
 import { codex, keepRefreshedAuth } from './codex.ts'
 import { SANDBOX_RUNTIME_ONLY, parseSandbox, type SandboxOption } from './sandbox.ts'
@@ -13,7 +14,7 @@ import type { CliAdapter } from './types.ts'
 export type { CliAdapter, InvocationInput, Preflight, RegisterInput, Staged } from './types.ts'
 export { keepRefreshedAuth }
 
-const ADAPTERS: Record<Runtime, CliAdapter> = { 'claude-code': claudeCode, codex }
+const ADAPTERS: Record<Runtime, CliAdapter> = { 'claude-code': claudeCode, codex, antigravity }
 
 /** The adapter of a Runtime; undefined for one that is not a CLI (`web`). */
 export function adapterFor(runtime: string): CliAdapter | undefined {

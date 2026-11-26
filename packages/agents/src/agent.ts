@@ -68,6 +68,10 @@ export interface Account {
   token?: () => Promise<string | undefined>
   /** codex: the account's System-owned CODEX_HOME holding `auth.json`. */
   codexHome?: string
+  /** antigravity: the Account's System-owned HOME, holding `.gemini/antigravity-cli` (its login, and the permission rules System writes). */
+  agyHome?: string
+  /** antigravity: the model group the Account draws on, which its quota reads. */
+  quotaGroup?: 'gemini' | '3p'
   /** The model to run for each offered tier; a step with no tier gets `standard`, else the CLI's default. */
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes (fractions allowed). */

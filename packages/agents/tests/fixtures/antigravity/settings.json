@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "command(*)"
+    ],
+    "deny": [
+      "command(git push)",
+      "command(gh)"
+    ]
+  }
+}

@@ -62,6 +62,10 @@ export interface AccountConfig extends WebAccountSettings {
   claudeHome?: string
   /** codex: CODEX_HOME, relative to $DSH_HOME/system unless absolute. */
   codexHome?: string
+  /** antigravity: the Account's HOME (holds `.gemini/antigravity-cli` with its login), relative to $DSH_HOME/system unless absolute; default `antigravity/<name>`. */
+  agyHome?: string
+  /** antigravity: the model group the Account draws on and whose quota it reads: `gemini` (Gemini Models) or `3p` (Claude and GPT models). Required. */
+  quotaGroup?: 'gemini' | '3p'
   /** The model per tier; each listed tier adds the capability `tier.<name>`. */
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes; overrides the row's. */

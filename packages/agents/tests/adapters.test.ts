@@ -19,7 +19,7 @@ test('no `runtime ===` branch exists outside the adapters and the web seam (web.
 })
 
 test('every adapter is registered under its own Runtime name and declares abilities', () => {
-  for (const runtime of ['claude-code', 'codex'] as const) {
+  for (const runtime of ['claude-code', 'codex', 'antigravity'] as const) {
     assert.equal(adapterFor(runtime)?.runtime, runtime)
     assert.ok(RUNTIME_ABILITIES[runtime].length > 0)
   }
