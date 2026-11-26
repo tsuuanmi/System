@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: active
-reviewed: 2026-11-18
+reviewed: 2026-11-26
 decided-by: [ADR-0002, ADR-0006]
 covers: [packages/work/src/workflow.ts, packages/work/src/record.ts, workflows/*.yaml]
 ---
@@ -226,6 +226,12 @@ failures carry `noChange` on `observed` and `hold` (`approval`, `inconclusive`)
 on `terminal`. `outside.ts` is the only reader: it takes `cause` first and
 matches the reason's words only for events without one, so old records
 classify as before and a rewording elsewhere changes no hold.
+
+**Attempt tool scope (scope-1).** An `observed` event's `worker` record may
+carry an optional `scope` describing the tool bounds the attempt ran with
+(permission mode, allowed and disallowed tools, sandbox mode, and the sha256
+of any staged settings bytes; never tokens or environment values). Records
+stored without `scope` parse and fold unchanged.
 
 DAG support should emerge from `dependsOn` only. Do not require a
 DAG-specific user abstraction for a one-step task.

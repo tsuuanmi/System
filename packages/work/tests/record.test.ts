@@ -104,3 +104,11 @@ test('a waiting event marks the step until its dispatch; it is not a failure and
   assert.equal(dispatched.steps.task!.waiting, undefined)
   assert.deepEqual(fold(['task'], [prefix[0]!, waiting]), fold(['task'], [prefix[0]!, waiting]))
 })
+
+test('observed worker.scope validates and folds identically to records without it', () => {
+  const withoutScope = { seq: 2, at, ...observed(2, 'task', { worker: { ref: 'codex/default', version: '0.1' } }) } as WorkEvent
+  const withScope = { seq: 2, at, ...observed(2, 'task', { worker: { ref: 'codex/default', version: '0.1', scope: { sandbox: 'workspace-write' } } }) } as WorkEvent
+  assert.equal(eventSchema.safeParse(withoutScope).success, true)
+  assert.equal(eventSchema.safeParse(withScope).success, true)
+  assert.deepEqual(fold(['task'], [...prefix, withScope]), fold(['task'], [...prefix, withoutScope]))
+})
