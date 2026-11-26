@@ -183,6 +183,12 @@ test('work.submit runs the Work unless run is false; work.list shows an unrun Wo
   assert.equal(await listed(held), 'admitted, not running')
 })
 
+test('work_submit with a single Task by capability no.such.capability is refused through a real Host', { timeout: 120_000 }, async () => {
+  const submitted = await call(await mcp(), 'work.submit', { capabilities: ['no.such.capability'], run: false })
+  assert.equal(typeof submitted.error, 'string')
+  assert.match(submitted.error!, /no\.such\.capability/)
+})
+
 test('a tool call goes to the Host: submit a direct Task, run it and follow it with work.events', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const submitted = await call(client, 'work.submit', { capabilities: ['repo.write'], run: false })

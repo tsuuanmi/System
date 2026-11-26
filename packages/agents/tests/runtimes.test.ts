@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
@@ -139,6 +140,25 @@ const sbWs = { root: '/fake/home/.dsh/attempt', home: '/fake/home/.dsh/attempt/h
 const fakeHost = { home: () => '/fake/home', gitCommonDir: () => '/fake/home/src/repo/.git' }
 const sandboxed = (sandbox: unknown, codeWrite = false) => claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite, env: { CLAUDE_CODE_OAUTH_TOKEN: 't' }, sandbox: sandbox as never, host: fakeHost })
 const settingsOf = (argv: string[]) => JSON.parse(argv[argv.indexOf('--settings') + 1]!) as { sandbox: { enabled: boolean; failIfUnavailable: boolean; allowUnsandboxedCommands: boolean; excludedCommands?: unknown; filesystem: { denyRead: string[]; allowRead: string[]; allowWrite: string[] }; network?: { allowedDomains?: string[] } } }
+
+test('the recorded scope is what the Claude Code argv and settings used', () => {
+  const values = (argv: string[], flag: string) => argv.slice(argv.indexOf(flag) + 1).filter((v, i, rest) => !rest.slice(0, i).some((x) => x.startsWith('--')) && !v.startsWith('--'))
+  for (const codeWrite of [false, true]) {
+    const { argv, scope } = sandboxed(undefined, codeWrite)
+    assert.deepEqual(scope, { permissionMode: argv[argv.indexOf('--permission-mode') + 1], allowedTools: values(argv, '--allowedTools'), disallowedTools: values(argv, '--disallowedTools'), sandbox: false })
+  }
+  assert.ok(sandboxed(undefined, true).scope.disallowedTools!.includes('Monitor'))
+  const on = sandboxed(true)
+  assert.equal(on.scope.sandbox, true)
+  assert.equal(on.scope.settingsSha256, createHash('sha256').update(on.argv[on.argv.indexOf('--settings') + 1]!).digest('hex'))
+  assert.equal(JSON.stringify(on.scope).includes('CLAUDE_CODE_OAUTH_TOKEN'), false)
+})
+
+test('the recorded scope is the Codex -s mode of its argv', () => {
+  const { argv, scope } = codexInvocation('codex', sbWs, 'p', '/h')
+  assert.deepEqual(scope, { sandbox: argv[argv.indexOf('-s') + 1] })
+  assert.equal(scope.sandbox, 'workspace-write')
+})
 
 test('without the sandbox option the Claude Code argv has no --settings, and is what it was', () => {
   const plain = claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite: false, env: {} })
