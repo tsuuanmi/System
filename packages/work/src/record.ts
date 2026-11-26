@@ -133,6 +133,11 @@ export const eventSchema = z.discriminatedUnion('type', [
     stepId: z.string(), reason: z.string(),
   }).strict(),
   z.object({
+    /** Item qw-1: the step waits for an Account's quota to reset (`resetsAt` when known). Ended by the step's next `dispatched`; not a failure. */
+    type: z.literal('waiting'), seq: z.number().int(), at,
+    stepId: z.string(), cause: z.literal('quota'), resetsAt: z.string().optional(),
+  }).strict(),
+  z.object({
     type: z.literal('attempt-lost'), seq: z.number().int(), at,
     stepId: z.string(), attemptId: z.string(), reason: z.string(),
   }).strict(),
@@ -210,6 +215,8 @@ const stepState = z.object({
   /** Derived by `fold`: the step's latest `reopened` event; the Outside failures in a row on it (cm-2), absent when the last thing was not one. */
   reopening: z.object({ automatic: z.literal(true).optional(), failure: contentIdSchema.optional(), failedEffect: z.string().optional(), base: contentIdSchema.optional(), worker: z.string().optional(), previous: contentIdSchema.optional() }).strict().optional(),
   outside: z.custom<OutsideRun>((v) => typeof v === 'object').optional(),
+  /** Derived by `fold`: the step waits on quota since the `waiting` event, until its next dispatch (qw-1). */
+  waiting: z.object({ cause: z.literal('quota'), resetsAt: z.string().optional(), since: z.string() }).strict().optional(),
 }).strict()
 
 const effectState = z.object({
@@ -283,8 +290,12 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         const s = steps[event.stepId]!
         s.state = 'running'
         s.attempts.push(event.attemptId)
+        delete s.waiting
         break
       }
+      case 'waiting':
+        steps[event.stepId]!.waiting = { cause: event.cause, ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}), since: event.at }
+        break
       case 'observed': {
         const s = steps[event.stepId]!
         if (event.limited) { s.state = 'pending'; break }
@@ -314,6 +325,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
           const { attempts, reopening } = steps[stepId]!
           steps[stepId] = { state: 'pending', attempts, outputs: {}, ...(reopening ? { reopening } : {}) }
         }
+        delete steps[event.stepId]!.waiting
         steps[event.stepId]!.state = 'pending'
         steps[event.stepId]!.outputs = {}
         steps[event.stepId]!.reopening = Object.fromEntries(Object.entries({ automatic: event.automatic, failure: event.failure, failedEffect: event.failedEffect, base: event.base, worker: event.worker, previous: event.previous }).filter(([, v]) => v !== undefined))
@@ -354,6 +366,7 @@ export function fold(stepIds: readonly string[], events: readonly WorkEvent[]): 
         delete state.awaiting
         break
       case 'terminal':
+        for (const step of Object.values(steps)) delete step.waiting
         state.status = event.outcome
         state.reason = event.reason
         state.results = { ...event.results }

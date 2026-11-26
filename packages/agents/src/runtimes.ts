@@ -5,7 +5,7 @@
 import { nodeBin } from './node.ts'
 import type { Workspace } from './workspace.ts'
 
-export type Runtime = 'claude-code' | 'codex'
+export type Runtime = 'claude-code' | 'codex' | 'antigravity'
 
 /**
  * What each Runtime can do, declared here and not granted in the profile (nm-1): a Worker's capabilities are its Runtime's abilities plus the Roles and
@@ -14,6 +14,7 @@ export type Runtime = 'claude-code' | 'codex'
 export const RUNTIME_ABILITIES = {
   'claude-code': ['repo.read', 'repo.write', 'web.search'],
   codex: ['repo.read', 'repo.write'],
+  antigravity: ['repo.read', 'repo.write'],
   web: ['web.search', 'web.browse'],
 } as const satisfies Record<Runtime | 'web', readonly string[]>
 

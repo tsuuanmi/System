@@ -78,3 +78,24 @@ export function rankByHeadroom(candidates: readonly Candidate[]): Ranking {
   const earliest = known.length ? known.reduce((a, b) => (b.at < a.at ? b : a)) : undefined
   return { reasons, waitUntil: earliest ? { resetsAt: earliest.resetsAt } : {} }
 }
+
+/** One Account for `roomOf`: whether it has a free slot, and what `rankByHeadroom` reads of it. */
+export interface RoomAccount {
+  ref: string
+  /** Running attempts are under its `maxConcurrentAttempts`. */
+  slot: boolean
+  reading: QuotaReading | undefined
+  ceiling: number
+}
+
+/**
+ * How many Accounts could take one more parallel Work now (information for the caller; the Host never picks an Item): a free slot,
+ * and every window under the Ceiling, as `rankByHeadroom` reads them. An Account with no readable quota counts as free when it
+ * has a slot, and is listed in `unknown`.
+ */
+export function roomOf(accounts: readonly RoomAccount[]): { accounts: number; free: number; unknown: string[] } {
+  const open = accounts.filter((a) => a.slot)
+  const ranked = rankByHeadroom(open.map((a) => ({ ref: a.ref, attempts: 0, reading: a.reading, ceiling: a.ceiling })))
+  const free = open.filter((a) => /^headroom |^no quota reader$|^quota unreadable/.test(ranked.reasons[a.ref] ?? ''))
+  return { accounts: accounts.length, free: free.length, unknown: free.filter((a) => !/^headroom /.test(ranked.reasons[a.ref]!)).map((a) => a.ref) }
+}

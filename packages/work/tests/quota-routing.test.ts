@@ -136,6 +136,33 @@ for (const resetKnown of [true, false]) {
     assert.deepEqual(f.controller.live(f.id), [])
   })
 }
+const waitings = (record: WorkRecord) => record.events.filter((e) => e.type === 'waiting')
+test('a quota wait is recorded once with its reset, ended by the dispatch, and replays to the same state', async (t) => {
+  const resetsAt = new Date(Date.now() + 120_000).toISOString()
+  let used = 91
+  const f = await setup(t, [{ ref: 'P', quota: async () => reading(used, 31, resetsAt) }])
+  const running = f.run()
+  await turns()
+  assert.equal(waitings(f.record()).length, 1)
+  assert.deepEqual({ ...waitings(f.record())[0] }, { ...waitings(f.record())[0], stepId: 'task', cause: 'quota', resetsAt })
+  assert.deepEqual(f.record().state.steps.task!.waiting, { cause: 'quota', resetsAt, since: waitings(f.record())[0]!.at })
+  await new Promise((resolve) => setTimeout(resolve, 80)) // several retry wake-ups with the same reset
+  assert.equal(waitings(f.record()).length, 1, 'the same wait with the same reset appends nothing')
+  assert.equal(f.controller.replay(f.id).matches, true)
+  used = 30
+  const done = await running
+  assert.equal(done.state.status, 'succeeded')
+  assert.equal(done.state.steps.task!.waiting, undefined, 'the dispatch ends the wait')
+  assert.equal(waitings(done).length, 1)
+  assert.equal(f.controller.replay(f.id).matches, true)
+})
+test('a quota wait with no known reset is recorded without resetsAt', async (t) => {
+  const f = await setup(t, [{ ref: 'P', quota: async () => reading(91) }])
+  void f.run()
+  await turns()
+  assert.equal(waitings(f.record()).length, 1)
+  assert.equal(Reflect.has(waitings(f.record())[0]!, 'resetsAt'), false)
+})
 test('a pinned over-ceiling Account waits rather than failing or falling back', async (t) => {
   const f = await setup(t, [
     { ref: 'P', quota: async () => reading(91) },

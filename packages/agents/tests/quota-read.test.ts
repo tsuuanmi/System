@@ -1,6 +1,6 @@
 /** Reader protocols exercised only through private test-support CLIs and synthetic homes. */
 import assert from 'node:assert/strict'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { tempDir } from '../../../test-support/accounts.ts'
@@ -42,7 +42,7 @@ test('Claude quota uses one get_usage control request, the account HOME/token, a
   process.env.GH_TOKEN = 'must-not-leak'
   try {
     const report = await readClaudeQuota({ command: fake.command, home: dir, token: 'tok-1', now: () => OBS })
-    assert.deepEqual(report, { observedAt: new Date(OBS).toISOString(), windows: { five_hour: { percentUsed: 42, resetsAt: RESET } } })
+    assert.deepEqual(report, { observedAt: new Date(OBS).toISOString(), windows: { five_hour: { percentUsed: 42, resetsAt: RESET } }, cliVersion: '2.1.322' })
     const entries = fake.readLog()
     assert.deepEqual(entries[0]?.argv, ['--version'])
     const launch = entries.find((entry) => entry.home !== undefined)
@@ -72,7 +72,7 @@ test('Codex initializes then reads rateLimits in the account CODEX_HOME', async 
   const dir = tempDir('quota-read-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const fake = fakeQuotaCli(join(dir, 'cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 42, windowDurationMins: 300, resetsAt: Date.parse(RESET) / 1000 } }) })
-  assert.deepEqual(await readCodexQuota({ command: fake.command, codexHome: dir, now: () => OBS }), { observedAt: new Date(OBS).toISOString(), windows: { five_hour: { percentUsed: 42, resetsAt: RESET } } })
+  assert.deepEqual(await readCodexQuota({ command: fake.command, codexHome: dir, now: () => OBS }), { observedAt: new Date(OBS).toISOString(), windows: { five_hour: { percentUsed: 42, resetsAt: RESET } }, cliVersion: '0.166.0' })
   const entries = fake.readLog()
   const launch = entries.find((entry) => entry.home !== undefined)
   assert.ok(launch)
@@ -85,17 +85,30 @@ test('Codex initializes then reads rateLimits in the account CODEX_HOME', async 
     { method: 'initialized' }, { method: 'account/rateLimits/read', id: 2 },
   ])
 })
-for (const [kind, version] of [['claude', '2.1.999'], ['codex', '0.999.0'], ['claude', 'garbage'], ['codex', 'garbage'], ['claude', '2.1.308']] as const) {
-  test(`${kind} rejects unverified version ${version} before any quota request`, async (t) => {
+test('Codex 0.171.0 reads from the real answer through the CLI, with the version kept as evidence', async (t) => {
+  const dir = tempDir('quota-171-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const answer = JSON.parse(readFileSync(new URL('./codex-0.171.0-rate-limits.json', import.meta.url), 'utf8')) as unknown
+  const fake = fakeQuotaCli(dir, { kind: 'codex', version: '0.171.0', answer })
+  assert.deepEqual(await readCodexQuota({ command: fake.command, codexHome: dir, now: () => OBS }), { observedAt: new Date(OBS).toISOString(), windows: { five_hour: { percentUsed: 30, resetsAt: new Date(1795695432_000).toISOString() }, seven_day: { percentUsed: 5, resetsAt: new Date(1796282232_000).toISOString() } }, cliVersion: '0.171.0' })
+})
+for (const [kind, version] of [['claude', '2.1.999'], ['codex', '0.999.0'], ['claude', 'garbage'], ['codex', 'garbage']] as const) {
+  test(`${kind} at version ${version} is read when the answer's shape matches`, async (t) => {
     const dir = tempDir('quota-version-')
     t.after(() => rmSync(dir, { recursive: true, force: true }))
-    const fake = fakeQuotaCli(dir, { kind, version, answer: {} })
-    const report = kind === 'claude' ? await readClaudeQuota({ command: fake.command, home: dir, token: 'tok-1' }) : await readCodexQuota({ command: fake.command, codexHome: dir })
-    unreadable(report, /not verified/)
-    if (version !== 'garbage') assert.ok(String(object(report).unreadable).includes(version))
-    assert.deepEqual(fake.readLog(), [{ argv: ['--version'] }])
+    const answer = kind === 'claude' ? claudeUsage({ five_hour: { utilization: 42, resets_at: RESET } }) : codexRateLimits({ primary: { usedPercent: 42, windowDurationMins: 300, resetsAt: Date.parse(RESET) / 1000 } })
+    const fake = fakeQuotaCli(dir, { kind, version, answer })
+    const report = object(kind === 'claude' ? await readClaudeQuota({ command: fake.command, home: dir, token: 'tok-1', now: () => OBS }) : await readCodexQuota({ command: fake.command, codexHome: dir, now: () => OBS }))
+    assert.deepEqual(report.windows, { five_hour: { percentUsed: 42, resetsAt: RESET } })
+    assert.equal(report.cliVersion, version === 'garbage' ? undefined : version)
   })
 }
+test('an answer that does not match the schema is unreadable whatever the version', async (t) => {
+  const dir = tempDir('quota-shape-')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const fake = fakeQuotaCli(dir, { kind: 'codex', version: '0.166.0', answer: { rateLimits: { primary: null, secondary: null } } })
+  unreadable(await readCodexQuota({ command: fake.command, codexHome: dir }), /does not match the checked schema/)
+})
 for (const [kind, mode, reason] of [
   ['claude', 'error', /get_usage failed/], ['claude', 'garbage', /JSON/i], ['claude', 'exit', /end|exit|closed/i],
   ['codex', 'error', /initialize|scripted/i], ['codex', 'exit', /end|exit|closed/i],

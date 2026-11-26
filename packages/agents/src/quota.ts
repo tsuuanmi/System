@@ -8,10 +8,10 @@
  * System 1's ledger, pools, reservations and per-model windows are not ported.
  *
  * Neither reader runs a model turn. An answer is readable or `unreadable` as a whole: one malformed
- * entry, an unknown CLI version or an answer nobody checked is never a guess.
+ * entry or an answer that does not match the reader's JSON Schema is never a guess. The CLI's version is
+ * not a gate (Item q-1): it is probed and kept beside a reading as `cliVersion`, evidence only.
  *
- * Versions (checked 2026-11-10 from the installed binaries, no account used; see the README): System 1's
- * 2.1.308-2.1.310 and 0.164.0 are not carried over, because this host cannot check them.
+ * Shapes (checked from the installed binaries, no account used; see the README; Codex 0.171.0 answers like 0.166.0):
  * - Claude Code 2.1.322: `get_usage` takes `{ subtype, skip_behaviors? }` and answers
  *   `{ rate_limits_available: boolean, rate_limits: { five_hour, seven_day, ... } }`, each window
  *   `{ utilization: number | null (0-100), resets_at: ISO 8601 | null }`; `rate_limit_event.rate_limit_info`
@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
 
 export interface QuotaWindow {
   /** 0 to 100. */
@@ -35,8 +36,8 @@ export interface QuotaWindow {
 }
 export type QuotaWindowName = 'five_hour' | 'seven_day'
 export type QuotaReport =
-  | { observedAt: string; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow }; source?: 'rate_limit_event' }
-  | { unreadable: string }
+  | { observedAt: string; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow }; source?: 'rate_limit_event'; /** The CLI's version when probed: evidence, never a gate. */ cliVersion?: string }
+  | { unreadable: string; /** A `retry-after` the provider gave, in milliseconds: the cache does not read again before it. */ retryAfterMs?: number }
 
 /** Why `get_usage` has no plan limits (a `setup-token` token without the profile scope); the cache falls back to attempt events only for it. */
 export const NO_PLAN_LIMITS = 'no plan limits: API key, third-party provider or no profile scope'
@@ -46,8 +47,52 @@ export interface QuotaEvent extends QuotaWindow {
   window: QuotaWindowName
 }
 
-export const VERIFIED_CLAUDE_VERSIONS: readonly string[] = ['2.1.322']
-export const VERIFIED_CODEX_VERSIONS: readonly string[] = ['0.166.0']
+/**
+ * One JSON Schema (Draft 2020-12) per reader. An answer is readable when at least one 5-hour or weekly window
+ * has a used share and a reset; every other entry is ignored. A window present but malformed is also refused.
+ */
+const CLAUDE_USAGE_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['rate_limits'],
+  properties: { rate_limits: { type: 'object', properties: { five_hour: { $ref: '#/$defs/window' }, seven_day: { $ref: '#/$defs/window' } }, anyOf: [{ required: ['five_hour'], properties: { five_hour: { $ref: '#/$defs/usedWindow' } } }, { required: ['seven_day'], properties: { seven_day: { $ref: '#/$defs/usedWindow' } } }] } },
+  $defs: {
+    window: { type: ['object', 'null'], properties: { utilization: { type: ['number', 'null'], minimum: 0, maximum: 100 }, resets_at: { type: ['string', 'null'] } } },
+    usedWindow: { type: 'object', required: ['utilization', 'resets_at'], properties: { utilization: { type: 'number', minimum: 0, maximum: 100 }, resets_at: { type: 'string' } } },
+  },
+} as const
+const CODEX_RATE_LIMITS_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['rateLimits'],
+  properties: { rateLimits: { type: 'object', properties: { primary: { $ref: '#/$defs/window' }, secondary: { $ref: '#/$defs/window' } }, anyOf: [{ required: ['primary'], properties: { primary: { $ref: '#/$defs/usedWindow' } } }, { required: ['secondary'], properties: { secondary: { $ref: '#/$defs/usedWindow' } } }] } },
+  $defs: {
+    window: { type: ['object', 'null'], properties: { usedPercent: { type: 'number', minimum: 0, maximum: 100 }, windowDurationMins: { type: ['integer', 'null'], minimum: 1 }, resetsAt: { type: ['number', 'null'] } } },
+    usedWindow: { type: 'object', required: ['usedPercent', 'windowDurationMins', 'resetsAt'], properties: { usedPercent: { type: 'number', minimum: 0, maximum: 100 }, windowDurationMins: { type: 'integer', enum: [300, 10080] }, resetsAt: { type: 'number' } } },
+  },
+} as const
+
+/** Antigravity's `/usage` answer: groups of buckets, each a window's remaining share and reset (1.5.18). A malformed bucket anywhere refuses the answer. */
+const AGY_USAGE_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['command'],
+  properties: { command: { type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['groups'], properties: { groups: { type: 'array', items: { $ref: '#/$defs/group' } } } } } } },
+  $defs: {
+    group: { type: 'object', required: ['name', 'buckets'], properties: { name: { type: 'string' }, buckets: { type: 'array', items: { $ref: '#/$defs/bucket' } } } },
+    bucket: { type: 'object', required: ['window', 'remaining_fraction', 'reset_time'], properties: { window: { type: 'string' }, remaining_fraction: { type: 'number', minimum: 0, maximum: 1 }, reset_time: { type: 'string' } } },
+  },
+} as const
+
+const ajv = new Ajv2020({ strict: true, allErrors: false, validateFormats: false })
+const claudeUsageValid = ajv.compile(CLAUDE_USAGE_SCHEMA)
+const codexRateLimitsValid = ajv.compile(CODEX_RATE_LIMITS_SCHEMA)
+const agyUsageValid = ajv.compile(AGY_USAGE_SCHEMA)
+/** The schema error of an answer, or undefined when it matches. */
+function schemaError(validate: ValidateFunction, answer: unknown, label: string): string | undefined {
+  if (validate(answer)) return undefined
+  return `its ${label} answer does not match the checked schema: ${ajv.errorsText(validate.errors, { dataVar: 'answer' })}`.slice(0, 300)
+}
 
 /** A reset time further than this from the reading is not believed (System 1's PLAUSIBLE_MS). */
 const PLAUSIBLE_MS = 400 * 86_400_000
@@ -58,6 +103,8 @@ const MAX_LINE = 1 << 20
 const DEFAULT_TIMEOUT_MS = 30_000
 const VERSION_TIMEOUT_MS = 10_000
 const KILL_MS = 2000
+const CLAUDE_VERSION = /^(\d+\.\d+\.\d+) \(Claude Code\)$/
+const CODEX_VERSION = /^codex-cli (\d+\.\d+\.\d+)$/
 
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -83,8 +130,9 @@ export function quotaFromUsage(answer: unknown, observedAt: number): QuotaReport
   if (!isRecord(answer)) return { unreadable: 'its get_usage answer is not an object' }
   if (typeof answer.rate_limits_available !== 'boolean') return { unreadable: 'its get_usage answer is not in the checked shape (no rate_limits_available)' }
   if (!answer.rate_limits_available) return { unreadable: NO_PLAN_LIMITS }
-  const limits = answer.rate_limits
-  if (!isRecord(limits)) return { unreadable: 'it reports plan limits, and its rate_limits is not an object' }
+  const refused = schemaError(claudeUsageValid, answer, 'get_usage')
+  if (refused) return { unreadable: refused }
+  const limits = answer.rate_limits as Record<string, unknown>
   const windows: Partial<Record<QuotaWindowName, QuotaWindow>> = {}
   for (const name of ['five_hour', 'seven_day'] as const) {
     const entry = limits[name]
@@ -105,8 +153,9 @@ export function quotaFromUsage(answer: unknown, observedAt: number): QuotaReport
 
 /** Codex's `account/rateLimits/read` result. A window is told by its length (300 or 10080 minutes), never by `primary`/`secondary`. */
 export function quotaFromRateLimits(result: unknown, observedAt: number): QuotaReport {
-  if (!isRecord(result) || !isRecord(result.rateLimits)) return { unreadable: 'its answer holds no rateLimits object' }
-  const snapshot = result.rateLimits
+  const refused = schemaError(codexRateLimitsValid, result, 'rateLimits')
+  if (refused) return { unreadable: refused }
+  const snapshot = (result as { rateLimits: Record<string, unknown> }).rateLimits
   const windows: Partial<Record<QuotaWindowName, QuotaWindow>> = {}
   for (const slot of ['primary', 'secondary'] as const) {
     const entry = snapshot[slot]
@@ -122,6 +171,31 @@ export function quotaFromRateLimits(result: unknown, observedAt: number): QuotaR
     windows[name] = windowOf(usedPercent, resetsAt === null ? undefined : resetsAt * 1000, observedAt)
   }
   if (Object.keys(windows).length === 0) return { unreadable: 'it reports no window of 300 or 10080 minutes' }
+  return report(windows, observedAt)
+}
+
+/** The group an Antigravity Account draws on, as its profile names it (`quotaGroup`) and as `/usage` names it. */
+export const AGY_GROUPS = { gemini: 'Gemini Models', '3p': 'Claude and GPT models' } as const
+export type AgyQuotaGroup = keyof typeof AGY_GROUPS
+/** A window not yet started is reported as the Unix epoch: its reset is unknown, not past. */
+const EPOCH_RESET = 0
+
+/** Antigravity's `/usage` answer, read for the Account's one group (an Account is one group); used share = 1 - remaining_fraction. */
+export function quotaFromAgyUsage(answer: unknown, group: AgyQuotaGroup, observedAt: number): QuotaReport {
+  const refused = schemaError(agyUsageValid, answer, 'usage')
+  if (refused) return { unreadable: refused }
+  const groups = (answer as { command: { data: { groups: Array<{ name: string; buckets: Array<{ window: string; remaining_fraction: number; reset_time: string }> }> } } }).command.data.groups
+  const found = groups.filter((g) => g.name === AGY_GROUPS[group])
+  if (found.length !== 1) return { unreadable: `its usage answer has ${found.length} groups named "${AGY_GROUPS[group]}", not one` }
+  const windows: Partial<Record<QuotaWindowName, QuotaWindow>> = {}
+  for (const bucket of found[0]!.buckets) {
+    const name: QuotaWindowName | undefined = bucket.window === '5h' ? 'five_hour' : bucket.window === 'weekly' ? 'seven_day' : undefined
+    if (!name) continue
+    if (windows[name]) return { unreadable: `two ${bucket.window} buckets in "${AGY_GROUPS[group]}"` }
+    if (!ISO.test(bucket.reset_time) || !Number.isFinite(Date.parse(bucket.reset_time))) return { unreadable: `its ${bucket.window} reset_time is not an ISO 8601 time` }
+    const reset = Date.parse(bucket.reset_time)
+    windows[name] = windowOf((1 - bucket.remaining_fraction) * 100, reset === EPOCH_RESET ? undefined : reset, observedAt)
+  }
   return report(windows, observedAt)
 }
 
@@ -175,7 +249,7 @@ export interface ReadOptions {
   now?: () => number
 }
 
-type Outcome = { value: unknown } | { fail: string }
+type Outcome = { value: unknown } | { fail: string; retryAfterMs?: number }
 
 interface ExchangeOptions {
   command: string
@@ -276,13 +350,31 @@ async function versionOf(command: string, cwd: string, own: Record<string, strin
   })
 }
 
-/** The gate: undefined when the version is verified, else the reason the report is unreadable. */
-async function gate(label: string, command: string, cwd: string, pattern: RegExp, verified: readonly string[], signal?: AbortSignal): Promise<string | undefined> {
+/** The CLI's version as evidence beside a reading, never a gate; only a CLI that cannot be run stops the read. */
+async function cliVersionOf(command: string, cwd: string, pattern: RegExp, signal?: AbortSignal): Promise<{ cliVersion?: string; failed?: string }> {
   const found = await versionOf(command, cwd, {}, pattern, signal)
-  if ('version' in found && verified.includes(found.version)) return undefined
-  const what = 'version' in found ? found.version : `(version unreadable: "${found.raw}")`
-  return `the usage report of ${label} ${what} is not verified (verified: ${verified.join(', ')})`
+  if ('version' in found) return { cliVersion: found.version }
+  return found.raw.startsWith('could not run') ? { failed: `the CLI ${found.raw}` } : {}
 }
+/** Keep the evidence on a readable report. */
+const withVersion = (report: QuotaReport, cliVersion: string | undefined): QuotaReport => cliVersion && 'windows' in report ? { ...report, cliVersion } : report
+/** A `retry-after` in seconds from a provider error (a field `retryAfter`, `retry_after` or `retry-after`, or `retry-after: N` in its text), in milliseconds. */
+function retryAfterOf(error: unknown): number | undefined {
+  const seconds = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value * 1000) : undefined
+  if (typeof error === 'string') {
+    const m = /retry[- _]?after\D{0,3}(\d+(?:\.\d+)?)/i.exec(error)
+    return m ? seconds(Number(m[1])) : undefined
+  }
+  if (!isRecord(error)) return undefined
+  for (const holder of [error, isRecord(error.data) ? error.data : {}]) {
+    for (const key of ['retryAfter', 'retry_after', 'retry-after']) {
+      const found = seconds(holder[key])
+      if (found) return found
+    }
+  }
+  return typeof error.message === 'string' ? retryAfterOf(error.message) : undefined
+}
+const failed = (outcome: { fail: string; retryAfterMs?: number }): QuotaReport => ({ unreadable: outcome.fail, ...(outcome.retryAfterMs ? { retryAfterMs: outcome.retryAfterMs } : {}) })
 
 export interface ClaudeQuotaOptions extends ReadOptions {
   /** The account's `claudeHome`, passed as HOME. */
@@ -296,8 +388,8 @@ export async function readClaudeQuota(options: ClaudeQuotaOptions): Promise<Quot
   try {
     // A missing cwd makes spawn fail with the CLI's own ENOENT; name the directory instead of blaming the CLI.
     if (!existsSync(options.home)) return { unreadable: `its claudeHome ${options.home} does not exist and could not be created` }
-    const refused = await gate('Claude Code', options.command, options.home, /^(\d+\.\d+\.\d+) \(Claude Code\)$/, VERIFIED_CLAUDE_VERSIONS, options.signal)
-    if (refused) return { unreadable: refused }
+    const { cliVersion, failed: notRun } = await cliVersionOf(options.command, options.home, CLAUDE_VERSION, options.signal)
+    if (notRun) return { unreadable: notRun }
     const id = randomUUID()
     const now = options.now ?? Date.now
     const outcome = await exchange({
@@ -312,11 +404,11 @@ export async function readClaudeQuota(options: ClaudeQuotaOptions): Promise<Quot
         if (message.type !== 'control_response' || !isRecord(message.response) || message.response.request_id !== id) return undefined
         const response = message.response
         if (response.subtype === 'success') return { value: response.response }
-        if (response.subtype === 'error') return { fail: `get_usage failed: ${String(response.error).slice(0, 200)}` }
+        if (response.subtype === 'error') return { fail: `get_usage failed: ${String(response.error).slice(0, 200)}`, retryAfterMs: retryAfterOf(response.error) }
         return { fail: 'get_usage answered in an unknown shape' }
       },
     })
-    return 'fail' in outcome ? { unreadable: outcome.fail } : quotaFromUsage(outcome.value, now())
+    return 'fail' in outcome ? failed(outcome) : withVersion(quotaFromUsage(outcome.value, now()), cliVersion)
   } catch (error) {
     return { unreadable: `the read failed: ${String((error as Error).message).slice(0, 200)}` }
   }
@@ -341,8 +433,6 @@ export async function probeClaudeQuota(options: ClaudeProbeOptions): Promise<Quo
   let cwd: string | undefined
   try {
     if (!existsSync(options.home)) return []
-    // The event's shape is checked for the verified versions only.
-    if (await gate('Claude Code', options.command, options.home, /^(\d+\.\d+\.\d+) \(Claude Code\)$/, VERIFIED_CLAUDE_VERSIONS, options.signal)) return []
     cwd = mkdtempSync(join(tmpdir(), 'system-probe-'))
     const now = options.now ?? Date.now
     const outcome = await exchange({
@@ -375,8 +465,8 @@ export interface CodexQuotaOptions extends ReadOptions {
 /** `codex app-server`: `initialize`, then `account/rateLimits/read`, with the account's CODEX_HOME. */
 export async function readCodexQuota(options: CodexQuotaOptions): Promise<QuotaReport> {
   try {
-    const refused = await gate('Codex', options.command, options.codexHome, /^codex-cli (\d+\.\d+\.\d+)$/, VERIFIED_CODEX_VERSIONS, options.signal)
-    if (refused) return { unreadable: refused }
+    const { cliVersion, failed: notRun } = await cliVersionOf(options.command, options.codexHome, CODEX_VERSION, options.signal)
+    if (notRun) return { unreadable: notRun }
     const now = options.now ?? Date.now
     const outcome = await exchange({
       command: options.command,
@@ -391,7 +481,7 @@ export async function readCodexQuota(options: CodexQuotaOptions): Promise<QuotaR
         if (message.id === undefined || message.method !== undefined) return undefined
         if (message.error !== undefined) {
           const said = isRecord(message.error) && typeof message.error.message === 'string' ? message.error.message : JSON.stringify(message.error)
-          return { fail: `the app server refused ${message.id === 1 ? 'initialize' : 'account/rateLimits/read'}: ${said.slice(0, 200)}` }
+          return { fail: `the app server refused ${message.id === 1 ? 'initialize' : 'account/rateLimits/read'}: ${said.slice(0, 200)}`, retryAfterMs: retryAfterOf(message.error) }
         }
         if (message.id === 1) {
           send({ method: 'initialized' })
@@ -400,7 +490,40 @@ export async function readCodexQuota(options: CodexQuotaOptions): Promise<QuotaR
         return undefined
       },
     })
-    return 'fail' in outcome ? { unreadable: outcome.fail } : quotaFromRateLimits(outcome.value, now())
+    return 'fail' in outcome ? failed(outcome) : withVersion(quotaFromRateLimits(outcome.value, now()), cliVersion)
+  } catch (error) {
+    return { unreadable: `the read failed: ${String((error as Error).message).slice(0, 200)}` }
+  }
+}
+
+export interface AntigravityQuotaOptions extends ReadOptions {
+  /** The Account's `agyHome`, passed as HOME (the token is read from it by `agy`, never by System). */
+  home: string
+  group: AgyQuotaGroup
+}
+
+/** `agy -p /usage --output-format json` with the Account's HOME and no session bus (so no keyring is asked), and no model turn. */
+export async function readAntigravityQuota(options: AntigravityQuotaOptions): Promise<QuotaReport> {
+  try {
+    if (!existsSync(options.home)) return { unreadable: `its agyHome ${options.home} does not exist` }
+    const now = options.now ?? Date.now
+    const outcome = await exchange({
+      command: options.command,
+      args: ['-p', '/usage', '--output-format', 'json', '--print-timeout', '30s'],
+      env: env({ HOME: options.home }),
+      cwd: options.home,
+      start: [],
+      signal: options.signal,
+      timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      onMessage(message) {
+        if (message.status === 'ERROR' || message.error !== undefined) {
+          const said = typeof message.error === 'string' ? message.error : JSON.stringify(message.error ?? message)
+          return { fail: `usage failed: ${said.slice(0, 200)}`, retryAfterMs: retryAfterOf(said) }
+        }
+        return { value: message }
+      },
+    })
+    return 'fail' in outcome ? failed(outcome) : quotaFromAgyUsage(outcome.value, options.group, now())
   } catch (error) {
     return { unreadable: `the read failed: ${String((error as Error).message).slice(0, 200)}` }
   }
@@ -435,8 +558,8 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, 
     if (Object.keys(windows).length) fromEvents = { observedAt: seed.observedAt, windows }
   }
   const eventReading = (from: Observed): QuotaReport => ({ observedAt: new Date(from.observedAt).toISOString(), windows: { ...from.windows }, source: 'rate_limit_event' })
-  // get_usage has no plan limits, or its CLI version is not verified: an attempt's events are the reading then.
-  const noPlanLimits = (report: QuotaReport) => 'unreadable' in report && (report.unreadable === NO_PLAN_LIMITS || /is not verified \(verified: /.test(report.unreadable))
+  // get_usage has no plan limits: an attempt's events are the reading then.
+  const noPlanLimits = (report: QuotaReport) => 'unreadable' in report && report.unreadable === NO_PLAN_LIMITS
   /** Fold events into what the attempts told last, and persist it; returns the time. */
   const merge = (events: ReadonlyArray<QuotaEvent>): number => {
     const at = now()
@@ -445,6 +568,13 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, 
     fromEvents = { observedAt: at, windows: own }
     persist?.(fromEvents)
     return at
+  }
+  /** Not before the provider's `retry-after`, nor before the reset of a window that is used up: a read cannot tell more earlier. */
+  const notBefore = (report: QuotaReport): number => {
+    if ('unreadable' in report) return report.retryAfterMs ? now() + report.retryAfterMs : 0
+    let until = 0
+    for (const w of Object.values(report.windows)) if (w.percentUsed >= 100 && w.resetsAt) until = Math.max(until, Date.parse(w.resetsAt))
+    return until
   }
   return {
     get() {
@@ -463,7 +593,7 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, 
             }
           } catch { /* the Account stays as unreadable as before; a probe never fails a step */ }
         }
-        cached = { report: shown, expiresAt: now() + ttlMs }
+        cached = { report: shown, expiresAt: Math.max(now() + ttlMs, notBefore(shown)) }
         return shown
       }).finally(() => { pending = undefined })
       return pending
@@ -476,7 +606,7 @@ export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, 
       if ('windows' in cached.report) {
         const windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow } = { ...cached.report.windows }
         for (const { window, percentUsed, resetsAt } of events) windows[window] = { percentUsed, ...(resetsAt ? { resetsAt } : {}) }
-        cached = { report: { observedAt: new Date(at).toISOString(), windows, ...(cached.report.source ? { source: cached.report.source } : {}) }, expiresAt: cached.expiresAt }
+        cached = { report: { observedAt: new Date(at).toISOString(), windows, ...(cached.report.source ? { source: cached.report.source } : {}), ...(cached.report.cliVersion ? { cliVersion: cached.report.cliVersion } : {}) }, expiresAt: cached.expiresAt }
       } else if (noPlanLimits(cached.report)) cached = { report: eventReading(fromEvents!), expiresAt: cached.expiresAt }
     },
   }

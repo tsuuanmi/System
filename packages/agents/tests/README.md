@@ -15,7 +15,7 @@ The web Runtime's own tests are in [web-worker](../../web-worker/tests/README.md
 The booted profile is covered by [tests/agents.test.ts](../../../tests/README.md),
 and the real CLIs by the credential-gated `tests/real-agents.test.ts`.
 
-[quota.test.ts](quota.test.ts) specifies the sc-3 parsers and ten-minute cache;
+[quota.test.ts](quota.test.ts) specifies the sc-3 parsers, schemas (fixture [codex-0.171.0-rate-limits.json](codex-0.171.0-rate-limits.json), a real answer) and ten-minute cache;
 [quota-read.test.ts](quota-read.test.ts) checks CLI protocols and process cleanup;
 [quota-row.test.ts](quota-row.test.ts) checks per-account reads on the agents row.
 The synthetic fixtures and CLIs live in [test-support](../../../test-support/README.md).
@@ -24,3 +24,5 @@ for the hook tests in `agent.test.ts`; `FAKE:unified=<five>,<seven>` emits both
 fractional windows in `unifiedWindows` for the ro-2 hook test. These tests use no real CLI or account.
 
 [ask.test.ts](ask.test.ts) checks `ask` (cls-1): one tool-less turn on the economy model of an Account that is not excluded, through the same fake CLI; `FAKE:cause=<label>` makes the fake answer a Classifier question.
+
+[antigravity.test.ts](antigravity.test.ts) specifies the Antigravity Runtime from the real outputs in [fixtures/antigravity](fixtures/antigravity/README.md) (parse, limits, argv and env, the staged permission rules, the `/usage` reading) and runs two Accounts sharing one home at once with the fake agent (`--mode` makes it print `agy`'s events).

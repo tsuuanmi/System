@@ -31,13 +31,13 @@ async function mount(dir: string, accounts: AccountConfig[], now: () => number, 
 }
 function claude(dir: string, version = '2.1.322') {
   const home = fakeClaudeHome(join(dir, 'claude-home'), { accountUuid: 'claude-account' })
-  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version, answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version, answer: claudeUsage({ five_hour: { utilization: 42, resets_at: '2026-11-10T14:00:00.000Z' } }) })
   const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command, claudeHome: home }
   return { home, fake, spec }
 }
 function codex(dir: string) {
   const home = fakeCodexHome(join(dir, 'codex-home'), 'codex-account')
-  const fake = fakeQuotaCli(join(dir, 'codex-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: null } }) })
+  const fake = fakeQuotaCli(join(dir, 'codex-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: 1794319200 } }) })
   const spec: AccountConfig = { ref: 'codex/x1', runtime: 'codex', capabilities: ['research'], command: fake.command, codexHome: home }
   return { home, fake, spec }
 }
@@ -45,20 +45,20 @@ test('the agents row creates a missing claudeHome (mode 700) and the quota reads
   const dir = tempDir('quota-row-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const home = join(dir, 'absent', 'c1')
-  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: '2026-11-10T14:00:00.000Z' } }) })
   const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command, claudeHome: home }
   const now = Date.parse('2026-11-10T12:00:00.000Z')
   const row = await mount(dir, [spec], () => now)
   assert.ok(existsSync(home), 'registration creates claudeHome before any quota read')
   assert.ok(statSync(home).isDirectory())
   assert.equal(statSync(home).mode & 0o777, 0o700)
-  assert.deepEqual(await row.quota(spec.ref), { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42 } } })
+  assert.deepEqual(await row.quota(spec.ref), { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42, resetsAt: '2026-11-10T14:00:00.000Z' } }, cliVersion: '2.1.322' })
   assert.equal(fake.readLog().find((entry) => entry.home !== undefined)?.home, home)
 })
 test('a default claudeHome under $DSH_HOME/system is created too', async (t) => {
   const dir = tempDir('quota-row-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: '2026-11-10T14:00:00.000Z' } }) })
   const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command }
   await mount(dir, [spec], () => 0)
   assert.ok(existsSync(join(dir, 'system', 'claude', 'c1')), 'registration creates the default claudeHome in the temporary DSH home')
@@ -68,7 +68,7 @@ test('the reason names the directory when claudeHome cannot be created', async (
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   writeFileSync(join(dir, 'blocker'), 'a file cannot contain the account home')
   const home = join(dir, 'blocker', 'c1')
-  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: null } }) })
+  const fake = fakeQuotaCli(join(dir, 'claude-cli'), { kind: 'claude', version: '2.1.322', answer: claudeUsage({ five_hour: { utilization: 42, resets_at: '2026-11-10T14:00:00.000Z' } }) })
   const spec: AccountConfig = { ref: 'claude-code/c1', runtime: 'claude-code', capabilities: ['research'], command: fake.command, claudeHome: home }
   const ports: WorkerPort[] = []
   const row = await mount(dir, [spec], () => 0, { ports })
@@ -88,14 +88,14 @@ test('the agents row caches a Claude reading for ten minutes then rereads', asyn
   const row = await mount(dir, [spec], () => now)
   assert.equal(existsSync(fake.log), false)
   const first = await row.quota(spec.ref)
-  assert.deepEqual(first, { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42 } } })
+  assert.deepEqual(first, { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42, resetsAt: '2026-11-10T14:00:00.000Z' } }, cliVersion: '2.1.322' })
   const firstLog = fake.readLog()
   assert.deepEqual(firstLog[0]?.argv, ['--version'])
   assert.equal(firstLog.filter((entry) => entry.stdin !== undefined).length, 1)
   assert.deepEqual(await row.quota(spec.ref), first)
   assert.deepEqual(fake.readLog(), firstLog)
   now += 600_001
-  assert.deepEqual(await row.quota(spec.ref), { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42 } } })
+  assert.deepEqual(await row.quota(spec.ref), { observedAt: new Date(now).toISOString(), windows: { five_hour: { percentUsed: 42, resetsAt: '2026-11-10T14:00:00.000Z' } }, cliVersion: '2.1.322' })
   assert.equal(fake.readLog().filter((entry) => entry.stdin !== undefined).length, 2)
 })
 test('two accounts read independently from their own homes and logs', async (t) => {
@@ -104,9 +104,9 @@ test('two accounts read independently from their own homes and logs', async (t) 
   const c = claude(dir)
   const x = codex(dir)
   const row = await mount(dir, [c.spec, x.spec], () => Date.parse('2026-11-10T12:00:00Z'))
-  assert.deepEqual(object(await row.quota(c.spec.ref)).windows, { five_hour: { percentUsed: 42 } })
+  assert.deepEqual(object(await row.quota(c.spec.ref)).windows, { five_hour: { percentUsed: 42, resetsAt: '2026-11-10T14:00:00.000Z' } })
   assert.equal(existsSync(x.fake.log), false)
-  assert.deepEqual(object(await row.quota(x.spec.ref)).windows, { five_hour: { percentUsed: 17 } })
+  assert.deepEqual(object(await row.quota(x.spec.ref)).windows, { five_hour: { percentUsed: 17, resetsAt: '2026-11-10T14:00:00.000Z' } })
   for (const account of [c, x]) {
     const launches = account.fake.readLog().filter((entry) => entry.home !== undefined)
     assert.equal(launches.length, 1)
@@ -133,18 +133,15 @@ test('listing accounts spawns no quota reader; web and unknown refs are unreadab
   assert.equal(existsSync(c.fake.log), false)
   assert.equal(existsSync(x.fake.log), false)
 })
-test('an unknown version on the row only runs --version', async (t) => {
+test('an unknown version on the row is read by the answer shape, with the version beside the reading', async (t) => {
   const dir = tempDir('quota-row-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const { spec, fake } = claude(dir, '2.1.999')
+  const { spec } = claude(dir, '2.1.999')
   const row = await mount(dir, [spec], () => 0)
   const report = object(await row.quota(spec.ref))
-  assert.deepEqual(Object.keys(report), ['unreadable'])
-  assert.ok(typeof report.unreadable === 'string')
-  assert.match(report.unreadable, /2\.1\.999.*not verified/)
-  assert.doesNotMatch(JSON.stringify(report), /tok-1/)
-  // The read and the probe each ask the version and nothing more: neither runs a turn at an unverified version.
-  assert.ok(fake.readLog().every((entry) => JSON.stringify(entry) === JSON.stringify({ argv: ['--version'] })))
+  assert.equal(object(object(report.windows).five_hour).percentUsed, 42)
+  assert.equal(report.cliVersion, '2.1.999')
+  assert.doesNotMatch(JSON.stringify(report), /tok-1|not verified/)
 })
 
 test('registered CLI Worker exposes the row\'s quota reading', async (t) => {

@@ -1,9 +1,10 @@
 /** sc-3's parser and cache contract: synthetic answers, no CLI or account access. */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { claudeUsage, codexRateLimits, object } from '../../../test-support/quota.ts'
 import type { QuotaEvent } from '../src/quota.ts'
-import { quotaFromUsage, quotaFromRateLimits, quotaFromRateLimitEvent, createQuotaCache, VERIFIED_CLAUDE_VERSIONS, VERIFIED_CODEX_VERSIONS, NO_PLAN_LIMITS } from '../src/quota.ts'
+import { quotaFromUsage, quotaFromRateLimits, quotaFromRateLimitEvent, createQuotaCache, NO_PLAN_LIMITS } from '../src/quota.ts'
 
 const OBS = Date.parse('2026-11-10T12:00:00.000Z')
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -31,7 +32,7 @@ test('Claude null windows and null utilization are absent, but neither window is
   for (const five_hour of [null, cw(null, null), undefined]) {
     assert.deepEqual(windows(quotaFromUsage(claudeUsage({ five_hour, seven_day: cw(17.5, SEVEN) }), OBS)), { seven_day: { percentUsed: 17.5, resetsAt: SEVEN } })
   }
-  unreadable(quotaFromUsage(claudeUsage(), OBS), /neither five_hour nor seven_day/)
+  unreadable(quotaFromUsage(claudeUsage(), OBS), /does not match the checked schema/)
 })
 for (const [label, bad] of [
   ['negative', cw(-1)], ['over 100', cw(101)], ['string share', cw('42')], ['NaN', cw(NaN)],
@@ -85,9 +86,37 @@ test('Claude events use fractions and seconds; rejected without a share means 10
   for (const info of [{ status: 'allowed', rateLimitType: 'seven_day_opus', utilization: .42 }, { status: 'allowed', rateLimitType: 'five_hour' }, { status: 'allowed', rateLimitType: 'five_hour', utilization: 1.3 }]) assert.deepEqual(quotaFromRateLimitEvent(event(info), OBS), [])
   assert.deepEqual(quotaFromRateLimitEvent({ type: 'result' }, OBS), [])
 })
-test('the version lists contain only the shapes checked on this host', () => {
-  assert.deepEqual(VERIFIED_CLAUDE_VERSIONS, ['2.1.322'])
-  assert.deepEqual(VERIFIED_CODEX_VERSIONS, ['0.166.0'])
+const CODEX_171 = JSON.parse(readFileSync(new URL('./codex-0.171.0-rate-limits.json', import.meta.url), 'utf8')) as unknown
+test("Codex 0.171.0's real answer reads as 5h 30% and 7d 5% with their resets", () => {
+  assert.deepEqual(quotaFromRateLimits(CODEX_171, OBS), { observedAt: iso(OBS), windows: { five_hour: { percentUsed: 30, resetsAt: iso(1795695432_000) }, seven_day: { percentUsed: 5, resetsAt: iso(1796282232_000) } } })
+})
+test('an answer with no window, or a window without a reset, is unreadable with the schema error', () => {
+  unreadable(quotaFromRateLimits(codexRateLimits({}), OBS), /does not match the checked schema/)
+  unreadable(quotaFromRateLimits(codexRateLimits({ primary: xw(9, 300, null) }), OBS), /does not match the checked schema.*resetsAt/)
+  unreadable(quotaFromRateLimits(codexRateLimits({ primary: xw('9') }), OBS), /does not match the checked schema/)
+  unreadable(quotaFromUsage(claudeUsage({}), OBS), /does not match the checked schema/)
+  unreadable(quotaFromUsage(claudeUsage({ five_hour: cw(42, null) }), OBS), /does not match the checked schema.*resets_at/)
+  unreadable(quotaFromUsage(claudeUsage({ five_hour: cw(), seven_day: cw(120) }), OBS), /does not match the checked schema/)
+})
+test('cache does not read again before the provider retry-after, nor before an exhausted window resets', async () => {
+  let now = OBS
+  let reads = 0
+  let answer: unknown = { unreadable: 'the app server refused account/rateLimits/read: slow down', retryAfterMs: 1_800_000 }
+  const cache = createQuotaCache({ ttlMs: 600_000, now: () => now, read: async () => { reads++; return answer as never } })
+  await cache.get()
+  now += 1_700_000
+  await cache.get()
+  assert.equal(reads, 1)
+  now += 100_001
+  answer = { observedAt: iso(now), windows: { five_hour: { percentUsed: 100, resetsAt: iso(now + 3_600_000) } } }
+  await cache.get()
+  assert.equal(reads, 2)
+  now += 3_000_000
+  await cache.get()
+  assert.equal(reads, 2)
+  now += 600_001
+  await cache.get()
+  assert.equal(reads, 3)
 })
 test('cache reuses readings for ten minutes and rereads after expiry', async () => {
   let now = OBS
@@ -203,8 +232,8 @@ test("cache falls back to the last attempt's event when get_usage has no plan li
   cache.observe(unifiedEvents())
   assert.deepEqual(await cache.get(), eventReading())
 })
-const REFUSED = { unreadable: 'the usage report of Claude Code 2.1.325 is not verified (verified: 2.1.322)' }
-test("cache falls back to the attempt's event when the CLI version is not verified", async () => {
+const REFUSED = { unreadable: NO_PLAN_LIMITS }
+test("cache falls back to the attempt's event when get_usage has no plan limits (again)", async () => {
   let now = OBS
   let reads = 0
   const cache = createQuotaCache({ ttlMs: 600_000, now: () => now, read: async () => { reads++; return REFUSED } })
@@ -215,7 +244,7 @@ test("cache falls back to the attempt's event when the CLI version is not verifi
   assert.deepEqual(await cache.get(), eventReading(OBS))
   assert.equal(reads, 2)
 })
-test('a seeded event reading is used while the version is not verified', async () => {
+test('a seeded event reading is used while get_usage has no plan limits', async () => {
   const cache = createQuotaCache({ now: () => OBS, read: async () => REFUSED, seed: { observedAt: OBS - 60_000, windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } } } })
   assert.deepEqual(await cache.get(), { observedAt: iso(OBS - 60_000), windows: { seven_day: { percentUsed: 77, resetsAt: SEVEN } }, source: 'rate_limit_event' })
 })

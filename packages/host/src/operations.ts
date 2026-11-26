@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -38,7 +38,7 @@ export interface Services {
     set(name: string, value: string): Promise<void>
     describe(name: string): Promise<{ configured: boolean; source?: string }>
   }
-  workers(): Promise<{ registered: string[]; accounts: unknown[] }>
+  workers(): Promise<{ registered: string[]; accounts: { ref: string; quota?: QuotaReading }[] }>
   /** The optional Classifier row (cls-1), report-only: undefined when the row is off. */
   classifier?: FailureClassifier
   /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
@@ -320,9 +320,25 @@ export function operations(services: Services) {
     'workers.list': {
       read: true,
       agent: true,
-      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable.',
-      params: z.object({}).strict(),
-      handler: () => services.workers(),
+      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable. `room` says how many Accounts could take one more parallel Work now: `accounts` registered, `free` of them with a free slot (running attempts under `maxConcurrentAttempts`) and Headroom under their Ceiling (as routing reads them), `unknown` the refs among those whose quota is unreadable (counted free when they have a slot), and with `repository` (a path, or several) `ready`: per repository, the number of Ready Items of its STATUS.md (todo, nobody on them, not Blocked), or an `error`. Information for the caller only: the Host never picks an Item.',
+      params: z.object({ repository: z.union([z.string().min(1), z.array(z.string().min(1))]).optional() }).strict(),
+      async handler(host, p) {
+        const view = await services.workers()
+        const accounts = view.accounts.flatMap((a) => {
+          const worker = services.capabilities.workerFor(a.ref)
+          return worker ? [{ ref: a.ref, slot: host.slots.hasFree(worker), reading: a.quota, ceiling: worker.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT }] : []
+        })
+        const records = host.view.list()
+        const ready = await Promise.all(([p.repository ?? []].flat(2) as string[]).map(async (path: string) => {
+          try {
+            const status = await readStatus(path)
+            return { repository: status.repository, count: readyCount(status, status.repository, records) }
+          } catch (error) {
+            return { repository: path, error: (error as Error).message }
+          }
+        }))
+        return { ...view, room: { ...roomOf(accounts), ready } }
+      },
     },
     'workers.login': {
       agent: false,

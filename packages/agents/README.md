@@ -107,9 +107,15 @@ registration or in `accounts()`.
 - **Reset rule:** a reset is dropped (keeping `percentUsed`) only when it is already past
   while the share is 100%, or more than 400 days from the reading (System 1's `PLAUSIBLE_MS`).
   A future reset at 100% is kept.
-- **Version gate:** only Claude Code 2.1.322 and Codex 0.166.0 are read; `--version` is
-  asked first and nothing else is spawned for another version, which is `unreadable`
-  and names it. A refused Claude version does not hide an attempt's event reading (see Cache). Checked on 2026-11-10 from the installed binaries and
+- **Shape, not version (Item q-1):** an answer is accepted when it matches one JSON Schema
+  (Draft 2020-12, Ajv) per reader: at least one 5-hour or weekly window with a used share and a
+  reset (Claude `five_hour`/`seven_day` with `utilization` and `resets_at`; Codex `primary`/`secondary`
+  with `usedPercent`, `windowDurationMins` 300 or 10080 and `resetsAt`). An answer that does not match
+  is `unreadable` with the schema error. `--version` is still asked and kept as `cliVersion` beside a
+  readable reading, as evidence; no version list gates a read (Codex 0.171.0 answers like 0.166.0, fixture
+  `tests/codex-0.171.0-rate-limits.json`). Only a CLI that cannot be run stops the read.
+  A provider `retry-after` in a read's error (`retryAfterMs` on the report) is honoured by the cache,
+  as is the reset of a window that is used up: no read before either. Shapes first checked on 2026-11-10 from the installed binaries and
   `codex app-server generate-ts`, **not on a live account**: Claude's `get_usage` and
   `control_response` envelopes, its `{ utilization, resets_at }` windows, and the
   `rate_limit_event` fields `status`, `resetsAt`, `rateLimitType` and `utilization`; Codex's
@@ -130,8 +136,7 @@ registration or in `accounts()`.
   dropped, and no window left means no reading.
   A readable cached reading takes an event's window and sets `observedAt`, without extending
   the expiry. When `get_usage` answers no plan limits (a `setup-token` token without the
-  profile scope, reason `no plan limits: …`) or its CLI version is not verified (reason
-  `… is not verified (verified: …)`), the Account's reading is the windows of its latest
+  profile scope, reason `no plan limits: …`) the Account's reading is the windows of its latest
   attempt's events, with `source: 'rate_limit_event'` and `observedAt` at when the attempt told
   them. It is kept past the 10-minute expiry and ages like any reading. An Account with no
   attempt yet stays unreadable, and an event never replaces any other unreadable reason (a
@@ -157,8 +162,7 @@ line, `quota: 5h 18% (resets 23:03), 7d 10%, read 2 min ago`, ending ` (from the
 event reading (see Cache), or `quota: unreadable - <reason>`.
 The reasons: `a web account has no quota reader`; `no plan limits: API key, third-party provider or no
 profile scope` (`get_usage` has no plan limits; a Claude Account may still have an event reading, see Cache);
-`the usage report of <label> <v> is not
-verified (verified: …)` (the CLI version is not one checked; a Claude Account with an event reading shows that reading instead, see Cache); `its token is not configured`;
+`its <what> answer does not match the checked schema: …` (the answer's shape is not the checked one); `its token is not configured`;
 `its claudeHome <path> does not exist and could not be created` (the home is missing at
 read time, so the CLI is never spawned; the row creates it at registration, see Account
 identity); `not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view

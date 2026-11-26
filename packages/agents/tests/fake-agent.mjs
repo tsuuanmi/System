@@ -24,6 +24,7 @@
 //   FAKE:noise    with FAKE:followup, print 300 KB of other events between the results
 //   FAKE:ratelimit=<five_hour|seven_day>:<fraction> (claude, stream-json) emit a quota event before the result
 //   FAKE:unified=<five>,<seven> (claude, stream-json) emit both fractional unified quota windows
+//   (agy: told by `--mode`; prints the init and result events of `--output-format stream-json`, and FAKE:fail prints an ERROR result)
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
 // The model given with --model / -m is written into ENV.json and reported as served.
 import { spawn } from 'node:child_process'
@@ -36,6 +37,7 @@ if (args[0] === '--version') {
   console.log(codex ? 'codex-cli 0.0.0-fake' : '0.0.0-fake (Claude Code)')
   process.exit(0)
 }
+const agy = args.includes('--mode')
 const prompt = codex ? args.at(-1) : args[args.indexOf('-p') + 1]
 const has = (marker) => prompt.includes(`FAKE:${marker}`)
 const cwd = process.cwd()
@@ -45,7 +47,11 @@ const model = args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined
 const cause = /FAKE:cause=(\S+)/.exec(prompt)?.[1]
 
 function finish(ok, message) {
-  if (codex) {
+  if (agy) {
+    console.log(JSON.stringify({ event: 'init', init: { model, cwd: process.cwd() } }))
+    const usage = { input_tokens: 100, output_tokens: 7, thinking_tokens: 0, cache_read_tokens: 40, total_tokens: 107 }
+    console.log(JSON.stringify({ event: 'result', result: ok ? { status: 'SUCCESS', response: message, num_turns: 1, usage } : { status: 'ERROR', error: message } }))
+  } else if (codex) {
     console.log(JSON.stringify({ type: 'thread.started' }))
     if (ok) {
       console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: message } }))
@@ -101,8 +107,8 @@ if (!codex && has('turns') && args.includes('stream-json')) {
 const background = /FAKE:background=(\S+)/.exec(prompt)?.[1]
 const refused = process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === '1' && args.slice(args.indexOf('--disallowedTools')).includes('Monitor')
 if (!codex && background && !refused) writeFileSync(background, String(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], { detached: true, stdio: 'ignore' }).pid))
-if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
-if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : 'claude'}\n`)
+if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, dbus: process.env.DBUS_SESSION_BUS_ADDRESS, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
+if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : agy ? 'agy' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {
   const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)

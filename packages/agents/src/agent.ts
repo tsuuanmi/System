@@ -35,9 +35,15 @@ export interface SpawnSpec {
   pidFile?: string
 }
 
-/** The command a spawner runs for `spec`: the CLI itself, started by a shell that first writes its process ID (`exec` keeps it, and the shell's own `PWD` is not passed on) to `spec.pidFile`. */
+/**
+ * The command a spawner runs for `spec`: the CLI itself, started by a shell that first writes its identity to `spec.pidFile`
+ * (see `readIdentity`): its process ID and its own `/proc/<pid>/stat` after the command name. `exec` keeps the process, so the
+ * identity is the CLI's; the shell's own `PWD` is not passed on.
+ */
 export function recordingPid(spec: SpawnSpec): string[] {
-  return spec.pidFile ? ['/bin/sh', '-c', 'echo $$ > "$1" && shift && unset PWD && exec "$@"', 'sh', spec.pidFile, ...spec.argv] : spec.argv
+  return spec.pidFile
+    ? ['/bin/sh', '-c', 'echo "$$ $(sed \'s/^.*) //\' /proc/$$/stat 2>/dev/null)" > "$1.tmp" && mv "$1.tmp" "$1" && shift && unset PWD && exec "$@"', 'sh', spec.pidFile, ...spec.argv]
+    : spec.argv
 }
 
 export interface Spawned {
@@ -62,6 +68,10 @@ export interface Account {
   token?: () => Promise<string | undefined>
   /** codex: the account's System-owned CODEX_HOME holding `auth.json`. */
   codexHome?: string
+  /** antigravity: the Account's System-owned HOME, holding `.gemini/antigravity-cli` (its login, and the permission rules System writes). */
+  agyHome?: string
+  /** antigravity: the model group the Account draws on, which its quota reads. */
+  quotaGroup?: 'gemini' | '3p'
   /** The model to run for each offered tier; a step with no tier gets `standard`, else the CLI's default. */
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes (fractions allowed). */
@@ -89,8 +99,42 @@ export interface AttemptBudget {
 /** Where the CLI's process ID is kept while an attempt runs, so a later Host can tell whether it is gone. */
 const pidFile = (attemptsDir: string, attemptId: string) => join(attemptsDir, `${attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
 
-/** Whether a process is gone: no such process (a reused ID only ever reads as alive). */
-export function exited(pid: number): boolean {
+/** What identifies a process: its ID, its process group and its start time (field 22 of `/proc/<pid>/stat`, in clock ticks since boot, which a reused ID does not repeat). */
+export interface Identity {
+  pid: number
+  pgid: number
+  start: string
+}
+
+/** The identity a pid file records: undefined when it has no pid; `pgid` and `start` are absent when the shell could not read /proc, so it cannot be verified. */
+function readIdentity(text: string): { pid: number; pgid?: number; start?: string } | undefined {
+  const tokens = text.trim().split(/\s+/)
+  const pid = Number(tokens[0])
+  if (!Number.isInteger(pid) || pid <= 0) return undefined
+  // After the pid come stat fields 3...: field n is tokens[n - 2].
+  const pgid = Number(tokens[3])
+  const start = tokens[20]
+  return Number.isInteger(pgid) && pgid > 0 && start && /^\d+$/.test(start) ? { pid, pgid, start } : { pid }
+}
+
+/** The start time of a live process, or undefined when there is none (`'gone'`) or /proc cannot say (`'unknown'`). */
+function startOf(pid: number): string | 'gone' | 'unknown' {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const start = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]
+    return start && /^\d+$/.test(start) ? start : 'unknown'
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'gone' : 'unknown'
+  }
+}
+
+/** Whether a process is gone: no such process, or (with a recorded start time) a different process under the reused ID. Unknown is not gone. */
+export function exited(pid: number, start?: string): boolean {
+  if (start !== undefined) {
+    const now = startOf(pid)
+    if (now === 'gone') return true
+    if (now !== 'unknown') return now !== start
+  }
   try {
     process.kill(pid, 0)
     return false
@@ -111,10 +155,28 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
     async gone(attemptId) {
       const file = pidFile(attemptsDir, attemptId)
       if (!existsSync(file)) return true
-      const pid = Number(readFileSync(file, 'utf8'))
-      if (Number.isInteger(pid) && pid > 0 && !exited(pid)) return false
+      const id = readIdentity(readFileSync(file, 'utf8'))
+      if (id && !exited(id.pid, id.start)) return false
       rmSync(file, { force: true })
       return true
+    },
+    async end(attemptId) {
+      const file = pidFile(attemptsDir, attemptId)
+      if (!existsSync(file)) return false
+      const id = readIdentity(readFileSync(file, 'utf8'))
+      // Only a process whose start time is recorded and still matches is signalled: a reused ID, or an identity nobody recorded, never is.
+      if (!id?.start || !id.pgid || startOf(id.pid) !== id.start) return false
+      // The CLI leads its own group (the subprocess service starts it so): end the group, and never a group the CLI does not lead.
+      const target = id.pgid === id.pid ? -id.pid : id.pid
+      const stopped = async (ms: number) => {
+        for (const stop = Date.now() + ms; Date.now() < stop; await new Promise((resolve) => setTimeout(resolve, 20))) if (exited(id.pid, id.start)) return true
+        return false
+      }
+      for (const [signal, wait] of [['SIGTERM', 3000], ['SIGKILL', 5000]] as const) {
+        try { process.kill(target, signal) } catch { /* already gone */ }
+        if (await stopped(wait)) { rmSync(file, { force: true }); return true }
+      }
+      return false
     },
   }
 }

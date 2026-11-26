@@ -1,7 +1,7 @@
 /**
  * Account admission (PLAN SC): which Account may take a step now, and when to look again. Owns the quota waits and
  * their timers, the Accounts that limited an attempt, and today's attempt counts (kept as attempts are dispatched).
- * In memory only: after a restart the quota is read fresh and routing is as usual.
+ * The timers are in memory only (the controller records a `waiting` event for the record): after a restart the quota is read fresh and routing is as usual.
  */
 import { DEFAULT_LIMIT_MS } from './limits.ts'
 import type { QuotaReading } from './headroom.ts'

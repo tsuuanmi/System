@@ -166,21 +166,19 @@ test('after the Host is killed mid-step, the restarted Host dispatches the lost 
   for (let i = 0; i < 1800 && !show(workId).events.some((e) => e.type === 'observed' && e.stepId === 'idea-a'); i++) await new Promise((r) => setTimeout(r, 100))
   process.kill(await cli.pid(), 'SIGKILL')
   assert.notEqual((await submit.done).status, 0, 'the killed Host did not finish the Work')
-  // The hanging agent outlived the Host, so its attempt keeps the Account's slot: stop it, as an operator would.
+  // The hanging agent outlived the Host: the restarted Host verifies it (pid, group, start time), ends it and runs the step again.
   const attempts = join(home, 'system', 'attempts')
-  const agents = readdirSync(attempts).filter((f) => f.endsWith('.pid')).map((f) => Number(readFileSync(join(attempts, f), 'utf8')))
-  assert.ok(agents.length > 0, 'the hanging agent left its process ID')
-  for (const pid of agents) process.kill(pid, 'SIGKILL')
-  // The Host reads a process that still exists as running: wait until the kill has taken effect, however long a loaded machine takes.
+  const agents = readdirSync(attempts).filter((f) => f.endsWith('.pid')).map((f) => Number(readFileSync(join(attempts, f), 'utf8').trim().split(/\s+/)[0]))
+  assert.ok(agents.length > 0 && agents.every(Number.isInteger), 'the hanging agent left its process ID')
   const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
-  for (let waited = 0; waited < 120_000 && agents.some(alive); waited += 50) await new Promise((r) => setTimeout(r, 50))
-  assert.deepEqual(agents.filter(alive), [], 'the killed agents are gone')
   await cli.start()
 
-  // The lost attempt's process is gone, so the Host runs the Work again without `work run`.
+  // The lost attempt's process was ended by the Host, so it runs the Work again without `work run`.
   for (let i = 0; i < 1800 && show(workId).state.status !== 'succeeded'; i++) await new Promise((r) => setTimeout(r, 100))
   const done = show(workId)
   assert.equal(done.state.status, 'succeeded')
+  for (let waited = 0; waited < 20_000 && agents.some(alive); waited += 50) await new Promise((r) => setTimeout(r, 50))
+  assert.deepEqual(agents.filter(alive), [], 'the Host ended the orphaned agents')
   assert.deepEqual(dispatched(done).map((e) => e.stepId), ['idea-a', 'idea-b', 'idea-b', 'synthesis'])
   assert.deepEqual(done.events.filter((e) => e.type === 'attempt-lost').map((e) => e.stepId), ['idea-b'])
   assert.deepEqual(done.events.map((e) => e.seq), done.events.map((_, i) => i), 'every event kept, in order')

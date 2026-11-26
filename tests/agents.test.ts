@@ -75,6 +75,14 @@ test('both configured accounts are registered, with the CLI version', () => {
   assert.match(out.stdout, /claude-code\/default\s+available\s+0\.0\.0-fake \(Claude Code\)/)
 })
 
+test('system workers ends with the room line, with Ready Items for --repo', () => {
+  const out = system(['workers', '--repo', gitRepo])
+  assert.equal(out.status, 0, out.stderr)
+  const last = out.stdout.trimEnd().split('\n').at(-1)!
+  assert.match(last, /^room: 2 of 2 Accounts free \(slot and Headroom under Ceiling\)/)
+  assert.match(last, /; Ready Items: repo-\w+ unknown$/)
+})
+
 test('a direct Task runs Claude Code in its own worktree and records the exact resulting commit', () => {
   const ran = system(['work', 'submit', '--capability', 'repo.write', '--input', newTask('FAKE:edit')])
   assert.equal(ran.status, 0, ran.stderr)
@@ -150,7 +158,7 @@ test('a profile with priority: primary loads, and workers notes that it is ignor
   assert.doesNotMatch(out.stdout, /fake-token/)
 })
 
-test('workers shows each account quota or why its CLI version is unreadable', () => {
+test('workers shows each account quota or why it is unreadable, never for its CLI version', () => {
   const out = system(['workers'])
   assert.equal(out.status, 0, out.stderr)
   assert.doesNotMatch(out.stdout, /fake-token/)
@@ -158,7 +166,8 @@ test('workers shows each account quota or why its CLI version is unreadable', ()
   for (const ref of ['claude-code/default', 'codex/default']) {
     const block = blocks.find((line) => line.startsWith(ref))
     assert.ok(block, `${ref} is listed`)
-    assert.match(block, /^  quota: unreadable - [^\n]*version/m)
+    assert.match(block, /^  quota: unreadable - /m)
+    assert.doesNotMatch(block, /^  quota: [^\n]*(?:version|not verified)/m)
     assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
   }
 })
@@ -181,7 +190,7 @@ test('duplicate provider account IDs refuse the later account, while unreadable 
 
 async function readableQuotaAccount() {
   const codexHome = fakeCodexHome(join(home, 'quota-home'), 'quota-provider')
-  const fake = fakeQuotaCli(join(home, 'quota-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: null } }) })
+  const fake = fakeQuotaCli(join(home, 'quota-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 } }) })
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
   config:
     $patch: replace
@@ -198,9 +207,10 @@ test('workers shows a readable quota from the real Host and one quota line per a
   const out = system(['workers'])
   assert.equal(out.status, 0, out.stderr)
   assert.doesNotMatch(out.stdout, /fake-token|SECRET-ACCESS|SECRET-REFRESH/)
-  assert.match(out.stdout, /quota: 5h 17%, read /)
-  const blocks = out.stdout.trimEnd().split(/\n(?=\S)/).slice(1)
+  assert.match(out.stdout, /quota: 5h 17% \(resets [^)]*\), read /)
+  const blocks = out.stdout.trimEnd().split(/\n(?=\S)/).slice(1, -1)
   assert.equal(blocks.length, 2)
+  assert.match(out.stdout.trimEnd().split('\n').at(-1)!, /^room: /)
   for (const block of blocks) assert.equal(block.match(/^  quota:/gm)?.length ?? 0, 1)
   assert.match(out.stdout, /quota: unreadable - a web account has no quota reader/)
 })

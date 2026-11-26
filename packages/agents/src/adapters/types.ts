@@ -32,7 +32,7 @@ export type Preflight = { failed: string } | { stage(dir: string): Staged }
 
 /** What an adapter reads from an account's profile entry to register it. */
 export interface RegisterInput {
-  account: { ref: string; tokenRef?: string; claudeHome?: string; codexHome?: string; models?: Partial<Record<Tier, string>> }
+  account: { ref: string; tokenRef?: string; claudeHome?: string; codexHome?: string; agyHome?: string; quotaGroup?: string; models?: Partial<Record<Tier, string>> }
   /** The Account being built; the adapter sets its credential fields and hooks. */
   resolved: Account
   command: string
