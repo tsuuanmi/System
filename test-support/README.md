@@ -16,7 +16,8 @@ Helpers shared by the tests, so each stand-in has one implementation:
   two Accounts, `fake/claude` and `fake/codex` (Brainstorm's `idea-b` is the
   Codex one), with `fixture({ slots })` as their `maxConcurrentAttempts`, `peak`
   (the most attempts of an Account at once) and `gone(attemptId)` (confirm a lost
-  attempt's process gone). It also has
+  attempt's process gone), `orphan(attemptId)` (its process is alive and verified: the
+  Worker's `end` ends it, listed in `ended`). It also has
   `startHost(home)` (a `Host` over the same table and Workers, for restarts),
   `remote` (what the fake publisher's reconcile reports), and
   `assertConsistent`: the stored state equals the fold of the events, and no

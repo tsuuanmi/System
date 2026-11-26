@@ -372,6 +372,31 @@ test('a lost Worker attempt not confirmed gone is not dispatched again', async (
   await second.close()
 })
 
+test('a lost Worker attempt whose live process is verified as its own is ended at start and dispatched again as a restart', async () => {
+  const f = fixture()
+  const home = newHome()
+  const first = await f.startHost(home)
+  const { id } = await first.submit(f.admission('brainstorm.yaml'))
+  f.hold('idea-b')
+  const running = first.run(id, { commandId: 'run-1' })
+  await f.arrived('idea-b')
+  for (let n = 0; n < 20; n++) await turn()
+  await first.close()
+  f.release('idea-b')
+  await assert.rejects(running, /Host is closed/)
+  const lost = first.view.get(id)!.state.steps['idea-b']!.attempts[0]!
+  f.orphan(lost)
+  const second = await f.startHost(home)
+  try {
+    await until(() => second.view.get(id)!.state.status === 'succeeded')
+    assert.deepEqual(f.ended, [lost])
+    assert.deepEqual(f.attempts, ['idea-a', 'idea-b', 'idea-b', 'synthesis'])
+    assert.deepEqual(second.slots.uncertain(), [])
+  } finally {
+    await second.close()
+  }
+})
+
 test('a lost check (verifier) attempt confirmed gone at start is not dispatched again', async () => {
   const f = fixture({ checks: 1 })
   const home = newHome()

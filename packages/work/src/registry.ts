@@ -83,6 +83,8 @@ export interface WorkerPort {
   quota?(fresh?: boolean): Promise<QuotaReading>
   /** Whether the process of an attempt is confirmed gone: what settles a lost attempt, which until then keeps its Account's slot. Absent: never confirmed. */
   gone?(attemptId: string): Promise<boolean>
+  /** A lost attempt whose process is alive: end it (its whole process group) only when its identity (pid, group, start time) is verified, and say whether it is now gone. False: the identity cannot be verified or the process stayed; nothing unverified is signalled. Absent: never ended. */
+  end?(attemptId: string): Promise<boolean>
   run(request: WorkerRequest): Promise<WorkerResult>
 }
 
