@@ -813,9 +813,12 @@ export async function webAttempt(account: WebAccount, artifacts: Artifacts, atte
       if (Object.keys(stripped).length) evidence.set({ stripped })
       // A JSON output never starts with its block's language label (web-1).
       for (const [slot, content] of Object.entries(contents)) contents[slot] = stripLanguageLabel(content)
+      // An output with no content (only whitespace) fails like a missing one, naming it.
+      const empty = Object.keys(contents).filter((slot) => !contents[slot]!.trim())
+      for (const slot of empty) delete contents[slot]
       const outputs: Record<string, string> = {}
       for (const [slot, content] of Object.entries(contents)) outputs[slot] = await put(Buffer.from(content), mediaTypeOf(Buffer.from(content)))
-      const captured = { outputs: { ...outputs, conversation: conversation.id }, missing }
+      const captured = { outputs: { ...outputs, conversation: conversation.id }, missing, empty }
       // An output closed early (a fence of its own inside it) leaves the rest of the answer outside the blocks: never accepted.
       if (!missing.length && outside > web.maxOutsideChars) {
         return { captured, partial: { conversation: conversation.id }, failure: `${account.ref}: the answer continues outside its output blocks (${outside} characters): an output may be cut short` }

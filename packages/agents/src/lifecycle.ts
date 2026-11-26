@@ -6,7 +6,7 @@
  * The limit stops the turn through the same abort as an operator cancel (`TurnContext.signal`), so a Runtime has one path
  * to stop; what tells them apart is the result: a cancel is `cancelled`, anything else that stopped the turn is `failed`.
  * The order is: a cancel, then a stop the turn asked for (`ctx.stop`), then the time limit, then the turn's own failure,
- * then a declared output that is missing.
+ * then a declared output that is missing or empty.
  */
 import type { Artifacts } from '@system/artifacts'
 import type { PortCause, UsageObserved, WorkerRequest, WorkerResult } from '@system/work'
@@ -39,7 +39,7 @@ export interface TurnOutcome {
   usage?: Omit<UsageObserved, 'state'>
   summary?: WorkerResult['summary']
   /** The outputs the turn stored itself; absent when the lifecycle captures `out/<slot>` files. */
-  captured?: { outputs: Record<string, string>; missing: string[] }
+  captured?: { outputs: Record<string, string>; missing: string[]; empty?: string[] }
   /** Extra partial outputs, kept whatever the status (and, alone, on success). */
   partial?: Record<string, string>
 }
@@ -108,6 +108,7 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
       const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
       if (outcome.failure !== undefined) result = { status: 'failed', outputs: {}, ...kept, reason: outcome.failure, ...(outcome.cause ? { cause: outcome.cause } : {}), ...common }
       else if (captured?.missing.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote no output ${noun} for ${captured.missing.join(', ')}`, retryable: true, ...common }
+      else if (captured?.empty?.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote an empty output ${noun}: ${captured.empty.map((slot) => `output ${slot} is empty`).join(', ')}`, retryable: true, ...common }
       else result = { status: 'succeeded', outputs: captured?.outputs ?? {}, ...(outcome.partial ? { partial: outcome.partial } : {}), ...(outcome.message ? { message: outcome.message } : {}), ...common }
     }
     const more = await o.settle?.(result)
