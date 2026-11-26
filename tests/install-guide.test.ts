@@ -30,7 +30,7 @@ export function pageCommands(markdown: string): string[] {
 /** Run the page's commands in a clone of this commit, from an empty HOME; `edit` may break the page first (the negative case). */
 function runPage(edit: (page: string) => string = (page) => page) {
   const scratch = mkdtempSync('/tmp/inst-')
-  const page = edit(readFileSync(join(repo, 'docs', 'operations', 'runbook.md'), 'utf8'))
+  const page = edit(readFileSync(join(repo, 'docs', 'operations', 'install-and-update.md'), 'utf8'))
   const commands = pageCommands(page)
   assert.ok(commands.length > 0, 'the runbook page has a `sh install` block')
   const home = join(scratch, 'home')

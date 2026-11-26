@@ -785,7 +785,7 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   assert.deepEqual(run(['.system/checks.yaml']), all.filter((name) => name !== 'web'))
   assert.deepEqual(run(['bin/system']), all.filter((name) => name !== 'web' && name !== 'statusmd'))
   assert.deepEqual(run(['packages/bundle/src/index.ts']), all.filter((name) => main.includes(name) || name === 'install-guide'))
-  for (const file of ['docs/operations/runbook.md', 'tools/install.sh']) assert.deepEqual(run([file]), ['docs', 'install-guide'], file)
+  for (const file of ['docs/operations/install-and-update.md', 'tools/install.sh']) assert.deepEqual(run([file]), ['docs', 'install-guide'], file)
   for (const file of ['packages/work/src/controller.ts', 'workflows/code-checks.yaml', 'packages/host/src/host.ts', 'packages/app/src/update.ts', 'packages/verifiers/src/checks.ts']) assert.deepEqual(run([file]), withUpgrade(main), file)
   for (const file of ['tests/work.test.ts', 'docs/requirements/purpose.md']) assert.deepEqual(run([file]), main, file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).

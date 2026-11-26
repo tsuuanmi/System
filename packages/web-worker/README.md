@@ -64,7 +64,7 @@ own signed-in ChatGPT web session (PROP-0005 ([retired](../../docs/governance/re
 It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives a genuine headed Chrome with
 `patchright-core` 1.63.0 (System 1's pin; [chrome.ts](src/chrome.ts) chooses the Chrome and installs the pinned Chrome for Testing on first use), and runs inside the Host,
 not as a spawned process. The account is configured in the `agents` row like any other;
-this row serves it (see above) and is off by default: [enable it](../../docs/operations/runbook.md#the-web-account).
+this row serves it (see above) and is off by default: [enable it](../../docs/operations/accounts-and-workers.md#the-web-account).
 
 One attempt:
 

@@ -8,8 +8,8 @@ const repo = join(import.meta.dirname, '..', '..', '..')
 const read = (...p: string[]) => readFileSync(join(repo, ...p), 'utf8')
 const service = read('packages', 'bundle', 'system-night-session.service')
 const timer = read('packages', 'bundle', 'system-night-session.timer')
-const runbook = read('docs', 'operations', 'runbook.md')
-const section = runbook.slice(runbook.indexOf('## The scheduled session'), runbook.indexOf('## The dev branch'))
+const runbook = read('docs', 'operations', 'scheduled-session.md')
+const section = runbook
 
 test('the service runs the session script, in the checkout, after the Host answers, into the journal', () => {
   assert.match(service, /^Type=oneshot$/m)
