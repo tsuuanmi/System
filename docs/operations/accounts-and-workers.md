@@ -89,7 +89,8 @@ operator act. An operator act is an Intent the operator settled (store it with
 session; an Intent without the flag is not counted), an operator-confirmed
 Artifact (`system confirm <artifact-id> --note <text>` stores a
 `confirmation@1`), a release (a merge of `dev` into `main` seen in the
-repository) or a human touch (retry, cancel, decision). The report shows the
+repository, unless a caller made it: `releasesByCaller`, apart and not counted;
+see the Charter) or a human touch (retry, cancel, decision). The report shows the
 parts and the ratio. Conversation with a caller session is not seen by System
 and not counted.
 

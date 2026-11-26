@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesOf, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -201,9 +201,11 @@ export function operations(services: Services) {
         const records = host.view.list()
         // Releases are merges of `dev` into `main` seen in each repository the Host knows Items for.
         const repositories = new Set(records.flatMap((r) => { const first = r.events[0]!; return first.type === 'admitted' && first.item?.repository ? [first.item.repository] : [] }))
-        const releases = (await Promise.all([...repositories].map((repository) => releasesOf(repository)))).flat()
+        const releasesByMaker = await Promise.all([...repositories].map((repository) => releasesBy(repository)))
+        const releases = releasesByMaker.flatMap((r) => r.operator)
+        const callerReleases = releasesByMaker.flatMap((r) => r.caller)
         const coreLines = await activeCoreLines([...repositories], p.since!, p.until)
-        return rangeReport(records, { ...services.operatorActs(), releases, activeCoreLines: coreLines, lateChecks: await lateChecks([...repositories]), since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), withdrawals: services.defectWithdrawals(), ...(classifier ? { classified: classifier.lookup } : {}) })
+        return rangeReport(records, { ...services.operatorActs(), releases, callerReleases, activeCoreLines: coreLines, lateChecks: await lateChecks([...repositories]), since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), withdrawals: services.defectWithdrawals(), ...(classifier ? { classified: classifier.lookup } : {}) })
       },
     },
     'work.events': {

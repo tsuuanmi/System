@@ -29,6 +29,8 @@ export interface RangeOptions {
   confirmations?: readonly { date: string }[]
   /** The merge times of `dev` into `main` in the repositories the Host knows Items for (`releasesOf`): those in the range are operator acts. */
   releases?: readonly string[]
+  /** ms-4: the merge times of releases made by a caller under the delegation of PLAN (`releasesBy`): those in the range are reported apart (`headline.releasesByCaller`) and are not operator acts. */
+  callerReleases?: readonly string[]
   /** The active core's lines at the range's start and end (`activeCoreLines`, from git); a trend, never a gate (ADR-0015). */
   activeCoreLines?: CoreLines
   /** ct-2 (ADR-0014): the names of the checks whose `on:` lacks `pull_request` (a Work's checks step skips them); a failed `release` verdict on one is a late-caught defect. Without it none is counted. */
@@ -50,8 +52,8 @@ export interface RangeReport {
   recurringClasses: { class: string; count: number; example: string }[]
   /** Of those, the ones a Classification labels, by label; absent when none (the Classifier row is off, or has classified none). */
   classifiedUnknownFailures?: Record<string, number>
-  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts`: Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
-  headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts' }
+  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts` (`releasesByCaller` is apart, not counted): Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
+  headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts'; releasesByCaller: number }
   /** Escaped defects over distinct Items merged; `source` says where the count comes from: recorded `escaped-defect@1` Artifacts, the `--escaped` override, or `none` (no input). */
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number; source: 'records' | 'override (--escaped)' | 'none' }
   /** ct-2 (ADR-0014): failed release verdicts (criteria `repo-checks-release-v1`) whose failing check the Works skip (`on:` without `pull_request`), with the check names; the trade-off of tiers by event, made visible. */
@@ -69,7 +71,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, activeCoreLines, lateChecks }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, callerReleases, activeCoreLines, lateChecks }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -152,7 +154,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     since, ...(until === undefined ? {} : { until }), works: inRange.length, activeCoreLines: activeCoreLines ?? 'unknown', unknownFailures, recurringClasses, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
-    headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs },
+    headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs, releasesByCaller: callerReleases?.filter(inRangeAt).length ?? 0 },
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
     lateCaughtDefects: { count: late.length, checks: [...new Set(late)].sort() },
     costPerVerifiedWork: { usd: accepted === 0 || (knownCostUsd === 0 && worksWithUnknownCost > 0) ? 'unknown' : knownCostUsd / accepted, knownCostUsd, accepted, worksWithUnknownCost },

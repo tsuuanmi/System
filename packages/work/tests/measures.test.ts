@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { defaultChange, failureClass, parseCheckFailure } from '../src/failure-class.ts'
 import { rangeReport } from '../src/measures.ts'
-import { releaseTimes } from '../src/releases.ts'
+import { isCallerRelease, releaseTimes, releasesByMaker } from '../src/releases.ts'
 import type { EscapedDefect } from '../src/defect.ts'
 import type { WorkEvent, WorkRecord } from '../src/record.ts'
 
@@ -125,14 +125,31 @@ test('headline: operator acts are Intents settled, confirmations, releases and h
   const confirmations = [{ date: '2026-11-16' }, { date: '2026-11-01' }]
   const releases = [T('15', '05:00:00'), T('17', '05:00:00'), T('09')]
   const r = rangeReport([touched, other], { since: '2026-11-15', until: '2026-11-18', intents, confirmations, releases })
-  assert.deepEqual(r.headline, { itemsMerged: 2, parts: { intentsSettled: 2, confirmations: 1, releases: 2, humanTouches: 2 }, operatorActs: 7, itemsPerAct: 2 / 7 })
+  assert.deepEqual(r.headline, { itemsMerged: 2, parts: { intentsSettled: 2, confirmations: 1, releases: 2, humanTouches: 2 }, operatorActs: 7, itemsPerAct: 2 / 7, releasesByCaller: 0 })
   // The 2026-11-17 case: Items merged with no touches, yet the operator acted.
   const acts = rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15'), settledBy: 'operator' }], releases: [T('16')] }).headline
-  assert.deepEqual(acts, { itemsMerged: 2, parts: { intentsSettled: 1, confirmations: 0, releases: 1, humanTouches: 0 }, operatorActs: 2, itemsPerAct: 1 })
+  assert.deepEqual(acts, { itemsMerged: 2, parts: { intentsSettled: 1, confirmations: 0, releases: 1, humanTouches: 0 }, operatorActs: 2, itemsPerAct: 1, releasesByCaller: 0 })
   // An Intent without `settledBy` is not counted; nothing counted gives `no acts`, never Infinity.
-  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15') }] }).headline, { itemsMerged: 2, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts' })
-  assert.deepEqual(rangeReport([OLD], { since: '2026-11-15' }).headline, { itemsMerged: 0, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts' })
+  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15') }] }).headline, { itemsMerged: 2, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts', releasesByCaller: 0 })
+  assert.deepEqual(rangeReport([OLD], { since: '2026-11-15' }).headline, { itemsMerged: 0, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts', releasesByCaller: 0 })
   assert.equal(JSON.stringify(rangeReport([A], { since: '2026-11-15' }).headline).includes('null'), false)
+})
+
+test('ms-4: a release by a caller is reported apart as releasesByCaller and not counted as an operator act', () => {
+  const r = rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15'), settledBy: 'operator' }], releases: [T('16')], callerReleases: [T('16', '01:00:00'), T('17'), T('01')] })
+  assert.deepEqual(r.headline, { itemsMerged: 2, parts: { intentsSettled: 1, confirmations: 0, releases: 1, humanTouches: 0 }, operatorActs: 2, itemsPerAct: 1, releasesByCaller: 2 })
+})
+
+test('ms-4: the releases of 2026-11-26 (#466, #469, #471, #478, #490) are a caller\'s, a pull request before the delegation or an unmarked one is the operator\'s', () => {
+  const merge = (n: number, extra = '') => `Merge pull request #${n} from tsuuanmi/dev\n\nRelease: x${extra}`
+  for (const n of [466, 469, 471, 478, 490]) assert.equal(isCallerRelease(merge(n)), true, `#${n}`)
+  for (const n of [456, 458, 449]) assert.equal(isCallerRelease(merge(n)), false, `#${n}`)
+  assert.equal(isCallerRelease(merge(500, '\n\nReleased-By: caller')), true, 'the marker line in the pull request body')
+  assert.equal(isCallerRelease(merge(500, ' Released-By: caller')), false, 'the marker is a line of its own')
+  const log = [
+    ['2026-11-26T10:46:23Z', 'm1 d1', merge(466)], ['2026-11-26T09:19:52Z', 'm2 d2', merge(456)], ['2026-11-26T15:43:46Z', 'm3 d3', merge(490)], ['2026-11-26T14:00:00Z', 'm4 f1', merge(491)],
+  ].map(([t, p, m]) => `${t}\x1f${p}\x1f${m}\n\x1e`).join('')
+  assert.deepEqual(releasesByMaker(log, new Set(['d1', 'd2', 'd3'])), { operator: ['2026-11-26T09:19:52.000Z'], caller: ['2026-11-26T10:46:23.000Z', '2026-11-26T15:43:46.000Z'] })
 })
 
 test('releaseTimes keeps the merges of a fake git log whose second parent is on dev (`%cI %P` per line, blank lines ignored)', () => {
