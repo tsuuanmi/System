@@ -53,6 +53,10 @@ export interface Fixture {
   checkAttempts: string[]
   /** Say that the process of an attempt is confirmed gone: its Account's Worker then reports it settled. */
   gone(attemptId: string): void
+  /** Say that the process of an attempt is alive and verified as its own: its Worker's `end` ends it (recorded in `ended`). */
+  orphan(attemptId: string): void
+  /** The attempts whose verified live process was ended. */
+  ended: string[]
   /** Admit a Workflow file from workflows/ with a stored input. */
   admit(file: string): Promise<WorkRecord>
   /** The same admission, not yet submitted: what `Host.submit` takes. */
@@ -99,6 +103,8 @@ export function fixture(options: { seed?: number; slots?: number; checks?: numbe
   const arrivals = new Map<string, { count: number; go: () => void }[]>()
   const arrived = new Map<string, number>()
   const goneAttempts = new Set<string>()
+  const orphans = new Set<string>()
+  const ended: string[] = []
   const active: Record<string, number> = {}
   const peak: Record<string, number> = {}
   const attempts: string[] = []
@@ -115,6 +121,12 @@ export function fixture(options: { seed?: number; slots?: number; checks?: numbe
     capabilities: offered,
     maxConcurrentAttempts: options.slots,
     async gone(attemptId) { return goneAttempts.has(attemptId) },
+    async end(attemptId) {
+      if (!orphans.delete(attemptId)) return false
+      ended.push(attemptId)
+      goneAttempts.add(attemptId)
+      return true
+    },
     async run(request) {
       attempts.push(request.stepId)
       active[ref] = (active[ref] ?? 0) + 1
@@ -181,6 +193,8 @@ export function fixture(options: { seed?: number; slots?: number; checks?: numbe
     arrived: (stepId, count = 1) => ((arrived.get(stepId) ?? 0) >= count ? Promise.resolve() : new Promise<void>((go) => arrivals.set(stepId, [...(arrivals.get(stepId) ?? []), { count, go }]))),
     release: (stepId) => { held.delete(stepId); for (const go of waiting.get(stepId) ?? []) go(); waiting.delete(stepId) },
     gone: (attemptId) => { goneAttempts.add(attemptId) },
+    orphan: (attemptId) => { orphans.add(attemptId) },
+    ended,
     admission(file) {
       const spec = resolve(parseWorkflow(workflowFile(file)), capabilities.available(), workflowFile)
       const input = id('the task')

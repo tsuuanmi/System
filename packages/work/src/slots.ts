@@ -100,7 +100,7 @@ export class Slots {
     return [...this.lost.values()].map((u) => u.attempt)
   }
 
-  /** Ask each Worker whether the process of a lost attempt is confirmed gone; those that are free their slot. Returns them. */
+  /** Ask each Worker whether the process of a lost attempt is confirmed gone, or ends it when it is alive and verified as the attempt's own; those that are gone free their slot. Returns them. */
   async settle(): Promise<LostAttempt[]> {
     const settled: LostAttempt[] = []
     for (const [attemptId, { account, attempt }] of [...this.lost]) {
@@ -108,6 +108,8 @@ export class Slots {
       try {
         const owner = account.startsWith(CHECK) ? this.capabilities.verifierFor(account.slice(CHECK.length)) : this.capabilities.workerFor(account)
         gone = (await owner?.gone?.(attemptId)) ?? false
+        // Alive and verified as the attempt's own process: a restart ended it, so end it and re-run its step.
+        if (!gone && owner && 'end' in owner) gone = (await owner.end?.(attemptId)) ?? false
       } catch {
         gone = false
       }

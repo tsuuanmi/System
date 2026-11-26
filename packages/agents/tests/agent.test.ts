@@ -375,6 +375,75 @@ test('a lost attempt is gone when its pid file is absent or names no process, an
   assert.equal(existsSync(file), false)
 })
 
+const pidFileOf = (dir: string, attemptId: string) => join(dir, `${attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
+/** Wait (bounded) until a process is gone. */
+async function dies(pid: number, what: string): Promise<void> {
+  for (const end = Date.now() + 60_000; alive(pid); await new Promise((r) => setTimeout(r, 50))) if (Date.now() > end) throw new Error(`${what} still runs`)
+}
+
+test('a pid file naming a live process with another start time reads as gone, and that process is not signalled', async () => {
+  const { artifacts } = memory()
+  const attempts = join(root, 'attempts-reuse')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
+  const abort = new AbortController()
+  const req = request({ question: await task(artifacts, 'FAKE:sleep') }, ['report'], abort.signal)
+  const running = worker.run(req)
+  const file = pidFileOf(attempts, req.attemptId)
+  await appears(file, 'the pid file')
+  const recorded = readFileSync(file, 'utf8').trim().split(/\s+/)
+  assert.equal(recorded.length > 20, true, 'pid, group and start time are recorded')
+  assert.equal(recorded[3], recorded[0], 'the CLI leads its own group')
+  // The same live pid under a start time it did not have: a reused ID.
+  const other = recorded.map((field, n) => (n === 20 ? String(Number(field) + 1) : field)).join(' ')
+  writeFileSync(file, other)
+  assert.equal(await worker.gone!(req.attemptId), true)
+  assert.equal(await worker.end!(req.attemptId), false, 'and nothing is signalled')
+  assert.ok(alive(Number(recorded[0])), 'the process under the reused ID is untouched')
+  abort.abort()
+  await running
+})
+
+test('a live orphan whose identity matches is ended with its group; one whose identity is unverifiable is left alone', async () => {
+  const { artifacts } = memory()
+  const attempts = join(root, 'attempts-orphan')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, attempts)
+  const child = join(root, 'orphan-child.pid')
+  const abort = new AbortController()
+  const req = request({ question: await task(artifacts, `FAKE:sleep FAKE:grandchild=${child}`) }, ['report'], abort.signal)
+  const running = worker.run(req)
+  const file = pidFileOf(attempts, req.attemptId)
+  await appears(file, 'the pid file')
+  await appears(child, 'the grandchild')
+  const pid = Number(readFileSync(file, 'utf8').trim().split(/\s+/)[0])
+  const full = readFileSync(file, 'utf8')
+  writeFileSync(file, String(pid))
+  assert.equal(await worker.gone!(req.attemptId), false, 'unverifiable is not gone')
+  assert.equal(await worker.end!(req.attemptId), false, 'and is not signalled')
+  assert.ok(alive(pid))
+  writeFileSync(file, full)
+  assert.equal(await worker.end!(req.attemptId), true)
+  await dies(pid, 'the agent')
+  await dies(Number(readFileSync(child, 'utf8')), 'its grandchild')
+  assert.equal(await worker.gone!(req.attemptId), true)
+  abort.abort()
+  await running
+})
+
+test('a cancel ends what the agent forked', async () => {
+  const { artifacts } = memory()
+  const child = join(root, 'cancel-child.pid')
+  const ready = join(root, 'cancel-ready')
+  const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-cancel-group'), 300)
+  const abort = new AbortController()
+  const running = worker.run(request({ question: await task(artifacts, `FAKE:sleep FAKE:grandchild=${child} FAKE:ready=${ready}`) }, ['report'], abort.signal))
+  await appears(ready, 'the agent')
+  await appears(child, 'the grandchild')
+  const grandchild = Number(readFileSync(child, 'utf8'))
+  abort.abort()
+  assert.equal((await running).status, 'cancelled')
+  await dies(grandchild, 'the forked child')
+})
+
 /** Wait for a file to exist (what a fake agent writes once it is ready), with a bound far over what a loaded machine needs. */
 async function appears(file: string, what: string): Promise<void> {
   for (const end = Date.now() + 120_000; !existsSync(file);) {
