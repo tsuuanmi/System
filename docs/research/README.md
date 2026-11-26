@@ -38,4 +38,7 @@ The generated index below is the authoritative list of current research.
   a frontier model review (workflows/experiments/review-replay.yaml) on the diffs of two Escaped defects of 2026-11-26
   (st-1, ag-2) and ten clean merged Works, to measure recall and false alarms before any adoption; nothing is gated on
   it.
+- [RES-0020 — Review eval set (evalset-1)](RES-0020-review-eval-set.md) — active — The review eval set (evalset-1) - one
+  case per Escaped defect with a known change (diff, one-sentence answer key, defect ID), seeded with st-1, ag-2 and
+  finish-1 of 2026-11-26; rev-1's replay reports recall on it; nothing gates on it.
 <!-- docs:end index:research -->

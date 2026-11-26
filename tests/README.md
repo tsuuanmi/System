@@ -74,6 +74,7 @@ A flaky test is never skipped, slept or retried until it passes: find the root c
   once, with no `work run` (no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
+- [review-evalset.test.ts](review-evalset.test.ts) — evalset-1: the review eval set in [fixtures/review-evalset](fixtures/review-evalset/README.md) loads, and each case has a defect ID, a diff and a one-sentence answer key.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
   (Artifact writes through the Host, `doctor` boots beside it) on one store all
   succeed (no "database is locked"), also when the boots all find the store
