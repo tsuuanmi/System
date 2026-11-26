@@ -336,39 +336,34 @@ How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter deta
 3. One sign-in is two Accounts ([GLOSSARY](../../GLOSSARY.md)): one with `"quotaGroup": "gemini"` and one
    with `"quotaGroup": "3p"` (Claude and GPT), both sharing `"agyHome": "antigravity/<name>"`. Each lists
    only the models of its group under `models` (`economy`, `standard`, `frontier`), checked with
-   `HOME=~/.dsh/system/antigravity/<name> agy models`. Example `~/.system/profile.yml` entry (JSON):
+   `HOME=~/.dsh/system/antigravity/<name> agy models`. Add the two account objects (JSON) to the
+   `accounts` array of the `agents` row's `config` in `~/.system/profile.yml` (`- id: agents` followed by
+   `  config: {...}`):
 
    ```json
    [
      {
-       "id": "agents",
-       "config": {
-         "accounts": [
-           {
-             "ref": "antigravity/a1",
-             "runtime": "antigravity",
-             "agyHome": "antigravity/a1",
-             "quotaGroup": "gemini",
-             "capabilities": ["develop.implement", "research"],
-             "models": {
-               "economy": "gemini-3.8-flash-medium",
-               "standard": "gemini-4-hydrogen-medium",
-               "frontier": "gemini-4-hydrogen-high"
-             }
-           },
-           {
-             "ref": "antigravity/a1-3p",
-             "runtime": "antigravity",
-             "agyHome": "antigravity/a1",
-             "quotaGroup": "3p",
-             "capabilities": ["develop.implement", "research"],
-             "models": {
-               "economy": "claude-sonnet-4-6",
-               "standard": "claude-sonnet-4-6",
-               "frontier": "claude-opus-4-6-thinking"
-             }
-           }
-         ]
+       "ref": "antigravity/a1",
+       "runtime": "antigravity",
+       "agyHome": "antigravity/a1",
+       "quotaGroup": "gemini",
+       "capabilities": ["develop.implement"],
+       "models": {
+         "economy": "gemini-3.8-flash-medium",
+         "standard": "gemini-4-hydrogen-medium",
+         "frontier": "gemini-4-hydrogen-high"
+       }
+     },
+     {
+       "ref": "antigravity/a1-3p",
+       "runtime": "antigravity",
+       "agyHome": "antigravity/a1",
+       "quotaGroup": "3p",
+       "capabilities": ["develop.implement"],
+       "models": {
+         "economy": "claude-sonnet-4-6",
+         "standard": "claude-sonnet-4-6",
+         "frontier": "claude-opus-4-6-thinking"
        }
      }
    ]
