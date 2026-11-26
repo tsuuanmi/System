@@ -146,6 +146,29 @@ operator (BS): the role `research.source` in the profile, so that `research-sour
   kill (no occurrence in 768 Works), a fixed evaluation set (it shows only differences of about 20 points).
 - Open measurements: E1 to E4 of the cycle-1 record.
 
+### ID — Identity (decided 2026-11-21)
+
+Source of each: Intent 3aa77fd4dfd7 and RES-0014. The identity and P2 are in the Charter.
+
+- A product Batch records the product's own measure before and after it; System records the number and owns neither the
+  evaluation set nor the error budget.
+- Operator acts stay the headline's unit; the operator notes their minutes for a Batch once at the release, running
+  apart from judging.
+- An Item for System is opened only when a product Batch's records point at it, when it repairs a promised safety
+  guarantee, or when it deletes something unused.
+- One caller session at a time writes Items and submits Works for a repository; from 2026-11-21 the operator works
+  through one session only.
+- Roles by fit: Claude Code implements; Codex is tried on work that does not write to a repository, first one
+  `plan-items` run for the next DNA Batch, by configuration only. A Codex adapter for web research is an Item only if
+  that try is useful.
+- The caller session carries DNA's supply loop: evidence, `plan-items` proposing at most 6 Items, one Intent, the
+  scheduled session, one release. The error budget, adjudication, re-baselining, approvals and releases stay the
+  operator's.
+- Reopened by: Items per operator act on product Batches staying under 3.6 after three Batches; DNA Batches where the
+  operator's minutes are mostly running the loop and the loop cannot be a Workflow plus repository checks; sb-1's
+  real-agent test failing in a way configuration cannot fix; late-caught or escaped defects rising under ADR-0014's
+  tiers.
+
 ### RB — Release boundary (decided 2026-11-16)
 
 - Aim: no defect of the kind "old release meets new release" reaches production or blocks the pipeline. Its finished decisions are in section 0.

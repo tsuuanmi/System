@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Artifacts } from '@system/artifacts'
 import { askVerifier, putVerdict, settleVerdict, type Capabilities, type EffectIntent, type VerificationStore } from '@system/work'
-import { githubPublisher, validMergeBatchSize, type MergeCheck, type PublishConfig } from './github.ts'
+import { githubPublisher, type MergeCheck, type PublishConfig } from './github.ts'
 
 export * from './github.ts'
 
@@ -62,7 +62,8 @@ export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (s
 }
 
 export function apply(ctx: Context, config: Config = {}): void {
-  if (config.mergeBatchSize !== undefined && !validMergeBatchSize(config.mergeBatchSize)) throw new Error(`mergeBatchSize must be a whole number of at least 1, not ${String(config.mergeBatchSize)}`)
+  // ct-4: the merge queue's batch mode (ct-3) was removed; an operator who set it must not have it silently ignored.
+  if ('mergeBatchSize' in config) throw new Error('the effects option mergeBatchSize was removed (ct-4): the merge queue merges one change at a time; delete it from the profile')
   const capabilities = ctx.get('capabilities') as Capabilities
   const credentials = ctx.get('credentials') as CredentialProvider
   const ref = credentialRef(config.tokenRef ?? 'GITHUB_TOKEN')
@@ -72,7 +73,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       token: async () => (await credentials.resolve(ref))?.value,
       check: mergeCheck(capabilities, ctx.get('artifacts') as Artifacts),
     },
-    { remote: config.remote ?? 'origin', base: config.base ?? 'main', mergeInto: config.mergeInto ?? [], apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository, mergeBatchSize: config.mergeBatchSize },
+    { remote: config.remote ?? 'origin', base: config.base ?? 'main', mergeInto: config.mergeInto ?? [], apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository },
   )
   const dispose = capabilities.registerEffect(publisher)
   ctx.effect(() => dispose, 'effect registrations')

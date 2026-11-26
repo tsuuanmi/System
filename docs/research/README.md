@@ -16,4 +16,7 @@ The generated index below is the authoritative list of current research.
 - [RES-0012 — Reuse-first research of 2026-11-14](RES-0012-reuse-first-research-2026-11-14.md) — active — Reuse-first
   research of 2026-11-14 (five Research Works and a synthesis at baseline b789061): which findings became CM Items and
   which did not yet.
+- [RES-0014 — What kind of system System should be](RES-0014-what-system-should-be.md) — active — What kind of system
+  System should be next - its stated identity against its records of 2026-11-10 to 2026-11-21 and primary sources on
+  comparable systems; four candidate identities and one recommendation.
 <!-- docs:end index:research -->

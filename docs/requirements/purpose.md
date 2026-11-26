@@ -1,7 +1,7 @@
 ---
 type: requirement
 status: active
-reviewed: 2026-11-16
+reviewed: 2026-11-21
 related: [architecture/control-plane]
 ---
 
@@ -9,9 +9,11 @@ related: [architecture/control-plane]
 
 ## Identity
 
-**System is a durable work control plane for replaceable AI Workers.**
-It governs the continuity, authorization, inspection and verification of work
-across Worker runtimes, rather than being another general-purpose model loop.
+**System is the gate and the ledger for the work one operator delegates to AI Workers.**
+A result (a change merged into a repository, or a stored report) is accepted
+only by the Verifier pinned for it, and everything a new session or Worker
+needs to carry on is a record. It is not an agent loop: Workers do the work,
+each in the Role it fits.
 
 **Tagline:** Work persists. Workers change. Humans govern.
 
@@ -22,7 +24,7 @@ non-goal until a second operator exists. Installing System on a new machine
 nicety.
 
 This is **the current product intent**, not a claim that the product has been
-implemented. The control-plane decision and selected DSH host are recorded in
+implemented. System is a control plane hosted on DSH: the control-plane decision and selected DSH host are recorded in
 [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md).
 
 ## Mission
@@ -31,7 +33,10 @@ System turns the operator's Intents (what they want done, in plain prose) into
 results (verified changes in their repositories, verified research reports)
 with as little of the operator's attention as possible. Durable Work, Artifacts
 and Verdicts are how; P1 to P3 below are the constraints that hold while it
-does so.
+does so. The supply of Items is part of that attention: turning a product's
+evidence into a Batch the operator accepts in one act is done by a caller's
+Workflows and the product repository's checks, outside the Host (ADR-0012: the
+Host never picks).
 
 ## Headline measure
 
@@ -58,9 +63,9 @@ not an act. Say it was the operator's only when it was.
 
 ## Vision
 
-A person delegates an outcome, not a sequence of tool commands. Replaceable
-Workers can collaborate or take over work without losing its artifacts,
-history or acceptance criteria. The person retains control of material risks
+A person delegates an outcome, not a sequence of tool commands. A change of
+Provider or Worker does not lose a Work, its artifacts, history or acceptance
+criteria, and each Role is held by the Provider that fits it. The person retains control of material risks
 and decisions, instead of becoming a bottleneck for routine operations.
 
 ## Fundamental purposes
@@ -69,9 +74,11 @@ and decisions, instead of becoming a bottleneck for routine operations.
 session, process restart and provider change. A failed Worker must not erase
 the identity of the task or force unsafe effect replay.
 
-**P2 — Workflow generality.** The same control-plane core supports different
-domains. For MVP this must be demonstrated with **Software Engineering** and
-**Research** workflows, not just different coding templates.
+**P2 — Workflow generality.** The core stays the same; what differs with the
+nature of the work is the Workflow, the Role and the Verifier. A kind of work
+enters System when its result has a Verifier and a place to live (a merged
+change or a stored report). **Software Engineering** and **Research** are the
+two kinds demonstrated, not just different coding templates.
 
 **P3 — Bounded autonomy.** Authorized routine work advances without an
 approval for every command; privileged or uncertain effects are subject to
@@ -81,7 +88,7 @@ evade policy.
 ## Philosophy
 
 1. **Work-first, not agent-first:** work and its outcomes are the domain model;
-   Workers and models are replaceable execution resources.
+   a change of Provider or Worker does not lose a Work, and each Role is held by the Provider that fits it.
 2. **State outside Workers:** conversations may help execution, but canonical
    Work/Task state, immutable Artifact IDs and decisions remain under System control.
 3. **Outcome over activity:** success means accepted, evidenced work, not a
@@ -128,7 +135,7 @@ Each criterion names the test that pins it today (`file`: "test name").
 - **Work continuity:** a Work survives a killed Host and a Workflow file edit;
   done steps never re-run. `tests/work.test.ts`: "the pinned spec survives a
   Workflow file edit and a killed host; done steps never re-run".
-- **Replaceable Workers:** the controller and Workflow compiler name no domain,
+- **Workers change without losing Work:** the controller and Workflow compiler name no domain,
   Worker or verifier; a retry hands a cancelled attempt's partial output on.
   `packages/work/tests/controller.test.ts`: "the controller and Workflow
   compiler name no domain, Worker or verifier"; "a cancel during an attempt
@@ -190,6 +197,9 @@ System results or automatically adopted release thresholds.
   are a planned Worker type, not the product's purpose.
 - Creating a new runtime service for every logical boundary.
 - Claiming universality without an executed second domain.
+- A planner inside the Host.
+- A model that accepts a result.
+- Owning a product's evaluation set, error budget or release.
 
 ## Product / implementation separation
 

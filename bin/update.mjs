@@ -1,7 +1,7 @@
 // `system update`: switch the install to the newest commit of `main`, and only to code that
 // passed its own required checks on this machine. Plain JavaScript that needs no build, like service.mjs.
 //
-// The install (`~/.system`): `repo/`, a clone of the origin; `releases/<commit>/`, one worktree of it per
+// The install (`~/.system`): `release/`, a clone of the origin; `releases/<commit>/`, one worktree of it per
 // commit, installed and built, never edited by hand; `current`, the link to the release the Host runs.
 // The steps, each stopping the update when it fails, with `current` left where it was:
 //   1. fetch `main`; the commit already current is nothing to do;
@@ -102,7 +102,7 @@ export async function finishPending({ install, commit, alive, ...deps }) {
 const lastLine = (text) => text.trim().split('\n').at(-1) ?? ''
 
 export async function update({ install, cli, origin, run, write, read, remove, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
-  const repo = join(install, 'repo')
+  const repo = join(install, 'release')
   const link = join(install, 'current')
   // corepack beside the Node running this (Item ns-2); its `pnpm` shim finds `node` on the PATH `run` is given, which starts with that Node's directory.
   const corepack = join(dirname(process.execPath), 'corepack')

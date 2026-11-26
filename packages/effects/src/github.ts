@@ -22,10 +22,6 @@
  *   checked on (bors' "not rocket science" rule); if the base moved meanwhile,
  *   the change is merged and checked again on the new tip. The pull request is
  *   opened ready, for the record; GitHub's merge endpoint is not used.
- * - merge batches (ct-3, `mergeBatchSize`, default 1 = the above, one change at a time): the head of a base's
- *   queue takes up to N waiting changes, chains them on the tip, checks the final commit once and pushes it with
- *   a lease; a failed or held check splits the batch in halves, down to single changes. An approved merge commit
- *   is never batched; a change that conflicts leaves the batch and fails as a single.
  * - reconcile only reads the remote: `applied` when the branch holds the commit
  *   and its pull request is open (and ready, if asked) or, with `merge`, when the
  *   base holds the change; `absent` otherwise; `unknown` when it cannot be read.
@@ -62,8 +58,6 @@ export interface PublishConfig {
   apiUrl: string
   /** `owner/name`; parsed from a github.com remote URL when absent. */
   repository?: string
-  /** ct-3: how many waiting changes the merge queue checks as one batch; a whole number of at least 1, default 1 (one change at a time). */
-  mergeBatchSize?: number
 }
 
 export interface PublishDeps {
@@ -152,27 +146,8 @@ const READY = 'marking the pull request ready for review'
 
 export const branchOf = (workId: string) => `system/${workId.replace(/^work:/, '')}`
 
-/** A change waiting in a base's queue to be merged in a batch (ct-3). */
-interface Waiting {
-  t: { tree: GitTreeContent; url: string; slug: string; token: string | undefined; env: Record<string, string>; branch: string }
-  intent: EffectIntent
-  open: Pull | undefined
-  settled: boolean
-  resolve(outcome: EffectOutcome): void
-  reject(error: unknown): void
-}
-
-/** Whether `size` is a valid `mergeBatchSize`: a whole number of at least 1. */
-export function validMergeBatchSize(size: unknown): size is number {
-  return typeof size === 'number' && Number.isInteger(size) && size >= 1
-}
-
 export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config: PublishConfig): EffectPort {
   const git = deps.git ?? runGit
-  const batchSize = config.mergeBatchSize ?? 1
-  if (!validMergeBatchSize(batchSize)) throw new Error(`mergeBatchSize must be a whole number of at least 1, not ${String(config.mergeBatchSize)}`)
-  /** Changes waiting for a base, by queue key; the head of the queue takes up to `batchSize` of them. */
-  const waiting = new Map<string, Waiting[]>()
 
   function treeOf(subject: string): GitTreeContent {
     const read = artifacts.get(subject)
@@ -347,101 +322,6 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
     return failed(`${config.base} kept moving during ${MERGE_ROUNDS} merges; run the step again`)
   }
 
-  /**
-   * ct-3: the head of a base's queue takes up to `mergeBatchSize` waiting changes (of one repository), builds one
-   * merge chain on the tip (tip + c1 + c2 ...) and re-checks its final commit once. On a pass the base moves to it
-   * with a lease; otherwise the batch is split in two, the first half first, down to single changes, which go
-   * through `mergeIn` exactly as with size 1. A change that conflicts with the tip or a batch mate leaves the
-   * batch and goes through `mergeIn` after it, so its conflict is reported against a real tip.
-   */
-  async function mergeBatch(key: string): Promise<void> {
-    const list = waiting.get(key) ?? []
-    const head = list[0]
-    if (!head) return
-    const taken = list.filter((w) => w.t.tree.repository === head.t.tree.repository).slice(0, batchSize)
-    waiting.set(key, list.filter((w) => !taken.includes(w)))
-    const single = async (w: Waiting) => {
-      if (w.settled) return
-      w.settled = true
-      try { w.resolve(await mergeIn(w.t, w.intent, w.open)) } catch (error) { w.reject(error) }
-    }
-    const settle = (w: Waiting, outcome: EffectOutcome) => { w.settled = true; w.resolve(outcome) }
-    const later: Waiting[] = []
-    try {
-      await process(taken, 0)
-      for (const w of later) await single(w)
-    } catch (error) {
-      for (const w of taken) if (!w.settled) { w.settled = true; w.reject(error) }
-    }
-
-    async function process(entries: Waiting[], round: number): Promise<void> {
-      if (entries.length === 0) return
-      if (entries.length === 1) return single(entries[0]!)
-      const repository = entries[0]!.t.tree.repository
-      const tip = await baseTip(entries[0]!.t)
-      if (!tip) { for (const w of entries) settle(w, { state: 'failed', reason: `${config.base} does not exist on ${config.remote}`, detail: { repository: w.t.slug, branch: w.t.branch, commit: w.t.tree.commit } }); return }
-      let current = tip
-      const members: { w: Waiting; commit: string; merged: boolean }[] = []
-      for (const w of entries) {
-        const change = w.t.tree.commit
-        if (await holds(w.t, change, current)) { later.push(w); continue }
-        if (await holds(w.t, current, change)) { members.push({ w, commit: change, merged: false }); current = change; continue }
-        const merged = await mergeTree(repository, current, change)
-        if ('conflicts' in merged) { later.push(w); continue }
-        const commit = (await git(repository, ['commit-tree', merged.tree, '-p', current, '-p', change, '-m', `Merge ${w.t.branch} into ${config.base}`])).trim()
-        await pin(repository, commit)
-        members.push({ w, commit, merged: true })
-        current = commit
-      }
-      if (members.length < 2) { for (const m of members) later.push(m.w); return }
-      const last = members[members.length - 1]!
-      let verdicts: string[] = []
-      if (members.some((m) => m.merged)) {
-        if (!deps.check) { for (const m of members) settle(m.w, { state: 'failed', reason: 'the merge queue has no checks to run on the merge', detail: { repository: m.w.t.slug, branch: m.w.t.branch, commit: m.w.t.tree.commit } }); return }
-        const subject = (await artifacts.put({
-          ...GIT_TREE_KIND, content: { repository, commit: last.commit, tree: (await git(repository, ['rev-parse', `${last.commit}^{tree}`])).trim(), parent: tip }, subject: { type: 'git-commit', ref: last.commit },
-          classification: 'local-private', producer: { type: 'system', ref: 'git.publish' },
-        })).id
-        const checked = await deps.check(subject, entries[0]!.intent)
-        verdicts = checked.verdicts ?? []
-        if (checked.verdict !== 'pass') {
-          // Split: the first half on the tip; the second on whatever the base is then.
-          const half = Math.ceil(entries.length / 2)
-          await process(entries.slice(0, half), 0)
-          await process(entries.slice(half), 0)
-          return
-        }
-      }
-      for (const m of members) m.w.open = (await publishBranch(m.w.t, m.w.intent, m.commit, m.w.open, true)).pull
-      try {
-        await git(repository, ['push', '--quiet', entries[0]!.t.url, `${last.commit}:refs/heads/${config.base}`, `--force-with-lease=refs/heads/${config.base}:${tip}`], entries[0]!.t.env)
-      } catch (error) {
-        if ((await git(repository, ['ls-remote', entries[0]!.t.url, `refs/heads/${config.base}`], entries[0]!.t.env)).startsWith(tip)) throw error
-        // The base moved meanwhile: merge and check again on the new tip.
-        if (round + 1 < MERGE_ROUNDS) return process(entries, round + 1)
-        for (const m of members) settle(m.w, { state: 'failed', reason: `${config.base} kept moving during ${MERGE_ROUNDS} merges; run the step again`, detail: { repository: m.w.t.slug, branch: m.w.t.branch, commit: m.w.t.tree.commit } })
-        return
-      }
-      for (const m of members) {
-        settle(m.w, {
-          state: 'applied',
-          reason: `merged ${m.w.t.tree.commit} into ${config.base} as ${m.commit}, in a batch of ${members.length} checked on ${last.commit.slice(0, 12)}${m.merged ? ` with ${tip.slice(0, 12)}` : ''}`,
-          detail: { ...detail(m.w.t, m.w.open!, false, m.commit), batch: last.commit, checkedOn: tip, ...(verdicts.length ? { verdicts: verdicts.join(',') } : {}) },
-        })
-      }
-    }
-  }
-
-  /** Queue `intent` to be merged: alone (size 1, or an approved merge commit, which is never batched) or with the changes waiting for the base. */
-  function enqueueMerge(t: Awaited<ReturnType<typeof target>>, intent: EffectIntent, open: Pull | undefined): Promise<EffectOutcome> {
-    const key = `${t.url}#${config.base}`
-    if (batchSize === 1 || intent.approvedMerge) return inQueue(key, () => mergeIn(t, intent, open))
-    return new Promise<EffectOutcome>((resolve, reject) => {
-      waiting.set(key, [...waiting.get(key) ?? [], { t, intent, open, settled: false, resolve, reject }])
-      inQueue(key, () => mergeBatch(key)).catch(() => undefined)
-    })
-  }
-
   const detail = (t: Awaited<ReturnType<typeof target>>, pull: Pull, draft: boolean, merge?: string): Record<string, string> => ({
     repository: t.slug, branch: t.branch, commit: t.tree.commit, pullRequest: String(pull.number), url: pull.html_url, draft: String(draft),
     ...(merge ? { merged: 'true', mergeCommit: merge } : {}),
@@ -476,7 +356,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       if (!pull && elsewhere) {
         return { state: 'failed', reason: `pull request #${elsewhere.number} for ${t.branch} targets ${elsewhere.base?.ref ?? 'an unknown base'}, not ${config.base}; resolve it by hand`, detail: detail(t, elsewhere, elsewhere.draft) }
       }
-      if (merge) return enqueueMerge(t, intent, pull)
+      if (merge) return inQueue(`${t.url}#${config.base}`, () => mergeIn(t, intent, pull))
       const published = await publishBranch(t, intent, t.tree.commit, pull, intent.params.ready === true)
       const draft = published.draft
       pull = published.pull

@@ -1,6 +1,6 @@
 # System
 
-**System is a durable work control plane for replaceable AI Workers.**
+**System is the gate and the ledger for the work one operator delegates to AI Workers.**
 
 **Work persists. Workers change. Humans govern.**
 
