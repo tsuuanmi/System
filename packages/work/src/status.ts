@@ -48,7 +48,16 @@ const progressText = (attempt: LiveAttempt | undefined): string => {
   return parts.join(', ') || 'no live progress'
 }
 
+/** The step the record shows waiting on quota (qw-1), with the text for it. */
+function quotaWait(record: WorkRecord): { step: string; text: string } | undefined {
+  if (record.state.status !== 'running') return undefined
+  const found = Object.entries(record.state.steps).find(([, s]) => s.waiting)
+  return found ? { step: found[0], text: found[1].waiting!.resetsAt ? `quota wait until ${found[1].waiting!.resetsAt}` : 'quota wait, reset unknown' } : undefined
+}
+
 function doing(record: WorkRecord, live: ((workId: string) => LiveAttempt[]) | undefined): string {
+  const quota = quotaWait(record)
+  if (quota) return `${record.id} step ${quota.step} since ${admittedAt(record)}; ${quota.text}`
   const waiting = live?.(record.id).find((a) => a.waiting)
   const { step, account } = waiting ? { step: waiting.stepId, account: waiting.worker } : whoHas(record)
   const idle = workStatus(record) === 'admitted, not running'

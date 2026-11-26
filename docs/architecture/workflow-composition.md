@@ -201,13 +201,15 @@ uncertain remote effect is held or reconciled before any retry; workflow
 structure alone cannot guarantee exactly-once effects.
 
 **Implemented recovery:** each Work is one storage key holding its events
-(`admitted`, `dispatched`, `observed`, `verified`, `attempt-lost`, `terminal`)
+(`admitted`, `dispatched`, `observed`, `verified`, `waiting`, `attempt-lost`, `terminal`)
 and the state they fold to; every change is one atomic update. A step whose
 last attempt was dispatched but never observed is recorded `attempt-lost` and
 dispatched again as a new attempt with the same recorded inputs (a Worker
 attempt by the Host on start, once its process is confirmed gone; otherwise on
 `system work run`, see [Start, stop and recovery](host.md#start-stop-and-recovery));
-completed steps are never re-run. `system work replay` folds the events again and
+completed steps are never re-run. A step that waits for an Account's quota to reset is recorded `waiting`
+(once per wait, with the reset time when known) until its next dispatch; it is not a failure.
+`system work replay` folds the events again and
 compares the result with the stored state.
 
 **Derived facts (state).** `fold` computes, once, what readers used to re-scan

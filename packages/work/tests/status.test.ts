@@ -600,3 +600,18 @@ test('admitting a Work whose Task names an Item needs a readable STATUS.md with 
   assert.equal((await admit(task(gone))).state.status, 'running')
   assert.equal((await admit(task(dir, 'df-4'))).state.status, 'running')
 })
+
+test('a Work waiting on quota shows the wait and its reset from the record alone', async () => {
+  const dir = repository(STATUS)
+  const { controller, task, admit } = setup()
+  const status = await readStatus(dir)
+  const work = await admit(task(dir, 'df-3'))
+  const waiting = (resetsAt?: string) => {
+    const record = controller.get(work.id)!
+    const events = [...record.events, { type: 'waiting', seq: 1, at: '2026-11-10T00:00:05.000Z', stepId: 'task', cause: 'quota', ...(resetsAt ? { resetsAt } : {}) } as WorkEvent]
+    return [{ ...record, events, state: fold(Object.keys(record.state.steps), events) }]
+  }
+  const line = (records: WorkRecord[]) => itemLines(status, dir, records, () => [], { item: 'df-3' })[0]
+  assert.match(line(waiting('2026-11-10T05:00:00.000Z'))!, /doing: .* step task since .*; quota wait until 2026-11-10T05:00:00\.000Z$/)
+  assert.match(line(waiting())!, /; quota wait, reset unknown$/)
+})

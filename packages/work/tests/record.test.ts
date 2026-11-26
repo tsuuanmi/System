@@ -91,3 +91,16 @@ test('a record stored before these facts parses with them derived from its event
   assert.deepEqual(parsed.state.verifiers, { check: { ref: 'v', version: '1' } })
   assert.deepEqual(parsed.state.changedTests?.[id('c')], [])
 })
+
+test('a waiting event marks the step until its dispatch; it is not a failure and survives validation', () => {
+  const waiting = { type: 'waiting' as const, seq: 1, at, stepId: 'task', cause: 'quota' as const, resetsAt: '2026-11-10T05:00:00.000Z' }
+  assert.equal(eventSchema.safeParse(waiting).success, true)
+  assert.equal(eventSchema.safeParse({ ...waiting, resetsAt: undefined }).success, true)
+  const waited = fold(['task'], [prefix[0]!, waiting])
+  assert.deepEqual(waited.steps.task!.waiting, { cause: 'quota', resetsAt: waiting.resetsAt, since: at })
+  assert.equal(waited.steps.task!.state, 'pending')
+  assert.equal(waited.steps.task!.outside, undefined)
+  const dispatched = fold(['task'], [prefix[0]!, waiting, { ...prefix[1]!, seq: 2 } as WorkEvent])
+  assert.equal(dispatched.steps.task!.waiting, undefined)
+  assert.deepEqual(fold(['task'], [prefix[0]!, waiting]), fold(['task'], [prefix[0]!, waiting]))
+})

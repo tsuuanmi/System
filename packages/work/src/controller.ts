@@ -690,6 +690,7 @@ export class WorkController {
       if (this.draining && (isWorkerStep(next) || isVerifyStep(next) || isEffectStep(next))) { waiting = true; continue }
       if (isWorkerStep(next)) {
         const dispatched = await this.dispatchWorker(record, next)
+        record = dispatched.record
         if (dispatched.blocked) { waiting = true; continue }
         const { attempt } = dispatched
         turn = this.attemptTurn(dispatched.record, attempt && (async () => {
@@ -735,7 +736,13 @@ export class WorkController {
     const capable = this.capabilities.rankable(s.capabilities, only, (w) => this.slots.hasFree(w))
     const readings = await this.readQuotas(capable)
     const route = this.accounts.route(this.capabilities, { workId: record.id, stepId: s.id, key: waitKey }, s.capabilities, only, (w) => this.slots.hasFree(w), readings, s.prefer)
-    if (route.quotaWait) return { record, blocked: true }
+    if (route.quotaWait) {
+      // The wait is shown durably once, and again only when its reset changes; the step's dispatch ends it.
+      const was = record.state.steps[s.id]!.waiting
+      const resetsAt = route.quotaWait.resetsAt
+      if (!was || was.resetsAt !== resetsAt) record = await this.append(record, { type: 'waiting', stepId: s.id, cause: 'quota', ...(resetsAt ? { resetsAt } : {}) })
+      return { record, blocked: true }
+    }
     if (route.full) {
       if (!this.waitingForSlot.has(waitKey)) this.waitingForSlot.set(waitKey, Date.now())
       return { record, blocked: true }
