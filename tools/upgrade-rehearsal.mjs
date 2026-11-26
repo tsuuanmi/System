@@ -5,7 +5,8 @@
 //   2. the commit under check (the working tree of this repository on top of HEAD; `--commit <ref>` uses a commit as it is) becomes
 //      `main` of a local bare `origin`, with `dev` beside it (the afterInstall checks fetch it);
 //   3. THAT install's `system update` runs (its Host drains and the supervisor starts the new code, as the user unit would).
-// It passes only when the update ends with `current` on the new release and its afterInstall Verdict passed.
+// It passes only when the update ends with `current` on the new release and its afterInstall Verdict passed, and then a revert
+// (`system update --to <last release>`, Item revert-1) ends with `current` back on the last release (its afterInstall Verdict passed).
 // What differs from a real update, so the rehearsal needs no network and stays short: the commit it installs has the `run` of each check
 // of `.system/checks.yaml` replaced by `true` (the update's own run of the whole suite, `upgrade` included, would recurse). Every key,
 // every `paths` and the `afterInstall` list are kept, so the old Host still reads the file as it would. `--add-check-key <name>` adds
@@ -114,12 +115,14 @@ async function rehearse(scratch) {
     await host.listening
     log('the last release\'s Host is up; publishing the commit under check as main (and dev) of the local origin')
     git('-c', 'core.hooksPath=/dev/null', 'push', '-q', '--force', origin, `${next}:refs/heads/main`, `${next}:refs/heads/dev`)
-    const updated = await new Promise((done) => {
-      const child = spawn(process.execPath, [cli, 'update', '--wait', '5'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+    const updateWith = (extra) => new Promise((done) => {
+      const child = spawn(process.execPath, [cli, 'update', ...extra, '--wait', '5'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
       let output = ''
       for (const stream of [child.stdout, child.stderr]) stream.on('data', (data) => { output += data; process.stdout.write(data) })
       child.on('exit', (code) => done({ code, output }))
     })
+    const updateTo = (commit) => updateWith(['--to', commit])
+    const updated = await updateWith([])
     const current = (() => { try { return readlinkSync(join(install, 'current')) } catch { return undefined } })()
     if (updated.code !== 0 || current !== `releases/${next}`) {
       const named = updated.output.trim().split('\n').filter((line) => /failed|invalid|refus|unknown|Unrecognized|error/i.test(line)).slice(-6).join('\n')
@@ -127,6 +130,19 @@ async function rehearse(scratch) {
     }
     if (!updated.output.includes(`the install checks of ${next.slice(0, 12)} passed`)) throw new Failed('the update kept the new release but its afterInstall Verdict did not pass (no "install checks ... passed" line)')
     log(`ok: current is ${next.slice(0, 12)} and its afterInstall checks passed`)
+
+    // Item revert-1: the way back. The new release's `system update --to` (cli follows `current`) switches to the previous release
+    // through the same drain and afterInstall check; the supervisor starts the old code again.
+    log(`reverting to the previous release ${old.slice(0, 12)} with \`system update --to\``)
+    const reverted = await updateTo(old)
+    const back = (() => { try { return readlinkSync(join(install, 'current')) } catch { return undefined } })()
+    if (reverted.code !== 0 || back !== `releases/${old}`) {
+      const named = reverted.output.trim().split('\n').filter((line) => /failed|invalid|refus|unknown|not in|error/i.test(line)).slice(-6).join('\n')
+      throw new Failed(`\`system update --to ${old.slice(0, 12)}\` exited ${reverted.code} with current ${back ?? 'unset'} (wanted releases/${old}):\n${named || reverted.output.trim().split('\n').slice(-6).join('\n')}`)
+    }
+    const hadChecks = /^afterInstall:/m.test(git('show', `${old}:.system/checks.yaml`))
+    if (hadChecks && !reverted.output.includes(`the install checks of ${old.slice(0, 12)} passed`)) throw new Failed('the revert switched to the previous release but its afterInstall Verdict did not pass (no "install checks ... passed" line)')
+    log(`ok: reverted to ${old.slice(0, 12)}${hadChecks ? ' and its afterInstall checks passed' : ''}`)
   } finally {
     await host.stop()
   }
