@@ -151,3 +151,32 @@ test('work report --since with a date that has no zone says the UTC instant it u
   assert.equal(zoned.err, '')
   assert.deepEqual(seen[0], { since: '2026-11-18' })
 })
+
+const heldRecord = (id: string) => record(id, 'held', { awaiting: 'ship', reason: 'ship awaits operator approval: gate', steps: { ship: { outputs: {} } }, effects: {} })
+
+test('work show of a held Work prints the decision above the record JSON', async () => {
+  const result = await system(['work', 'show', 'work:h'], fakeHost({ 'work.show': ({ workId }) => heldRecord(workId) }))
+  assert.match(result.out, /^Decision needed\n/)
+  assert.match(result.out, /system approve work:h/)
+  assert.match(result.out, /system work retry work:h --step ship/)
+  assert.ok(result.out.indexOf('Decision needed') < result.out.indexOf('"events"'))
+})
+
+test('work show of a Work that is not held prints only the record JSON', async () => {
+  const result = await system(['work', 'show', 'work:r'], fakeHost({ 'work.show': ({ workId }) => record(workId, 'running') }))
+  assert.doesNotMatch(result.out, /Decision needed/)
+  assert.doesNotThrow(() => JSON.parse(result.out))
+})
+
+test('approve prints the decision before asking for the typed confirmation', async () => {
+  let printedBeforePrompt = ''
+  let out = ''
+  const host = fakeHost({ 'work.show': ({ workId }) => heldRecord(workId) }, { decide: async () => ({ state: { status: 'succeeded' } }) as any })
+  const io = { out: (t: string) => { out += t }, err() {}, confirmHuman: async () => { printedBeforePrompt = out; return 'tan' } } as any
+  let run: Run | undefined
+  const program = buildProgram(host, io, (r) => { run = r })
+  program.exitOverride()
+  await program.parseAsync(['node', 'system', 'approve', 'work:h'])
+  await run!()
+  assert.match(printedBeforePrompt, /Decision needed[\s\S]*system deny work:h/)
+})

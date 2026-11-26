@@ -53,6 +53,7 @@ export * from './later-pass.ts'
 export { defaultChange } from './failure-class.ts'
 export * from './summary.ts'
 export * from './outside.ts'
+export * from './hold.ts'
 export * from './workflow.ts'
 /** The zod the Work schemas are built with, for the packages that validate the same shapes. */
 export { z } from 'zod'

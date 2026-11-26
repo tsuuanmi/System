@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, type WorkRecord } from '@system/work'
+import { TERMINAL, holdDecision, type WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/agents'
 import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '../../host/lib/index.js'
 import { operations, type Services } from '../../host/lib/operations.js'
@@ -198,6 +198,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         const record = await host.call('work.show', { workId })
         if (!record) throw new Error(`no Work ${workId}`)
         io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
+        io.out(holdDecision(record) ?? '')
         records.push(record)
       }
       const verb = decision === 'approved' ? 'approve' : 'deny'
@@ -522,11 +523,12 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('show <workId>')
-    .description('print the Work record (events and state) as JSON')
+    .description('print the Work record (events and state) as JSON; a held Work first states its decision: the step, reason, options and the command for each')
     .action((workId: string) => {
       select(async () => {
         const record = await host.call('work.show', { workId })
         if (!record) throw new Error(`no Work ${workId}`)
+        io.out(holdDecision(record) ?? '')
         io.out(`${JSON.stringify(record, null, 2)}\n`)
         return 0
       })
