@@ -113,11 +113,11 @@ afterInstall:
       printf '%s\n' "$out" | grep -Eq '^ +host +answering:'
     timeoutSeconds: 60
   - name: workers
-    # At least one Worker (an account line at column 0, after the `registered:` line), and each is followed by an `abilities:` line.
+    # At least one Worker (an account line at column 0, after the `registered:` line; the `room:` line, which ends the output, is not an account), and each is followed by an `abilities:` line.
     run: |
       out=$(system workers) || exit 1
       printf '%s\n' "$out"
-      printf '%s\n' "$out" | awk '/^registered:/ { next } /^[^ ]/ { n++; if (n > 1 && !a) bad = 1; a = 0; next } /^  abilities:/ { a = 1 } END { if (n < 1 || bad || !a) exit 1 }'
+      printf '%s\n' "$out" | awk '/^(registered|room):/ { next } /^[^ ]/ { n++; if (n > 1 && !a) bad = 1; a = 0; next } /^  abilities:/ { a = 1 } END { if (n < 1 || bad || !a) exit 1 }'
     timeoutSeconds: 60
   - name: status
     # The install's repository fetches only main, so refresh dev first. A note about the ref read (`note: read <ref> ...`, its age) is fine; any other `note:` line reports a problem.
