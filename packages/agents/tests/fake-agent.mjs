@@ -111,9 +111,11 @@ if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Obje
 if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : agy ? 'agy' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {
-  const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)
-  const context = prompt.split('\n').find((line) => line.startsWith('Context ('))
-  return [`# ${slot} by ${codex ? 'codex' : 'claude'}`, ...(context ? [context] : []), ...read].join('\n')
+  const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)(?: \(artifact [^)]*\))?$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)
+  const lines = prompt.split('\n')
+  const at = lines.findIndex((line) => line.startsWith('Context ('))
+  const context = at < 0 ? [] : lines.slice(at, at + lines.slice(at).indexOf(''))
+  return [`# ${slot} by ${codex ? 'codex' : 'claude'}`, ...context, ...read].join('\n')
 }
 const QUOTE = 'System verifies citations exactly'
 const cited = /FAKE:cite=(\S+)/.exec(prompt)?.[1]
