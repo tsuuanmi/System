@@ -2,6 +2,7 @@
  * How each agent CLI is invoked headless and how its output is read
  * (ADR-0004 decision 6, ADR-0005). Pure functions; spawning is the adapter's.
  */
+import type { ExecutorRecord } from '@system/work'
 import { nodeBin } from './node.ts'
 import type { Workspace } from './workspace.ts'
 
@@ -18,10 +19,15 @@ export const RUNTIME_ABILITIES = {
   web: ['web.search', 'web.browse'],
 } as const satisfies Record<Runtime | 'web', readonly string[]>
 
+/** What an Invocation bounds the Worker to, recorded on the attempt. */
+export type Scope = NonNullable<ExecutorRecord['scope']>
+
 export interface Invocation {
   argv: string[]
   /** Exactly the variables the agent may see; everything else is removed. */
   env: Record<string, string>
+  /** The tool scope the argv and staged settings give, computed from the same values. */
+  scope: Scope
 }
 
 export interface Parsed {

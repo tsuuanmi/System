@@ -1,4 +1,5 @@
 /** The Antigravity Runtime (`agy`): how its CLI is invoked, staged, read and measured (Item ag-2, RES-0015). */
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { AttemptSummary, Progress } from '@system/work'
@@ -17,6 +18,8 @@ const TOKEN = 'antigravity-oauth-token'
  */
 const SETTINGS = `${JSON.stringify({ permissions: { allow: ['command(*)'], deny: ['command(git push)', 'command(gh)'] } }, null, 2)}\n`
 
+const MODE = 'accept-edits'
+
 /**
  * `cwd` is the checkout (agy has no cwd flag) and HOME the Account's, which the staged env sets; `--mode auto` is refused for these Accounts, so
  * `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed (baseEnv has none), so the token is read from a file.
@@ -24,8 +27,10 @@ const SETTINGS = `${JSON.stringify({ permissions: { allow: ['command(*)'], deny:
 function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
   return {
-    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', 'accept-edits', '--sandbox', '--add-dir', ws.inputs, '--add-dir', ws.outputs],
+    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', MODE, '--sandbox', '--add-dir', ws.inputs, '--add-dir', ws.outputs],
     env: { ...baseEnv(ws), ...env },
+    // The settings bytes `writeSettings` stages are SETTINGS.
+    scope: { permissionMode: MODE, sandbox: true, settingsSha256: createHash('sha256').update(SETTINGS).digest('hex') },
   }
 }
 

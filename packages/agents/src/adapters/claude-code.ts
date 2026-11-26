@@ -1,4 +1,5 @@
 /** The Claude Code Runtime: how its CLI is invoked, staged, read and measured (ADR-0004 decision 6, ADR-0005). */
+import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -16,17 +17,21 @@ import type { CliAdapter, InvocationInput } from './types.ts'
  * context at every wake.
  */
 function invocation({ command, ws, prompt, model, codeWrite, env, sandbox, host }: InvocationInput): Invocation {
+  const allowed = ['Bash', 'WebSearch', 'WebFetch']
+  // Deny wins over allow: no Worker pushes or uses the GitHub CLI (ADR-0004 decision 10).
+  const denied = ['Bash(git push:*)', 'Bash(gh:*)', ...(codeWrite ? ['Monitor'] : [])]
+  const settings = sandbox ? JSON.stringify(sandboxSettings(ws, sandbox, host ?? realHost)) : undefined
   return {
     argv: [
       command, '-p', prompt, '--output-format', 'stream-json', '--verbose',
       ...(model ? ['--model', model] : []),
       '--permission-mode', 'acceptEdits',
       '--add-dir', ws.inputs, '--add-dir', ws.outputs,
-      '--allowedTools', 'Bash', 'WebSearch', 'WebFetch',
-      // Deny wins over allow: no Worker pushes or uses the GitHub CLI (ADR-0004 decision 10).
-      '--disallowedTools', 'Bash(git push:*)', 'Bash(gh:*)', ...(codeWrite ? ['Monitor'] : []),
-      ...(sandbox ? ['--settings', JSON.stringify(sandboxSettings(ws, sandbox, host ?? realHost))] : []),
+      '--allowedTools', ...allowed,
+      '--disallowedTools', ...denied,
+      ...(settings ? ['--settings', settings] : []),
     ],
+    scope: { permissionMode: 'acceptEdits', allowedTools: allowed, disallowedTools: denied, sandbox: Boolean(sandbox), ...(settings ? { settingsSha256: createHash('sha256').update(settings).digest('hex') } : {}) },
     env: { ...baseEnv(ws), ...env, ...(codeWrite ? { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' } : {}) },
   }
 }
