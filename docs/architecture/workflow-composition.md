@@ -76,7 +76,7 @@ full ID. The compiler's refusals (recursion, depth, a Sub-workflow with an accep
 steps once joined) are in `workflow.ts`. The resolved spec has no `uses` left, so the
 controller, replay, per-step retry, slots and budgets apply as written. 
 The CLI sends the used files it finds beside the using file; the Host reads the rest
-([runbook](../operations/runbook.md#using-system-from-an-agent)).
+([runbook](../operations/using-system.md#using-system-from-an-agent)).
 
 Preflight refuses, before any Worker runs: unknown fields, YAML duplicate keys,
 another schema version, duplicate steps, unknown or self dependencies, cycles
@@ -232,6 +232,12 @@ carry an optional `scope` describing the tool bounds the attempt ran with
 (permission mode, allowed and disallowed tools, sandbox mode, and the sha256
 of any staged settings bytes; never tokens or environment values). Records
 stored without `scope` parse and fold unchanged.
+
+**Structured final result (finish-1).** An `observed` event may carry an
+optional `finalResult` (`{ status: 'done' | 'blocked', reason }`) reported by
+Codex and Antigravity attempts. When `status` is `blocked`, the attempt fails
+with the Worker's own `reason` rather than "no change" or a missing output.
+Records stored without `finalResult` parse and fold unchanged.
 
 DAG support should emerge from `dependsOn` only. Do not require a
 DAG-specific user abstraction for a one-step task.

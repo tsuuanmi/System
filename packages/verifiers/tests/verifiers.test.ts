@@ -601,7 +601,20 @@ test('a failed check says in one line which check, which test and its first erro
   const failing = "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\ntest('adds', () => { assert.equal(1 + 1, 3) })\ntest('fine', () => {})\n"
   const result = await verdictOf('checks:\n  - name: unit\n    run: test ! -f adds.test.mjs || node --test adds.test.mjs\n', {}, { 'adds.test.mjs': failing })
   assert.equal(result.verdict, 'fail')
-  assert.equal(result.reason, 'failed: unit: adds.test.mjs "adds": Expected values to be strictly equal: 2 !== 3')
+  assert.equal(result.reason, 'failed: unit: adds.test.mjs "adds": Expected values to be strictly equal: 2 !== 3 (unit: the change broke it, the base passes)')
+})
+
+test('a failing verdict says per check whether the base fails it too or the change broke it (reopen-1)', async () => {
+  const { result } = await verifyChange('checks:\n  - name: broken\n    run: "false"\n  - name: value\n    run: test ! -f bad.txt\n', { 'bad.txt': 'x\n' })
+  assert.equal(result.verdict, 'fail', result.reason)
+  assert.match(result.reason, /\(broken: the base fails it too; value: the change broke it, the base passes\)$/)
+  assert.deepEqual(parseCheckFailure(result.reason), { check: 'broken' })
+})
+
+test('a check that is not a test run skips install noise in its reason line (reopen-1)', () => {
+  const noisy = 'Progress: resolved 120, reused 120, downloaded 0, added 0\nLockfile is up to date, resolution step is skipped\nsrc/a.ts:3 lint: no-unused-vars\nDone in 2.1s\n'
+  assert.equal(failureLine('', 'lint', 1, null, noisy), 'lint: src/a.ts:3 lint: no-unused-vars')
+  assert.equal(failureLine('', 'install', 1, null, 'Progress: resolved 1\n'), 'install: Progress: resolved 1')
 })
 
 test('a timed-out check names the test that was running', { timeout: 180_000 }, async () => {
@@ -772,7 +785,7 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   assert.deepEqual(run(['.system/checks.yaml']), all.filter((name) => name !== 'web'))
   assert.deepEqual(run(['bin/system']), all.filter((name) => name !== 'web' && name !== 'statusmd'))
   assert.deepEqual(run(['packages/bundle/src/index.ts']), all.filter((name) => main.includes(name) || name === 'install-guide'))
-  for (const file of ['docs/operations/runbook.md', 'tools/install.sh']) assert.deepEqual(run([file]), ['docs', 'install-guide'], file)
+  for (const file of ['docs/operations/install-and-update.md', 'tools/install.sh']) assert.deepEqual(run([file]), ['docs', 'install-guide'], file)
   for (const file of ['packages/work/src/controller.ts', 'workflows/code-checks.yaml', 'packages/host/src/host.ts', 'packages/app/src/update.ts', 'packages/verifiers/src/checks.ts']) assert.deepEqual(run([file]), withUpgrade(main), file)
   for (const file of ['tests/work.test.ts', 'docs/requirements/purpose.md']) assert.deepEqual(run([file]), main, file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).

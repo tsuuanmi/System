@@ -16,7 +16,7 @@ the optional web-worker row) becomes a System Worker
   says so. Name refs `<runtime>/<n>` (`claude-code/1`, `codex/1`,
   `web/chatgpt/1`), with `label` the name for people. A retired ref is never
   reused and records keep it; existing refs such as `claude-code/default` stay
-  valid. Renaming an Account: see the [runbook](../../docs/operations/runbook.md).
+  valid. Renaming an Account: see the [runbook](../../docs/operations/accounts-and-workers.md).
 
 ```yaml
 - id: agents

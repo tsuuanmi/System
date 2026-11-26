@@ -1,0 +1,4 @@
+{"event":"init","conversation_id":"00000000-0000-4000-8000-000000000002","init":{"model":"gemini-3.8-flash-low","cwd":"/work"}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-4000-8000-000000000002","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-4000-8000-000000000002","step_index":1,"state":"DONE","step_type":"agent_response","duration_seconds":1.1,"usage":{"input_tokens":900,"output_tokens":22,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":922}}}
+{"event":"result","result":{"conversation_id":"00000000-0000-4000-8000-000000000002","status":"SUCCESS","response":"{\"status\":\"blocked\",\"reason\":\"missing required context artifact\"}","duration_seconds":1.2,"num_turns":1,"usage":{"input_tokens":900,"output_tokens":22,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":922}}}

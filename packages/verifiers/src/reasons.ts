@@ -4,6 +4,8 @@
  */
 import { basename } from 'node:path'
 
+import { maskValues } from '@system/agents'
+
 export { nodeBin, satisfies } from '@system/agents'
 
 /** The file a test runner location names: `test at file:///a/b.test.ts:3:1` gives `b.test.ts`. */
@@ -52,8 +54,7 @@ const OWN_ERROR_MAX = 300
 
 /** The last non-empty lines of `text` that fit in `OWN_ERROR_MAX` characters, on one line, each `secrets` value masked. */
 export function lastLines(text: string, secrets: readonly string[] = []): string {
-  let clean = text
-  for (const secret of secrets) if (secret.length >= 3) clean = clean.split(secret).join('[redacted]')
+  const clean = maskValues(text, secrets)
   const lines = clean.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
   const picked: string[] = []
   let size = 0
@@ -70,6 +71,15 @@ export function lastLines(text: string, secrets: readonly string[] = []): string
   return picked.join(' | ')
 }
 
+/** Lines a package manager prints while installing (pnpm, npm): never the reason a check failed. */
+const INSTALL_NOISE = /^(Progress: |Lockfile is up to date|Already up to date|Scope: |Packages: |Downloading |Done in |[+-]{3,}$|dependencies:$|devDependencies:$|\+ \S+ \S+$|WARN |npm warn |added \d+ packages|up to date,)/
+
+/** `text` without install noise, unless nothing else is left (an `install` check's own output is then its reason). */
+const withoutNoise = (text: string): string => {
+  const kept = text.split('\n').filter((l) => !INSTALL_NOISE.test(l.trim()))
+  return kept.some((l) => l.trim()) ? kept.join('\n') : text
+}
+
 /**
  * Why a check that exited non-zero failed: its first failing test (`unit: a.test.ts "x": boom`, which rb-3 keys on), else
  * the last lines of its stderr (else stdout), else `name (exit N)`. `output` is stdout and stderr together, as the test runner prints.
@@ -78,6 +88,6 @@ export function failureLine(output: string, name: string, exitCode: number | nul
   const first = firstFailure(output)
   if (first) return `${name}: ${first}`
   const text = typeof own === 'string' ? own : own.stderr.trim() ? own.stderr : own.stdout
-  const last = lastLines(text, secrets)
+  const last = lastLines(withoutNoise(text), secrets)
   return last ? `${name}: ${last}` : `${name} (exit ${exitCode ?? signal})`
 }

@@ -19,7 +19,7 @@
 # One list for all of them, so `install` and `build` run whenever a later
 # check needs them. `'!**/*.md'` excludes Markdown (GitHub Actions' `!`: the last
 # matching pattern decides), so a README edit does not run the code checks; the
-# Charter comes after it, so it still does. `install-guide` keeps the runbook.
+# Charter comes after it, so it still does. `install-guide` keeps the install page.
 checks:
   - name: docs
     # Item dc-1: the covered-path impact check against the base the checks were pinned from (SYSTEM_CHECK_BASE, set by the verifier);
@@ -85,7 +85,7 @@ checks:
     # (Named `install-guide`: `install` is the dependency step the later checks reuse, packages/verifiers SETUP_CHECKS.)
     run: node --test --test-timeout=840000 tests/install-guide.test.ts
     timeoutSeconds: 900
-    paths: [bin/**, packages/bundle/**, docs/operations/runbook.md, tools/install.sh, tests/install-guide.test.ts, .system/checks.yaml]
+    paths: [bin/**, packages/bundle/**, docs/operations/install-and-update.md, tools/install.sh, tests/install-guide.test.ts, .system/checks.yaml]
   - name: web
     on: [pull_request, release]
     # The Website Worker's tests, which drive a real headed Chrome on Xvfb

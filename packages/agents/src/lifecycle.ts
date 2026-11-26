@@ -11,6 +11,7 @@
 import type { Artifacts } from '@system/artifacts'
 import type { PortCause, UsageObserved, WorkerRequest, WorkerResult } from '@system/work'
 import { boundLog } from './attempt-summary.ts'
+import { redactLog, redactString, redactValue } from './redact.ts'
 import { capture, cleanup, prepare, type Workspace } from './workspace.ts'
 
 /** The wall-clock limit of an attempt when neither the account nor the row sets one. */
@@ -38,6 +39,8 @@ export interface TurnOutcome {
   message?: string
   usage?: Omit<UsageObserved, 'state'>
   summary?: WorkerResult['summary']
+  /** finish-1: structured final result when the Runtime reports one. */
+  finalResult?: WorkerResult['finalResult']
   /** The outputs the turn stored itself; absent when the lifecycle captures `out/<slot>` files. */
   captured?: { outputs: Record<string, string>; missing: string[]; empty?: string[] }
   /** Extra partial outputs, kept whatever the status (and, alone, on success). */
@@ -67,6 +70,8 @@ export interface AttemptOptions {
   logMediaType?: string
   /** Inputs recorded on the Artifacts the lifecycle (and `ctx.put`) stores. */
   inputs?: string[]
+  /** Values masked wherever they appear in the log, the reason and the summary: the Account's own token (Item redact-1). */
+  secrets?: readonly (string | undefined)[]
   /** Runs once the result is known and before the log is read: end the Runtime's resources, record what it saw; returns more partial outputs. */
   settle?: (result: Omit<WorkerResult, 'executor' | 'log'>) => Promise<Record<string, string> | void>
   /** Runs last, before the workspace is cleaned, whatever happened. */
@@ -105,15 +110,18 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
     else if (stoppedFor) result = stopped(stoppedFor, 'failed')
     else if (timedOut) result = stopped(`attempt exceeded its time limit of ${limit} minutes`, 'failed')
     else {
-      const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
+      const common = { ...(outcome.summary ? { summary: outcome.summary } : {}), ...(outcome.finalResult ? { finalResult: outcome.finalResult } : {}), ...(outcome.usage ? { usage: outcome.usage } : {}) }
       if (outcome.failure !== undefined) result = { status: 'failed', outputs: {}, ...kept, reason: outcome.failure, ...(outcome.cause ? { cause: outcome.cause } : {}), ...common }
       else if (captured?.missing.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote no output ${noun} for ${captured.missing.join(', ')}`, retryable: true, ...common }
       else if (captured?.empty?.length) result = { status: 'failed', outputs: {}, ...kept, reason: `${o.ref} wrote an empty output ${noun}: ${captured.empty.map((slot) => `output ${slot} is empty`).join(', ')}`, retryable: true, ...common }
       else result = { status: 'succeeded', outputs: captured?.outputs ?? {}, ...(outcome.partial ? { partial: outcome.partial } : {}), ...(outcome.message ? { message: outcome.message } : {}), ...common }
     }
+    // Item redact-1: what is stored or recorded of the attempt carries no secret.
+    if (result.reason !== undefined) result.reason = redactString(result.reason, o.secrets)
+    if (result.summary) result.summary = redactValue(result.summary, o.secrets)
     const more = await o.settle?.(result)
     if (more) result.partial = { ...result.partial, ...more }
-    const log = await put(Buffer.from(boundLog(o.log())), o.logMediaType ?? 'application/x-ndjson')
+    const log = await put(Buffer.from(boundLog(redactLog(o.log(), o.secrets))), o.logMediaType ?? 'application/x-ndjson')
     return { ...result, log, executor: o.executor }
   } finally {
     clearTimeout(timer)

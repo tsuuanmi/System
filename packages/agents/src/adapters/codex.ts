@@ -1,30 +1,38 @@
 /** The Codex Runtime: how its CLI is invoked, staged, read and measured (ADR-0005). */
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { AttemptSummary, Progress } from '@system/work'
 import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { createQuotaCache, readCodexQuota } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
+import { applyFinalResult, FINAL_RESULT_SCHEMA } from './final-result.ts'
 import { SANDBOX_RUNTIME_ONLY } from './sandbox.ts'
 import { readCodexAccountId } from '../identity.ts'
-import type { CliAdapter, InvocationInput } from './types.ts'
+import type { CliAdapter, InvocationInput, ParseOptions } from './types.ts'
+
+const SCHEMA_FILE = 'final-result.schema.json'
+const RESULT_FILE = 'final-result.json'
 
 function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
   const mode = 'workspace-write'
+  const dir = ws.root ?? ws.work
   return {
     argv: [
       command, 'exec', '--json', '--ephemeral', '--ignore-user-config', '--skip-git-repo-check',
       ...(model ? ['-m', model] : []),
-      '-s', mode, '-C', ws.work, '--add-dir', ws.outputs, prompt,
+      '-s', mode, '-C', ws.work, '--add-dir', ws.outputs,
+      '--output-schema', join(dir, SCHEMA_FILE),
+      '-o', join(dir, RESULT_FILE),
+      prompt,
     ],
     env: { ...baseEnv(ws), ...env },
     scope: { sandbox: mode },
   }
 }
 
-function parse(stdout: string): Parsed {
+function parse(stdout: string, options?: ParseOptions): Parsed {
   let input = 0
   let cached = 0
   let output = 0
@@ -58,18 +66,19 @@ function parse(stdout: string): Parsed {
     if (event.type === 'turn.failed' || event.type === 'error') failure = event.error?.message ?? event.message ?? event.type
     if (event.type === 'item.completed' && event.item?.type === 'agent_message') message = event.item.text ?? message
   }
-  return {
-    ok: turns > 0 && failure === undefined,
-    message: failure ?? message,
-    usage: turns && counted
-      ? {
-          inputTokens: input,
-          ...(split ? { cacheReadTokens: cached } : {}),
-          outputTokens: output,
-          source: `codex turn.completed usage over ${turns} turn(s) (input_tokens includes cached_input_tokens)`,
-        }
-      : undefined,
-  }
+  const usage = turns && counted
+    ? {
+        inputTokens: input,
+        ...(split ? { cacheReadTokens: cached } : {}),
+        outputTokens: output,
+        source: `codex turn.completed usage over ${turns} turn(s) (input_tokens includes cached_input_tokens)`,
+      }
+    : undefined
+  const base: Parsed = { ok: turns > 0 && failure === undefined, message: failure ?? message, usage }
+  if (!base.ok || options?.structured === false) return base
+  const resultPath = options?.ws ? join(options.ws.root, RESULT_FILE) : undefined
+  const raw = resultPath ? (existsSync(resultPath) ? readFileSync(resultPath, 'utf8') : undefined) : (message || undefined)
+  return applyFinalResult(base, raw)
 }
 
 /** Progress as the stream grows (see Claude Code's): a turn is a `turn.completed`, the last tool the type of the last item completed. */
@@ -128,6 +137,7 @@ export const codex: CliAdapter = {
         mkdirSync(home, { mode: 0o700 })
         // A fresh CODEX_HOME per attempt holding only auth.json: no memories or history carry over (ADR-0005).
         copyFileSync(source, join(home, 'auth.json'))
+        writeFileSync(join(dir, SCHEMA_FILE), FINAL_RESULT_SCHEMA)
         const auth = { attempt: join(home, 'auth.json'), account: source, before: digest(source) }
         return { env: { CODEX_HOME: home }, finish: () => keepRefreshedAuth(auth) }
       },

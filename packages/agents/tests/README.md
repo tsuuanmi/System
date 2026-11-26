@@ -25,4 +25,4 @@ fractional windows in `unifiedWindows` for the ro-2 hook test. These tests use n
 
 [ask.test.ts](ask.test.ts) checks `ask` (cls-1): one tool-less turn on the economy model of an Account that is not excluded, through the same fake CLI; `FAKE:cause=<label>` makes the fake answer a Classifier question.
 
-[antigravity.test.ts](antigravity.test.ts) specifies the Antigravity Runtime from the real outputs in [fixtures/antigravity](fixtures/antigravity/README.md) (parse, limits, argv and env, the staged permission rules, the `/usage` reading) and runs two Accounts sharing one home at once with the fake agent (`--mode` makes it print `agy`'s events).
+[antigravity.test.ts](antigravity.test.ts) specifies the Antigravity Runtime from the real outputs in [fixtures/antigravity](fixtures/antigravity/README.md) (parse, limits, argv and env, the staged permission rules, the `/usage` reading) and runs two Accounts sharing one home at once with the fake agent (`--mode` makes it print `agy`'s events), plus `finish-1` structured-result outcomes from [fixtures/antigravity](fixtures/antigravity/README.md) and [fixtures/codex](fixtures/codex/README.md).

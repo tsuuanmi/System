@@ -25,21 +25,42 @@ const SETTINGS = { permissions: { allow: ['command(*)'], deny: ['command(git pus
 const ws = { root: '/ws', home: '/ws/home', inputs: '/ws/in', outputs: '/ws/out', work: '/ws/work' } as never
 const account = (extra: Partial<Account> = {}): Account => ({ ref: 'antigravity/a1', runtime: 'antigravity', capabilities: ['repo.write'], command: fake, version: async () => 'fake', ...extra })
 
-test('parse: a plain answer is ok with its message and the token counts of its one turn', () => {
-  const parsed = adapter.parse(fixture('stream-ok.jsonl'))
+const EXPECTED_SCHEMA = {
+  type: 'object',
+  properties: {
+    status: { type: 'string', enum: ['done', 'blocked'] },
+    reason: { type: 'string' },
+  },
+  required: ['status', 'reason'],
+  additionalProperties: false,
+}
+
+test('parse: a structured done result is ok with its reason and the token counts of its turn', () => {
+  const parsed = adapter.parse(fixture('stream-done.jsonl'))
   assert.equal(parsed.ok, true)
-  assert.equal(parsed.message.trim(), 'OK')
-  assert.equal(parsed.usage?.inputTokens, 10400)
-  assert.equal(parsed.usage?.outputTokens, 1)
-  assert.equal(parsed.usage?.cacheReadTokens, 0)
+  assert.equal(parsed.message, 'implemented the change')
+  assert.deepEqual(parsed.finalResult, { status: 'done', reason: 'implemented the change' })
+  assert.equal(parsed.usage?.inputTokens, 1400)
+  assert.equal(parsed.usage?.outputTokens, 18)
+  assert.equal(parsed.usage?.cacheReadTokens, 200)
   assert.match(parsed.usage!.source, /antigravity/)
 })
 
-test('parse: a tool that ends in ERROR (git push denied by a rule) does not fail the attempt by itself', () => {
-  const parsed = adapter.parse(fixture('stream-tools-sandbox-deny.jsonl'))
-  assert.equal(parsed.ok, true)
-  assert.match(parsed.message, /Permission denied/)
-  assert.ok(parsed.usage && parsed.usage.inputTokens > 0)
+test('parse: a structured blocked result fails with the Worker own reason and keeps finalResult', () => {
+  const parsed = adapter.parse(fixture('stream-blocked.jsonl'))
+  assert.equal(parsed.ok, false)
+  assert.equal(parsed.message, 'missing required context artifact')
+  assert.deepEqual(parsed.finalResult, { status: 'blocked', reason: 'missing required context artifact' })
+  assert.equal(parsed.usage?.inputTokens, 900)
+})
+
+test('parse: a SUCCESS result without the structured final result fails naming it, while keeping usage', () => {
+  for (const name of ['stream-ok.jsonl', 'stream-tools-sandbox-deny.jsonl']) {
+    const parsed = adapter.parse(fixture(name))
+    assert.equal(parsed.ok, false)
+    assert.match(parsed.message, /structured final result/i)
+    assert.ok(parsed.usage && parsed.usage.inputTokens > 0)
+  }
 })
 
 test('parse: a run that ended with denied actions and no response fails naming them, not as an empty success', () => {
@@ -49,11 +70,12 @@ test('parse: a run that ended with denied actions and no response fails naming t
   assert.match(parsed.message, /headless/)
 })
 
-test('parse: denied actions with a response are only noted, the run stays ok', () => {
-  const line = JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'done', denied_actions: [{ action: 'read_file' }] } })
+test('parse: denied actions with a structured done response are only noted, the run stays ok', () => {
+  const line = JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: JSON.stringify({ status: 'done', reason: 'done' }), denied_actions: [{ action: 'read_file' }] } })
   const parsed = adapter.parse(line)
   assert.equal(parsed.ok, true)
   assert.equal(parsed.message, 'done')
+  assert.deepEqual(parsed.finalResult, { status: 'done', reason: 'done' })
 })
 
 test('parse: an ERROR result fails with its text; a quota or 429 error is one the controller records as limited, with its reset', () => {
@@ -70,9 +92,12 @@ test('parse: an ERROR result fails with its text; a quota or 429 error is one th
   assert.equal(adapter.parse('not json').ok, false)
 })
 
-test('the argv is accept-edits in the sandbox, adds the inputs and outputs directories, and never skips permissions', () => {
+test('the argv is accept-edits in the sandbox, adds the inputs and outputs directories, passes --json-schema, and never skips permissions', () => {
   const { argv, env } = adapter.invocation({ command: 'agy', ws, prompt: 'do it', model: 'gemini-3.8-flash-low', codeWrite: true, env: { HOME: '/homes/a1' } })
-  assert.deepEqual(argv, ['agy', '-p', 'do it', '--output-format', 'stream-json', '--model', 'gemini-3.8-flash-low', '--mode', 'accept-edits', '--sandbox', '--add-dir', '/ws/in', '--add-dir', '/ws/out'])
+  const schemaIndex = argv.indexOf('--json-schema')
+  assert.ok(schemaIndex >= 0, 'passes --json-schema')
+  assert.deepEqual(JSON.parse(argv[schemaIndex + 1]!), EXPECTED_SCHEMA)
+  assert.deepEqual(argv.slice(0, schemaIndex), ['agy', '-p', 'do it', '--output-format', 'stream-json', '--model', 'gemini-3.8-flash-low', '--mode', 'accept-edits', '--sandbox', '--add-dir', '/ws/in', '--add-dir', '/ws/out'])
   assert.equal(argv.includes('--dangerously-skip-permissions'), false)
   assert.equal(argv.includes('auto'), false)
   assert.equal(env.HOME, '/homes/a1')
@@ -168,6 +193,7 @@ test('the argv of a real attempt: env has HOME = the Account home and no DBUS_SE
     const results = await Promise.all(workers.map((w) => w.run(request())))
     for (const result of results) {
       assert.equal(result.status, 'succeeded', result.reason)
+      assert.deepEqual(result.finalResult, { status: 'done', reason: 'done' })
       assert.deepEqual(result.usage, { inputTokens: 140, cacheReadTokens: 40, outputTokens: 7, source: result.usage!.source })
       const commit = (artifacts.get(result.outputs.change!) as { envelope: { content: { commit: string } } }).envelope.content.commit
       const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${commit}:ENV.json`], { encoding: 'utf8' })) as { home: string; dbus?: string; keys: string[]; model: string }
@@ -179,4 +205,17 @@ test('the argv of a real attempt: env has HOME = the Account home and no DBUS_SE
   } finally {
     delete process.env.DBUS_SESSION_BUS_ADDRESS
   }
+})
+
+test('antigravity blocked result fails the attempt with the Worker own reason (never no-change or missing output) and keeps finalResult', async () => {
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema })
+  const producer = { type: 'operator' as const, ref: 'tester' }
+  const task = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'FAKE:blocked=missing context artifact ID' }, classification: 'local-private', producer })).id
+  const request: WorkerRequest = { workId: 'work:test', attemptId: 'attempt:agy-blocked', stepId: 'implement', capabilities: [], inputs: { task }, outputs: ['report'], signal: new AbortController().signal }
+  const home = join(root, 'blocked-agy-home')
+  const result = await agentWorker(account({ agyHome: home }), artifacts, processSpawner, join(root, 'attempts-blocked')).run(request)
+  assert.equal(result.status, 'failed')
+  assert.match(result.reason!, /missing context artifact ID/)
+  assert.equal(/no change|wrote no output/i.test(result.reason!), false)
+  assert.deepEqual(result.finalResult, { status: 'blocked', reason: 'missing context artifact ID' })
 })

@@ -18,6 +18,8 @@
 //   FAKE:turns    (claude, stream-json) first print two assistant messages that use tools, as progress
 //   FAKE:background=FILE  (claude) start a background job (its pid in FILE), unless background tasks are disabled and Monitor is disallowed
 //   FAKE:fail     report an error
+//   FAKE:blocked=REASON  (codex, agy) end with structured result { status: 'blocked', reason: REASON }
+//   FAKE:no-result       (codex, agy) omit the structured final result
 //   FAKE:cause=LABEL  (cls-1) with FAKE:fail, the error message carries this marker; a Classifier question (a prompt that says "Reply with only a JSON object") that quotes it is answered {"label":"LABEL"}
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
@@ -45,16 +47,20 @@ const flag = codex ? '-m' : '--model'
 const model = args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined
 
 const cause = /FAKE:cause=(\S+)/.exec(prompt)?.[1]
+const blockedReason = /FAKE:blocked=([^\n]+)/.exec(prompt)?.[1]
 
 function finish(ok, message) {
+  const structured = !has('no-result') && (agy ? args.includes('--json-schema') : codex ? args.includes('-o') : false)
+  const payload = structured ? JSON.stringify({ status: blockedReason ? 'blocked' : 'done', reason: blockedReason ?? message }) : message
   if (agy) {
     console.log(JSON.stringify({ event: 'init', init: { model, cwd: process.cwd() } }))
     const usage = { input_tokens: 100, output_tokens: 7, thinking_tokens: 0, cache_read_tokens: 40, total_tokens: 107 }
-    console.log(JSON.stringify({ event: 'result', result: ok ? { status: 'SUCCESS', response: message, num_turns: 1, usage } : { status: 'ERROR', error: message } }))
+    console.log(JSON.stringify({ event: 'result', result: ok ? { status: 'SUCCESS', response: payload, num_turns: 1, usage } : { status: 'ERROR', error: message } }))
   } else if (codex) {
     console.log(JSON.stringify({ type: 'thread.started' }))
     if (ok) {
-      console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: message } }))
+      if (structured && args.includes('-o')) writeFileSync(args[args.indexOf('-o') + 1], payload)
+      console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: payload } }))
       console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 7 } }))
     } else {
       console.log(JSON.stringify({ type: 'turn.failed', error: { message } }))
@@ -111,9 +117,11 @@ if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Obje
 if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : agy ? 'agy' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {
-  const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)
-  const context = prompt.split('\n').find((line) => line.startsWith('Context ('))
-  return [`# ${slot} by ${codex ? 'codex' : 'claude'}`, ...(context ? [context] : []), ...read].join('\n')
+  const read = [...prompt.matchAll(/^- ([a-z][a-z0-9-]*): (\/\S+)(?: \(artifact [^)]*\))?$/gm)].map(([, name, path]) => `## ${name}\n${readFileSync(path, 'utf8')}`)
+  const lines = prompt.split('\n')
+  const at = lines.findIndex((line) => line.startsWith('Context ('))
+  const context = at < 0 ? [] : lines.slice(at, at + lines.slice(at).indexOf(''))
+  return [`# ${slot} by ${codex ? 'codex' : 'claude'}`, ...context, ...read].join('\n')
 }
 const QUOTE = 'System verifies citations exactly'
 const cited = /FAKE:cite=(\S+)/.exec(prompt)?.[1]

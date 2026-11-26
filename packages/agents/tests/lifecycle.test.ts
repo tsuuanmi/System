@@ -155,3 +155,50 @@ test('an empty or whitespace-only declared output fails the attempt, naming it; 
   const padded = await run(request(['report']), async (ctx) => { writeFileSync(join(ctx.ws.outputs, 'report'), '  x \n'); return {} })
   assert.equal(padded.result.status, 'succeeded')
 })
+
+// Item redact-1 (RES-0016): no secret reaches a stored Artifact from an attempt.
+const TOKEN = 'sk-ant-oat01-' + 'A1b2C3d4E5f6G7h8I9j0'.repeat(3)
+const stored = async (r: Awaited<ReturnType<typeof run>>) => Buffer.from(await r.artifacts.readBytes(r.result.log!)).toString()
+const envEvent = (content: string) => JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content }] } })
+
+test('a stream-json log whose tool output prints an environment with a token is stored without it', async () => {
+  const log = `${envEvent(`HOME=/home/a\nCLAUDE_CODE_OAUTH_TOKEN=${TOKEN}\nPATH=/usr/bin`)}\n${JSON.stringify({ type: 'result', result: `leaked ${TOKEN}` })}\n`
+  const r = await run(request([]), async () => ({}), { log: () => log })
+  const text = await stored(r)
+  assert.ok(!text.includes(TOKEN), text)
+  assert.ok(!text.includes('A1b2C3d4E5f6'), text)
+  for (const line of text.trim().split('\n')) JSON.parse(line)
+})
+
+test('the Account token is masked by value, in the log, the failure reason and the summary', async () => {
+  const secret = 'plain-account-secret-value'
+  const r = await run(request([]), async () => ({ failure: `exit 1: bad ${secret}`, summary: { runtime: 'claude-code', toolCalls: {}, filesRead: [`/x/${secret}`], filesEdited: [], longest: [], toolSeconds: 0, toolShare: 0, durationMs: 1, numTurns: 1 } as never }), { log: () => `echo ${secret}\n`, secrets: [secret] })
+  assert.ok(!(await stored(r)).includes(secret))
+  assert.ok(!r.result.reason!.includes(secret), r.result.reason)
+  assert.ok(!JSON.stringify(r.result.summary).includes(secret))
+  assert.match(r.result.reason!, /^exit 1: bad /)
+})
+
+test('a token cut by the log bound is still masked', async () => {
+  const filler = 'x'.repeat(100)
+  const line = (n: number) => `${filler} ${n}\n`
+  let text = ''
+  for (let i = 0; text.length < MAX_LOG_BYTES * 2; i++) text += line(i)
+  // Put the token where the bound's tail starts, and one where its cut is.
+  const at = text.length - Math.floor(MAX_LOG_BYTES / 2)
+  const log = `${text.slice(0, at)}ANTHROPIC_API_KEY=${TOKEN} trailing${text.slice(at)}`
+  const r = await run(request([]), async () => ({}), { log: () => log })
+  const out = await stored(r)
+  assert.ok(out.includes('bytes cut by System'))
+  assert.ok(!out.includes('A1b2C3d4E5f6'))
+  const plain = 'ACCOUNT-SECRET-123'
+  const cut = await run(request([]), async () => ({}), { log: () => `${plain}\n${text}${plain}`, secrets: [plain] })
+  assert.ok(!(await stored(cut)).includes(plain))
+})
+
+test('a non-secret line is unchanged', async () => {
+  const log = `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'I read packages/a.ts and ran the tests; tokens used: 12' }] }, usage: { input_tokens: 5 } })}\nplain text line, see https://example.com/a/b\n`
+  const r = await run(request([]), async () => ({ failure: 'exit 1: boom' }), { log: () => log })
+  assert.equal(await stored(r), log)
+  assert.equal(r.result.reason, 'exit 1: boom')
+})

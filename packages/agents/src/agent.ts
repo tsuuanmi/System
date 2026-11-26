@@ -192,7 +192,9 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
   const pre = await adapter.preflight(account)
   if ('failed' in pre) return { status: 'failed', outputs: {}, reason: pre.failed, executor }
   let stdout = () => ''
+  const secrets = [await account.token?.()]
   return runAttempt({
+    secrets,
     artifacts, ref: account.ref, executor, request, dir: join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')),
     timeoutMinutes: account.attemptTimeoutMinutes, cancelReason: 'cancelled; the agent was stopped',
     log: () => stdout(),
@@ -231,15 +233,16 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       // Even a rejected or stopped attempt tells the truth about quota.
       const events = adapter.rateLimitEvents?.(out)
       if (events?.length && account.onRateLimit) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
-      const parsed = adapter.parse(out)
+      const parsed = adapter.parse(out, { ws })
       staged.finish()
       if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
       const summary = adapter.summarize(out)
+      const finalResult = parsed.finalResult ? { finalResult: parsed.finalResult } : {}
       if (done.exitCode !== 0 || !parsed.ok) {
         const why = done.signal ? `signal ${done.signal}` : `exit ${done.exitCode}`
-        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, summary, usage: parsed.usage }
+        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...finalResult, summary, usage: parsed.usage }
       }
-      return { ...(parsed.message ? { message: parsed.message } : {}), summary, usage: parsed.usage }
+      return { ...(parsed.message ? { message: parsed.message } : {}), ...finalResult, summary, usage: parsed.usage }
     },
   })
 }

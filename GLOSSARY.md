@@ -68,6 +68,13 @@ _Avoid_: persona, agent type
 
 ### Running and directing work
 
+**Authority**:
+Who may call an operation: the Operator at a terminal (approve, deny, verify
+again, release), a caller session (submit, claim, store an Intent), or a
+Worker (no Host operation: it only writes its outputs). Declared once for
+each operation.
+_Avoid_: permission, role (a Role is a Workflow capability), scope
+
 **Operator**:
 The one person a System install works for: they own its profile and
 repositories, write Items, approve, deny and release. They may run System on
