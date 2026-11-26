@@ -1,6 +1,6 @@
 /**
  * `system mcp`: a stdio MCP server that
- * is a client of the Host. Its tools are the rows flagged `agent: true` of the
+ * is a client of the Host. Its tools are the rows with `authority: 'caller'` of the
  * operation table of the code the Host runs (rebuilt when the process recovers
  * on newer code, with `notifications/tools/list_changed`), with the row's zod params as JSON Schema and
  * its summary as the description; each call is forwarded over the socket. A call
@@ -26,8 +26,8 @@ import { readWorkflowFile, repeatable, rowsOf, withCommandId, type Row } from '.
 /** What a code root offers `system mcp`: its operation table builder. */
 export interface Code { operations: (services: Services) => Methods; tableOf: typeof tableOf }
 
-/** The MCP tools of a code's table, for its shapes only (no handler runs here): one per row flagged `agent: true`. */
-export const toolsOf = ({ operations, tableOf }: Code) => Object.entries(tableOf(operations({} as Services))).filter(([, row]) => row.agent).map(([name, row]) => ({
+/** The MCP tools of a code's table, for its shapes only (no handler runs here): one per row with `authority: 'caller'`. */
+export const toolsOf = ({ operations, tableOf }: Code) => Object.entries(tableOf(operations({} as Services))).filter(([, row]) => row.authority === 'caller').map(([name, row]) => ({
   name,
   description: row.summary,
   inputSchema: z.toJSONSchema(row.params ?? z.object({}).strict(), { io: 'input' }) as { type: 'object'; [key: string]: unknown },

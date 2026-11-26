@@ -143,10 +143,12 @@ test('the instructions and the work.submit description agree on paths and conten
   assert.match(instructions, /contents/)
 })
 
-test('the tools are exactly the rows flagged agent: true, with their schemas and descriptions', { timeout: 120_000 }, async () => {
+test('the tools are exactly the rows with authority: caller; every operator operation is absent and refused over MCP', { timeout: 120_000 }, async () => {
   const client = await mcp()
   const { tools } = await client.listTools()
-  const open = Object.entries(table).filter(([, method]) => method.agent)
+  const open = Object.entries(table).filter(([, method]) => method.authority === 'caller')
+  const operators = Object.entries(table).filter(([, method]) => method.authority === 'operator')
+  assert.ok(operators.length > 0, 'the table has operator operations')
   assert.deepEqual(tools.map((t) => t.name).sort(), open.map(([name]) => name).sort())
   for (const tool of tools) {
     assert.equal(tool.description, table[tool.name]!.summary)
@@ -156,7 +158,29 @@ test('the tools are exactly the rows flagged agent: true, with their schemas and
   assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}).sort(), ['capabilities', 'commandId', 'force', 'input', 'run', 'uses', 'worker', 'workflow'])
   const claim = tools.find((t) => t.name === 'item.claim')!
   assert.ok(Object.hasOwn(claim.inputSchema.properties ?? {}, 'commandId'))
-  for (const closed of ['approval.decide', 'credentials.set', 'workers.login']) assert.ok(!tools.some((t) => t.name === closed), `${closed} is listed`)
+  for (const [closed] of operators) {
+    assert.ok(!tools.some((t) => t.name === closed), `${closed} must not be listed as an MCP tool`)
+    const refused = await call(client, closed, {})
+    assert.equal(typeof refused.error, 'string', `${closed} must be refused over MCP`)
+    assert.match(refused.error!, /unknown tool/)
+  }
+})
+
+test('toolsOf derives from the operation table so a new operator or worker operation never appears as an MCP tool', async () => {
+  const { toolsOf } = await import('../src/mcp.ts')
+  const derived = toolsOf({
+    tableOf,
+    operations: (s) => ({
+      ...operations(s),
+      'test.operatorOnly': { authority: 'operator', summary: 'human only', handler: () => null },
+      'test.workerOnly': { authority: 'worker', summary: 'worker only', handler: () => null },
+      'test.callerOpen': { authority: 'caller', summary: 'caller ok', handler: () => null },
+    }),
+  })
+  const names = derived.map((t) => t.name)
+  assert.ok(names.includes('test.callerOpen'))
+  assert.ok(!names.includes('test.operatorOnly'))
+  assert.ok(!names.includes('test.workerOnly'))
 })
 
 test('item_claim accepts commandId through MCP and status reports the claim', { timeout: 120_000 }, async () => {
@@ -357,7 +381,7 @@ test('an MCP session refreshes its tools and notifies after recovering on newer 
   mkdirSync(lib, { recursive: true })
   const realIndex = new URL('../../host/lib/index.js', import.meta.url).href
   const realOperations = new URL('../../host/lib/operations.js', import.meta.url).href
-  const extra = "'test.ping': { agent: true, summary: 'ping', params: undefined, handler: () => 'pong' }"
+  const extra = "'test.ping': { authority: 'caller', summary: 'ping', params: undefined, handler: () => 'pong' }"
   writeFileSync(join(lib, 'index.js'), `export * from '${realIndex}'\nexport const VERSION = 'newer-code'\n`)
   writeFileSync(join(lib, 'operations.js'), `import { operations as real } from '${realOperations}'\nexport const operations = (s) => ({ ...real(s), ${extra} })\n`)
   mkdirSync(join(dir, 'system'))
@@ -367,7 +391,7 @@ test('an MCP session refreshes its tools and notifies after recovering on newer 
   const methods = operations({ capabilities: f.capabilities, artifact: (id: string) => artifacts.get(id) } as Services)
   const server = await serve(host, {
     path: join(dir, 'system', 'host.sock'),
-    methods: { ...methods, 'test.ping': { agent: true, summary: 'ping', params: undefined, handler: () => 'pong' } },
+    methods: { ...methods, 'test.ping': { authority: 'caller', summary: 'ping', params: undefined, handler: () => 'pong' } },
     version: 'newer-code',
     onDisk: () => 'newer-code',
   })

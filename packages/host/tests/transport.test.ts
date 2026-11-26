@@ -180,8 +180,8 @@ test('two calls are answered out of order and matched by id', async () => {
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
   const { path } = await served({
-    slow: { agent: true, handler: async () => { await gate; return 'slow' } },
-    fast: { agent: true, handler: async () => { release(); return 'fast' } },
+    slow: { authority: 'caller', handler: async () => { await gate; return 'slow' } },
+    fast: { authority: 'caller', handler: async () => { release(); return 'fast' } },
   })
   const client = await connect(path)
   await client.call('host.hello', { version: VERSION, caller: human })
@@ -194,7 +194,7 @@ test('two calls are answered out of order and matched by id', async () => {
 })
 
 test('the caller of the connection reaches the handler', async () => {
-  const { path } = await served({ who: { agent: true, handler: async (_host, _params, caller) => caller } })
+  const { path } = await served({ who: { authority: 'caller', handler: async (_host, _params, caller) => caller } })
   const client = await connect(path)
   await client.call('host.hello', { version: VERSION, caller: { type: 'agent', operatorId: 'a1' } })
   assert.deepEqual(await client.call('who'), { type: 'agent', operatorId: 'a1' })
@@ -221,7 +221,7 @@ test('close lets an admitted call finish, then drops an idle client without wait
   const slow = new Promise<void>((resolve) => { release = resolve })
   let admitted!: () => void
   const running = new Promise<void>((resolve) => { admitted = resolve })
-  const { path, server } = await served({ 'test.slow': { agent: true, handler: async () => { admitted(); await slow; return 'done' } } })
+  const { path, server } = await served({ 'test.slow': { authority: 'caller', handler: async () => { admitted(); await slow; return 'done' } } })
   const busy = await connect(path)
   const idle = await connect(path)
   await busy.call('host.hello', { version: VERSION, caller: human })
@@ -239,7 +239,7 @@ test('close lets an admitted call finish, then drops an idle client without wait
 })
 
 test('close stops waiting for a call that outlasts the grace, and its client sees the connection close', async () => {
-  const { path, server } = await served({ 'test.stuck': { agent: true, handler: () => new Promise(() => {}) } }, undefined, 100)
+  const { path, server } = await served({ 'test.stuck': { authority: 'caller', handler: () => new Promise(() => {}) } }, undefined, 100)
   const client = await connect(path)
   await client.call('host.hello', { version: VERSION, caller: human })
   const stuck = assert.rejects(client.call('test.stuck'), NotRunning)

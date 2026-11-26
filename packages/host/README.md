@@ -38,11 +38,14 @@ await serving.stop()                                // server, then the Host cor
   The reply carries `packageVersion`, the `package.json` version, for display only. The caller is kept for
   the connection, passed to every handler and recorded as the `caller` of each Work event the call causes. Until a hello succeeds, any other
   method is refused.
-- **Methods.** A table `method -> { params, handler, agent }`: `params` is a
+- **Methods.** A table `method -> { params, handler, authority }`: `params` is a
   zod schema, and a call that does not fit it gets `-32602` before the handler
-  runs. A caller of type `agent` may call only rows with
-  `agent: true`, and `approval.decide` also checks, in its handler, that the
-  caller is a human.
+  runs. Every row declares its [Authority](../../GLOSSARY.md#running-and-directing-work)
+  (`operator`, `caller`, or `worker`): an `operator` row refuses any caller
+  other than `human` (at a terminal, per [ADR-0011](../../docs/decisions/ADR-0011-human-caller-needs-a-terminal.md))
+  and is not exposed as an MCP tool, `caller` rows are open to caller sessions
+  and MCP, and `worker` rows are refused on the caller socket. `approval.decide`
+  also checks, in its handler, that the caller is a human.
   `operations(services)` (`src/operations.ts`) builds the rows of the Work
   operations; `Services` is what they need besides the `Host`: Artifacts,
   credentials and the Workers view; `system host` brings the DSH-backed ones.
@@ -62,8 +65,8 @@ await serving.stop()                                // server, then the Host cor
 ## API reference
 
 The operation table in `src/operations.ts` is the reference: each row's name,
-params schema, summary, and its `read` and `agent` flags. Agents see it as the
-`system mcp` tool descriptions; people see it in `system <command> --help`.
+params schema, summary, `authority`, and `read` flag. Agents see the `caller`
+rows as the `system mcp` tool descriptions; people see it in `system <command> --help`.
 
 ## Errors
 
