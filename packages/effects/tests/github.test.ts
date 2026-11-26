@@ -400,6 +400,72 @@ test('merge: a held check leaves main alone and names the merge commit; once tha
   assert.equal(done.detail.mergeCommit, merge)
 })
 
+/** Item gate-1: main holds `.system/checks.yaml` with `gates` (a list of globs); the change, made on the older base, writes `files`. */
+async function gatedChange(artifacts: Artifacts, files: Record<string, string>, gates = '[".system/checks.yaml", "packages/effects/**"]') {
+  const w = setup()
+  const base = w.run('rev-parse', 'HEAD~1')
+  w.run('checkout', '--quiet', '--detach', base)
+  mkdirSync(join(w.work, '.system'), { recursive: true })
+  writeFileSync(join(w.work, '.system/checks.yaml'), `gates: ${gates}\nchecks: []\n`)
+  w.run('add', '.')
+  w.run('commit', '--quiet', '-m', 'gates')
+  w.run('push', '--quiet', 'origin', 'HEAD:main')
+  const tip = w.run('rev-parse', 'HEAD')
+  w.run('checkout', '--quiet', '--detach', base)
+  for (const [file, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(w.work, file)), { recursive: true })
+    writeFileSync(join(w.work, file), text)
+  }
+  w.run('add', '.')
+  w.run('commit', '--quiet', '-m', 'change')
+  return { ...w, tip, subject: await subjectOf(artifacts, w.work) }
+}
+
+test('gate-1: a change to a gate path is held after its checks pass, naming the paths and the approval; approving that commit merges it without a check', async () => {
+  fresh()
+  const artifacts = store()
+  const { subject, tip, remoteRef } = await gatedChange(artifacts, { '.system/checks.yaml': 'checks: []\n' })
+  const { publisher, checked } = queue(artifacts)
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(subject, merging, 'work:1111-aaaa'))
+  assert.equal(held.state, 'failed')
+  assert.ok(held.held, 'the outcome names the commit to approve')
+  assert.match(held.reason, /gate paths \.system\/checks\.yaml/)
+  assert.match(held.reason, /`system approve work:1111-aaaa` approves commit [0-9a-f]{40}/)
+  assert.equal(checked.length, 1, 'the checks ran first')
+  assert.equal(remoteRef('main'), tip, 'nothing merged')
+  const done = await publisher.apply({ ...intent(subject, merging, 'work:1111-aaaa'), approvedMerge: held.held })
+  assert.equal(done.state, 'applied', done.reason)
+  assert.equal(checked.length, 1)
+  assert.equal(remoteRef('main'), done.detail.mergeCommit)
+})
+
+test('gate-1: a change elsewhere merges as today', async () => {
+  fresh()
+  const artifacts = store()
+  const { subject, remoteRef } = await gatedChange(artifacts, { 'docs/NOTE.md': 'note\n' })
+  const { publisher } = queue(artifacts)
+  const outcome = await publisher.apply(intent(subject, merging))
+  assert.equal(outcome.state, 'applied', outcome.reason)
+  assert.equal(remoteRef('main'), outcome.detail.mergeCommit)
+})
+
+test('gate-1: a gate list the change itself adds does not apply to it', async () => {
+  fresh()
+  const artifacts = store()
+  // The base has no gates; the change adds a list gating docs/** in the file it edits.
+  const own = await gatedChange(artifacts, { '.system/checks.yaml': 'gates: ["docs/**"]\nchecks: []\n', 'docs/NOTE.md': 'note\n' }, '[]')
+  const outcome = await queue(artifacts).publisher.apply(intent(own.subject, merging))
+  assert.equal(outcome.state, 'applied', outcome.reason)
+})
+
+test('gate-1: a gate list the change empties does not free it: the base\'s list decides', async () => {
+  fresh()
+  const artifacts = store()
+  const emptied = await gatedChange(artifacts, { '.system/checks.yaml': 'gates: []\nchecks: []\n' })
+  const held: EffectOutcome & { held?: string } = await queue(artifacts).publisher.apply(intent(emptied.subject, merging))
+  assert.ok(held.held, held.reason)
+})
+
 test('merge: main moving while the merge is checked is caught by the lease; the change is merged and checked again on the new tip', async () => {
   fresh()
   const artifacts = store()
