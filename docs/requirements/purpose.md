@@ -54,7 +54,11 @@ acts` when there are none). An operator act is:
 - a `confirmation@1` the operator stored for an Artifact they confirmed, such as
   a dataset or a set of labels (`system confirm`, MCP `artifact.confirm`);
 - a release: a merge of `dev` into `main` seen in the repository (a first-parent
-  merge of `main` that merges `dev`), for each repository the Host knows Items for;
+  merge of `main` that merges `dev`), for each repository the Host knows Items for,
+  unless a caller made it under the delegation of [PLAN](../../PLAN.md) (merge
+  commit message with a `Released-By: caller` line, or a listed pull request such
+  as #466, #469, #471, #478, #490 of 2026-11-26): it is reported apart as
+  `releasesByCaller` and not counted; the delegation counts once, as its Intent;
 - a human touch, as `summary.ts` counts them (human callers only).
 
 Conversation with a caller session is not seen by System: only what the caller
