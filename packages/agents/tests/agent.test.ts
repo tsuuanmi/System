@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts, memoryWorkTable } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
-import { CONVERSATION_KIND, Capabilities, GIT_TREE_KIND, NOTICE, TASK_KIND, addConversation, conversationSchema, directTask, WorkController, resolvedSpecSchema, gitTreeSchema, parseWorkflow, resolve, snapshot, taskSchema, type GitTreeContent, type ResolvedSpec, type SpecStore, type WorkerRequest } from '@system/work'
+import { CONVERSATION_KIND, Capabilities, VERDICT_KIND, verdictSchema, GIT_TREE_KIND, NOTICE, TASK_KIND, addConversation, conversationSchema, directTask, WorkController, resolvedSpecSchema, gitTreeSchema, parseWorkflow, resolve, snapshot, taskSchema, type GitTreeContent, type ResolvedSpec, type SpecStore, type WorkerRequest } from '@system/work'
+import { CHECK_RUN_KIND, checkRunSchema } from '../../verifiers/src/checks.ts'
 import { agentWorker, type Account } from '../src/agent.ts'
 import { lazyVersion } from '../src/index.ts'
 import { cleanup, prepare, prompt } from '../src/workspace.ts'
@@ -748,6 +749,30 @@ for (const conflict of [false, true]) {
     } finally { await cleanup(ws) }
   })
 }
+
+test('a reopen after a failing check has each failing check\'s command, exit code and output tail in in/, named by the prompt (reopen-1)', async () => {
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema }, { ...VERDICT_KIND, content: verdictSchema }, { ...CHECK_RUN_KIND, content: checkRunSchema })
+  const producer = { type: 'system' as const, ref: 'test' }
+  const repository = repo()
+  const input = await task(artifacts, 'fix it', repository)
+  const run = async (name: string, commit: string, exitCode: number, tail: string) => (await artifacts.put({ ...CHECK_RUN_KIND, content: { name, run: `pnpm ${name}`, commit, exitCode, signal: null, timedOut: false, durationMs: 5, stdoutTail: tail, stderrTail: '' }, classification: 'local-private', producer })).id
+  const failing = await run('unit', 'c1', 1, 'noise\nAssertionError: 2 !== 3\n')
+  const passing = await run('lint', 'c1', 0, 'clean\n')
+  const onBase = await run('unit', 'b0', 0, 'base ok\n')
+  const subject = (await artifacts.put({ ...TASK_KIND, content: { instructions: 's' }, classification: 'local-private', producer })).id
+  const verdict = (await artifacts.put({ ...VERDICT_KIND, content: { subject, criteria: subject, capability: 'code.required-checks', verifier: { ref: 'v', version: '1' }, verdict: 'fail', reason: 'failed: unit: x', evidence: [failing, passing, onBase] }, inputs: [subject, failing, passing, onBase], classification: 'local-private', producer })).id
+  const req = request({ task: input, failure: verdict }, ['change'])
+  const ws = await prepare(artifacts, req, join(root, 'ws-failure'))
+  try {
+    const files = readdirSync(ws.inputs).filter((f) => f.startsWith('failure-'))
+    assert.equal(files.length, 1, files.join())
+    const text = readFileSync(join(ws.inputs, files[0]!), 'utf8')
+    assert.match(text, /pnpm unit/)
+    assert.match(text, /exit code: 1/)
+    assert.match(text, /AssertionError: 2 !== 3/)
+    assert.ok(prompt(ws, req).includes(join(ws.inputs, files[0]!)))
+  } finally { await cleanup(ws) }
+})
 
 test('Claude attempt hook receives both unified windows', async (t) => {
   const ownRoot = mkdtempSync(join(tmpdir(), 'agent-unified-'))

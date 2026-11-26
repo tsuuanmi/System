@@ -235,6 +235,8 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       const ran: string[] = []
       const skipped: string[] = []
       let flaky = ''
+      /** reopen-1: per failed check, whether the base fails it too or the change broke it; set when the base was run. */
+      let baseNote = ''
       try {
         // The repository's Node first on PATH, whatever the Host's PATH has (PROP-0007 decision 3).
         let bin: string | undefined
@@ -370,6 +372,9 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
         }
         if (failedNames.length && !asItIs && base !== tree.commit) {
           const baseFailed = await failingOnBase(failedNames)
+          if (baseFailed && !failedNames.every((name) => baseFailed.has(name))) {
+            baseNote = ` (${failedNames.map((name) => baseFailed.has(name) ? `${name}: the base fails it too` : `${name}: the change broke it, the base passes`).join('; ')})`
+          }
           if (baseFailed && failedNames.every((name) => baseFailed.has(name))) {
             // Inconclusive: run the failing checks once more, on the change and then on the base, before the verdict holds the Work (sc-13).
             const firstFailed = failed.join('; ')
@@ -396,7 +401,7 @@ export function requiredChecks(artifacts: Artifacts, spawner: Spawner, now: () =
       }
       const which = `run: ${ran.join(', ')}${skipped.length ? `; skipped: ${skipped.join(', ')}` : ''}`
       return failed.length
-        ? verdict('fail', `failed: ${failed.join('; ')}${skipped.length ? ` (skipped: ${skipped.join(', ')})` : ''}`, evidence)
+        ? verdict('fail', `failed: ${failed.join('; ')}${baseNote}${skipped.length ? ` (skipped: ${skipped.join(', ')})` : ''}`, evidence)
         : verdict('pass', `${flaky}all ${ran.length} check(s) run passed on ${tree.commit}; ${which}`, evidence)
     },
   }
