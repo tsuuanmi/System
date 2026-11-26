@@ -269,3 +269,30 @@ test("an attempt's git over ssh is refused by GIT_SSH_COMMAND, without a network
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test("a Worker's environment never holds the Host's credentials, whatever the Host's environment holds", () => {
+  const forbidden = ['SSH_AUTH_SOCK', 'GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'MY_SECRET', 'CLIENT_SECRET_X', 'AWS_ACCESS_KEY_ID', 'AWS_PROFILE', 'GOOGLE_APPLICATION_CREDENTIALS', 'DBUS_SESSION_BUS_ADDRESS']
+  // An Account's own model credential is the only allowed exception, and it comes from the Account's env, not the Host's.
+  const accountOwn = new Set(['CLAUDE_CODE_OAUTH_TOKEN'])
+  const saved = new Map(forbidden.map((k) => [k, process.env[k]]))
+  const bad = /^(SSH_AUTH_SOCK|GH_TOKEN|GITHUB_TOKEN|GOOGLE_APPLICATION_CREDENTIALS|DBUS_SESSION_BUS_ADDRESS|AWS_.*|.*_API_KEY|.*_SECRET.*)$/
+  try {
+    for (const k of forbidden) process.env[k] = 'host-value'
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'host-token'
+    const envs: Record<string, Record<string, string>> = {
+      baseEnv: baseEnv(ws as never),
+      'claude-code': claude.invocation({ command: 'claude', ws: ws as never, prompt: 'p', codeWrite: false, env: { CLAUDE_CODE_OAUTH_TOKEN: 'acct' } }).env,
+      codex: codex.invocation({ command: 'codex', ws: ws as never, prompt: 'p', codeWrite: false, env: { CODEX_HOME: '/h' } }).env,
+      antigravity: adapterFor('antigravity')!.invocation({ command: 'agy', ws: ws as never, prompt: 'p', codeWrite: false, env: {} }).env,
+    }
+    for (const [name, env] of Object.entries(envs)) {
+      for (const k of Object.keys(env)) assert.ok(accountOwn.has(k) || !bad.test(k), `${name} holds ${k}`)
+      for (const k of forbidden) assert.equal(env[k], undefined, `${name} holds ${k}`)
+      assert.notEqual(env.CLAUDE_CODE_OAUTH_TOKEN, 'host-token', `${name} passes the Host's account token`)
+    }
+    assert.equal(envs['claude-code']!.CLAUDE_CODE_OAUTH_TOKEN, 'acct')
+  } finally {
+    for (const [k, v] of saved) if (v === undefined) delete process.env[k]; else process.env[k] = v
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN
+  }
+})
