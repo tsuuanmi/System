@@ -58,6 +58,11 @@ While it runs, `dev` takes no changes and the Host runs `web-workers`.
 - **Only the operator merges `web-workers` into `dev`**, when milestone WW's
   gate holds. The base for System's Work goes back to `dev` with that merge.
 
+**Note (2026-11-27):** the branch ended with milestone WW (pull request #84,
+2026-11-09) and is no longer a merge target: the bundle's `mergeInto` is
+`[dev]` again, and System's base is `dev`. The amendment above is the history
+of that period.
+
 ## Amendment (2026-11-07): the merge queue
 
 PROP-0007 decision 6, chosen by the operator over GitHub's merge endpoint.
