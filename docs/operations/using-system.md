@@ -78,6 +78,11 @@ A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base
 commit, else beside its own code.
 
+`system approve` and `system deny` print, once the typed confirmation is accepted and the Host has recorded it, what was
+decided (`approved ship of work:… (commit 1c2e7cda5f3b)`), then follow the Work with one line per event; Ctrl-C only
+detaches. An Approval of a Gate path change is of that change's commit: a re-merge of it onto a newer `dev`
+needs no new one (the merge checks still run), another commit or a `gates:` list widened since does.
+
 The session is an agent: it may use every agent operation on every Work, store
 Tasks and files, and list the Workers. It cannot approve or deny (only the operator socket
 serves them, and the session does not reach it:

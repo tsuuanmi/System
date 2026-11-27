@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -473,6 +473,62 @@ test('gate-1: a gate list the change empties does not free it: the base\'s list 
   const emptied = await gatedChange(artifacts, {}, undefined, (t) => t.replace(/^gates:.*$/m, 'gates: []'))
   const held: EffectOutcome & { held?: string } = await queue(artifacts).publisher.apply(intent(emptied.subject, merging))
   assert.ok(held.held, held.reason)
+})
+
+/** Main moves on (the text of `.system/checks.yaml` through `edit`) after an Approval was asked for; the work tree returns to the change. */
+function moveMain(w: ReturnType<typeof setup>, edit: (text: string) => string): string {
+  const change = w.run('rev-parse', 'HEAD')
+  w.run('fetch', '--quiet', 'origin')
+  w.run('checkout', '--quiet', '--force', '--detach', 'origin/main')
+  const file = join(w.work, '.system/checks.yaml')
+  writeFileSync(file, edit(readFileSync(file, 'utf8')))
+  w.run('commit', '--quiet', '-am', 'main moves again')
+  w.run('push', '--quiet', 'origin', 'HEAD:main')
+  const tip = w.run('rev-parse', 'HEAD')
+  w.run('checkout', '--quiet', '--detach', change)
+  return tip
+}
+
+test('gate-3: an Approval of a gate-path change survives main moving: the merge is checked again and goes in without a second hold', async () => {
+  fresh()
+  const artifacts = store()
+  const g = await gatedChange(artifacts, {}, undefined, (t) => t.replace('checks: []', 'checks: [x]'))
+  const { publisher, checked } = queue(artifacts)
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(g.subject, merging, 'work:1111-aaaa'))
+  assert.ok(held.held)
+  moveMain(g, (t) => t.replace('tip: 1', 'tip: 2'))
+  const done = await publisher.apply({ ...intent(g.subject, merging, 'work:1111-aaaa'), approvedMerge: held.held })
+  assert.equal(done.state, 'applied', done.reason)
+  assert.equal(checked.length, 2, 'the merge checks ran on the new merge')
+  assert.notEqual(done.detail.mergeCommit, held.held)
+  assert.equal(g.remoteRef('main'), done.detail.mergeCommit)
+})
+
+test('gate-3: an Approval given for another commit of the change holds again', async () => {
+  fresh()
+  const artifacts = store()
+  const g = await gatedChange(artifacts, {}, undefined, (t) => t.replace('checks: []', 'checks: [x]'))
+  const { publisher } = queue(artifacts)
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(g.subject, merging, 'work:1111-aaaa'))
+  writeFileSync(join(g.work, '.system/checks.yaml'), readFileSync(join(g.work, '.system/checks.yaml'), 'utf8').replace('checks: [x]', 'checks: [y]'))
+  g.run('commit', '--quiet', '-am', 'amended')
+  moveMain(g, (t) => t.replace('tip: 1', 'tip: 2'))
+  const amended = await subjectOf(artifacts, g.work)
+  const again: EffectOutcome & { held?: string } = await publisher.apply({ ...intent(amended, merging, 'work:1111-aaaa'), approvedMerge: held.held })
+  assert.ok(again.held, again.reason)
+})
+
+test('gate-3: a gate list widened on main after the Approval holds again', async () => {
+  fresh()
+  const artifacts = store()
+  const g = await gatedChange(artifacts, { 'docs/NOTE.md': 'note\n' }, '[".system/checks.yaml"]', (t) => t.replace('checks: []', 'checks: [x]'))
+  const { publisher } = queue(artifacts)
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(g.subject, merging, 'work:1111-aaaa'))
+  assert.ok(held.held)
+  moveMain(g, (t) => t.replace(/^gates:.*$/m, 'gates: [".system/checks.yaml", "docs/**"]'))
+  const again: EffectOutcome & { held?: string } = await publisher.apply({ ...intent(g.subject, merging, 'work:1111-aaaa'), approvedMerge: held.held })
+  assert.ok(again.held, again.reason)
+  assert.match(again.reason, /docs\/NOTE\.md/)
 })
 
 test('merge: main moving while the merge is checked is caught by the lease; the change is merged and checked again on the new tip', async () => {

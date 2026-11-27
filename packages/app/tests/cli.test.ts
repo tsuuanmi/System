@@ -182,6 +182,30 @@ test('approve prints the decision before asking for the typed confirmation', asy
   assert.match(printedBeforePrompt, /Decision needed[\s\S]*system deny work:h/)
 })
 
+for (const verb of ['approve', 'deny'] as const) {
+  test(`gate-3: ${verb} prints what was recorded at once after the confirmation, then one line per event, never silent`, async () => {
+    let out = ''
+    const held = { ...heldRecord('work:h'), state: { ...heldRecord('work:h').state, effects: { op: { stepId: 'ship', state: 'failed', held: 'sha256:m', detail: { mergeCommit: '1c2e7cda5f3b9a8d7e6f' } } } } }
+    const host = fakeHost({ 'work.show': () => held }, {
+      decide: async (_params, _who, hooks) => {
+        assert.equal(out.includes('following it'), false, 'nothing is said before the Host recorded the decision')
+        hooks?.recorded?.()
+        hooks?.onEvent?.({ seq: 9, type: 'decided', stepId: 'ship' })
+        return { state: { status: 'succeeded' } } as any
+      },
+    })
+    const io = { out: (t: string) => { out += t }, err() {}, confirmHuman: async () => 'tan' } as any
+    let run: Run | undefined
+    const program = buildProgram(host, io, (r) => { run = r })
+    program.exitOverride()
+    await program.parseAsync(['node', 'system', verb, 'work:h', '--reason', 'r'])
+    await run!()
+    const decision = verb === 'approve' ? 'approved' : 'denied'
+    assert.match(out, new RegExp(`${decision} ship of work:h \\(commit 1c2e7cda5f3b\\); following it \\(Ctrl-C only detaches`))
+    assert.match(out, /work:h #9 decided ship\n$/)
+  })
+}
+
 test('the approve and deny prompt ends with the token alone, not the decision word', async () => {
   let prompt = ''
   const host = fakeHost({ 'work.show': ({ workId }) => heldRecord(workId) }, { decide: async () => ({ state: { status: 'failed' } }) as any })

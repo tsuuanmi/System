@@ -69,7 +69,12 @@ The controller records `effect-intended` before `apply` and
   that commit (a change that already holds the tip is held too, without a
   check). The approved commit is pushed as it
   is (`approvedMerge`) while the base is still its parent, and an Approval
-  given for another commit counts for nothing. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
+  given for another commit counts for nothing. A gate-path Approval is of the
+  change's own commit (Item gate-3): when the base moved, the change is merged
+  and its merge checks run again, and no second Approval is asked while the
+  change's commit is the approved one and the `gates:` list at the new tip
+  selects no file of it that the list the Approval was given under did not;
+  another commit, or a list widened over the change, holds again. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
   exactly that commit by a push with a lease on the checked tip; if the base
   moved, the change is merged and checked again (three rounds at most). A
   conflict and a failing check on the merge return `rejected: 'conflict' |

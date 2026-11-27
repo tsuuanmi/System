@@ -303,12 +303,21 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       const content = read.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? read.envelope.content as { commit: string; parent?: string } : undefined
       return content?.parent === tip ? content.commit : undefined
     }
-    /** The files the change touches (against the tip) that the tip's `gates:` select. */
-    const gatedPaths = async (t2: typeof t, tip: string, commit: string): Promise<string[]> => {
-      const file = await git(t2.tree.repository, ['show', `${tip}:${GATES_FILE}`]).catch(() => '')
+    /** The files the change touches (against the tip) that the `gates:` of `gatesAt` select. */
+    const gatedPaths = async (t2: typeof t, tip: string, commit: string, gatesAt = tip): Promise<string[]> => {
+      const file = await git(t2.tree.repository, ['show', `${gatesAt}:${GATES_FILE}`]).catch(() => '')
       const gates = gatesOf(file)
       if (!gates.length) return []
       return gatedFiles((await git(t2.tree.repository, ['diff', '--name-only', '-z', `${tip}...${commit}`])).split('\0').filter(Boolean), gates)
+    }
+    /** Item gate-3: the gate paths of `change` that an Approval already covers. It is of the change's own commit (the merge's second parent, or the commit itself), under the gate list at the base tip it was given on. */
+    const approvedGated = async (subject: string | undefined, tip: string, change: string): Promise<string[]> => {
+      const read = subject ? artifacts.get(subject) : undefined
+      const content = read?.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? read.envelope.content as { commit: string; parent?: string } : undefined
+      if (!content?.parent) return []
+      const commits = (await git(t.tree.repository, ['rev-list', '--parents', '-n', '1', content.commit]).catch(() => '')).trim().split(' ')
+      if ((commits[2] ?? commits[0]) !== change) return []
+      return gatedPaths(t, tip, change, content.parent).catch(() => [])
     }
     const named = (ids: string[]): Record<string, string> => (ids.length ? { verdicts: ids.join(',') } : {})
     for (let round = 0; round < MERGE_ROUNDS; round++) {
@@ -348,7 +357,12 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         }
       } else if (approved === change) approvedMerge = true
       // Item gate-1: a change touching a gate path (the base's list, never the change's own) waits for the Operator's Approval of the commit that would go in.
-      const gated = approvedMerge ? [] : await gatedPaths(t, tip, change)
+      // The Approval is of the change's commit, so main moving on does not ask again (the merge checks above still ran); a gate list widened since covers more of it and does.
+      let gated = approvedMerge ? [] : await gatedPaths(t, tip, change)
+      if (gated.length) {
+        const covered = await approvedGated(intent.approvedMerge, tip, change)
+        gated = gated.filter((file) => !covered.includes(file))
+      }
       if (gated.length) {
         mergeSubject ??= (await artifacts.put({
           ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit, tree: (await git(t.tree.repository, ['rev-parse', `${commit}^{tree}`])).trim(), parent: tip }, subject: { type: 'git-commit', ref: commit },
