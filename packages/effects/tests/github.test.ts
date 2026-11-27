@@ -675,3 +675,76 @@ test('fl-8: a file the base\'s .gitignore ignores is refused; a file the change 
   assert.equal(ok.state, 'applied', ok.reason)
   assert.equal(pulls.length, 1)
 })
+
+// waiver-1: `.system/docs-waivers` merges by union, with the attributes read from the base tip.
+const WAIVER_HEAD = '# Waivers for the docs check, one line each.\n'
+const waiverLine = (n: string) => `docs-unchanged: docs/${n}.md - reason ${n}\n`
+
+/** A bare remote whose `main` commits `.gitattributes` and the waivers file; the work repository has `.gitattributes` removed from disk. Returns a function committing `files` on the base as one change. */
+function waiverRepo(baseWaivers = WAIVER_HEAD) {
+  const bare = mkdtempSync(join(root, 'remote-'))
+  execFileSync('git', ['init', '--bare', '--quiet', bare])
+  const work = mkdtempSync(join(root, 'work-'))
+  const run = (...args: string[]) => execFileSync('git', ['-C', work, ...args], { env, encoding: 'utf8' }).trim()
+  run('init', '--quiet', '-b', 'main')
+  mkdirSync(join(work, '.system'))
+  writeFileSync(join(work, '.gitattributes'), '.system/docs-waivers merge=union\n')
+  writeFileSync(join(work, '.system/docs-waivers'), baseWaivers)
+  writeFileSync(join(work, 'README.md'), 'base\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'base')
+  run('remote', 'add', 'origin', `file://${bare}`)
+  run('push', '--quiet', 'origin', 'main')
+  const base = run('rev-parse', 'HEAD')
+  bareOf = bare
+  const change = async (artifacts: Artifacts, files: Record<string, string>) => {
+    run('checkout', '--quiet', '--detach', base)
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(work, file), text)
+    run('add', '-A')
+    run('commit', '--quiet', '-m', 'change')
+    rmSync(join(work, '.gitattributes'))
+    return subjectOf(artifacts, work)
+  }
+  return { bare, work, run, change, waivers: (ref: string) => execFileSync('git', ['-C', bare, 'show', `${ref}:.system/docs-waivers`], { encoding: 'utf8' }) }
+}
+
+async function twoPublishes(a: Record<string, string>, b: Record<string, string>, baseWaivers?: string) {
+  fresh()
+  const artifacts = store()
+  const r = waiverRepo(baseWaivers)
+  const first = await r.change(artifacts, a)
+  const second = await r.change(artifacts, b)
+  const { publisher } = queue(artifacts)
+  const one = await publisher.apply(intent(first, merging, 'work:1111-aaaa'))
+  const two = await publisher.apply(intent(second, merging, 'work:2222-bbbb'))
+  return { ...r, one, two, tip: () => execFileSync('git', ['-C', r.bare, 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' }).trim() }
+}
+
+test('waivers: two changes each appending a waiver line merge by union, with no .gitattributes on disk', async () => {
+  const w = await twoPublishes({ '.system/docs-waivers': WAIVER_HEAD + waiverLine('a') }, { '.system/docs-waivers': WAIVER_HEAD + waiverLine('b') })
+  assert.equal(w.one.state, 'applied', w.one.reason)
+  assert.equal(w.two.state, 'applied', w.two.reason)
+  const text = w.waivers(w.tip())
+  assert.equal(text.split(WAIVER_HEAD).length - 1, 1, 'the comment line once')
+  assert.ok(text.includes(waiverLine('a')) && text.includes(waiverLine('b')))
+})
+
+test('waivers: a conflict in any other file is still refused, naming it', async () => {
+  const w = await twoPublishes({ 'README.md': 'one\n', '.system/docs-waivers': WAIVER_HEAD + waiverLine('a') }, { 'README.md': 'two\n', '.system/docs-waivers': WAIVER_HEAD + waiverLine('b') })
+  assert.equal(w.two.state, 'failed')
+  assert.match(w.two.reason, /merge conflict with main at [0-9a-f]{12}: README\.md$/)
+})
+
+test('waivers: a change that clears the file merged with one that adds a line keeps the added line (union keeps what either side has)', async () => {
+  const w = await twoPublishes({ '.system/docs-waivers': WAIVER_HEAD }, { '.system/docs-waivers': WAIVER_HEAD + waiverLine('b') }, WAIVER_HEAD + waiverLine('old'))
+  assert.equal(w.two.state, 'applied', w.two.reason)
+  assert.ok(w.waivers(w.tip()).includes(waiverLine('b')), 'tools/check-docs-waivers.py still sees the added line')
+})
+
+test('waivers: two changes editing the same line differently keep both versions, without conflict markers (accepted: a release clears the file)', async () => {
+  const w = await twoPublishes({ '.system/docs-waivers': WAIVER_HEAD + 'docs-unchanged: x.md - one\n' }, { '.system/docs-waivers': WAIVER_HEAD + 'docs-unchanged: x.md - two\n' }, WAIVER_HEAD + 'docs-unchanged: x.md - old\n')
+  assert.equal(w.two.state, 'applied', w.two.reason)
+  const text = w.waivers(w.tip())
+  assert.ok(text.includes('- one\n') && text.includes('- two\n'))
+  assert.ok(!text.includes('<<<<<<<'))
+})

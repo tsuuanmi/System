@@ -1,0 +1,2 @@
+# Two Works that append a waiver line merge by union (waiver-1); the publish reads this file from the base tip (packages/effects/README.md).
+.system/docs-waivers merge=union
