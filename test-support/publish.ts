@@ -30,7 +30,7 @@ export function createPublishEnv(prefix: string) {
   }
 
   async function github(...args: string[]): Promise<{ url: string; state: () => Promise<{ pulls: { number: number; head: string; draft: boolean; merged?: boolean; mergeCommit?: string }[]; calls: string[] }> }> {
-    const server = spawn(process.execPath, [join(repo, 'tests', 'fake-github.mjs'), ...args], { stdio: ['ignore', 'pipe', 'inherit'] })
+    const server = spawn(process.execPath, [join(repo, 'test-support', 'fake-github.mjs'), ...args], { stdio: ['ignore', 'pipe', 'inherit'] })
     servers.push(server)
     const port = await new Promise<string>((r) => server.stdout!.once('data', (d) => r(String(d).trim())))
     const url = `http://127.0.0.1:${port}`

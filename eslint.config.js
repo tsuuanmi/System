@@ -9,7 +9,7 @@ export default [
   // The fixture is a deliberate violation: lint.test.ts lints it with --no-ignore.
   { ignores: ['**/lib/', '**/dist/', '**/node_modules/', 'packages/verifiers/tests/fixtures/'] },
   {
-    files: ['packages/*/src/**/*.ts', 'packages/*/tests/**/*.ts', 'tests/**/*.ts', 'test-support/**/*.ts'],
+    files: ['packages/*/src/**/*.ts', 'packages/*/tests/**/*.ts', 'tests/**/*.ts', 'test-support/**/*.ts', 'tools/*.ts'],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
