@@ -45,7 +45,8 @@ test('a Work with merge: true moves main to exactly the checked commit through t
   const commit = commitOf(record.events.find((e) => e.type === 'verified')!.subject!)
   const published = record.events.find((e) => e.type === 'effect-observed')!
   assert.equal(published.state, 'applied')
-  assert.equal(p.branchOf(workId), commit)
+  assert.throws(() => p.branchOf(workId), 'the merged system branch is deleted from the remote')
+  assert.equal(published.detail!.branchDeleted, 'true')
   assert.equal(mainOf(p.bare), commit, 'main is the checked commit: it already held the tip, so nothing new to check')
   assert.deepEqual([published.detail!.merged, published.detail!.mergeCommit], ['true', commit])
   const { pulls, calls } = await gh.state()

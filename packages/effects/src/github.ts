@@ -22,7 +22,11 @@
  *   checked on (bors' "not rocket science" rule); if the base moved meanwhile,
  *   the change is merged and checked again on the new tip. The pull request is
  *   opened ready, for the record; GitHub's merge endpoint is not used.
- * - reconcile only reads the remote: `applied` when the branch holds the commit
+ * - After a merge is observed (apply, or reconcile finding the base holds the change) the branch
+ *   `system/<work>` is deleted on the remote, best effort: `detail.branchDeleted` is `'true'` (also
+ *   when it was already gone) or `'false'` with `branchDeleteReason`; the outcome never changes.
+ *   Without a merge, or when the merge is refused, the branch stays.
+ * - reconcile only reads the remote (but for that deletion): `applied` when the branch holds the commit
  *   and its pull request is open (and ready, if asked) or, with `merge`, when the
  *   base holds the change; `absent` otherwise; `unknown` when it cannot be read.
  * - Build and cache output is never published (fl-8, Escaped defect 1): before any push,
@@ -223,6 +227,25 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
     return tip
   }
 
+  /**
+   * After a merge has been observed: delete the Work's own `system/<work>` branch on the remote, over git like the push and the merge.
+   * Best effort, never the effect's outcome: the result goes into the observed detail. Safe to repeat (replay, reconcile, retry) although
+   * an unknown side effect is never retried blindly: it names one exact ref, and a ref already gone is success.
+   */
+  async function deleteBranch(t: Awaited<ReturnType<typeof target>>): Promise<Record<string, string>> {
+    const ref = `refs/heads/${t.branch}`
+    const gone = async () => !(await remoteCommit(t))
+    try {
+      if (!t.branch.startsWith('system/') || t.branch === `system/${config.base}`) throw new Error(`${t.branch} is not a System work branch`)
+      if (await gone()) return { branchDeleted: 'true' }
+      await git(t.tree.repository, ['push', '--quiet', t.url, '--delete', ref], t.env)
+      return { branchDeleted: 'true' }
+    } catch (error) {
+      if (await gone().catch(() => false)) return { branchDeleted: 'true' }
+      return { branchDeleted: 'false', branchDeleteReason: (error as Error).message.replace(/\s+/g, ' ').slice(0, 300) }
+    }
+  }
+
   const holds = (t: Awaited<ReturnType<typeof target>>, ancestor: string, commit: string) =>
     git(t.tree.repository, ['merge-base', '--is-ancestor', ancestor, commit]).then(() => true, () => false)
 
@@ -283,7 +306,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
     for (let round = 0; round < MERGE_ROUNDS; round++) {
       const tip = await baseTip(t)
       if (!tip) return failed(`${config.base} does not exist on ${config.remote}`)
-      if (await holds(t, change, tip)) return { state: 'applied', reason: `${config.base} already holds ${change}`, detail: { repository: t.slug, branch: t.branch, commit: change, merged: 'true', mergeCommit: tip } }
+      if (await holds(t, change, tip)) return { state: 'applied', reason: `${config.base} already holds ${change}`, detail: { repository: t.slug, branch: t.branch, commit: change, merged: 'true', mergeCommit: tip, ...(await deleteBranch(t)) } }
       let commit = change
       let checkedOn: string | undefined
       let approvedMerge = false
@@ -337,7 +360,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       }
       return {
         state: 'applied', reason: `merged ${change} into ${config.base} as ${commit}${checkedOn ? `, checked on its merge with ${checkedOn.slice(0, 12)}` : ''}${approvedMerge ? ', approved by the operator' : ''}`,
-        detail: { ...detail(t, pull, false, commit), ...(checkedOn ? { checkedOn } : {}), ...named(verdicts) },
+        detail: { ...detail(t, pull, false, commit), ...(await deleteBranch(t)), ...(checkedOn ? { checkedOn } : {}), ...named(verdicts) },
       }
     }
     return failed(`${config.base} kept moving during ${MERGE_ROUNDS} merges; run the step again`)
@@ -391,7 +414,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         t = await target(intent)
         if (merge) {
           const tip = await baseTip(t)
-          if (tip && await holds(t, t.tree.commit, tip)) return { state: 'applied', reason: `${config.base} holds ${t.tree.commit}`, detail: { repository: t.slug, branch: t.branch, commit: t.tree.commit, merged: 'true', mergeCommit: tip } }
+          if (tip && await holds(t, t.tree.commit, tip)) return { state: 'applied', reason: `${config.base} holds ${t.tree.commit}`, detail: { repository: t.slug, branch: t.branch, commit: t.tree.commit, merged: 'true', mergeCommit: tip, ...(await deleteBranch(t)) } }
           return { state: 'absent', reason: `${config.base} does not hold ${t.tree.commit}` }
         }
         current = await remoteCommit(t)
