@@ -78,3 +78,15 @@ test('without bwrap the fake claude never runs and the report says the layer cou
   assert.match(report, /layer could not start/i)
   assert.doesNotMatch(report, /^caller:/m)
 })
+
+test('with a bwrap that cannot start a namespace the fake claude never runs and the report says the layer could not start', () => {
+  const broken = mkdtempSync(join(home, 'brokenbwrap-'))
+  writeFileSync(join(broken, 'bwrap'), '#!/bin/sh\nexit 1\n')
+  chmodSync(join(broken, 'bwrap'), 0o755)
+  const { res, report } = night_(`${broken}:${tools}:${process.env.PATH}`)
+
+  assert.notEqual(res.status, 0)
+  assert.equal(existsSync(join(tools, 'claude.ran')), false, 'claude never ran')
+  assert.match(report, /cannot create a user namespace/i)
+  assert.doesNotMatch(report, /^caller:/m)
+})

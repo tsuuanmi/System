@@ -20,9 +20,12 @@ function run(opts: { answer?: string; claudeExit?: number; putExit?: number; env
     // `claude` runs in the layer (iso-3), where nothing but its TMPDIR is writable: it reports its arguments on stderr between markers.
     exe('claude', `{ echo @@ARGS; printf '%s\\n' "$@"; echo @@END; } >&2\ncat "${dir}/answer"\nexit ${opts.claudeExit ?? 0}`)
     exe('system', `printf '%s\\n' "$@" > "${dir}/system.args"\ncp "$3" "${dir}/stored" 2>/dev/null\n[ ${opts.putExit ?? 0} -eq 0 ] || { echo "put failed" >&2; exit ${opts.putExit ?? 0}; }\necho sha256:fakeid`)
+    // These tests are not about the layer (tests/night-session-layer.test.ts is): a stand-in `bwrap` runs only the wrapped command,
+    // so they pass where bubblewrap cannot start. It answers the launcher's probe (no `--`) with success, else runs what follows the first `--`.
+    exe('bwrap', `for a in "$@"; do [ "$a" = -- ] && { while [ "$1" != -- ]; do shift; done; shift; exec "$@"; }; done\nexit 0`)
     exe('notify', `printf '%s\\n' "$1" > "${dir}/notify.arg"`)
     exe('curl', `printf '%s\\n' "$@" > "${dir}/curl.args"`)
-    const env = { PATH: `${dir}:${process.env.PATH}`, HOME: dir, ...opts.env }
+    const env = { HOME: dir, ...opts.env, PATH: `${dir}:${opts.env?.PATH ?? process.env.PATH}` }
     const res = spawnSync('sh', [launcher], { env: env as NodeJS.ProcessEnv, encoding: 'utf8', cwd: dir })
     const seen = /@@ARGS\n([\s\S]*?)@@END\n/.exec(res.stderr)
     if (seen) res.stderr = res.stderr.replace(seen[0], '')
@@ -177,5 +180,18 @@ test('before the prompt the launcher fetches origin dev in each repository, and 
     rmSync(broken, { recursive: true, force: true })
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a bwrap that cannot start a namespace does not fail a test that is not about the layer: the stand-in runs claude', () => {
+  const broken = mkdtempSync(join(tmpdir(), 'night-nobwrap-'))
+  try {
+    writeFileSync(join(broken, 'bwrap'), '#!/bin/sh\nexit 1\n')
+    chmodSync(join(broken, 'bwrap'), 0o755)
+    const r = run({ answer: '# ok\n', env: { PATH: `${broken}:${process.env.PATH}` } })
+    assert.equal(r.res.status, 0, r.res.stderr)
+    assert.equal(r.stored, '# ok\n')
+  } finally {
+    rmSync(broken, { recursive: true, force: true })
   }
 })
