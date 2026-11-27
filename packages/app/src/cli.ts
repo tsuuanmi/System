@@ -572,6 +572,8 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         const sinceUtc = zonelessUtc(options.since!)
         if (sinceUtc) io.err(`system: --since ${options.since} has no zone and is read as UTC: ${sinceUtc}\n`)
         for (const v of (report as { releaseViolations?: { merge: string; paths: string[] }[] }).releaseViolations ?? []) io.err(`system: release ${v.merge.slice(0, 12)} by a caller touched what is not delegated: ${v.paths.join(', ')}\n`)
+        const cost = (report as { costPerVerifiedWork?: { usd: number | string; accepted: number; acceptedWithKnownCost: number } }).costPerVerifiedWork
+        if (cost) io.err(`system: cost per verified Work: ${typeof cost.usd === 'number' ? `$${cost.usd.toFixed(2)}` : cost.usd} over ${cost.acceptedWithKnownCost} of ${cost.accepted} accepted Works\n`)
         io.out(`${JSON.stringify(sinceUtc ? { ...(report as object), sinceUtc } : report, null, 2)}\n`)
         return 0
       })
