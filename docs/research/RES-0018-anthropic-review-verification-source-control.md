@@ -34,6 +34,21 @@ Each post was read by a page reader; its figures are Anthropic's own, not indepe
   30,000 merges a day a global serialized merge queue stopped making sense; Anthropic moved to post-merge and pre-deploy
   testing and lets Claude fix conflicts. It offers nothing on conflicts in shared prose files.
 
+**Corrections, 2026-11-27** (the three posts were fetched again in full; each quote below was found in the fetched
+text):
+
+- *Merge queue.* "Dropped" in the table below overstates the post. It says "We haven't been able to effectively
+  replicate the industry standard of a global repository lock on the merge queue", and it still names an "Antique merge
+  queue superfan"; what went is the global lock, not a queue. The post also says its system is not a "suitable
+  replacement for git" for general use. The direction for System (one change at a time) is unchanged.
+- *Model review.* "Blocking" holds for the security pass only: the review product "posts findings, not approvals".
+  The post also admits "We don't yet have circuit breakers" that tighten approval when reverts rise, and light review
+  paths are for a trusted-author list only ("Everyone else needs a second person"); System has no author trust and
+  needs none with one operator.
+- *Verification.* Not in the lifecycle below: property tests (fast-check, Hypothesis) and differential tests ("the old
+  system is the oracle"), which the post offers against the agent's own bias; PLAN section 0 keeps them waiting for an
+  Escaped defect of their kind.
+
 ## Against System's records
 
 | Topic | Anthropic | System on 2026-11-26 | Direction |

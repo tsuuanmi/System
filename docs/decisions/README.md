@@ -52,4 +52,8 @@ acceptance does not imply its code exists.
   accepted — Charter 11 (stay changeable) is judged by Items merged on their first Work, the Recurring Failure Rate and
   the Time to Verified Resolution; the active core's lines are a trend recorded at each milestone and shown by work
   report, never a gate; supersedes ADR-0010.
+- [ADR-0016 — The gate is enforced by reachability](ADR-0016-the-gate-is-enforced-by-reachability.md) — accepted — A CLI
+  Worker and the Scheduled session run inside one bubblewrap layer as the same OS user, and the operations of the
+  Operator's Authority are served on their own socket that no sandbox binds; this replaces ADR-0011's advisory boundary
+  for unattended work and the Claude Code-only sandbox option.
 <!-- docs:end index:decision -->

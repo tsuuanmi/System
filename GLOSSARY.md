@@ -176,6 +176,13 @@ A human's yes or no on what a held Work awaits; the only one of these that
 lets a Work go on.
 _Avoid_: decision, sign-off
 
+**Gate path**:
+A path whose change is held for the Operator's Approval of that commit after
+its checks pass, instead of merging. A change cannot lift a Gate path for
+itself.
+_Avoid_: protected path, code owner; gate alone (it also names the Aim and a
+threshold a measure must pass)
+
 **Quota wait**:
 A running Work whose next step waits for an Account's quota to reset;
 recorded with the time it expects to go on. Not a hold: no human is needed.
