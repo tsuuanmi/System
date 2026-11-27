@@ -4,7 +4,7 @@ type: research
 status: active
 date: 2026-11-27
 summary: Adaptive component evolution, build-versus-reuse decisions, and execution contracts.
-related: [RES-0021, RES-0015, RES-0016, RES-0017, ADR-0003, ADR-0012, ADR-0016]
+related: [RES-0021, RES-0015, RES-0016, RES-0017, ADR-0003, ADR-0004, ADR-0012, ADR-0013, ADR-0016]
 ---
 
 # Adaptive System: evolution beyond any one runtime
@@ -147,7 +147,12 @@ That lifecycle handles timeout, cancellation, workspace, logs and outputs.
 Do not blindly force a daemon/ACP runtime through CLI-only APIs like
 `defaultCommand` or `askArgv`.
 
-A small Turn driver beneath that lifecycle could eventually expose:
+The Host-to-Runtime seam the controller sees is already `WorkerPort`
+(`run`, `gone`, `end`; [registry](../../packages/work/src/registry.ts)), and
+`runAttempt` already takes any `Turn` ([lifecycle](../../packages/agents/src/lifecycle.ts)):
+the web Runtime is a non-CLI `WorkerPort` built that way, without a `CliAdapter`.
+A new backend is one more `WorkerPort` row; the sketch below lists only what such a row
+must show, not a new interface to add:
 
 ~~~ts
 // Illustrative, not an accepted implementation schema.
@@ -201,14 +206,15 @@ meaning of a Work, an Artifact or an operator decision.
   System's sandbox. Constrain the **actual child process**, not only the caller.
 - **Duplicate subscription aliases:** direct CLI and daemon use the same
   provider Account; quota must count once, without optimistic round robin.
+  Today's refusal of a second ref is keyed by `runtime:providerAccount`
+  (packages/agents/src/index.ts), so a second Runtime on the same account is not caught.
 - **Version/schema change:** keep backend, protocol, capabilities, Account and
   verifier version provenance on every Attempt; reject unknown semantics.
 - **In-flight migration:** drain/reconcile live sessions, preserve historical
   replay and retain native fallback before removing the prior implementation.
 
-[ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)
-accepted a bubblewrap + separate Operator socket design on 2026-11-27.
-Acceptance of an ADR is **not** proof that its isolation Items were released.
+What ADR-0016 enforces today is stated once, in
+[RES-0021's security state](RES-0021-agent-workspace-landscape.md).
 A new external backend must meet the enforced boundary before writing code.
 
 ## 9. Experiment: one Work, three backends
@@ -261,8 +267,9 @@ to credentials or the Host store. Research must not silently become an ADR.
 
 ## 11. Wider product horizon and next questions
 
-A genuinely adaptive System could eventually select different execution,
-verification and UI components for code, scientific investigation, web
+In a genuinely adaptive System the operator could choose different execution,
+verification and UI components (a changed Verifier still needs an Approval:
+ADR-0013) for code, scientific investigation, web
 research and data workflows, while preserving provenance and accepted
 outcomes. This is a *possibility*, not an implemented multi-domain claim.
 

@@ -4,7 +4,7 @@ type: research
 status: active
 date: 2026-11-27
 summary: Compare six agent workspaces against System and evaluate evidence-led reuse.
-related: [RES-0015, RES-0016, RES-0017, RES-0018, ADR-0003, ADR-0012, ADR-0016]
+related: [RES-0015, RES-0016, RES-0017, RES-0018, ADR-0003, ADR-0011, ADR-0012, ADR-0016]
 ---
 
 # Agent-workspace landscape and System integration options
@@ -117,15 +117,21 @@ The caller, not the Host, selects Items; the Host schedules ready steps within a
 
 **Gaps relevant to other projects:** no comparable visual fleet console; live terminal/diff review
 and mobile attention surfaces are limited; supporting new provider CLI protocols still requires
-adapters; structured error context, process identity, resource isolation and observability remain
-work in progress or depend on the current deployment. Reuse a third-party UI/runtime only when it
+adapters; resource isolation by default and live observability remain work in progress or depend
+on the current deployment (structured failure evidence and process identity are in: reopen-1,
+finish-1, pid-1). Reuse a third-party UI/runtime only when it
 reduces operator time or demonstrated Outside failures, not solely to match feature lists.
 
-**Security state at this snapshot:** [ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)
-was **accepted on 2026-11-27**: bubblewrap for CLI Workers and the Scheduled session, hidden
-credential/push paths and a separate unreachable Operator socket. It explicitly says its
-iso-1/iso-2/iso-3 Items must be released before these guarantees replace ADR-0011's advisory
-same-OS-user boundary. Therefore **do not claim the new isolation is already enforced**.
+**Security state at this snapshot (the one home for it in RES-0021 to RES-0023):**
+[ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md) was accepted on
+2026-11-27, and iso-1 to iso-3 were released as 0d63354 the same day (PLAN section 3).
+Enforced: the Operator socket (iso-2) and the Scheduled session's layer (iso-3). The CLI
+Worker layer is the per-Account `sandbox` option, off by default; on 2026-11-27 only
+`claude-code/c4` had it on, and default on is the Operator's decision (ADR-0016 decision 6).
+Not covered by the ADR: required checks run the change's own code without the layer
+(`packages/verifiers/src/checks.ts`), and the verify-again retry (`work.retry` on a verify step)
+is still served on the caller socket. So **do not claim the isolation holds for every Worker
+process** until those are resolved.
 
 ## Orca: agent IDE, fleet coordination and remote runtime
 
@@ -165,7 +171,7 @@ until a System Artifact and Verifier make it admissible.
 with separate desktop, web, iOS, Android and CLI clients; multi-provider agents, parallel worktrees,
 agent-to-agent delegation, plugin extensions, optional end-to-end encrypted remote relay.
 The public [server guide](https://github.com/getpaseo/paseo) documents headless CLI installation,
-remote --host usage and an [SDK](https://github.com/getpaseo/paseo) client.
+remote --host usage and an [SDK](https://github.com/getpaseo/paseo/blob/main/public-docs/sdk/index.md) client.
 The [architecture](https://github.com/getpaseo/paseo/blob/main/docs/architecture.md)
 identifies server, app, CLI, desktop and relay components.
 
@@ -266,11 +272,11 @@ or deletion of unused code. The operator settles Intent and approval.
 
 | Priority | Candidate and inspiration | Why it might matter | Gate before an Item |
 | --- | --- | --- | --- |
-| P0 | Enforce the accepted ADR-0016 trust boundary (System) | Prevent worker-to-operator escalation/push | Track existing iso Items; no duplicate task |
-| P0 | Reopen with complete structured failure evidence (Orca, AO) | Reduce wasted repair attempts | Measure current failures and reopens |
+| P0 | Enforce the accepted ADR-0016 trust boundary (System) | Prevent worker-to-operator escalation/push | iso-1 to iso-3 released; see the security state above for what remains |
+| Done | Reopen with complete structured failure evidence (Orca, AO) | Reduce wasted repair attempts | Implemented: reopen-1, finish-1 (reopen-2 open) |
 | P1 | Work/Attempt attention and live observation view (Orca, Paradev, AO) | Reduce operator minutes per Item | Read-only API/CLI spike; compare before/after |
 | P1 | Headless external-runtime adapter (Paseo, Orca) | Reuse CLI/session ecosystems without replacement | Demonstrate five protocol invariants below |
-| P1 | Process start/stop uncertainty and fencing (Orca, Paseo) | Prevent misidentified or duplicated Attempts | Reproduce an actual restart/process failure |
+| P1 | Process start/stop uncertainty and fencing (Orca, Paseo) | Prevent misidentified or duplicated Attempts | Mostly implemented (pid-1, `attempt-lost`, `WorkerPort.gone`/`end`); no attempt-id fence on `observed` |
 | P2 | Write-path overlap and merge preview (Paradev, AO) | Prevent cross-worktree merge conflicts | Demonstrate recurring conflict class |
 | P2 | Role x Runtime x Model evaluation (System records, Orca) | Route by measured task fit | Enough labelled attempts and correct denominators |
 | P2 | Backends/trust-boundary descriptor (OpenHands) | Explicit local/VM/container capabilities | A real second backend requires it |
@@ -281,7 +287,8 @@ Work/Attempt IDs, idempotent command receipts, pinned verifier criteria, isolate
 bounded retry, a DSH-hosted long-lived Host, and the scheduled caller.
 Read [RES-0015](RES-0015-orca-study.md) for the complete "already present" mapping and
 [RES-0016](RES-0016-orca-study-round-2.md) for failure observations.
-The accepted ADR-0016 proposal is not equivalent to released isolation.
+Role x Runtime x Model routing is already gated by PLAN section 3 ("Roles by fit… by configuration
+only") and section 4 ("Adaptive routing only on a measured need").
 
 ### Example: feedback without an agent-driven acceptance gate
 

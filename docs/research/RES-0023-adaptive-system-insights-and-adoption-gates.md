@@ -88,7 +88,7 @@ path, (b) reuse, (c) adapt, (d) a focused better internal build.
 If no meaningful bottleneck exists, record why no component should change.
 
 **Gate 2 — Draw a minimal boundary.** Identify the *existing* seam
-(e.g. provider-specific CliAdapter vs shared Turn). Decide whether a runtime,
+(`WorkerPort`, then `Turn`, then a CLI's `CliAdapter`). Decide whether a runtime,
 read-only observation view, error-evidence improvement or another component is
 the smallest useful slice. State who owns timeout, retry, credential scope,
 process/session, Workspace, log, Artifact and publish/approve authority.
@@ -142,7 +142,7 @@ lifecycle instead of adding any backend.
 The currently accepted
 [ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)
 must not be treated as fully enforced simply because the design was accepted.
-Resolve its implementation state from current source/tests and Items first.
+Its state on 2026-11-27 is in [RES-0021's security state](RES-0021-agent-workspace-landscape.md).
 
 ## Review deliverables for a local System session
 
@@ -163,6 +163,45 @@ evidence package. Use separate implementation PR(s) against the appropriate
 repository branch after a scope/authority decision; do not silently convert
 a research PR into a large framework rewrite. Start from real measured work
 and prefer one verified vertical slice to a general plugin system.
+
+## Review against the code, 2026-11-27 (origin/dev 70bd7e4)
+
+Gates 0 and 1, run by a caller session with two citation-verified System Works
+(work:aabc2f0f reliability, work:ccdc5472 security) and a read of the Host's records.
+Baseline, `system work report --since 2026-11-20`: 257 Works, Verified Success Rate
+225/252, 4.35 Items merged per operator act (34 acts: 17 Intents, 12 releases, 5 touches),
+Recurring Failure Rate 51/79, Escaped Defect Rate 11/148, Time to Verified Resolution
+median 5.0 min (p90 20.6 min), cost known for 170 of 225 accepted Works.
+
+| # | Coverage | Evidence (source, tests, records) |
+| --- | --- | --- |
+| 1 | Implemented by design | No console; CLI and MCP only (ADR-0011, packages/app) |
+| 2 | Implemented | `attempt-lost` on restart, slot held until `gone`, verified-identity `end` (work:aabc2f0f) |
+| 3 | Partial | `work.report` measures exist; no per-Runtime split, though records show it (below) |
+| 4 | Implemented | Controller owns retry and acceptance; `WorkerPort` seam; web Runtime is non-CLI |
+| 5 | Mostly | Effects: intent before apply, reconcile, never blind retry. Gaps: no attempt-id fence on `observed`; a lost launch reads as a clean loss |
+| 6 | Partial | Layer on 1 of 8 CLI Accounts (`claude-code/c4`); checks run the change's code unwrapped; verify-again on the caller socket |
+| 7 | Implemented as practice | RES-0015/16/17 mechanisms adopted: pid-1, qw-1, idle-1, reopen-1, finish-1, ratchet-1 |
+| 8 | Implemented | Headline is Items per operator act; Codex and Antigravity costs are partial |
+
+**The measured bottleneck is feedback, not execution.**
+- 16 of the 18 `change:docs` failures are DOC-IMP-001. `tools/docs.py impact` diffs `base...HEAD`,
+  which misses the uncommitted change a Worker leaves. So the Worker's own docs check passes, and
+  the Verifier fails. That costs about 16 of 56 reopen rounds and causes most `docs-waivers` conflicts.
+- 12 of 14 `unknown` failures are Antigravity attempts: 13 of 46 Antigravity attempts failed,
+  against 2 of 211 Claude Code attempts.
+- No Work failed for want of a session daemon or a protocol.
+
+**Component decisions:**
+- Keep the Host, controller, effects and `WorkerPort`.
+- Improve docs impact, verify-again authority, the shared-sign-in slot (agyconc-1) and
+  per-Runtime reporting.
+- Defer Paseo, Orca and ACP until a Work fails for want of one (PLAN section 4). A spike
+  would be one `WorkerPort` row whose children run in System's layer.
+- Do not add an ExecutionBackend interface.
+
+**Operator decisions raised:** layer default on; checks inside the layer (outside ADR-0016's
+scope today).
 
 ## Related sources
 
