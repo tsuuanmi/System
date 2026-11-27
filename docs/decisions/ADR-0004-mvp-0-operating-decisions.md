@@ -23,7 +23,7 @@ Status: superseded in part. Decisions not listed here still stand.
 [ADR-0001](ADR-0001-control-plane-on-dsh.md) to
 [ADR-0003](ADR-0003-artifact-ids-and-verification-contracts.md) fix the
 architecture but leave the operator model, Worker runtime, storage, effect
-executor and isolation open. The [MVP contract](../requirements/purpose.md) is
+executor and isolation open. The [Product Charter](../requirements/purpose.md) is
 broad; the first build should be the **smallest slice that proves the core
 claim**: work persists, Workers change, humans govern, and two domains run
 on one controller. This ADR records the choices for that slice (**MVP-0**)

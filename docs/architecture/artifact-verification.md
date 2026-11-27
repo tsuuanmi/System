@@ -162,4 +162,4 @@ while retaining a historical ID must give an explicit `expired` /
 `unavailable` state, not pretend the content exists.
 
 See [workflow composition](workflow-composition.md),
-and [MVP acceptance](../requirements/purpose.md).
+and [Product Charter](../requirements/purpose.md#success-means).

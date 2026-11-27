@@ -1,7 +1,7 @@
 # Architecture
 
 This area owns the **selected architectural direction** and its evolving
-boundary contracts. Selection is not the same as a working implementation.
+boundary contracts. Each page says what is implemented; source and tests are the authority.
 
 - [Control-plane architecture](control-plane.md) — accepted logical ownership,
   DSH/Cordis host composition, plugin lifecycle and cross-workflow invariants.
@@ -18,8 +18,7 @@ Architectural rationale: [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.m
 [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md) and
 [ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
 The product's why and scope live in the
-[Product Charter](../requirements/purpose.md) and
-[MVP requirements](../requirements/purpose.md).
+[Product Charter](../requirements/purpose.md).
 DSH capability references and alternatives are in
 [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md#evidence-and-follow-up); open
 experiments belong in [research](../research/README.md).
