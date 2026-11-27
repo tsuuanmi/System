@@ -655,3 +655,8 @@ test('readyCount counts todo Items that are not Blocked, not done and not doing'
   const status = parseStatus('# S\n\n## Items\n\n- [ ] a-1 Ready one\n- [ ] a-2 Ready two\n- [ ] a-3 Blocked (after: a-1)\n- [x] a-4 Done\n- [ ] a-5 Cycle x (after: a-6)\n- [ ] a-6 Cycle y (after: a-5)\n')
   assert.equal(readyCount(status, '/r', []), 2)
 })
+
+test('readyCount does not count an Item a session has claimed', () => {
+  const status = parseStatus('# S\n\n## Items\n\n- [ ] a-1 One\n- [ ] a-2 Two\n')
+  assert.equal(readyCount(status, '/r', [], [{ repository: '/r', item: 'a-1', who: 'tan', at: '2026-01-01T00:00:00.000Z' }]), 1)
+})
