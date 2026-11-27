@@ -45,7 +45,7 @@ part of the profile and `system init` does not install them; the
 
 [`system-night-session.service`](system-night-session.service) and
 [`.timer`](system-night-session.timer) are templates (`@REPO@`, `@PATH@`) for a
-nightly user timer that runs `claude -p` (through [`system-night-session.sh`](system-night-session.sh), which gives it `--allowedTools`, stores its answer as the report and sends the ID) with
+nightly user timer that runs `claude -p` (through [`system-night-session.sh`](system-night-session.sh), which gives it `--allowedTools`, runs it in a bubblewrap layer with only the caller socket ([ADR-0016](../../docs/decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)), stores its answer as the report and sends the ID) with
 [`tools/night-session.md`](../../tools/night-session.md); not installed by
 `system init`, off until enabled, not run late. See the
 [runbook](../../docs/operations/scheduled-session.md#the-scheduled-sessions-prompt).
