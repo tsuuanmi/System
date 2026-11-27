@@ -57,7 +57,7 @@ test('system confirm stores a confirmation@1 and the report counts it, with a se
   assert.equal(shown(JSON.parse(text).confirmation).kind, 'confirmation')
 
   // The unsettled Intent is not counted; the CLI confirmation (2026-11-17) and the MCP one (now) are.
-  assert.deepEqual(headline(), { itemsMerged: 0, parts: { intentsSettled: 1, confirmations: 2, releases: 0, humanTouches: 0 }, operatorActs: 3, itemsPerAct: 0 })
+  assert.deepEqual(headline(), { itemsMerged: 0, parts: { intentsSettled: 1, confirmations: 2, releases: 0, humanTouches: 0 }, operatorActs: 3, itemsPerAct: 0, releasesByCaller: 0 })
   const before = JSON.parse(cli.run(['work', 'report', '--since', '2000-01-01', '--until', '2001-01-01']).stdout).headline
   assert.equal(before.operatorActs, 0, 'acts outside the range are not counted')
 })

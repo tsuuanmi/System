@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { defaultChange, failureClass, parseCheckFailure } from '../src/failure-class.ts'
 import { rangeReport } from '../src/measures.ts'
-import { releaseTimes } from '../src/releases.ts'
+import { isCallerRelease, releaseTimes, releasesByMaker } from '../src/releases.ts'
 import type { EscapedDefect } from '../src/defect.ts'
 import type { WorkEvent, WorkRecord } from '../src/record.ts'
 
@@ -125,14 +125,31 @@ test('headline: operator acts are Intents settled, confirmations, releases and h
   const confirmations = [{ date: '2026-11-16' }, { date: '2026-11-01' }]
   const releases = [T('15', '05:00:00'), T('17', '05:00:00'), T('09')]
   const r = rangeReport([touched, other], { since: '2026-11-15', until: '2026-11-18', intents, confirmations, releases })
-  assert.deepEqual(r.headline, { itemsMerged: 2, parts: { intentsSettled: 2, confirmations: 1, releases: 2, humanTouches: 2 }, operatorActs: 7, itemsPerAct: 2 / 7 })
+  assert.deepEqual(r.headline, { itemsMerged: 2, parts: { intentsSettled: 2, confirmations: 1, releases: 2, humanTouches: 2 }, operatorActs: 7, itemsPerAct: 2 / 7, releasesByCaller: 0 })
   // The 2026-11-17 case: Items merged with no touches, yet the operator acted.
   const acts = rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15'), settledBy: 'operator' }], releases: [T('16')] }).headline
-  assert.deepEqual(acts, { itemsMerged: 2, parts: { intentsSettled: 1, confirmations: 0, releases: 1, humanTouches: 0 }, operatorActs: 2, itemsPerAct: 1 })
+  assert.deepEqual(acts, { itemsMerged: 2, parts: { intentsSettled: 1, confirmations: 0, releases: 1, humanTouches: 0 }, operatorActs: 2, itemsPerAct: 1, releasesByCaller: 0 })
   // An Intent without `settledBy` is not counted; nothing counted gives `no acts`, never Infinity.
-  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15') }] }).headline, { itemsMerged: 2, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts' })
-  assert.deepEqual(rangeReport([OLD], { since: '2026-11-15' }).headline, { itemsMerged: 0, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts' })
+  assert.deepEqual(rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15') }] }).headline, { itemsMerged: 2, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts', releasesByCaller: 0 })
+  assert.deepEqual(rangeReport([OLD], { since: '2026-11-15' }).headline, { itemsMerged: 0, parts: { intentsSettled: 0, confirmations: 0, releases: 0, humanTouches: 0 }, operatorActs: 0, itemsPerAct: 'no acts', releasesByCaller: 0 })
   assert.equal(JSON.stringify(rangeReport([A], { since: '2026-11-15' }).headline).includes('null'), false)
+})
+
+test('ms-4: a release by a caller is reported apart as releasesByCaller and not counted as an operator act', () => {
+  const r = rangeReport([A, C], { since: '2026-11-15', intents: [{ at: T('15'), settledBy: 'operator' }], releases: [T('16')], callerReleases: [T('16', '01:00:00'), T('17'), T('01')] })
+  assert.deepEqual(r.headline, { itemsMerged: 2, parts: { intentsSettled: 1, confirmations: 0, releases: 1, humanTouches: 0 }, operatorActs: 2, itemsPerAct: 1, releasesByCaller: 2 })
+})
+
+test('ms-4: the releases of 2026-11-26 (#466, #469, #471, #478, #490) are a caller\'s, a pull request before the delegation or an unmarked one is the operator\'s', () => {
+  const merge = (n: number, extra = '') => `Merge pull request #${n} from tsuuanmi/dev\n\nRelease: x${extra}`
+  for (const n of [466, 469, 471, 478, 490]) assert.equal(isCallerRelease(merge(n)), true, `#${n}`)
+  for (const n of [456, 458, 449]) assert.equal(isCallerRelease(merge(n)), false, `#${n}`)
+  assert.equal(isCallerRelease(merge(500, '\n\nReleased-By: caller')), true, 'the marker line in the pull request body')
+  assert.equal(isCallerRelease(merge(500, ' Released-By: caller')), false, 'the marker is a line of its own')
+  const log = [
+    ['2026-11-26T10:46:23Z', 'm1 d1', merge(466)], ['2026-11-26T09:19:52Z', 'm2 d2', merge(456)], ['2026-11-26T15:43:46Z', 'm3 d3', merge(490)], ['2026-11-26T14:00:00Z', 'm4 f1', merge(491)],
+  ].map(([t, p, m]) => `${t}\x1f${p}\x1f${m}\n\x1e`).join('')
+  assert.deepEqual(releasesByMaker(log, new Set(['d1', 'd2', 'd3'])), { operator: ['2026-11-26T09:19:52.000Z'], caller: ['2026-11-26T10:46:23.000Z', '2026-11-26T15:43:46.000Z'] })
 })
 
 test('releaseTimes keeps the merges of a fake git log whose second parent is on dev (`%cI %P` per line, blank lines ignored)', () => {
@@ -197,4 +214,30 @@ test('ct-2: a failed release verdict on a check the Works skip is a late-caught 
   assert.deepEqual(count(rel('p', 'failed: upgrade (exit 1)', 'repo-checks-v2')), { count: 0, checks: [] })
   assert.deepEqual(count(rel('a', 'failed: upgrade (exit 1)'), rel('b', 'failed: install-guide (exit 1)'), rel('c', 'failed: upgrade (exit 1)')), { count: 3, checks: ['install-guide', 'upgrade'] })
   assert.deepEqual(rangeReport([rel('x', 'failed: upgrade (exit 1)')], { since: '2026-11-15' }).lateCaughtDefects, { count: 0, checks: [] })
+})
+
+test('costCoverage: attempts with a known, partial and unavailable cost are counted per Runtime, so unknown cost is not read as zero (usage-1)', () => {
+  const sel = (r: WorkRecord, runtime: string): WorkRecord => ({ ...r, events: r.events.map((e) => (e.type === 'dispatched' ? { ...e, selected: `${runtime}/a` } : e)) })
+  const r = rangeReport([sel(A, 'claude-code'), sel(B, 'codex'), sel(C, 'claude-code')], { since: '2026-11-15' })
+  assert.deepEqual(r.costCoverage, { 'claude-code': { known: 0, partial: 2, unavailable: 0 }, codex: { known: 0, partial: 0, unavailable: 1 } })
+})
+
+const reopen = (at: string, automatic = true): Unnumbered => ({ type: 'reopened', at, stepId: 'task', reason: 'checks failed', ...(automatic ? { automatic: true } : { caller: { type: 'human', operatorId: 'tan' } }) }) as unknown as Unnumbered
+
+test('reopen rounds (rounds-1): per Work, in total, median and p90 to pass, and Works failed after the cap', async () => {
+  const { summarize } = await import('../src/summary.ts')
+  const P0 = record('p0', 'succeeded', [admitted(T('20')), terminal(T('20', '01:00:00'), 'succeeded')])
+  const P1 = record('p1', 'succeeded', [admitted(T('21')), reopen(T('21', '00:10:00')), terminal(T('21', '01:00:00'), 'succeeded')])
+  const P3 = record('p3', 'succeeded', [admitted(T('22')), reopen(T('22', '00:10:00')), reopen(T('22', '00:20:00'), false), reopen(T('22', '00:30:00')), terminal(T('22', '01:00:00'), 'succeeded')])
+  const F = record('f', 'failed', [admitted(T('23')), reopen(T('23', '00:10:00')), verdictFail(T('23', '00:20:00'), 'unit failed'), terminal(T('23', '01:00:00'), 'failed')])
+  const G = record('g', 'failed', [admitted(T('24')), verdictFail(T('24', '00:20:00'), 'unit failed'), terminal(T('24', '01:00:00'), 'failed')])
+  assert.equal(summarize(P1).reopenRounds, 1)
+  assert.equal(summarize(P0).reopenRounds, 0)
+  const r = rangeReport([P0, P1, P3, F, G], { since: '2026-11-20' }).reopenRounds
+  assert.deepEqual(r.perWork, [{ work: 'work:p0', rounds: 0, status: 'succeeded' }, { work: 'work:p1', rounds: 1, status: 'succeeded' }, { work: 'work:p3', rounds: 3, status: 'succeeded' }, { work: 'work:f', rounds: 1, status: 'failed' }, { work: 'work:g', rounds: 0, status: 'failed' }])
+  assert.equal(r.total, 5)
+  assert.deepEqual({ median: r.medianToPass, p90: r.p90ToPass, passed: r.passed }, { median: 1, p90: 3, passed: 3 })
+  assert.deepEqual(r.failedAfterCap, ['work:f'])
+  const none = rangeReport([G], { since: '2026-11-20' }).reopenRounds
+  assert.deepEqual({ median: none.medianToPass, p90: none.p90ToPass, failed: none.failedAfterCap }, { median: 'unknown', p90: 'unknown', failed: [] })
 })

@@ -13,7 +13,7 @@ import type { Spawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
-import { GIT_TREE_KIND, TASK_KIND, captureTree, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, captureTree, putVerdict, verdictSchema, gitTreeSchema, snapshot, taskSchema, type GitTreeContent } from '@system/work'
 import { parseCheckFailure } from '../../work/src/failure-class.ts'
 import { failureLine } from '../src/reasons.ts'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, parseChecksFile, requiredChecks } from '../src/checks.ts'
@@ -54,7 +54,7 @@ after(() => {
 
 const store = () => memoryArtifacts(
   { ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema }, { ...CHECKS_KIND, content: checksSchema },
-  { ...CHECK_RUN_KIND, content: checkRunSchema }, { ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema }, { ...CITATION_CHECK_KIND, content: citationCheckSchema },
+  { ...CHECK_RUN_KIND, content: checkRunSchema }, { ...VERDICT_KIND, content: verdictSchema }, { ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema }, { ...CITATION_CHECK_KIND, content: citationCheckSchema },
 ).artifacts
 const producer = { type: 'operator' as const, ref: 'tester' }
 
@@ -778,20 +778,25 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   // The upgrade rehearsal (Item rb-1) has its own `paths`: the release surface only, so it is not in `main` below.
   // The install guide check (Item install-1) has its own `paths` too: bin, the bundle, the runbook, the script.
   const main = all.filter((name) => name !== 'web' && name !== 'statusmd' && name !== 'upgrade' && name !== 'install-guide')
+  // The ratchets check (Item ratchet-1) runs for the sources (packages/*/src), its tool, its baseline or the checks file; not for tests, bin or the lockfile.
+  const noRatchets = (names: string[]) => names.filter((name) => name !== 'ratchets')
   const withUpgrade = (names: string[]) => all.filter((name) => names.includes(name) || name === 'upgrade')
   // The STATUS.md check (Item cm-4) runs for STATUS.md, its tool, its parser or the checks file, and needs no install.
   assert.deepEqual(run(['STATUS.md']), ['docs', 'statusmd'])
   assert.deepEqual(run(['packages/work/src/status-parse.ts']), all.filter((name) => name !== 'web' && name !== 'install-guide'))
   assert.deepEqual(run(['.system/checks.yaml']), all.filter((name) => name !== 'web'))
-  assert.deepEqual(run(['bin/system']), all.filter((name) => name !== 'web' && name !== 'statusmd'))
+  assert.deepEqual(run(['bin/system']), noRatchets(all).filter((name) => name !== 'web' && name !== 'statusmd'))
   assert.deepEqual(run(['packages/bundle/src/index.ts']), all.filter((name) => main.includes(name) || name === 'install-guide'))
   for (const file of ['docs/operations/install-and-update.md', 'tools/install.sh']) assert.deepEqual(run([file]), ['docs', 'install-guide'], file)
-  for (const file of ['packages/work/src/controller.ts', 'workflows/code-checks.yaml', 'packages/host/src/host.ts', 'packages/app/src/update.ts', 'packages/verifiers/src/checks.ts']) assert.deepEqual(run([file]), withUpgrade(main), file)
-  for (const file of ['tests/work.test.ts', 'docs/requirements/purpose.md']) assert.deepEqual(run([file]), main, file)
+  assert.deepEqual(run(['tools/check-ratchets.ts']), ['docs', 'ratchets'])
+  for (const file of ['packages/work/src/controller.ts', 'packages/host/src/host.ts', 'packages/app/src/update.ts', 'packages/verifiers/src/checks.ts']) assert.deepEqual(run([file]), withUpgrade(main), file)
+  assert.deepEqual(run(['workflows/code-checks.yaml']), noRatchets(withUpgrade(main)))
+  for (const file of ['tests/work.test.ts', 'docs/requirements/purpose.md']) assert.deepEqual(run([file]), noRatchets(main), file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).
-  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts', 'tests/chatgpt-web.test.ts', 'test-support/headed.ts']) assert.deepEqual(run([file]), [...main, 'web'], file)
+  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts']) assert.deepEqual(run([file]), [...main, 'web'], file)
+  for (const file of ['tests/chatgpt-web.test.ts', 'test-support/headed.ts']) assert.deepEqual(run([file]), [...noRatchets(main), 'web'], file)
   // The lint check (Item fl-10) runs for a change to the ESLint config as for any code.
-  for (const file of ['test-support/fixture.ts', 'package.json', 'pnpm-lock.yaml', 'eslint.config.js']) assert.deepEqual(run([file]), main, file)
+  for (const file of ['test-support/fixture.ts', 'package.json', 'pnpm-lock.yaml', 'eslint.config.js']) assert.deepEqual(run([file]), noRatchets(main), file)
 })
 
 test('a commit checked as it is (code-checks.yaml on its own) runs every check, paths or not', async () => {
@@ -845,23 +850,46 @@ async function withCheckEnv(run: string, checkEnv: Record<string, string>) {
   const verifier = requiredChecks(artifacts, processSpawner, Date.now, checkEnv)
   const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
   const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'checks', capability: 'code.required-checks', subject: treeId, criteria })
-  const read = artifacts.get(result.evidence[0]!)
-  return { result, run: (read.state === 'stored' ? read.envelope.content : {}) as { stdoutTail: string; checkEnv?: string[] } }
+  const read = result.evidence[0] ? artifacts.get(result.evidence[0]) : undefined
+  return { result, run: (read?.state === 'stored' ? read.envelope.content : {}) as { stdoutTail: string; checkEnv?: string[]; nodeVersion?: string; nodePath?: string; pnpmVersion?: string } }
 }
 
 test('checkEnv: a check sees a configured variable; HOME is still a fresh directory', async () => {
-  const { result, run } = await withCheckEnv('echo "$RUSTUP_HOME $HOME"', { RUSTUP_HOME: '/opt/rustup-test' })
+  const dir = mkdtempSync(join(tmpdir(), 'rustup-test-'))
+  const { result, run } = await withCheckEnv('echo "$RUSTUP_HOME $HOME"', { RUSTUP_HOME: dir })
   assert.equal(result.verdict, 'pass', result.reason)
   const [rustup, home] = run.stdoutTail.trim().split(' ')
-  assert.equal(rustup, '/opt/rustup-test')
+  assert.equal(rustup, dir)
   assert.match(home!, /system-checks-/)
   assert.notEqual(home, process.env.HOME)
 })
 
 test('checkEnv: the evidence lists the names and never the values', async () => {
-  const { run } = await withCheckEnv('echo ok', { CARGO_HOME: '/secret/value/one', CARGO_TARGET_DIR: '/secret/value/two' })
-  assert.deepEqual(run.checkEnv, ['CARGO_HOME', 'CARGO_TARGET_DIR'])
-  assert.doesNotMatch(JSON.stringify(run), /secret\/value/)
+  const dir = mkdtempSync(join(tmpdir(), 'secret-value-'))
+  const { run } = await withCheckEnv('echo ok', { CARGO_HOME: dir, CARGO_TARGET_DIR: tmpdir(), OTHER: '/secret/value/three' })
+  assert.deepEqual(run.checkEnv, ['CARGO_HOME', 'CARGO_TARGET_DIR', 'OTHER'])
+  assert.doesNotMatch(JSON.stringify(run), /secret-value|secret\/value/)
+})
+
+test('nodever-1: a check run records the Node version, the Node path and the pnpm version it used', async () => {
+  const { result, run } = await withCheckEnv('echo ok', {})
+  assert.equal(result.verdict, 'pass', result.reason)
+  assert.equal(run.nodeVersion, process.version)
+  assert.equal(run.nodePath, process.execPath)
+  assert.ok(run.pnpmVersion === undefined || /^\d+\.\d+/.test(run.pnpmVersion), String(run.pnpmVersion))
+  assert.ok(checkRunSchema.safeParse({ name: 'x', run: 'x', commit: 'c', exitCode: 0, signal: null, timedOut: false, durationMs: 0, stdoutTail: '', stderrTail: '' }).success, 'older records still parse')
+})
+
+test('nodever-1: a *_HOME or *_DIR checkEnv path that does not exist fails at once naming it, running nothing', async () => {
+  const missing = join(tmpdir(), 'no-such-dir-nodever-1')
+  for (const name of ['RUSTUP_HOME', 'CARGO_TARGET_DIR']) {
+    const { result } = await withCheckEnv('echo ran', { [name]: missing })
+    assert.notEqual(result.verdict, 'pass')
+    assert.match(result.reason, new RegExp(`${name}.*${missing}`))
+    assert.deepEqual(result.evidence, [], 'no check ran')
+  }
+  const { result } = await withCheckEnv('echo ran', { MODE: 'x', SOME_PATH: missing, HOME_X: missing })
+  assert.equal(result.verdict, 'pass', 'other names are not checked')
 })
 
 test('checkEnv: HOME, PATH, CI and malformed names are refused', () => {
@@ -1028,4 +1056,71 @@ test('on: the schema accepts the three events and refuses an unknown one, an emp
     assert.ok('problem' in parsed, bad)
     assert.match((parsed as { problem: string }).problem, /on/, bad)
   }
+})
+
+// Item chk-reuse-1: a pass is reused when the inputs of the check are byte-identical.
+const REUSE = 'checks:\n  - name: install\n    run: "true"\n  - name: unit\n    run: test -f ok.txt\n    paths: ["**", "!**/*.md"]\n  - name: smoke\n    run: test -f ok.txt\n    paths: ["**", "!**/*.md"]\n'
+const reuseRepo = () => repo(REUSE, { 'ok.txt': 'ok\n', 'pnpm-lock.yaml': 'lock: 1\n', 'package.json': '{"packageManager":"pnpm@1.0.0"}\n' })
+/** A failed earlier check-run of `name`, so the check runs again whatever `paths` selects (as a reopened step's retry). */
+const failedEarlier = async (artifacts: Artifacts, names: string[]): Promise<string[]> => Promise.all(names.map(async (name) => (await artifacts.put({ ...CHECK_RUN_KIND, content: { name, run: 'x', commit: 'a'.repeat(40), exitCode: 1, signal: null, timedOut: false, durationMs: 1, stdoutTail: '', stderrTail: '' }, classification: 'local-private', producer })).id))
+async function verified(artifacts: Artifacts, verifier: ReturnType<typeof requiredChecks>, criteria: string, subject: string, attempt: string, extra: { earlier?: string[]; event?: 'release' } = {}) {
+  const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-${attempt}`, stepId: 'checks', capability: 'code.required-checks', subject, criteria, ...extra })
+  const verdictId = await putVerdict(artifacts, { subject, criteria, capability: 'code.required-checks', verifier: { ref: verifier.ref, version: verifier.version }, verdict: result.verdict, reason: result.reason, evidence: result.evidence })
+  return { ...result, verdictId }
+}
+
+test('a docs-only change reuses unit and smoke from its base\'s pass, naming the earlier verdict', async () => {
+  const artifacts = store()
+  const repository = reuseRepo()
+  const { task, tree, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const first = await verified(artifacts, verifier, criteria, treeId, 'r1')
+  assert.equal(first.verdict, 'pass', first.reason)
+  assert.doesNotMatch(first.reason, /reused/)
+  const docsOnly = await change(artifacts, repository, tree.commit, { 'docs/n.md': 'n\n' })
+  const second = await verified(artifacts, verifier, criteria, docsOnly, 'r2', { earlier: await failedEarlier(artifacts, ['unit', 'smoke']) })
+  assert.equal(second.verdict, 'pass', second.reason)
+  assert.match(second.reason, new RegExp(`unit pass \\(reused ${first.verdictId}\\)`))
+  assert.match(second.reason, new RegExp(`smoke pass \\(reused ${first.verdictId}\\)`))
+  assert.deepEqual(second.evidence.slice().sort(), first.evidence.slice(1).sort(), 'the reused runs are the earlier evidence; install did not run again')
+})
+
+test('a changed lockfile or a changed selected file does not reuse', async () => {
+  const artifacts = store()
+  const repository = reuseRepo()
+  const { task, tree, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  await verified(artifacts, verifier, criteria, treeId, 'l1')
+  for (const [n, files] of [['l2', { 'pnpm-lock.yaml': 'lock: 2\n' }], ['l3', { 'src/a.ts': 'x\n' }]] as const) {
+    const changed = await change(artifacts, repository, tree.commit, files)
+    const result = await verified(artifacts, verifier, criteria, changed, n, { earlier: await failedEarlier(artifacts, ['unit', 'smoke']) })
+    assert.equal(result.verdict, 'pass', result.reason)
+    assert.doesNotMatch(result.reason, /reused/, n)
+  }
+})
+
+test('a failed verdict is not reused, and neither is a pass of the release event', async () => {
+  const artifacts = store()
+  const repository = repo(REUSE, { 'package.json': '{}\n' })
+  const { task, tree, treeId } = await taskOn(artifacts, repository)
+  const verifier = requiredChecks(artifacts, processSpawner)
+  const criteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: task, operatorId: 't' })
+  const failed = await verified(artifacts, verifier, criteria, treeId, 'f1')
+  assert.equal(failed.verdict, 'fail')
+  const again = await verified(artifacts, verifier, criteria, treeId, 'f2')
+  assert.equal(again.verdict, 'fail')
+  assert.doesNotMatch(again.reason, /reused/)
+  // A pass, then the release event over the same inputs: every check runs.
+  const good = repo(REUSE, { 'ok.txt': 'ok\n', 'package.json': '{}\n' })
+  const goodTask = await taskOn(artifacts, good)
+  const goodCriteria = await verifier.criteria({ capability: 'code.required-checks', name: 'repo-checks-v1', input: goodTask.task, operatorId: 't' })
+  const pass = await verified(artifacts, verifier, goodCriteria, goodTask.treeId, 'f3')
+  assert.equal(pass.verdict, 'pass', pass.reason)
+  const release = await verified(artifacts, verifier, goodCriteria, goodTask.treeId, 'f4', { event: 'release' })
+  assert.equal(release.verdict, 'pass', release.reason)
+  assert.doesNotMatch(release.reason, /reused/)
+  assert.match(release.reason, /run: install [\d.]+ s, unit [\d.]+ s, smoke [\d.]+ s$/)
+  void tree
 })

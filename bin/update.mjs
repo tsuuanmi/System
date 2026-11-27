@@ -21,6 +21,7 @@
 //      is written here, not pinned by a file of the repository, the Q0 rule), bound to the commit. A failed check switches
 //      `current` back and the Host is asked to run the release before; the failed check is named.
 // The releases other than the current one and the one before are removed.
+// `system update --to <release>` (Item revert-1) is the way back: it switches `current` to a kept release through steps 4-6 only.
 import { dirname, join } from 'node:path'
 
 /** The Work of the install check: a verify step of `release.install-check`, its input the release commit's task. */
@@ -143,7 +144,72 @@ export async function finishPending({ install, commit, alive, ...deps }) {
 /** The last line of a command's output. */
 const lastLine = (text) => text.trim().split('\n').at(-1) ?? ''
 
-export async function update({ install, cli, origin, run, write, read, remove, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
+/**
+ * `system update --to <release>` (Item revert-1): switch `current` to a release kept in `releases/` (the one before, normally) through
+ * the same switch, drain and afterInstall check as an update; no fetch, build or release check, the kept release passed them when it
+ * was installed. A release not in `releases/` is refused and nothing changes. A failed afterInstall check, or a Host that does not come
+ * up, switches back to the release the revert left. `to` is a commit or a unique prefix of one.
+ */
+async function revert({ install, to, cli, run, write, read, remove, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
+  const repo = join(install, 'source')
+  const link = join(install, 'current')
+  const kept = releases().filter((name) => name === to || (to.length >= 7 && name.startsWith(to)))
+  const exact = kept.find((name) => name === to)
+  const commit = exact ?? (kept.length === 1 ? kept[0] : undefined)
+  if (!commit) {
+    log(`${to} is ${kept.length > 1 ? 'ambiguous' : 'not in releases/'} (kept: ${releases().join(', ') || 'none'}); current stays ${readlink(link) ?? 'unset'}`)
+    return 1
+  }
+  const before = readlink(link)
+  if (before === `releases/${commit}`) {
+    log(`${commit.slice(0, 12)} is already current`)
+    return 0
+  }
+  const release = join(install, 'releases', commit)
+  try {
+    const listed = (await run('git', ['-C', repo, 'show', `${commit}:.system/checks.yaml`])).stdout
+    const pending = /^afterInstall:/m.test(listed) && before !== undefined
+    let task
+    if (pending) {
+      const made = await run(cli, ['task', 'new', '--text', `Revert check of ${commit} for the install`, '--repo', repo, '--ref', commit])
+      if (made.status !== 0) throw new Error(`system task new failed with status ${made.status}`)
+      task = made.stdout.trim()
+      write(join(install, 'install-check.yaml'), INSTALL_CHECK_WORKFLOW)
+      write(join(install, PENDING), JSON.stringify({ commit, previous: before, task, workflow: join(install, 'install-check.yaml'), updatePid: process.pid }, null, 2))
+    }
+    switchLink(link, `releases/${commit}`)
+    log(`reverted: current is ${commit.slice(0, 12)}; waiting for the Host to drain and start it`)
+    if (before === undefined) return 0
+    const until = now() + waitMs
+    for (;;) {
+      if (await probe(release)) break
+      if (now() >= until) {
+        switchLink(link, before)
+        remove(join(install, PENDING))
+        log(`the Host did not come up on ${commit.slice(0, 12)} within ${Math.round(waitMs / 60_000)} min; switched back to ${before}`)
+        return 1
+      }
+      await sleep(5000)
+    }
+    log(`the Host runs ${commit.slice(0, 12)}`)
+    if (pending && !(await finishInstallCheck({ install, run, read, write, remove, switchLink, log, sleep, now, waitMs }))) {
+      const back = now() + waitMs
+      while (!(await probe(join(install, before))) && now() < back) await sleep(5000)
+      return 1
+    }
+    return 0
+  } catch (error) {
+    log(`${error.message}; current stays where it was`)
+    return 1
+  }
+}
+
+export async function update({ to, ...deps }) {
+  if (to !== undefined) return revert({ to, ...deps })
+  return upgrade(deps)
+}
+
+async function upgrade({ install, cli, origin, run, write, read, remove, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
   const repo = join(install, 'source')
   const link = join(install, 'current')
   // corepack beside the Node running this (Item ns-2); its `pnpm` shim finds `node` on the PATH `run` is given, which starts with that Node's directory.

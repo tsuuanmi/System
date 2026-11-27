@@ -6,9 +6,10 @@ import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import type { WorkRecord } from '@system/work'
+import { TERMINAL, holdDecision, type WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/agents'
-import { MAX_FRAME, fitsFrame } from '../../host/lib/index.js'
+import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '../../host/lib/index.js'
+import { operations, type Services } from '../../host/lib/operations.js'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
@@ -197,6 +198,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         const record = await host.call('work.show', { workId })
         if (!record) throw new Error(`no Work ${workId}`)
         io.out(`${workId} is ${record.state.status}: ${record.state.reason ?? ''}\n`)
+        io.out(holdDecision(record) ?? '')
         records.push(record)
       }
       const verb = decision === 'approved' ? 'approve' : 'deny'
@@ -365,6 +367,14 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  program.command('schema')
+    .description('print the operation table as JSON: each operation\'s name, summary, Authority, read or write, whether a write is destructive, and its parameters (the MCP tools and their annotations come from the same table); needs no Host')
+    .action(() => {
+      select(async () => {
+        io.out(`${JSON.stringify(schemaOf(tableOf(operations({} as Services))), null, 2)}\n`)
+        return 0
+      })
+    })
   program.command('status')
     .description('the status of a project: one line per Item of its STATUS.md on dev, done, doing (which Work, step, account, since when, progress) or todo (nobody)')
     .option('--repo <path>', 'a git repository of the project', '.')
@@ -468,10 +478,11 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('wait <workId...>')
-    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work. Exit: with --any the code of the first Work to end; otherwise the worst among the Works (failed, cancelled, held, succeeded; 0 succeeded, 1 failed, 3 held, 5 cancelled), 4 on timeout, 6 when the Host stayed unreachable')
+    .description('return when every Work, or with --any the first, has ended, is held or awaits approval; one line per Work (or one JSON object per Work with --json). Exit: with --any the code of the first Work to end; otherwise the worst among the Works (failed, cancelled, held, succeeded; 0 succeeded, 1 failed, 3 held or awaiting the Operator, 5 cancelled), 4 on timeout, 6 when the Host stayed unreachable')
     .option('--any', 'return at the first Work that ended, not when all have')
     .option('--timeout <minutes>', 'give up after this many minutes (exit 4; exit 6 if the Host was unreachable)')
-    .action((workIds: string[], options: { any?: boolean; timeout?: string }) => {
+    .option('--json', 'print one JSON object per Work (NDJSON)')
+    .action((workIds: string[], options: { any?: boolean; timeout?: string; json?: boolean }) => {
       select(async () => {
         let timeoutMs: number | undefined
         if (options.timeout !== undefined) {
@@ -480,13 +491,25 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
           timeoutMs = minutes * 60_000
         }
         const waited = await host.waitFor(workIds, { any: Boolean(options.any), timeoutMs })
-        for (const { id, state } of waited.records) {
-          const why = state.reason ?? (state.status === 'held' && state.awaiting ? `awaiting ${state.awaiting}` : undefined)
-          io.out(`${id}  ${state.status}${why ? `  ${why}` : ''}\n`)
-        }
         if (waited.unreachable !== undefined) {
+          if (options.json) {
+            for (const workId of workIds) {
+              io.out(`${JSON.stringify({ id: workId, outcome: 'unreachable', exitCode: EXIT_HOST_UNREACHABLE, reason: waited.unreachable })}\n`)
+            }
+          }
           io.err(`system: the System Host did not answer for ${Math.round((timeoutMs === undefined ? RECONNECT_MS : Math.min(timeoutMs, RECONNECT_MS)) / 60_000 * 10) / 10} minutes; the Works were not read and may still be running (exit ${EXIT_HOST_UNREACHABLE}); see docs/operations/runbook.md, "The Host is not answering"\n`)
           return EXIT_HOST_UNREACHABLE
+        }
+        for (const { id, state } of waited.records) {
+          const why = state.reason ?? (state.status === 'held' && state.awaiting ? `awaiting ${state.awaiting}` : undefined)
+          if (options.json) {
+            const isTimeout = waited.timedOut && !TERMINAL.has(state.status)
+            const outcome = isTimeout ? 'timeout' : state.status
+            const code = isTimeout ? 4 : exitCode(state.status)
+            io.out(`${JSON.stringify({ id, status: state.status, outcome, exitCode: code, ...(state.awaiting ? { awaiting: state.awaiting } : {}), ...(why ? { reason: why } : {}) })}\n`)
+          } else {
+            io.out(`${id}  ${state.status}${why ? `  ${why}` : ''}\n`)
+          }
         }
         if (waited.timedOut) {
           io.err(`system: timed out after ${options.timeout} minutes; the Works above had not ended (exit 4)\n`)
@@ -500,11 +523,13 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('show <workId>')
-    .description('print the Work record (events and state) as JSON')
+    .description('print the Work record (events and state) as JSON; a held Work first states its decision on stderr: the step, reason, options and the command for each')
     .action((workId: string) => {
       select(async () => {
         const record = await host.call('work.show', { workId })
         if (!record) throw new Error(`no Work ${workId}`)
+        // On stderr, above the record in a terminal: stdout stays the record's JSON for every reader that parses it.
+        io.err(holdDecision(record) ?? '')
         io.out(`${JSON.stringify(record, null, 2)}\n`)
         return 0
       })
@@ -519,7 +544,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   work.command('report [workId]')
-    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the headline (Items merged per operator act: Intents settled, confirmations, releases, human touches) and the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts, and recurringClasses: the failure classes seen 2 or more times, most frequent first (top 10, with the latest Work as example)')
+    .description('duration, attempts, operator touches and usage of a Work, from its events; or with --since, the headline (Items merged per operator act: Intents settled, confirmations, releases the Operator made, human touches; `releasesByCaller`, releases a caller made under the delegation, are reported apart and not counted) and the five measures of effect (verified success, recurring failure, escaped defect, cost per verified Work, time to verified resolution) over the Works admitted in the range, with their counts, and recurringClasses: the failure classes seen 2 or more times, most frequent first (top 10, with the latest Work as example)')
     .option('--since <date>', 'the range starts at this date or timestamp (inclusive)')
     .option('--until <date>', 'the range ends before this date or timestamp (default: now)')
     .option('--escaped <n>', 'an explicit count of the Escaped defects of the range that replaces the recorded ones (`system defect add`); the report labels it an override')

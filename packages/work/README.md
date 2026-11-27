@@ -3,7 +3,8 @@
 The `work` row: durable Work, the Workflow file compiler and the generic Work
 Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-workflows.md),
 [ADR-0004](../../docs/decisions/ADR-0004-mvp-0-operating-decisions.md) decision 9,
-[architecture](../../docs/architecture/workflow-composition.md)).
+[architecture](../../docs/architecture/workflow-composition.md),
+[record](../../docs/architecture/work-record.md)).
 
 - **Injects:** `storageDomain`, `artifacts`. **Provides:** `ctx.capabilities`
   (the Worker and verifier registry) and `ctx.work` (the Host core's storage).
@@ -27,6 +28,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   the rule is in the [agents README](../agents/README.md#routing-by-headroom).
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
+- [src/hold.ts](src/hold.ts) — `holdDecision`: a pure statement of what a held Work awaits, the options and the command for each (printed by `work show` and `approve`).
 - [src/status.ts](src/status.ts) — a project's status: `parseStatus` (in [src/status-parse.ts](src/status-parse.ts), import-free; `strict` throws on any problem; `(after: id, id)` makes an Item Blocked) `itemLines` (done, doing, todo from the Work records, a `done` line naming its Works' Outside failures when there are any) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/using-system.md#the-status-of-a-project).
 - [src/outside.ts](src/outside.ts) — `outsideCause`: the one place where a recorded failure reason is classed as an Outside failure ([GLOSSARY](../../GLOSSARY.md)) with its cause (`quota`, `restart`, `conflict`, `load`, `slow-host`, `attach`; a check timeout in a verdict is a change failure unless the base fails it too), or, when no pattern matches, as a failure of the change.
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.

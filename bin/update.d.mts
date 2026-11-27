@@ -15,6 +15,8 @@ export interface UpdateDeps {
   now(): number
   log(line: string): void
   waitMs: number
+  /** `system update --to <release>` (Item revert-1): revert to this kept release instead of upgrading. */
+  to?: string
 }
 export function update(deps: UpdateDeps): Promise<number>
 export const PENDING: string

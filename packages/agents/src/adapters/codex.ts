@@ -74,7 +74,7 @@ function parse(stdout: string, options?: ParseOptions): Parsed {
         source: `codex turn.completed usage over ${turns} turn(s) (input_tokens includes cached_input_tokens)`,
       }
     : undefined
-  const base: Parsed = { ok: turns > 0 && failure === undefined, message: failure ?? message, usage }
+  const base: Parsed = { ok: turns > 0 && failure === undefined, message: failure ?? message, usage, ...(usage ? {} : { usageGap: turns ? 'a codex turn.completed event carried no token counts' : 'codex printed no turn.completed event' }) }
   if (!base.ok || options?.structured === false) return base
   const resultPath = options?.ws ? join(options.ws.root, RESULT_FILE) : undefined
   const raw = resultPath ? (existsSync(resultPath) ? readFileSync(resultPath, 'utf8') : undefined) : (message || undefined)

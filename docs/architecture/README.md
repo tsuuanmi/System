@@ -7,6 +7,7 @@ boundary contracts. Selection is not the same as a working implementation.
   DSH/Cordis host composition, plugin lifecycle and cross-workflow invariants.
 - [Work and Workflow composition](workflow-composition.md) — Task as primitive,
   declarative config with dependencies and capability-based steps.
+- [Work record](work-record.md) — events, derived facts and the optional fields of an observed event.
 - [Artifact IDs and verification](artifact-verification.md) — immutable
   handoff, replay boundaries and configurable verifier capabilities.
 - [Brainstorm composition](brainstorm-composition.md) — three Worker attempts and Artifact ID handoff.

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { after, before, test } from 'node:test'
+import { after, before, describe, test } from 'node:test'
 import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
 const cli = systemCli('system-verify')
@@ -26,11 +26,11 @@ const server = createServer((req, res) => {
 server.listen(0, '127.0.0.1', () => console.log(server.address().port))
 `
 
-const system = (args: string[]) => cli.run(args)
+const system = (args: string[]) => cli.runAsync(args).done
 
 type Verified = { type: string; stepId?: string; subject?: string; criteria?: string; verdict?: string; verdictId?: string; evidence?: string[] }
-const show = (workId: string) => JSON.parse(system(['work', 'show', workId]).stdout) as { events: Verified[]; state: { status: string; reason?: string; criteria: Record<string, string>; steps: Record<string, { outputs: Record<string, string> }> } }
-const artifact = (id: string) => JSON.parse(system(['artifact', 'show', id]).stdout) as { envelope: { kind: string; content: Record<string, unknown> } }
+const show = async (workId: string) => JSON.parse((await system(['work', 'show', workId])).stdout) as { events: Verified[]; state: { status: string; reason?: string; criteria: Record<string, string>; steps: Record<string, { outputs: Record<string, string> }> } }
+const artifact = async (id: string) => JSON.parse((await system(['artifact', 'show', id])).stdout) as { envelope: { kind: string; content: Record<string, unknown> } }
 
 function gitRepo(checks?: string, files: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(home, 'repo-'))
@@ -54,7 +54,7 @@ before(async () => {
   server = spawn(process.execPath, ['-e', SITE], { stdio: ['ignore', 'pipe', 'inherit'] })
   const port = await new Promise<string>((r) => server.stdout!.once('data', (d) => r(String(d).trim())))
   site = `http://127.0.0.1:${port}`
-  assert.equal(system(['init']).status, 0)
+  assert.equal((await system(['init'])).status, 0)
   writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
   config:
     $patch: replace
@@ -65,6 +65,7 @@ before(async () => {
         command: ${fakeAgent}
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
         models: { standard: sonnet }
+        maxConcurrentAttempts: 6
 `)
   // The Host reads its credentials when it starts: store the token, then start it again.
   await cli.start()
@@ -79,48 +80,49 @@ after(async () => {
   rmSync(home, { recursive: true, force: true })
 })
 
-const task = (text: string, repository?: string) => system(['task', 'new', '--text', text, ...(repository ? ['--repo', repository] : [])]).stdout.trim().split('\n').at(-1)!
+const task = async (text: string, repository?: string) => (await system(['task', 'new', '--text', text, ...(repository ? ['--repo', repository] : [])])).stdout.trim().split('\n').at(-1)!
 /** The Software Engineering file without its publish step: these tests are about verification (tests/publish.test.ts covers the whole file). */
 const SE = join(home, 'software-engineering-checks.yaml')
 writeFileSync(SE, readFileSync(join(repo, 'workflows', 'develop.yaml'), 'utf8').replace(/  - id: publish[\s\S]*?(?=  - id: accept)/, '').replace('dependsOn: [publish]', 'dependsOn: [checks]').replace('checks.checks, publish', 'checks.checks'))
 const RESEARCH = join(repo, 'workflows', 'research.yaml')
 
-test('Software Engineering: the exact changed commit passes the base commit\'s pinned checks', () => {
+describe('verify', { concurrency: true }, () => {
+test('Software Engineering: the exact changed commit passes the base commit\'s pinned checks', async () => {
   const repository = gitRepo('checks:\n  - name: note-exists\n    run: test -f NOTE.md\n')
-  const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit', repository)])
+  const ran = await system(['work', 'submit', '--workflow', SE, '--input', await task('FAKE:edit', repository)])
   assert.equal(ran.status, 0, ran.stderr)
-  const record = show(ran.stdout.trim())
+  const record = await show(ran.stdout.trim())
   const verified = record.events.find((e) => e.type === 'verified')!
   assert.equal(verified.subject, record.state.steps.implement!.outputs.change)
   assert.equal(verified.criteria, record.state.criteria['checks.checks'])
-  const verdict = artifact(verified.verdictId!)
+  const verdict = await artifact(verified.verdictId!)
   assert.equal(verdict.envelope.kind, 'verdict')
   assert.deepEqual([verdict.envelope.content.subject, verdict.envelope.content.criteria, verdict.envelope.content.verdict], [verified.subject, verified.criteria, 'pass'])
-  const run = artifact(verified.evidence![0]!)
+  const run = await artifact(verified.evidence![0]!)
   assert.deepEqual([run.envelope.kind, run.envelope.content.name, run.envelope.content.exitCode], ['check-run', 'note-exists', 0])
-  assert.equal(artifact(record.state.criteria['checks.checks']!).envelope.kind, 'checks')
+  assert.equal((await artifact(record.state.criteria['checks.checks']!)).envelope.kind, 'checks')
 })
 
-test('Software Engineering: a change failing a check fails the Work with the check named', () => {
+test('Software Engineering: a change failing a check fails the Work with the check named', async () => {
   const repository = gitRepo('checks:\n  - name: no-env\n    run: test ! -f ENV.json\n')
-  const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:env', repository)])
+  const ran = await system(['work', 'submit', '--workflow', SE, '--input', await task('FAKE:env', repository)])
   assert.equal(ran.status, 1)
-  const record = show(ran.stdout.trim())
+  const record = await show(ran.stdout.trim())
   assert.match(record.events.find((e) => e.type === 'verified')!.verdict!, /^fail$/)
   assert.match(record.state.reason!, /checks=fail/)
 })
 
-test('Software Engineering: a check failed by the environment is verified again with work retry --step checks.checks, on the same change', () => {
+test('Software Engineering: a check failed by the environment is verified again with work retry --step checks.checks, on the same change', async () => {
   const marker = join(home, 'environment-fixed')
   rmSync(marker, { force: true })
   const repository = gitRepo(`checks:\n  - name: environment\n    run: test ! -f NOTE.md || test -f ${marker}\n`)
-  const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit FAKE:append', repository)])
+  const ran = await system(['work', 'submit', '--workflow', SE, '--input', await task('FAKE:edit FAKE:append', repository)])
   assert.equal(ran.status, 1)
   const workId = ran.stdout.trim()
   writeFileSync(marker, '')
   const again = cli.run(['work', 'retry', workId, '--step', 'checks.checks', '--reason', 'the environment is fixed'], { input: `${workId.replace(/^\w+:/, "").slice(0, 8)}\n`, terminal: true })
   assert.equal(again.status, 0, again.stderr)
-  const record = show(workId)
+  const record = await show(workId)
   const verified = record.events.filter((e) => e.type === 'verified')
   assert.deepEqual(verified.map((e) => e.verdict), ['fail', 'fail', 'pass'], 'the failed verdicts are kept: the first change and the automatic further attempt')
   assert.notEqual(verified[0]!.subject, verified[1]!.subject)
@@ -129,88 +131,89 @@ test('Software Engineering: a check failed by the environment is verified again 
   assert.equal(record.state.status, 'succeeded')
 })
 
-test('Software Engineering: a Worker that writes `satisfied` on a base that already holds ends the Work Satisfied; the named tests ran on the base, and `system status` counts the Item done', () => {
+test('Software Engineering: a Worker that writes `satisfied` on a base that already holds ends the Work Satisfied; the named tests ran on the base, and `system status` counts the Item done', async () => {
   const repository = gitRepo('checks:\n  - name: install\n    run: "true"\n  - name: unit\n    run: "false"\n', {
     't/ok.test.mjs': "import { test } from 'node:test'\ntest('holds', () => {})\n",
     'STATUS.md': 'Aim: a project\n- [ ] p-1 Already true\n',
   })
   execFileSync('git', ['-C', repository, 'branch', '-m', 'dev'])
-  const made = system(['task', 'new', '--text', 'FAKE:satisfied', '--repo', repository, '--ref', 'dev', '--item', 'p-1'])
+  const made = await system(['task', 'new', '--text', 'FAKE:satisfied', '--repo', repository, '--ref', 'dev', '--item', 'p-1'])
   assert.equal(made.status, 0, made.stderr)
-  const ran = system(['work', 'submit', '--workflow', SE, '--input', made.stdout.trim()])
+  const ran = await system(['work', 'submit', '--workflow', SE, '--input', made.stdout.trim()])
   assert.equal(ran.status, 0, ran.stderr)
-  const record = show(ran.stdout.trim())
+  const record = await show(ran.stdout.trim())
   assert.equal(record.state.status, 'succeeded')
   assert.equal((record.state as { result?: string }).result, 'satisfied')
   const verified = record.events.filter((e) => e.type === 'verified')
   assert.deepEqual(verified.map((e) => [e.stepId, e.verdict]), [['satisfied-check', 'pass']])
-  assert.equal(artifact(verified[0]!.evidence!.at(-1)!).envelope.content.name, 't/ok.test.mjs "holds"')
+  assert.equal((await artifact(verified[0]!.evidence!.at(-1)!)).envelope.content.name, 't/ok.test.mjs "holds"')
   assert.deepEqual(record.events.filter((e) => e.type === 'skipped').map((e) => e.stepId), ['checks.checks', 'accept'])
-  const line = system(['status', '--repo', repository]).stdout.split('\n')[0]
+  const line = (await system(['status', '--repo', repository])).stdout.split('\n')[0]
   assert.match(line!, /^\[x\] p-1 Already true - done, satisfied; last work:/)
 })
 
-test('a Workflow file using code-checks.yaml, not beside it, gets it from workflows/ at the base commit of its input task', () => {
+test('a Workflow file using code-checks.yaml, not beside it, gets it from workflows/ at the base commit of its input task', async () => {
   const dir = mkdtempSync(join(home, 'alone-'))
   const file = join(dir, 'hygiene.yaml')
   writeFileSync(file, 'schema: system.workflow/v1\nid: hygiene\nversion: 1\nsteps:\n  - id: c\n    uses: code-checks.yaml\n')
   const bundled = readFileSync(join(repo, 'workflows', 'code-checks.yaml'), 'utf8')
   const repository = gitRepo('checks:\n  - name: readme-exists\n    run: test -f README.md\n', { 'workflows/code-checks.yaml': bundled })
-  const ran = system(['work', 'submit', '--workflow', file, '--input', task('check it', repository)])
+  const ran = await system(['work', 'submit', '--workflow', file, '--input', await task('check it', repository)])
   assert.equal(ran.status, 0, ran.stderr)
-  const record = show(ran.stdout.trim())
+  const record = await show(ran.stdout.trim())
   assert.equal(record.events.find((e) => e.type === 'verified')!.verdict, 'pass')
 })
 
-test('code-checks.yaml on its own checks the base commit of its input task, as it is', () => {
+test('code-checks.yaml on its own checks the base commit of its input task, as it is', async () => {
   const repository = gitRepo('checks:\n  - name: readme-exists\n    run: test -f README.md\n')
-  const ran = system(['work', 'submit', '--workflow', join(repo, 'workflows', 'code-checks.yaml'), '--input', task('check it', repository)])
+  const ran = await system(['work', 'submit', '--workflow', join(repo, 'workflows', 'code-checks.yaml'), '--input', await task('check it', repository)])
   assert.equal(ran.status, 0, ran.stderr)
-  const record = show(ran.stdout.trim())
+  const record = await show(ran.stdout.trim())
   const verified = record.events.find((e) => e.type === 'verified')!
   assert.equal(verified.verdict, 'pass')
   const base = execFileSync('git', ['-C', repository, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-  assert.equal(artifact(verified.evidence![0]!).envelope.content.commit, base)
+  assert.equal((await artifact(verified.evidence![0]!)).envelope.content.commit, base)
 })
 
-test('Software Engineering: a base commit with no .system/checks.yaml is refused at admission', () => {
-  const ran = system(['work', 'submit', '--workflow', SE, '--input', task('FAKE:edit', gitRepo())])
+test('Software Engineering: a base commit with no .system/checks.yaml is refused at admission', async () => {
+  const ran = await system(['work', 'submit', '--workflow', SE, '--input', await task('FAKE:edit', gitRepo())])
   assert.equal(ran.status, 1)
   assert.match(ran.stderr, /cannot pin criteria satisfied-tests-v1: no \.system\/checks\.yaml at commit/)
 })
 
-test('Research: cited quotes found at their URLs pass, through the same controller', () => {
-  const ran = system(['work', 'submit', '--workflow', RESEARCH, '--input', task(`FAKE:outputs FAKE:cite=${site}/article`)])
+test('Research: cited quotes found at their URLs pass, through the same controller', async () => {
+  const ran = await system(['work', 'submit', '--workflow', RESEARCH, '--input', await task(`FAKE:outputs FAKE:cite=${site}/article`)])
   assert.equal(ran.status, 0, ran.stderr)
-  const record = show(ran.stdout.trim())
+  const record = await show(ran.stdout.trim())
   const verified = record.events.find((e) => e.type === 'verified')!
   assert.equal(verified.subject, record.state.steps.investigate!.outputs.sources)
-  const evidence = artifact(verified.evidence![0]!)
+  const evidence = await artifact(verified.evidence![0]!)
   assert.equal(evidence.envelope.kind, 'citation-check')
   assert.deepEqual((evidence.envelope.content.results as { found: boolean }[]).map((r) => r.found), [true])
 })
 
-test('Research: a Task with a repository base passes citations with report bytes', () => {
-  const ran = system(['work', 'submit', '--workflow', RESEARCH, '--input', task(`FAKE:outputs FAKE:cite=${site}/article`, gitRepo())])
-  const record = show(ran.stdout.trim())
+test('Research: a Task with a repository base passes citations with report bytes', async () => {
+  const ran = await system(['work', 'submit', '--workflow', RESEARCH, '--input', await task(`FAKE:outputs FAKE:cite=${site}/article`, gitRepo())])
+  const record = await show(ran.stdout.trim())
   const verified = record.events.find((e) => e.type === 'verified' && e.stepId === 'citations')
   assert.equal(record.state.status, 'succeeded', JSON.stringify(record))
   assert.equal(ran.status, 0, ran.stderr)
   assert.equal(verified?.verdict, 'pass')
-  assert.equal(artifact(record.state.steps.investigate!.outputs.report!).envelope.kind, 'file')
+  assert.equal((await artifact(record.state.steps.investigate!.outputs.report!)).envelope.kind, 'file')
   assert.equal(verified.subject, record.state.steps.investigate!.outputs.sources)
-  const evidence = artifact(verified.evidence![0]!)
+  const evidence = await artifact(verified.evidence![0]!)
   assert.deepEqual((evidence.envelope.content.results as { found: boolean }[]).map((r) => r.found), [true])
 })
 
-test('Research: a quote that cannot be confirmed now holds the Work for the operator', () => {
-  const ran = system(['work', 'submit', '--workflow', RESEARCH, '--input', task(`FAKE:outputs FAKE:cite=${site}/gone`)])
+test('Research: a quote that cannot be confirmed now holds the Work for the operator', async () => {
+  const ran = await system(['work', 'submit', '--workflow', RESEARCH, '--input', await task(`FAKE:outputs FAKE:cite=${site}/gone`)])
   assert.equal(ran.status, 3)
-  assert.match(show(ran.stdout.trim()).state.reason!, /inconclusive verification needs an operator decision: citations/)
+  assert.match((await show(ran.stdout.trim())).state.reason!, /inconclusive verification needs an operator decision: citations/)
 })
 
-test('Research: an empty sources file fails', () => {
-  const ran = system(['work', 'submit', '--workflow', RESEARCH, '--input', task('FAKE:outputs')])
+test('Research: an empty sources file fails', async () => {
+  const ran = await system(['work', 'submit', '--workflow', RESEARCH, '--input', await task('FAKE:outputs')])
   assert.equal(ran.status, 1)
-  assert.match(show(ran.stdout.trim()).events.find((e) => e.type === 'verified')!.verdict!, /^fail$/)
+  assert.match((await show(ran.stdout.trim())).events.find((e) => e.type === 'verified')!.verdict!, /^fail$/)
+})
 })

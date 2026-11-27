@@ -51,6 +51,8 @@ export interface WorkerResult {
   /** The Worker's own final message, if it gave one; the controller quotes it when it fails the step itself. */
   message?: string
   usage?: Omit<UsageObserved, 'state'>
+  /** Why `usage` is absent, when the Worker knows (usage-1); recorded as the reason of the unavailable usage outcome. */
+  usageGap?: string
   /** Bounded agent output as an Artifact, for audit. */
   log?: string
   /** fl-4: what the attempt did, computed by System from its output; recorded with the observed event. */

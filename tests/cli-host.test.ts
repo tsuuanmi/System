@@ -152,7 +152,7 @@ test('a timeout retries once with the same commandId: one Work', { timeout: 120_
   try {
     const before = system('work', 'list').stdout.split('\n').filter(Boolean).length
     // Asynchronously: the proxy lives in this process.
-    const ran = await cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--no-run'], { env: { DSH_HOME: proxyHome } }).done
+    const ran = await cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--no-run'], { env: { DSH_HOME: proxyHome, SYSTEM_CALL_TIMEOUT_MS: '500' } }).done
     assert.equal(ran.status, 0, ran.stderr)
     assert.match(ran.stdout, /^work:[0-9a-f-]+\n$/)
     assert.equal(seen.length, 2)
@@ -170,7 +170,7 @@ test('a Host that does not answer is named, with the runbook', { timeout: 120_00
   const silent = createServer((socket) => { sockets.push(socket) })
   await new Promise<void>((resolve) => silent.listen(join(silentHome, 'system', 'host.sock'), resolve))
   try {
-    const ran = cli.run(['work', 'list'], { env: { DSH_HOME: silentHome } })
+    const ran = cli.run(['work', 'list'], { env: { DSH_HOME: silentHome, SYSTEM_CALL_TIMEOUT_MS: '500' } })
     assert.equal(ran.status, 1)
     assert.match(ran.stderr, /^system: the System Host for \S+ is not answering .*docs\/operations\/runbook\.md.*\n$/)
   } finally {
@@ -186,8 +186,8 @@ test('work wait on a silent Host exits 6 after the bound', { timeout: 120_000 },
   const silent = createServer((socket) => { sockets.push(socket) })
   await new Promise<void>((resolve) => silent.listen(join(silentHome, 'system', 'host.sock'), resolve))
   const waiting = cli.runAsync(['work', 'wait', 'work:x'], {
-    // Test-only outage bound; each unanswered hello still has its real 10 s timeout.
-    env: { DSH_HOME: silentHome, SYSTEM_WAIT_RECONNECT_MS: '300' },
+    // Test-only outage and call-timeout bounds so the silent-Host path runs in under a second.
+    env: { DSH_HOME: silentHome, SYSTEM_WAIT_RECONNECT_MS: '300', SYSTEM_CALL_TIMEOUT_MS: '500' },
   })
   try {
     const ran = await waiting.done
@@ -254,28 +254,72 @@ test('claim from the CLI is accepted by the Host and status shows it', () => {
 })
 
 test('work wait survives a Host restart', { timeout: 120_000 }, async () => {
-  const restartHold = join(home, 'restart-hold')
-  const restartEnv = { SYSTEM_FAKE_HOLD_AT: 'task', SYSTEM_FAKE_HOLD_FILE: restartHold }
-  rmSync(restartHold, { force: true })
+  rmSync(hold, { force: true })
   // The Host carries every unfinished Work on at start, so the ones earlier tests left would take the slots: settle them first.
   for (const line of system('work', 'list').stdout.split('\n')) {
     const [id, state] = line.trim().split(/\s+/)
     if (id && state && !['succeeded', 'failed', 'cancelled'].includes(state)) system('work', 'cancel', id)
   }
-  await cli.start({ env: restartEnv })
-  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write'], { env: restartEnv })
+  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write'])
   const workId = await admitted(run)
   run.child.kill('SIGINT')
   await run.done
-  const waiting = cli.runAsync(['work', 'wait', workId, '--timeout', '2'])
-  await new Promise((resolve) => setTimeout(resolve, 200))
+  const waiting = cli.runAsync(['work', 'wait', workId, '--timeout', '2'], {
+    env: { SYSTEM_WAIT_RETRY_MS: '100', SYSTEM_CONNECT_RETRY_MS: '100' },
+  })
+  // End the Host immediately (SIGTERM would wait for the held fake-worker until stop()'s 10 s SIGKILL, letting backoff climb to 10 s).
+  process.kill(await cli.pid(), 'SIGKILL')
   await cli.stop()
-  await new Promise((resolve) => setTimeout(resolve, 5_500))
-  await cli.start({ env: restartEnv })
+  rmSync(cli.socket, { force: true })
+  // Hold the socket path with a server that drops connections until `work wait` has retried at least twice across the outage.
+  let reconnects = 0
+  const drop = createServer((socket) => { reconnects++; socket.destroy() })
+  await new Promise<void>((resolve) => drop.listen(cli.socket, resolve))
+  try {
+    await until('work wait to retry across the outage', () => reconnects >= 2)
+  } finally {
+    await new Promise<void>((resolve) => drop.close(() => resolve()))
+    rmSync(cli.socket, { force: true })
+  }
+  await cli.start({ env: held })
   assert.equal(waiting.child.exitCode, null, waiting.stderr())
   const cancelled = system('work', 'cancel', workId)
   assert.ok(cancelled.status === 0 || cancelled.status === 5, cancelled.stderr)
   const result = await waiting.done
   assert.equal(result.status, 5, result.stderr)
   assert.doesNotMatch(result.stderr, /not running/)
+})
+
+test('work wait --json through a real Host exits with distinct codes and prints one object per Work', { timeout: 120_000 }, async () => {
+  writeFileSync(hold, '')
+  const doneRun = system('work', 'submit', '--capability', 'repo.write', '--no-run')
+  assert.equal(doneRun.status, 0, doneRun.stderr)
+  const doneId = doneRun.stdout.trim()
+  assert.equal(system('work', 'run', doneId).status, 0)
+  const waitedDone = system('work', 'wait', doneId, '--json')
+  assert.equal(waitedDone.status, 0, waitedDone.stderr)
+  assert.deepEqual(JSON.parse(waitedDone.stdout.trim()), { id: doneId, status: 'succeeded', outcome: 'succeeded', exitCode: 0, reason: 'every step succeeded' })
+
+  rmSync(hold, { force: true })
+  const run = cli.runAsync(['work', 'submit', '--capability', 'repo.write'])
+  const runId = await admitted(run)
+  run.child.kill('SIGINT')
+  await run.done
+
+  const waitedTimeout = system('work', 'wait', doneId, runId, '--timeout', '0.01', '--json')
+  assert.equal(waitedTimeout.status, 4, waitedTimeout.stderr)
+  const timeoutRows = waitedTimeout.stdout.trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(timeoutRows, [
+    { id: doneId, status: 'succeeded', outcome: 'succeeded', exitCode: 0, reason: 'every step succeeded' },
+    { id: runId, status: 'running', outcome: 'timeout', exitCode: 4 },
+  ])
+
+  const cancelled = system('work', 'cancel', runId)
+  assert.ok(cancelled.status === 0 || cancelled.status === 5, cancelled.stderr)
+  const waitedCancelled = system('work', 'wait', runId, '--json')
+  assert.equal(waitedCancelled.status, 5, waitedCancelled.stderr)
+  const cancelledJson = JSON.parse(waitedCancelled.stdout.trim())
+  assert.equal(cancelledJson.id, runId)
+  assert.equal(cancelledJson.outcome, 'cancelled')
+  assert.equal(cancelledJson.exitCode, 5)
 })

@@ -240,9 +240,9 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const finalResult = parsed.finalResult ? { finalResult: parsed.finalResult } : {}
       if (done.exitCode !== 0 || !parsed.ok) {
         const why = done.signal ? `signal ${done.signal}` : `exit ${done.exitCode}`
-        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...finalResult, summary, usage: parsed.usage }
+        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...finalResult, summary, usage: parsed.usage, ...(parsed.usageGap ? { usageGap: parsed.usageGap } : {}) }
       }
-      return { ...(parsed.message ? { message: parsed.message } : {}), ...finalResult, summary, usage: parsed.usage }
+      return { ...(parsed.message ? { message: parsed.message } : {}), ...finalResult, summary, usage: parsed.usage, ...(parsed.usageGap ? { usageGap: parsed.usageGap } : {}) }
     },
   })
 }

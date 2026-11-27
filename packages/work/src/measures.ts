@@ -3,6 +3,7 @@
  * never by hand; records are only read. A measure with nothing to divide by, or an input nobody gave, is `unknown`,
  * never zero. Admission decides the range: `since` inclusive, `until` exclusive.
  */
+import { costCoverage, type CostCoverage } from './usage.ts'
 import type { WorkRecord } from './record.ts'
 import { failureClass, parseCheckFailure } from './failure-class.ts'
 import { laterPasses } from './later-pass.ts'
@@ -29,6 +30,8 @@ export interface RangeOptions {
   confirmations?: readonly { date: string }[]
   /** The merge times of `dev` into `main` in the repositories the Host knows Items for (`releasesOf`): those in the range are operator acts. */
   releases?: readonly string[]
+  /** ms-4: the merge times of releases made by a caller under the delegation of PLAN (`releasesBy`): those in the range are reported apart (`headline.releasesByCaller`) and are not operator acts. */
+  callerReleases?: readonly string[]
   /** The active core's lines at the range's start and end (`activeCoreLines`, from git); a trend, never a gate (ADR-0015). */
   activeCoreLines?: CoreLines
   /** ct-2 (ADR-0014): the names of the checks whose `on:` lacks `pull_request` (a Work's checks step skips them); a failed `release` verdict on one is a late-caught defect. Without it none is counted. */
@@ -50,16 +53,20 @@ export interface RangeReport {
   recurringClasses: { class: string; count: number; example: string }[]
   /** Of those, the ones a Classification labels, by label; absent when none (the Classifier row is off, or has classified none). */
   classifiedUnknownFailures?: Record<string, number>
-  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts`: Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
-  headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts' }
+  /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts` (`releasesByCaller` is apart, not counted): Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
+  headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts'; releasesByCaller: number }
   /** Escaped defects over distinct Items merged; `source` says where the count comes from: recorded `escaped-defect@1` Artifacts, the `--escaped` override, or `none` (no input). */
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number; source: 'records' | 'override (--escaped)' | 'none' }
   /** ct-2 (ADR-0014): failed release verdicts (criteria `repo-checks-release-v1`) whose failing check the Works skip (`on:` without `pull_request`), with the check names; the trade-off of tiers by event, made visible. */
   lateCaughtDefects: { count: number; checks: string[] }
   /** The API-equivalent cost estimate of every attempt in the range that reports one, over accepted Works; a lower bound when `worksWithUnknownCost` is above 0, `unknown` when no cost is known. */
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; worksWithUnknownCost: number }
+  /** usage-1: attempts of the range per Runtime by usage outcome (`known`: tokens and cost; `partial`: tokens without cost or cache split; `unavailable`: none), so cost the Runtime did not report is not read as zero. */
+  costCoverage: CostCoverage
   /** Admission to acceptance of the accepted Works. */
   timeToVerifiedResolution: { medianMs: number | Unknown; p90Ms: number | Unknown; accepted: number }
+  /** rounds-1: reopened steps per Work and in total; `medianToPass`/`p90ToPass` are over the succeeded Works (rounds before success); `failedAfterCap` are the failed Works that were automatically reopened (develop.yaml `retry max`) and still failed. */
+  reopenRounds: { total: number; perWork: { work: string; rounds: number; status: WorkRecord['state']['status'] }[]; passed: number; medianToPass: number | Unknown; p90ToPass: number | Unknown; failedAfterCap: string[] }
   /** Mean of the attempts' tool-seconds per second (the record's `toolShare`): parallel tool calls overlap, so it is not a share and can pass 1. */
   toolSecondsPerSecond: { mean: number | Unknown; attempts: number }
 }
@@ -69,7 +76,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, activeCoreLines, lateChecks }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, callerReleases, activeCoreLines, lateChecks }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -89,6 +96,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const mergedCommits: string[] = []
   let operatorTouches = 0
   const resolution: number[] = []
+  const rounds: RangeReport['reopenRounds']['perWork'] = []
+  const toPass: number[] = []
+  const failedAfterCap: string[] = []
   const shares: number[] = []
   const late: string[] = []
   for (const record of inRange) {
@@ -107,6 +117,9 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
       if (commit) mergedCommits.push(commit)
     }
     const summary = summarize(record, classified, later)
+    rounds.push({ work: record.id, rounds: summary.reopenRounds, status })
+    if (status === 'succeeded') toPass.push(summary.reopenRounds)
+    if (status === 'failed' && record.events.some((e) => e.type === 'reopened' && e.automatic)) failedAfterCap.push(record.id)
     operatorTouches += summary.operatorTouches
     const counted = summary.failures.filter((f) => f.kind !== 'touch')
     unknownFailures += counted.filter((f) => f.unknown).length
@@ -147,16 +160,19 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
   const defects = recordedDefects?.filter((d) => d.id === undefined || !gone.has(d.id))
   const recorded = defects?.filter((d) => (d.item !== undefined && mergedItems.has(d.item)) || (d.commit !== undefined && mergedCommits.some((c) => c.startsWith(d.commit!)))).length
   const count = escaped ?? recorded
+  toPass.sort((a, b) => a - b)
   const recurringClasses = [...tally].filter(([, t]) => t.count >= 2).sort((a, b) => b[1].count - a[1].count || b[1].last - a[1].last).slice(0, 10).map(([c, t]) => ({ class: c, count: t.count, example: t.example }))
   return {
     since, ...(until === undefined ? {} : { until }), works: inRange.length, activeCoreLines: activeCoreLines ?? 'unknown', unknownFailures, recurringClasses, ...(Object.keys(classifiedUnknown).length ? { classifiedUnknownFailures: classifiedUnknown } : {}),
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
-    headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs },
+    headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs, releasesByCaller: callerReleases?.filter(inRangeAt).length ?? 0 },
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
     lateCaughtDefects: { count: late.length, checks: [...new Set(late)].sort() },
+    costCoverage: costCoverage(inRange),
     costPerVerifiedWork: { usd: accepted === 0 || (knownCostUsd === 0 && worksWithUnknownCost > 0) ? 'unknown' : knownCostUsd / accepted, knownCostUsd, accepted, worksWithUnknownCost },
     timeToVerifiedResolution: resolution.length === 0 ? { medianMs: 'unknown', p90Ms: 'unknown', accepted } : { medianMs: (resolution[Math.floor((resolution.length - 1) / 2)]! + resolution[Math.floor(resolution.length / 2)]!) / 2, p90Ms: percentile(resolution, 0.9), accepted },
+    reopenRounds: { total: rounds.reduce((n, r) => n + r.rounds, 0), perWork: rounds, passed: toPass.length, medianToPass: toPass.length === 0 ? 'unknown' : (toPass[Math.floor((toPass.length - 1) / 2)]! + toPass[Math.floor(toPass.length / 2)]!) / 2, p90ToPass: toPass.length === 0 ? 'unknown' : percentile(toPass, 0.9), failedAfterCap },
     toolSecondsPerSecond: { mean: shares.length === 0 ? 'unknown' : shares.reduce((a, b) => a + b, 0) / shares.length, attempts: shares.length },
   }
 }

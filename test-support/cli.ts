@@ -3,8 +3,8 @@
  * test file, a runner bound to it, and the Host (`bin/system host`) that every
  * Work command talks to.
  */
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +12,16 @@ import { VERSION, connect } from '../packages/host/src/index.ts'
 
 export const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const fakeAgent = join(repo, 'packages', 'agents', 'tests', 'fake-agent.mjs')
+
+/**
+ * Copy a release tree into `dest` using hardlinks (`cp -al`) so `node_modules`
+ * (754 packages) is not byte-copied while every path and pnpm relative link
+ * stays isolated inside `dest`. Callers that edit a file unlink it before writing.
+ */
+export function copyRelease(dest: string): void {
+  mkdirSync(dest, { recursive: true })
+  execFileSync('cp', ['-al', ...['bin', 'packages', 'node_modules', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'patches', 'workflows'].map((name) => join(repo, name)), dest], { timeout: 60_000 })
+}
 
 export interface Ran {
   status: number | null

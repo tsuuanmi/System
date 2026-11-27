@@ -32,6 +32,12 @@ checks:
     run: node tools/check-status.ts STATUS.md
     timeoutSeconds: 60
     paths: [STATUS.md, tools/check-status.ts, packages/work/src/status-parse.ts, .system/checks.yaml]
+  - name: ratchets
+    # Item ratchet-1: `as unknown as` casts in packages/*/src may only fall (tools/check-ratchets.ts; baseline .system/ratchets/unknown-casts.txt,
+    # lowered with `--prune`). Needs git only, no install.
+    run: node tools/check-ratchets.ts
+    timeoutSeconds: 60
+    paths: [packages/*/src/**, tools/check-ratchets.ts, .system/ratchets/**, .system/checks.yaml, '!**/*.md']
   - name: secrets
     on: [pull_request, release]
     # Item rb-5: gitleaks on what the change adds to its base (`$SYSTEM_CHECK_BASE..HEAD`, never the whole history), values redacted. No `paths`:

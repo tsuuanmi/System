@@ -107,11 +107,14 @@ async function init(args) {
   installService(args)
 }
 
-/** `system update [--wait <minutes>]`: see update.mjs. */
+/** `system update [--wait <minutes>] [--to <release>]`: see update.mjs. */
 async function runUpdate(args) {
   const at = args.indexOf('--wait')
   const waitMs = (at >= 0 ? Number(args[at + 1]) : 75) * 60_000
   if (!(waitMs > 0)) fail('--wait takes a number of minutes')
+  const toAt = args.indexOf('--to')
+  const to = toAt >= 0 ? args[toAt + 1] : undefined
+  if (toAt >= 0 && !to) fail('--to takes a release (a commit in ~/.system/releases)')
   const base = process.env.SYSTEM_INSTALL || join(homedir(), '.system')
   mkdirSync(join(base, 'releases'), { recursive: true })
   const path = [dirname(process.execPath), process.env.PATH].filter(Boolean).join(':')
@@ -125,6 +128,7 @@ async function runUpdate(args) {
   })
   const origin = spawnSync('git', ['-C', repo, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).stdout.trim()
   return update({
+    to,
     install: base,
     cli: join(repo, 'bin', 'system'),
     origin,

@@ -26,7 +26,7 @@ test('a Work run straight through needs no operator touch; observed usage is sum
     { type: 'terminal', at: '2026-11-06T00:00:10.000Z', outcome: 'succeeded', reason: 'ok', results: {} },
   ]))
   assert.deepEqual(summary, {
-    id: 'work:1', status: 'succeeded', durationMs: 10_000, attempts: 1, waitedForSlotMs: 0, rateLimitedAttempts: 0, operatorTouches: 0, touches: [],
+    id: 'work:1', status: 'succeeded', durationMs: 10_000, attempts: 1, reopenRounds: 0, waitedForSlotMs: 0, rateLimitedAttempts: 0, operatorTouches: 0, touches: [],
     failures: [], outsideFailures: 0, changeFailures: 0, unknownFailures: 0,
     usage: { inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 7, observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 0 },
   })

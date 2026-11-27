@@ -42,7 +42,8 @@ place), apart from any checkout you develop in:
 ```
 
 The store and the secrets stay in `$DSH_HOME/system` (`~/.dsh`, DSH's).
-`system update` installs the newest commit of `main` ([Upgrading](releases.md#upgrading)).
+`system update` installs the newest commit of `main` ([Upgrading](releases.md#upgrading));
+`system update --to <release>` switches back to a kept earlier release ([Rollback](releases.md#rollback)).
 `system init`, run from the install, links the profile to `current` and writes
 the user unit, which it never enables or starts
 ([bin/README.md](../../bin/README.md)):

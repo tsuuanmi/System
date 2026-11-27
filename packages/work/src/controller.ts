@@ -16,6 +16,7 @@ import { isQuotaLimited, quotaResetFrom } from './limits.ts'
 import { DEFAULT_STALL_MINUTES, LiveAttempts, type LiveAttempt } from './live.ts'
 import type { Task, Verdict } from './kinds.ts'
 import { askVerifier, firstRunOf, refusedResult, settleVerdict, type VerifierPin } from './verification.ts'
+import { usageRecord } from './usage.ts'
 import { Slots, checkAccount, type LostAttempt } from './slots.ts'
 import type { Decide } from './gate.ts'
 import type { QuotaReading } from './headroom.ts'
@@ -869,7 +870,7 @@ export class WorkController {
     }
     return this.append(this.require(workId), {
       type: 'observed', stepId: s.id, attemptId, status, outputs: status === 'succeeded' ? pick(outputs, [...s.outputs, ...(s.optionalOutputs ?? []).filter((slot) => outputs[slot])]) : {}, reason,
-      usage: result.usage ? { state: 'observed', ...result.usage } : { state: 'unknown' },
+      usage: usageRecord(result.usage, result.usageGap),
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
       ...(result.summary ? { summary: result.summary } : {}),

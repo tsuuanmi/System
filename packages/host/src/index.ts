@@ -1,7 +1,7 @@
 /**
  * The Host's transport (PROP-0004 C5, C17): JSON-RPC 2.0 over a Unix socket,
  * one JSON object per line as MCP's stdio transport frames it. The methods
- * are a table, `method -> { handler, agent }`; the Work operations are rows
+ * are a table, `method -> { handler, authority }`; the Work operations are rows
  * added to it.
  */
 import { createHash } from 'node:crypto'
@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { callerSchema, type Caller, type Host, type WorkChange, type z } from '@system/work'
+import { callerSchema, type Caller, type Host, type WorkChange, z } from '@system/work'
 
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -74,7 +74,7 @@ export const INVALID_PARAMS = -32602
 export const INTERNAL_ERROR = -32603
 /** Refused by the Host: no hello yet, or a version mismatch. */
 export const REFUSED = -32000
-/** An operation flagged `agent: false`, called by an agent. */
+/** An operation the caller lacks Authority for (e.g. an `operator` operation called by an agent). */
 export const NOT_ALLOWED = -32001
 /** A hello from the code on disk, refused because this Host is upgrading to it: retry in a moment. */
 export const UPGRADING = -32002
@@ -100,16 +100,22 @@ export interface Link {
   listen(): void
 }
 
+/** Who may call an operation (GLOSSARY, Authority): `operator` (a human at a terminal, never over MCP), `caller` (an operator or caller session, exposed over MCP), or `worker` (no Host operation today). */
+export const AUTHORITIES = ['operator', 'caller', 'worker'] as const
+export type Authority = typeof AUTHORITIES[number]
+
 export interface Method {
   /** One line for the API reference: what it does and returns. */
   summary?: string
   /** The shape of `params`; a call that does not fit is refused with -32602, and the handler gets the parsed value. */
   params?: z.ZodType
   handler: (host: Host, params: any, caller: Caller, link: Link) => unknown | Promise<unknown>
-  /** Whether a caller of type `agent` may call it. */
-  agent: boolean
+  /** Who may call this operation (GLOSSARY, Authority); required for every row of the table. */
+  authority: Authority
   /** It only reads: while the Host upgrades, a read-only connection of any code version may call it. */
   read?: boolean
+  /** A write that destroys or overwrites what it touches (MCP `destructiveHint`); meaningless for a read. */
+  destructive?: boolean
 }
 export type Methods = Record<string, Method>
 
@@ -138,7 +144,7 @@ export interface Served {
 /** The `host.*` rows every Host serves, besides `host.hello`, which the connection itself handles. */
 const builtin = (version: string): Methods => ({
   'host.status': {
-    agent: true,
+    authority: 'caller',
     read: true,
     summary: 'Whether the Host answers, and the memory report (C18) counted from the records, for the growth budget: `{ version, pid, works, recordBytes }`.',
     handler(host) {
@@ -147,6 +153,32 @@ const builtin = (version: string): Methods => ({
     },
   },
 })
+
+/** The MCP tool annotations of a row: the one place they are derived from the table. */
+export const annotationsOf = (row: Method): { readOnlyHint: boolean; destructiveHint: boolean } => ({ readOnlyHint: row.read === true, destructiveHint: row.read !== true && row.destructive === true })
+
+/** A row's JSON Schema of its params, as an MCP tool and `system schema` give it. */
+export const paramsSchemaOf = (row: Method): { type: 'object'; [key: string]: unknown } => z.toJSONSchema(row.params ?? z.object({}).strict(), { io: 'input' }) as { type: 'object'; [key: string]: unknown }
+
+/** One printed row of the operation table (`system schema`). */
+export interface OperationSchema {
+  name: string
+  summary: string
+  authority: Authority
+  access: 'read' | 'write'
+  destructive: boolean
+  params: { type: 'object'; [key: string]: unknown }
+}
+
+/** The operation table as data: each operation's name, summary, Authority, read or write, destructive and params. */
+export const schemaOf = (table: Methods): OperationSchema[] => Object.entries(table).map(([name, row]) => ({
+  name,
+  summary: row.summary ?? '',
+  authority: row.authority,
+  access: row.read === true ? 'read' : 'write',
+  destructive: annotationsOf(row).destructiveHint,
+  params: paramsSchemaOf(row),
+}))
 
 /** The whole table a Host serves: the built-in rows and `extra`. */
 export const tableOf = (extra: Methods = {}, version: string = VERSION): Methods => ({ ...builtin(version), ...extra })
@@ -215,7 +247,8 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         if (!method) throw new RpcError(METHOD_NOT_FOUND, `unknown method ${request.method}`)
         if (!caller) throw new RpcError(REFUSED, `say host.hello first: ${request.method} needs a version and a caller`)
         if (upgradingTo && !method.read) throw new RpcError(UPGRADING, `${request.method}: this Host is upgrading to ${upgradingTo}; retry after it has restarted (a read-only connection only reads)`)
-        if (caller.type !== 'human' && !method.agent) throw new RpcError(NOT_ALLOWED, `${request.method}: not allowed for agents`)
+        if (method.authority === 'operator' && caller.type !== 'human') throw new RpcError(NOT_ALLOWED, `${request.method}: operator authority required (not allowed for agents)`)
+        if (method.authority === 'worker') throw new RpcError(NOT_ALLOWED, `${request.method}: worker authority only`)
         let params = request.params
         if (method.params) {
           const parsed = method.params.safeParse(params ?? {})

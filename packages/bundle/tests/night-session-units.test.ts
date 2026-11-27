@@ -14,10 +14,17 @@ const section = runbook
 test('the service runs the session script, in the checkout, after the Host answers, into the journal', () => {
   assert.match(service, /^Type=oneshot$/m)
   assert.match(service, /^WorkingDirectory=@REPO@$/m)
-  assert.match(service, /^ExecStartPre=.*@REPO@\/bin\/system doctor/m)
+  assert.match(service, /^ExecStartPre=.*\bsystem doctor/m)
   assert.match(service, /^Environment=PATH=@PATH@$/m)
   assert.match(service, /^TimeoutStartSec=/m)
   assert.doesNotMatch(service, /StandardOutput=(?!journal)/, 'output stays in the journal')
+})
+
+test('the service never runs the checkout\'s bin: the Host check uses the installed system', () => {
+  const commands = service.split('\n').filter((l) => /^Exec(Start|StartPre)=/.test(l))
+  assert.ok(commands.length >= 2)
+  for (const l of commands) assert.doesNotMatch(l, /@REPO@\/bin\//, l)
+  assert.match(service, /^ExecStartPre=.*[ ;&']system doctor/m)
 })
 
 test('the timer is nightly, not persistent, and not wanted by anything but timers.target', () => {

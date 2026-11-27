@@ -5,7 +5,7 @@ Over a real Unix socket, with a Host on the in-memory stand-ins of
 - `transport.test.ts`: handshake, framing limits, error codes, out-of-order
   answers, and the client's "not running" and timeout errors;
 - `operations.test.ts`: the operation table with fake Workers. Every method
-  round-trips (the table is iterated, so a new row is covered); agents are refused every `agent: false` row; a repeated
+  round-trips (the table is iterated, so a new row is covered); agents are refused every `operator` row (and `worker` rows are refused on the caller socket); a repeated
   `commandId` gives one Work; `work.events` follows a Work to the state
   `work.show` has; a closed client leaves its Work running;
 - `operations.test.ts` also: `work.watch` sends one `work.changed` on finishing and on a hold, `work.unwatch`,
@@ -16,4 +16,4 @@ Over a real Unix socket, with a Host on the in-memory stand-ins of
   version and runs the Works queued meanwhile; a client calling during the swap
   succeeds after its retry; a hello from the new code upgrades an idle Host; a
   change seen once is ignored; a stop while draining exits 0;
-- `api.test.ts`: every row of the table says what it does.
+- `api.test.ts`: every row of the table says what it does and declares its Authority.

@@ -11,6 +11,8 @@ parallel (`--test-concurrency=16`), which is safe because each file owns its
 home (so its Host lock and socket), its repositories and its ports, and shares
 nothing else.
 
+A flaky test is never skipped, slept or retried until it passes: find the root cause, or delete it with the reason and an Escaped defect and keep a deterministic test of what it guarded ([AGENTS.md](../AGENTS.md)).
+
 - [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
 - [bootstrap-check.test.ts](bootstrap-check.test.ts) — bs-2: `system bootstrap check`
   through `bin/system` against a temporary git repository (no Host).
@@ -72,6 +74,7 @@ nothing else.
   once, with no `work run` (no event lost), a pinned spec, and
   (H5) the two proposals overlapping in time, compared by `dispatched` and
   `observed` timestamps.
+- [review-evalset.test.ts](review-evalset.test.ts) — evalset-1: the review eval set in [fixtures/review-evalset](fixtures/review-evalset/README.md) loads, and each case has a defect ID, a diff and a one-sentence answer key.
 - [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
   (Artifact writes through the Host, `doctor` boots beside it) on one store all
   succeed (no "database is locked"), also when the boots all find the store

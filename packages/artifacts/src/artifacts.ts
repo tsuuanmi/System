@@ -139,6 +139,13 @@ export class Artifacts {
     return found
   }
 
+  /** The IDs of the stored Artifacts of `kind`, found by reading every record (no copies). */
+  idsByKind(kind: string): string[] {
+    const found: string[] = []
+    for (const key of this.records.keys()) if (this.records.get(key)?.envelope.kind === kind) found.push(key)
+    return found
+  }
+
   /** The IDs of the Artifacts whose `lineage.supersedes` names `id`, found by reading every record. */
   supersededBy(id: string): string[] {
     const found: string[] = []

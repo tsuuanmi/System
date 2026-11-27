@@ -38,7 +38,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
-import { GIT_TREE_KIND, git as runGit, pin, type EffectIntent, type EffectOutcome, type EffectPort, type GitTreeContent, type Reconciled } from '@system/work'
+import { GIT_TREE_KIND, gatedFiles, gatesOf, git as runGit, pin, type EffectIntent, type EffectOutcome, type EffectPort, type GitTreeContent, type Reconciled } from '@system/work'
 
 /** What the merge queue's re-check says of a merge commit: `pass` merges, `hold` waits for an operator's Approval of that commit, anything else is refused. `verdicts` are the stored verdict Artifacts. */
 export interface MergeCheck {
@@ -70,6 +70,9 @@ export interface PublishDeps {
 
 /** How many times the merge queue follows a base that keeps moving before it gives up. */
 const MERGE_ROUNDS = 3
+
+/** The file whose `gates:` list names the paths that hold a change for the Operator's Approval. */
+const GATES_FILE = '.system/checks.yaml'
 
 /** `git merge-tree --write-tree`: the merged tree, or the files in conflict. */
 function mergeTree(repository: string, tip: string, commit: string): Promise<{ tree: string } | { conflicts: string[] }> {
@@ -269,6 +272,13 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       const content = read.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? read.envelope.content as { commit: string; parent?: string } : undefined
       return content?.parent === tip ? content.commit : undefined
     }
+    /** The files the change touches (against the tip) that the tip's `gates:` select. */
+    const gatedPaths = async (t2: typeof t, tip: string, commit: string): Promise<string[]> => {
+      const file = await git(t2.tree.repository, ['show', `${tip}:${GATES_FILE}`]).catch(() => '')
+      const gates = gatesOf(file)
+      if (!gates.length) return []
+      return gatedFiles((await git(t2.tree.repository, ['diff', '--name-only', '-z', `${tip}...${commit}`])).split('\0').filter(Boolean), gates)
+    }
     const named = (ids: string[]): Record<string, string> => (ids.length ? { verdicts: ids.join(',') } : {})
     for (let round = 0; round < MERGE_ROUNDS; round++) {
       const tip = await baseTip(t)
@@ -278,9 +288,10 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       let checkedOn: string | undefined
       let approvedMerge = false
       let verdicts: string[] = []
+      let mergeSubject: string | undefined
+      // The merge commit an operator approved is pushed as it is while the base is still the tip it was made on; any other is checked.
+      const approved = intent.approvedMerge ? approvedOn(intent.approvedMerge, tip) : undefined
       if (!(await holds(t, tip, change))) {
-        // The merge commit an operator approved is pushed as it is while the base is still the tip it was made on; any other is checked.
-        const approved = intent.approvedMerge ? approvedOn(intent.approvedMerge, tip) : undefined
         if (approved) {
           commit = approved
           approvedMerge = true
@@ -289,7 +300,7 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
           if ('conflicts' in merged) return rejected('conflict', tip, `merge conflict with ${config.base} at ${tip.slice(0, 12)}: ${merged.conflicts.join(', ')}`)
           commit = (await git(t.tree.repository, ['commit-tree', merged.tree, '-p', tip, '-p', change, '-m', `Merge ${t.branch} into ${config.base}`])).trim()
           await pin(t.tree.repository, commit)
-          const subject = (await artifacts.put({
+          const subject = mergeSubject = (await artifacts.put({
             ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit, tree: merged.tree, parent: tip }, subject: { type: 'git-commit', ref: commit },
             classification: 'local-private', producer: { type: 'system', ref: 'git.publish' },
           })).id
@@ -304,6 +315,16 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
           }
           checkedOn = tip
         }
+      } else if (approved === change) approvedMerge = true
+      // Item gate-1: a change touching a gate path (the base's list, never the change's own) waits for the Operator's Approval of the commit that would go in.
+      const gated = approvedMerge ? [] : await gatedPaths(t, tip, change)
+      if (gated.length) {
+        mergeSubject ??= (await artifacts.put({
+          ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit, tree: (await git(t.tree.repository, ['rev-parse', `${commit}^{tree}`])).trim(), parent: tip }, subject: { type: 'git-commit', ref: commit },
+          classification: 'local-private', producer: { type: 'system', ref: 'git.publish' },
+        })).id
+        const why = `the change touches gate paths ${gated.join(', ')} (gates of ${GATES_FILE} at ${tip.slice(0, 12)}); \`system approve ${intent.workId}\` approves commit ${commit}`
+        return { ...failed(why), held: mergeSubject, detail: { ...failed(why).detail, mergeCommit: commit, gated: gated.join(',') } }
       }
       const { pull } = await publishBranch(t, intent, commit, open, true)
       open = pull

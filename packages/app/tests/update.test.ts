@@ -46,7 +46,7 @@ function machine(options: { current?: string; checks?: number; build?: number; h
       if (options.skew && links.get('/i/current') === `releases/${SHA}` && command === '/cli/bin/system' && args[0] === 'work') return { status: 1, stdout: 'the client is older: restart the client\n' }
       // The first `node` on PATH is an old Node (below MIN_NODE) that fails; only process.execPath works.
       if (command === 'node') return { status: 1, stdout: 'node: too old\n' }
-      if (command === process.execPath && args[0] === `/i/releases/${SHA}/bin/system`) { command = '/cli/bin/system'; args = args.slice(1) }
+      if (command === process.execPath && /^\/i\/releases\/[a-f0-9]+\/bin\/system$/.test(args[0] ?? '')) { command = '/cli/bin/system'; args = args.slice(1) }
       if (args[0] === 'work' && args.some((a) => a.endsWith('install-check.yaml'))) return { status: options.installCheck ?? 0, stdout: 'work:installed\n' }
       if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:installed') return { status: 0, stdout: JSON.stringify({ state: { status: (options.installCheck ?? 0) === 0 ? 'succeeded' : 'failed', reason: 'failed: answers: no such command' } }) }
       if (args[0] === 'work' && args[1] === 'show' && args[2] === 'work:checked') return { status: 0, stdout: JSON.stringify({ state: { status: (options.checks ?? 0) === 0 ? 'succeeded' : 'failed' } }) }
@@ -373,4 +373,45 @@ test('install check: work submit exiting 0 for a failed/cancelled/held Work swit
   assert.equal(unreadable.links.get('/i/current'), `releases/${OLD}`)
   assert.equal(unreadable.written.has(`/i/${PENDING}`), false)
   assert.ok(unreadable.log.some((line) => line.includes('work:missing-install')))
+})
+
+// Item revert-1: `system update --to <release>` switches `current` to a kept earlier release.
+test('revert: to the previous release switches current, asks the Host and runs the afterInstall check with the release\'s client', async () => {
+  const m = machine({ current: SHA, releases: [OLD, SHA], afterInstall: true })
+  assert.equal(await update({ ...m.deps, to: OLD }), 0)
+  assert.equal(m.links.get('/i/current'), `releases/${OLD}`)
+  assert.ok(m.probes() >= 1)
+  assert.ok(m.ran.some((line) => line.startsWith(`${process.execPath} /i/releases/${OLD}/bin/system work submit --workflow /i/install-check.yaml`)))
+  assert.ok(m.log.some((line) => line.includes('work:installed') && line.includes('passed')))
+  assert.equal(m.written.has(`/i/${PENDING}`), false)
+  // no fetch, build or release check: the kept release passed them when it was installed
+  assert.ok(!m.ran.some((line) => line.includes('fetch') || line.includes('corepack') || line.includes('--against')))
+  assert.deepEqual(m.deps.releases().sort(), [OLD, SHA].sort())
+})
+
+test('revert: an unknown release is refused and nothing changes', async () => {
+  const m = machine({ current: SHA, releases: [OLD, SHA], afterInstall: true })
+  assert.equal(await update({ ...m.deps, to: 'e'.repeat(40) }), 1)
+  assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
+  assert.equal(m.probes(), 0)
+  assert.equal(m.written.size, 0)
+  assert.deepEqual(m.ran, [])
+  assert.ok(m.log.some((line) => line.includes('not in releases/')))
+})
+
+test('revert: a failing afterInstall check switches back to the release it left', async () => {
+  const m = machine({ current: SHA, releases: [OLD, SHA], afterInstall: true, installCheck: 1 })
+  assert.equal(await update({ ...m.deps, to: OLD }), 1)
+  assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
+  assert.equal(m.written.has(`/i/${PENDING}`), false)
+})
+
+test('revert: the release already current is nothing to do; a Host that never comes up switches back', async () => {
+  const same = machine({ current: OLD, releases: [OLD, SHA] })
+  assert.equal(await update({ ...same.deps, to: OLD }), 0)
+  assert.deepEqual(same.ran, [])
+  const down = machine({ current: SHA, releases: [OLD, SHA], afterInstall: true, hostUp: false })
+  assert.equal(await update({ ...down.deps, to: OLD }), 1)
+  assert.equal(down.links.get('/i/current'), `releases/${SHA}`)
+  assert.equal(down.written.has(`/i/${PENDING}`), false)
 })

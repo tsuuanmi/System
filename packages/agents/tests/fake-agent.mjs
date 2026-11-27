@@ -15,6 +15,7 @@
 //   FAKE:escaped=FILE     the same, but in a session of its own (setsid), as a `system host` a test started might be
 //   FAKE:holdstdout=FILE  with FAKE:outputs, leave a process in the agent's group that holds stdout open (as a leaked Xvfb does) and write its pid to FILE
 //   FAKE:delay=MS finish only after MS milliseconds, so attempts can be seen to overlap
+//   FAKE:barrier=DIR:COUNT  write one marker file in DIR and wait until DIR holds at least COUNT files (proving overlap without a fixed sleep)
 //   FAKE:turns    (claude, stream-json) first print two assistant messages that use tools, as progress
 //   FAKE:background=FILE  (claude) start a background job (its pid in FILE), unless background tasks are disabled and Monitor is disallowed
 //   FAKE:fail     report an error
@@ -113,7 +114,10 @@ if (!codex && has('turns') && args.includes('stream-json')) {
 const background = /FAKE:background=(\S+)/.exec(prompt)?.[1]
 const refused = process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === '1' && args.slice(args.indexOf('--disallowedTools')).includes('Monitor')
 if (!codex && background && !refused) writeFileSync(background, String(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], { detached: true, stdio: 'ignore' }).pid))
-if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, dbus: process.env.DBUS_SESSION_BUS_ADDRESS, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], model }))
+const homeFile = /FAKE:home=(\S+)/.exec(prompt)?.[1]
+const homeFilesBefore = homeFile && process.env.HOME ? readdirSync(process.env.HOME).sort() : undefined
+if (homeFile && process.env.HOME) writeFileSync(join(process.env.HOME, homeFile), 'attempt-file\n')
+if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, dbus: process.env.DBUS_SESSION_BUS_ADDRESS, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], ...(homeFilesBefore ? { homeFilesBefore } : {}), model }))
 if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : agy ? 'agy' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {
@@ -158,6 +162,21 @@ if (hang && prompt.includes(`Step: ${hang[1]}\n`) && !existsSync(hang[2])) {
   const ready = /FAKE:ready=(\S+)/.exec(prompt)?.[1]
   if (ready) writeFileSync(ready, '')
 } else {
-  const delay = Number(/FAKE:delay=(\d+)/.exec(prompt)?.[1] ?? 0)
-  setTimeout(() => finish(true, 'done'), delay)
+  const barrier = /FAKE:barrier=([^:\s]+):(\d+)(?::(\d+))?/.exec(prompt)
+  if (barrier) {
+    const [, dir, needed, timeoutMs] = barrier
+    writeFileSync(join(dir, `${process.pid}-${Math.random().toString(36).slice(2)}`), '')
+    const deadline = Date.now() + Number(timeoutMs ?? 60_000)
+    while (readdirSync(dir).length < Number(needed)) {
+      if (Date.now() > deadline) {
+        finish(false, `barrier ${dir} did not reach ${needed}`)
+        await new Promise(() => {})
+      }
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    finish(true, 'done')
+  } else {
+    const delay = Number(/FAKE:delay=(\d+)/.exec(prompt)?.[1] ?? 0)
+    setTimeout(() => finish(true, 'done'), delay)
+  }
 }

@@ -58,7 +58,13 @@ The controller records `effect-intended` before `apply` and
   per check, named in `detail.verdicts`. A verdict other than `pass` or
   `inconclusive` is `failed`. An `inconclusive` verdict, or a verifier version
   that changed since admission, holds the Work (`held`: the merge commit, no
-  push) for an Approval of that commit; the approved commit is pushed as it
+  push) for an Approval of that commit; so does a change touching a **gate
+  path** (Item gate-1, RES-0018): the `gates:` globs of `.system/checks.yaml`
+  at the base tip (never the change's own edit of the list; `!` excludes)
+  select the files the change touches, and after its checks pass the Work is
+  held, the reason naming the paths and that `system approve <work>` approves
+  that commit (a change that already holds the tip is held too, without a
+  check). The approved commit is pushed as it
   is (`approvedMerge`) while the base is still its parent, and an Approval
   given for another commit counts for nothing. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
   exactly that commit by a push with a lease on the checked tip; if the base

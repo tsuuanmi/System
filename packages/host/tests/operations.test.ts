@@ -113,8 +113,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal(work.state.status, 'running')
   assert.deepEqual((await call('work.list') as { id: string }[]).map((r) => r.id), [work.id])
   assert.equal(((await call('work.show', { workId: work.id })) as { id: string }).id, work.id)
-  assert.deepEqual(await call('work.watch', { workId: work.id }), { status: 'running', seq: 0 })
-  assert.deepEqual(await call('work.unwatch', { workId: work.id }), { status: 'running', seq: 0 })
+  assert.deepEqual(await call('work.watch', { workId: work.id }), { status: 'running', outcome: 'running', seq: 0 })
+  assert.deepEqual(await call('work.unwatch', { workId: work.id }), { status: 'running', outcome: 'running', seq: 0 })
   assert.equal((await call('work.cancel', { workId: work.id, reason: 'stop' }) as { state: { status: string } }).state.status, 'cancelled')
   await call('work.retry', { workId: work.id, reason: 'again' })
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
@@ -236,18 +236,34 @@ test('work.list takes `since` (admission time, inclusive) and shows the Item of 
   await assert.rejects(client.call('work.list', { since: 'tonight' }), /-32602|date/i)
 })
 
-test('an agent connection is refused every method flagged agent: false, and only those', async () => {
+test('an agent connection is refused every operator method, and only those', async () => {
   const { table, open } = await started()
   const client = await open(agent)
-  const closed = Object.entries(tableOf(table)).filter(([, m]) => !m.agent).map(([name]) => name)
-  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait') && closed.includes('workers.recheck'))
+  const closed = Object.entries(tableOf(table)).filter(([, m]) => m.authority !== 'caller').map(([name]) => name)
+  assert.ok(closed.includes('approval.decide') && closed.includes('credentials.set') && closed.includes('credentials.status') && closed.includes('workers.login') && closed.includes('workers.loginRemote') && closed.includes('workers.loginWait') && closed.includes('workers.recheck'))
   for (const [name, method] of Object.entries(tableOf(table))) {
     const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
-    if (method.agent) assert.notEqual(outcome?.code, NOT_ALLOWED, `${name} is open to agents`)
+    if (method.authority === 'caller') assert.notEqual(outcome?.code, NOT_ALLOWED, `${name} is open to callers`)
     else {
       assert.equal(outcome?.code, NOT_ALLOWED, `${name} must refuse an agent`)
-      assert.match(outcome!.message, /not allowed for agents/)
+      assert.match(outcome!.message, /not allowed for agents|operator authority/)
     }
+  }
+})
+
+test('a worker-authority method is refused on the caller socket', async () => {
+  const home = join(dir, `n${count++}`)
+  mkdirSync(home)
+  const f = fixture()
+  const host = await f.startHost(home)
+  const path = join(sockets, `${count++}.sock`)
+  const server = await serve(host, { path, methods: { 'worker.only': { authority: 'worker', handler: () => 'ok' } } })
+  after(async () => { await server.close(); await host.close() })
+  for (const who of [human, agent]) {
+    const client = await connect(path)
+    await client.call('host.hello', { version: VERSION, caller: who })
+    await assert.rejects(client.call('worker.only', {}), (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /worker authority/.test(error.message))
+    client.close()
   }
 })
 
@@ -405,7 +421,7 @@ test('work.watch sends one work.changed when the Work finishes, and one when it 
   const { f, open } = await started()
   const { client, notices } = await listening(open)
   const done = await client.call('work.submit', { workflow, input: input(f), run: false }) as { id: string }
-  assert.deepEqual(await client.call('work.watch', { workId: done.id }), { status: 'running', seq: 0 })
+  assert.deepEqual(await client.call('work.watch', { workId: done.id }), { status: 'running', outcome: 'running', seq: 0 })
   await client.call('work.run', { workId: done.id })
   await settled('the notice', () => notices.length > 0)
   const last = (await events(client, done.id)).events.at(-1)!
@@ -481,7 +497,7 @@ test('a client that missed the notice reads on from its cursor and loses nothing
   assert.equal(missed.events.at(-1)!.type, 'terminal')
   assert.equal(missed.events.length, all.events.length - cursor - 1)
   // Watching a Work that already ended says so in the reply, which is the same wake-up.
-  assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', seq: all.events.at(-1)!.seq })
+  assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', outcome: 'succeeded', seq: all.events.at(-1)!.seq })
 })
 
 test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 120_000 }, async () => {

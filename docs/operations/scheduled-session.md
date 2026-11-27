@@ -69,7 +69,9 @@ the timer sends to the journal (`journalctl --user -u <the session's unit>`).
 `packages/bundle/system-night-session.service` and `.timer` are templates (like
 the web canary's; `system init` does not install them) that run
 `claude -p` with that prompt (through `system-night-session.sh`) in this checkout, once a night at 01:00. The
-service first waits up to 5 minutes for the Host (`bin/system doctor` exits 0);
+service first waits up to 5 minutes for the Host (`system doctor` exits 0).
+The check runs the installed `system` on the `PATH`, not the checkout's `bin/system`: a checkout build
+older than the installed release fails doctor ("the client is older") and the night would never start;
 the launcher's output, the report's Artifact ID, goes to the journal. `Persistent=false`:
 a night missed while the machine was off is not run late. Nothing runs until
 you enable the timer. `claude` must be on the `PATH` the install records and

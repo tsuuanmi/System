@@ -1,7 +1,7 @@
 /** The Antigravity Runtime (`agy`): how its CLI is invoked, staged, read and measured (Item ag-2, RES-0015). */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { isAbsolute, join, resolve } from 'node:path'
 import type { AttemptSummary, Progress } from '@system/work'
 import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { AGY_GROUPS, createQuotaCache, readAntigravityQuota, type AgyQuotaGroup } from '../quota.ts'
@@ -22,8 +22,9 @@ const SETTINGS = `${JSON.stringify({ permissions: { allow: ['command(*)'], deny:
 const MODE = 'accept-edits'
 
 /**
- * `cwd` is the checkout (agy has no cwd flag) and HOME the Account's, which the staged env sets; `--mode auto` is refused for these Accounts, so
- * `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed (baseEnv has none), so the token is read from a file.
+ * `cwd` is the checkout (agy has no cwd flag) and HOME the attempt's throwaway `ws.home` (with `.gemini` linked to `agyHome/.gemini`);
+ * `--mode auto` is refused for these Accounts, so `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed
+ * (baseEnv has none), so the token is read from a file.
  */
 function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
@@ -44,8 +45,8 @@ const failureText = (error: string) => (QUOTA.test(error) && !LIMITED.test(error
 /** The `result` event decides: SUCCESS is ok; a tool that ended in ERROR (a denied `git push`) is only a step of the run, and so are denied actions when the run still answered (without a response they fail the attempt, since headless mode cannot prompt). Its usage is the run's total. */
 function parse(stdout: string, options?: ParseOptions): Parsed {
   const result = jsonEvents(stdout).findLast((event) => event.event === 'result')?.result
-  if (!result) return { ok: false, message: `unreadable Antigravity output: ${stdout.slice(0, 200)}` }
-  if (result.status !== 'SUCCESS') return { ok: false, message: failureText(String(result.error ?? result.response ?? result.status)) }
+  if (!result) return { ok: false, message: `unreadable Antigravity output: ${stdout.slice(0, 200)}`, usageGap: 'antigravity printed no result event' }
+  if (result.status !== 'SUCCESS') return { ok: false, message: failureText(String(result.error ?? result.response ?? result.status)), usageGap: `the antigravity run ended ${String(result.status)} without usage counts` }
   const denied: string[] = Array.isArray(result.denied_actions) ? result.denied_actions.map((d: any) => String(d?.action ?? d?.display_name ?? 'unknown')) : []
   if (denied.length > 0 && !String(result.response ?? '').trim()) {
     return { ok: false, message: `agy denied ${[...new Set(denied)].join(', ')} (headless mode cannot prompt) and ended with no response` }
@@ -61,7 +62,7 @@ function parse(stdout: string, options?: ParseOptions): Parsed {
     source: 'antigravity result usage over the run (input_tokens is fresh; inputTokens adds cache_read_tokens)',
   }
   const response = String(result.response ?? '').trimEnd()
-  const base: Parsed = { ok: true, message: response, usage }
+  const base: Parsed = { ok: true, message: response, usage, ...(usage ? {} : { usageGap: 'the antigravity result carried no input and output token counts' }) }
   if (options?.structured === false) return base
   // agy 1.5.18 puts the schema-shaped JSON in the last `agent_response` step and a prose summary in `result.response`.
   const stepText = lastAgentResponse(stdout)
@@ -132,7 +133,18 @@ export const antigravity: CliAdapter = {
   async preflight(account) {
     const home = account.agyHome
     if (!home) return { failed: `${account.ref}: no agyHome (the Account home holding .gemini/antigravity-cli)` }
-    return { stage: () => { writeSettings(home); return { env: { HOME: home }, finish() {} } } }
+    return {
+      stage(dir) {
+        writeSettings(home)
+        // Run with the attempt's throwaway HOME so caches/stores do not accumulate in agyHome; only `.gemini` is linked to the Account's state.
+        const attemptHome = join(dir, 'home')
+        mkdirSync(attemptHome, { recursive: true, mode: 0o700 })
+        const link = join(attemptHome, '.gemini')
+        rmSync(link, { recursive: true, force: true })
+        symlinkSync(resolve(home, '.gemini'), link)
+        return { env: {}, finish() {} }
+      },
+    }
   },
   invocation,
   // agy has no verified way to run a turn without tools, and the staged rules allow every command: no Classifier question runs on it.

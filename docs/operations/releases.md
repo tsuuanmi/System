@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-26
+reviewed: 2026-11-27
 summary: Updating the installed release, rolling it back, and the dev branch.
 covers: [bin/update.mjs]
 ---
@@ -12,7 +12,7 @@ Part of the [runbook](runbook.md).
 
 ## Upgrading
 
-`system update [--wait <minutes>]` moves the install to the newest commit of
+`system update [--wait <minutes>] [--to <release>]` moves the install to the newest commit of
 `main`, and only to code that passed its own checks on this machine:
 
 - it fetches `main` (the commit already current is nothing to do), adds
@@ -72,21 +72,29 @@ lines of `.system/docs-waivers`, committed with the change. Clear that file's wa
 pull request (keep its comment line); the docs CI fails a pull request into `main` that leaves one.
 Editing the body does not rerun CI: close and reopen the pull request.
 
+The release report, the pull request body, ends with a "How to revert" part: the command
+`system update --to <commit>` with the commit of the release before (the `main` commit the install runs now), and
+what a revert does not undo (a record schema change, above).
+
 ## Rollback
 
-Point `current` at the release before (`ls ~/.system/releases`) and restart:
+`system update --to <release>` (a commit in `~/.system/releases`, or a unique prefix of one; normally the
+release before, which `ls ~/.system/releases` shows next to `current`) switches `current` to that kept release
+through the same switch, drain and `afterInstall` check as an update (the pending record, the Host asked until
+it runs it, a failed check or a Host that does not come up switches back to the release it left). It fetches,
+builds and checks nothing: a kept release passed that when it was installed. A release not in `releases/` is
+refused and nothing changes; the release already current is nothing to do. `tools/upgrade-rehearsal.mjs`
+rehearses a revert to the previous release.
 
 ```
-ln -sfn releases/<commit> ~/.system/current.new && mv -T ~/.system/current.new ~/.system/current
-systemctl --user restart system
+system update --to <commit>
 ```
 
-The restart interrupts running attempts; do it when `system work list` shows
-none running. What the Host then runs again by itself, and what waits for
-`system work run`, is in [Stop, restart, status](install-and-update.md#stop-restart-status). A
-release refuses a store whose records it does not know only if a later release
-changed the record schema (`git diff <commit>..<later> --
-packages/work/src/record.ts packages/artifacts/src` shows it).
+Like an update it makes the Host drain: running attempts finish first (`--wait`). `systemctl --user restart
+system` stops the Host at once and interrupts them. What the Host then runs again by itself, and what waits
+for `system work run`, is in [Stop, restart, status](install-and-update.md#stop-restart-status). A release
+refuses a store whose records it does not know only if a later release changed the record schema (`git diff
+<commit>..<later> -- packages/work/src/record.ts packages/artifacts/src` shows it).
 
 ## The dev branch
 

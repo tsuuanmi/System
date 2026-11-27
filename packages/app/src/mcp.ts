@@ -1,6 +1,6 @@
 /**
  * `system mcp`: a stdio MCP server that
- * is a client of the Host. Its tools are the rows flagged `agent: true` of the
+ * is a client of the Host. Its tools are the rows with `authority: 'caller'` of the
  * operation table of the code the Host runs (rebuilt when the process recovers
  * on newer code, with `notifications/tools/list_changed`), with the row's zod params as JSON Schema and
  * its summary as the description; each call is forwarded over the socket. A call
@@ -16,9 +16,9 @@ import { parseArgs } from 'node:util'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema, SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { z, type Caller } from '@system/work'
+import type { Caller } from '@system/work'
 // By path, not by package: declaring @system/host here would change the lockfile.
-import { NotRunning, RpcError, tableOf, type Client, type Methods } from '../../host/lib/index.js'
+import { NotRunning, RpcError, annotationsOf, paramsSchemaOf, tableOf, type Client, type Methods } from '../../host/lib/index.js'
 import { operations, type Services } from '../../host/lib/operations.js'
 import { explain, operatorId } from './io.ts'
 import { readWorkflowFile, repeatable, rowsOf, withCommandId, type Row } from './remote.ts'
@@ -26,11 +26,12 @@ import { readWorkflowFile, repeatable, rowsOf, withCommandId, type Row } from '.
 /** What a code root offers `system mcp`: its operation table builder. */
 export interface Code { operations: (services: Services) => Methods; tableOf: typeof tableOf }
 
-/** The MCP tools of a code's table, for its shapes only (no handler runs here): one per row flagged `agent: true`. */
-export const toolsOf = ({ operations, tableOf }: Code) => Object.entries(tableOf(operations({} as Services))).filter(([, row]) => row.agent).map(([name, row]) => ({
+/** The MCP tools of a code's table, for its shapes only (no handler runs here): one per row with `authority: 'caller'`. */
+export const toolsOf = ({ operations, tableOf }: Code) => Object.entries(tableOf(operations({} as Services))).filter(([, row]) => row.authority === 'caller').map(([name, row]) => ({
   name,
   description: row.summary,
-  inputSchema: z.toJSONSchema(row.params ?? z.object({}).strict(), { io: 'input' }) as { type: 'object'; [key: string]: unknown },
+  inputSchema: paramsSchemaOf(row),
+  annotations: annotationsOf(row),
 }))
 
 export const tools = toolsOf({ operations, tableOf })

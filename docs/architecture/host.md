@@ -33,8 +33,8 @@ at the same time.
    Unix socket  $DSH_HOME/system/host.sock
         |
  ┌──────────────── Host: one process per DSH_HOME, one DSH host ─────────────────┐
- │ operation table   every operation once, with an `agent` flag (agents never   │
- │                   reach approve, deny, credentials set) │
+ │ operation table   every operation once, with its Authority (`operator`,       │
+ │                   `caller`, or `worker`; agents never reach `operator` rows)  │
  │ commit lane       the only path that changes a Work: each change is one       │
  │                   event appended, with its command receipt, in one write     │
  │ scheduler         ready steps -> attempts, one slot per Account by default   │
@@ -48,7 +48,7 @@ at the same time.
 ```
 
 `system mcp` is an agent client of the same socket: a stdio MCP server that
-offers only the operations the table marks for agents, and forwards each call.
+offers only the operations the table marks `authority: 'caller'`, and forwards each call.
 
 ## Parts
 
@@ -134,7 +134,7 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   each append and admission, and nothing polls storage. A notice only wakes the
   client; the log is the truth, so a notice sent while it was away loses
   nothing, and a watch on a Work that already ended replies with its final
-  `{ status, seq }`. `system mcp` turns it into MCP resource subscriptions (the
+  `{ status, outcome, seq }`. `system mcp` turns it into MCP resource subscriptions (the
   [runbook](../operations/using-system.md#using-system-from-an-agent)).
 - **Reads.** `work show` and every other read go through the Host.
 - **Approval.** Approval stays human-only. `system approve` shows the exact
@@ -298,7 +298,7 @@ before the code (Charter 12, fixture first).
 | No change from a stale copy (ends the stale snapshot of 2026-11-06: one process loads the store, so no second copy exists) | Held for the Host's commands (H2): `no copy of the store outlives its Host: a second Host is refused while one runs a Work, and the next one starts from what the first wrote`, `a cancel and the report of a held attempt in the same turn: both are recorded, in order, and the record replays`, `run and cancel submitted together: the cancel is decided first, so nothing is dispatched`, `two runs of one Work together: one drives it, the other is refused, nothing interleaves`, `writes of different Works never overlap: every change goes through the one lane`, `seed 1` to `seed 20: run, cancel and run again at random moments lose and repeat no event`, `the lane runs one section at a time, in order, and a failure does not block the next`, `a closed Host writes nothing, even when its attempt reports late` (host.test.ts); the controller itself by H1 in packages/work/tests/seam.test.ts. |
 | The five defects of 2026-11-06 stay fixed | The empty lock, stale-lock removal and the stale snapshot are the first two rows. The SQLite store-creation race and the profile config rewrite are in [tests/README.md](../../tests/README.md#regressions) (`concurrency.test.ts`, run through the Host). |
 | A lost reply is safe | Held in process (H2): `submitting twice with one commandId gives one Work; its ID derives from the commandId`, `the same run twice dispatches once`, `the same commandId with different arguments is refused`, `a refusal is remembered: the same retry again gives the same error, a different one is refused`, `a receipt is stored in the Work record, in the update of the event that caused it, and survives a restart`, the two cancel receipts and `records written before receipts are still valid; a record with them is too` (host.test.ts). Over the socket (H3): `the same work.submit with the same commandId gives one Work, and another body is refused`, `the same work.run with the same commandId while it runs answers at once and drives it once` (packages/host/tests/operations.test.ts). |
-| Agents cannot approve | Held (H3): `an agent connection is refused every method flagged agent: false, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
+| Agents cannot approve | Held (H3, authority-1): `an agent connection is refused every operator method, and only those`, which iterates the table so a new row is covered, and `approval.decide needs a human even when its row is opened to agents` (packages/host/tests/operations.test.ts); the controller refuses an agent's decision too (effects.test.ts). |
 | Recovery is conservative for effects and unknown side effects; a settled Worker attempt is dispatched again | Held (H2, and the slot at H5, see the next row): `a lost Worker attempt confirmed gone at start is dispatched again without work run`, `a lost Worker attempt not confirmed gone is not dispatched again`, `replay is deterministic after automatic re-dispatch and another Host restart adds no event`, `a settled Worker attempt with an effect found absent at start is not dispatched again`, `a lost check (verifier) attempt confirmed gone at start is not dispatched again`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until settled: `a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself` and `a lost attempt whose Worker cannot confirm it gone keeps its slot` (packages/work/tests/slots.test.ts). |
 | New code replaces the Host without interrupting an attempt | Held (D): `a draining Host starts no new attempt, lets the running one finish, and names the Works it held`, `resume continues what a draining Host held, and nothing that start found interrupted` (packages/work/tests/upgrade.test.ts); `on new code a supervised Host starts nothing new, finishes its attempt, exits 75, and the next Host serves the new version and runs what was queued` (which includes a client call during the swap), `a client built from the new code upgrades an idle Host at once, and is told to retry`, `a change seen once is not enough...`, `a stop while the Host drains exits 0 and leaves nothing to continue`, `a connection retries while the Host is away...` (packages/host/tests/upgrade.test.ts); `the supervisor runs the Host again after exit 75 and after nothing else` (packages/app/tests/service.test.ts). |
 | Version skew is caught | Held (H3a): `a Host of another version refuses the hello and names the fix` (packages/host/tests/transport.test.ts). |

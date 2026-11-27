@@ -8,8 +8,8 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { test } from 'node:test'
-import { repo, systemCli } from '../test-support/cli.ts'
+import { describe, test } from 'node:test'
+import { copyRelease, repo, systemCli } from '../test-support/cli.ts'
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@x' } }).trim()
 const until = async (what: string, ok: () => boolean, ms = 90_000) => {
@@ -24,7 +24,7 @@ async function scenario(afterInstall: string, check: (s: { base: string; stderr:
   const base = mkdtempSync('/tmp/sm-pic-')
   const home = join(base, 'home')
   const current = join(base, 'current')
-  const cli = systemCli('pic', { HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_NO_SERVICE: '1', SYSTEM_INSTALL: base }, join(home, '.dsh'), join(current, 'bin', 'system'))
+  const cli = systemCli('pic', { HOME: home, SYSTEM_OPERATOR_ID: 'tester', SYSTEM_NO_SERVICE: '1', SYSTEM_INSTALL: base, SYSTEM_UPGRADE_POLL_MS: '100' }, join(home, '.dsh'), join(current, 'bin', 'system'))
   delete cli.env.SYSTEM_CODE
   try {
     const source = join(base, 'src')
@@ -42,9 +42,7 @@ async function scenario(afterInstall: string, check: (s: { base: string; stderr:
     const c2 = commit(2, afterInstall)
     mkdirSync(join(base, 'releases'), { recursive: true })
     for (const sha of [c1, c2]) {
-      const release = join(base, 'releases', sha)
-      mkdirSync(release)
-      execFileSync('cp', ['-a', '--reflink=auto', ...['bin', 'packages', 'node_modules', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'patches', 'workflows'].map((name) => join(repo, name)), release], { timeout: 60_000 })
+      copyRelease(join(base, 'releases', sha))
     }
     // A different code version for the new release; each release is its own copy.
     const file = join(base, 'releases', c2, 'packages', 'app', 'lib', 'client.js')
@@ -73,9 +71,10 @@ async function scenario(afterInstall: string, check: (s: { base: string; stderr:
   }
 }
 
+describe('pending install check', { concurrency: true }, () => {
 test('an update killed while it waits for the drain: the Host that starts on the new release runs the install check, and keeps it when it passes', { timeout: 300_000 }, async () => {
   await scenario('true', async ({ base, stderr, c2, link }) => {
-    await until('the pending check to be done', () => !existsSync(join(base, 'pending-install-check.json')))
+    await until('the pending check to be done and its result logged', () => !existsSync(join(base, 'pending-install-check.json')) && /install checks of [0-9a-f]{12} passed: work:/.test(stderr()))
     assert.match(stderr(), /install checks of [0-9a-f]{12} passed: work:/)
     assert.equal(link(), `releases/${c2}`)
   })
@@ -83,8 +82,9 @@ test('an update killed while it waits for the drain: the Host that starts on the
 
 test('an update killed while it waits for the drain: a failed install check on the new Host switches current back to the previous release', { timeout: 300_000 }, async () => {
   await scenario('false', async ({ base, stderr, c1, link }) => {
-    await until('current to be switched back', () => link() === `releases/${c1}`)
+    await until('current to be switched back and the failure logged', () => link() === `releases/${c1}` && !existsSync(join(base, 'pending-install-check.json')) && /install checks of [0-9a-f]{12} failed \(work:[0-9a-f-]+\)/.test(stderr()))
     assert.match(stderr(), /install checks of [0-9a-f]{12} failed \(work:[0-9a-f-]+\)/)
     assert.ok(!existsSync(join(base, 'pending-install-check.json')))
   })
+})
 })
