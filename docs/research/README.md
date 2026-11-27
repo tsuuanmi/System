@@ -33,4 +33,7 @@ The generated index below is the authoritative list of current research.
   — Compare six agent workspaces against System and evaluate evidence-led reuse.
 - [RES-0022 — Adaptive System: evolution beyond any one runtime](RES-0022-adaptive-component-evolution.md) — active —
   Adaptive component evolution, build-versus-reuse decisions, and execution contracts.
+- [RES-0023 — Adaptive System: eight insights and adoption
+  gates](RES-0023-adaptive-system-insights-and-adoption-gates.md) — active — Eight strategic insights and staged
+  evidence gates for adapting System components safely.
 <!-- docs:end index:research -->
