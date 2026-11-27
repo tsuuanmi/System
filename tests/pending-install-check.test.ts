@@ -74,7 +74,7 @@ async function scenario(afterInstall: string, check: (s: { base: string; stderr:
 describe('pending install check', { concurrency: true }, () => {
 test('an update killed while it waits for the drain: the Host that starts on the new release runs the install check, and keeps it when it passes', { timeout: 300_000 }, async () => {
   await scenario('true', async ({ base, stderr, c2, link }) => {
-    await until('the pending check to be done', () => !existsSync(join(base, 'pending-install-check.json')))
+    await until('the pending check to be done and its result logged', () => !existsSync(join(base, 'pending-install-check.json')) && /install checks of [0-9a-f]{12} passed: work:/.test(stderr()))
     assert.match(stderr(), /install checks of [0-9a-f]{12} passed: work:/)
     assert.equal(link(), `releases/${c2}`)
   })
@@ -82,7 +82,7 @@ test('an update killed while it waits for the drain: the Host that starts on the
 
 test('an update killed while it waits for the drain: a failed install check on the new Host switches current back to the previous release', { timeout: 300_000 }, async () => {
   await scenario('false', async ({ base, stderr, c1, link }) => {
-    await until('current to be switched back', () => link() === `releases/${c1}` && !existsSync(join(base, 'pending-install-check.json')))
+    await until('current to be switched back and the failure logged', () => link() === `releases/${c1}` && !existsSync(join(base, 'pending-install-check.json')) && /install checks of [0-9a-f]{12} failed \(work:[0-9a-f-]+\)/.test(stderr()))
     assert.match(stderr(), /install checks of [0-9a-f]{12} failed \(work:[0-9a-f-]+\)/)
     assert.ok(!existsSync(join(base, 'pending-install-check.json')))
   })
