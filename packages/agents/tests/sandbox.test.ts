@@ -161,14 +161,14 @@ test('an Antigravity attempt in the layer runs the repository Node first on PATH
 // ---- what the layer binds from the hidden home (ADR-0016 decision 2; iso-6) ----
 
 /** An operator-like home, a throwaway attempt root and the layer `sandboxed` builds for it (no repository), as the Worker does. */
-function operator(path: (home: string) => string[], build?: (home: string, attempt: string) => void) {
+function operator(path: (home: string) => string[], build?: (home: string, attempt: string) => void, bwrap: string | undefined = bwrapOf) {
   const dir = mkdtempSync(join(root, 'op-'))
   const home = join(dir, 'home'), state = join(dir, 'dsh', 'system'), attempt = join(state, 'attempts', 'a1')
   const ws = { root: attempt, work: join(attempt, 'work'), home: join(attempt, 'home') } as Workspace
   for (const d of [home, state, ws.work, ws.home]) mkdirSync(d, { recursive: true })
   build?.(home, attempt)
   const PATH = [...path(home), ...(process.env.PATH ?? '').split(':')].join(':')
-  const host: SandboxHost = { home: () => home, bwrap: () => bwrapOf, works: () => true, gitCommonDir: () => undefined }
+  const host: SandboxHost = { home: () => home, bwrap: () => bwrap, works: () => true, gitCommonDir: () => undefined }
   const plan = (command = '/bin/sh') => sandboxed(['/bin/sh', '-c', ''], ws, { state, command, env: { PATH } }, host) as { argv: string[] }
   const run = (script: string, command = '/bin/sh') => {
     const { argv } = plan(command)
@@ -274,7 +274,7 @@ test('the plan for an operator-like PATH binds each entry and no parent the rule
     file(join(h, '.sdkman', 'candidates', 'java', '17', 'bin', 'java'), '\x7fELF $ORIGIN/../lib', 0o755)
     file(join(h, '.sdkman', 'candidates', 'java', '17', 'lib', 'libjli.so'))
     symlinkSync(join(h, '.sdkman', 'candidates', 'java', '17'), join(h, '.sdkman', 'candidates', 'java', 'current'))
-  })
+  }, '/usr/bin/bwrap') // a pure plan: nothing runs, so it needs no bubblewrap that starts (iso-7)
   const bound = readOnly(o.plan().argv).filter((p) => p.startsWith(o.home))
   const expected = ['.nvm/versions/node/v1/bin', '.nvm/versions/node/v1/lib', '.local/bin', '.cargo/bin', 'go/bin', '.sdkman/candidates/java/current/bin', '.sdkman/candidates/java/17/bin', '.sdkman/candidates/java/17/lib'].map((p) => join(o.home, p))
   for (const p of expected) assert.ok(bound.includes(p), `${p} is bound`)
