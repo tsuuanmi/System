@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync }
 import { isAbsolute, join, resolve } from 'node:path'
 import type { AttemptSummary, Progress } from '@system/work'
 import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
+import { exclusiveHome } from '../agy-home.ts'
 import { AGY_GROUPS, createQuotaCache, readAntigravityQuota, type AgyQuotaGroup } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
 import { applyFinalResult, FINAL_RESULT_SCHEMA } from './final-result.ts'
@@ -147,6 +148,8 @@ export const antigravity: CliAdapter = {
       },
     }
   },
+  slotKey: (account) => account.agyHome && resolve(account.agyHome),
+  exclusive: (account, fn) => (account.agyHome ? exclusiveHome(resolve(account.agyHome), fn) : fn()),
   invocation,
   // agy has no verified way to run a turn without tools, and the staged rules allow every command: no Classifier question runs on it.
   askArgv: () => { throw new Error('the antigravity Runtime does not answer a question without tools') },

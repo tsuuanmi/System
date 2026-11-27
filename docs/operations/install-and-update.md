@@ -95,7 +95,8 @@ systemctl --user status system
 
 Whatever was running when the Host stopped is lost at the next start. A Worker
 attempt cut short is dispatched again by the Host once its process is confirmed
-gone; a lost attempt not confirmed gone, a verifier run or a publish or merge
+gone (it keeps its Account's slot, and its agy sign-in's shared slot, until then); a lost attempt not
+confirmed gone, a verifier run or a publish or merge
 effect waits for `system work run` or `retry`. (A
 Host that stopped itself for new code waits for its attempts first; see
 [Upgrading](releases.md#upgrading).)

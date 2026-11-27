@@ -179,8 +179,9 @@ time. Steps after them in the same Work wait, as their `dependsOn` already
 says.
 
 **Implemented (H5, R2):** a Work's `drive`, the Account slots (`maxConcurrentAttempts`), waiting in admission
-order, stopping and uncertain attempts are in the [work README](../../packages/work/README.md#scheduling-and-slots)
-and `controller.ts`, `slots.ts`. There are no priorities, fairness tuning or queue on disk. An agent attempt is gone
+order, stopping and uncertain attempts (Accounts of one `agyHome` share one slot) are in the
+[work README](../../packages/work/README.md#scheduling-and-slots) and `controller.ts`, `slots.ts`. There are no
+priorities, fairness tuning or queue on disk. An agent attempt is gone
 when its pid file is absent or names no live process.
 
 ### Start, stop and recovery

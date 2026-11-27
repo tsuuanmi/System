@@ -296,3 +296,39 @@ test('antigravity blocked result fails the attempt with the Worker own reason (n
   assert.equal(/no change|wrote no output/i.test(result.reason!), false)
   assert.deepEqual(result.finalResult, { status: 'blocked', reason: 'missing context artifact ID' })
 })
+
+test('two Accounts of one agyHome never run attempts at once; two of different homes do (agyconc-1)', async () => {
+  const { exclusiveHome } = await import('../src/agy-home.ts')
+  const active = { now: 0, max: 0 }
+  const job = () => exclusiveHome('/h/one', async () => { active.max = Math.max(active.max, ++active.now); await new Promise((r) => setTimeout(r, 30)); active.now-- })
+  await Promise.all([job(), job(), job()])
+  assert.equal(active.max, 1)
+  const other = { now: 0, max: 0 }
+  const homes = (h: string) => exclusiveHome(h, async () => { other.max = Math.max(other.max, ++other.now); await new Promise((r) => setTimeout(r, 30)); other.now-- })
+  await Promise.all([homes('/h/a'), homes('/h/b')])
+  assert.equal(other.max, 2)
+  assert.equal(adapter.slotKey!(account({ agyHome: '/h/one' })), '/h/one')
+  assert.equal(adapter.slotKey!(account({ ref: 'antigravity/a1-3p', agyHome: '/h/one/' })), '/h/one')
+  assert.equal(adapterFor('codex')!.slotKey, undefined)
+})
+
+test('a quota read waits while an attempt of the same agyHome runs, not for another home', async () => {
+  const { exclusiveHome } = await import('../src/agy-home.ts')
+  const home = join(root, 'quota-home')
+  const other = join(root, 'quota-other')
+  mkdirSync(home); mkdirSync(other)
+  const marker = join(root, 'quota-ran')
+  const cli = join(root, 'quota-cli.sh')
+  writeFileSync(cli, `#!/bin/sh\necho "$HOME" >> ${marker}\n`, { mode: 0o755 })
+  let release!: () => void
+  const attempt = exclusiveHome(home, () => new Promise<void>((r) => { release = r }))
+  const waiting = readAntigravityQuota({ command: cli, home, group: 'gemini' })
+  await readAntigravityQuota({ command: cli, home: other, group: 'gemini' })
+  assert.equal(readFileSync(marker, 'utf8').trim(), other, 'the other home read at once')
+  await new Promise((r) => setTimeout(r, 50))
+  assert.equal(readFileSync(marker, 'utf8').trim(), other, 'the same home waits for the attempt')
+  release()
+  await attempt
+  await waiting
+  assert.deepEqual(readFileSync(marker, 'utf8').trim().split('\n'), [other, home])
+})

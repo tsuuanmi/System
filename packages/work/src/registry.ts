@@ -81,6 +81,8 @@ export interface WorkerPort {
   capabilities: readonly string[]
   /** How many attempts of this Account run at once; default 1. */
   maxConcurrentAttempts?: number
+  /** Accounts with the same key share one slot (one sign-in): at most one attempt runs across them. Absent: the Account has its own. */
+  slotKey?: string
   /** The share of a quota window (percent used) from which the Account is not chosen; default 80. The row's `quotaCeilingPercent`. */
   quotaCeilingPercent?: number
   /** The Account's quota windows (a cached read, no model turn); absent for an Account with none (`web`), which ranks after every readable one. */

@@ -147,7 +147,9 @@ How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter deta
    all Accounts. A Google account that `agy -p /usage` calls "not eligible" must be verified in a browser
    first.
 3. One sign-in is two Accounts ([GLOSSARY](../../GLOSSARY.md)): one with `"quotaGroup": "gemini"` and one
-   with `"quotaGroup": "3p"` (Claude and GPT), both sharing `"agyHome": "antigravity/<name>"`. Each lists
+   with `"quotaGroup": "3p"` (Claude and GPT), both sharing `"agyHome": "antigravity/<name>"`.
+   Accounts of one resolved `agyHome` share one slot: one attempt
+   or `/usage` read runs per sign-in at a time (two refreshes of one token logged both sign-ins out). Each lists
    only the models of its group under `models` (`economy`, `standard`, `frontier`), checked with
    `HOME=~/.dsh/system/antigravity/<name> agy models`. Add the two account objects (JSON) to the
    `accounts` array of the `agents` row's `config` in `~/.system/profile.yml` (`- id: agents` followed by

@@ -142,6 +142,7 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
+    slotKey: adapterFor(account.runtime)?.slotKey?.(account),
     quotaCeilingPercent: account.quotaCeilingPercent,
     quota: account.quota,
     run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs, host),
@@ -186,7 +187,7 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
   if ('failed' in pre) return { status: 'failed', outputs: {}, reason: pre.failed, executor }
   let stdout = () => ''
   const secrets = [await account.token?.()]
-  return runAttempt({
+  const run = () => runAttempt({
     secrets,
     artifacts, ref: account.ref, executor, request, dir: join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')),
     timeoutMinutes: account.attemptTimeoutMinutes, cancelReason: 'cancelled; the agent was stopped',
@@ -241,4 +242,5 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       return { ...(parsed.message ? { message: parsed.message } : {}), ...finalResult, summary, usage: parsed.usage, ...(parsed.usageGap ? { usageGap: parsed.usageGap } : {}) }
     },
   })
+  return adapter.exclusive ? adapter.exclusive(account, run) : run()
 }

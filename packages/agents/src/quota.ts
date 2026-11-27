@@ -25,7 +25,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
+import { exclusiveHome } from './agy-home.ts'
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
 
 export interface QuotaWindow {
@@ -503,7 +504,12 @@ interface AntigravityQuotaOptions extends ReadOptions {
 }
 
 /** `agy -p /usage --output-format json` with the Account's HOME and no session bus (so no keyring is asked), and no model turn. */
-export async function readAntigravityQuota(options: AntigravityQuotaOptions): Promise<QuotaReport> {
+export function readAntigravityQuota(options: AntigravityQuotaOptions): Promise<QuotaReport> {
+  // Not while an attempt, or another read, uses the same sign-in (agyconc-1).
+  return exclusiveHome(resolvePath(options.home), () => readAntigravityQuotaNow(options))
+}
+
+async function readAntigravityQuotaNow(options: AntigravityQuotaOptions): Promise<QuotaReport> {
   try {
     if (!existsSync(options.home)) return { unreadable: `its agyHome ${options.home} does not exist` }
     const now = options.now ?? Date.now
