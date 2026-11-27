@@ -185,6 +185,9 @@ How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter deta
 5. System writes `<home>/.gemini/antigravity-cli/settings.json` before each attempt (allow `command(*)`,
    deny `command(git push)` and `command(gh)`); do not edit it.
 
+Two Accounts of one sign-in share its login; until agyconc-1 (STATUS) they must not run at once.
+To sign in again: `HOME=<agyHome> env -u DBUS_SESSION_BUS_ADDRESS agy`, then the login flow; check `system workers`.
+
 ## The web account
 
 A Worker that runs a step in the operator's signed-in ChatGPT web session
