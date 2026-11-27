@@ -47,7 +47,7 @@ function run(command, args, env) {
 
 const nodes = join(homedir(), '.nvm', 'versions', 'node')
 const choice = nodeChoice(process.versions.node, existsSync(nodes) ? readdirSync(nodes) : [])
-if (choice.use === 'none') fail(`DSH 0.2.2-rc.1 needs Node >=${MIN_NODE}; this is ${process.version} and no Node 24 of that version is under ${nodes}: run \`nvm install 24\``)
+if (choice.use === 'none') fail(`DSH 0.2.2-rc.5 needs Node >=${MIN_NODE}; this is ${process.version} and no Node 24 of that version is under ${nodes}: run \`nvm install 24\``)
 if (choice.use === 'other') process.exit(await run(join(nodes, choice.version, 'bin', 'node'), [fileURLToPath(import.meta.url), ...process.argv.slice(2)], process.env))
 if (!existsSync(dshBin)) fail(`DSH is not installed at ${dshBin}: run \`corepack pnpm install\` in ${repo}`)
 if (!existsSync(join(repo, 'packages', 'app', 'lib', 'index.js'))) fail(`the System app is not built: run \`corepack pnpm build\` in ${repo}`)

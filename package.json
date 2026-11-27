@@ -16,7 +16,7 @@
     "check": "\"$npm_execpath\" run build && \"$npm_execpath\" run typecheck && \"$npm_execpath\" run lint && \"$npm_execpath\" run test && \"$npm_execpath\" run smoke && \"$npm_execpath\" run test:web"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.1",
+    "@deepseek-ai/dsh": "0.2.2-rc.5",
     "@system/agents": "workspace:*",
     "@system/artifacts": "workspace:*",
     "@system/work": "workspace:*",

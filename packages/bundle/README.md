@@ -72,11 +72,11 @@ Work is in flight is MVP-1.
 
 ## Pins
 
-DSH's SQLite backend is patched to wait up to 5 s for another process's write
+DSH's SQLite backend is patched to wait up to 60 s for another process's write
 lock ([patches](../../patches/README.md)): `system doctor` boots its own host
 beside the Host on the same store.
 
-All DSH packages are `0.2.2-rc.1`, tag commit `66491b05`; `engines.dsh` pins
+All DSH packages are `0.2.2-rc.5`; `engines.dsh` pins
 the runtime. Install scripts of DSH dependencies are denied in
 [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml).
 

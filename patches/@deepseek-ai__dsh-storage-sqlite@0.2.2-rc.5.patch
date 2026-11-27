@@ -1,5 +1,5 @@
 diff --git a/lib/index.js b/lib/index.js
-index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..dcab42ee7fb1e0d5bb1ba70a048fa6b32d5230ef 100644
+index 5cd2ead69693fc21eb494285118b0dc5d9b25b33..9a301f7b6b481847659c3109c25a3a62026b8890 100644
 --- a/lib/index.js
 +++ b/lib/index.js
 @@ -51,6 +51,8 @@ async function openDatabase(path, journalMode) {

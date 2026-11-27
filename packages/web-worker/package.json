@@ -14,10 +14,10 @@
     "chrome.lock.json"
   ],
   "engines": {
-    "dsh": "0.2.2-rc.1"
+    "dsh": "0.2.2-rc.5"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.5",
     "@novnc/novnc": "1.7.0",
     "@puppeteer/browsers": "3.2.3",
     "@system/agents": "workspace:*",

@@ -1,16 +1,13 @@
-diff --git a/lib/profile-boot-e2mS45fC.js b/lib/profile-boot-e2mS45fC.js
-index 3e3ac2225caf4bb16d0d2708ee51751f75b710ba..5b94f0c3162f9ada96cc37f864e91e2a04e3b38b 100644
---- a/lib/profile-boot-e2mS45fC.js
-+++ b/lib/profile-boot-e2mS45fC.js
-@@ -1,7 +1,7 @@
- import { PROFILE_PATCH_FILENAME, PluginPackages, boot, createRuntimeResolution, initProfile, installFailLoud, loadOverlayPatches, loadProfile, readProfilePatches, reportSkippedBundles, resolveProfileDir } from "@deepseek-ai/dsh-app-boot";
- import { resolveDshHome } from "@deepseek-ai/dsh-home-paths";
- import { dirname, join, resolve } from "node:path";
+diff --git a/lib/profile-boot-QhDEDXsF.js b/lib/profile-boot-QhDEDXsF.js
+index 01109f405cad0fbf931589d20460c065d47f9464..2a8ee546631e0894883cd6025c4eedbcb821343b 100644
+--- a/lib/profile-boot-QhDEDXsF.js
++++ b/lib/profile-boot-QhDEDXsF.js
+@@ -1,4 +1,4 @@
 -import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 +import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
  import { fileURLToPath } from "node:url";
- import { PROFILE_TEMPLATES } from "@deepseek-ai/dsh-official-bundles";
- import { installProxyFromEnvironment } from "@deepseek-ai/dsh-http-proxy";
+ import { dirname, join, resolve } from "node:path";
+ import { PROFILE_PATCH_FILENAME, PluginPackages, boot, createRuntimeResolution, initProfile, installFailLoud, loadOverlayPatches, loadProfile, readProfilePatches, reportSkippedBundles, resolveProfileDir } from "@deepseek-ai/dsh-app-boot";
 @@ -199,6 +199,18 @@ function initializeProfileFromDefault(name, fromDefaultProfile, home = resolveDs
  		process.stderr.write(`${NAME}: replaced profile ${JSON.stringify(name)} but could not remove ${staging}: ${String(error)}\n`);
  	}

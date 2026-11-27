@@ -13,10 +13,10 @@
     "lib"
   ],
   "engines": {
-    "dsh": "0.2.2-rc.1"
+    "dsh": "0.2.2-rc.5"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-credentials": "0.2.2-rc.5",
     "@system/artifacts": "workspace:*",
     "@system/work": "workspace:*"
   },

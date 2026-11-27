@@ -66,7 +66,7 @@ test('an optional row disabled by config is reported, its package stays installe
     assert.equal(status, 0)
     assert.equal(report.rows.find((row) => row.id === 'credentials')?.mounted, false)
     const installed = readFileSync(join(repo, 'packages', 'bundle', 'node_modules', '@deepseek-ai', 'dsh-credentials-local', 'package.json'), 'utf8')
-    assert.match(installed, /"version": "0.2.2-rc.1"/)
+    assert.match(installed, /"version": "0.2.2-rc.5"/)
   } finally {
     writeFileSync(patch, '[]\n')
   }
