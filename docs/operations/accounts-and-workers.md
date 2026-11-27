@@ -74,7 +74,9 @@ The old ref is retired: do not give it to another Account. Records keep it.
 
 `system workers` ends with one line that says whether there is room for more
 parallel Works; `--repo <path>` (repeatable) adds the Ready Items of that
-project's `STATUS.md`. It is information for you: the Host never picks an Item.
+project's `STATUS.md`. An Item a session has claimed is not Ready, and a
+`STATUS.md` that cannot be read shows its error, not 0. It is information for
+you: the Host never picks an Item.
 
 ```
 room: 3 of 8 Accounts free (slot and Headroom under Ceiling); Ready Items: System 5
