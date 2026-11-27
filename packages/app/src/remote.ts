@@ -27,7 +27,7 @@ export type Params<M extends Method> = Omit<z.input<NonNullable<Table[M]['params
 export type Result<M extends Method> = Awaited<ReturnType<Table[M]['handler']>>
 
 /** What a command that follows a Work accepts: Ctrl-C detaches, or with this cancels the Work and goes on following it. */
-export interface FollowOptions {
+interface FollowOptions {
   cancelOnInterrupt?: boolean
   /** Aborting it ends the following without a word; the result is `stopped`. */
   signal?: AbortSignal
@@ -55,7 +55,7 @@ export interface Waited {
 /** A Work's record once it is terminal, or `detached` when the operator left it running in the Host. */
 export type Followed = WorkRecord | 'detached' | 'stopped'
 
-export interface RemoteLoginView {
+interface RemoteLoginView {
   url: string
   port: number
   ssh: string
@@ -105,7 +105,7 @@ export function withCommandId<P extends object>(row: Row | undefined, params: P,
 export const repeatable = (row: Row | undefined, params: object): boolean => row?.read === true || typeof (params as { commandId?: unknown }).commandId === 'string'
 
 /** How often `work.events` is asked while following a Work (PROP-0004 C13). */
-export const POLL_MS = 1000
+const POLL_MS = 1000
 
 /** The bound on one outage of any kind (a restart, an upgrade, a Host too slow to answer) that `work wait` waits through; a Host really gone must not hold a session forever. */
 export const RECONNECT_MS = 10 * 60_000

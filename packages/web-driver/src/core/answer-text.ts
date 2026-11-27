@@ -97,15 +97,6 @@ export function splitAfterLastFence(markdown: string): [fenced: string, rest: st
 }
 
 /**
- * Whether Markdown is the rendered answer: its prose words appear in the rendered words in order,
- * and rendering added only labels: a code block's language and its Copy button, and for each link
- * its text and a chip's count.
- */
-export function sameWords(markdown: string, rendered: string): boolean {
-  return compareWords(markdown, rendered).same
-}
-
-/**
  * How Markdown compares with the rendered answer, as counts only (never words): its prose words,
  * the rendered words, how many prose words were found in order, its links and their words, and
  * how many extra rendered words are allowed. A refused Copy is recorded with them.

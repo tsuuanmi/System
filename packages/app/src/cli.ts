@@ -32,7 +32,7 @@ function collect(value: string, previous: string[]): string[] {
 /** What a human types to confirm: the first eight characters of an ID or digest, without its prefix. */
 const shortCode = (id: string): string => id.replace(/^\w+:/, '').slice(0, 8)
 
-export interface CliIo {
+interface CliIo {
   out(text: string): void
   /** Warnings and notes for the operator, on stderr. */
   err(text: string): void
@@ -46,14 +46,14 @@ export interface CliIo {
   confirmHuman(prompt: string, expected: string): Promise<string>
 }
 
-export interface LoginView {
+interface LoginView {
   signedIn: boolean
   detail: string
   imported?: number
   skipped?: number
 }
 
-export interface RecheckView {
+interface RecheckView {
   ready: boolean
   state: string
   detail: string
@@ -66,7 +66,7 @@ function identityOf(a: WorkersView['accounts'][number]): string {
 }
 
 /** `room: 3 of 8 Accounts free (slot and Headroom under Ceiling); Ready Items: System 5`; an Account with unreadable quota is counted when it has a slot, and listed apart. */
-export function roomLine(room: NonNullable<WorkersView['room']>): string {
+function roomLine(room: NonNullable<WorkersView['room']>): string {
   const unknown = room.unknown.length ? `; quota unknown: ${room.unknown.join(', ')}` : ''
   const ready = room.ready.map((r) => `${basename(r.repository)} ${r.count ?? 'unknown'}`).join(', ')
   return `room: ${room.free} of ${room.accounts} Accounts free (slot and Headroom under Ceiling)${unknown}${ready ? `; Ready Items: ${ready}` : ''}`
@@ -146,7 +146,7 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
 
 /** Build the thin client's program: every other command, over the Host's socket. */
 /** The UTC instant a date or timestamp without a zone stands for (the Host compares ISO UTC strings), or undefined when it names a zone. */
-export function zonelessUtc(text: string): string | undefined {
+function zonelessUtc(text: string): string | undefined {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(text)
   if (!date && !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(text)) return undefined
   const at = new Date(date ? text : `${text.replace(' ', 'T')}Z`)

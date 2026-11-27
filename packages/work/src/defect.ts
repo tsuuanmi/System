@@ -14,7 +14,7 @@ import { ITEM_ID } from './status-parse.ts'
 import { requireStored, storedOf } from './stored.ts'
 
 export const DEFECT_KIND = { kind: 'escaped-defect', schemaVersion: 1 } as const
-export const COMMIT_PREFIX = /^[0-9a-f]{7,40}$/
+const COMMIT_PREFIX = /^[0-9a-f]{7,40}$/
 export const defectSchema = z.object({
   /** The Item (its ID in STATUS.md) that carried the defect; exactly one of `item` and `commit`. */
   item: z.string().regex(ITEM_ID).optional(),
@@ -44,7 +44,7 @@ export type StoredDefect = EscapedDefect & { id: string }
 export interface DefectInput { subject: string; foundBy: string; reason: string; date?: string; supersedes?: string }
 
 /** The subject read as an Item ID or a commit prefix. */
-export function defectSubject(subject: string): { item: string } | { commit: string } {
+function defectSubject(subject: string): { item: string } | { commit: string } {
   if (ITEM_ID.test(subject)) return { item: subject }
   if (COMMIT_PREFIX.test(subject)) return { commit: subject }
   throw new WorkError(`${subject} is neither an Item ID nor a merge commit (7 to 40 lower-case hex characters)`)

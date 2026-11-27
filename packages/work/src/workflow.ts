@@ -103,7 +103,7 @@ const usesStep = z.object({
 /** A step of a resolved spec: every Sub-workflow joined. */
 export const stepSchema = z.union([workerStep, verifyStep, effectStep, acceptStep])
 
-export const workflowSchema = z.object({
+const workflowSchema = z.object({
   schema: z.literal(WORKFLOW_SCHEMA),
   id: z.string().regex(ID),
   version: z.number().int().positive(),
@@ -112,16 +112,16 @@ export const workflowSchema = z.object({
 
 export type Workflow = z.infer<typeof workflowSchema>
 export type Step = z.infer<typeof stepSchema>
-export type UsesStep = z.infer<typeof usesStep>
+type UsesStep = z.infer<typeof usesStep>
 export type WorkerStep = z.infer<typeof workerStep>
-export type VerifyStep = z.infer<typeof verifyStep>
-export type AcceptStep = z.infer<typeof acceptStep>
-export type EffectStep = z.infer<typeof effectStep>
+type VerifyStep = z.infer<typeof verifyStep>
+type AcceptStep = z.infer<typeof acceptStep>
+type EffectStep = z.infer<typeof effectStep>
 
 type AnyStep = Step | UsesStep
 export const isWorkerStep = (s: AnyStep): s is WorkerStep => 'capabilities' in s
 export const isVerifyStep = (s: AnyStep): s is VerifyStep => 'verify' in s
-export const isAcceptStep = (s: AnyStep): s is AcceptStep => 'accept' in s
+const isAcceptStep = (s: AnyStep): s is AcceptStep => 'accept' in s
 export const isEffectStep = (s: AnyStep): s is EffectStep => 'effect' in s
 const isUsesStep = (s: AnyStep): s is UsesStep => 'uses' in s
 
@@ -292,7 +292,7 @@ export interface ResolvedSpec {
 }
 
 /** A used Workflow file's text by its name; throws `WorkflowError` when there is none. */
-export type WorkflowFiles = (name: string) => string
+type WorkflowFiles = (name: string) => string
 
 /** Rename what a joined step refers to: step IDs by `id`, `$steps` references by `ref`. */
 function rename(s: Step, id: (stepId: string) => string, ref: (value: string) => string): Step {

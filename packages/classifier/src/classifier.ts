@@ -12,12 +12,12 @@ import { CLASSIFICATION_KIND, classificationSchema, type Classification } from '
 import { vote } from './vote.ts'
 
 /** Where a recorded answer is found: `<question>@<version>:<input hash>` to the Classification Artifact. */
-export interface ClassificationIndex {
+interface ClassificationIndex {
   get(key: string): { artifact: string } | undefined
   put(key: string, value: { artifact: string }): Promise<void>
 }
 
-export interface ClassifierOptions {
+interface ClassifierOptions {
   artifacts: Artifacts
   index: ClassificationIndex
   ask: Ask
@@ -28,7 +28,7 @@ export interface ClassifierOptions {
 export const failureText = (failure: Pick<Failure, 'kind' | 'reason'>): string => `${failure.kind}: ${failure.reason}`
 
 /** The prompt of one sample: the question, its labels, its examples and the text, asking for a JSON object only. */
-export function promptFor(question: LoadedQuestion, text: string): string {
+function promptFor(question: LoadedQuestion, text: string): string {
   return [
     question.instructions.trim(),
     '',
@@ -46,7 +46,7 @@ export function promptFor(question: LoadedQuestion, text: string): string {
 }
 
 /** The label a reply gives: the `label` of the JSON object in it (a fenced block is fine); undefined when it has none. It may be off the enum. */
-export function answerOf(text: string): string | undefined {
+function answerOf(text: string): string | undefined {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start < 0 || end < start) return undefined

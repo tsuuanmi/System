@@ -13,7 +13,7 @@ import { addWorktree, git, parseStatus, removeWorktree } from '@system/work'
 // By path, as client.ts imports the Host: declaring @system/verifiers here would change the lockfile.
 import { CHECKS_FILE, parseChecksFile } from '../../verifiers/lib/checks.js'
 
-export interface BootstrapResult {
+interface BootstrapResult {
   name: string
   /** Absent when the item passes. */
   problem?: string

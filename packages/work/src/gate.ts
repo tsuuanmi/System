@@ -20,7 +20,7 @@ export interface ClaimTable {
   keys(): IterableIterator<string>
 }
 
-export interface StatusFile extends ParsedStatus {
+interface StatusFile extends ParsedStatus {
   /** The repository's top level, as a Work's Task records it. */
   repository: string
   /** The tip it was read at. */
@@ -43,10 +43,10 @@ async function refAge(repository: string, ref: string): Promise<string | undefin
 }
 
 /** `status` fetches `origin dev` when the last fetch of the repository (by this process) is older than this. */
-export const STATUS_FETCH_MAX_AGE_MS = 3 * 60_000
+const STATUS_FETCH_MAX_AGE_MS = 3 * 60_000
 const lastFetch = new Map<string, number>()
 
-export interface ReadStatusOptions {
+interface ReadStatusOptions {
   /** Fetch again when the last fetch is older than this (default `STATUS_FETCH_MAX_AGE_MS`); 0 always fetches. */
   fetchAfterMs?: number
   /** Bound on the fetch. */

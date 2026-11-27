@@ -15,7 +15,7 @@ import { redactLog, redactString, redactValue } from './redact.ts'
 import { capture, cleanup, prepare, type Workspace } from './workspace.ts'
 
 /** The wall-clock limit of an attempt when neither the account nor the row sets one. */
-export const DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 60
+const DEFAULT_ATTEMPT_TIMEOUT_MINUTES = 60
 
 /** What the lifecycle gives a turn. */
 export interface TurnContext {
@@ -31,7 +31,7 @@ export interface TurnContext {
 }
 
 /** What a turn says came of it; every part is optional. A turn does not throw for a failure it can describe. */
-export interface TurnOutcome {
+interface TurnOutcome {
   /** The turn's own failure: the attempt fails with this reason. */
   failure?: string
   /** The marker of an Outside failure for `failure` (WorkerResult.cause). */
@@ -50,7 +50,7 @@ export interface TurnOutcome {
 
 export type Turn = (ctx: TurnContext) => Promise<TurnOutcome>
 
-export interface AttemptOptions {
+interface AttemptOptions {
   artifacts: Artifacts
   /** The Worker's ref: the producer of the log, and the subject of the missing-output reason. */
   ref: string

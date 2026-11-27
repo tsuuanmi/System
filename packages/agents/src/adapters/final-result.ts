@@ -13,7 +13,7 @@ export const FINAL_RESULT_SCHEMA = JSON.stringify({
 })
 
 /** Parse a `{status: done|blocked, reason}` JSON string into a `FinalResult`, or return why it is missing/invalid. */
-export function parseFinalResult(raw: string): { ok: true; finalResult: FinalResult } | { ok: false; message: string } {
+function parseFinalResult(raw: string): { ok: true; finalResult: FinalResult } | { ok: false; message: string } {
   const trimmed = raw.trim()
   if (!trimmed) return { ok: false, message: 'missing structured final result' }
   let value: unknown

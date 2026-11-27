@@ -13,7 +13,7 @@ import type { DefectWithdrawal, EscapedDefect } from './defect.ts'
 import type { CoreLines } from './core-lines.ts'
 
 export type Unknown = 'unknown'
-export interface RangeOptions {
+interface RangeOptions {
   since: string
   until?: string
   /** An explicit count of Escaped defects that replaces the recorded ones; the report labels it `override (--escaped)`. */

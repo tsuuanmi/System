@@ -17,7 +17,7 @@ export interface RecheckReport {
   detail: string
 }
 
-export interface RecheckOptions {
+interface RecheckOptions {
   /** Only for tests: the launcher (default `launch`). */
   launcher?: typeof launch
 }

@@ -64,7 +64,7 @@ export interface PublishConfig {
   repository?: string
 }
 
-export interface PublishDeps {
+interface PublishDeps {
   /** The GitHub token System holds; Workers never receive it. */
   token(): Promise<string | undefined>
   git?: typeof runGit

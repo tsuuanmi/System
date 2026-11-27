@@ -14,7 +14,7 @@ import { operations, type Services } from './operations.ts'
 export const socketPath = (home: string): string => join(home, 'system', 'host.sock')
 
 /** Where an upgrading Host leaves the Works it held, for the next Host to continue. */
-export const upgradePath = (home: string): string => join(home, 'system', 'upgrade.json')
+const upgradePath = (home: string): string => join(home, 'system', 'upgrade.json')
 
 /** The exit status of a Host that stopped to run new code (EX_TEMPFAIL); the unit and `--supervise` restart on it. */
 export const UPGRADE_EXIT = 75
@@ -22,7 +22,7 @@ export const UPGRADE_EXIT = 75
 /** How often the Host looks at its code on disk, in milliseconds. */
 export const UPGRADE_POLL = 10_000
 
-export interface ServeHostOptions {
+interface ServeHostOptions {
   host: Host
   home: string
   services: Services

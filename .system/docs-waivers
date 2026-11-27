@@ -3,3 +3,7 @@ docs-unchanged: docs/architecture/control-plane.md - tidy-15 only trims the bund
 docs-unchanged: docs/operations/install-and-update.md — only the pointer text of messages and comments changed (they now point to this page); nothing it says is stale
 docs-unchanged: docs/operations/recovery.md — only the pointer text of messages and comments changed (they now point to this page); nothing it says is stale
 docs-unchanged: docs/operations/releases.md — only the pointer text of a comment and a waiver-file comment changed; no behaviour it describes
+docs-unchanged: docs/architecture/artifact-verification.md — tidy-14 only drops the `export` keyword of names used in their own file (and deletes unused ones) in files this page covers; no behaviour it describes changed
+docs-unchanged: docs/architecture/host.md — tidy-14 only drops the `export` keyword of names used in their own file (and deletes unused ones) in files this page covers; no behaviour it describes changed
+docs-unchanged: docs/architecture/work-record.md — tidy-14 only drops the `export` keyword of names used in their own file (and deletes unused ones) in files this page covers; no behaviour it describes changed
+docs-unchanged: docs/architecture/workflow-composition.md — tidy-14 only drops the `export` keyword of names used in their own file (and deletes unused ones) in files this page covers; no behaviour it describes changed

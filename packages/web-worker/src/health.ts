@@ -13,7 +13,7 @@ import type { WorkerPort } from '@system/work'
 
 export type HealthState = 'ready' | 'cooling' | 'needs-sign-in' | 'challenged'
 
-export interface HealthRecord {
+interface HealthRecord {
   schema: 'chatgpt-web-account@1'
   state: HealthState
   /** What moved the Account to this state, in words. */
@@ -70,7 +70,7 @@ const SCHEMA = 'chatgpt-web-account@1'
 const STATES: readonly string[] = ['ready', 'cooling', 'needs-sign-in', 'challenged']
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 
-export interface HealthOptions {
+interface HealthOptions {
   now?: () => number
   /** Where a notice goes: the Host's log. */
   log?: (line: string) => void

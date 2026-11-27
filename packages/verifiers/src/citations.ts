@@ -40,11 +40,11 @@ export const citationCriteriaSchema = z.object({
   /** `citations-v2`: the share of a quote's words that must appear in order near each other; a criteria without it is refused with an `error` verdict. */
   minWordMatch: z.number().min(0).max(1).optional(),
 }).strict()
-export type CitationCriteria = z.infer<typeof citationCriteriaSchema>
+type CitationCriteria = z.infer<typeof citationCriteriaSchema>
 
 const V2_CRITERIA: Omit<CitationCriteria, 'name'> = { minWordMatch: 0.8, minSources: 1, minQuoteChars: 8, fetchTimeoutMs: 20_000, maxBytes: 2 * 1024 * 1024, minConfirmedRatio: 0.5 }
 
-export const sourcesSchema = z.object({
+const sourcesSchema = z.object({
   sources: z.array(z.object({
     id: z.string().min(1),
     url: z.string().url().refine((u) => /^https?:\/\//.test(u), 'http or https'),
@@ -126,7 +126,7 @@ export function looseMatch(page: string, quote: string, minWordMatch: number): {
 }
 
 /** `report` without fenced code blocks (``` or ~~~, closed or running to the end) and inline code spans (a backtick run closed by a run of the same length). */
-export function stripCode(report: string): string {
+function stripCode(report: string): string {
   return report
     .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm, ' ')
     .replace(/(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, ' ')

@@ -6,7 +6,7 @@
  */
 import type { Failure } from './summary.ts'
 
-export interface CheckFailure { check: string; test?: string }
+interface CheckFailure { check: string; test?: string }
 
 /**
  * The first failed check of a verdict reason and its first failing test: `failed: unit: a.test.ts "x": boom`, or, for a

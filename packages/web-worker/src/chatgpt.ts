@@ -76,7 +76,7 @@ export interface WebAccount {
 }
 
 /** Chrome's launch clock when the account sets none, in seconds. */
-export const LAUNCH_SECONDS = 30
+const LAUNCH_SECONDS = 30
 
 export const launchTimeoutMs = (web: WebConfig): number => (web.timeouts.launch ?? LAUNCH_SECONDS) * 1000
 
@@ -208,7 +208,7 @@ export function unblocked(rendered: string, blocks: ReadonlyArray<{ label: strin
 }
 
 /** Whether the text is Markdown with its characters escaped (a line of escaped tildes or backticks, or "\\:"), which never gives an output exactly (WW5d). */
-export function escapedMarkdown(markdown: string): boolean {
+function escapedMarkdown(markdown: string): boolean {
   return /^ {0,3}\\[~`]/m.test(markdown) || /\\:/.test(markdown)
 }
 
@@ -353,7 +353,7 @@ export async function singleTab(context: BrowserContext): Promise<{ page: Page; 
 }
 
 /** The prompt of one attempt in its two parts (WW1g): what is typed in the composer, and what is pasted after it. */
-export interface WebPrompt {
+interface WebPrompt {
   /** The role line, the step, the instructions and the output-format request, with a line naming the inputs when there is a body. */
   header: string
   /** The inputs and context, fenced and named, starting on a new line; none when the prompt is short (one part). */

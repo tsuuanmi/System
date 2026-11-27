@@ -1,6 +1,6 @@
 // Ported from System 1 (tsuuanmi/system @ f199a277): packages/provider-core/src/errors.ts. Changes: packages/web-driver/README.md.
 /** Retry disposition per failure class (docs/design/workflow-engine.md#recovery). */
-export type Disposition = 'IMMEDIATE' | 'BACKOFF' | 'RECREATE_SESSION' | 'USER_ACTION' | 'CODE_FIX' | 'CONFIG_FIX' | 'NONE'
+type Disposition = 'IMMEDIATE' | 'BACKOFF' | 'RECREATE_SESSION' | 'USER_ACTION' | 'CODE_FIX' | 'CONFIG_FIX' | 'NONE'
 
 export type ProviderErrorKind =
   | 'network' | 'timeout' | 'provider_stalled' | 'session_broken' | 'conversation_lost' | 'input_dropped'
@@ -33,7 +33,7 @@ const DISPOSITIONS: Record<ProviderErrorKind, Disposition> = {
   invalid_input: 'NONE',
 }
 
-export function dispositionOf(kind: ProviderErrorKind): Disposition {
+function dispositionOf(kind: ProviderErrorKind): Disposition {
   return DISPOSITIONS[kind]
 }
 
@@ -73,19 +73,4 @@ export function abortReason(signal: AbortSignal | undefined, what = 'provider tu
   const reason: unknown = signal?.reason
   if (reason instanceof Error && reason.name !== 'AbortError') return reason
   return new ProviderError('aborted', what, { cause: reason })
-}
-
-/** Programming and contract errors: retrying cannot help and may repeat a side effect. */
-const INTERNAL = new Set(['TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'SchemaError', 'RevisionConflict'])
-
-/**
- * Type a failure the runtime did not raise itself. Programming and contract errors are
- * `internal` (CODE_FIX, never retried); anything else (browser or page failures) is a
- * broken session that a fresh context may fix.
- */
-export function toProviderError(error: unknown): ProviderError {
-  if (error instanceof ProviderError) return error
-  const name = error instanceof Error ? error.name : ''
-  const message = error instanceof Error ? error.message : String(error)
-  return new ProviderError(INTERNAL.has(name) ? 'internal' : 'session_broken', message, { cause: error })
 }

@@ -16,7 +16,7 @@ export const confirmationSchema = z.object({
   date: z.string().min(10).max(40),
   note: z.string().min(1).max(8 * 1024),
 }).strict()
-export type Confirmation = z.infer<typeof confirmationSchema>
+type Confirmation = z.infer<typeof confirmationSchema>
 export interface ConfirmationInput { subject: string; note: string; date?: string }
 
 /** Store a `confirmation@1`; the subject must be a stored Artifact. */

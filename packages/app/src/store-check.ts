@@ -15,13 +15,13 @@ export interface StoreReport {
   problems: string[]
 }
 
-export interface StoreSources {
+interface StoreSources {
   works: Pick<WorkTable, 'keys' | 'get'>
   artifacts: Pick<Artifacts, 'ids' | 'get' | 'verify'>
 }
 
 /** Every Artifact ID a Work's events and folded state name, with the place that names it. */
-export function namedArtifacts(record: WorkRecord): { id: string; role: string }[] {
+function namedArtifacts(record: WorkRecord): { id: string; role: string }[] {
   const named: { id: string; role: string }[] = []
   const add = (role: string, id: string | undefined) => { if (id) named.push({ id, role }) }
   const addAll = (role: string, ids: Record<string, string> | readonly string[] | undefined) => {

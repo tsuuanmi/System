@@ -28,7 +28,7 @@ const candidate = z.object({ ref: z.string(), selected: z.boolean(), reason: z.s
 
 /** Which account, binary and version ran an attempt (ADR-0005 decision 5). */
 /** The tool scope an attempt ran with: what its Runtime's flags and staged settings allowed (RES-0015). No token, no environment value. */
-export const scopeSchema = z.object({
+const scopeSchema = z.object({
   permissionMode: z.string().optional(), allowedTools: z.array(z.string()).optional(), disallowedTools: z.array(z.string()).optional(),
   /** Codex: the `-s` mode; Claude Code and Antigravity: whether the sandbox is on. */
   sandbox: z.union([z.string(), z.boolean()]).optional(),
@@ -36,7 +36,7 @@ export const scopeSchema = z.object({
   settingsSha256: z.string().optional(),
 }).strict()
 
-export const executorSchema = z.object({
+const executorSchema = z.object({
   ref: z.string(), account: z.string().optional(), command: z.string().optional(), version: z.string().optional(),
   /** The tier the step asked for, the model configured for it, and the models the CLI reports it served. */
   tier: z.string().optional(), model: z.string().optional(), servedModels: z.array(z.string()).optional(),
@@ -47,7 +47,7 @@ export const executorSchema = z.object({
 const usageOutcomeFields = {
   outcome: z.enum(['known', 'partial', 'unavailable']).optional(), reason: z.string().optional(), origin: z.enum(['stream', 'transcript', 'none']).optional(),
 }
-export const usageSchema = z.union([
+const usageSchema = z.union([
   z.object({ state: z.literal('unknown'), ...usageOutcomeFields }).strict(),
   z.object({ state: z.literal('observed'), inputTokens: z.number().int().nonnegative(), cacheReadTokens: z.number().int().nonnegative().optional(), cacheWriteTokens: z.number().int().nonnegative().optional(), outputTokens: z.number().int().nonnegative(), costUsd: z.number().nonnegative().optional(), source: z.string(), ...usageOutcomeFields }).strict(),
 ])
@@ -55,7 +55,7 @@ export const usageSchema = z.union([
 export type ExecutorRecord = z.infer<typeof executorSchema>
 const known = <T extends z.ZodTypeAny>(t: T) => z.union([t, z.literal('unknown')])
 /** fl-4: what an attempt did, computed by System from its log; `unknown` where the Runtime's log does not say. */
-export const attemptSummarySchema = z.object({
+const attemptSummarySchema = z.object({
   runtime: z.string(),
   toolCalls: known(z.record(z.string(), z.number().int().nonnegative())),
   filesRead: known(z.array(z.string())),
@@ -71,12 +71,12 @@ export const attemptSummarySchema = z.object({
 export type AttemptSummary = z.infer<typeof attemptSummarySchema>
 
 /** Why a port's failure is Outside, said by the port that wrote the reason (cause-1): only `outside.ts` reads it; an event without one is classified by its text, as old records are. */
-export const PORT_CAUSES = ['attach', 'conflict', 'load'] as const
+const PORT_CAUSES = ['attach', 'conflict', 'load'] as const
 export type PortCause = (typeof PORT_CAUSES)[number]
 const portCause = z.enum(PORT_CAUSES).optional()
 
 /** finish-1: structured final result reported by Codex and Antigravity attempts. */
-export const finalResultSchema = z.object({ status: z.enum(['done', 'blocked']), reason: z.string() }).strict()
+const finalResultSchema = z.object({ status: z.enum(['done', 'blocked']), reason: z.string() }).strict()
 export type FinalResult = z.infer<typeof finalResultSchema>
 
 export type UsageObserved = Extract<z.infer<typeof usageSchema>, { state: 'observed' }>
@@ -247,7 +247,7 @@ const effectState = z.object({
   approvedMerge: contentIdSchema.optional(),
 }).strict()
 
-export const stateSchema = z.object({
+const stateSchema = z.object({
   status,
   specId: contentIdSchema,
   input: contentIdSchema.optional(),
@@ -266,7 +266,7 @@ export const stateSchema = z.object({
 }).strict()
 
 export type WorkState = z.infer<typeof stateSchema>
-export type StepState = z.infer<typeof stepState>
+type StepState = z.infer<typeof stepState>
 
 /**
  * What a command left in the Work it changed (PROP-0004 C8): its client ID,
