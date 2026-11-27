@@ -19,6 +19,10 @@ This is a cross-project synthesis, not a replacement for the more detailed and c
 or [Paseo/Paradev source study](RES-0017-paseo-paradev-study.md).
 The latter include source-level findings and System Work evidence that this survey does not reproduce.
 
+**Architecture follow-up:** [RES-0022](RES-0022-adaptive-component-evolution.md) records the
+operator's adaptive-component direction, strategies A-D, the execution boundary,
+reliability/security cases, comparative experiment and evidence-led replacement loop.
+
 ## Scope, evidence and confidence
 
 - **System:** read the repository's dev branch on 2026-11-27, including
