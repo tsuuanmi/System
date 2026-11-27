@@ -45,7 +45,7 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
   `develop.yaml` and `hygiene.yaml`; on its own, on a task with a base, it checks that commit as it is.
   `system work retry <work> --step checks.checks` verifies the same change again.
   A new criteria version is pinned in a Workflow only in a release after the one that added it, because `system update` checks a release with the running Host's verifiers.
-  A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (before `publish`) ([runbook](../docs/operations/runbook.md#a-check-the-base-fails-too)).
+  A check that fails on the change and on its base, and again on both after one re-run (sc-13), is `inconclusive` (df-25): the Work is held for approval, not retried (before `publish`) ([recovery](../docs/operations/recovery.md#a-check-the-base-fails-too)).
 - [research.yaml](research.yaml) — `investigate` (`web.search`, `tier.standard`, `prefer: web.browse`, one `retry`;
   outputs `report`, `sources`) → `citations` (`research.citation-check` on
   `sources`, with the `report` as an input; criteria `citations-v3`) → `accept`. `investigate` goes to an Account whose
@@ -62,16 +62,15 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
 
 - [plan-items.yaml](plan-items.yaml) — `propose` (`repo.read`, never `repo.write`, `tier.standard`) reads the Intent in the Task's context and the repository's `STATUS.md` and `PLAN.md`, and writes the output `items`: proposed Item lines in STATUS.md's grammar (`- [ ] <id> <text> (intent: <12 hex>) (after: ...)`, `after:` only for real dependencies, new ids, a Done-when clause in each). It has no verify or accept step (an accept step needs a verify step, and a verifier that runs `status-parse.ts` would be a new Host capability). It writes nothing to STATUS: the caller shows `items` to the operator and only after the operator agrees submits a docs Work (`develop.yaml`) that adds the lines. The scheduled session never runs it ([night-session.md](../tools/night-session.md)).
 
-Comparison configurations for the Brainstorm evaluation, and the Workflows that
-are not canonical (`second-opinion.yaml`),
-are in [experiments](experiments/README.md).
+The Workflows that are not canonical (comparison configurations and measurements)
+are in [experiments](experiments/README.md); it lists them.
 
 ```sh
 bin/system work submit --workflow workflows/research.yaml --input <artifactId>
 ```
 
 [`tools/web-canary`](../tools/web-canary) runs it on a fixed question for the
-`web` Accounts ([runbook](../docs/operations/runbook.md#the-web-canary)).
+`web` Accounts ([accounts and workers](../docs/operations/accounts-and-workers.md#the-web-canary)).
 
 Compatibility policy: criteria versions and Artifact kinds are not deleted (old records must replay), except `citations-v1`, removed on 2026-11-16 by the operator (a Work pinned to it cannot be retried; `work replay` reads events only).
 A change across a release boundary is expand then contract, with a registered removal Item (the Q0 rule
