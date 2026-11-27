@@ -113,5 +113,5 @@ System's own publish pushes from attempt worktrees with `core.hooksPath=/dev/nul
 The hook acts only on a push to the remote named `origin` whose URL is not a local path or a `file:` URL,
 and it clears every inherited `GIT_*` repository variable before a check runs,
 so it cannot change the operator's repository.
-The sandbox Account option (sb-1) is the second guard: in a sandbox, a linked worktree cannot write
-the main repository's `config` or `hooks/`; its gated test is still the operator's.
+The sandbox Account option (iso-1) is the second guard: inside its layer, a linked worktree cannot write
+the main repository's `config` or `hooks/`; `packages/agents/tests/sandbox.test.ts` shows it.

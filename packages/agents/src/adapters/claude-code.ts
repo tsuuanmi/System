@@ -8,7 +8,6 @@ import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { createQuotaCache, probeClaudeQuota, quotaFromRateLimitEvent, readClaudeQuota, type QuotaEvent } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
 import { readClaudeAccountId } from '../identity.ts'
-import { sandboxSettings, realHost } from './sandbox.ts'
 import type { CliAdapter, InvocationInput } from './types.ts'
 
 /**
@@ -16,11 +15,10 @@ import type { CliAdapter, InvocationInput } from './types.ts'
  * may not start background tasks or monitors: a wait on one re-reads the whole
  * context at every wake.
  */
-function invocation({ command, ws, prompt, model, codeWrite, env, sandbox, host }: InvocationInput): Invocation {
+function invocation({ command, ws, prompt, model, codeWrite, env, sandbox }: InvocationInput): Invocation {
   const allowed = ['Bash', 'WebSearch', 'WebFetch']
   // Deny wins over allow: no Worker pushes or uses the GitHub CLI (ADR-0004 decision 10).
   const denied = ['Bash(git push:*)', 'Bash(gh:*)', ...(codeWrite ? ['Monitor'] : [])]
-  const settings = sandbox ? JSON.stringify(sandboxSettings(ws, sandbox, host ?? realHost)) : undefined
   return {
     argv: [
       command, '-p', prompt, '--output-format', 'stream-json', '--verbose',
@@ -29,9 +27,8 @@ function invocation({ command, ws, prompt, model, codeWrite, env, sandbox, host 
       '--add-dir', ws.inputs, '--add-dir', ws.outputs,
       '--allowedTools', ...allowed,
       '--disallowedTools', ...denied,
-      ...(settings ? ['--settings', settings] : []),
     ],
-    scope: { permissionMode: 'acceptEdits', allowedTools: allowed, disallowedTools: denied, sandbox: Boolean(sandbox), ...(settings ? { settingsSha256: createHash('sha256').update(settings).digest('hex') } : {}) },
+    scope: { permissionMode: 'acceptEdits', allowedTools: allowed, disallowedTools: denied, sandbox: Boolean(sandbox) },
     env: { ...baseEnv(ws), ...env, ...(codeWrite ? { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' } : {}) },
   }
 }
@@ -212,7 +209,6 @@ export const claudeCode: CliAdapter = {
     return { stage: () => ({ env: { CLAUDE_CODE_OAUTH_TOKEN: token }, finish() {} }) }
   },
   invocation,
-  sandboxes: true,
   askArgv: ({ command, prompt, model }) => [command, '-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', model, '--no-session-persistence', '--strict-mcp-config', '--tools', ''],
   parse,
   progress,
