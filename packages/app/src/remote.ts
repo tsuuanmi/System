@@ -337,12 +337,13 @@ export function hostClient(remote: Remote): HostClient {
     // A manual sign-in waits for the operator, so this call outlasts the usual answer time.
     loginRemote: async (ref, show) => {
       show(await call('workers.loginRemote', { ref }))
-      const client = await link()
+      // `workers.loginWait` is an operator operation: it goes over the operator socket, each call on its own connection
+      // (`onOperatorSocket` opens one per call), so the Ctrl-C cancel is not queued behind the pending wait.
       // Ctrl-C ends the session in the Host; the wait below then returns its report.
-      const onInterrupt = () => { void client.call('workers.loginWait', { ref, cancel: true }).catch(() => {}) }
+      const onInterrupt = () => { void onOperatorSocket('workers.loginWait', { ref, cancel: true }).catch(() => {}) }
       process.once('SIGINT', onInterrupt)
       try {
-        return await client.call('workers.loginWait', { ref }, REMOTE_LOGIN_TIMEOUT) as any
+        return await onOperatorSocket('workers.loginWait', { ref }, REMOTE_LOGIN_TIMEOUT) as any
       } finally {
         process.off('SIGINT', onInterrupt)
       }
