@@ -111,8 +111,10 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   contents, never a path (`system mcp` reads a path and sends its contents;
   see [the app README](../../packages/app/README.md)), and `work.run`, `work.retry` and `approval.decide`
   answer once the Work is being driven, so a refusal still reaches the caller
-  and a long run does not hold the call. A closed connection never cancels a
-  Work.
+  and a long run does not hold the call. `work.retry` refuses a verify step whatever the
+  caller type; asking a check again is `work.verifyAgain`, an `operator` operation served only on the operator
+  socket (`system work retry <work> --step <verify step>`, after the terminal confirmation
+  of ADR-0011). A closed connection never cancels a Work.
 - **Following a Work.** `work.events` takes `{ workId, after }` and returns the
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.

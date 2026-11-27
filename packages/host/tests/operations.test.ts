@@ -122,6 +122,8 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(await call('work.unwatch', { workId: work.id }), { status: 'running', outcome: 'running', seq: 0 })
   assert.equal((await call('work.cancel', { workId: work.id, reason: 'stop' }) as { state: { status: string } }).state.status, 'cancelled')
   await call('work.retry', { workId: work.id, reason: 'again' })
+  // The Work is running again: the operation is reached and refuses on its state.
+  await assert.rejects(call('work.verifyAgain', { workId: work.id, step: 'implement' }), /already being run/)
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
   assert.equal((await call('work.run', { workId: work.id }) as { state: { status: string } }).state.status, 'succeeded')
   assert.deepEqual(await call('work.replay', { workId: work.id }), { state: (await call('work.show', { workId: work.id }) as { state: unknown }).state, matches: true })
@@ -625,10 +627,16 @@ test('develop.yaml checks through code-checks.yaml: a failed check, retried on i
   const implemented = failed.state.steps.implement!.attempts
 
   // Choosing among runs of a check is the operator's: an agent is refused, and tells the operator.
-  await assert.rejects((await open(agent)).call('work.retry', { workId: work.id, step: 'checks.checks' }), /only a human verifies again/)
+  await assert.rejects((await open(agent)).call('work.retry', { workId: work.id, step: 'checks.checks' }), /only the Operator verifies again/)
   // The environment is fixed; the same change is verified again, with the same pinned criteria.
-  await assert.rejects(client.call('work.retry', { workId: work.id, step: 'checks.checks', worker: 'fake/claude' }), /verify step/)
-  await client.call('work.retry', { workId: work.id, step: 'checks.checks', reason: 'the Host had Node 22 on its PATH' })
+  // Whatever the caller says it is, host.sock does not verify again: the refusal names the operator command.
+  await assert.rejects(client.call('work.retry', { workId: work.id, step: 'checks.checks' }), /terminal with `system work retry .* --step checks\.checks`/)
+  const operator = await open(human, 'operator')
+  await assert.rejects((await open(agent, 'operator')).call('work.verifyAgain', { workId: work.id, step: 'checks.checks' }), /not allowed for agents/)
+  await assert.rejects(operator.call('work.verifyAgain', { workId: work.id, step: 'checks.checks', worker: 'fake/claude' }), /unrecognized|worker/i)
+  await assert.rejects(operator.call('work.verifyAgain', { workId: work.id, step: 'implement' }), /not a verify step/)
+  await assert.rejects(client.call('work.verifyAgain', { workId: work.id, step: 'checks.checks' }), (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /operator socket/.test(error.message))
+  await operator.call('work.verifyAgain', { workId: work.id, step: 'checks.checks', reason: 'the Host had Node 22 on its PATH' })
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
   const done = await client.call('work.show', { workId: work.id }) as Shown
   const verdicts = done.events.filter((e) => e.type === 'verified')

@@ -466,7 +466,13 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .action((workId: string, options: { step?: string; worker?: string; reason: string; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         // Choosing among runs of a check is the operator's (ADR-0011): the same typed confirmation as `system approve`.
-        if (options.step && await isVerifyStep(workId, options.step)) await io.confirmHuman(`Verifying again is a human's decision. Type exactly ${shortCode(workId)} to run ${options.step} again\n> `, shortCode(workId))
+        if (options.step && await isVerifyStep(workId, options.step)) {
+          if (options.worker) throw new Error(`${options.step} is a verify step; --worker names Workers only`)
+          await io.confirmHuman(`Verifying again is a human's decision. Type exactly ${shortCode(workId)} to run ${options.step} again\n> `, shortCode(workId))
+          // An operator operation: it goes over the operator socket, as the Operator's.
+          await host.call('work.verifyAgain', given({ workId, step: options.step, reason: options.reason }))
+          return exitOf(await host.wait(workId, { cancelOnInterrupt: options.cancelOnInterrupt }))
+        }
         return exitOf(await host.retry(given({ workId, worker: options.worker, reason: options.reason, step: options.step }), { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })

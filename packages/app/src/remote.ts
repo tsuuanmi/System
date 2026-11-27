@@ -72,7 +72,7 @@ export interface HostClient {
   /** A decision is a human's: its own connection says so. Then follow the Work. */
   decide(params: Params<'approval.decide'>, operatorId: string): Promise<Followed>
   /** Wait until nothing runs the Work, as after a cancel was requested. */
-  wait(workId: string): Promise<Followed>
+  wait(workId: string, follow?: FollowOptions): Promise<Followed>
   /** Wait for every one of `workIds`, or with `any` the first, to end, be held or await approval. */
   waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** The remote sign-in: `show` is given where to reach the viewer once it is up; resolves when it ends. Ctrl-C cancels it. */
@@ -296,7 +296,7 @@ export function hostClient(remote: Remote): HostClient {
       await onOperatorSocket('approval.decide', params, undefined, { type: 'human', operatorId: operator })
       return follow(params.workId)
     },
-    wait: (workId) => follow(workId),
+    wait: (workId, options) => follow(workId, options),
     async waitFor(workIds, { any, timeoutMs }: WaitOptions): Promise<Waited> {
       const stop = new AbortController()
       let timedOut = false

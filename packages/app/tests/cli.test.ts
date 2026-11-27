@@ -101,8 +101,8 @@ const specOf = (verifyId: string) => ({ state: 'stored', envelope: { content: { 
 /** A fake Host for `work retry`: the spec has a verify step `checks`; `retried` collects the steps run again. */
 function retryHost(retried: string[]): HostClient {
   return fakeHost(
-    { 'work.show': ({ workId }) => record(workId, 'failed', { specId: 'sha256:spec' }), 'artifact.show': () => specOf('checks') },
-    { retry: async ({ step }) => { retried.push(String(step)); return 'detached' } },
+    { 'work.show': ({ workId }) => record(workId, 'failed', { specId: 'sha256:spec' }), 'artifact.show': () => specOf('checks'), 'work.verifyAgain': ({ step }) => { retried.push(`verifyAgain:${String(step)}`); return {} } },
+    { retry: async ({ step }) => { retried.push(`retry:${String(step)}`); return 'detached' }, wait: async () => 'detached' },
   )
 }
 
@@ -127,14 +127,14 @@ test('retry of a verify step asks the typed confirmation of a human, then retrie
   const { run, retried, confirmed } = await retry(['--step', 'checks'], true)
   await run()
   assert.equal(confirmed(), 1)
-  assert.deepEqual(retried, ['checks'])
+  assert.deepEqual(retried, ['verifyAgain:checks'])
 })
 
 test('retry of a Worker step needs no confirmation', async () => {
   const { run, retried, confirmed } = await retry(['--step', 'implement'], false)
   await run()
   assert.equal(confirmed(), 0)
-  assert.deepEqual(retried, ['implement'])
+  assert.deepEqual(retried, ['retry:implement'])
 })
 
 test('work report --since with a date that has no zone says the UTC instant it uses, in the JSON and on stderr', async () => {
