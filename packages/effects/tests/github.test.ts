@@ -407,7 +407,7 @@ test('merge: a held check leaves main alone and names the merge commit; once tha
 async function gatedChange(artifacts: Artifacts, files: Record<string, string>, gates = '[".system/checks.yaml", "packages/effects/**"]', edit?: (text: string) => string) {
   const w = setup()
   const base = w.run('rev-parse', 'HEAD~1')
-  w.run('checkout', '--quiet', '--detach', base)
+  w.run('checkout', '--quiet', '--force', '--detach', base)
   mkdirSync(join(w.work, '.system'), { recursive: true })
   const gap = '\n'.repeat(4)
   const original = `gates: ${gates}\n${gap}checks: []\n${gap}tip: 0\n`
@@ -698,7 +698,7 @@ function waiverRepo(baseWaivers = WAIVER_HEAD) {
   const base = run('rev-parse', 'HEAD')
   bareOf = bare
   const change = async (artifacts: Artifacts, files: Record<string, string>) => {
-    run('checkout', '--quiet', '--detach', base)
+    run('checkout', '--quiet', '--force', '--detach', base)
     for (const [file, text] of Object.entries(files)) writeFileSync(join(work, file), text)
     run('add', '-A')
     run('commit', '--quiet', '-m', 'change')
