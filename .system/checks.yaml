@@ -20,6 +20,11 @@
 # check needs them. `'!**/*.md'` excludes Markdown (GitHub Actions' `!`: the last
 # matching pattern decides), so a README edit does not run the code checks; the
 # Charter comes after it, so it still does. `install-guide` keeps the install page.
+# Item gate-2 (ADR-0016): this repository's Gate paths, read from the base commit (packages/work/src/gates.ts): a change to either is held
+# for `system approve <work>` after its checks pass. Only the paths that decide what binds later Works; a wider list would hold most merges.
+gates:
+  - .system/checks.yaml
+  - .github/workflows/**
 checks:
   - name: docs
     # Item dc-1: the covered-path impact check against the base the checks were pinned from (SYSTEM_CHECK_BASE, set by the verifier);
