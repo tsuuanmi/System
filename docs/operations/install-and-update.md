@@ -104,4 +104,7 @@ Host that stopped itself for new code waits for its attempts first; see
 
 Only `~/.dsh` gets the unit. For another `DSH_HOME`, run
 `DSH_HOME=<home> system host` in a terminal (Ctrl-C stops it); keep the path
-short, a socket path is limited to about 100 bytes.
+short, a socket path is limited to about 100 bytes (the longer one is
+`operator/host.sock`, the operator's second socket,
+[ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md); the
+Host makes its directory at start, so an update needs nothing).

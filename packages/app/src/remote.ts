@@ -85,11 +85,13 @@ export interface Row {
   read: boolean
   /** Its params declare `commandId`: the Host does it once per id. */
   takesId: boolean
+  /** Its Authority is the Operator's: it is called over the operator socket. */
+  operator: boolean
 }
 
 /** The rows of a table, by method; for its shapes only (no handler runs). */
 export function rowsOf(table: Methods): Map<string, Row> {
-  return new Map(Object.entries(table).map(([name, row]) => [name, { read: row.read === true, takesId: 'commandId' in ((row.params as unknown as { shape?: object } | undefined)?.shape ?? {}) }]))
+  return new Map(Object.entries(table).map(([name, row]) => [name, { read: row.read === true, takesId: 'commandId' in ((row.params as unknown as { shape?: object } | undefined)?.shape ?? {}), operator: row.authority === 'operator' }]))
 }
 
 /** The rows of the code this client runs with. */
@@ -118,8 +120,8 @@ const REMOTE_LOGIN_TIMEOUT = 17 * 60_000
 
 
 export interface Remote {
-  /** A connection that has said `host.hello` as `caller`; with `readOnly`, one a Host upgrading to other code still serves its reads on. */
-  open(caller: Caller, options?: { readOnly?: boolean }): Promise<Client>
+  /** A connection that has said `host.hello` as `caller`; with `readOnly`, one a Host upgrading to other code still serves its reads on; with `operator`, one on the operator socket (ADR-0016), the only one that serves an `operator` operation. */
+  open(caller: Caller, options?: { readOnly?: boolean; operator?: boolean }): Promise<Client>
   /** Replaces `RECONNECT_MS`; for tests. */
   reconnectMs?: number
   /** Replaces `POLL_MS` as the first wait between retries of a patient read; for tests. */
@@ -221,8 +223,19 @@ export function hostClient(remote: Remote): HostClient {
     }
   }
   /** A call of the table: a read goes over the session or the read-only one, a write over the session only. */
-  const call = async (method: string, params?: object, options?: { timeout?: number }): Promise<any> =>
-    rows.get(method)?.read ? read(method, params, options?.timeout) : mutate(await link(), method, params ?? {}, options?.timeout)
+  const call = async (method: string, params?: object, options?: { timeout?: number }): Promise<any> => {
+    if (rows.get(method)?.operator) return onOperatorSocket(method, params ?? {}, options?.timeout)
+    return rows.get(method)?.read ? read(method, params, options?.timeout) : mutate(await link(), method, params ?? {}, options?.timeout)
+  }
+  /** An operation of the Operator's Authority: its own connection to the operator socket, as the caller the CLI computes (a human at a terminal, else an agent, which the Host refuses). */
+  const onOperatorSocket = async (method: string, params: object, timeout?: number, who: Caller = caller()): Promise<any> => {
+    const client = await remote.open(who, { operator: true })
+    try {
+      return await mutate(client, method, params, timeout)
+    } finally {
+      client.close()
+    }
+  }
 
   /** Poll `work.events` until the Work is terminal. Ctrl-C detaches, or cancels first with `cancelOnInterrupt`. */
   async function follow(workId: string, options: FollowOptions = {}): Promise<Followed> {
@@ -279,13 +292,8 @@ export function hostClient(remote: Remote): HostClient {
       return follow(params.workId, options)
     },
     async decide(params, operator) {
-      // A decision is a human's: its own connection says so, whoever the other calls are.
-      const human = await remote.open({ type: 'human', operatorId: operator })
-      try {
-        await mutate(human, 'approval.decide', params)
-      } finally {
-        human.close()
-      }
+      // A decision is a human's: its own connection, on the operator socket, says so, whoever the other calls are.
+      await onOperatorSocket('approval.decide', params, undefined, { type: 'human', operatorId: operator })
       return follow(params.workId)
     },
     wait: (workId) => follow(workId),

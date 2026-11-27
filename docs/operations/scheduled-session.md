@@ -20,7 +20,12 @@ denies, retries a held step or releases, and stores the night report (below).
 
 `packages/bundle/system-night-session.sh` (what the service starts) runs
 `claude -p` with `--allowedTools` naming exactly the tools the prompt uses, so
-anything else is refused by permission, as `claude -p` has no one to ask. The
+anything else is refused by permission, as `claude -p` has no one to ask. That one
+`claude -p` runs inside a bubblewrap layer with only the caller socket, so it cannot
+call an operation of the Operator's Authority ([ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)
+decision 5); without `bwrap` or user namespaces it does not run and the night report says the layer could not start.
+The comment above `in_layer` in the script lists what is hidden and bound. To check the layer is on, run the script
+with a `claude` on the `PATH` that runs `ls "$DSH_HOME/system"`: it shows `host.sock` only. The
 tests under `packages/app/tests`, `packages/bundle/tests` and `tests` check the
 prompt against the commands, the allowlist and a real Host. What they cannot
 show is that your `claude` accepts these rules, so do one real run before

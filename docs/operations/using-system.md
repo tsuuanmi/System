@@ -79,7 +79,9 @@ sending them: the Host reads each from `workflows/` at the input Task's base
 commit, else beside its own code.
 
 The session is an agent: it may use every agent operation on every Work, store
-Tasks and files, and list the Workers. It cannot approve or deny, set
+Tasks and files, and list the Workers. It cannot approve or deny (only the operator socket
+serves them, and the session does not reach it:
+[ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)), set
 credentials, sign an account in, or merge into `main`; only a human runs
 `system work retry <work> --step checks.checks` for a check that failed outside
 the change. Each Work is also an MCP resource, `system://work/<id>`: subscribe

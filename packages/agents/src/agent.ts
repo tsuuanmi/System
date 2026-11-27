@@ -7,11 +7,11 @@
  * An attempt past its time limit is stopped the same way but fails: nobody cancelled it.
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Artifacts } from '@system/artifacts'
 import { requestedTier, writesRepository, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { adapterFor } from './adapters/index.ts'
-import type { SandboxOption } from './adapters/sandbox.ts'
+import { realHost, sandboxed, type SandboxHost, type SandboxOption } from './adapters/sandbox.ts'
 import type { QuotaEvent, QuotaReport } from './quota.ts'
 import type { Runtime } from './runtimes.ts'
 import { runAttempt } from './lifecycle.ts'
@@ -78,7 +78,7 @@ export interface Account {
   attemptTimeoutMinutes?: number
   /** What one attempt may spend before it is stopped and fails "over budget" (PROP-0007 decision 2). */
   attemptBudget?: AttemptBudget
-  /** claude-code, a spike, off by default: run the attempt's Bash in Claude Code's sandbox (adapters/sandbox.ts). */
+  /** Off by default: run the Runtime's process inside the bubblewrap layer (adapters/sandbox.ts, ADR-0016). */
   sandbox?: SandboxOption
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
@@ -137,14 +137,14 @@ export function exited(pid: number, start?: string): boolean {
 }
 
 /** The Host's slots limit how many attempts of an account run at once, so none queues here. */
-export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, graceMs = GRACE_MS, drainMs = DRAIN_MS): WorkerPort {
+export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, graceMs = GRACE_MS, drainMs = DRAIN_MS, host: SandboxHost = realHost()): WorkerPort {
   return {
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
     quotaCeilingPercent: account.quotaCeilingPercent,
     quota: account.quota,
-    run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs),
+    run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs, host),
     async gone(attemptId) {
       const file = pidFile(attemptsDir, attemptId)
       if (!existsSync(file)) return true
@@ -174,7 +174,7 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
   }
 }
 
-async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, request: WorkerRequest, graceMs: number, drainMs: number): Promise<WorkerResult> {
+async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner, attemptsDir: string, request: WorkerRequest, graceMs: number, drainMs: number, host: SandboxHost): Promise<WorkerResult> {
   const tier = requestedTier(request.capabilities)
   const model = tier ? account.models?.[tier] : account.models?.standard
   const executor: NonNullable<WorkerResult['executor']> = {
@@ -197,13 +197,16 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const staged = pre.stage(ws.root)
       const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env, ...(account.sandbox ? { sandbox: account.sandbox } : {}) })
       executor.scope = invocation.scope
+      // The layer is part of the spawn: when it cannot start the attempt fails Outside and the Runtime never runs unwrapped (ADR-0016 decision 3).
+      const layer = account.sandbox ? sandboxed(invocation.argv, ws, { state: dirname(attemptsDir), command: account.command, env: invocation.env }, host) : undefined
+      if (layer && 'failed' in layer) return { failure: layer.failed, cause: 'load' }
       // Remove every host variable the agent was not given (SSH agent, tokens, ...).
       const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
       Object.assign(env, invocation.env)
       // Over budget is stopped through the lifecycle's abort, and fails with what was spent.
       const budget = account.attemptBudget
       const budgetTimer = budget?.minutes === undefined ? undefined : setTimeout(() => ctx.stop(`over budget: ${budget.minutes} minutes`), budget.minutes * 60_000)
-      const spawned = spawner.spawn({ argv: invocation.argv, cwd: ws.work, env, signal: ctx.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
+      const spawned = spawner.spawn({ argv: layer?.argv ?? invocation.argv, cwd: ws.work, env, signal: ctx.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
       stdout = spawned.stdout
       // Output that grew is activity: what it says so far is the attempt's progress.
       const read = adapter.progress()

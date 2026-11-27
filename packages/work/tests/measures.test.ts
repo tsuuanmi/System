@@ -38,7 +38,7 @@ test('the five measures over a range, with their counts', () => {
   // B fails unit (change-verdict) and quota; C's unit failure recurs, and nothing earlier had it.
   assert.deepEqual(r.recurringFailureRate, { rate: 1 / 3, recurring: 1, failures: 3 })
   assert.deepEqual(r.escapedDefectRate, { rate: 1 / 2, escaped: 1, itemsMerged: 2, source: 'override (--escaped)' })
-  assert.deepEqual(r.costPerVerifiedWork, { usd: 1, knownCostUsd: 2, accepted: 2, worksWithUnknownCost: 1 })
+  assert.deepEqual(r.costPerVerifiedWork, { usd: 1, knownCostUsd: 2, accepted: 2, acceptedWithKnownCost: 2, worksWithUnknownCost: 1 })
   assert.deepEqual(r.timeToVerifiedResolution, { medianMs: (3 * 3600_000 + 3600_000) / 2, p90Ms: 3 * 3600_000, accepted: 2 })
   assert.deepEqual(r.toolSecondsPerSecond, { mean: 0.30000000000000004, attempts: 2 })
 })
@@ -60,6 +60,24 @@ test('with nothing to divide by, or no input, a measure is unknown, never zero',
   assert.deepEqual(noEscaped.escapedDefectRate, { rate: 'unknown', escaped: 'unknown', itemsMerged: 2, source: 'none' })
   const noCost = rangeReport([B], { since: '2026-11-15' })
   assert.equal(noCost.costPerVerifiedWork.usd, 'unknown')
+})
+
+const costWork = (id: string, status: 'succeeded' | 'failed', ...costs: ({ costUsd: number } | 'unknown')[]) => record(id, status, [admitted(T('20', '00:00:00')), ...costs.map((c, i) => observed(T('20', `00:00:0${i + 1}`), i + 1, c)), terminal(T('20', '01:00:00'), status)])
+const costOf = (...works: WorkRecord[]) => rangeReport(works, { since: '2026-11-15' }).costPerVerifiedWork
+
+test('cost per verified Work is over the Works whose cost is fully known, and says how many', () => {
+  // Today's code divides 3 by 3 accepted: 1.0.
+  assert.deepEqual(costOf(costWork('k1', 'succeeded', { costUsd: 1 }), costWork('k2', 'succeeded', { costUsd: 2 }), costWork('k3', 'succeeded', 'unknown')),
+    { usd: 1.5, knownCostUsd: 3, accepted: 3, acceptedWithKnownCost: 2, worksWithUnknownCost: 1 })
+  // A Work with one costed and one uncosted attempt is unknown: its 1 is not in the numerator.
+  assert.deepEqual(costOf(costWork('p1', 'succeeded', { costUsd: 1 }, 'unknown'), costWork('p2', 'succeeded', { costUsd: 2 })),
+    { usd: 2, knownCostUsd: 2, accepted: 2, acceptedWithKnownCost: 1, worksWithUnknownCost: 1 })
+  // A failed Work with known cost is part of what a verified Work costs.
+  assert.deepEqual(costOf(costWork('f1', 'failed', { costUsd: 3 }), costWork('f2', 'succeeded', { costUsd: 1 })),
+    { usd: 4, knownCostUsd: 4, accepted: 1, acceptedWithKnownCost: 1, worksWithUnknownCost: 0 })
+  // No accepted Work with known cost: unknown, even with known cost elsewhere.
+  assert.deepEqual(costOf(costWork('u1', 'succeeded', 'unknown'), costWork('u2', 'failed', { costUsd: 3 })),
+    { usd: 'unknown', knownCostUsd: 3, accepted: 1, acceptedWithKnownCost: 0, worksWithUnknownCost: 1 })
 })
 
 const unit = (test: string) => `failed: unit: a.test.ts "${test}": boom`
@@ -240,4 +258,11 @@ test('reopen rounds (rounds-1): per Work, in total, median and p90 to pass, and 
   assert.deepEqual(r.failedAfterCap, ['work:f'])
   const none = rangeReport([G], { since: '2026-11-20' }).reopenRounds
   assert.deepEqual({ median: none.medianToPass, p90: none.p90ToPass, failed: none.failedAfterCap }, { median: 'unknown', p90: 'unknown', failed: [] })
+})
+
+test('relgate-1: releaseViolations are the violations of the range, as merge and paths', () => {
+  const v = (at: string, merge: string) => ({ merge, paths: ['workflows/develop.yaml'], at })
+  const r = rangeReport([A], { since: '2026-11-15', until: '2026-11-18', violations: [v(T('16'), 'm1'), v(T('09'), 'm0'), v(T('19'), 'm2')] })
+  assert.deepEqual(r.releaseViolations, [{ merge: 'm1', paths: ['workflows/develop.yaml'] }])
+  assert.deepEqual(rangeReport([A], { since: '2026-11-15' }).releaseViolations, [])
 })

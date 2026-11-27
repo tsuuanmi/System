@@ -31,7 +31,7 @@
 //   FAKE:refresh  (codex) rewrite $CODEX_HOME/auth.json, as a token refresh does
 // The model given with --model / -m is written into ENV.json and reported as served.
 import { spawn } from 'node:child_process'
-import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
@@ -117,7 +117,17 @@ if (!codex && background && !refused) writeFileSync(background, String(spawn(pro
 const homeFile = /FAKE:home=(\S+)/.exec(prompt)?.[1]
 const homeFilesBefore = homeFile && process.env.HOME ? readdirSync(process.env.HOME).sort() : undefined
 if (homeFile && process.env.HOME) writeFileSync(join(process.env.HOME, homeFile), 'attempt-file\n')
-if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, dbus: process.env.DBUS_SESSION_BUS_ADDRESS, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], ...(homeFilesBefore ? { homeFilesBefore } : {}), model }))
+// FAKE:brain  (agy) write and read back agy's working file under $HOME/.gemini/antigravity-cli/brain, as agy does for long tool output
+let brain
+if (agy && has('brain')) {
+  const dir = join(process.env.HOME, '.gemini', 'antigravity-cli', 'brain')
+  const before = existsSync(dir) ? readdirSync(dir).sort() : []
+  mkdirSync(join(dir, 'c1'), { recursive: true })
+  const file = join(dir, 'c1', 'scratch.txt')
+  writeFileSync(file, 'scratch\n')
+  brain = { before, realHome: realpathSync(process.env.HOME), real: realpathSync(file), content: readFileSync(file, 'utf8'), token: readFileSync(join(process.env.HOME, '.gemini', 'antigravity-cli', 'antigravity-oauth-token'), 'utf8') }
+}
+if (has('env')) writeFileSync(join(cwd, 'ENV.json'), JSON.stringify({ ...(brain ? { brain } : {}), keys: Object.keys(process.env).sort(), home: process.env.HOME, path: process.env.PATH, codexHome: process.env.CODEX_HOME, dbus: process.env.DBUS_SESSION_BUS_ADDRESS, codexHomeFiles: process.env.CODEX_HOME ? readdirSync(process.env.CODEX_HOME) : [], ...(homeFilesBefore ? { homeFilesBefore } : {}), model }))
 if (has('edit')) (has('append') ? appendFileSync : writeFileSync)(join(cwd, 'NOTE.md'), `edited by ${codex ? 'codex' : agy ? 'agy' : 'claude'}\n`)
 /** An output naming who wrote it and quoting each input file, so a test can see what a step read. */
 function signed(slot) {

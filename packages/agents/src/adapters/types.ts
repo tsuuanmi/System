@@ -5,7 +5,7 @@ import type { Account } from '../agent.ts'
 import type { Observed, QuotaCache, QuotaEvent } from '../quota.ts'
 import type { Invocation, Parsed, Runtime } from '../runtimes.ts'
 import type { Workspace } from '../workspace.ts'
-import type { SandboxHost, SandboxOption } from './sandbox.ts'
+import type { SandboxOption } from './sandbox.ts'
 
 export interface InvocationInput {
   command: string
@@ -16,10 +16,8 @@ export interface InvocationInput {
   codeWrite: boolean
   /** The staged credential's variables. */
   env: Record<string, string>
-  /** The Account's `sandbox` option; only an adapter with `sandboxes` takes it. */
+  /** The Account's `sandbox` option: the process runs in the layer of sandbox.ts (agent.ts wraps it); recorded in the scope. */
   sandbox?: SandboxOption
-  /** A test hook: the host's home and git facts for the sandbox settings. */
-  host?: SandboxHost
 }
 
 /** A credential staged in a directory: its variables, and what to do once the CLI is done (keep a refreshed login). */
@@ -56,8 +54,6 @@ export interface CliAdapter {
   /** The account's credential problem, or how to stage it in a directory: checked before anything is prepared. */
   preflight(account: Account): Promise<Preflight>
   invocation(input: InvocationInput): Invocation
-  /** Whether the Runtime has the `sandbox` option (a spike: Claude Code only). */
-  readonly sandboxes?: boolean
   /** One turn with no tools in an empty directory (cls-1). */
   askArgv(input: { command: string; prompt: string; model: string; work: string }): string[]
   parse(stdout: string, options?: ParseOptions): Parsed

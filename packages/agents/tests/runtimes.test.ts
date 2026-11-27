@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir, userInfo } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { baseEnv } from '../src/runtimes.ts'
@@ -137,11 +136,9 @@ test('the Claude Code Runtime asks for acceptEdits, allows Bash and the web tool
 })
 
 const sbWs = { root: '/fake/home/.dsh/attempt', home: '/fake/home/.dsh/attempt/home', inputs: '/fake/home/.dsh/attempt/in', outputs: '/fake/home/.dsh/attempt/out', work: '/fake/home/.dsh/attempt/work' } as never
-const fakeHost = { home: () => '/fake/home', gitCommonDir: () => '/fake/home/src/repo/.git' }
-const sandboxed = (sandbox: unknown, codeWrite = false) => claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite, env: { CLAUDE_CODE_OAUTH_TOKEN: 't' }, sandbox: sandbox as never, host: fakeHost })
-const settingsOf = (argv: string[]) => JSON.parse(argv[argv.indexOf('--settings') + 1]!) as { sandbox: { enabled: boolean; failIfUnavailable: boolean; allowUnsandboxedCommands: boolean; excludedCommands?: unknown; filesystem: { denyRead: string[]; allowRead: string[]; allowWrite: string[] }; network?: { allowedDomains?: string[] } } }
+const sandboxed = (sandbox: unknown, codeWrite = false) => claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite, env: { CLAUDE_CODE_OAUTH_TOKEN: 't' }, sandbox: sandbox as never })
 
-test('the recorded scope is what the Claude Code argv and settings used', () => {
+test('the recorded scope is what the Claude Code argv used, and says whether the layer was on', () => {
   const values = (argv: string[], flag: string) => argv.slice(argv.indexOf(flag) + 1).filter((v, i, rest) => !rest.slice(0, i).some((x) => x.startsWith('--')) && !v.startsWith('--'))
   for (const codeWrite of [false, true]) {
     const { argv, scope } = sandboxed(undefined, codeWrite)
@@ -150,7 +147,7 @@ test('the recorded scope is what the Claude Code argv and settings used', () => 
   assert.ok(sandboxed(undefined, true).scope.disallowedTools!.includes('Monitor'))
   const on = sandboxed(true)
   assert.equal(on.scope.sandbox, true)
-  assert.equal(on.scope.settingsSha256, createHash('sha256').update(on.argv[on.argv.indexOf('--settings') + 1]!).digest('hex'))
+  assert.deepEqual(on.argv, sandboxed(undefined).argv, 'the layer wraps the process: it changes no flag of the Runtime')
   assert.equal(JSON.stringify(on.scope).includes('CLAUDE_CODE_OAUTH_TOKEN'), false)
 })
 
@@ -160,59 +157,12 @@ test('the recorded scope is the Codex -s mode of its argv', () => {
   assert.equal(scope.sandbox, 'workspace-write')
 })
 
-test('without the sandbox option the Claude Code argv has no --settings, and is what it was', () => {
-  const plain = claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite: false, env: {} })
-  assert.equal(plain.argv.includes('--settings'), false)
-  assert.deepEqual(claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite: false, env: {}, host: fakeHost }), plain)
-})
-
-test('with the sandbox option the argv carries --settings: enabled, never fails open, the real home denied, the attempt\'s directories allowed', () => {
-  const { argv } = sandboxed(true)
-  const { sandbox } = settingsOf(argv)
-  assert.equal(sandbox.enabled, true)
-  assert.equal(sandbox.failIfUnavailable, true)
-  assert.equal(sandbox.allowUnsandboxedCommands, false)
-  assert.equal('excludedCommands' in sandbox, false)
-  assert.deepEqual(sandbox.filesystem.denyRead, ['/fake/home'])
-  for (const dir of ['/fake/home/.dsh/attempt/work', '/fake/home/.dsh/attempt/in', '/fake/home/.dsh/attempt/out', '/fake/home/.dsh/attempt/home', '/fake/home/src/repo/.git']) assert.ok(sandbox.filesystem.allowRead.includes(dir), dir)
-  assert.deepEqual(sandbox.filesystem.allowWrite, ['/fake/home/.dsh/attempt/home', '/fake/home/.dsh/attempt/in', '/fake/home/.dsh/attempt/out'])
-  // The rb-4 flags and the environment stay.
-  assert.deepEqual(argv.slice(0, argv.indexOf('--settings')), claudeInvocation('claude', sbWs, 'p', 't').argv)
-  assert.equal(sandboxed(true).env.GIT_SSH_COMMAND, claudeInvocation('claude', sbWs, 'p', 't').env.GIT_SSH_COMMAND)
-})
-
-test('the sandbox allows reading only what lies under the real home from PATH, the repository and the option; the network is the option\'s hosts, empty by default', () => {
-  const home = '/fake/home'
-  const { sandbox } = settingsOf(sandboxed({ allowRead: ['/fake/home/.cache/x', '/opt/elsewhere'], allowedDomains: ['registry.npmjs.org'] }).argv)
-  assert.ok(sandbox.filesystem.allowRead.includes('/fake/home/.cache/x'))
-  assert.ok(sandbox.filesystem.allowRead.includes('/opt/elsewhere'))
-  assert.deepEqual(sandbox.network?.allowedDomains, ['registry.npmjs.org'])
-  const bare = settingsOf(sandboxed(true).argv).sandbox
-  assert.deepEqual(bare.network?.allowedDomains ?? [], [])
-  // Only PATH entries under the home are added (the Node of baseEnv); an entry outside it is not.
-  const dirs = baseEnv(sbWs).PATH!.split(':').filter((d) => d.startsWith(home + '/'))
-  for (const d of dirs) assert.ok(bare.filesystem.allowRead.includes(d), d)
-  assert.equal(bare.filesystem.allowRead.includes('/usr/bin'), false)
-  // A repository outside the home is not listed.
-  const outside = claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite: false, env: {}, sandbox: true, host: { home: () => '/fake/home', gitCommonDir: () => '/srv/repo/.git' } })
-  assert.equal(settingsOf(outside.argv).sandbox.filesystem.allowRead.includes('/srv/repo/.git'), false)
-})
-
-test('the real home comes from the passwd entry, not $HOME', () => {
-  const real = claude.invocation({ command: 'claude', ws: sbWs, prompt: 'p', codeWrite: false, env: {}, sandbox: true })
-  assert.deepEqual(settingsOf(real.argv).sandbox.filesystem.denyRead, [userInfo().homedir])
-})
-
-test('the sandbox option is refused on a Codex Account and checked for unknown keys and shapes', () => {
-  assert.throws(() => codex.invocation({ command: 'codex', ws, prompt: 'p', codeWrite: false, env: {}, sandbox: true }), /Claude Code Runtime only/)
-  assert.throws(() => checkSandbox('codex', true), /spike that covers the Claude Code Runtime only/)
-  assert.throws(() => checkSandbox('web', true), /spike that covers the Claude Code Runtime only/)
-  assert.throws(() => checkSandbox('claude-code', { allowWrite: ['/x'] }), /unknown key allowWrite/)
-  assert.throws(() => checkSandbox('claude-code', { allowRead: ['relative'] }), /absolute/)
-  assert.throws(() => checkSandbox('claude-code', false), /true or an object/)
+test('the sandbox option is refused on a web account and checked for its shape; every CLI Runtime takes it', () => {
+  assert.throws(() => checkSandbox('web', true), /a web account has none/)
+  assert.throws(() => checkSandbox('claude-code', { allowRead: ['/x'] }), /must be true/)
+  assert.throws(() => checkSandbox('codex', false), /must be true/)
   assert.equal(checkSandbox('claude-code', undefined), undefined)
-  assert.equal(checkSandbox('codex', undefined), undefined)
-  assert.equal(checkSandbox('claude-code', true), true)
+  for (const runtime of ['claude-code', 'codex', 'antigravity']) assert.equal(checkSandbox(runtime, true), true)
 })
 
 test('the Codex Runtime runs in the workspace-write sandbox, never a wider one, and passes --output-schema and -o', () => {

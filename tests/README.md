@@ -37,7 +37,7 @@ Without its switch a credential-gated file skips itself, so `smoke` stays offlin
 
 A flaky test is never skipped, slept or retried until it passes: find the root cause, or delete it with the reason and an Escaped defect and keep a deterministic test of what it guarded ([AGENTS.md](../AGENTS.md)).
 
-A test file's header says which Item or gate it guards; that, not this README, is the inventory. [fake-github.mjs](fake-github.mjs) is the fake GitHub that the publish tests start, and [fixtures](fixtures) holds the data tests read, such as the [review eval set](fixtures/review-evalset/README.md).
+A test file's header says which Item or gate it guards; that, not this README, is the inventory. [fake-github.mjs](../test-support/fake-github.mjs) is the fake GitHub that the publish tests start, and [fixtures](fixtures) holds the data tests read, such as the [review eval set](fixtures/review-evalset/README.md).
 
 ## Regressions
 

@@ -197,4 +197,4 @@ checks:
 Sources: [src/checks.ts](src/checks.ts), [src/citations.ts](src/citations.ts),
 [src/index.ts](src/index.ts); tests: [tests](tests/README.md).
 
-`gates:` (Item gate-1): top-level globs of `.system/checks.yaml` naming paths whose change the merge queue holds for the Operator's Approval ([effects README](../effects/README.md)). The verifier ignores it. This repository's own list waits for a release that knows the key (Q0 rule, criteria-pins test).
+`gates:` (Item gate-1): top-level globs of `.system/checks.yaml` naming paths whose change the merge queue holds for the Operator's Approval ([effects README](../effects/README.md)). The verifier ignores it. This repository's own list is `.system/checks.yaml` and `.github/workflows/**` (Item gate-2).

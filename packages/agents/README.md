@@ -34,7 +34,7 @@ the optional web-worker row) becomes a System Worker
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
         maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
-        # sandbox: true                 # spike, off by default, Claude Code only: Bash runs in Claude Code's sandbox (adapters/README.md)
+        # sandbox: true                 # off by default: the Runtime's process runs in one bubblewrap layer (adapters/README.md)
       - ref: codex/default
         runtime: codex
         capabilities: [code.tests]
@@ -354,8 +354,9 @@ the contract, and `WEB_WORKER_DISABLED`). With that row off the account is repor
 
 ## Limits
 
-No sandbox or egress control (ADR-0004 decision 14): the agent runs as the
-operator and could read the operator's files, including the credential store.
+No egress control (ADR-0004 decision 14). Unless the Account sets `sandbox`, the agent runs as the
+operator and could read the operator's files, including the credential store; with it, the process runs inside the
+bubblewrap layer of [adapters/sandbox.ts](src/adapters/sandbox.ts) ([ADR-0016](../../docs/decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)).
 No retries, and no time limit beyond the attempt's. `--allowedTools Bash` lets Claude Code
 run any shell command except `git push` and `gh`.
 

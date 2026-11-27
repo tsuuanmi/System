@@ -7,15 +7,13 @@ import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { createQuotaCache, readCodexQuota } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
 import { applyFinalResult, FINAL_RESULT_SCHEMA } from './final-result.ts'
-import { SANDBOX_RUNTIME_ONLY } from './sandbox.ts'
 import { readCodexAccountId } from '../identity.ts'
 import type { CliAdapter, InvocationInput, ParseOptions } from './types.ts'
 
 const SCHEMA_FILE = 'final-result.schema.json'
 const RESULT_FILE = 'final-result.json'
 
-function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
-  if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
+function invocation({ command, ws, prompt, model, env }: InvocationInput): Invocation {
   const mode = 'workspace-write'
   const dir = ws.root ?? ws.work
   return {

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { fixture } from '../../../test-support/fixture.ts'
 import type { Services } from '../src/operations.ts'
-import { serveHost, socketPath } from '../src/process.ts'
+import { operatorSocketPath, serveHost, socketPath } from '../src/process.ts'
 
 // A socket path is limited to about 100 bytes, and tmpdir() may be longer.
 const base = mkdtempSync('/tmp/sh-')
@@ -20,6 +20,18 @@ test('something that is not a socket at the path is not removed', { timeout: 120
   await assert.rejects(serveHost({ host, home, services: {} as Services, log: () => {} }), /EADDRINUSE/)
   assert.equal(existsSync(socketPath(home)), true)
   await host.close()
+})
+
+test('the Host makes the operator socket and its directory itself, mode 0700, even where the directory exists with another mode (an update from a release without it)', { timeout: 120_000 }, async () => {
+  const home = fresh()
+  const dir = join(home, 'system', 'operator')
+  mkdirSync(dir, { recursive: true })
+  chmodSync(dir, 0o755)
+  const host = await fixture().startHost(home)
+  const serving = await serveHost({ host, home, services: {} as Services, log: () => {} })
+  assert.equal(statSync(dir).mode & 0o777, 0o700)
+  assert.equal(statSync(operatorSocketPath(home)).isSocket(), true)
+  await serving.stop()
 })
 
 test('a home whose socket path is too long for a Unix socket is refused with the fix', { timeout: 120_000 }, async () => {

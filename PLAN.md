@@ -34,8 +34,10 @@
   or a Tier (`tier.*`); a rename is expand, then contract; the citation verifier stays as strict as it is (NM, 2026-11-15).
 - A `checks.yaml` key or verifier version is pinned a release after the one that added it, because the running Host
   refuses what it does not know (Q0, Escaped defects 3 and 7; [verifiers README](packages/verifiers/README.md)).
-- Unattended-scale isolation, when it comes: bubblewrap, the same OS user (the shared server gives no root), `$HOME`
-  hidden with an allow-list, a per-attempt clone with read-only alternates, network kept, CLI Workers only (2026-11-15).
+- Unattended-scale isolation: bubblewrap, the same OS user (the shared server gives no root), `$HOME` hidden with an
+  allow-list, a per-attempt clone with read-only alternates, network kept, CLI Workers and the Scheduled session
+  (2026-11-15; decided as
+  [ADR-0016](docs/decisions/ADR-0016-the-gate-is-enforced-by-reachability.md) on 2026-11-27).
 - Property-based and formal verification wait for an Escaped defect of their kind. pstack (MIT, Lauren Tan) is reused
   selectively as Worker procedures and a source for Guardrails, never as a control plane or a substitute for System's
   verdicts; copied files keep attribution and the upstream commit (FL, 2026-11-15). The Guardrail rule (Q8) is in
@@ -115,8 +117,8 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
   present and nothing merges that its checks did not pass, judged by the existing measures; model judgement does not
   move into the Host (ADR-0012). A caller may submit Works that write nothing to a repository (research,
   research-source, brainstorm, plan-items) without asking, at most 8 a round; a review round with fewer than 3 accepted
-  Items ends the self-improvement. Sandbox: Claude Code's own (sb-1, option `sandbox`, off; turning it on needs the
-  operator's decision on `allowedDomains`). Reading Item state back from git waits for a second machine or a restore.
+  Items ends the self-improvement. Sandbox: ADR-0016's layer; it replaces
+  Claude Code's own (sb-1). Reading Item state back from git waits for a second machine or a restore.
   research.yaml keeps `prefer: web.browse`. One release per accepted batch.
 
 ### ID — Identity (decided 2026-11-21)
@@ -134,10 +136,13 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
 - Release delegated (operator, 2026-11-26): to a caller session on conditions: the release pull request's CI passes and
   `system update`'s release check and install check pass; any failure stops the release, records an Escaped defect and
   is fixed through a Work. Never approve, deny or verify again. A caller's release is not an operator act (ms-4).
+  Not delegated (operator, 2026-11-27): a release that touches `packages/verifiers/src`, `packages/effects/src` or
+  `workflows/*.yaml`, because those take effect only at a release; a caller's release that touched them is reported as
+  a violation (relgate-1) and recorded as an Escaped defect.
 - No Item caps (operator, 2026-11-26): the scheduled session and a `/goal` session take every Ready `todo` Item; each
   Item is still one Worker attempt with a test that fails first, and the Operator settles the Intent behind it.
 - Reopened by: Items per operator act on product Batches staying under 3.6 after three Batches; DNA Batches whose
-  operator minutes are mostly running the loop; sb-1's real-agent test failing in a way configuration cannot fix;
+  operator minutes are mostly running the loop; ADR-0016's layer failing in a way configuration cannot fix;
   late-caught or escaped defects rising under ADR-0014's tiers.
 
 ### RB and later decisions
@@ -149,8 +154,13 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
 - IR (2026-11-20): batches 2 and 3 (context-pack and file-overlap warnings, `guardrail.yaml`, a Model check of Done
   when, Triage in shadow, a doc-truth Model check) open only when `recurringClasses` on DNA's Works ask for them;
   rerunning a check stays the operator's (RO). CT: checks in tiers by event, [ADR-0014](docs/decisions/ADR-0014-checks-in-tiers-by-event.md).
-- Unattended-scale isolation is required before raising the scheduled session's limits or adding repositories; the
-  operator runs sb-1's gated test (`tests/real-agents.test.ts`, `SYSTEM_REAL_AGENTS=1`) before either.
+- The gate holds unattended (operator, 2026-11-27; Intent 21e4cf418770, ADR-0016; Items gate-2, iso-1 to iso-3,
+  relgate-1, cost-1). The ID rule for opening a System Item stands. Removing the Item cap on 2026-11-26 waived the
+  2026-11-16 condition that isolation comes before raising the Scheduled session's limits; adding repositories still
+  waits for iso-1 to iso-3 released. This repository's Gate paths are `.system/checks.yaml` and `.github/workflows/**`.
+  The operator's own: required status checks `build` and `docs` on `main`; one Account with `sandbox` on for one night,
+  then the decision on default on. The `unknown` failure class gets no Item: 66 of its 69 since 2026-11-01 came before
+  2026-11-20 (rc-1 catches a recurrence), and Satisfied keeps needing a test a Verifier ran.
 
 ## 4. Future, not current gates
 

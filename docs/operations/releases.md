@@ -64,6 +64,9 @@ attempts. A Host run from a development checkout restarts itself on a build
 there, not while the `.building` file `corepack pnpm build` keeps exists.
 
 A release is a pull request from `dev` to `main`, merged by the operator, then `system update`.
+A release that touches `packages/verifiers/src`, `packages/effects/src` or `workflows/*.yaml` is the
+Operator's own, not delegated ([PLAN.md](../../PLAN.md), "Release delegated"); `system work report` lists
+a caller's release that did (`releaseViolations`).
 The docs CI's `impact` check fails when the release changes a path a doc `covers:` without changing
 that doc ([the tool](../../tools/docs.py), [governance](../governance/documentation.md)). When the doc
 is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it. System's
@@ -113,5 +116,5 @@ System's own publish pushes from attempt worktrees with `core.hooksPath=/dev/nul
 The hook acts only on a push to the remote named `origin` whose URL is not a local path or a `file:` URL,
 and it clears every inherited `GIT_*` repository variable before a check runs,
 so it cannot change the operator's repository.
-The sandbox Account option (sb-1) is the second guard: in a sandbox, a linked worktree cannot write
-the main repository's `config` or `hooks/`; its gated test is still the operator's.
+The sandbox Account option (iso-1) is the second guard: inside its layer, a linked worktree cannot write
+the main repository's `config` or `hooks/`; `packages/agents/tests/sandbox.test.ts` shows it.
