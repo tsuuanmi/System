@@ -35,3 +35,4 @@ in STATUS.md carries it out).
 4. `tools/core-budget.sh` stays as a stub that exits 0, for Works whose
    criteria were pinned before the check's removal; a later cleanup deletes it
    once no running or held Work pins the old criteria.
+   Deleted on 2026-11-27 (Item tidy-12): `system status` showed no running or held Work.
