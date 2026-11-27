@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
+import { layerSkip } from '../../../test-support/layer-gate.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { GIT_TREE_KIND, TASK_KIND, gitTreeSchema, snapshot, taskSchema, type WorkerRequest } from '@system/work'
 import type { Workspace } from '../src/workspace.ts'
@@ -68,8 +69,7 @@ test('the repository\'s git data is writable for a commit, but its config and ho
 // ---- through a real process ----
 
 const bwrapOf = realHost().bwrap()
-const usable = bwrapOf && spawnSync(bwrapOf, ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--unshare-pid', 'true']).status === 0
-const skip = !usable && 'unprivileged user namespaces are off here (bubblewrap cannot start)'
+const skip = layerSkip(bwrapOf, 'unprivileged user namespaces are off here (bubblewrap cannot start)')
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
 const memory = () => memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema })

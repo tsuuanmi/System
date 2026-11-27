@@ -19,6 +19,7 @@ const self = 'packages/agents/tests/sandbox-without-bwrap.test.ts'
 export const LAYER_TEST_FILES = [
   'packages/agents/tests/sandbox.test.ts',
   'packages/bundle/tests/night-session-launcher.test.ts',
+  'tests/layer-gate.test.ts',
   'tests/night-session-layer.test.ts',
 ]
 
