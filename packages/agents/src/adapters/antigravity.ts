@@ -21,7 +21,7 @@ const SETTINGS = `${JSON.stringify({ permissions: { allow: ['command(*)'], deny:
 const MODE = 'accept-edits'
 
 /**
- * `cwd` is the checkout (agy has no cwd flag) and HOME the attempt's throwaway `ws.home` (with `.gemini` linked to `agyHome/.gemini`);
+ * `cwd` is the checkout (agy has no cwd flag) and HOME the attempt's throwaway `ws.home` (`.gemini/antigravity-cli` a real directory holding links to the Account's token and settings);
  * `--mode auto` is refused for these Accounts, so `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed
  * (baseEnv has none), so the token is read from a file.
  */
@@ -134,12 +134,14 @@ export const antigravity: CliAdapter = {
     return {
       stage(dir) {
         writeSettings(home)
-        // Run with the attempt's throwaway HOME so caches/stores do not accumulate in agyHome; only `.gemini` is linked to the Account's state.
+        // Run with the attempt's throwaway HOME so caches, stores and agy's working files (`brain/`) do not accumulate in agyHome. `.gemini/antigravity-cli`
+        // is a real directory of the attempt; only the login token and the staged settings are linked to the Account's files (a link to the whole
+        // `.gemini` made `brain/` resolve into agyHome, where agy's own permission check refuses it).
         const attemptHome = join(dir, 'home')
-        mkdirSync(attemptHome, { recursive: true, mode: 0o700 })
-        const link = join(attemptHome, '.gemini')
-        rmSync(link, { recursive: true, force: true })
-        symlinkSync(resolve(home, '.gemini'), link)
+        const config = join(attemptHome, ...CONFIG)
+        rmSync(join(attemptHome, '.gemini'), { recursive: true, force: true })
+        mkdirSync(config, { recursive: true, mode: 0o700 })
+        for (const name of [TOKEN, 'settings.json']) symlinkSync(resolve(home, ...CONFIG, name), join(config, name))
         return { env: {}, finish() {} }
       },
     }
