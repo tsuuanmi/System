@@ -142,18 +142,44 @@ export function redactValue<T>(value: T, secrets: readonly (string | undefined)[
   return walk(value) as T
 }
 
-/** An attempt's log (lines of stream-json or text): a JSON line is redacted by its values and rewritten only when one changed, any other line as text. */
+const PEM_BEGIN = /-----BEGIN [A-Z ]+-----/g
+const PEM_END = /-----END [A-Z ]+-----/
+
+/** Whether the line's last PEM header has no END after it, so the block goes on in the next lines. */
+function pemOpensAtEnd(line: string): boolean {
+  let last = -1
+  for (const m of line.matchAll(PEM_BEGIN)) last = m.index + m[0].length
+  return last >= 0 && !PEM_END.test(line.slice(last))
+}
+
+function redactLogLine(line: string, secrets: readonly (string | undefined)[]): string {
+  const head = line.trimStart()[0]
+  if (head === '{' || head === '[') {
+    try {
+      const event: unknown = JSON.parse(line)
+      const clean = redactValue(event, secrets)
+      // A value of the text the parse did not change may still hold a secret across keys (a cut line is handled below).
+      return clean === event ? maskValues(line, secrets, '[redacted:account-token]') : JSON.stringify(clean)
+    } catch { /* a line cut by the stream's end, or not JSON: as text */ }
+  }
+  return redactString(line, secrets)
+}
+
+/** An attempt's log (lines of stream-json or text): a JSON line is redacted by its values and rewritten only when one changed, any other line as text; a PEM block over several text lines is dropped from after its header to its END (or the log's end), the text after END kept. */
 export function redactLog(log: string, secrets: readonly (string | undefined)[] = []): string {
-  return log.split('\n').map((line) => {
-    const head = line.trimStart()[0]
-    if (head === '{' || head === '[') {
-      try {
-        const event: unknown = JSON.parse(line)
-        const clean = redactValue(event, secrets)
-        // A value of the text the parse did not change may still hold a secret across keys (a cut line is handled below).
-        return clean === event ? maskValues(line, secrets, '[redacted:account-token]') : JSON.stringify(clean)
-      } catch { /* a line cut by the stream's end, or not JSON: as text */ }
+  let inPem = false
+  const out: string[] = []
+  for (const raw of log.split('\n')) {
+    let line = raw
+    if (inPem) {
+      const end = PEM_END.exec(line)
+      if (!end) continue
+      inPem = false
+      line = line.slice(end.index + end[0].length)
     }
-    return redactString(line, secrets)
-  }).join('\n')
+    const head = line.trimStart()[0]
+    if (head !== '{' && head !== '[') inPem = pemOpensAtEnd(line)
+    out.push(redactLogLine(line, secrets))
+  }
+  return out.join('\n')
 }
