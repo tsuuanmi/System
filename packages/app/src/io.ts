@@ -50,16 +50,31 @@ export async function readSecret(prompt: string): Promise<string> {
   }
 }
 
+/** Ask up to three times for `expected`; each mismatch says what was typed and what is expected. */
+export async function confirmLines(ask: (prompt: string) => Promise<string>, say: (text: string) => void, expected: string, prompt = '> '): Promise<void> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const typed = (await ask(prompt)).trim()
+    if (typed === expected) return
+    if (attempt < 3) say(`you typed ${JSON.stringify(typed)}; type ${expected} to confirm, or Ctrl-C to cancel\n`)
+  }
+  throw new Error('the confirmation did not match; nothing was decided')
+}
+
 /** One typed line from a human at the terminal; anything else is refused (ADR-0004 decision 3). */
 export async function confirmHuman(prompt: string, expected: string): Promise<string> {
   if (!process.stdin.isTTY) {
     throw new Error('this decision needs a human at a terminal: stdin is not a terminal, so the caller may be an agent (ADR-0004 decision 3)')
   }
   const { createInterface } = await import('node:readline/promises')
-  const lines = createInterface({ input: process.stdin, output: process.stderr })
+  const lines = createInterface({ input: process.stdin })
+  const next = lines[Symbol.asyncIterator]()
   try {
-    const typed = (await lines.question(prompt)).trim()
-    if (typed !== expected) throw new Error('the confirmation did not match; nothing was decided')
+    await confirmLines(async (p) => {
+      process.stderr.write(p)
+      const line = await next.next()
+      if (line.done) throw new Error('cancelled: no confirmation was typed; nothing was decided')
+      return line.value
+    }, (text) => { process.stderr.write(text) }, expected, prompt)
   } finally {
     lines.close()
   }

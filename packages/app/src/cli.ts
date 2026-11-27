@@ -204,9 +204,10 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       const verb = decision === 'approved' ? 'approve' : 'deny'
       // One Work: its short ID. Several: the verb and their number, typed after reading the list above.
       const expected = workIds.length === 1 ? shortCode(workIds[0]!) : `${verb} ${workIds.length}`
-      const what = workIds.length === 1 ? `for ${records[0]!.state.awaiting ?? 'it'}` : `for each of these ${workIds.length} Works`
-      // On a line of its own, so a pasted command is not taken for the answer.
-      const operatorId = await io.confirmHuman(`Nothing is decided unless you type exactly ${expected} to record "${decision}" ${what}\n> `, expected)
+      const what = workIds.length === 1 ? `${verb} ${records[0]!.state.awaiting ?? 'it'} of ${workIds[0]}` : `${verb} these ${workIds.length} Works`
+      const typeWhat = workIds.length === 1 ? "the Work's short ID" : 'the verb and their number'
+      // The token is alone and last on its line, so the decision word is never read as the answer.
+      const operatorId = await io.confirmHuman(`To ${what}, type ${typeWhat} and press Enter, exactly: ${expected}\n> `, expected)
       let code = 0
       for (const workId of workIds) {
         try {

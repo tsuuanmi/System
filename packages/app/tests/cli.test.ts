@@ -181,3 +181,15 @@ test('approve prints the decision before asking for the typed confirmation', asy
   await run!()
   assert.match(printedBeforePrompt, /Decision needed[\s\S]*system deny work:h/)
 })
+
+test('the approve and deny prompt ends with the token alone, not the decision word', async () => {
+  let prompt = ''
+  const host = fakeHost({ 'work.show': ({ workId }) => heldRecord(workId) }, { decide: async () => ({ state: { status: 'failed' } }) as any })
+  const io = { out() {}, err() {}, confirmHuman: async (p: string) => { prompt = p; return 'tan' } } as any
+  let run: Run | undefined
+  const program = buildProgram(host, io, (r) => { run = r })
+  program.exitOverride()
+  await program.parseAsync(['node', 'system', 'deny', 'work:abcdef0123', '--reason', 'no'])
+  await run!()
+  assert.match(prompt, /^To deny ship of work:abcdef0123, type the Work's short ID and press Enter, exactly: [0-9a-f]+\n> $/)
+})
