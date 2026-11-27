@@ -24,6 +24,10 @@ versioned contracts and evidence, rather than permanent framework loyalty.
 The [Product Charter](../requirements/purpose.md) is still binding:
 "Work persists. Workers change. Humans govern."
 
+**Review and implementation map:** [RES-0023](RES-0023-adaptive-system-insights-and-adoption-gates.md)
+condenses the eight cross-project insights into evidence gates, adversarial
+checks and a local System review handoff. It is not an accepted proposal.
+
 ## 1. Separate three kinds of orchestration
 
 | Layer | Authority | Example |
