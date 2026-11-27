@@ -134,7 +134,7 @@ test('the argv is accept-edits in the sandbox, adds the inputs and outputs direc
   assert.equal(argv.includes('auto'), false)
   assert.equal(env.HOME, '/ws/home')
   assert.equal('DBUS_SESSION_BUS_ADDRESS' in env, false)
-  assert.throws(() => adapter.invocation({ command: 'agy', ws, prompt: 'p', codeWrite: false, env: {}, sandbox: true }), /sandbox/)
+  assert.deepEqual(adapter.invocation({ command: 'agy', ws, prompt: 'do it', model: 'gemini-3.8-flash-low', codeWrite: true, env: {}, sandbox: true }).argv, argv, 'the layer wraps the process, it changes no flag')
 })
 
 test('the recorded scope is the mode and sandbox of the argv and the sha256 of the staged settings bytes', async () => {

@@ -369,10 +369,10 @@ test('a web-worker row that never provides its service is waited for, bounded by
   assert.match(account!.reason, /web-worker row did not start within 0\.05 s/)
 })
 
-test('the sandbox option on a web account is refused with the reason, an unknown key too', async () => {
+test('the sandbox option on a web account is refused with the reason, a shape of sb-1 too', async () => {
   const { accounts } = await mount(undefined, false, [{ sandbox: true }])
   assert.equal(accounts[0]!.available, false)
-  assert.match(accounts[0]!.reason, /spike that covers the Claude Code Runtime only/)
-  const unknown = await mount(undefined, false, [{ runtime: 'claude-code', ref: 'claude-code/x', sandbox: { allowWrite: ['/x'] } }])
-  assert.match(unknown.accounts[0]!.reason, /sandbox: unknown key allowWrite/)
+  assert.match(accounts[0]!.reason, /a web account has none/)
+  const old = await mount(undefined, false, [{ runtime: 'claude-code', ref: 'claude-code/x', sandbox: { allowRead: ['/x'] } }])
+  assert.match(old.accounts[0]!.reason, /sandbox must be true/)
 })

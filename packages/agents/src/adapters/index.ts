@@ -8,7 +8,7 @@ import type { Runtime } from '../runtimes.ts'
 import { antigravity } from './antigravity.ts'
 import { claudeCode } from './claude-code.ts'
 import { codex, keepRefreshedAuth } from './codex.ts'
-import { SANDBOX_RUNTIME_ONLY, parseSandbox, type SandboxOption } from './sandbox.ts'
+import { parseSandbox, type SandboxOption } from './sandbox.ts'
 import type { CliAdapter } from './types.ts'
 
 export type { CliAdapter, InvocationInput, Preflight, RegisterInput, Staged } from './types.ts'
@@ -26,9 +26,11 @@ export function summarizeAttempt(runtime: Runtime | 'web', output: string): Atte
   return adapterFor(runtime)?.summarize(output) ?? unknownSummary(runtime)
 }
 
-/** The Account's `sandbox` option, checked: refused on a Runtime that does not have it (Codex, web), or when its shape is wrong. */
+/** The Account's `sandbox` option, checked: refused on a Runtime with no process of its own (web), or when it is not `true`. */
 export function checkSandbox(runtime: string, value: unknown): SandboxOption | undefined {
   if (value === undefined) return undefined
-  if (!adapterFor(runtime)?.sandboxes) throw new Error(SANDBOX_RUNTIME_ONLY)
+  if (!adapterFor(runtime)) throw new Error(SANDBOX_WEB)
   return parseSandbox(value)
 }
+
+const SANDBOX_WEB = 'the sandbox option wraps a CLI Runtime\'s process; a web account has none'

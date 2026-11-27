@@ -7,7 +7,6 @@ import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { AGY_GROUPS, createQuotaCache, readAntigravityQuota, type AgyQuotaGroup } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
 import { applyFinalResult, FINAL_RESULT_SCHEMA } from './final-result.ts'
-import { SANDBOX_RUNTIME_ONLY } from './sandbox.ts'
 import type { CliAdapter, InvocationInput, ParseOptions } from './types.ts'
 
 /** Where `agy` reads its login and its permission rules, under the Account's HOME. */
@@ -26,8 +25,7 @@ const MODE = 'accept-edits'
  * `--mode auto` is refused for these Accounts, so `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed
  * (baseEnv has none), so the token is read from a file.
  */
-function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
-  if (sandbox) throw new Error(SANDBOX_RUNTIME_ONLY)
+function invocation({ command, ws, prompt, model, env }: InvocationInput): Invocation {
   return {
     argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', MODE, '--sandbox', '--add-dir', ws.inputs, '--add-dir', ws.outputs, '--json-schema', FINAL_RESULT_SCHEMA],
     env: { ...baseEnv(ws), ...env },

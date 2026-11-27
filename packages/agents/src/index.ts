@@ -75,7 +75,7 @@ export interface AccountConfig extends WebAccountSettings {
   maxConcurrentAttempts?: number
   /** What one attempt may spend (input tokens, minutes) before it is stopped as over budget; overrides the row's. */
   attemptBudget?: AttemptBudget
-  /** claude-code only, a spike, off by default: `true`, or `{ allowRead, allowedDomains }`; Bash then runs in Claude Code's sandbox (adapters/README.md). */
+  /** Off by default: `true` runs the Runtime's process in one bubblewrap layer (adapters/sandbox.ts, ADR-0016); every CLI Runtime takes it. */
   sandbox?: SandboxOption
 }
 
