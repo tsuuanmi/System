@@ -14,7 +14,7 @@ import type { CliAdapter } from './types.ts'
 export type { CliAdapter, InvocationInput, Preflight, RegisterInput, Staged } from './types.ts'
 export { keepRefreshedAuth }
 
-const ADAPTERS: Record<Runtime, CliAdapter> = { 'claude-code': claudeCode, codex, antigravity }
+export const ADAPTERS: Record<Runtime, CliAdapter> = { 'claude-code': claudeCode, codex, antigravity }
 
 /** The adapter of a Runtime; undefined for one that is not a CLI (`web`). */
 export function adapterFor(runtime: string): CliAdapter | undefined {
