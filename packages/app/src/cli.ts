@@ -571,6 +571,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         // A date with no zone is read as UTC, not as the caller's local time: say which instant that is.
         const sinceUtc = zonelessUtc(options.since!)
         if (sinceUtc) io.err(`system: --since ${options.since} has no zone and is read as UTC: ${sinceUtc}\n`)
+        for (const v of (report as { releaseViolations?: { merge: string; paths: string[] }[] }).releaseViolations ?? []) io.err(`system: release ${v.merge.slice(0, 12)} by a caller touched what is not delegated: ${v.paths.join(', ')}\n`)
         io.out(`${JSON.stringify(sinceUtc ? { ...(report as object), sinceUtc } : report, null, 2)}\n`)
         return 0
       })

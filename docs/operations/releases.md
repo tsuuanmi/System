@@ -64,6 +64,9 @@ attempts. A Host run from a development checkout restarts itself on a build
 there, not while the `.building` file `corepack pnpm build` keeps exists.
 
 A release is a pull request from `dev` to `main`, merged by the operator, then `system update`.
+A release that touches `packages/verifiers/src`, `packages/effects/src` or `workflows/*.yaml` is the
+Operator's own, not delegated ([PLAN.md](../../PLAN.md), "Release delegated"); `system work report` lists
+a caller's release that did (`releaseViolations`).
 The docs CI's `impact` check fails when the release changes a path a doc `covers:` without changing
 that doc ([the tool](../../tools/docs.py), [governance](../governance/documentation.md)). When the doc
 is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it. System's

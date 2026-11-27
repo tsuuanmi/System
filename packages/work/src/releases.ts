@@ -33,16 +33,33 @@ export function isCallerRelease(message: string): boolean {
   return CALLER_RELEASE_MARKER.test(message) || (pr !== null && CALLER_RELEASE_PRS.has(Number(pr[1])))
 }
 
-/** Release times split by who made them. */
-interface ReleasesBy { operator: string[]; caller: string[] }
+/** relgate-1: what a caller's release may not touch (PLAN "Release delegated", 2026-11-27): those take effect only at a release. */
+const NOT_DELEGATED = /^(packages\/(verifiers|effects)\/src\/|workflows\/[^/]+\.yaml$)/
+
+/** The paths of a release's changed files that a caller's release may not touch; none for the Operator's release. */
+export function releaseViolationPaths(files: readonly string[], byCaller: boolean): string[] {
+  return byCaller ? files.filter((f) => NOT_DELEGATED.test(f)) : []
+}
+
+/** A caller's release that touched what is not delegated: the merge commit, the paths, the merge time. */
+interface ReleaseViolation { merge: string; paths: string[]; at: string }
+
+/** Release times split by who made them (`violations`: filled by `releasesBy` from git). */
+interface ReleasesBy { operator: string[]; caller: string[]; violations: ReleaseViolation[] }
 
 /** The release times in the output of `git log --merges --first-parent --format='%cI%x1f%P%x1f%B%x1e'`, split by `isCallerRelease`. */
-export function releasesByMaker(log: string, devFirstParent: ReadonlySet<string>): ReleasesBy {
-  const out: ReleasesBy = { operator: [], caller: [] }
+export function releasesByMaker(log: string, devFirstParent: ReadonlySet<string>): Omit<ReleasesBy, 'violations'> {
+  const releases = releaseMerges(log, devFirstParent)
+  return { operator: releases.filter((r) => !r.caller).map((r) => r.at), caller: releases.filter((r) => r.caller).map((r) => r.at) }
+}
+
+/** The releases of a log (`%cI%x1f%P%x1f%B%x1f%H%x1e`; `%H` may be missing): time, whether a caller's, first parent and merge commit. */
+function releaseMerges(log: string, devFirstParent: ReadonlySet<string>): { at: string; caller: boolean; first: string; merge: string }[] {
+  const out = []
   for (const entry of log.split('\x1e')) {
-    const [time, parents, message] = entry.trim().split('\x1f')
-    const second = parents?.split(/\s+/)[1]
-    if (time && second && devFirstParent.has(second)) (isCallerRelease(message ?? '') ? out.caller : out.operator).push(new Date(time).toISOString())
+    const [time, parents, message, merge] = entry.trim().split('\x1f')
+    const [first, second] = parents?.split(/\s+/) ?? []
+    if (time && first && second && devFirstParent.has(second)) out.push({ at: new Date(time).toISOString(), caller: isCallerRelease(message ?? ''), first, merge: merge?.trim() ?? '' })
   }
   return out
 }
@@ -69,8 +86,14 @@ export async function releasesBy(repository: string): Promise<ReleasesBy> {
   try {
     const main = await firstRef(repository, ['refs/remotes/origin/main', 'refs/heads/main'])
     const dev = await firstRef(repository, ['refs/remotes/origin/dev', 'refs/heads/dev'])
-    if (!main || !dev) return { operator: [], caller: [] }
+    if (!main || !dev) return { operator: [], caller: [], violations: [] }
     const devCommits = new Set((await git(repository, ['rev-list', '--first-parent', dev])).split('\n').map((l) => l.trim()).filter(Boolean))
-    return releasesByMaker(await git(repository, ['log', '--merges', '--first-parent', '--format=%cI%x1f%P%x1f%B%x1e', main]), devCommits)
-  } catch { return { operator: [], caller: [] } }
+    const releases = releaseMerges(await git(repository, ['log', '--merges', '--first-parent', '--format=%cI%x1f%P%x1f%B%x1f%H%x1e', main]), devCommits)
+    const violations: ReleaseViolation[] = []
+    for (const r of releases.filter((x) => x.caller)) {
+      const paths = releaseViolationPaths((await git(repository, ['diff', '--name-only', r.first, r.merge])).split('\n').filter(Boolean), true)
+      if (paths.length) violations.push({ merge: r.merge, paths, at: r.at })
+    }
+    return { operator: releases.filter((r) => !r.caller).map((r) => r.at), caller: releases.filter((r) => r.caller).map((r) => r.at), violations }
+  } catch { return { operator: [], caller: [], violations: [] } }
 }

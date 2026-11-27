@@ -205,8 +205,9 @@ export function operations(services: Services) {
         const releasesByMaker = await Promise.all([...repositories].map((repository) => releasesBy(repository)))
         const releases = releasesByMaker.flatMap((r) => r.operator)
         const callerReleases = releasesByMaker.flatMap((r) => r.caller)
+        const violations = releasesByMaker.flatMap((r) => r.violations)
         const coreLines = await activeCoreLines([...repositories], p.since!, p.until)
-        return rangeReport(records, { ...services.operatorActs(), releases, callerReleases, activeCoreLines: coreLines, lateChecks: await lateChecks([...repositories]), since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), withdrawals: services.defectWithdrawals(), ...(classifier ? { classified: classifier.lookup } : {}) })
+        return rangeReport(records, { ...services.operatorActs(), releases, callerReleases, violations, activeCoreLines: coreLines, lateChecks: await lateChecks([...repositories]), since: p.since!, ...(p.until === undefined ? {} : { until: p.until }), ...(p.escaped === undefined ? {} : { escaped: p.escaped }), defects: services.defects(), withdrawals: services.defectWithdrawals(), ...(classifier ? { classified: classifier.lookup } : {}) })
       },
     },
     'work.events': {
