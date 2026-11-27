@@ -8,6 +8,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { userInfo } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import { layerSkip } from '../test-support/layer-gate.ts'
 import { repo, systemCli } from '../test-support/cli.ts'
 
 const launcher = join(repo, 'packages', 'bundle', 'system-night-session.sh')
@@ -15,8 +16,7 @@ const cli = systemCli('system-layer', { SYSTEM_OPERATOR_ID: 'night' })
 const home = cli.home
 const tools = mkdtempSync(join(home, 'tools-'))
 const night = mkdtempSync(join(home, 'repo-'))
-const probe = spawnSync('bwrap', ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--unshare-pid', 'true'], { stdio: 'ignore' })
-const skip = probe.status === 0 ? false : 'bubblewrap cannot start here (no bwrap, or unprivileged user namespaces are off)'
+const skip = layerSkip('bwrap', 'bubblewrap cannot start here (no bwrap, or unprivileged user namespaces are off)')
 
 const exe = (name: string, body: string) => {
   writeFileSync(join(tools, name), `#!/bin/sh\n${body}\n`)

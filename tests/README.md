@@ -30,6 +30,7 @@ filter names it. The check that runs each of the others is named in
 A test of the bubblewrap layer must pass or skip where bubblewrap cannot start (the GitHub runner has user namespaces off), never fail.
 [sandbox-without-bwrap.test.ts](../packages/agents/tests/sandbox-without-bwrap.test.ts) enforces it: it runs each file it lists in a child
 process with no working `bwrap`; a new layer test file is added to its list.
+`SYSTEM_REQUIRE_SANDBOX=1` (set by the build check) turns a layer test's skip into a failure ([layer-gate.ts](../test-support/layer-gate.ts)); the Guardrail removes it from its children.
 
 ## Environment switches
 
