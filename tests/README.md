@@ -25,6 +25,12 @@ filter names it. The check that runs each of the others is named in
 - `upgrade-rehearsal.test.ts` builds two releases: the `upgrade` check.
 - `install-guide.test.ts`: the `install-guide` check.
 
+## Layer tests without bubblewrap
+
+A test of the bubblewrap layer must pass or skip where bubblewrap cannot start (the GitHub runner has user namespaces off), never fail.
+[sandbox-without-bwrap.test.ts](../packages/agents/tests/sandbox-without-bwrap.test.ts) enforces it: it runs each file it lists in a child
+process with no working `bwrap`; a new layer test file is added to its list.
+
 ## Environment switches
 
 - `SYSTEM_REAL_AGENTS=1` enables `real-agents.test.ts`: the operator's real Claude Code and Codex accounts.
