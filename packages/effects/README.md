@@ -38,7 +38,7 @@ The controller records `effect-intended` before `apply` and
 - **Reconcile:** `applied` when the branch holds the commit and its pull
   request is open (and ready, if asked) or, with `merge: true`, when the base
   holds the change; `absent` otherwise; `unknown` when the remote or the API
-  cannot be read. It only reads the remote.
+  cannot be read. It only reads the remote, but for the branch deletion after a merge.
 - **Parameters:** `ready: true|false` and `merge: true|false`. `ready: true`
   marks the pull request ready for review and needs an operator's approval.
   `merge: true` needs none (ADR-0008 authorises it), but `validate` refuses it
@@ -79,6 +79,7 @@ The controller records `effect-intended` before `apply` and
   `checkedOn` (the tip it was checked with). GitHub's merge endpoint is not
   used. A branch protection requiring pull requests refuses the push, which
   is `failed` with git's message.
+- **The branch is deleted after the merge:** once the base holds the change (in `apply`, or in `reconcile` after a restart), `system/<work>` is deleted on the remote with `git push --delete`, best effort: `detail.branchDeleted` is `"true"` (also when it was already gone) or `"false"` with `branchDeleteReason`, and the outcome never changes. A publish without merge, a refused one and a reopened Work keep the branch.
 - **One at a time:** the queue merges one change at a time; the batch mode of ct-3 was removed (ct-4), and a profile that still sets `mergeBatchSize` stops the Host at start.
 - **Build output (fl-8):** before any push, apply lists the files the change
   adds to its base (`git diff --diff-filter=A`; the base is the change's
