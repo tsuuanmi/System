@@ -154,12 +154,13 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
 - IR (2026-11-20): batches 2 and 3 (context-pack and file-overlap warnings, `guardrail.yaml`, a Model check of Done
   when, Triage in shadow, a doc-truth Model check) open only when `recurringClasses` on DNA's Works ask for them;
   rerunning a check stays the operator's (RO). CT: checks in tiers by event, [ADR-0014](docs/decisions/ADR-0014-checks-in-tiers-by-event.md).
-- The gate holds unattended (operator, 2026-11-27; Intent 21e4cf418770, ADR-0016; Items gate-2, iso-1 to iso-3,
-  relgate-1, cost-1). The ID rule for opening a System Item stands. Removing the Item cap on 2026-11-26 waived the
+- The gate holds unattended (operator, 2026-11-27; Intent 21e4cf418770, ADR-0016; Items gate-2, iso-1 to iso-4,
+  relgate-1, cost-1; released as 0d63354 on 2026-11-27). The ID rule for opening a System Item stands. Removing the Item cap on 2026-11-26 waived the
   2026-11-16 condition that isolation comes before raising the Scheduled session's limits; adding repositories still
   waits for iso-1 to iso-3 released. This repository's Gate paths are `.system/checks.yaml` and `.github/workflows/**`.
-  The operator's own: required status checks `build` and `docs` on `main`; one Account with `sandbox` on for one night,
-  then the decision on default on. The `unknown` failure class gets no Item: 66 of its 69 since 2026-11-01 came before
+  Required status checks `build` and `docs` are on `main` (operator, 2026-11-27). `claude-code/c4` runs with `sandbox`
+  on since that release (a real attempt, work:69b5e97f, ran under bubblewrap: no `~/.ssh`, no Host state, `hooks/`
+  read-only, the repository's Node); the operator decides default on from that night's Verified Success Rate. The `unknown` failure class gets no Item: 66 of its 69 since 2026-11-01 came before
   2026-11-20 (rc-1 catches a recurrence), and Satisfied keeps needing a test a Verifier ran.
 
 ## 4. Future, not current gates
