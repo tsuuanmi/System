@@ -20,9 +20,9 @@ DSH plugin standard of the pinned DSH:
 - All nine use DSH's export form (`name`, `inject`, `apply`). None exports `Config`; none types its service in
   `Context` (43 `ctx.get(...) as T` casts); `app` reads ten services it does not declare in `inject`, and imports
   `packages/host` by relative path.
-- 40 value imports cross packages. None reaches another plugin's running instance: each imported function takes its
-  dependencies as arguments. The coupling is that a package's one entry is both its plugin and a library (the contract,
-  a git library, reports), so `@system/work` is a hub that every package depends on whole.
+- 40 value import statements (90 names) cross packages. None reaches another plugin's running instance: each imported
+  function takes its dependencies as arguments. The coupling is that a package's one entry is both its plugin and a
+  library (the contract, a git library, reports), so `@system/work` is a hub that every package depends on whole.
 
 DSH itself separates a **seam** (contract: abstract service, `Context` typing, value types, pure helpers) from its
 implementations (`dsh-attachment` / `dsh-attachment-local`, `dsh-subprocess` / `dsh-subprocess-local`); an

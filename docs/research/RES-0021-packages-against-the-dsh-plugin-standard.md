@@ -54,7 +54,7 @@ check is runtime inspection (`dsh-tool-cordis`), out of scope here.
 
 ## The value imports between packages (S4)
 
-`import type` excluded; counted by name per edge.
+`import type` excluded: 40 import statements, 90 imported names, counted by name per edge.
 
 | Edge | Names | What they are |
 |---|---|---|
@@ -77,7 +77,7 @@ check is runtime inspection (`dsh-tool-cordis`), out of scope here.
 arguments (`addConversation(artifacts, ...)`, `askVerifier(store, ...)`, `subprocessSpawner(subprocess)`). What breaks
 S4 is that each package is a plugin **and** a library at one entry: `@system/work`'s entry holds the Cordis plugin, the
 contract (kinds, schemas, errors, tiers), a git library and reports, so every edge above depends on the whole of it.
-`work` is the hub (40 of the imports are from it), and `agents` is a second library for `verifiers` and `web-worker`.
+`work` is the hub (71 of the 90 names come from it), and `agents` is a second library for `verifiers` and `web-worker`.
 
 ## What follows
 
