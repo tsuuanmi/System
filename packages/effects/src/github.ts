@@ -78,13 +78,21 @@ const MERGE_ROUNDS = 3
 /** The file whose `gates:` list names the paths that hold a change for the Operator's Approval. */
 const GATES_FILE = '.system/checks.yaml'
 
-/** `git merge-tree --write-tree`: the merged tree, or the files in conflict. */
+/** The oldest git with the global `--attr-source`, which the merge needs to read attributes from the base tip. */
+const ATTR_SOURCE_GIT = '2.40'
+
+/**
+ * `git merge-tree --write-tree`: the merged tree, or the files in conflict.
+ * Attributes (`.gitattributes`: `.system/docs-waivers merge=union`) are read from `tip`, never from
+ * the working tree, which merge-tree would otherwise use and a bare or moved-on repository lacks.
+ */
 function mergeTree(repository: string, tip: string, commit: string): Promise<{ tree: string } | { conflicts: string[] }> {
   return new Promise((resolve, reject) => {
-    execFile('git', ['-C', repository, 'merge-tree', '--write-tree', '--name-only', '--no-messages', tip, commit], (error, stdout) => {
+    execFile('git', ['-C', repository, `--attr-source=${tip}`, 'merge-tree', '--write-tree', '--name-only', '--no-messages', tip, commit], (error, stdout, stderr) => {
       const [tree, ...files] = stdout.trim().split('\n')
       if (!error) resolve({ tree: tree! })
       else if ((error as { code?: number }).code === 1) resolve({ conflicts: files.filter(Boolean) })
+      else if (/attr-source/.test(stderr)) reject(new Error(`git merge-tree in ${repository} needs git ${ATTR_SOURCE_GIT} or newer (--attr-source): ${stderr.trim()}`))
       else reject(new Error(`git merge-tree in ${repository} failed: ${error.message}`))
     })
   })

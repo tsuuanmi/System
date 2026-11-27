@@ -49,7 +49,10 @@ The controller records `effect-intended` before `apply` and
 - **Merge (`merge: true`), the merge queue** ([ADR-0008 amendment](../../docs/decisions/ADR-0008-dev-integration-branch.md)):
   one change at a time per base. A change that holds the base's tip goes in
   as it is. Any other is merged with the tip by `git merge-tree` (a conflict
-  is `failed`, naming the files); the merge commit is pinned, stored as a
+  is `failed`, naming the files); the merge reads attributes from the base tip
+  (`--attr-source`, git 2.40 or newer, else the publish fails naming it), so
+  `.system/docs-waivers` (`.gitattributes`: `merge=union`) merges by union
+  whatever is checked out; the merge commit is pinned, stored as a
   `git-tree@1` and checked with the effect's `required` checks and their
   pinned criteria. The re-check is a verification like any other
   (`mergeCheck`): it runs the verifier ref and version pinned at admission,
