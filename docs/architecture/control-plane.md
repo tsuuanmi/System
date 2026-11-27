@@ -163,7 +163,7 @@ The [Brainstorm Workflow](brainstorm-composition.md) uses Claude and Codex for
 two proposal Artifacts and a synthesis through the same Work Controller, with
 no domain engine, new Worker type, Team plugin or mandatory verifier. The
 Host that replaced the PID locks is in
-[Work ownership and recovery](work-ownership-and-recovery.md).
+[Work ownership and recovery](host.md#crash-and-recovery-invariants).
 
 MVP-0 storage, Worker adapter and effect executor are chosen in
 [ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The exact DSH

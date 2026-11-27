@@ -38,7 +38,7 @@ ADR-0008); `system approve` is for a human at a terminal.
 - [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)
   — upstream sources, risks and experiments.
 - [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff, no new Team engine, and the B3 evaluation result (RES-0008, retired).
-- [Work ownership and recovery](docs/architecture/work-ownership-and-recovery.md) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
+- [Host](docs/architecture/host.md#crash-and-recovery-invariants) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
 - [Next implementation plan](PLAN.md) — local-agent checklist and test gates.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
