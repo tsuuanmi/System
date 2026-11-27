@@ -35,7 +35,7 @@
   wrapper reaches DSH, and its exit status is the wrapper's.
 - Every other command runs in the thin client of the Host
   ([client.ts](../packages/app/src/client.ts)): it does not boot DSH and needs
-  no profile, only a Host on `$DSH_HOME/system/host.sock`.
+  no profile, only a Host on `$DSH_HOME/system/host.sock` and `operator/host.sock`.
 - [service.mjs](service.mjs) (typed by [service.d.mts](service.d.mts)) holds the
   decisions that need no DSH: the unit text (`Restart=on-failure` and
   `RestartForceExitStatus=75`), whether init installs it, the supervisor loop,

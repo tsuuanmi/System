@@ -6,7 +6,7 @@ row: it reads the launcher's inner arguments through
 `@deepseek-ai/dsh-cmdline`, runs one command once DSH has started
 (`ctx.appReady`), and exits through `ctx.appExit`. Every other command runs in
 `lib/client.js`, which `bin/system` loads without booting DSH: it connects to
-`$DSH_HOME/system/host.sock` and calls the Host's operations. Without a Host it
+`$DSH_HOME/system/host.sock` and calls the Host's operations (those of the Operator's Authority over `operator/host.sock`, [ADR-0016](../../docs/decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)). Without a Host it
 prints `system: the System Host is not running for <home>: ...` and exits 1.
 
 | Command | Result |

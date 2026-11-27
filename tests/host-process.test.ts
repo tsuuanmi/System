@@ -37,6 +37,7 @@ test('system host serves hello and status on host.sock, and logs its start', { t
     client.close()
   }
   assert.match(host.stderr(), /^system host: started for \S+, listening on \S+host\.sock$/m)
+  assert.match(host.stderr(), /^system host: operator socket \S+operator\/host\.sock$/m)
   host.child.kill('SIGTERM')
   await host.exited
 })

@@ -41,7 +41,7 @@ only when there is none. It repairs nothing.
 ## Host not running
 
 The CLI prints one line and exits 1 when nothing answers at
-`$DSH_HOME/system/host.sock`:
+`$DSH_HOME/system/host.sock` (or `operator/host.sock` for an operator command):
 
 ```
 system: the System Host is not running for <home>: systemctl --user start system (or run: system host)

@@ -11,7 +11,7 @@ const client = await connect(path, { timeout })     // { call(method, params), c
 await client.call('host.hello', { version, caller: { type: 'human', operatorId } })
 await client.call('host.status')
 
-// as a process (`system host`): lock taken, then the socket at $DSH_HOME/system/host.sock
+// as a process (`system host`): lock taken, then the sockets at $DSH_HOME/system/host.sock and $DSH_HOME/system/operator/host.sock (ADR-0016: `operator` rows only answer on the second)
 const serving = await serveHost({ host, home, services, log })
 await serving.stop()                                // server, then the Host core and its lock
 // `served.close()` stops accepting, lets admitted calls finish for `grace` (2 s), then drops every connection

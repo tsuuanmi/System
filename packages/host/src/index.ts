@@ -6,7 +6,7 @@
  */
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
-import { createConnection, createServer, type Server, type Socket } from 'node:net'
+import { createConnection, createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { callerSchema, type Caller, type Host, type WorkChange, z } from '@system/work'
@@ -120,7 +120,10 @@ export interface Method {
 export type Methods = Record<string, Method>
 
 export interface ServeOptions {
+  /** The caller socket: it serves every operation whose Authority is not `operator`. */
   path: string
+  /** The operator socket (ADR-0016 decision 4): serves the whole table, so the operations of the Operator's Authority are reachable only here. Without it no operator operation is served at all. */
+  operatorPath?: string
   /** Extra rows over the built-in `host.*` ones. */
   methods?: Methods
   /** The code version a hello must carry; default: this build's `VERSION`. */
@@ -189,14 +192,15 @@ const callerOf = (value: unknown): Caller | undefined => {
   return parsed.success ? parsed.data : undefined
 }
 
-/** Listen on `options.path`; each connection must say `host.hello` before any other method. */
+/** Listen on `options.path` (and `options.operatorPath`); each connection must say `host.hello` before any other method. */
 export async function serve(host: Host, options: ServeOptions): Promise<Served> {
   const version = options.version ?? VERSION
   const methods = tableOf(options.methods, version)
   const sockets = new Set<Socket>()
   const inflight = new Set<Promise<void>>()
   let stopping = false
-  const server: Server = createServer((socket) => {
+  /** `operatorSocket`: the connection came in on the operator socket; which socket it is decides what it may call, whatever its hello says. */
+  const accept = (operatorSocket: boolean) => (socket: Socket): void => {
     sockets.add(socket)
     socket.on('close', () => sockets.delete(socket))
     socket.on('error', () => socket.destroy())
@@ -247,6 +251,7 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         if (!method) throw new RpcError(METHOD_NOT_FOUND, `unknown method ${request.method}`)
         if (!caller) throw new RpcError(REFUSED, `say host.hello first: ${request.method} needs a version and a caller`)
         if (upgradingTo && !method.read) throw new RpcError(UPGRADING, `${request.method}: this Host is upgrading to ${upgradingTo}; retry after it has restarted (a read-only connection only reads)`)
+        if (method.authority === 'operator' && !operatorSocket) throw new RpcError(NOT_ALLOWED, `${request.method}: operator authority is served only on the operator socket`)
         if (method.authority === 'operator' && caller.type !== 'human') throw new RpcError(NOT_ALLOWED, `${request.method}: operator authority required (not allowed for agents)`)
         if (method.authority === 'worker') throw new RpcError(NOT_ALLOWED, `${request.method}: worker authority only`)
         let params = request.params
@@ -278,15 +283,23 @@ export async function serve(host: Host, options: ServeOptions): Promise<Served> 
         socket.end()
       }
     })
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(options.path, () => { server.off('error', reject); resolve() })
-  })
+  }
+  const servers = [{ path: options.path, server: createServer(accept(false)) }, ...(options.operatorPath === undefined ? [] : [{ path: options.operatorPath, server: createServer(accept(true)) }])]
+  try {
+    for (const { path, server } of servers) {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(path, () => { server.off('error', reject); resolve() })
+      })
+    }
+  } catch (error) {
+    for (const { server } of servers) if (server.listening) server.close()
+    throw error
+  }
   return {
     async close() {
       stopping = true
-      const closed = new Promise<void>((resolve) => server.close(() => resolve()))
+      const closed = Promise.all(servers.map(({ server }) => new Promise<void>((resolve) => server.close(() => resolve()))))
       let timer: NodeJS.Timeout | undefined
       await Promise.race([Promise.allSettled(inflight), new Promise((resolve) => { timer = setTimeout(resolve, options.grace ?? STOP_GRACE) })])
       clearTimeout(timer)

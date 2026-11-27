@@ -24,7 +24,7 @@ import { caller, errorLine, explain } from './io.ts'
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
 import type { Services } from '../../host/lib/operations.js'
-import { exitWithin, serveHost, socketPath } from '../../host/lib/process.js'
+import { exitWithin, operatorSocketPath, serveHost, socketPath } from '../../host/lib/process.js'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -100,13 +100,28 @@ export function workflowFile(artifacts: Artifacts, name: string, input: string |
 }
 
 /** Whether a Host answers on the socket of `home`: a hello and a status, in three seconds. */
+/** Whether the operator socket (ADR-0016) answers a hello: the one the operator commands need. */
+async function operatorAnswers(home: string): Promise<boolean> {
+  try {
+    const client = await connect(operatorSocketPath(home), { timeout: 3000 })
+    try {
+      await client.call('host.hello', { version: VERSION, caller: caller() })
+      return true
+    } finally {
+      client.close()
+    }
+  } catch {
+    return false
+  }
+}
+
 async function probeHost(home: string): Promise<HostStatus> {
   try {
     const client = await connect(socketPath(home), { timeout: 3000 })
     try {
       await client.call('host.hello', { version: VERSION, caller: caller() })
       const status = await client.call('host.status') as { version: string; pid: number }
-      return { answering: true, detail: `version ${status.version}, pid ${status.pid}` }
+      return { answering: true, detail: `version ${status.version}, pid ${status.pid}; operator socket ${await operatorAnswers(home) ? 'answering' : 'not answering (restart the Host: it makes it at start)'}` }
     } finally {
       client.close()
     }

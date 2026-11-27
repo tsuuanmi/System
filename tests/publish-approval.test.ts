@@ -7,9 +7,11 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { test } from 'node:test'
+import { NOT_ALLOWED, VERSION, connect } from '../packages/host/src/index.ts'
+import { operatorSocketPath, socketPath } from '../packages/host/src/process.ts'
 import { repo } from '../test-support/cli.ts'
 import { publishHarness, type Event } from '../test-support/publish.ts'
 
@@ -35,6 +37,17 @@ test('marking the pull request ready waits for a human at a terminal; an agent o
   const workId = held.stdout.trim()
   assert.match(show(workId).state.reason!, /publish awaits operator approval: marking the pull request ready for review/)
   assert.equal((await gh.state()).pulls.length, 0)
+
+  // ADR-0016 decision 4: the operator socket's directory is the Host's own, mode 0700; a raw client claiming to be a human is refused on the caller socket, whatever it says about itself.
+  const raw = await connect(socketPath(home))
+  try {
+    await raw.call('host.hello', { version: VERSION, caller: { type: 'human', operatorId: 'tester' } })
+    await assert.rejects(raw.call('approval.decide', { workId, decision: 'approved', reason: 'ok' }), (error: { code: number }) => error.code === NOT_ALLOWED)
+  } finally {
+    raw.close()
+  }
+  assert.equal(show(workId).state.status, 'held')
+  assert.equal(statSync(dirname(operatorSocketPath(home))).mode & 0o777, 0o700)
 
   const piped = system(['approve', workId, '--reason', 'ok'])
   assert.equal(piped.status, 1)
