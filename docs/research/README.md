@@ -31,4 +31,6 @@ The generated index below is the authoritative list of current research.
   finish-1 of 2026-11-26; rev-1's replay reports recall on it; nothing gates on it.
 - [RES-0021 — Agent-workspace landscape and System integration options](RES-0021-agent-workspace-landscape.md) — active
   — Compare six agent workspaces against System and evaluate evidence-led reuse.
+- [RES-0022 — Adaptive System: evolution beyond any one runtime](RES-0022-adaptive-component-evolution.md) — active —
+  Adaptive component evolution, build-versus-reuse decisions, and execution contracts.
 <!-- docs:end index:research -->
