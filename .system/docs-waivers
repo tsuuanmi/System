@@ -1,3 +1,1 @@
 # Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (docs/operations/releases.md, "The dev branch").
-docs-unchanged: docs/architecture/host.md - the Host's design is unchanged; the Ready count is described in docs/operations/accounts-and-workers.md
-docs-unchanged: docs/operations/install-and-update.md - bin/system now ends only after stdout and stderr drain, and a reader that closed the pipe ends it with 141; nothing the page states changes
