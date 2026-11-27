@@ -178,8 +178,9 @@ Brainstorm's two proposals use different Accounts, so they run at the same
 time. Steps after them in the same Work wait, as their `dependsOn` already
 says.
 
-**Implemented (H5, R2):** a Work's `drive`, the Account slots (`maxConcurrentAttempts`), waiting in admission
-order, stopping and uncertain attempts are in the [work README](../../packages/work/README.md#scheduling-and-slots)
+**Implemented (H5, R2):** a Work's `drive`, the Account slots (`maxConcurrentAttempts`; Accounts of one `agyHome` also
+share one slot), waiting in admission order, stopping and uncertain attempts are in the
+[work README](../../packages/work/README.md#scheduling-and-slots)
 and `controller.ts`, `slots.ts`. There are no priorities, fairness tuning or queue on disk. An agent attempt is gone
 when its pid file is absent or names no live process.
 
