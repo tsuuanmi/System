@@ -1,7 +1,7 @@
 /** bs-1: `tools/bootstrap_docs.py --plan` lists create / unchanged / conflict per file and writes nothing. */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -56,4 +56,18 @@ test('--plan after a real run lists every file as unchanged; an edited file is a
 test('--plan still refuses System\'s own checkout', () => {
   const r = spawnSync('python3', ['tools/bootstrap_docs.py', '--out', '.', '--plan'], { encoding: 'utf8' })
   assert.notEqual(r.status, 0)
+})
+
+test('the bootstrapped docs workflow runs only tools that the bootstrap copied', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bs-plan-'))
+  try {
+    run(dir)
+    const yml = readFileSync(join(dir, '.github/workflows/docs.yml'), 'utf8')
+    const tools = [...yml.matchAll(/\btools\/[\w.-]+\.(?:py|sh)\b/g)].map((m) => m[0])
+    assert.ok(tools.includes('tools/docs.py'))
+    for (const t of tools) assert.ok(existsSync(join(dir, t)), `workflow runs ${t}, which is not bootstrapped`)
+    if (yml.includes('docs-waivers')) assert.ok(existsSync(join(dir, '.system/docs-waivers')))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

@@ -19,7 +19,9 @@ With Python 3.8+ and a checkout of System available:
 Existing files are not overwritten. Review printed skipped files and add the
 docs router link to an existing root README. The bootstrap copies the portable
 standard and checker, writes a **target-local** governance profile, a docs
-router, AGENTS.md, a retirement ledger and an initial docs CI workflow.
+router, AGENTS.md, a retirement ledger and an initial docs CI workflow. That workflow runs only
+`tools/docs.py` (check, sync, impact); System's own bootstrap smoke test and
+waiver clearance check are not copied or run in the target.
 
 ## Make it ready for System
 
