@@ -241,3 +241,10 @@ test('reopen rounds (rounds-1): per Work, in total, median and p90 to pass, and 
   const none = rangeReport([G], { since: '2026-11-20' }).reopenRounds
   assert.deepEqual({ median: none.medianToPass, p90: none.p90ToPass, failed: none.failedAfterCap }, { median: 'unknown', p90: 'unknown', failed: [] })
 })
+
+test('relgate-1: releaseViolations are the violations of the range, as merge and paths', () => {
+  const v = (at: string, merge: string) => ({ merge, paths: ['workflows/develop.yaml'], at })
+  const r = rangeReport([A], { since: '2026-11-15', until: '2026-11-18', violations: [v(T('16'), 'm1'), v(T('09'), 'm0'), v(T('19'), 'm2')] })
+  assert.deepEqual(r.releaseViolations, [{ merge: 'm1', paths: ['workflows/develop.yaml'] }])
+  assert.deepEqual(rangeReport([A], { since: '2026-11-15' }).releaseViolations, [])
+})

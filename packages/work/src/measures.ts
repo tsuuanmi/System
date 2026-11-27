@@ -32,6 +32,8 @@ interface RangeOptions {
   releases?: readonly string[]
   /** ms-4: the merge times of releases made by a caller under the delegation of PLAN (`releasesBy`): those in the range are reported apart (`headline.releasesByCaller`) and are not operator acts. */
   callerReleases?: readonly string[]
+  /** relgate-1: the caller's releases that touched what PLAN does not delegate (`releasesBy`); those in the range are `releaseViolations`. */
+  violations?: readonly { merge: string; paths: string[]; at: string }[]
   /** The active core's lines at the range's start and end (`activeCoreLines`, from git); a trend, never a gate (ADR-0015). */
   activeCoreLines?: CoreLines
   /** ct-2 (ADR-0014): the names of the checks whose `on:` lacks `pull_request` (a Work's checks step skips them); a failed `release` verdict on one is a late-caught defect. Without it none is counted. */
@@ -55,6 +57,8 @@ export interface RangeReport {
   classifiedUnknownFailures?: Record<string, number>
   /** The headline measure (Charter): distinct Items merged (verified, then merged) per operator act; `operatorActs` is the sum of `parts` (`releasesByCaller` is apart, not counted): Intents the operator settled, confirmations, releases, and the human touches `summarize` counts (human callers only). With no acts `itemsPerAct` is `no acts`, never Infinity. */
   headline: { itemsMerged: number; parts: { intentsSettled: number; confirmations: number; releases: number; humanTouches: number }; operatorActs: number; itemsPerAct: number | 'no acts'; releasesByCaller: number }
+  /** relgate-1: a caller's release in the range that touched `packages/verifiers/src`, `packages/effects/src` or `workflows/*.yaml`, which PLAN does not delegate: an Escaped defect to record. */
+  releaseViolations: { merge: string; paths: string[] }[]
   /** Escaped defects over distinct Items merged; `source` says where the count comes from: recorded `escaped-defect@1` Artifacts, the `--escaped` override, or `none` (no input). */
   escapedDefectRate: { rate: number | Unknown; escaped: number | Unknown; itemsMerged: number; source: 'records' | 'override (--escaped)' | 'none' }
   /** ct-2 (ADR-0014): failed release verdicts (criteria `repo-checks-release-v1`) whose failing check the Works skip (`on:` without `pull_request`), with the check names; the trade-off of tiers by event, made visible. */
@@ -76,7 +80,7 @@ const ms = (iso: string) => Date.parse(iso)
 /** Nearest-rank percentile of a sorted list. */
 const percentile = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 
-export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, callerReleases, activeCoreLines, lateChecks }: RangeOptions): RangeReport {
+export function rangeReport(records: readonly WorkRecord[], { since, until, escaped, defects: recordedDefects, withdrawals, classified, intents, confirmations, releases, callerReleases, violations, activeCoreLines, lateChecks }: RangeOptions): RangeReport {
   const inRange = records
     .filter((r) => r.events[0]!.at >= since && (until === undefined || r.events[0]!.at < until))
     .sort((a, b) => ms(a.events[0]!.at) - ms(b.events[0]!.at))
@@ -167,6 +171,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     verifiedSuccessRate: { rate: ratio(accepted, ended), accepted, ended },
     recurringFailureRate: { rate: ratio(recurring, failures), recurring, failures },
     headline: { itemsMerged: merged.size, parts, operatorActs, itemsPerAct: operatorActs === 0 ? 'no acts' : merged.size / operatorActs, releasesByCaller: callerReleases?.filter(inRangeAt).length ?? 0 },
+    releaseViolations: (violations ?? []).filter((v) => inRangeAt(v.at)).map(({ merge, paths }) => ({ merge, paths })),
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
     lateCaughtDefects: { count: late.length, checks: [...new Set(late)].sort() },
     costCoverage: costCoverage(inRange),
