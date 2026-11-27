@@ -498,7 +498,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
               io.out(`${JSON.stringify({ id: workId, outcome: 'unreachable', exitCode: EXIT_HOST_UNREACHABLE, reason: waited.unreachable })}\n`)
             }
           }
-          io.err(`system: the System Host did not answer for ${Math.round((timeoutMs === undefined ? RECONNECT_MS : Math.min(timeoutMs, RECONNECT_MS)) / 60_000 * 10) / 10} minutes; the Works were not read and may still be running (exit ${EXIT_HOST_UNREACHABLE}); see docs/operations/runbook.md, "The Host is not answering"\n`)
+          io.err(`system: the System Host did not answer for ${Math.round((timeoutMs === undefined ? RECONNECT_MS : Math.min(timeoutMs, RECONNECT_MS)) / 60_000 * 10) / 10} minutes; the Works were not read and may still be running (exit ${EXIT_HOST_UNREACHABLE}); see docs/operations/recovery.md, "The Host is not answering"\n`)
           return EXIT_HOST_UNREACHABLE
         }
         for (const { id, state } of waited.records) {

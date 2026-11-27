@@ -97,7 +97,7 @@ test('the night report is one Artifact with the required parts, read from work r
   assert.match(reportSection, /Markdown/)
   for (const part of ['Works', 'Items done', 'Items skipped', 'no Item', 'Items you propose', 'For the operator', 'Account', 'cost'])
     assert.ok(reportSection.includes(part), `the report names: ${part}`)
-  assert.match(reportSection, /system work approve <work>/)
+  assert.match(reportSection, /system approve <work>/)
   assert.doesNotMatch(reportSection, /ss-3 will say/)
 })
 

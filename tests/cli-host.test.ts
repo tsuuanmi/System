@@ -172,7 +172,7 @@ test('a Host that does not answer is named, with the runbook', { timeout: 120_00
   try {
     const ran = cli.run(['work', 'list'], { env: { DSH_HOME: silentHome, SYSTEM_CALL_TIMEOUT_MS: '500' } })
     assert.equal(ran.status, 1)
-    assert.match(ran.stderr, /^system: the System Host for \S+ is not answering .*docs\/operations\/runbook\.md.*\n$/)
+    assert.match(ran.stderr, /^system: the System Host for \S+ is not answering .*docs\/operations\/recovery\.md.*\n$/)
   } finally {
     for (const socket of sockets) socket.destroy()
     silent.close()

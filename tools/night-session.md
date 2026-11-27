@@ -130,4 +130,4 @@ The report has these parts, in this order:
 - **Why the night ended:** no Ready `todo` left, or a Host that did not answer.
 - **Items you propose:** one line each, for the operator to write if they agree.
 - **For the operator:** the commands only they run, exactly:
-  `system work approve <work>` for each held Work, and the release.
+  `system approve <work>` for each held Work, and the release.

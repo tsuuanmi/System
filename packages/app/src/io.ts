@@ -90,6 +90,6 @@ export function errorLine(error: unknown): string {
 /** The operator-facing error for what the transport reports, or the error itself. */
 export function explain(error: unknown, home: string): unknown {
   if (error instanceof NotRunning) return new Error(`the System Host is not running for ${home}: systemctl --user start system (or run: system host)`, { cause: error })
-  if (error instanceof NotAnswering) return new Error(`the System Host for ${home} is not answering (${error.message}): see docs/operations/runbook.md, "The Host is not answering"`, { cause: error })
+  if (error instanceof NotAnswering) return new Error(`the System Host for ${home} is not answering (${error.message}): see docs/operations/recovery.md, "The Host is not answering"`, { cause: error })
   return error
 }

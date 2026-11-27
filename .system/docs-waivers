@@ -1,2 +1,5 @@
-# Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (runbook, Release).
-docs-unchanged: docs/architecture/control-plane.md - tidy-15 only trims the bundle's default mergeInto list; the architecture document does not state the list
+# Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (docs/operations/releases.md, "The dev branch").
+docs-unchanged: docs/architecture/control-plane.md - tidy-15 only trims the bundle's default mergeInto list, which the document does not state; tidy-8 only changes the pointer text of messages and comments and one wrong command in the night session prompt; no behaviour it describes
+docs-unchanged: docs/operations/install-and-update.md — only the pointer text of messages and comments changed (they now point to this page); nothing it says is stale
+docs-unchanged: docs/operations/recovery.md — only the pointer text of messages and comments changed (they now point to this page); nothing it says is stale
+docs-unchanged: docs/operations/releases.md — only the pointer text of a comment and a waiver-file comment changed; no behaviour it describes

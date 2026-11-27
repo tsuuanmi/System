@@ -269,7 +269,7 @@ async function upgrade({ install, cli, origin, run, write, read, remove, exists,
     }
     switchLink(link, `releases/${commit}`)
     if (!before) {
-      log(`current is ${commit.slice(0, 12)}, the first install: link \`${join(link, 'bin', 'system')}\` as \`system\` on PATH, run \`system init\` and \`systemctl --user enable --now system\` (runbook, "Install and start")`)
+      log(`current is ${commit.slice(0, 12)}, the first install: link \`${join(link, 'bin', 'system')}\` as \`system\` on PATH, run \`system init\` and \`systemctl --user enable --now system\` (docs/operations/install-and-update.md, "Install and start")`)
       return 0
     }
     log(`current is ${commit.slice(0, 12)}; waiting for the Host to drain and start it`)
