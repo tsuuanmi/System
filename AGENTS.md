@@ -20,6 +20,7 @@ vocabulary. Changes to this repository are checked by
 4. Run `python3 tools/docs.py trace <path-or-ID>` on existing affected
    documents/IDs. Read the nearest README, implementation and tests of the
    source you change.
+5. A change to a package's plugin shape (its entry `apply`/`inject`/`Config`, services, or `packages/bundle/cordis.patch.yml`) follows [.claude/skills/dsh-doc/SKILL.md](.claude/skills/dsh-doc/SKILL.md).
 
 ## Product invariants
 
