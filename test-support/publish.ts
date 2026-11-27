@@ -34,7 +34,7 @@ export function createPublishEnv(prefix: string) {
     servers.push(server)
     const port = await new Promise<string>((r) => server.stdout!.once('data', (d) => r(String(d).trim())))
     const url = `http://127.0.0.1:${port}`
-    return { url, state: async () => (await fetch(`${url}/_state`)).json() as never }
+    return { url, state: async () => (await fetch(`${url}/_state`, { headers: { connection: 'close' } })).json() as never }
   }
 
   function profile(apiUrl: string, mergeInto = '[]') {
