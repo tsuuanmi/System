@@ -17,14 +17,17 @@ function run(opts: { answer?: string; claudeExit?: number; putExit?: number; env
       chmodSync(join(dir, name), 0o755)
     }
     writeFileSync(join(dir, 'answer'), opts.answer ?? '')
-    exe('claude', `printf '%s\\n' "$@" > "${dir}/claude.args"\ncat "${dir}/answer"\nexit ${opts.claudeExit ?? 0}`)
+    // `claude` runs in the layer (iso-3), where nothing but its TMPDIR is writable: it reports its arguments on stderr between markers.
+    exe('claude', `{ echo @@ARGS; printf '%s\\n' "$@"; echo @@END; } >&2\ncat "${dir}/answer"\nexit ${opts.claudeExit ?? 0}`)
     exe('system', `printf '%s\\n' "$@" > "${dir}/system.args"\ncp "$3" "${dir}/stored" 2>/dev/null\n[ ${opts.putExit ?? 0} -eq 0 ] || { echo "put failed" >&2; exit ${opts.putExit ?? 0}; }\necho sha256:fakeid`)
     exe('notify', `printf '%s\\n' "$1" > "${dir}/notify.arg"`)
     exe('curl', `printf '%s\\n' "$@" > "${dir}/curl.args"`)
     const env = { PATH: `${dir}:${process.env.PATH}`, HOME: dir, ...opts.env }
     const res = spawnSync('sh', [launcher], { env: env as NodeJS.ProcessEnv, encoding: 'utf8', cwd: dir })
+    const seen = /@@ARGS\n([\s\S]*?)@@END\n/.exec(res.stderr)
+    if (seen) res.stderr = res.stderr.replace(seen[0], '')
     const read = (f: string) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : undefined)
-    return { res, dir, claudeArgs: read('claude.args'), systemArgs: read('system.args'), stored: read('stored'), notify: read('notify.arg'), curl: read('curl.args') }
+    return { res, dir, claudeArgs: seen?.[1], systemArgs: read('system.args'), stored: read('stored'), notify: read('notify.arg'), curl: read('curl.args') }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
