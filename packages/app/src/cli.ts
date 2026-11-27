@@ -209,9 +209,16 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       // The token is alone and last on its line, so the decision word is never read as the answer.
       const operatorId = await io.confirmHuman(`To ${what}, type ${typeWhat} and press Enter, exactly: ${expected}\n> `, expected)
       let code = 0
-      for (const workId of workIds) {
+      for (const [index, workId] of workIds.entries()) {
+        const held = records[index]!
+        const step = held.state.awaiting
+        const commit = Object.values(held.state.effects ?? {}).find((e) => e.stepId === step && e.held)?.detail?.mergeCommit
         try {
-          const outcome = exitOf(await host.decide({ workId, decision, reason: options.reason }, operatorId))
+          // What the Host recorded is said at once; then the Work is followed, one line per event, and Ctrl-C only detaches.
+          const outcome = exitOf(await host.decide({ workId, decision, reason: options.reason }, operatorId, {
+            recorded: () => io.out(`${decision} ${step ?? 'the decision'} of ${workId}${commit ? ` (commit ${commit.slice(0, 12)})` : ''}; following it (Ctrl-C only detaches, the Work goes on in the Host)\n`),
+            onEvent: (event) => io.out(`${workId} #${event.seq} ${event.type}${event.stepId ? ` ${event.stepId}` : ''}\n`),
+          }))
           code = code || outcome
         } catch (error) {
           if (workIds.length === 1) throw error
