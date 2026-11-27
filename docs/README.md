@@ -17,6 +17,7 @@ source and tests are the authority for implementation behavior.
 | How is a Work's history recorded and folded? | [Work record](architecture/work-record.md) | Implemented; events and derived facts |
 | Why was the control-plane/DSH choice made? | [ADR index](decisions/README.md) | Accepted rationale |
 | What external evidence or open tests inform the MVP? | [Research](research/README.md) | Exploratory, non-normative |
+| How should a component replacement be evaluated before adoption? | [Adaptive insights and gates](research/RES-0023-adaptive-system-insights-and-adoption-gates.md) | Research only, not an accepted decision |
 | What is finished, and what is open? | [STATUS.md](../STATUS.md), [PLAN.md](../PLAN.md) | STATUS.md: open Items; PLAN.md: finished milestones, standing decisions, future triggers |
 | What do System's terms mean? | [GLOSSARY.md](../GLOSSARY.md) | The vocabulary |
 | How does Brainstorm reuse Workers? | [Brainstorm architecture](architecture/brainstorm-composition.md) | Implemented; `workflows/brainstorm.yaml` |
