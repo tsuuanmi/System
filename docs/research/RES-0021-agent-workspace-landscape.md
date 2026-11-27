@@ -200,7 +200,8 @@ functionality described as experimental in upstream documentation.
 
 **System can learn:** connect every actionable failure to its owning Attempt and exact revision,
 show the next action rather than an undifferentiated session log, and keep a clear operator
-attention queue. Its [documentation map](https://github.com/OrchestratorInc/agent-orchestrator/blob/main/docs/documentation-map.md)
+attention queue. Its
+[documentation map](https://github.com/OrchestratorInc/agent-orchestrator/blob/main/docs/documentation-map.md)
 also separates generated/machine contracts from fallible explanatory prose.
 
 **Tradeoffs and limits:** triggering another agent turn on every failure can waste quota or
@@ -208,7 +209,7 @@ replay unsafe effects. System should preserve pinned checks, bounded retries and
 between a change failure and an Outside failure. PR review is useful evidence but never a
 replacement for a required verifier.
 
-Sources: [project README](https://github.com/OrchestratorInc/agent-orchestrator) and
+Sources: [project README](https://github.com/OrchestratorInc/agent-orchestrator) and the
 [product introduction](https://github.com/OrchestratorInc/agent-orchestrator/blob/main/frontend/src/docs/content/index.mdx).
 
 ## OpenHands Agent Canvas: backend and trust-boundary abstraction
