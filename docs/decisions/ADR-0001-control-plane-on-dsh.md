@@ -44,7 +44,7 @@ motivate keeping the core lean, but the new System makes its own decisions.
    names responsibility ownership, not a mandatory distributed deployment.
 
 The accepted [Product Charter](../requirements/purpose.md) is the current
-purpose; [MVP requirements](../requirements/purpose.md) contain the proof contract.
+purpose; [Product Charter](../requirements/purpose.md#success-means) contains the proof contract.
 
 ## Alternatives considered
 

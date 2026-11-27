@@ -35,8 +35,8 @@ original MVP-0 plan is kept at
 - [Decisions](docs/decisions/README.md) — the accepted ADRs and their alternatives.
 - [DSH evidence](docs/decisions/ADR-0001-control-plane-on-dsh.md#evidence-and-follow-up)
   — upstream sources behind the host choice (RES-0003, retired).
-- [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff, no new Team engine, and the B3 evaluation result (RES-0008, retired).
-- [Host](docs/architecture/host.md#crash-and-recovery-invariants) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
+- [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff, no new Team engine, and the shape of the three-attempt Workflow.
+- [Host](docs/architecture/host.md#crash-and-recovery-invariants) — one long-lived process owning every Work; its crash and recovery invariants.
 - [PLAN.md](PLAN.md) — finished milestones, standing decisions and open work; [STATUS.md](STATUS.md) lists the Items.
 - [GLOSSARY.md](GLOSSARY.md) — the vocabulary.
 - [Documentation router](docs/README.md) — current knowledge and authority.

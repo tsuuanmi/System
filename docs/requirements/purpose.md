@@ -23,9 +23,9 @@ non-goal until a second operator exists. Installing System on a new machine
 (clone, then follow one guide or run one script) is a requirement, not a
 nicety.
 
-This is **the current product intent**, not a claim that the product has been
-implemented. System is a control plane hosted on DSH: the control-plane decision and selected DSH host are recorded in
-[ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md).
+This is **the current product intent**; the criteria under "Success means" are pinned
+by passing tests. System is a control plane hosted on DSH: the control-plane decision and selected DSH
+host are recorded in [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md).
 
 ## Mission
 
@@ -183,7 +183,7 @@ Each criterion names the test that pins it today (`file`: "test name").
 - **Accounting and operator touches:** usage the Worker does not report is
   unknown, never zero; decisions, retries and cancels count as touches.
   `packages/work/tests/controller.test.ts`: "usage a Worker does not report is
-  recorded as unknown, never zero"; `packages/work/tests/summary.test.ts`:
+  recorded as unavailable with a reason, never zero"; `packages/work/tests/summary.test.ts`:
   "human decisions, retries and cancels are touches; unknown usage is counted
   apart, never as zero". Comparing usage with an oracle: not pinned.
 
@@ -198,7 +198,7 @@ System results or automatically adopted release thresholds.
 - A proprietary replacement for every community plugin or model adapter.
 - Treating token arbitrage, complex multi-agent debate, a full project
   board, or a rich dashboard as the reason System exists. Website Workers
-  are a planned Worker type, not the product's purpose.
+  (`packages/web-worker`, an optional Worker type, off by default) are not the product's purpose.
 - Creating a new runtime service for every logical boundary.
 - Claiming universality without an executed second domain.
 - A planner inside the Host.

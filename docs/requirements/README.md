@@ -2,7 +2,8 @@
 
 This area contains **accepted current product intent and measurable behavior**.
 It does not prescribe plugin internals, implementation languages, or deployed
-features. The repository contains documentation only; no passing runtime is claimed.
+features. It holds the Product Charter; the code that meets it is in
+[packages](../../packages/README.md), and the Charter names the tests that pin each criterion.
 
 - [Product Charter: purpose, mission and philosophy](purpose.md) — current
   product identity and non-negotiable design priorities.
