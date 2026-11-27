@@ -393,3 +393,27 @@ test('withCheck waits for a free check slot and releases it on a throw', async (
   await assert.rejects(second, /boom/)
   assert.equal(slots.reserveCheck(verifier, 'c'), true)
 })
+
+test('Accounts sharing one sign-in (sharedSlot) share one slot; others do not; each keeps its own maxConcurrentAttempts', () => {
+  const w = (ref: string, sharedSlot?: string, maxConcurrentAttempts?: number) => ({ ref, capabilities: [], sharedSlot, maxConcurrentAttempts, run: async () => { throw new Error('unused') } }) as never as import('../src/registry.ts').WorkerPort
+  const a = w('antigravity/a1', '/h/a1'), b = w('antigravity/a1-3p', '/h/a1'), c = w('antigravity/a2', '/h/a2'), d = w('antigravity/a3', '/h/a3', 2)
+  const caps = new Capabilities()
+  for (const x of [a, b, c, d]) caps.registerWorker(x)
+  const slots = new Slots(caps)
+  assert.equal(slots.reserve(a, 'one'), true)
+  assert.equal(slots.hasFree(b), false, 'the second Account of the home is busy')
+  assert.equal(slots.reserve(b, 'two'), false)
+  assert.equal(slots.reserve(c, 'three'), true, 'another home runs at once')
+  assert.equal(slots.reserve(a, 'again'), false, 'the Account keeps its own limit')
+  slots.release(a.ref, 'one')
+  assert.equal(slots.hasFree(b), true)
+  assert.equal(slots.reserve(b, 'two'), true)
+  assert.equal(slots.reserve(d, 'd1'), true)
+  assert.equal(slots.reserve(d, 'd2'), false, 'two Accounts at most: d has one home slot')
+  // a lost attempt holds the home until settled
+  slots.release(b.ref, 'two')
+  slots.hold(a.ref, { workId: 'w', stepId: 's', attemptId: 'lost' })
+  assert.equal(slots.hasFree(b), false)
+  slots.release(a.ref, 'lost')
+  assert.equal(slots.hasFree(b), true)
+})
