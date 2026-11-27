@@ -47,7 +47,7 @@ original MVP-0 plan is kept at
 
 ## Build and run (development)
 
-Needs Node `>=24.9.0` (DSH `0.2.2-rc.1` requires it) and corepack.
+Needs Node `>=24.9.0` (DSH `0.2.2-rc.5` requires it) and corepack.
 
 ```sh
 corepack pnpm install

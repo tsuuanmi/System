@@ -110,7 +110,7 @@ System tests so far.
     worktree, clean environment and disallowed tools are configuration, not
     enforcement; an agent running as the operator could still reach the
     network and the operator's files. MVP-04 is narrowed accordingly.
-15. **DSH pin.** `@deepseek-ai/dsh@0.2.2-rc.1`, tag commit `66491b05`. All DSH
+15. **DSH pin.** `@deepseek-ai/dsh@0.2.2-rc.5` (first `0.2.2-rc.1`, tag commit `66491b05`; moved by tidy-17). All DSH
     releases are prereleases; each upgrade is its own recorded decision,
     checked against that version's upgrade guide.
 

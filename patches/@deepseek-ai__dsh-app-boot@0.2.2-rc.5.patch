@@ -1,8 +1,8 @@
 diff --git a/lib/index.js b/lib/index.js
-index 927ba78f65abd7d9a17f9b52c5743eac07d8bfaa..4539478a393685ea6ada8f4d6cb19f4f5e8ed52f 100644
+index 0fda9d375e8eae69aa819f80ed2b7153a5a59887..9e61aced8c1639181665f2accdb3ee0d7a4d7e31 100644
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -548,11 +548,52 @@ function applyPatches(data, patches, warn) {
+@@ -549,11 +549,52 @@ function applyPatches(data, patches, warn) {
  		}
  		for (const [key, value] of Object.entries(overrides)) {
  			if (key === "id") continue;

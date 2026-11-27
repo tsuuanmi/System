@@ -14,10 +14,10 @@
     "schemas"
   ],
   "engines": {
-    "dsh": "0.2.2-rc.1"
+    "dsh": "0.2.2-rc.5"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.5",
     "@system/agents": "workspace:*",
     "@system/artifacts": "workspace:*",
     "@system/work": "workspace:*",
