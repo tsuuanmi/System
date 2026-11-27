@@ -62,4 +62,9 @@ acceptance does not imply its code exists.
   a seam from its implementations; plugins export `Config`, declare every service they read in `inject`, and type
   services through `Context`; ESLint's `no-restricted-imports` keeps the rule, starting from today's edges and
   shrinking.
+- [ADR-0018 — Runtimes plug into the Worker registry](ADR-0018-runtimes-plug-into-the-worker-registry.md) — accepted —
+  Every Runtime, CLI or web, plugs into the one Worker registry (`Capabilities` in `@system/work/contract`) and owns its
+  Accounts in its own row; a Worker registration carries its Account's status, quota and version, and optionally sign-in
+  and recheck, so `agents` knows no specific Runtime and `app` reads no Runtime's service; packages are renamed to
+  GLOSSARY terms (`runtime-cli`, `runtime-web`), row ids in the one profile migration.
 <!-- docs:end index:decision -->
