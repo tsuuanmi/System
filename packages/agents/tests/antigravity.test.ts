@@ -147,7 +147,7 @@ test('the recorded scope is the mode and sandbox of the argv and the sha256 of t
   assert.deepEqual(scope, { permissionMode: argv[argv.indexOf('--mode') + 1], sandbox: argv.includes('--sandbox'), settingsSha256: createHash('sha256').update(bytes).digest('hex') })
 })
 
-test('preflight needs an agyHome; staging writes the settings file and links .gemini into the attempt home, idempotently', async () => {
+test('preflight needs an agyHome; staging writes the settings file and links it and the token into a real .gemini/antigravity-cli of the attempt home, idempotently', async () => {
   assert.deepEqual(await adapter.preflight(account()), { failed: 'antigravity/a1: no agyHome (the Account home holding .gemini/antigravity-cli)' })
   const home = join(root, 'new-home', 'a1')
   const pre = await adapter.preflight(account({ agyHome: home }))
@@ -158,7 +158,9 @@ test('preflight needs an agyHome; staging writes the settings file and links .ge
   for (const _ of [1, 2]) {
     const staged = pre.stage(attemptDir)
     assert.deepEqual(staged.env, {})
-    assert.ok(lstatSync(linked).isSymbolicLink())
+    assert.ok(lstatSync(linked).isDirectory() && lstatSync(join(linked, 'antigravity-cli')).isDirectory())
+    assert.ok(lstatSync(join(linked, 'antigravity-cli', 'settings.json')).isSymbolicLink())
+    assert.ok(lstatSync(join(linked, 'antigravity-cli', 'antigravity-oauth-token')).isSymbolicLink())
     assert.equal(readFileSync(file, 'utf8'), fixture('settings.json'))
     assert.equal(readFileSync(join(linked, 'antigravity-cli', 'settings.json'), 'utf8'), fixture('settings.json'))
     assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), SETTINGS)
@@ -220,7 +222,7 @@ test('the argv of a real attempt: env has throwaway HOME with only .gemini linke
   const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema })
   const producer = { type: 'operator' as const, ref: 'tester' }
   const tree = (await artifacts.put({ ...GIT_TREE_KIND, content: await snapshot(repository), classification: 'local-private', producer })).id
-  const makeTask = async (marker: string) => (await artifacts.put({ ...TASK_KIND, content: { instructions: `FAKE:edit FAKE:env FAKE:home=${marker} FAKE:delay=300`, base: tree }, inputs: [tree], classification: 'local-private', producer })).id
+  const makeTask = async (marker: string) => (await artifacts.put({ ...TASK_KIND, content: { instructions: `FAKE:edit FAKE:env FAKE:brain FAKE:home=${marker} FAKE:delay=300`, base: tree }, inputs: [tree], classification: 'local-private', producer })).id
   const request = (task: string): WorkerRequest => ({ workId: 'work:test', attemptId: `attempt:${Math.random().toString(16).slice(2)}`, stepId: 'implement', capabilities: ['repo.write'], inputs: { task }, outputs: ['change'], signal: new AbortController().signal })
   const home = join(root, 'shared-agy-home')
   mkdirSync(join(home, '.gemini', 'antigravity-cli'), { recursive: true, mode: 0o700 })
@@ -238,20 +240,27 @@ test('the argv of a real attempt: env has throwaway HOME with only .gemini linke
       assert.deepEqual(result.finalResult, { status: 'done', reason: 'done' })
       assert.deepEqual(result.usage, { inputTokens: 140, cacheReadTokens: 40, outputTokens: 7, source: result.usage!.source })
       const commit = (artifacts.get(result.outputs.change!) as { envelope: { content: { commit: string } } }).envelope.content.commit
-      const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${commit}:ENV.json`], { encoding: 'utf8' })) as { home: string; dbus?: string; keys: string[]; model: string; homeFilesBefore: string[] }
+      const seen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${commit}:ENV.json`], { encoding: 'utf8' })) as { home: string; dbus?: string; keys: string[]; model: string; homeFilesBefore: string[]; brain: { before: string[]; realHome: string; real: string; content: string; token: string } }
       assert.notEqual(seen.home, home)
       assert.deepEqual(seen.homeFilesBefore, ['.gemini'])
       assert.equal(seen.dbus, undefined)
       assert.equal(seen.model, 'gemini-3.8-flash-low')
       seenHomes.push(seen.home)
+      // agy's working files (brain) land in the attempt's own home, not through the link into the Account's; the login is still the Account's.
+      assert.equal(seen.brain.content, 'scratch\n')
+      assert.equal(seen.brain.token, 'tok\n')
+      assert.deepEqual(seen.brain.before, [])
+      assert.ok(seen.brain.real.startsWith(`${seen.brain.realHome}/`), seen.brain.real)
     }
     assert.notEqual(seenHomes[0], seenHomes[1])
     // A subsequent attempt on the same agyHome also starts with only .gemini in HOME.
     const seqResult = await workers[0]!.run(request(await makeTask('from-a3.txt')))
     assert.equal(seqResult.status, 'succeeded', seqResult.reason)
     const seqCommit = (artifacts.get(seqResult.outputs.change!) as { envelope: { content: { commit: string } } }).envelope.content.commit
-    const seqSeen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${seqCommit}:ENV.json`], { encoding: 'utf8' })) as { home: string; homeFilesBefore: string[] }
+    const seqSeen = JSON.parse(execFileSync('git', ['-C', repository, 'show', `${seqCommit}:ENV.json`], { encoding: 'utf8' })) as { home: string; homeFilesBefore: string[]; brain: { before: string[] } }
     assert.deepEqual(seqSeen.homeFilesBefore, ['.gemini'])
+    assert.deepEqual(seqSeen.brain.before, [])
+    assert.equal(existsSync(join(home, '.gemini', 'antigravity-cli', 'brain')), false)
     // Cleanup of attempts did not delete the Account's .gemini state or write attempt files into agyHome.
     assert.deepEqual(JSON.parse(readFileSync(join(home, '.gemini', 'antigravity-cli', 'settings.json'), 'utf8')), SETTINGS)
     assert.equal(existsSync(join(home, '.gemini', 'antigravity-cli', 'antigravity-oauth-token')), true)
