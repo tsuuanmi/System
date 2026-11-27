@@ -101,5 +101,5 @@ a mandatory model verifier.
 
 See [Workflow composition](workflow-composition.md),
 [Artifact contracts](artifact-verification.md),
-[runtime integrity boundary](work-ownership-and-recovery.md) and
+[runtime integrity boundary](host.md#crash-and-recovery-invariants) and
 [PLAN.md](../../PLAN.md).
