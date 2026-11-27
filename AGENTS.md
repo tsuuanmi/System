@@ -1,27 +1,25 @@
 # Agent instructions
 
 System is a DSH-hosted **durable work control plane**, not a new agent runtime.
-MVP-0 is implemented in [packages](packages/README.md) (see the evidence in the
-[MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md); the next iteration is
-[PLAN.md](PLAN.md)); [test-support](test-support/README.md) holds the shared
-test stand-ins. Changes to this repository are checked by
+The source is in [packages](packages/README.md); [test-support](test-support/README.md)
+holds the shared test stand-ins. Finished milestones and open work are in
+[PLAN.md](PLAN.md) and [STATUS.md](STATUS.md); [GLOSSARY.md](GLOSSARY.md) is the
+vocabulary. Changes to this repository are checked by
 [`.system/checks.yaml`](.system/checks.yaml).
 
 ## Read before changing
 
-1. Read the [Product Charter](docs/requirements/purpose.md) and the
-   [MVP contract](docs/requirements/purpose.md).
+1. Read the [Product Charter](docs/requirements/purpose.md) (it holds the MVP scope).
 2. Read the [documentation router](docs/README.md), the
-   [local governance profile](docs/governance/documentation.md) and
-   [ADR-0001](docs/decisions/ADR-0001-control-plane-on-dsh.md),
-   [ADR-0002](docs/decisions/ADR-0002-work-primitive-configured-workflows.md),
-   and [ADR-0003](docs/decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
+   [local governance profile](docs/governance/documentation.md) and the
+   [decisions index](docs/decisions/README.md), which is the list of ADRs
+   (start with the founding ADR-0001 to ADR-0003).
 3. Read relevant [control-plane architecture](docs/architecture/control-plane.md),
    draft boundaries, research and proposals. Research is evidence, not a
    production promise.
 4. Run `python3 tools/docs.py trace <path-or-ID>` on existing affected
-   documents/IDs. When product source is added, read its nearest README,
-   implementation and tests.
+   documents/IDs. Read the nearest README, implementation and tests of the
+   source you change.
 
 ## Product invariants
 
@@ -76,7 +74,7 @@ test stand-ins. Changes to this repository are checked by
 
 A session (Claude Code or another) is only how the operator talks to
 System: any session can be replaced by a new one and everything keeps
-working. Keep project state in the repository (PLAN, pull requests, docs) or
+working. Keep project state in the repository (STATUS.md, PLAN.md, pull requests, docs) or
 in System (Artifacts), never in a session's own memory or
 chat.
 
@@ -92,5 +90,5 @@ System implementation truth.
 
 Run `python3 tools/docs.py check` and
 `python3 tools/docs.py sync --check`. On a PR with covered paths run
-`python3 tools/docs.py impact <base-ref>`. When code exists, also run
-its source/test/CI checks. Report what was not verified.
+`python3 tools/docs.py impact <base-ref>`. Also run `corepack pnpm check` and the checks of
+[`.system/checks.yaml`](.system/checks.yaml). Report what was not verified.

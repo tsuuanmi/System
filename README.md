@@ -10,36 +10,35 @@ the active service composition is deliberately small, while optional
 capabilities and community plugins can be enabled or disabled by configuration
 without deleting their source.
 
-**Current state:** MVP-0 is implemented (its milestones and evidence are in
-the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md)); the next iteration,
-Brainstorm, is planned in [PLAN.md](PLAN.md). The `system` DSH profile boots,
-`system doctor` checks it, `system artifact` stores and reads immutable
-Artifacts by ID, and `system work` admits Workflow files or direct Tasks and
-runs them durably, with Claude Code and Codex accounts as Workers (cancel and
-takeover included), verifies results with the repository's pinned checks or
-citation checks, and publishes a checked commit as one pull request (a draft, or merged when its
-base is on the `mergeInto` allowlist, `dev`; `main` stays the operator's,
-ADR-0008); `system approve` is for a human at a terminal.
+**Current state:** the MVP-0 milestones and the iterations after them (Brainstorm
+among them) are finished and recorded in [PLAN.md](PLAN.md) section 1; open work
+is the Items of [STATUS.md](STATUS.md), and [GLOSSARY.md](GLOSSARY.md) is the
+vocabulary. System runs on the `system` DSH profile: `system work` admits
+Workflow files or direct Tasks and runs them durably, with Claude Code and Codex
+accounts as Workers, verifies results with the repository's pinned checks or
+citation checks, and publishes a checked commit as one pull request (a draft, or
+merged when its base is on the `mergeInto` allowlist, `dev`; `main` stays the
+operator's, ADR-0008). `system approve` is for a human at a terminal. The
+original MVP-0 plan is kept at
+[its pinned commit](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md) as history.
 
 ## Read and contribute
 
-- [Product Charter](docs/requirements/purpose.md) — mission, purposes and
-  philosophy; authoritative product intent.
-- [MVP requirements](docs/requirements/purpose.md) — a shared core proven by
-  **Software Engineering** and **Research** workflows.
+- [Product Charter](docs/requirements/purpose.md) — mission, purposes,
+  philosophy and the MVP scope; authoritative product intent.
 - [Control-plane architecture](docs/architecture/control-plane.md) —
   DSH-hosted logical ownership, plugin boundaries and active composition.
 - [Declarative Workflow composition](docs/architecture/workflow-composition.md)
   — Work/Task primitive; step graphs, Workers and verification in config files.
 - [Artifact-ID and verification contracts](docs/architecture/artifact-verification.md)
   — deterministic handoff, exact-subject evidence and verifiers as capabilities.
-- [ADR-0001](docs/decisions/ADR-0001-control-plane-on-dsh.md) — accepted
-  decision and alternatives.
+- [Decisions](docs/decisions/README.md) — the accepted ADRs and their alternatives.
 - [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)
   — upstream sources, risks and experiments.
 - [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff, no new Team engine, and the B3 evaluation result (RES-0008, retired).
 - [Host](docs/architecture/host.md#crash-and-recovery-invariants) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
-- [Next implementation plan](PLAN.md) — local-agent checklist and test gates.
+- [PLAN.md](PLAN.md) — finished milestones, standing decisions and open work; [STATUS.md](STATUS.md) lists the Items.
+- [GLOSSARY.md](GLOSSARY.md) — the vocabulary.
 - [Documentation router](docs/README.md) — current knowledge and authority.
 - [Portable documentation governance](docs/governance/documentation-architecture.md)
   and [bootstrap guide](docs/governance/bootstrap.md) — reuse this governance
@@ -59,59 +58,25 @@ corepack pnpm check  # build, typecheck, unit tests, offline smoke tests
 ```
 
 The source is described in [packages](packages/README.md), [bin](bin/README.md)
-and [tests](tests/README.md). No release is published.
+and [tests](tests/README.md). Releases and `system update`:
+[releases](docs/operations/releases.md).
 
-## Operating MVP-0
+## Operating System
 
-Credentials go into the DSH store by name; values are never printed:
-
-```sh
-bin/system credentials set CLAUDE_CODE_OAUTH_TOKEN   # from `claude setup-token`
-mkdir -p ~/.dsh/system/codex/default
-CODEX_HOME=~/.dsh/system/codex/default codex login --device-auth
-bin/system credentials set GITHUB_TOKEN              # System's own; Workers never get it
-bin/system workers                                   # which accounts are usable, and why not
-bin/system workers login web/chatgpt/default --cookies cookies.json   # an account that is not in the bundle; see the runbook
-```
-
-A code change needs a repository whose base commit has
-[`.system/checks.yaml`](.system/checks.yaml) and an `origin` remote:
+The operator pages are [runbook](docs/operations/runbook.md) (the index),
+[install and update](docs/operations/install-and-update.md) and
+[using System](docs/operations/using-system.md); the commands are in the
+[app README](packages/app/README.md). A first use, after `bin/system credentials set`
+for each Worker (see the runbook):
 
 ```sh
-TASK=$(bin/system task new --repo <path> --text "<what to do>")   # the Task ID alone; the base goes to stderr
+TASK=$(bin/system task new --repo <path> --text "<what to do>")   # the repository's base commit needs .system/checks.yaml and an `origin` remote
 bin/system work submit --workflow workflows/develop.yaml --input "$TASK"
 bin/system work show <work>          # events, verdicts, the published branch and pull request
-bin/system approve <work>...         # held Work (several: one typed confirmation): a human at a terminal only
-bin/system work cancel <work> --wait
-bin/system work retry <work> [--step implement] [--worker codex/default]
-bin/system work submit ... --worker codex/default   # only that Worker takes its Worker steps
 ```
 
-`workflows/develop.yaml` is the default for any change to a repository
-(implement → checks → publish); the Worker works test-first. The others:
-[`hygiene.yaml`](workflows/hygiene.yaml) (a cleanup that keeps behaviour),
-`research.yaml` and `brainstorm.yaml`, below, and the Sub-workflow
-`code-checks.yaml`, which checks a change.
-
-Research takes a question as its input
-(`bin/system task new --text "<question>"`, then `--workflow workflows/research.yaml`).
-Brainstorm takes a brief the same way (`--workflow workflows/brainstorm.yaml`):
-Claude Code and Codex each write a proposal, then a synthesis compares them;
-`bin/system work show <work>` lists the three output Artifact IDs and
-`bin/system artifact cat <id>` prints one.
-A step asks for a model tier with the capability `tier.economy`,
-`tier.standard` or `tier.frontier`.
-
-Environment variables: `DSH_HOME` (default `~/.dsh`), `SYSTEM_OPERATOR_ID`
-(default: the OS user), `SYSTEM_CALLER=agent` (lowers a call to agent; cannot make one human,
-never authorises an approval), `SYSTEM_REAL_AGENTS=1` (runs the
-credential-gated tests in `tests/real-agents.test.ts`; `SYSTEM_REAL_WEB=1`
-those in `tests/real-web.test.ts`). Launcher flags go
-before the command, such as `bin/system --patch overlay.yml work submit ...`.
+`workflows/develop.yaml` is the default for a change to a repository; the
+others are in [workflows](workflows/).
 
 **System develops System:** [`.system/checks.yaml`](.system/checks.yaml) is
-this repository's own required checks. Commit `e99996b` was made by System
-through its Software Engineering Workflow (Work `work:6bd9748e…`; Claude Code
-at the economy tier; checks passed; published as a draft pull request to a
-local mirror) and taken in after review. See the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md) for the
-evidence of every milestone and the known limits.
+this repository's own required checks.

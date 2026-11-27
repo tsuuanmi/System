@@ -1,7 +1,7 @@
 # Packages
 
 System's source packages, one pnpm workspace member each. Packages are split
-only when lifecycle or configuration demands it (the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md) package guidance).
+only when lifecycle or configuration demands it (package guidance of the [MVP-0 plan](https://github.com/tsuuanmi/System/blob/709942819e56c57452bf72c2db019c845fca1d74/PLAN.md), historical).
 
 - [bundle](bundle/README.md) — `@system/bundle`, the only bundle of the
   `system` DSH profile: the explicit Cordis tree.
@@ -28,5 +28,5 @@ only when lifecycle or configuration demands it (the [MVP-0 plan](https://github
   `code.required-checks` and `research.citation-check`.
 - [effects](effects/README.md) — `@system/effects`, the `effects` row:
   `git.publish`, push and one pull request, merged only into the `mergeInto` allowlist.
-- [app](app/README.md) — `@system/app`, the CLI app row (`system doctor`,
-  `system artifact`, `system work`).
+- [app](app/README.md) — `@system/app`, the CLI app row: the `system` commands, a thin
+  client of the Host.
