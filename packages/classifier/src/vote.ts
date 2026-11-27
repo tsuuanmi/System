@@ -1,7 +1,7 @@
 /** The vote of a Classifier's samples (cls-1): the label distribution is each label's share, the confidence the winner's share. */
 import { UNKNOWN } from './schema.ts'
 
-export interface Voted {
+interface Voted {
   label: string
   confidence: number
   distribution: Record<string, number>

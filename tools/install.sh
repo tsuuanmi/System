@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The one script of a new machine (runbook, install-and-update.md "Install and start", Item install-1): from a clone of System, build the install
+# The one script of a new machine (docs/operations/install-and-update.md, "Install and start", Item install-1): from a clone of System, build the install
 # `system update` would leave (`$SYSTEM_INSTALL`, default ~/.system: release/, releases/<commit>/, current) for the commit this
 # clone has checked out, and write the profile with `system init`. It never enables or starts the Host. Needs git, corepack and
 # Node >=24.9 (an older Node on PATH is replaced by the newest Node 24 under ~/.nvm, as bin/system does).

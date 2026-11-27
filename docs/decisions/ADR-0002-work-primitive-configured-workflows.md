@@ -68,6 +68,9 @@ some reference workflow definitions still live in TypeScript plugin code.
 - A removed config file does not erase accepted runs or their provenance.
 - YAML is a preferred authoring format, **not yet a frozen schema/version**;
   exact syntax and loader behavior require an implementation spike.
+  *Amended 2026-11-27: the schema exists as `system.workflow/v1`
+  ([ADR-0006](ADR-0006-workflow-vocabulary-for-mvp-0.md),
+  [workflow composition](../architecture/workflow-composition.md)).*
 - Dynamic graph growth, loops, compensation, conditionals and complex
   scheduling are deferred until concrete use cases demonstrate necessity.
 
@@ -83,7 +86,8 @@ GitHub Actions' composite actions (expanded in place) and reusable workflows
   Sub-workflow's steps join the spec under the using step's namespace (for
   example `debate.round1.a`), and the expanded spec is pinned as any other.
 - The controller is unchanged: replay, Artifact IDs, per-step retry, slots
-  and Goal budgets apply to the expanded steps as written.
+  and Goal budgets apply to the expanded steps as written. *(Amended 2026-11-27: the Goal feature was removed in DF2,
+  2026-11-09, so there are no Goal budgets.)*
 - No recursion; a bounded depth (3). A Sub-workflow still runs on its own as
   an ordinary Workflow.
 - Rejected for now: a step that submits a child Work and waits for it. It
@@ -92,4 +96,4 @@ GitHub Actions' composite actions (expanded in place) and reusable workflows
 
 See [workflow composition](../architecture/workflow-composition.md) for the
 target boundary and illustrative domain-neutral YAML, and
-[MVP acceptance](../requirements/purpose.md) for tests.
+[Product Charter](../requirements/purpose.md#success-means) for tests.

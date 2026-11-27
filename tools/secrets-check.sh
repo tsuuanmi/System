@@ -15,7 +15,7 @@ if [ -z "$bin" ] && [ -z "${SYSTEM_GITLEAKS_NONE:-}" ]; then
   [ -n "$real" ] && [ -x "$real/.local/bin/gitleaks" ] && bin=$real/.local/bin/gitleaks
 fi
 if [ -z "$bin" ] || [ ! -x "$bin" ]; then
-  echo "secrets: gitleaks not found (${GITLEAKS_BIN:-not on PATH or in ~/.local/bin}); install gitleaks: download the release and verify its checksum, see docs/operations/runbook.md (Install gitleaks), then put it on PATH or set GITLEAKS_BIN" >&2
+  echo "secrets: gitleaks not found (${GITLEAKS_BIN:-not on PATH or in ~/.local/bin}); install gitleaks: download the release and verify its checksum, see docs/operations/install-and-update.md (Install gitleaks), then put it on PATH or set GITLEAKS_BIN" >&2
   exit 1
 fi
 

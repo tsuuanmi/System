@@ -41,7 +41,7 @@ export type KindSpec =
   | { kind: string; schemaVersion: number; blob: true }
 
 /** Every Artifact of kind `file` is operator- or Worker-supplied bytes. */
-export const FILE_KIND: KindSpec = { kind: 'file', schemaVersion: 1, blob: true }
+const FILE_KIND: KindSpec = { kind: 'file', schemaVersion: 1, blob: true }
 
 interface CommonInput {
   kind: string
@@ -59,7 +59,7 @@ export interface PutContent extends CommonInput {
   content: unknown
 }
 
-export interface PutBytes extends CommonInput {
+interface PutBytes extends CommonInput {
   data: Uint8Array
   mediaType: string
 }

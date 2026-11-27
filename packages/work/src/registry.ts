@@ -126,7 +126,7 @@ export interface VerifyResult {
   cause?: PortCause
 }
 
-export interface CriteriaRequest {
+interface CriteriaRequest {
   capability: string
   /** The criteria name the Workflow file gives. */
   name: string

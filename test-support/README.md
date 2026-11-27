@@ -1,50 +1,24 @@
 # test-support
 
-Helpers shared by the tests, so each stand-in has one implementation:
+Helpers shared by the tests, so each stand-in has one implementation: the
+in-memory stores, the fake Workers and CLIs, the throwaway `DSH_HOME` runner for
+the [smoke tests](../tests/README.md), the headed-Chrome and publish helpers.
+The header of each file says what it provides; this README does not list them.
 
-- [clean-git-env.mjs](clean-git-env.mjs) — preloaded by the test scripts: removes `GIT_DIR` and the other repository-pointing variables a git hook sets, so a test never changes the real repository.
-- [memory.ts](memory.ts) — the Artifact record table, blob store, Artifact
-  store and Work table in memory (durable before visible, an `update` atomic,
-  like DSH), and
-  `until` for bounded waits.
-- [process.ts](process.ts) — `processSpawner` (the DSH subprocess contract:
-  process group, SIGTERM, SIGKILL after the grace).
-- [fixture.ts](fixture.ts) — the deterministic concurrency fixture: a
-  `WorkController` with fake Workers whose attempts are held at named barriers
-  (`hold`, `arrived(step, count)`, `release`) or delayed by a seeded generator
-  (`fixture({ seed })`, so a seed reproduces an interleaving). Its Workers are
-  two Accounts, `fake/claude` and `fake/codex` (Brainstorm's `idea-b` is the
-  Codex one), with `fixture({ slots })` as their `maxConcurrentAttempts`, `peak`
-  (the most attempts of an Account at once) and `gone(attemptId)` (confirm a lost
-  attempt's process gone), `orphan(attemptId)` (its process is alive and verified: the
-  Worker's `end` ends it, listed in `ended`). It also has
-  `startHost(home)` (a `Host` over the same table and Workers, for restarts),
-  `remote` (what the fake publisher's reconcile reports), and
-  `assertConsistent`: the stored state equals the fold of the events, and no
-  event `seq` is missing or repeated.
-- [cli.ts](cli.ts) — `systemCli`: a throwaway DSH home, a runner for
-  `bin/system` (`run`, and `runAsync` for a command that outlives a call), and
-  the Host the smoke tests talk to: `start()` runs `bin/system host` as a child
-  process and waits for its socket (a second `start()` restarts it), `pid()`
-  names it for a test that kills it, and `stop()` sends SIGTERM (SIGKILL after
-  10 s). Call `stop()` from `after`. For the [smoke tests](../tests/README.md).
+Rules:
 
-- [accounts.ts](accounts.ts) — `fakeClaudeHome` and `fakeCodexHome`: a temp
-  directory with the `.claude.json` / `auth.json` an account's provider ID is
-  read from (with secrets beside it that must never be read), `tempDir`.
-- [quota.ts](quota.ts) and [fake-quota-cli.mjs](fake-quota-cli.mjs) — fresh synthetic
-  quota answers and a private CLI/log in each test directory for the sc-3
-  reader tests. Logs are written synchronously before a reply or wait.
-- [headed.ts](headed.ts) — `CHROME` (the Chrome the Runtime chooses; the pinned
-  Chrome for Testing is installed once into `SYSTEM_TEST_BROWSERS`, default
-  `<tmp>/system-test-browsers-<user>`, shared by the test processes) and
-  `skipHeaded`. A Chrome or Xvfb that is missing, or a Chrome that does not start
-  ([headed-probe.ts](headed-probe.ts) tries one), **fails** the file that imports
-  it instead of skipping its tests: the checks once passed on a host where those
-  tests fail. `SYSTEM_SKIP_HEADED=1` skips them, for a host with no Xvfb.
-- [update-driver.mjs](update-driver.mjs) — the real `update()` of `bin/update.mjs` with the real client, Host and link switch, answering
-  only the network and build steps; [pending-install-check.test.ts](../tests/pending-install-check.test.ts) kills it after the switch.
-
-It is not a package: tests import it by path. It imports the built
-`@system/*` packages, so run `corepack pnpm build` first (`corepack pnpm check`
-does).
+- It is not a package: tests import it by path. It imports the built
+  `@system/*` packages, so run `corepack pnpm build` first (`corepack pnpm check`
+  does).
+- A stand-in lives here once. A test that needs one that exists imports it
+  instead of writing its own; a second copy in a test file is moved here.
+- Nothing here is product code: no `src` file imports it.
+- [clean-git-env.mjs](clean-git-env.mjs) is preloaded by the test scripts in
+  [package.json](../package.json) (`--import`): it removes `GIT_DIR` and the other
+  repository-pointing variables a git hook sets, so a test never changes the real
+  repository. A new test script preloads it too.
+- A missing Chrome or Xvfb, or a Chrome that does not start, **fails** the file
+  that imports [headed.ts](headed.ts) instead of skipping its tests: the checks
+  once passed on a host where those tests fail. `SYSTEM_SKIP_HEADED=1` skips them.
+- A fake never reads a real secret; a fake account home holds secrets beside the
+  file under test so a test can show they are never read.

@@ -44,4 +44,7 @@ Model tiers are not schema: they are capabilities (`tier.<name>`).
 
 - Preflight refuses every field outside this list, as before.
 - Loops, conditionals, retries, timeouts and concurrency stay out of MVP-0.
+  *Amended 2026-11-27: `system.workflow/v1` has since gained `retry`, `when`
+  and `unless` on steps; loops, timeouts and concurrency policy are still not
+  in it. See [workflow composition](../architecture/workflow-composition.md).*
 - ADR-0004's deferral now reads "beyond `system.workflow/v1` as of ADR-0006".

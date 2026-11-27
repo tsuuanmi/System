@@ -10,7 +10,7 @@ export const CONVERSATION_KIND = { kind: 'conversation', schemaVersion: 1 } as c
 
 export const NOTICE = 'Operator-supplied conversation. System stored these bytes as given and has not verified who wrote them, whether they are complete, or whether they are true.'
 
-export const assertedSchema = z.object({
+const assertedSchema = z.object({
   provider: z.string().min(1).optional(),
   url: z.string().url().optional(),
   model: z.string().min(1).optional(),
@@ -20,7 +20,7 @@ export const assertedSchema = z.object({
   /** Context the product used that the parts do not show, such as browsing, memory or deep research. */
   context: z.array(z.string().min(1)).optional(),
 }).strict()
-export type Asserted = z.infer<typeof assertedSchema>
+type Asserted = z.infer<typeof assertedSchema>
 
 export const conversationSchema = z.object({
   notice: z.literal(NOTICE),
@@ -35,7 +35,7 @@ export const conversationSchema = z.object({
 }).strict()
 export type Conversation = z.infer<typeof conversationSchema>
 
-export interface Part {
+interface Part {
   name: string
   data: Uint8Array
   mediaType: string

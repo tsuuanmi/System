@@ -13,7 +13,7 @@ export interface ChangedTest {
   path: string
   change: 'modified' | 'deleted'
 }
-export interface ChangedTestWithReason extends ChangedTest {
+interface ChangedTestWithReason extends ChangedTest {
   reason: string
 }
 

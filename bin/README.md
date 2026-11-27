@@ -12,14 +12,19 @@
   and `loginctl enable-linger`, and prints the command that enables it (it never
   enables or starts it). `--no-service` or `SYSTEM_NO_SERVICE=1` skips that; any
   other home is told to run `system host` in the foreground.
-- `system update [--wait <minutes>]` moves the install (`~/.system`, or
+- `system update [--wait <minutes>] [--to <release>]` moves the install (`~/.system`, or
   `SYSTEM_INSTALL`) to the newest commit of `main`, only after that commit
   passed its own required checks as a System Work on this machine (a change
   from the running release, so only the checks whose `paths` match the diff
   run; the first install runs all)
-  (and `system update --finish-pending`, run by a Host that starts on a release with a pending
+  (`--to <release>` switches `current` back to a release kept in `releases/`, through the switch steps only;
+  and `system update --finish-pending`, run by a Host that starts on a release with a pending
   install check: the same check and switch back) ([update.mjs](update.mjs); the
-  [runbook](../docs/operations/runbook.md#install-and-start)).
+  [install and update](../docs/operations/install-and-update.md#install-and-start)).
+- `system mcp` serves MCP on stdio through [mcp-front.mjs](mcp-front.mjs): the
+  front owns the session's stdio and runs the MCP server of the release `current`
+  points to as a child, starting it again when the link moves, so a session that
+  began days earlier gets a new release's fixes.
 - `system host --supervise` (development, no systemd) stays as a small
   supervisor around `system host` and runs it again (through the install's
   `bin/system`, so a switched `current` is new code) after exit 75, the status of
@@ -37,6 +42,12 @@
   the Node choice, and whether this code is a release of the install
   (`installRoot`). A release runs as the install's `current` link: the Host
   watches the code there (`SYSTEM_CODE`) and upgrades when the link moves.
+
+The files besides `system` are loaded by path, so each is listed:
+
+- [service.mjs](service.mjs), typed by [service.d.mts](service.d.mts): above.
+- [update.mjs](update.mjs), typed by [update.d.mts](update.d.mts): `system update`.
+- [mcp-front.mjs](mcp-front.mjs): `system mcp`'s front, above.
 
 `DSH_HOME` defaults to `~/.dsh`. The wrapper uses the workspace's pinned DSH
 launcher and puts the workspace's pinned `pnpm` on `PATH`, because

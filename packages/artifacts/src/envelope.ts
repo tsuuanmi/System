@@ -21,7 +21,7 @@ export function stricter(a: Classification, b: Classification): Classification {
 
 export const contentIdSchema = z.string().regex(CONTENT_ID_RE)
 
-export const blobRefSchema = z.object({
+const blobRefSchema = z.object({
   attachmentId: contentIdSchema,
   bytes: z.number().int().nonnegative(),
   mediaType: z.string().min(1),
@@ -29,7 +29,7 @@ export const blobRefSchema = z.object({
 
 const subjectSchema = z.object({ type: z.string().min(1), ref: z.string().min(1) }).strict()
 
-export const envelopeSchema = z.object({
+const envelopeSchema = z.object({
   id: contentIdSchema,
   kind: z.string().min(1),
   schemaVersion: z.number().int().positive(),
@@ -42,7 +42,7 @@ export const envelopeSchema = z.object({
   createdAt: z.string(),
 }).strict()
 
-export const occurrenceSchema = z.object({
+const occurrenceSchema = z.object({
   producer: z.object({ type: z.enum(['operator', 'worker', 'verifier', 'system']), ref: z.string().min(1) }).strict(),
   workId: z.string().optional(),
   attemptId: z.string().optional(),

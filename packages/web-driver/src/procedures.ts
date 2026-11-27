@@ -108,7 +108,7 @@ export function bindingProblems(map: UiMap): string[] {
  * the label's line and the blank lines around it are not the block's content. Only a label line at the very start, after blank
  * lines, is removed; the label itself stays on the block, for matching it to an output's name.
  */
-export function withoutHeader(text: string, label: string): string {
+function withoutHeader(text: string, label: string): string {
   if (!label) return text
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return text.replace(new RegExp(`^(?:[ \\t]*\\r?\\n)*[ \\t]*${escaped}[ \\t]*\\r?\\n(?:[ \\t]*\\r?\\n)*`), '')

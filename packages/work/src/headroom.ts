@@ -5,7 +5,7 @@
  */
 
 /** One window as a Worker's `quota()` tells it (structurally `@system/agents`' `QuotaWindow`). */
-export interface QuotaWindowReading {
+interface QuotaWindowReading {
   /** 0 to 100. */
   percentUsed: number
   resetsAt?: string
@@ -29,7 +29,7 @@ export interface Candidate {
   ceiling: number
 }
 
-export interface Ranking {
+interface Ranking {
   /** The Account that takes the step; absent when every reading is over the ceiling (see `waitUntil`). */
   selected?: string
   /** Why each Account ranks where it does, by ref. */
@@ -80,7 +80,7 @@ export function rankByHeadroom(candidates: readonly Candidate[]): Ranking {
 }
 
 /** One Account for `roomOf`: whether it has a free slot, and what `rankByHeadroom` reads of it. */
-export interface RoomAccount {
+interface RoomAccount {
   ref: string
   /** Running attempts are under its `maxConcurrentAttempts`. */
   slot: boolean

@@ -55,14 +55,14 @@
       config:
         remote: origin
         base: dev  # System's changes integrate into dev; only the operator merges dev into main (ADR-0008)
-        mergeInto: [dev, web-workers]  # the base branches System may merge into; any other base refuses a Workflow that merges
+        mergeInto: [dev]  # the base branches System may merge into; any other base refuses a Workflow that merges
         apiUrl: https://api.github.com
         tokenRef: GITHUB_TOKEN
 
     # The web Runtime (WW2a): `web` accounts of the agents row, served through a
     # genuine headed Chrome. Optional and off: with it off those accounts are reported
     # unavailable ("the web-worker row is disabled") and nothing of the browser is loaded.
-    # A profile patch turns it on with `disabled: false` (docs/operations/runbook.md).
+    # A profile patch turns it on with `disabled: false` (docs/operations/accounts-and-workers.md, "The web account").
     - id: web-worker
       name: '@system/web-worker'
       disabled: true

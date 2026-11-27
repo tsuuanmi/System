@@ -63,7 +63,7 @@ _Avoid_: permission, feature
 **Role**:
 A capability naming a step's part in a Workflow, given to one or more Accounts so
 that the step runs on that Account, such as the first Brainstorm proposal or
-the development of a code change (`develop.implement`). A step's `prefer` names a role that ranks its Accounts first without requiring them, falling back to any other capable Account (ro-12).
+the development of a code change (`develop.implement`). A step's `prefer` names a role that ranks its Accounts first without requiring them, falling back to any other capable Account.
 _Avoid_: persona, agent type
 
 ### Running and directing work
@@ -125,6 +125,47 @@ One durable carrying-out of a Task through a pinned Workflow, with its
 attempts, verdicts and record; cancel, retry and approve act on a Work.
 _Avoid_: run, job, Task (for the execution)
 
+**Workflow**:
+A named, versioned spec of the steps that carry out a Task and how a failed
+step reopens an earlier one; a Work pins one when it is admitted. See
+[workflow composition](docs/architecture/workflow-composition.md) and
+[ADR-0002](docs/decisions/ADR-0002-work-primitive-configured-workflows.md).
+_Avoid_: pipeline, recipe, template
+
+**Step**:
+One unit of a Workflow, run as one or more attempts: a Worker step, a
+verify step or an effect step, each naming the capabilities it needs.
+_Avoid_: stage, phase; task (a Task is the request)
+
+**Attempt**:
+One execution of a step by one Account, recorded in the Work's history. A
+failed or lost step runs again as a new Attempt; the earlier ones stay in the
+record. See [work-record](docs/architecture/work-record.md).
+_Avoid_: run, try, retry (a retry acts on a Work)
+
+**Artifact**:
+An immutable, typed, content-addressed record, such as a Task's context file, an
+Intent or a step's output; its ID is derived from its kind and content, so equal
+content is one Artifact. See [the artifacts package](packages/artifacts/README.md) and
+[ADR-0003](docs/decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
+_Avoid_: file, blob, output (an output is one use of an Artifact)
+
+**Check**:
+A step of a Workflow that runs Verifiers on a Worker step's output and
+records a Verdict for each; a Work goes on only on a pass.
+_Avoid_: test (a test is one thing a Check may run), gate
+
+**Effect**:
+An external change a Workflow makes to the world, such as merging a commit,
+done by an effect step only after every required Verdict on the exact subject
+is pass; recorded as intended, then as observed, and never retried blindly.
+_Avoid_: side effect, action, deploy
+
+**Hold**:
+A Work stopped at a step until a human decides: it awaits an Approval, or an
+inconclusive Verdict the operator must resolve. A hold is not a failure.
+_Avoid_: pause, block (a Blocked Item awaits other Items), wait (a Quota wait needs no human)
+
 **Sub-workflow**:
 A Workflow used as one step of another Workflow; its steps are joined into
 the using Workflow's spec when the Work is admitted.
@@ -178,7 +219,7 @@ _Avoid_: reviewer, judge, validator
 What a Verifier concludes about one Artifact: pass; fail, when the Artifact
 itself is wrong (such as malformed); or inconclusive, when the check could
 not confirm it against the world (a page that changed or refused the fetch,
-or a check that the base fails too, after one re-run on the change and the base, so the change cannot be to blame; or a check that fails twice on the same change after `implement` changed nothing, sc-9).
+or a check that the base fails too, after one re-run on the change and the base, so the change cannot be to blame; or a check that fails twice on the same change after `implement` changed nothing).
 Only a check of the Artifact's own form may fail it.
 _Avoid_: score, review, result
 
@@ -192,13 +233,13 @@ A Classifier's recorded answer: label, label distribution, confidence, model and
 question version.
 _Avoid_: verdict, decision
 
-**Triage**:
+**Triage** (specified, not built; [ADR-0013](docs/decisions/ADR-0013-models-decide-what-to-try.md)):
 Writes a diagnosis of a failed step, as an Artifact, for the step that is
 reopened and for the operator; never accepts, verifies again or changes what
 the controller does.
 _Avoid_: judge, brain, agent
 
-**Model check**:
+**Model check** (specified, not built; [ADR-0014](docs/decisions/ADR-0014-checks-in-tiers-by-event.md)):
 A Verifier backed by a model whose Verdict can only be fail or inconclusive,
 never pass; runs in shadow until its precision is measured.
 _Avoid_: AI review, judge
@@ -231,11 +272,6 @@ An exchange the operator had elsewhere, such as in a web chat product, that
 the operator brings into System. System vouches for the bytes, never for
 where they came from or whether they are true.
 _Avoid_: chat log, transcript, Website Worker output
-
-**Source snapshot**:
-A public source that System itself fetched and stored, identified by its
-content.
-_Avoid_: citation, scrape
 
 **Website Worker**:
 A Worker that System drives on a website where the operator is signed in.

@@ -34,7 +34,7 @@ export interface QuotaWindow {
   /** ISO time; absent when the reset is not believed. */
   resetsAt?: string
 }
-export type QuotaWindowName = 'five_hour' | 'seven_day'
+type QuotaWindowName = 'five_hour' | 'seven_day'
 export type QuotaReport =
   | { observedAt: string; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow }; source?: 'rate_limit_event'; /** The CLI's version when probed: evidence, never a gate. */ cliVersion?: string }
   | { unreadable: string; /** A `retry-after` the provider gave, in milliseconds: the cache does not read again before it. */ retryAfterMs?: number }
@@ -181,7 +181,7 @@ export type AgyQuotaGroup = keyof typeof AGY_GROUPS
 const EPOCH_RESET = 0
 
 /** Antigravity's `/usage` answer, read for the Account's one group (an Account is one group); used share = 1 - remaining_fraction. */
-export function quotaFromAgyUsage(answer: unknown, group: AgyQuotaGroup, observedAt: number): QuotaReport {
+function quotaFromAgyUsage(answer: unknown, group: AgyQuotaGroup, observedAt: number): QuotaReport {
   const refused = schemaError(agyUsageValid, answer, 'usage')
   if (refused) return { unreadable: refused }
   const groups = (answer as { command: { data: { groups: Array<{ name: string; buckets: Array<{ window: string; remaining_fraction: number; reset_time: string }> }> } } }).command.data.groups
@@ -240,7 +240,7 @@ function env(own: Record<string, string>): Record<string, string> {
   return out
 }
 
-export interface ReadOptions {
+interface ReadOptions {
   command: string
   signal?: AbortSignal
   /** Default 30 s. */
@@ -376,7 +376,7 @@ function retryAfterOf(error: unknown): number | undefined {
 }
 const failed = (outcome: { fail: string; retryAfterMs?: number }): QuotaReport => ({ unreadable: outcome.fail, ...(outcome.retryAfterMs ? { retryAfterMs: outcome.retryAfterMs } : {}) })
 
-export interface ClaudeQuotaOptions extends ReadOptions {
+interface ClaudeQuotaOptions extends ReadOptions {
   /** The account's `claudeHome`, passed as HOME. */
   home: string
   /** The account's own token. */
@@ -414,7 +414,7 @@ export async function readClaudeQuota(options: ClaudeQuotaOptions): Promise<Quot
   }
 }
 
-export interface ClaudeProbeOptions extends ReadOptions {
+interface ClaudeProbeOptions extends ReadOptions {
   home: string
   token: string
   /** The account's economy-tier model; without one the CLI's default. */
@@ -457,7 +457,7 @@ export async function probeClaudeQuota(options: ClaudeProbeOptions): Promise<Quo
   }
 }
 
-export interface CodexQuotaOptions extends ReadOptions {
+interface CodexQuotaOptions extends ReadOptions {
   /** The account's CODEX_HOME. */
   codexHome: string
 }
@@ -496,7 +496,7 @@ export async function readCodexQuota(options: CodexQuotaOptions): Promise<QuotaR
   }
 }
 
-export interface AntigravityQuotaOptions extends ReadOptions {
+interface AntigravityQuotaOptions extends ReadOptions {
   /** The Account's `agyHome`, passed as HOME (the token is read from it by `agy`, never by System). */
   home: string
   group: AgyQuotaGroup
@@ -543,7 +543,7 @@ export type Observed = { observedAt: number; windows: { five_hour?: QuotaWindow;
 
 /** `seed` is a saved event reading (after a restart); `persist` is handed each new one. */
 /** A reading older than this, or none, is probed before a step is dispatched (ss-5). */
-export const PROBE_STALE_MS = 30 * 60_000
+const PROBE_STALE_MS = 30 * 60_000
 
 /** `probe` (claude-code) is the smallest attempt that yields a reading; it runs at most once per 30 minutes, and its events are observed like an attempt's. */
 export function createQuotaCache({ read, ttlMs = 600_000, now = Date.now, seed, persist, probe }: { read: () => Promise<QuotaReport>; ttlMs?: number; now?: () => number; seed?: Observed; persist?: (observed: Observed) => void; probe?: () => Promise<QuotaEvent[]> }): QuotaCache {

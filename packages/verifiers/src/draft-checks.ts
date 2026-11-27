@@ -5,7 +5,7 @@
 import { parse, stringify } from 'yaml'
 import { CHECKS_FILE, parseChecksFile } from './checks.ts'
 
-export interface WorkflowFile { name: string; text: string }
+interface WorkflowFile { name: string; text: string }
 export interface DraftChecks {
   /** The draft file text; absent when no step could be translated or the draft fails the schema. */
   draft?: string

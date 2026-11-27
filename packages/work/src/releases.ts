@@ -24,8 +24,8 @@ export function releaseTimes(log: string, devFirstParent: ReadonlySet<string>): 
  * body), or when its pull request is one of `CALLER_RELEASE_PRS`: the releases made before the marker existed.
  * The merge commit's author cannot tell them apart (GitHub records the Operator's account for every merge of the pull request).
  */
-export const CALLER_RELEASE_MARKER = /^Released-By:\s*caller\s*$/im
-export const CALLER_RELEASE_PRS: ReadonlySet<number> = new Set([466, 469, 471, 478, 490])
+const CALLER_RELEASE_MARKER = /^Released-By:\s*caller\s*$/im
+const CALLER_RELEASE_PRS: ReadonlySet<number> = new Set([466, 469, 471, 478, 490])
 
 /** Whether a release merge commit message (subject and body) is a caller's release. */
 export function isCallerRelease(message: string): boolean {
@@ -34,7 +34,7 @@ export function isCallerRelease(message: string): boolean {
 }
 
 /** Release times split by who made them. */
-export interface ReleasesBy { operator: string[]; caller: string[] }
+interface ReleasesBy { operator: string[]; caller: string[] }
 
 /** The release times in the output of `git log --merges --first-parent --format='%cI%x1f%P%x1f%B%x1e'`, split by `isCallerRelease`. */
 export function releasesByMaker(log: string, devFirstParent: ReadonlySet<string>): ReleasesBy {

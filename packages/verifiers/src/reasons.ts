@@ -53,7 +53,7 @@ export function interrupted(output: string): string[] {
 const OWN_ERROR_MAX = 300
 
 /** The last non-empty lines of `text` that fit in `OWN_ERROR_MAX` characters, on one line, each `secrets` value masked. */
-export function lastLines(text: string, secrets: readonly string[] = []): string {
+function lastLines(text: string, secrets: readonly string[] = []): string {
   const clean = maskValues(text, secrets)
   const lines = clean.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
   const picked: string[] = []

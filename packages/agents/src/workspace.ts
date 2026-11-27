@@ -208,7 +208,7 @@ export function prompt(ws: Workspace, request: WorkerRequest): string {
   ].join('\n')
 }
 
-export interface Captured {
+interface Captured {
   outputs: Record<string, string>
   missing: string[]
   /** Declared outputs written with no content (0 bytes or only whitespace); they fail the attempt like a missing one, and an optional one is not written. */
@@ -226,7 +226,7 @@ function goalLine(instructions: string): string {
 }
 
 /** The commit message: for a Task that names an Item, `<item>: <goal line>` and an `Item:` trailer before `Work:` and `Attempt:`. */
-export function commitMessage(ws: Workspace, request: WorkerRequest, slot: string): string {
+function commitMessage(ws: Workspace, request: WorkerRequest, slot: string): string {
   const trailers = `Work: ${request.workId}\nAttempt: ${request.attemptId}`
   if (!ws.item) return `system: ${request.stepId} output ${slot}\n\n${trailers}`
   const prefix = `${ws.item}: `

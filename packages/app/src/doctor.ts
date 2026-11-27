@@ -5,7 +5,7 @@
  */
 
 /** A row of the System bundle, the service it provides, and whether System needs it. */
-export interface RowProbe {
+interface RowProbe {
   id: string
   service: string
   required: boolean
@@ -30,7 +30,7 @@ export const ROWS: readonly RowProbe[] = [
 /** The storage backend Work records must use (ADR-0004 decision 9). */
 export const REQUIRED_BACKEND = 'sqlite'
 
-export interface RowStatus extends RowProbe {
+interface RowStatus extends RowProbe {
   mounted: boolean
 }
 
@@ -46,7 +46,7 @@ export interface HostStatus {
   detail: string
 }
 
-export interface DoctorReport {
+interface DoctorReport {
   ok: boolean
   versions: { node: string; dsh: string }
   rows: RowStatus[]

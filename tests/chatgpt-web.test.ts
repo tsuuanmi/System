@@ -114,7 +114,7 @@ test('recheck passes on the signed-in account; on the walled one it fails and `s
 })
 
 // The remote login needs a VNC server (x11vnc or x0vncserver) as well.
-const skipRemote = skip || (findVnc() ? false : 'neither x11vnc nor x0vncserver is on PATH (docs/operations/runbook.md)')
+const skipRemote = skip || (findVnc() ? false : 'neither x11vnc nor x0vncserver is on PATH (docs/operations/accounts-and-workers.md, "The web account")')
 test('login --remote prints the tunnel and the address, serves noVNC behind the token, and Save reports the state', { skip: skipRemote, timeout: 120_000 }, async () => {
   const running = cli.runAsync(['workers', 'login', 'web/chatgpt/default', '--remote'], { terminal: true })
   try {

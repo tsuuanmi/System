@@ -381,7 +381,9 @@ class Graph:
         return int(bool(self.errors or (check and changed)))
 
     def trace(self, target: str) -> int:
-        source = self.resolve(target.removeprefix("docs/").removesuffix(".md"))
+        name = target[len("docs/"):] if target.startswith("docs/") else target
+        name = name[: -len(".md")] if name.endswith(".md") else name
+        source = self.resolve(name)
         if source is None:
             print(f"Unknown document or ID: {target}", file=sys.stderr)
             return 1

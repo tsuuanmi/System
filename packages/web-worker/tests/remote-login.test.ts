@@ -79,7 +79,7 @@ async function withSession(config: WebConfig, run: (s: RemoteSession, pids: { ch
 }
 
 const vnc = findVnc()
-const skipVnc = skip || (vnc ? false : 'neither x11vnc nor x0vncserver is on PATH (see docs/operations/runbooks.md)')
+const skipVnc = skip || (vnc ? false : 'neither x11vnc nor x0vncserver is on PATH (see docs/operations/accounts-and-workers.md, "The web account")')
 const gone = (session: RemoteSession, chrome: number) => {
   assert.equal(alive(session.xvfbPid), false, 'Xvfb is still running')
   assert.deepEqual(session.vncPids(), [], 'a VNC server is still running')

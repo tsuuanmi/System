@@ -283,8 +283,8 @@ test('merge: a change that already contains the tip moves main to it, with no me
   const commit = (await snapshot(work)).commit
   assert.equal(outcome.state, 'applied', outcome.reason)
   assert.equal(remoteRef('main'), commit, 'main is exactly the checked commit')
-  assert.equal(remoteRef('system/1111-aaaa'), commit)
-  assert.deepEqual([outcome.detail.merged, outcome.detail.mergeCommit, outcome.detail.draft], ['true', commit, 'false'])
+  assert.throws(() => remoteRef('system/1111-aaaa'), 'the merged branch is deleted')
+  assert.deepEqual([outcome.detail.merged, outcome.detail.mergeCommit, outcome.detail.draft, outcome.detail.branchDeleted], ['true', commit, 'false', 'true'])
   assert.deepEqual([checked, mergeCalls()], [[], []])
   assert.equal(pulls[0]!.draft, false)
   // Again: main already holds it; nothing is pushed or checked.
@@ -519,6 +519,59 @@ test('reconcile with merge: true is applied once main holds the change, absent b
   assert.equal(calls.filter((c) => !c.startsWith('GET ')).length, 0, 'reconcile only reads')
   const dead = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig({ remote: 'nowhere' }))
   assert.equal((await dead.reconcile(i)).state, 'unknown')
+})
+
+/** The remote refuses to delete any branch (a pre-receive hook), as branch protection would. */
+function refuseDeletion(bare: string) {
+  const hook = join(bare, 'hooks', 'pre-receive')
+  writeFileSync(hook, '#!/bin/sh\nwhile read old new ref; do [ "$new" = 0000000000000000000000000000000000000000 ] && { echo "protected branch" >&2; exit 1; }; done\nexit 0\n', { mode: 0o755 })
+}
+
+test('merge: the system branch is deleted after the merge; without merge, or when the merge is refused, it stays', async () => {
+  fresh()
+  const artifacts = store()
+  const kept = setup()
+  const publisher = githubPublisher(artifacts, { token: async () => undefined }, mergeConfig())
+  const draft = await publisher.apply(intent(await subjectOf(artifacts, kept.work)))
+  assert.equal(draft.state, 'applied', draft.reason)
+  assert.ok(kept.remoteRef('system/1111-aaaa'), 'no merge: kept')
+  assert.equal(draft.detail.branchDeleted, undefined)
+  // A refused merge (conflict) keeps the branch.
+  const clash = setup('one\n')
+  const { publisher: queued } = queue(artifacts)
+  const first = await queued.apply(intent(await subjectOf(artifacts, clash.work), merging, 'work:1111-aaaa'))
+  assert.equal(first.state, 'applied', first.reason)
+  const other = mkdtempSync(join(root, 'other-'))
+  execFileSync('git', ['clone', '--quiet', '-b', 'main', `file://${clash.bare}`, other])
+  const o = (...args: string[]) => execFileSync('git', ['-C', other, ...args], { env, encoding: 'utf8' })
+  o('checkout', '--quiet', '-b', 'x', 'HEAD~1')
+  writeFileSync(join(other, 'CHANGE.md'), 'two\n')
+  o('add', '.'); o('commit', '--quiet', '-m', 'two')
+  const refused = await queued.apply(intent(await subjectOf(artifacts, other), merging, 'work:2222-bbbb')) as EffectOutcome & { rejected?: string }
+  assert.equal(refused.rejected, 'conflict')
+  assert.equal(refused.detail.branchDeleted, undefined)
+})
+
+test('merge: a remote that refuses the deletion leaves the effect applied, recording why; reconcile and a repeat delete once it allows', async () => {
+  fresh()
+  const artifacts = store()
+  const { work, bare, remoteRef } = setup()
+  refuseDeletion(bare)
+  const { publisher } = queue(artifacts)
+  const i = intent(await subjectOf(artifacts, work), merging)
+  const outcome = await publisher.apply(i)
+  assert.equal(outcome.state, 'applied', outcome.reason)
+  assert.equal(outcome.detail.branchDeleted, 'false')
+  assert.match(outcome.detail.branchDeleteReason!, /protected branch/)
+  assert.ok(remoteRef('system/1111-aaaa'))
+  rmSync(join(bare, 'hooks', 'pre-receive'))
+  const reconciled = await publisher.reconcile(i)
+  assert.equal(reconciled.state, 'applied')
+  assert.equal(reconciled.state === 'applied' && reconciled.detail.branchDeleted, 'true')
+  assert.throws(() => remoteRef('system/1111-aaaa'))
+  const again = await publisher.apply(i)
+  assert.equal(again.state, 'applied', again.reason)
+  assert.equal(again.detail.branchDeleted, 'true', 'already gone is success')
 })
 
 /** A pull request for the System branch that someone opened against another base. */

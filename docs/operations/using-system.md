@@ -25,10 +25,10 @@ poll with `SYSTEM_UPGRADE_POLL_MS`; unset, the defaults apply.
 ## The status of a project
 
 A repository lists its planned work in a `STATUS.md` at its root: one line per
-**Item**, `- [ ] <id> <title>` (`- [x]` when done), with an id such as `df-3`
-(see [GLOSSARY](../../GLOSSARY.md)). A line that does not parse is skipped and
+Item, `- [ ] <id> <title>` (`- [x]` when done), with an id such as `df-3`
+(Item and Blocked: [GLOSSARY](../../GLOSSARY.md)). A line that does not parse is skipped and
 reported by `system status` as a `note:`. `(after: id, id)` at the end of a
-line (with the colon) makes the Item **Blocked** until each named Item is done;
+line (with the colon) makes the Item Blocked until each named Item is done;
 `status` then reads `todo (blocked by <ids>)`, and a cycle or an ID with no line
 is a problem (`cycle: a -> b -> a`, `unknown id`). `(intent: <12 hex>)` beside it
 (either order, each once) names the `intent@1` Artifact the Item carries out, by
@@ -64,11 +64,8 @@ stderr). `task new --item` is refused when the Item has no line in
 
 `system mcp` lets an agent session such as Claude Code use System's agent
 operations as MCP tools. It runs without DSH and talks to the running Host, so
-start the Host first, then add the server:
-
-```
-claude mcp add system -- system mcp
-```
+start the Host first, then register the server once with the `claude mcp add`
+command in [Install and update](install-and-update.md#install-and-start).
 
 A session keeps `system mcp` for days: it follows the release `current` points to, so
 `system update` reaches it without a restart ([Host](../architecture/host.md)).

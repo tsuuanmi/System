@@ -27,24 +27,24 @@ import { z } from 'zod'
 
 export const CHECKS_FILE = '.system/checks.yaml'
 /** The criteria names, pinned in the `checks@1` Artifact, and what each verdict means; any other name refuses admission. */
-export const REPO_CHECKS = 'repo-checks-v1'
+const REPO_CHECKS = 'repo-checks-v1'
 /** `repo-checks-v1` with one difference: a run where no check ran (every one filtered out by `paths`) is `inconclusive`, not `pass`. */
 export const REPO_CHECKS_V2 = 'repo-checks-v2'
 /** `repo-checks-v2` for a release checked against the running one (`system update`): the event of its run is `release`. */
 export const REPO_CHECKS_RELEASE = 'repo-checks-release-v1'
 /** The events a check can name with `on:` (GitHub Actions' `on:`): a Work's checks step, the merge queue's re-check, a release check by `system update`. */
-export const CHECK_EVENTS = ['pull_request', 'merge_group', 'release'] as const
-export type CheckEvent = (typeof CHECK_EVENTS)[number]
+const CHECK_EVENTS = ['pull_request', 'merge_group', 'release'] as const
+type CheckEvent = (typeof CHECK_EVENTS)[number]
 /**
  * The small mode (ro-15, Satisfied): the Task's base is not judged by the repository's checks but by exactly the tests the verify step's input
  * `tests` names (one `<test file> "<test name>"` per line), run with `node --test-name-pattern <file>` (the file itself, not `--test`, which counts the file as a test that passed) after the pinned setup checks named in `SETUP_CHECKS`.
  * A listed test that matches nothing is a failure, so a wrong name never passes.
  */
-export const SATISFIED_TESTS = 'satisfied-tests-v1'
-export const SETUP_CHECKS = ['install', 'build']
-export const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, REPO_CHECKS_RELEASE, SATISFIED_TESTS] as const
+const SATISFIED_TESTS = 'satisfied-tests-v1'
+const SETUP_CHECKS = ['install', 'build']
+const CRITERIA_NAMES = [REPO_CHECKS, REPO_CHECKS_V2, REPO_CHECKS_RELEASE, SATISFIED_TESTS] as const
 /** The event a verify step's criteria name stands for when its request names none: `release` for the release criteria, otherwise `pull_request`. */
-export const eventOfCriteria = (name: string): CheckEvent => name === REPO_CHECKS_RELEASE ? 'release' : 'pull_request'
+const eventOfCriteria = (name: string): CheckEvent => name === REPO_CHECKS_RELEASE ? 'release' : 'pull_request'
 const TAIL = 16 * 1024
 
 export const CHECKS_KIND = { kind: 'checks', schemaVersion: 1 } as const
@@ -200,7 +200,7 @@ function anyWithHome(home: string): boolean {
 const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 
 /** The tests a `satisfied-tests-v1` run names: `<test file> "<test name>"` per line, files relative to the repository and inside it. */
-export function parseTests(text: string): { file: string; name: string }[] {
+function parseTests(text: string): { file: string; name: string }[] {
   const tests = text.split('\n').map((line) => line.trimEnd()).filter(Boolean).map((line) => {
     const match = /^(\S+) "(.+)"$/.exec(line)
     if (!match) throw new Error(`not a test line (<test file> "<test name>"): ${line}`)

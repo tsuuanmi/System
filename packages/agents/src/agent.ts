@@ -23,7 +23,7 @@ export const DRAIN_MS = 5000
 /** How often a running agent's stdout is read for its progress. */
 const PROGRESS_MS = 500
 
-export interface SpawnSpec {
+interface SpawnSpec {
   argv: string[]
   cwd: string
   env: Record<string, string | undefined>
@@ -46,7 +46,7 @@ export function recordingPid(spec: SpawnSpec): string[] {
     : spec.argv
 }
 
-export interface Spawned {
+interface Spawned {
   done: Promise<{ exitCode: number | null; signal: string | null }>
   stdout(): string
   stderr(): string
@@ -98,13 +98,6 @@ export interface AttemptBudget {
 
 /** Where the CLI's process ID is kept while an attempt runs, so a later Host can tell whether it is gone. */
 const pidFile = (attemptsDir: string, attemptId: string) => join(attemptsDir, `${attemptId.replace(/[^a-z0-9-]/gi, '_')}.pid`)
-
-/** What identifies a process: its ID, its process group and its start time (field 22 of `/proc/<pid>/stat`, in clock ticks since boot, which a reused ID does not repeat). */
-export interface Identity {
-  pid: number
-  pgid: number
-  start: string
-}
 
 /** The identity a pid file records: undefined when it has no pid; `pgid` and `start` are absent when the shell could not read /proc, so it cannot be verified. */
 function readIdentity(text: string): { pid: number; pgid?: number; start?: string } | undefined {

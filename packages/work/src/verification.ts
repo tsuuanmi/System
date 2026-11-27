@@ -35,7 +35,7 @@ export interface VerifierPin {
 }
 
 /** Why a verifier did not judge: its pin changed, it does not accept the subject's kind, or it threw. */
-export interface Refusal {
+interface Refusal {
   kind: 'pin' | 'accepts' | 'threw'
   /** `hold` only for a pin mismatch under `onPinMismatch: 'hold'`; else `error`. */
   verdict: 'error' | 'hold'
@@ -71,7 +71,7 @@ export async function askVerifier(store: Pick<VerificationStore, 'kindOf'>, { ve
 export const refusedResult = (refusal: Refusal, subject: string, criteria: string): VerifyResult => ({ verdict: 'error', reason: refusal.reason, subject, criteria, evidence: [] })
 
 /** A check that failed, and the second run of it on the same change (`retry.rerunUnchanged`). */
-export interface FirstRun {
+interface FirstRun {
   verdictId: string
   evidence?: string[]
 }

@@ -53,7 +53,7 @@ const be16 = (n: number) => Buffer.from([n >> 8, n & 0xff])
 const field = (data: Buffer) => Buffer.concat([be16(data.length), data])
 
 /** An `.Xauthority` file with one MIT-MAGIC-COOKIE-1 entry for the display, for this host and as a wildcard. */
-export function xauthority(number: string, cookie: Buffer): Buffer {
+function xauthority(number: string, cookie: Buffer): Buffer {
   const entry = (family: number, address: string) => Buffer.concat([be16(family), field(Buffer.from(address)), field(Buffer.from(number)), field(Buffer.from('MIT-MAGIC-COOKIE-1')), field(cookie)])
   return Buffer.concat([entry(256, hostname()), entry(0xffff, '')])
 }

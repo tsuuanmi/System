@@ -18,7 +18,7 @@ const DEFAULT_DOMAINS = ['chatgpt.com', 'openai.com']
 
 const domainOf = (domain: string, allowed: readonly string[]) => allowed.some((d) => domain.replace(/^\./, '') === d || domain.replace(/^\./, '').endsWith(`.${d}`))
 /** What `context.addCookies` takes; a cookie file never has all of Playwright's fields. */
-export type ImportedCookie = Omit<Cookie, 'sameSite'> & { sameSite?: Cookie['sameSite'] }
+type ImportedCookie = Omit<Cookie, 'sameSite'> & { sameSite?: Cookie['sameSite'] }
 const SAME_SITE: Record<string, Cookie['sameSite']> = { no_restriction: 'None', none: 'None', lax: 'Lax', strict: 'Strict' }
 
 /** A cookie file the operator exported from their own browser: a JSON list (browser extensions) or Netscape text. Only cookies of `domains` are kept. */
@@ -55,7 +55,7 @@ export function parseCookies(text: string, domains: readonly string[] = DEFAULT_
   return { cookies, skipped: all.length - cookies.length }
 }
 
-export interface LoginOptions {
+interface LoginOptions {
   /** The contents of a cookie file; read once by the caller and never stored. */
   cookies?: string
   /** The operator's own `DISPLAY`, for a manual sign-in in a window they can see; without it only cookies work (or the remote viewer). */

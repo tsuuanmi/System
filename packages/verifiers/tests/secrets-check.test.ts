@@ -55,7 +55,7 @@ test('a missing binary fails closed with the install message', () => {
     for (const env of [{ GITLEAKS_BIN: '/nonexistent/gitleaks' }, { SYSTEM_GITLEAKS_NONE: '1' }] as Record<string, string>[]) {
       const r = run(dir, { SYSTEM_CHECK_BASE: base, ...env })
       assert.notEqual(r.status, 0)
-      assert.match(r.stderr, /install gitleaks: .*runbook/)
+      assert.match(r.stderr, /install gitleaks: .*install-and-update\.md/)
     }
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

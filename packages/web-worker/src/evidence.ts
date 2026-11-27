@@ -7,7 +7,7 @@
  */
 import { renameSync, writeFileSync } from 'node:fs'
 
-export interface StageRecord {
+interface StageRecord {
   stage: string
   status: 'started' | 'ok' | 'failed'
   /** Milliseconds from the start of the attempt. */
@@ -17,7 +17,7 @@ export interface StageRecord {
   error?: string
 }
 
-export interface EvidenceData {
+interface EvidenceData {
   schema: 'chatgpt-web-evidence@1'
   attempt: string
   account: string

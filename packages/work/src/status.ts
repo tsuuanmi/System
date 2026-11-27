@@ -80,7 +80,7 @@ const changedNothing = (record: WorkRecord): boolean =>
 const artifactsOf = (record: WorkRecord): string[] => Object.values(record.state.results)
 
 /** The Artifact a Work finally published or had accepted, or undefined when its record does not say. */
-export const finalArtifactOf = (record: WorkRecord): string | undefined => {
+const finalArtifactOf = (record: WorkRecord): string | undefined => {
   const merged = mergedEntry(record)
   if (merged) {
     const intent = record.events.findLast((e) => e.type === 'effect-intended' && e.operationId === merged[0])

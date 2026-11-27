@@ -44,7 +44,7 @@ const rowsOfCode = ({ operations, tableOf }: Code): Map<string, Row> => rowsOf(t
  * it can use System from any repository without reading System's docs.
  */
 /** `work.submit`'s `workflow` as a path: one line ending in .yaml or .yml. The MCP server runs on the Host's machine, so it reads the file as the CLI does; anything else is contents. */
-export function withWorkflowFile(method: string, args: Record<string, unknown>): Record<string, unknown> {
+function withWorkflowFile(method: string, args: Record<string, unknown>): Record<string, unknown> {
   const path = typeof args.workflow === 'string' ? args.workflow.trim() : ''
   if (method !== 'work.submit' || !path || /[\r\n]/.test(path) || !/\.ya?ml$/i.test(path)) return args
   try {

@@ -17,7 +17,7 @@ import { bootstrapCheck, formatBootstrap } from './bootstrap.ts'
 /** The System checkout or release this file runs from (`packages/app/{src,lib}`). */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
-export interface BootstrapPlan extends DraftChecks {
+interface BootstrapPlan extends DraftChecks {
   text: string
 }
 

@@ -43,9 +43,9 @@ home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
 - id: verifiers
   config:
     checkEnv:
-      RUSTUP_HOME: /home/tan/.rustup
-      CARGO_HOME: /home/tan/.cargo
-      CARGO_TARGET_DIR: /home/tan/.cache/system-cargo-target
+      RUSTUP_HOME: ~/.rustup
+      CARGO_HOME: ~/.cargo
+      CARGO_TARGET_DIR: ~/.cache/system-cargo-target
 ```
 
 The names allowed, what a `check-run@1` records and `maxConcurrentChecks` (how many
@@ -277,8 +277,10 @@ tools/web-canary --report [--since <ISO>]     # read the records
 ```
 
 `--report` classifies the finished Works on the canary Task and prints the gate
-(`gate: holds` or `does not hold`, exit 3). Run it after each merge into
-`web-workers`; the timer does so every six hours.
+(`gate: holds` or `does not hold`, exit 3). Run it after a change to the web
+Runtime has merged into `dev`; the timer runs it every six hours whatever
+merged, and the `web` check (`.system/checks.yaml`) runs the Website Worker's
+tests on a pull request that touches its paths.
 
 Install the timer as a user unit like the night session's (below), from
 `packages/bundle/system-web-canary.{service,timer}`, with `@NODE@` also

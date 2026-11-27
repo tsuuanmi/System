@@ -17,9 +17,9 @@ export interface LabelledSet {
 }
 
 /** Classes a failure is Outside of the change; a `change` placed in one of them is an error the gate never allows. */
-export const OUTSIDE_LABELS: ReadonlySet<string> = new Set(['quota', 'restart', 'conflict', 'load', 'slow-host', 'attach', 'flaky', 'process'])
+const OUTSIDE_LABELS: ReadonlySet<string> = new Set(['quota', 'restart', 'conflict', 'load', 'slow-host', 'attach', 'flaky', 'process'])
 
-export interface Metrics {
+interface Metrics {
   total: number
   correct: number
   accuracy: number
@@ -75,7 +75,7 @@ function metrics(pairs: { gold: string; answer: string }[]): Metrics {
   return { total, correct, accuracy: total ? correct / total : 0, interval: wilson(correct, total), unknownRate: total ? unknown / total : 0, confusion, changeToOutside }
 }
 
-export interface EvalOptions {
+interface EvalOptions {
   set: LabelledSet
   /** The set's Artifact ID. */
   artifact: string

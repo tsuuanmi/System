@@ -12,4 +12,4 @@ Workflows that are not canonical (ss-6). They are not product Workflows.
   gate; replays are recorded in [RES-0019](../../docs/research/RES-0019-model-review-replay.md).
 
 The tests in [workflow.test.ts](../../packages/work/tests/workflow.test.ts)
-check that this file resolves.
+check that these files resolve.

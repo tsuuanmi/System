@@ -2,7 +2,7 @@
  * The reasons that mean an Account is out of quota or credits (sc-14): the one list. An attempt that
  * failed with such a reason is recorded as `limited`, not failed; the step is routed again.
  */
-export const QUOTA_LIMITED = /rate.?limit|too many requests|\b429\b|usage limit|out of credits|quota exceeded|hit your (?:[\w-]+ )?limit/i
+const QUOTA_LIMITED = /rate.?limit|too many requests|\b429\b|usage limit|out of credits|quota exceeded|hit your (?:[\w-]+ )?limit/i
 
 /** The zone's offset from UTC at an instant, in ms; undefined for a name Intl does not know. */
 function zoneOffset(zone: string, at: number): number | undefined {

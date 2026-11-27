@@ -97,6 +97,33 @@ Keep one canonical home per fact. Proposals and research are not normative.
 Retire only after folding live knowledge forward, rewriting links and recording
 the old full text commit and path in [the ledger](retired.md).
 """,
+        ".github/workflows/docs.yml": """name: Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate documentation
+        run: python3 tools/docs.py check
+      - name: Verify generated indexes
+        run: python3 tools/docs.py sync --check
+      - name: Check covered-path impact
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tools/docs.py impact "origin/${{ github.base_ref }}"
+""",
         "docs/governance/retired.md": """# Retired-document ledger
 
 Append-only ledger. No documents have been retired.
@@ -128,7 +155,6 @@ def run() -> int:
         "docs/governance/bootstrap.md": "docs/governance/bootstrap.md",
         "tools/docs.py": "tools/docs.py",
         "tools/bootstrap_docs.py": "tools/bootstrap_docs.py",
-        ".github/workflows/docs.yml": ".github/workflows/docs.yml",
     }
     data = {path: body.encode("utf-8")
             for path, body in scaffold(name).items()}

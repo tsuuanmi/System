@@ -6,8 +6,8 @@
 import type { UsageObserved, WorkEvent, WorkRecord } from './record.ts'
 
 export type Usage = Extract<WorkEvent, { type: 'observed' }>['usage']
-export type UsageOutcome = NonNullable<Usage['outcome']>
-export interface UsageReading { outcome: UsageOutcome; reason?: string; origin: NonNullable<Usage['origin']> }
+type UsageOutcome = NonNullable<Usage['outcome']>
+interface UsageReading { outcome: UsageOutcome; reason?: string; origin: NonNullable<Usage['origin']> }
 export type CostCoverage = Record<string, Record<UsageOutcome, number>>
 
 /** The usage record of an attempt from what its Worker reported, with the outcome, reason and origin System derives. */

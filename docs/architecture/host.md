@@ -3,6 +3,7 @@ type: architecture
 status: active
 reviewed: 2026-11-07
 decided-by: [ADR-0007, ADR-0012]
+covers: [packages/host/src/*.ts, packages/work/src/host.ts, packages/work/src/host-lock.ts, packages/work/src/lane.ts, packages/work/src/controller.ts, packages/work/src/slots.ts, packages/work/src/limits.ts, packages/work/src/outside.ts]
 ---
 
 # The Host
@@ -11,8 +12,11 @@ decided-by: [ADR-0007, ADR-0012]
 ([ADR-0007](../decisions/ADR-0007-one-long-lived-host.md) as amended, and
 PROP-0004, [retired](../governance/retired.md)): the Host in `packages/work` and `packages/host`, the thin CLI in
 `packages/app` (their READMEs say what each file holds). The old per-command mode, where every `system` command
-booted its own host and coordinated through files, is gone; what it did is in
-[Work ownership and recovery](work-ownership-and-recovery.md).
+booted its own host and coordinated through files, is gone: the per-Work lock, its takeover mutex and the write fence
+are removed with their tests (the defects behind them are in ADR-0007). The accepted Work and effect semantics stay in
+[ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md),
+[ADR-0003](../decisions/ADR-0003-artifact-ids-and-verification-contracts.md) and
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md).
 
 ## Why
 
@@ -267,8 +271,8 @@ attempt to do it.
   so client fixes of a new release reach it. The front's own code is read once,
   when the session starts.
 
-`host.status` reports the number of Works and the size of their records, for
-PLAN's growth budget.
+`host.status` reports the number of Works and the size of their records, as a trend to read
+([ADR-0015](../decisions/ADR-0015-changeability-is-measured-not-budgeted.md)), never a gate.
 
 ### Running it
 
@@ -286,6 +290,31 @@ sandboxing, a durable scheduler queue, live plugin reload and auto-resume of an 
 - Socket activation of the unit (a plain unit with `Restart=on-failure`, lingering and a ping timeout instead):
   when starting the Host by hand becomes a recurring cost.
 - Compaction of Work records: when the memory report in `host.status` (Work count, record size) exceeds its budget.
+
+## Crash and recovery invariants
+
+**Atomicity is scoped.** A serialized update of *one stored Work key* protects that key's transition; it does not
+atomically commit Artifact bytes, metadata or a GitHub effect. The **operation intent and remote-state reconciliation**
+contract covers effects. How the Host recovers is in [Start, stop and recovery](#start-stop-and-recovery); the
+guarantees and their tests are in the table below.
+
+1. **Work admission:** no committed Work without valid pinned spec, inputs and capability preflight.
+2. **Dispatch:** event and input IDs are persisted before Worker execution. A host crash leaves an interrupted
+   attempt, not an imaginary success.
+3. **Artifact result:** missing output metadata/bytes cannot be accepted; orphaned content may be inspected/collected
+   after reconciliation.
+4. **Restart:** completed steps and their Artifact IDs are reused. Unknown attempts get new attempt IDs; state is
+   reconstructed from recorded events, not regenerated model output.
+5. **GitHub effect:** write intent before the remote call. On timeout/crash, inspect the branch/PR using the operation
+   identity; no blind repeated publish.
+6. **Verifier:** bind the verdict to the exact subject/criteria; a replayed verdict does not retroactively attest a
+   changed Artifact.
+7. **Cancellation:** preserve observed partial outputs as unaccepted Artifacts; a cancel from a client never grants
+   another process the right to run a step.
+8. **Operator:** a Work status, actual effect outcome and reason remain explainable after recovery.
+
+The implementation is a **trusted, single-operator prototype**. These invariants address correctness and durability,
+**not** the deferred container/egress security program ([Brainstorm contract](brainstorm-composition.md)).
 
 ## Guarantees and the tests that hold them
 

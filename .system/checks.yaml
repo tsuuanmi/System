@@ -41,7 +41,7 @@ checks:
   - name: secrets
     on: [pull_request, release]
     # Item rb-5: gitleaks on what the change adds to its base (`$SYSTEM_CHECK_BASE..HEAD`, never the whole history), values redacted. No `paths`:
-    # a secret can be added anywhere. The binary is the operator's (runbook, "Install gitleaks"): a machine without it fails closed.
+    # a secret can be added anywhere. The binary is the operator's (docs/operations/install-and-update.md, "Install gitleaks"): a machine without it fails closed.
     run: sh tools/secrets-check.sh
     timeoutSeconds: 120
   - name: install

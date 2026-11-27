@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
-export const PENDING_INSTALL_CHECK = 'pending-install-check.json'
+const PENDING_INSTALL_CHECK = 'pending-install-check.json'
 
 /** Start the command when this Host runs a release of an install (`<install>/current`) whose record exists; returns whether it did. */
 export function completePendingInstallCheck(root: string, log: (line: string) => void, start: typeof spawn = spawn): boolean {

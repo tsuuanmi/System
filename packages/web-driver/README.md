@@ -194,9 +194,20 @@ legacy driver turn and the account option `procedures` are gone, see the
 - **Conformance.** [tests/conformance.ts](tests/conformance.ts) is the contract as a suite
   that runs on any map and fake page; [tests/conformance.test.ts](tests/conformance.test.ts)
   runs it on the hostile Site ([tests/fake-other.ts](tests/fake-other.ts),
-  [ui/fake-other.ui.yaml](ui/fake-other.ui.yaml)) and on ChatGPT's map and fake page. Outside the binding model today, found by the hostile Site and ChatGPT's
-  map, and recorded with the verdict in
-  [RES-0009](../../docs/research/RES-0009-web-driver-inspection.md#3-result-of-the-hostile-site).
+  [ui/fake-other.ui.yaml](ui/fake-other.ui.yaml)) and on ChatGPT's map and fake page.
+- **Verdict of the hostile Site** (WW2-ii, 2026-11-08; the inspection behind it is the retired
+  RES-0009, in the [ledger](../../docs/governance/retired.md)): the bindings sufficed and no ordered
+  `steps` list was added. Every action of that Site is one engine action and every difference is
+  an element, a state or an answer field in its map; no generic code changed for it. No flow
+  needed a menu followed by an option or a URL navigation, so a fifth map kind stays open only
+  for a real Site that has one.
+- **Outside the binding model today** (found by the hostile Site and ChatGPT's map, listed, not
+  closed): the code label *before* a `pre` (one label element per block, paired by order; only
+  the live widget's header bar is bound); the action ids and the `auth.*` and `site.error-page`
+  states are fixed names checked by `bindingProblems`, not schema fields; the model picker and
+  read-back (a `generic` attempt records no model), a stall clock for a wait (only the deadline),
+  the Copy-based Markdown, answer-level `errors` rules (the Procedures use the `answer.error`
+  state) and the reload-once on the site's error page (the attempt does it around `checkAuth`).
 
 ## Used by the Runtime, not in System 1
 

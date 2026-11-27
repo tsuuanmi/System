@@ -23,7 +23,7 @@ export interface FailureClassifier {
   classify(record: WorkRecord): Promise<void>
 }
 
-export interface WorkSummary {
+interface WorkSummary {
   id: string
   status: WorkRecord['state']['status']
   durationMs: number

@@ -4,7 +4,8 @@ type: decision
 status: accepted
 date: 2026-11-06
 summary: System's own changes integrate into a `dev` branch that System may update and merge into once the required checks pass; only the operator merges `dev` into `main`.
-related: [ADR-0004, ADR-0007]
+supersedes: [ADR-0004]
+related: [ADR-0007]
 ---
 
 # A `dev` integration branch System may merge into
@@ -57,6 +58,11 @@ While it runs, `dev` takes no changes and the Host runs `web-workers`.
 - **Only the operator merges `web-workers` into `dev`**, when milestone WW's
   gate holds. The base for System's Work goes back to `dev` with that merge.
 
+**Note (2026-11-27):** the branch ended with milestone WW (pull request #84,
+2026-11-09) and is no longer a merge target: the bundle's `mergeInto` is
+`[dev]` again, and System's base is `dev`. The amendment above is the history
+of that period.
+
 ## Amendment (2026-11-07): the merge queue
 
 PROP-0007 decision 6, chosen by the operator over GitHub's merge endpoint.
@@ -92,4 +98,6 @@ was checked against a tip that had moved. Decision 2 now reads:
   found there are fixed in the checks, not by reviewing each PR.
 - The `git.publish` provider needs a merge step limited to an allowlist of
   target branches (`dev`). Until it exists, System's PRs into `dev` are
-  opened and merged by the operator's agent after review.
+  opened and merged by the operator's agent after review. *(Amended
+  2026-11-27: the merge step shipped, as the merge queue above; System now
+  merges into `dev` itself.)*

@@ -160,7 +160,7 @@ export interface UiAnswer {
   /** Literal strings the site leaks into its visible text: removed where they sit at the very start or end of an output. */
   leakedTokens: string[]
 }
-export const DEFAULT_ANSWER: UiAnswer = { leakedTokens: [] }
+const DEFAULT_ANSWER: UiAnswer = { leakedTokens: [] }
 
 export interface UiMap {
   schema: 'ui-map@1.0' | 'ui-map@1.1' | 'ui-map@1.2' | 'ui-map@1.3' | 'ui-map@1.4' | 'ui-map@1.5' | 'ui-map@1.6' | 'ui-map@1.7'

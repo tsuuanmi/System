@@ -14,7 +14,7 @@ const systemClock: Clock = { now: Date.now, setTimer: (fn, ms) => setTimeout(fn,
 export const QUOTA_RETRY_MS = 5 * 60_000
 const DAY_MS = 86_400_000
 
-export interface QuotaWait { workId: string; stepId: string; worker: string; since: number; until?: string }
+interface QuotaWait { workId: string; stepId: string; worker: string; since: number; until?: string }
 type Step = { workId: string; stepId: string; key: string }
 
 export class AccountAdmission {

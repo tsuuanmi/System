@@ -32,7 +32,7 @@ function collect(value: string, previous: string[]): string[] {
 /** What a human types to confirm: the first eight characters of an ID or digest, without its prefix. */
 const shortCode = (id: string): string => id.replace(/^\w+:/, '').slice(0, 8)
 
-export interface CliIo {
+interface CliIo {
   out(text: string): void
   /** Warnings and notes for the operator, on stderr. */
   err(text: string): void
@@ -46,14 +46,14 @@ export interface CliIo {
   confirmHuman(prompt: string, expected: string): Promise<string>
 }
 
-export interface LoginView {
+interface LoginView {
   signedIn: boolean
   detail: string
   imported?: number
   skipped?: number
 }
 
-export interface RecheckView {
+interface RecheckView {
   ready: boolean
   state: string
   detail: string
@@ -66,7 +66,7 @@ function identityOf(a: WorkersView['accounts'][number]): string {
 }
 
 /** `room: 3 of 8 Accounts free (slot and Headroom under Ceiling); Ready Items: System 5`; an Account with unreadable quota is counted when it has a slot, and listed apart. */
-export function roomLine(room: NonNullable<WorkersView['room']>): string {
+function roomLine(room: NonNullable<WorkersView['room']>): string {
   const unknown = room.unknown.length ? `; quota unknown: ${room.unknown.join(', ')}` : ''
   const ready = room.ready.map((r) => `${basename(r.repository)} ${r.count ?? 'unknown'}`).join(', ')
   return `room: ${room.free} of ${room.accounts} Accounts free (slot and Headroom under Ceiling)${unknown}${ready ? `; Ready Items: ${ready}` : ''}`
@@ -146,7 +146,7 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
 
 /** Build the thin client's program: every other command, over the Host's socket. */
 /** The UTC instant a date or timestamp without a zone stands for (the Host compares ISO UTC strings), or undefined when it names a zone. */
-export function zonelessUtc(text: string): string | undefined {
+function zonelessUtc(text: string): string | undefined {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(text)
   if (!date && !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(text)) return undefined
   const at = new Date(date ? text : `${text.replace(' ', 'T')}Z`)
@@ -204,9 +204,10 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       const verb = decision === 'approved' ? 'approve' : 'deny'
       // One Work: its short ID. Several: the verb and their number, typed after reading the list above.
       const expected = workIds.length === 1 ? shortCode(workIds[0]!) : `${verb} ${workIds.length}`
-      const what = workIds.length === 1 ? `for ${records[0]!.state.awaiting ?? 'it'}` : `for each of these ${workIds.length} Works`
-      // On a line of its own, so a pasted command is not taken for the answer.
-      const operatorId = await io.confirmHuman(`Nothing is decided unless you type exactly ${expected} to record "${decision}" ${what}\n> `, expected)
+      const what = workIds.length === 1 ? `${verb} ${records[0]!.state.awaiting ?? 'it'} of ${workIds[0]}` : `${verb} these ${workIds.length} Works`
+      const typeWhat = workIds.length === 1 ? "the Work's short ID" : 'the verb and their number'
+      // The token is alone and last on its line, so the decision word is never read as the answer.
+      const operatorId = await io.confirmHuman(`To ${what}, type ${typeWhat} and press Enter, exactly: ${expected}\n> `, expected)
       let code = 0
       for (const workId of workIds) {
         try {
@@ -497,7 +498,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
               io.out(`${JSON.stringify({ id: workId, outcome: 'unreachable', exitCode: EXIT_HOST_UNREACHABLE, reason: waited.unreachable })}\n`)
             }
           }
-          io.err(`system: the System Host did not answer for ${Math.round((timeoutMs === undefined ? RECONNECT_MS : Math.min(timeoutMs, RECONNECT_MS)) / 60_000 * 10) / 10} minutes; the Works were not read and may still be running (exit ${EXIT_HOST_UNREACHABLE}); see docs/operations/runbook.md, "The Host is not answering"\n`)
+          io.err(`system: the System Host did not answer for ${Math.round((timeoutMs === undefined ? RECONNECT_MS : Math.min(timeoutMs, RECONNECT_MS)) / 60_000 * 10) / 10} minutes; the Works were not read and may still be running (exit ${EXIT_HOST_UNREACHABLE}); see docs/operations/recovery.md, "The Host is not answering"\n`)
           return EXIT_HOST_UNREACHABLE
         }
         for (const { id, state } of waited.records) {

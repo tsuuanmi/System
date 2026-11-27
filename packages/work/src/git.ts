@@ -47,7 +47,7 @@ const REMOTE_ENV = ['GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_SSH_VARIANT', 'SSH_AUTH_S
 const remoteEnv = (): Record<string, string> => Object.fromEntries(REMOTE_ENV.flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]!]])))
 
 /** The longest a fetch of `origin <branch>` may take before the caller goes on without it. */
-export const FETCH_MS = 20_000
+const FETCH_MS = 20_000
 
 /**
  * Fetch `origin <branch>` into `refs/remotes/origin/<branch>` (explicitly, so a repository whose origin refspec

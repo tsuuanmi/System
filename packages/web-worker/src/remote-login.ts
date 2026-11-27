@@ -42,9 +42,9 @@ import { chromeTmpdir, launch, type WebConfig } from './chatgpt.ts'
 import { findVnc, startXvfb, VNC_MISSING, type Display } from './display.ts'
 
 /** How long a session lives, unless it is saved or cancelled first. */
-export const REMOTE_TTL_MS = 15 * 60_000
+const REMOTE_TTL_MS = 15 * 60_000
 
-export interface RemoteOptions {
+interface RemoteOptions {
   ttlMs?: number
   /** For the printed `ssh` line; default the Host's user and host name. */
   user?: string

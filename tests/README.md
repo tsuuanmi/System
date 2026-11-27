@@ -1,92 +1,43 @@
 # Tests
 
-Offline tests of the booted `system` profile. Each creates a throwaway
-`DSH_HOME`, runs `bin/system init`, starts `bin/system host` for it
-([test-support](../test-support/README.md) `start()`; the Host reads its
+The booted-profile smoke tests, run by `corepack pnpm smoke`. Each test file
+creates a throwaway `DSH_HOME`, runs `bin/system init`, starts `bin/system host`
+for it ([test-support](../test-support/README.md) `start()`; the Host reads its
 profile and credentials when it starts, so a test restarts it after changing
 them), and drives the real CLI, which is a thin client of that Host. They need
-`corepack pnpm install` and `corepack pnpm build` first, and no model or
-GitHub credentials. Run with `corepack pnpm smoke`: the test files run in
-parallel (`--test-concurrency=16`), which is safe because each file owns its
+no model or GitHub credentials. The unit tests of each package are in
+`packages/*/tests` and run by `corepack pnpm test`; a test belongs here when it
+needs the booted profile and `bin/system`.
+
+Run them after `corepack pnpm install` and `corepack pnpm build`. The files run
+in parallel (`--test-concurrency=16`), which is safe because each file owns its
 home (so its Host lock and socket), its repositories and its ports, and shares
 nothing else.
 
+## Which file runs where
+
+Every `tests/*.test.ts` is run by `smoke`, except the ones the `smoke` script in
+[package.json](../package.json) filters out; a new file is smoke unless that
+filter names it. The check that runs each of the others is named in
+[`.system/checks.yaml`](../.system/checks.yaml):
+
+- `chatgpt-web.test.ts` needs a headed Chrome: `corepack pnpm test:web`, the `web` check.
+- `upgrade-rehearsal.test.ts` builds two releases: the `upgrade` check.
+- `install-guide.test.ts`: the `install-guide` check.
+
+## Environment switches
+
+- `SYSTEM_REAL_AGENTS=1` enables `real-agents.test.ts`: the operator's real Claude Code and Codex accounts.
+- `SYSTEM_REAL_WEB=1` enables `real-web.test.ts`: the operator's signed-in `web/chatgpt/default` profile.
+- `SYSTEM_SKIP_HEADED=1` skips the headed-Chrome tests, for a host with no Xvfb.
+
+Without its switch a credential-gated file skips itself, so `smoke` stays offline.
+
+## Rules
+
 A flaky test is never skipped, slept or retried until it passes: find the root cause, or delete it with the reason and an Escaped defect and keep a deterministic test of what it guarded ([AGENTS.md](../AGENTS.md)).
 
-- [smoke.test.ts](smoke.test.ts) — boot, composition, row toggles, Artifacts.
-- [bootstrap-check.test.ts](bootstrap-check.test.ts) — bs-2: `system bootstrap check`
-  through `bin/system` against a temporary git repository (no Host).
-- [bootstrap-plan-cmd.test.ts](bootstrap-plan-cmd.test.ts) — bs-3: `system bootstrap plan`
-  through `bin/system`; it prints the plan and writes nothing.
-- [night-session.test.ts](night-session.test.ts) — ss-8: the scheduled session's
-  sequence (claim, task_new, work_submit, `work wait`, work_report)
-  through `system mcp` against a real Host with fake Workers.
-- [mcp-update.test.ts](mcp-update.test.ts) — one running `system mcp` calls
-  tools across two atomic install-link switches and real Host upgrades.
-- [pending-install-check.test.ts](pending-install-check.test.ts) — upd-1: the real `update()`
-  killed after it switched `current`; the Host that starts on the new release runs the pending
-  install check itself, and a failed one switches `current` back.
-- [upgrade-rehearsal.test.ts](upgrade-rehearsal.test.ts) — rb-1 (run by the `upgrade` check, not smoke: it builds two releases):
-  [tools/upgrade-rehearsal.mjs](../tools/upgrade-rehearsal.mjs) builds the last release (`origin/main`) in temporary homes, starts its Host
-  and runs that install's `system update` to this commit, against a local `origin`; it passes only when the update keeps the new release
-  with its afterInstall Verdict passed. A `checks.yaml` key the last release refuses (Escaped defect 7) fails it, naming the refusal.
-- [host-process.test.ts](host-process.test.ts) — H4a: `bin/system host` as a
-  child process: `host.hello` and `host.status` on `host.sock`, a second Host
-  refused, the Work commands reaching the running Host, SIGTERM and SIGINT
-  stop it with exit 0 and free the home, a killed Host's stale socket is
-  replaced, leftover control files of the old mode ignored and left in place, and
-  what `init` says about the service.
-  `system host --supervise` serves and stops with exit 0 and no new Host.
-- [cli-host.test.ts](cli-host.test.ts) — H4b-1: the thin client: no Host is one
-  line and exit 1, a Host that does not answer is named, an error is one line
-  (a stack only with `SYSTEM_DEBUG=1`), Ctrl-C detaches while the Work finishes
-  in the Host, `--cancel-on-interrupt`, a timeout retried once with the same
-  `commandId` (one Work), and `doctor` reporting the Host.
-- [work.test.ts](work.test.ts) — M2 gate: both Workflow files and a direct
-  Task through one controller with the `fakes` row on, invalid Workflows,
-  the pinned spec across a file edit and a SIGKILLed host, SQLite durability.
-- [agents.test.ts](agents.test.ts) — M3 on the real profile with the `agents`
-  row pointed at a fake CLI: worktree capture, cross-process cancel, Codex
-  takeover, `retry` refusals, and the `quota:` line `system workers` prints per account
-  (a readable one from a fake Codex CLI, unreadable where the CLI version is unverified).
-- [real-agents.test.ts](real-agents.test.ts) — credential-gated
-  (`SYSTEM_REAL_AGENTS=1`): the operator's real Claude Code and Codex accounts,
-  through the operator's Host when one answers, or one the test starts.
-- [classifier.test.ts](classifier.test.ts) — cls-1: the profile with the optional `classifier` row on and a fake economy Account: an unknown failure is classified and `work report` shows it; off, reports are as before.
-- [web-worker-off.test.ts](web-worker-off.test.ts) — WW2a: the profile with the
-  `web-worker` row off (the bundle's default) runs a Software Engineering Work and a
-  Brainstorm on the fake Runtimes, `system workers` reports a `web` account
-  unavailable with "the web-worker row is disabled", and `workers login` says the same.
-- [chatgpt-web.test.ts](chatgpt-web.test.ts) — the `web` account (the
-  `web-worker` row turned on by a profile patch) on
-  the booted profile against the local fake site ([web-driver](../packages/web-driver/tests/fake-chatgpt.ts)): `workers login --cookies`
-  (no value printed), a sign-in wall reported, a Work filling its slot and
-  producing a conversation. A headed Chrome that cannot start fails it (`SYSTEM_SKIP_HEADED=1` skips).
-- [real-web.test.ts](real-web.test.ts) — credential-gated (`SYSTEM_REAL_WEB=1`):
-  one Research Work on the operator's signed-in `web/chatgpt/default` profile.
-- [web-canary.test.ts](web-canary.test.ts) — WW4 (run by smoke; its report tests are in packages/web-worker/tests/canary-report.unit.test.ts, unit): the canary Task has the same
-  Artifact ID every time, and `work submit --worker` refuses an unregistered Worker (the Host tests; the report and timer-unit tests moved to the unit file above).
-- [brainstorm.test.ts](brainstorm.test.ts) — Brainstorm on the bundle's own
-  accounts (CLI pointed at the fake): two proposals by different providers
-  from the brief alone, a synthesis of both exact proposal Artifacts, refusal
-  without Codex, a stop after the first proposal reusing it, a host killed
-  mid-step, then the restarted Host dispatches the lost step again by itself,
-  once, with no `work run` (no event lost), a pinned spec, and
-  (H5) the two proposals overlapping in time, compared by `dispatched` and
-  `observed` timestamps.
-- [review-evalset.test.ts](review-evalset.test.ts) — evalset-1: the review eval set in [fixtures/review-evalset](fixtures/review-evalset/README.md) loads, and each case has a defect ID, a diff and a one-sentence answer key.
-- [concurrency.test.ts](concurrency.test.ts) — parallel `system` commands
-  (Artifact writes through the Host, `doctor` boots beside it) on one store all
-  succeed (no "database is locked"), also when the boots all find the store
-  missing and create it together.
-- [publish.test.ts](publish.test.ts), [publish-crash.test.ts](publish-crash.test.ts), [publish-approval.test.ts](publish-approval.test.ts) — M5 gate, three files so they run in parallel, sharing [publish.ts](../test-support/publish.ts): the whole Software
-  Engineering file publishes one draft pull request to a bare remote and the
-  fake GitHub in [fake-github.mjs](fake-github.mjs); a Host killed after the
-  pull request was created or during the push is reconciled at its next start
-  without a duplicate; approval needs a human at a pseudo-terminal (`script`).
-- [verify.test.ts](verify.test.ts) — M4 gate: both Workflow files through one
-  controller with fake-CLI Workers and the real verifiers (git checks, citation
-  fetches from a local site run in its own process).
+A test file's header says which Item or gate it guards; that, not this README, is the inventory. [fake-github.mjs](fake-github.mjs) is the fake GitHub that the publish tests start, and [fixtures](fixtures) holds the data tests read, such as the [review eval set](fixtures/review-evalset/README.md).
 
 ## Regressions
 

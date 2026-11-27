@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 import { refuseBrowser } from './no-browser.ts'
 import { Browser, computeExecutablePath, install as puppeteerInstall } from '@puppeteer/browsers'
 
-export interface ChromeLock {
+interface ChromeLock {
   browser: 'chrome'
   buildId: string
 }
@@ -44,19 +44,19 @@ export function chromeMajor(path: string): number | undefined {
 }
 
 /** `<DSH_HOME>/system/browsers`, for a caller that has no Cordis context. */
-export const defaultBrowsersDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', 'browsers')
+const defaultBrowsersDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', 'browsers')
 
 /** The pinned managed Chrome's path, whether or not it is installed yet. */
 export function managedChromePath(dir: string = defaultBrowsersDir(), lock: ChromeLock = CHROME_LOCK): string {
   return computeExecutablePath({ browser: Browser.CHROME, buildId: lock.buildId, cacheDir: dir })
 }
 
-export interface ChromeChoice {
+interface ChromeChoice {
   path: string
   source: 'configured' | 'env' | 'system' | 'managed'
 }
 
-export interface DiscoverOptions {
+interface DiscoverOptions {
   standard?: readonly string[]
   managedDir?: string
   /** Only for tests: how old a Chrome may be. */

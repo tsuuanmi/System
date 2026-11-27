@@ -23,7 +23,7 @@ const TAIL = 16 * 1024
 const tail = (text: string) => (text.length > TAIL ? text.slice(-TAIL) : text)
 
 /** The `bin` of the install's `current` link (`SYSTEM_INSTALL`, default `~/.system`, as `system update` finds it). */
-export const installedBin = (): string => join(process.env.SYSTEM_INSTALL || join(homedir(), '.system'), 'current', 'bin')
+const installedBin = (): string => join(process.env.SYSTEM_INSTALL || join(homedir(), '.system'), 'current', 'bin')
 
 export function installCheck(artifacts: Artifacts, spawner: Spawner, bin: string = installedBin(), now: () => number = Date.now): VerifierPort {
   const producer = { type: 'verifier' as const, ref: 'release.install-check' }
