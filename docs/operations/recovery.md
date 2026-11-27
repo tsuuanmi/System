@@ -3,6 +3,7 @@ type: operations
 status: active
 reviewed: 2026-11-26
 summary: Backing up, reading logs, and what to do when the Host or a check fails.
+covers: [packages/app/src/cli.ts, packages/app/src/io.ts]
 related: [operations/runbook, architecture/host]
 ---
 
@@ -57,13 +58,12 @@ system: the System Host is not running for <home>: systemctl --user start system
 
 ## The Host is not answering
 
-```
-system: the System Host for <home> is not answering (...): see docs/operations/runbook.md, "The Host is not answering"
-```
+The message `system: the System Host for <home> is not answering (...)` points to a
+section of the runbook; it is this one, on this page.
 
 The socket accepts connections but a call got no answer in 10 seconds. A call
 that changes something (every write: `submit`, `run`, `retry`, `cancel`,
-`approve`, `task new`, `intent new`, `item claim`, ...) carries a fresh
+`approve`, `task new`, `intent new`, `claim`, ...) carries a fresh
 `commandId` and is sent once more with the same one, so the Host does it once:
 look at `system work list` before sending it again yourself.
 
@@ -88,8 +88,8 @@ break: a pass on the change's re-run gives `pass`, a pass on the base's gives
 `fail`. Only when they still fail on both is the `checks` verdict `inconclusive`
 (`<check>: the base fails it too`, evidence of all the runs) and the Work
 **held** before `publish`. `system work show <id>` shows the base runs;
-`system work approve <id> --reason ...` lets it publish and merge, `system work
-deny` fails it.
+`system approve <work> --reason ...` lets it publish and merge, `system deny
+<work> --reason ...` fails it.
 
 ## A check that fails again on the same change
 
@@ -98,8 +98,8 @@ check runs once more on that same change (`retry.rerunUnchanged`, sc-9;
 [the vocabulary](../architecture/workflow-composition.md#the-implemented-vocabulary-systemworkflowv1)).
 If the second run passes, the Work goes on and `system work show <id>` notes
 the check as flaky. If it fails again, the verdict is `inconclusive` with both
-runs as evidence and the Work is **held**: `system work approve <id>` lets it
-go on, `system work deny` fails it, and `system work retry <id> --step <verify
+runs as evidence and the Work is **held**: `system approve <work>` lets it
+go on, `system deny <work> --reason ...` fails it, and `system work retry <id> --step <verify
 step>` asks the check again. This re-run (sc-9) is separate from the verifier's own one re-run of an
 inconclusive verdict (sc-13, [above](#a-check-the-base-fails-too)).
 

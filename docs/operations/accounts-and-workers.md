@@ -43,9 +43,9 @@ home, such as DNA (Rust, `rust-toolchain.toml`), needs it:
 - id: verifiers
   config:
     checkEnv:
-      RUSTUP_HOME: /home/tan/.rustup
-      CARGO_HOME: /home/tan/.cargo
-      CARGO_TARGET_DIR: /home/tan/.cache/system-cargo-target
+      RUSTUP_HOME: ~/.rustup
+      CARGO_HOME: ~/.cargo
+      CARGO_TARGET_DIR: ~/.cache/system-cargo-target
 ```
 
 The names allowed, what a `check-run@1` records and `maxConcurrentChecks` (how many
