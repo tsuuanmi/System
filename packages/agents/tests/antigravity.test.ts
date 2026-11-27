@@ -296,3 +296,32 @@ test('antigravity blocked result fails the attempt with the Worker own reason (n
   assert.equal(/no change|wrote no output/i.test(result.reason!), false)
   assert.deepEqual(result.finalResult, { status: 'blocked', reason: 'missing context artifact ID' })
 })
+
+test('a quota read waits while an attempt of the same agyHome runs, and not for another home', async () => {
+  const { holdAgyHome, whenAgyHomeFree } = await import('../src/adapters/antigravity.ts')
+  const release = holdAgyHome('/tmp/agy-home-x')
+  let read = false
+  const waiting = whenAgyHomeFree('/tmp/agy-home-x', async () => { read = true })
+  await whenAgyHomeFree('/tmp/agy-home-y', async () => 1)
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(read, false)
+  release()
+  await waiting
+  assert.equal(read, true)
+})
+
+test('an attempt of the antigravity adapter holds its agyHome from stage to finish', async () => {
+  const { antigravity, whenAgyHomeFree } = await import('../src/adapters/antigravity.ts')
+  const home = join(root, 'held-home')
+  mkdirSync(home, { recursive: true })
+  const pre = await antigravity.preflight({ ref: 'antigravity/a1', agyHome: home } as never)
+  assert.ok('stage' in pre)
+  const staged = pre.stage(join(root, 'held-dir'))
+  let read = false
+  const waiting = whenAgyHomeFree(home, async () => { read = true })
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(read, false)
+  staged.finish()
+  await waiting
+  assert.equal(read, true)
+})

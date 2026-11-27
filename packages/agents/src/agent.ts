@@ -82,6 +82,8 @@ export interface Account {
   sandbox?: SandboxOption
   /** How many attempts of this account run at once (the Host's slots); default 1. */
   maxConcurrentAttempts?: number
+  /** Accounts with the same key (the same `agyHome`: one sign-in) share one slot. */
+  sharedSlot?: string
   /** From this share of a quota window used the account is not chosen (the row's `quotaCeilingPercent`; routing's default is 80). */
   quotaCeilingPercent?: number
   /** The account's cached quota reading; routing reads it and records it with the choice. */
@@ -142,6 +144,7 @@ export function agentWorker(account: Account, artifacts: Artifacts, spawner: Spa
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
+    sharedSlot: account.sharedSlot,
     quotaCeilingPercent: account.quotaCeilingPercent,
     quota: account.quota,
     run: (request) => attempt(account, artifacts, spawner, attemptsDir, request, graceMs, drainMs, host),
@@ -195,50 +198,54 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
       const { ws } = ctx
       const text = prompt(ws, request)
       const staged = pre.stage(ws.root)
-      const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env, ...(account.sandbox ? { sandbox: account.sandbox } : {}) })
-      executor.scope = invocation.scope
-      // The layer is part of the spawn: when it cannot start the attempt fails Outside and the Runtime never runs unwrapped (ADR-0016 decision 3).
-      const layer = account.sandbox ? sandboxed(invocation.argv, ws, { state: dirname(attemptsDir), command: account.command, env: invocation.env }, host) : undefined
-      if (layer && 'failed' in layer) return { failure: layer.failed, cause: 'load' }
-      // Remove every host variable the agent was not given (SSH agent, tokens, ...).
-      const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
-      Object.assign(env, invocation.env)
-      // Over budget is stopped through the lifecycle's abort, and fails with what was spent.
-      const budget = account.attemptBudget
-      const budgetTimer = budget?.minutes === undefined ? undefined : setTimeout(() => ctx.stop(`over budget: ${budget.minutes} minutes`), budget.minutes * 60_000)
-      const spawned = spawner.spawn({ argv: layer?.argv ?? invocation.argv, cwd: ws.work, env, signal: ctx.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
-      stdout = spawned.stdout
-      // Output that grew is activity: what it says so far is the attempt's progress.
-      const read = adapter.progress()
-      let seen = 0
-      const watch = setInterval(() => {
+      try {
+        const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env, ...(account.sandbox ? { sandbox: account.sandbox } : {}) })
+        executor.scope = invocation.scope
+        // The layer is part of the spawn: when it cannot start the attempt fails Outside and the Runtime never runs unwrapped (ADR-0016 decision 3).
+        const layer = account.sandbox ? sandboxed(invocation.argv, ws, { state: dirname(attemptsDir), command: account.command, env: invocation.env }, host) : undefined
+        if (layer && 'failed' in layer) return { failure: layer.failed, cause: 'load' }
+        // Remove every host variable the agent was not given (SSH agent, tokens, ...).
+        const env: Record<string, string | undefined> = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]))
+        Object.assign(env, invocation.env)
+        // Over budget is stopped through the lifecycle's abort, and fails with what was spent.
+        const budget = account.attemptBudget
+        const budgetTimer = budget?.minutes === undefined ? undefined : setTimeout(() => ctx.stop(`over budget: ${budget.minutes} minutes`), budget.minutes * 60_000)
+        const spawned = spawner.spawn({ argv: layer?.argv ?? invocation.argv, cwd: ws.work, env, signal: ctx.signal, graceMs, drainMs, pidFile: pidFile(attemptsDir, request.attemptId) })
+        stdout = spawned.stdout
+        // Output that grew is activity: what it says so far is the attempt's progress.
+        const read = adapter.progress()
+        let seen = 0
+        const watch = setInterval(() => {
+          const out = spawned.stdout()
+          if (out.length === seen) return
+          seen = out.length
+          const progress = read(out)
+          request.progress?.(progress)
+          if (budget?.inputTokens !== undefined && (progress.inputTokens ?? 0) > budget.inputTokens) ctx.stop(`over budget: input tokens (${progress.inputTokens} of ${budget.inputTokens})`)
+        }, PROGRESS_MS)
+        watch.unref()
+        const done = await spawned.done.finally(() => {
+          clearInterval(watch)
+          clearTimeout(budgetTimer)
+          rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
+        })
         const out = spawned.stdout()
-        if (out.length === seen) return
-        seen = out.length
-        const progress = read(out)
-        request.progress?.(progress)
-        if (budget?.inputTokens !== undefined && (progress.inputTokens ?? 0) > budget.inputTokens) ctx.stop(`over budget: input tokens (${progress.inputTokens} of ${budget.inputTokens})`)
-      }, PROGRESS_MS)
-      watch.unref()
-      const done = await spawned.done.finally(() => {
-        clearInterval(watch)
-        clearTimeout(budgetTimer)
-        rmSync(pidFile(attemptsDir, request.attemptId), { force: true })
-      })
-      const out = spawned.stdout()
-      // Even a rejected or stopped attempt tells the truth about quota.
-      const events = adapter.rateLimitEvents?.(out)
-      if (events?.length && account.onRateLimit) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
-      const parsed = adapter.parse(out, { ws })
-      staged.finish()
-      if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
-      const summary = adapter.summarize(out)
-      const finalResult = parsed.finalResult ? { finalResult: parsed.finalResult } : {}
-      if (done.exitCode !== 0 || !parsed.ok) {
-        const why = done.signal ? `signal ${done.signal}` : `exit ${done.exitCode}`
-        return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...finalResult, summary, usage: parsed.usage, ...(parsed.usageGap ? { usageGap: parsed.usageGap } : {}) }
+        // Even a rejected or stopped attempt tells the truth about quota.
+        const events = adapter.rateLimitEvents?.(out)
+        if (events?.length && account.onRateLimit) try { account.onRateLimit(events) } catch { /* a bad hook cannot fail the attempt */ }
+        const parsed = adapter.parse(out, { ws })
+        staged.finish()
+        if (parsed.servedModels?.length) executor.servedModels = parsed.servedModels
+        const summary = adapter.summarize(out)
+        const finalResult = parsed.finalResult ? { finalResult: parsed.finalResult } : {}
+        if (done.exitCode !== 0 || !parsed.ok) {
+          const why = done.signal ? `signal ${done.signal}` : `exit ${done.exitCode}`
+          return { failure: `${account.ref} ${why}: ${(parsed.message || spawned.stderr()).slice(0, 500)}`, ...finalResult, summary, usage: parsed.usage, ...(parsed.usageGap ? { usageGap: parsed.usageGap } : {}) }
+        }
+        return { ...(parsed.message ? { message: parsed.message } : {}), ...finalResult, summary, usage: parsed.usage, ...(parsed.usageGap ? { usageGap: parsed.usageGap } : {}) }
+      } finally {
+        staged.finish()
       }
-      return { ...(parsed.message ? { message: parsed.message } : {}), ...finalResult, summary, usage: parsed.usage, ...(parsed.usageGap ? { usageGap: parsed.usageGap } : {}) }
     },
   })
 }

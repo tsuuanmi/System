@@ -18,6 +18,29 @@ const TOKEN = 'antigravity-oauth-token'
  */
 const SETTINGS = `${JSON.stringify({ permissions: { allow: ['command(*)'], deny: ['command(git push)', 'command(gh)'] } }, null, 2)}\n`
 
+/** Homes an attempt or a quota read is using: two refreshes of one OAuth token logged both sign-ins out (agyconc-1), so the Host's shared slot keeps attempts apart and these keep the quota read apart from them. */
+const busyHomes = new Map<string, Promise<void>>()
+
+/** Mark `home` in use until the returned function is called. */
+export function holdAgyHome(home: string): () => void {
+  const key = resolve(home)
+  let free!: () => void
+  const mine = new Promise<void>((done) => { free = done })
+  const before = busyHomes.get(key)
+  const tail = before ? before.then(() => mine) : mine
+  busyHomes.set(key, tail)
+  void tail.then(() => { if (busyHomes.get(key) === tail) busyHomes.delete(key) })
+  return free
+}
+
+/** Run `fn` once nothing else uses `home`, holding it meanwhile. */
+export async function whenAgyHomeFree<T>(home: string, fn: () => Promise<T>): Promise<T> {
+  const key = resolve(home)
+  while (busyHomes.has(key)) await busyHomes.get(key)
+  const release = holdAgyHome(home)
+  try { return await fn() } finally { release() }
+}
+
 const MODE = 'accept-edits'
 
 /**
@@ -134,7 +157,8 @@ export const antigravity: CliAdapter = {
     if (!home) return { failed: `${account.ref}: no agyHome (the Account home holding .gemini/antigravity-cli)` }
     return {
       stage(dir) {
-        writeSettings(home)
+        const release = holdAgyHome(home)
+        try { writeSettings(home) } catch (error) { release(); throw error }
         // Run with the attempt's throwaway HOME so caches, stores and agy's working files (`brain/`) do not accumulate in agyHome. `.gemini/antigravity-cli`
         // is a real directory of the attempt; only the login token and the staged settings are linked to the Account's files (a link to the whole
         // `.gemini` made `brain/` resolve into agyHome, where agy's own permission check refuses it).
@@ -143,7 +167,7 @@ export const antigravity: CliAdapter = {
         rmSync(join(attemptHome, '.gemini'), { recursive: true, force: true })
         mkdirSync(config, { recursive: true, mode: 0o700 })
         for (const name of [TOKEN, 'settings.json']) symlinkSync(resolve(home, ...CONFIG, name), join(config, name))
-        return { env: {}, finish() {} }
+        return { env: {}, finish: release }
       },
     }
   },
@@ -161,7 +185,8 @@ export const antigravity: CliAdapter = {
     const dir = account.agyHome ?? `antigravity/${account.ref.split('/')[1] ?? 'default'}`
     const agyHome = (resolved.agyHome = isAbsolute(dir) ? dir : home(dir))
     resolved.quotaGroup = group
+    resolved.sharedSlot = resolve(agyHome)
     if (!existsSync(join(agyHome, ...CONFIG, TOKEN))) throw new Error(`no login in ${agyHome} (HOME=${agyHome} agy, then sign in)`)
-    return { quota: createQuotaCache({ ...quota, read: () => readAntigravityQuota({ command, home: agyHome, group: group as AgyQuotaGroup, now: quota.now }) }) }
+    return { quota: createQuotaCache({ ...quota, read: () => whenAgyHomeFree(agyHome, () => readAntigravityQuota({ command, home: agyHome, group: group as AgyQuotaGroup, now: quota.now })) }) }
   },
 }
