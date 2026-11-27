@@ -1,3 +1,1 @@
 # Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (docs/operations/releases.md, "The dev branch").
-docs-unchanged: docs/architecture/host.md - relgate-1 only passes the release violations from git into the report in packages/host/src/operations.ts; the Host's lifecycle, lanes and locks it describes are unchanged.
-docs-unchanged: docs/operations/recovery.md - relgate-1 adds one report option text line in packages/app/src/cli.ts; no recovery step or log location changes.
