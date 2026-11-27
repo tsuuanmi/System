@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-05
 summary: Select System as a durable work control plane, DSH/Cordis as host and configurable plugin foundation, and two workflow-agnostic MVP proofs.
-related: [RES-0003]
+related: [ADR-0004]
 ---
 
 # Control plane on DSH/Cordis
@@ -75,6 +75,18 @@ purpose; [MVP requirements](../requirements/purpose.md) contain the proof contra
 
 ## Evidence and follow-up
 
-See [research evaluation](../research/RES-0003-dsh-control-plane-evaluation.md)
-for official DSH capability references, trade-offs and tests. Document any
-material reversal as a new ADR rather than silently rewriting this rationale.
+The evaluation behind this decision, RES-0003, is retired (concluded; its full text is in the
+[ledger](../governance/retired.md)). Note, 2026-11-27: the upstream DSH documents it relied on are
+[architecture and profiles](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md),
+[plugin packaging and install](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md),
+[composition and HMR](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-tutorial/06-composition-and-hmr.md),
+the [plugin
+manager](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/boot/plugin-manager/README.md),
+[application
+boot](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/boot/app-boot/README.md) and the
+[bundle catalog](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/bundle/README.md).
+They are live pages that may change; compatibility is what the pinned DSH version tests, not what they say.
+MCP is an integration protocol, not System's durable work model, and supporting it does not give
+effect reconciliation.
+
+Document any material reversal as a new ADR rather than silently rewriting this rationale.

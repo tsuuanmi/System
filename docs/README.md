@@ -19,7 +19,6 @@ source and tests are the authority for implementation behavior.
 | How does Brainstorm reuse Workers? | [Brainstorm architecture](architecture/brainstorm-composition.md) | Accepted boundary, implementation in PR #2 |
 | What changed in the Work concurrency review? | [Host](architecture/host.md#crash-and-recovery-invariants) | Old file mechanisms, removed in R1; the invariant map |
 | How do I start, stop and diagnose the Host? | [Operations runbook](operations/README.md) | Current procedure |
-| What design work remains proposed? | [Proposals](proposals/README.md) | Unaccepted details |
 | How is documentation organized and retired? | [Governance](governance/README.md) | Local documentation policy |
 | How can another repo bootstrap governance? | [Portable bootstrap](governance/bootstrap.md) | Reusable, product-agnostic |
 

@@ -33,8 +33,8 @@ original MVP-0 plan is kept at
 - [Artifact-ID and verification contracts](docs/architecture/artifact-verification.md)
   — deterministic handoff, exact-subject evidence and verifiers as capabilities.
 - [Decisions](docs/decisions/README.md) — the accepted ADRs and their alternatives.
-- [DSH architecture research](docs/research/RES-0003-dsh-control-plane-evaluation.md)
-  — upstream sources, risks and experiments.
+- [DSH evidence](docs/decisions/ADR-0001-control-plane-on-dsh.md#evidence-and-follow-up)
+  — upstream sources behind the host choice (RES-0003, retired).
 - [Brainstorm architecture](docs/architecture/brainstorm-composition.md) — three attempts, Artifact handoff, no new Team engine, and the B3 evaluation result (RES-0008, retired).
 - [Host](docs/architecture/host.md#crash-and-recovery-invariants) — the old file mechanisms, removed in R1; where the Host holds each guarantee.
 - [PLAN.md](PLAN.md) — finished milestones, standing decisions and open work; [STATUS.md](STATUS.md) lists the Items.

@@ -3,7 +3,7 @@ id: RES-0015
 type: research
 status: active
 summary: What System can port or learn from Orca (stablyai/orca, MIT) at commit 196cf89 - nine Research Works and read-only subagent studies checked against System's dev at b0162e4; the operator's grilling of 2026-11-26 settled Antigravity Workers and Work-lifecycle Items (ag-1 to st-1).
-related: [ADR-0003, ADR-0011, ADR-0015, RES-0012]
+related: [ADR-0003, ADR-0011, ADR-0015]
 ---
 
 # What System can take from Orca

@@ -29,8 +29,6 @@ assumptions into another project. For reuse, see [bootstrap](bootstrap.md).
 - [Decisions](../decisions/README.md) — durable architectural rationale.
 - [Research](../research/README.md) — external evidence, risks and proposed
   experiments; non-normative.
-- [Proposals](../proposals/README.md) — implementation and design questions
-  still awaiting acceptance.
 - [Operations](../operations/README.md) — the runbook for starting, stopping
   and diagnosing the Host.
 

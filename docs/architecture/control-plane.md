@@ -193,5 +193,7 @@ and profile are settled in
 [`packages/bundle/cordis.patch.yml`](../../packages/bundle/cordis.patch.yml), the
 restart protocol in [Host](host.md#start-stop-and-recovery) and upgrading in
 [Releases](../operations/releases.md); the Work schema is in
-[Work record](work-record.md). The evidence and test plan for DSH are in
-[RES-0003](../research/RES-0003-dsh-control-plane-evaluation.md).
+[Work record](work-record.md). The DSH evidence is in the retired RES-0003
+([ledger](../governance/retired.md); its sources are listed in
+[ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md#evidence-and-follow-up)); the tests are the
+[Charter's](../requirements/purpose.md#success-means).

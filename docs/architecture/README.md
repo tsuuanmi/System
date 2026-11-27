@@ -20,5 +20,6 @@ Architectural rationale: [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.m
 The product's why and scope live in the
 [Product Charter](../requirements/purpose.md) and
 [MVP requirements](../requirements/purpose.md).
-DSH capability references, alternatives and experiments belong in
-[research](../research/RES-0003-dsh-control-plane-evaluation.md).
+DSH capability references and alternatives are in
+[ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md#evidence-and-follow-up); open
+experiments belong in [research](../research/README.md).
