@@ -75,7 +75,7 @@ const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, 
 const memory = () => memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema })
 
 /** A fake home with a `.ssh`, a fake DSH_HOME/system with a store and a listening Host socket, a repository, and the probe script; the layer is told the fake home. */
-async function setup(host: (home: string) => SandboxHost, sandbox = true) {
+async function setup(host: (home: string) => SandboxHost, sandbox = true, runtime: 'claude-code' | 'antigravity' = 'claude-code') {
   const dir = mkdtempSync(join(root, 'case-'))
   const home = join(dir, 'home'), state = join(dir, 'dsh', 'system'), repository = join(dir, 'repo'), tools = join(dir, 'tools')
   for (const d of [join(home, '.ssh'), state, repository, tools]) mkdirSync(d, { recursive: true })
@@ -95,14 +95,17 @@ async function setup(host: (home: string) => SandboxHost, sandbox = true) {
   git(repository, 'commit', '--quiet', '-m', 'base')
   mkdirSync(join(repository, '.git', 'hooks'), { recursive: true })
   const command = join(tools, 'agent.sh')
-  copyFileSync(join(here, 'fake-sandbox-agent.sh'), command)
+  copyFileSync(join(here, runtime === 'antigravity' ? 'fake-sandbox-agy.sh' : 'fake-sandbox-agent.sh'), command)
   execFileSync('chmod', ['+x', command])
   writeFileSync(join(tools, 'probe.conf'), `HOME_DIR=${home}\nSTATE=${state}\nCOMMON=${join(repository, '.git')}\nPORT=${(web.address() as { port: number }).port}\n`)
   const artifacts = memory().artifacts
   const producer = { type: 'operator' as const, ref: 'tester' }
   const base = (await artifacts.put({ ...GIT_TREE_KIND, content: await snapshot(repository), classification: 'local-private', producer })).id
   const input = (await artifacts.put({ ...TASK_KIND, content: { instructions: 'probe', base }, inputs: [base], classification: 'local-private', producer })).id
-  const account: Account = { ref: 'claude-code/default', runtime: 'claude-code', capabilities: ['repo.write'], command, version: async () => 'fake', token: async () => 't', ...(sandbox ? { sandbox: true as const } : {}) }
+  const agyHome = join(dir, 'agy')
+  mkdirSync(join(agyHome, '.gemini', 'antigravity-cli'), { recursive: true })
+  writeFileSync(join(agyHome, '.gemini', 'antigravity-cli', 'antigravity-oauth-token'), 'tok\n')
+  const account: Account = { ref: `${runtime}/default`, runtime, ...(runtime === 'antigravity' ? { agyHome } : {}), capabilities: ['repo.write'], command, version: async () => 'fake', token: async () => 't', ...(sandbox ? { sandbox: true as const } : {}) }
   const request: WorkerRequest = { workId: 'work:t', attemptId: `attempt:${Math.random().toString(16).slice(2)}`, stepId: 'implement', capabilities: ['repo.write'], inputs: { task: input }, outputs: ['change'], signal: new AbortController().signal }
   const attempts = join(state, 'attempts')
   const worker = agentWorker(account, artifacts, processSpawner, attempts, undefined, undefined, host(home))
@@ -142,3 +145,15 @@ test('with bwrap not found the attempt fails as an Outside failure and the agent
   } finally { s.close() }
 })
 
+test('an Antigravity attempt in the layer runs the repository Node first on PATH and cannot list the passwd home .ssh', { skip }, async () => {
+  const s = await setup((home) => ({ ...realHost(), home: () => home }), true, 'antigravity')
+  try {
+    const result = await s.worker.run(s.request)
+    assert.equal(result.status, 'succeeded', result.reason)
+    const [, version, ssh] = /^node=(v[\d.]+);ssh=(\w+);$/.exec(result.message!.trim()) ?? []
+    const satisfies = (v: string) => { const [a = 0, b = 0] = v.slice(1).split('.').map(Number), [x, y] = [24, 9]; return a > x || (a === x && b >= y) }
+    assert.ok(version && satisfies(version), `node -v printed ${version} (engines.node >=24.9.0)`)
+    assert.equal(ssh, 'denied')
+    assert.equal((result.executor!.scope as { sandbox: unknown }).sandbox, 'bubblewrap')
+  } finally { s.close() }
+})

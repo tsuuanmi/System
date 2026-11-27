@@ -134,7 +134,21 @@ test('the argv is accept-edits in the sandbox, adds the inputs and outputs direc
   assert.equal(argv.includes('auto'), false)
   assert.equal(env.HOME, '/ws/home')
   assert.equal('DBUS_SESSION_BUS_ADDRESS' in env, false)
-  assert.deepEqual(adapter.invocation({ command: 'agy', ws, prompt: 'do it', model: 'gemini-3.8-flash-low', codeWrite: true, env: {}, sandbox: true }).argv, argv, 'the layer wraps the process, it changes no flag')
+})
+
+test('under the bubblewrap layer agy own --sandbox is left out (it hides the toolchain); every other flag stays and the recorded scope names the layer', () => {
+  const off = adapter.invocation({ command: 'agy', ws, prompt: 'do it', model: 'gemini-3.8-flash-low', codeWrite: true, env: {} })
+  const on = adapter.invocation({ command: 'agy', ws, prompt: 'do it', model: 'gemini-3.8-flash-low', codeWrite: true, env: {}, sandbox: true })
+  assert.equal(on.argv.includes('--sandbox'), false)
+  assert.deepEqual(on.argv, off.argv.filter((a) => a !== '--sandbox'))
+  for (const flag of ['--mode', '--json-schema']) assert.ok(on.argv.includes(flag))
+  assert.deepEqual(on.argv.filter((a, i) => on.argv[i - 1] === '--add-dir'), ['/ws/in', '/ws/out'])
+  assert.equal(on.argv[on.argv.indexOf('--mode') + 1], 'accept-edits')
+  assert.equal(on.argv.includes('--dangerously-skip-permissions'), false)
+  assert.deepEqual(on.env, off.env)
+  assert.equal(on.scope?.settingsSha256, off.scope?.settingsSha256, 'the staged permission rules are the same bytes')
+  assert.equal(off.scope?.sandbox, true, 'without the option the scope is as before: agy own sandbox')
+  assert.equal(on.scope?.sandbox, 'bubblewrap')
 })
 
 test('the recorded scope is the mode and sandbox of the argv and the sha256 of the staged settings bytes', async () => {
