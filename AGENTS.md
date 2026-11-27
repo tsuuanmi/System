@@ -17,7 +17,7 @@ test stand-ins. Changes to this repository are checked by
    [ADR-0002](docs/decisions/ADR-0002-work-primitive-configured-workflows.md),
    and [ADR-0003](docs/decisions/ADR-0003-artifact-ids-and-verification-contracts.md).
 3. Read relevant [control-plane architecture](docs/architecture/control-plane.md),
-   draft boundaries, research and proposals. Research is evidence, not a
+   research and proposals. Research is evidence, not a
    production promise.
 4. Run `python3 tools/docs.py trace <path-or-ID>` on existing affected
    documents/IDs. When product source is added, read its nearest README,

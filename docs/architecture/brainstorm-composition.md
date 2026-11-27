@@ -3,6 +3,7 @@ type: architecture
 status: active
 reviewed: 2026-11-06
 decided-by: [ADR-0002, ADR-0003]
+covers: [workflows/brainstorm.yaml]
 ---
 
 # Brainstorm as a Workflow composition, not a Team engine
@@ -29,16 +30,16 @@ once, on different Accounts ([Host](host.md#attempts-and-slots)). Independent
 `idea-a` and `idea-b` receive **only the same brief Artifact ID**,
 not each other's output; `synthesis` depends on both and receives
 both exact proposal IDs and the brief. The current
-[Workflow YAML](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/workflows/brainstorm.yaml)
+[Workflow YAML](../../workflows/brainstorm.yaml)
 is the executable source of its step graph and prompts. Do **not** copy
 the Workflow graph into TypeScript or create a standalone Brainstorm engine.
 
 Three *Worker attempts* do not mean three provider implementations or
 independently running agent sessions. The DSH
-[bundle account configuration](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/bundle/cordis.patch.yml)
+[bundle account configuration](../../packages/bundle/cordis.patch.yml)
 maps `brainstorm.idea-a` to Claude Code, `brainstorm.idea-b` to Codex,
 and `brainstorm.synthesis` to Claude Code. The
-[registry](https://github.com/tsuuanmi/System/blob/4a71c79f5fc9ed4857bd027625eda8b56f854bb8/packages/work/src/registry.ts)
+[registry](../../packages/work/src/registry.ts)
 selects the capable account with a free slot and the most quota headroom, and fails preflight when a required
 capability is missing. Configurable role labels are an **initial routing
 policy**, not a new class of Worker.
@@ -93,8 +94,8 @@ a mandatory model verifier.
 
 - No System 1 Team/session persistence, voting, ballots, debate engine,
   consensus-as-truth or third model provider for Brainstorm V0.
-- Website Worker, import of external web conversations and source
-  provenance are **later capabilities**, using the same Artifact/Worker
+- The Website Worker ([`packages/web-worker`](../../packages/web-worker/README.md), off by default) is built; it
+  and any import of external web conversations or source provenance use the same Artifact/Worker
   contracts rather than replacing this Workflow.
 - Research claim verification is future work; existing configured verifiers
   remain available but do not become mandatory for exploratory Brainstorm.
