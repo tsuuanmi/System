@@ -2,6 +2,7 @@
 type: architecture
 status: active
 reviewed: 2026-11-05
+decided-by: [ADR-0001, ADR-0004]
 covers: [packages/bundle/cordis.patch.yml]
 ---
 
@@ -23,7 +24,7 @@ purpose and philosophy.
 ## Logical topology
 
 ```text
-Operator / CLI / MCP (candidate product entry points)
+Operator / CLI / MCP (the entry points; see the Host)
                     |
               System control plane
                     |
@@ -136,7 +137,7 @@ version allowlists, dependency review before activation; see
 **MVP-0 limitation:** Workers run as the operator in per-attempt worktrees
 with a throwaway `HOME` and no push credentials, but without a sandbox or
 egress control; this is configuration, not isolation. Containers and an
-allowlisting proxy are MVP-1
+allowlisting proxy are not built; they are deferred
 ([ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md)).
 
 ## Domain independence
@@ -157,17 +158,40 @@ tool choices and validation rules.
 Do not create a second engine just because the research workflow uses
 different tools and result formats. This is a release-blocking MVP proof.
 
-## Third domain and remaining open details
+## Invariants
+
+Beyond the ownership contract above (the crash and recovery invariants are in
+[Host](host.md#crash-and-recovery-invariants), the artifact ones in
+[Artifact/verification boundary](artifact-verification.md)):
+
+1. A decision is attributable to an operator or to the applicable policy
+   version.
+2. A usage claim records its origin, scope, completeness and deduplication
+   rule. A resumed session may report cumulative rather than incremental usage,
+   so a report is never summed with the earlier one without that rule.
+3. A disabled optional plugin cannot invalidate core state or bypass the
+   admission gate; admission observes the **effective** configuration, so a
+   higher-priority patch that overrides the intended enablement is seen.
+4. An unavailable required plugin blocks the dependent work explicitly, even
+   while unrelated plugins stay healthy.
+5. A Worker adapter that reports false success is not believed: its result is
+   evidence, and acceptance is decided by System (verifier and policy), never by
+   the Worker.
+6. Software Engineering and Research (and Brainstorm) share one controller state
+   machine.
+
+## Third domain and where the open details were settled
 
 The [Brainstorm Workflow](brainstorm-composition.md) uses Claude and Codex for
 two proposal Artifacts and a synthesis through the same Work Controller, with
 no domain engine, new Worker type, Team plugin or mandatory verifier. The
-Host that replaced the PID locks is in
-[Work ownership and recovery](host.md#crash-and-recovery-invariants).
+Host that replaced the PID locks is described in [Host](host.md).
 
 MVP-0 storage, Worker adapter and effect executor are chosen in
-[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The exact DSH
-bundle/profile, restart protocol and schema remain open; boundary hypotheses
-and crash scenarios are in [draft boundary design](boundaries.md), and the
-evidence and test plan in
+[ADR-0004](../decisions/ADR-0004-mvp-0-operating-decisions.md). The DSH bundle
+and profile are settled in
+[`packages/bundle/cordis.patch.yml`](../../packages/bundle/cordis.patch.yml), the
+restart protocol in [Host](host.md#start-stop-and-recovery) and upgrading in
+[Releases](../operations/releases.md); the Work schema is in
+[Work record](work-record.md). The evidence and test plan for DSH are in
 [RES-0003](../research/RES-0003-dsh-control-plane-evaluation.md).

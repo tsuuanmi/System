@@ -15,7 +15,7 @@ vocabulary. Changes to this repository are checked by
    [decisions index](docs/decisions/README.md), which is the list of ADRs
    (start with the founding ADR-0001 to ADR-0003).
 3. Read relevant [control-plane architecture](docs/architecture/control-plane.md),
-   draft boundaries, research and proposals. Research is evidence, not a
+   research and proposals. Research is evidence, not a
    production promise.
 4. Run `python3 tools/docs.py trace <path-or-ID>` on existing affected
    documents/IDs. Read the nearest README, implementation and tests of the

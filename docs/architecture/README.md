@@ -13,8 +13,6 @@ boundary contracts. Selection is not the same as a working implementation.
 - [Brainstorm composition](brainstorm-composition.md) — three Worker attempts and Artifact ID handoff.
 - [Host](host.md) — milestone H: one long-lived process owning every Work (implemented; see its status), with the
   crash and recovery invariants.
-- [Boundary and failure questions](boundaries.md) — draft interface sketches,
-  risks and implementation questions not yet proven in code.
 
 Architectural rationale: [ADR-0001](../decisions/ADR-0001-control-plane-on-dsh.md),
 [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md) and
