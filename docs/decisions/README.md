@@ -56,7 +56,7 @@ acceptance does not imply its code exists.
   Worker and the Scheduled session run inside one bubblewrap layer as the same OS user, and the operations of the
   Operator's Authority are served on their own socket that no sandbox binds; this replaces ADR-0011's advisory boundary
   for unattended work and the Claude Code-only sandbox option.
-- [ADR-0017 — Plugin boundaries follow DSH's seams](ADR-0017-plugin-boundaries-follow-dsh-seams.md) — proposed — Each
+- [ADR-0017 — Plugin boundaries follow DSH's seams](ADR-0017-plugin-boundaries-follow-dsh-seams.md) — accepted — Each
   `@system/*` package keeps its Cordis plugin at the package entry and puts what other packages may import (types,
   schemas, constants, pure functions, the typed service contract) behind a `./contract` subpath export, as DSH separates
   a seam from its implementations; plugins export `Config`, declare every service they read in `inject`, and type

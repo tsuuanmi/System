@@ -1,16 +1,16 @@
 ---
 id: ADR-0017
 type: decision
-status: proposed
-date: 2026-11-27
+status: accepted
+date: 2026-11-28
 summary: Each `@system/*` package keeps its Cordis plugin at the package entry and puts what other packages may import (types, schemas, constants, pure functions, the typed service contract) behind a `./contract` subpath export, as DSH separates a seam from its implementations; plugins export `Config`, declare every service they read in `inject`, and type services through `Context`; ESLint's `no-restricted-imports` keeps the rule, starting from today's edges and shrinking.
 related: [ADR-0001, RES-0021]
 ---
 
 # Plugin boundaries follow DSH's seams
 
-**Proposed** 2026-11-27 for Item plug-3 (Intent `806fd2be9bf8`); the operator accepts or rejects it. Until then
-nothing here is in force.
+Accepted 2026-11-28 by the operator ("Đồng ý plug-3"), for Item plug-3 (Intent `806fd2be9bf8`). Proposed
+2026-11-27. Acceptance does not mean the code follows it yet: the moves are Items (Consequences).
 
 ## Context
 
