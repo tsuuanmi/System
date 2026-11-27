@@ -166,6 +166,9 @@ is out of quota or credits (the reasons are listed in
 the Account's quota reading is read again at once, the step goes back to
 pending and is dispatched again by routing on another Account, without
 spending an attempt or retry, or waits (`waiting: quota`) when none is left.
+An Account whose quota read fails with an authentication error is `unavailable` with the
+reason `signed out`: routing skips it until a later read succeeds, and a step failing with
+that text is an Outside failure with cause `signed-out`.
 Old records carry `rateLimited` on a failed step, which stays failed.
 `system work report` sums the waits and limits as `waitedForSlotMs` and
 `rateLimitedAttempts`. The wait is measured in the Host's memory, so a Host

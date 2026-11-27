@@ -84,6 +84,8 @@ serves them, and the session does not reach it:
 [ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)), set
 credentials, sign an account in, or merge into `main`; only a human runs
 `system work retry <work> --step checks.checks` for a check that failed outside
-the change. Each Work is also an MCP resource, `system://work/<id>`: subscribe
+the change. `system workers` shows an account whose quota read failed with an authentication error as
+`unavailable` with the reason `signed out`; it takes no step until a later read succeeds (log in again, see
+[accounts and workers](accounts-and-workers.md)). Each Work is also an MCP resource, `system://work/<id>`: subscribe
 to be woken when it ends, is held, waits for approval or stalls, then read
 `work.events` from your last `seq`.

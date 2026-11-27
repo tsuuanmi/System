@@ -142,10 +142,13 @@ function credentialCommands(ctx: Context): Services['credentials'] {
 async function workersView(ctx: Context): Promise<WorkersView> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
   const agents = ctx.get('agents') as AgentsService | undefined
-  const accounts = (await agents?.accounts()) ?? []
+  const listed = (await agents?.accounts()) ?? []
   // The cache and the readers' own timeouts bound each read; none sends a model turn.
   const quota = async (ref: string): Promise<QuotaReport> => agents!.quota(ref).catch(() => ({ unreadable: 'the quota read failed' }))
-  return { registered: capabilities?.workerRefs() ?? [], accounts: await Promise.all(accounts.map(async (a) => ({ ...a, quota: await quota(a.ref) }))) }
+  const quotas = await Promise.all(listed.map((a) => quota(a.ref)))
+  // Listed again after the reads: an Account whose read failed with an authentication error is `unavailable: signed out` (authgate-1).
+  const accounts = (await agents?.accounts()) ?? []
+  return { registered: capabilities?.workerRefs() ?? [], accounts: accounts.map((a) => ({ ...a, quota: quotas[listed.findIndex((l) => l.ref === a.ref)]! })) }
 }
 
 /** The web Runtime's service: its row is optional, and off by default. */

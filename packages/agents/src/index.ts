@@ -124,6 +124,9 @@ export interface AccountStatus {
   version?: string
 }
 
+/** Why an Account whose quota read failed with an authentication error is unavailable. */
+export const SIGNED_OUT_REASON = 'signed out'
+
 export interface AgentsService {
   /** Every configured account; the CLI version of each available one is asked here, once. */
   accounts(): Promise<AccountStatus[]>
@@ -191,9 +194,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const versions = new Map<string, () => Promise<string>>()
   // An account the web-worker row quarantines or cools down is unavailable, with what to do, until it is ready again.
   const unavailable = new Map<string, () => string | undefined>()
+  // Accounts whose last quota read failed with an authentication error, until a later read succeeds (authgate-1).
+  const signedOut = new Set<string>()
   const accounts = () => Promise.all(statuses.map(async (status) => {
     const askVersion = versions.get(status.ref)
-    const reason = unavailable.get(status.ref)?.()
+    const reason = unavailable.get(status.ref)?.() ?? (signedOut.has(status.ref) ? SIGNED_OUT_REASON : undefined)
     if (reason) return { ...status, available: false, reason, ...(askVersion ? { version: await askVersion() } : {}) }
     return askVersion ? { ...status, version: await askVersion() } : { ...status }
   }))
@@ -206,7 +211,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const cache = quotas.get(ref)
     if (cache) {
       if (options?.fresh) cache.invalidate()
-      return cache.get()
+      const report = await cache.get()
+      if ('unreadable' in report && report.signedOut) signedOut.add(ref)
+      else signedOut.delete(ref)
+      return report
     }
     const status = statuses.find((s) => s.ref === ref)
     if (!status) return { unreadable: `no quota reader for ${ref}` }

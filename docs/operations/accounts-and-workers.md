@@ -69,6 +69,13 @@ Account refs and labels, and the refusal of two accounts on one provider account
 
 The old ref is retired: do not give it to another Account. Records keep it.
 
+An Account whose quota read fails with an authentication error (Antigravity
+"authentication failed" or "Authentication required", Claude Code "Please run /login",
+Codex "Not logged in") is `unavailable - signed out`: it takes no step, and a step
+waits when no other Account is left, until a later read succeeds. A quota that is
+merely unknown (no window, a web Account) does not make an Account unavailable.
+A step that fails with such a text is an Outside failure with cause `signed-out`.
+
 `system workers` also prints a `quota:` line under each account; see the
 [agents README](../../packages/agents/README.md#quota).
 
