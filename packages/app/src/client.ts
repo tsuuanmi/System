@@ -1,7 +1,7 @@
 /**
  * The thin client entry of `bin/system` (PROP-0004 C6): every command but
  * `init`, `update`, `host` and `doctor` runs here (`bootstrap check` reads git alone and never connects), in a process that does not boot DSH
- * and talks to the Host on `$DSH_HOME/system/host.sock`.
+ * and talks to the Host on `$DSH_HOME/system/host.sock`, and over `operator/host.sock` for an `operator` operation (ADR-0016).
  */
 // By path, not by package: declaring @system/host here would change the lockfile.
 import { realpathSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Caller } from '@system/work'
 import { REFUSED, RpcError, VERSION, codeRoot, connectHello, type Client } from '../../host/lib/index.js'
-import { socketPath } from '../../host/lib/process.js'
+import { operatorSocketPath, socketPath } from '../../host/lib/process.js'
 import { bootstrapMain } from './bootstrap.ts'
 import { buildProgram, type Run } from './cli.ts'
 import { confirmHuman, errorLine, explain, readSecret } from './io.ts'
@@ -66,7 +66,7 @@ export async function main(args: string[], home: string): Promise<number> {
   const err = (text: string) => { process.stderr.write(text) }
   const retry = testMs('SYSTEM_CONNECT_RETRY_MS') ?? CONNECT_RETRY
   const timeout = testMs('SYSTEM_CALL_TIMEOUT_MS')
-  const open = (who: Caller, options: { readOnly?: boolean } = {}): Promise<Client> => connectHello(socketPath(home), { version: VERSION, caller: who, retry, ...(timeout === undefined ? {} : { timeout }), ...options })
+  const open = (who: Caller, { operator, ...options }: { readOnly?: boolean; operator?: boolean } = {}): Promise<Client> => connectHello(operator ? operatorSocketPath(home) : socketPath(home), { version: VERSION, caller: who, retry, ...(timeout === undefined ? {} : { timeout }), ...options })
   if (args[0] === 'bootstrap') {
     try {
       return await bootstrapMain(args, out)

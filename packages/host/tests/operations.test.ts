@@ -71,15 +71,18 @@ async function started(options: { setup?: (f: Fixture) => void; stallMinutes?: n
   const svc = services(f, artifacts)
   const table: Methods = operations(svc)
   const path = join(sockets, `${count++}.sock`)
-  const server = await serve(host, { path, methods: table })
+  const operatorDir = join(sockets, `${count++}-op`)
+  const operatorPath = join(operatorDir, 'host.sock')
+  mkdirSync(operatorDir, { mode: 0o700 })
+  const server = await serve(host, { path, operatorPath, methods: table })
   after(async () => { await server.close(); await host.close() })
-  const open = async (caller: { type: string; operatorId: string } = human): Promise<Client> => {
-    const client = await connect(path)
+  const open = async (caller: { type: string; operatorId: string } = human, socket: 'caller' | 'operator' = 'caller'): Promise<Client> => {
+    const client = await connect(socket === 'operator' ? operatorPath : path)
     await client.call('host.hello', { version: VERSION, caller })
     after(() => client.close())
     return client
   }
-  return { f, host, svc, table, open, path, artifacts }
+  return { f, host, svc, table, open, path, operatorPath, artifacts }
 }
 
 const input = (f: Fixture) => f.admission('brainstorm.yaml').input!
@@ -99,8 +102,10 @@ const terminal = async (client: Client, workId: string) => {
 test('every method of the table round-trips over the socket', async () => {
   const { f, svc, table, open, artifacts } = await started()
   const client = await open()
+  const operator = await open(human, 'operator')
   const called = new Set<string>()
-  const call = (method: string, params?: unknown) => { called.add(method); return client.call(method, params) }
+  // An operator operation goes over the operator socket (ADR-0016 decision 4), the others over the caller socket.
+  const call = (method: string, params?: unknown) => { called.add(method); return (tableOf(table)[method]?.authority === 'operator' ? operator : client).call(method, params) }
 
   const task = await call('task.new', { instructions: 'do it', repository: '/r', ref: 'main', context: [`sha256:${'1'.repeat(64)}`] })
   assert.deepEqual(task, { task: `task:do it:/r:main:sha256:${'1'.repeat(64)}` })
@@ -249,6 +254,27 @@ test('an agent connection is refused every operator method, and only those', asy
       assert.match(outcome!.message, /not allowed for agents|operator authority/)
     }
   }
+})
+
+test('every operator operation is refused on the caller socket whatever the caller type, and reaches its handler on the operator socket', async () => {
+  const { table, open } = await started()
+  const operators = Object.entries(table).filter(([, m]) => m.authority === 'operator').map(([name]) => name)
+  assert.ok(operators.length >= 7)
+  for (const who of [human, agent]) {
+    const client = await open(who)
+    for (const name of operators) {
+      await assert.rejects(client.call(name, {}), (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /operator socket/.test(error.message), `${name} as ${who.type} on the caller socket`)
+    }
+  }
+  const client = await open(human, 'operator')
+  for (const name of operators) {
+    const outcome = await client.call(name, {}).then(() => undefined, (error: { code: number; message: string }) => error)
+    // It gets past the socket gate: it may fail on its params or its state, never as NOT_ALLOWED.
+    assert.notEqual(outcome?.code, NOT_ALLOWED, `${name} reaches its handler on the operator socket`)
+  }
+  // ADR-0011 still holds there: the socket does not make an agent a human.
+  const agentOnOperator = await open(agent, 'operator')
+  await assert.rejects(agentOnOperator.call('approval.decide', {}), (error: { code: number }) => error.code === NOT_ALLOWED)
 })
 
 test('a worker-authority method is refused on the caller socket', async () => {
@@ -434,7 +460,7 @@ test('work.watch sends one work.changed when the Work finishes, and one when it 
   assert.equal(notices[1]!.status, 'held')
   assert.equal(notices[1]!.workId, held.id)
   // Approving it is the next change of the same Work: one more notice, the end.
-  const approver = await open()
+  const approver = await open(human, 'operator')
   await approver.call('approval.decide', { workId: held.id, decision: 'approved', reason: 'ok' })
   await settled('the end after approval', () => notices.length > 2)
   assert.deepEqual([notices[2]!.status, notices.length], ['succeeded', 3])

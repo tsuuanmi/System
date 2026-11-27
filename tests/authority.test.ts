@@ -5,13 +5,13 @@
  * refused while a terminal caller reaches the Host.
  */
 import assert from 'node:assert/strict'
-import { rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { rmSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
 import { StdioClientTransport } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { NOT_ALLOWED, VERSION, connect, tableOf } from '../packages/host/src/index.ts'
-import { socketPath } from '../packages/host/src/process.ts'
+import { operatorSocketPath, socketPath } from '../packages/host/src/process.ts'
 import { operations, type Services } from '../packages/host/src/operations.ts'
 import { repo, systemCli } from '../test-support/cli.ts'
 
@@ -79,4 +79,18 @@ test('through a real Host, an operator operation refuses a non-terminal CLI call
   assert.equal(tty.status, 1, 'key is not configured, but the Host answered')
   assert.match(tty.stdout, /NO_SUCH_KEY {2}not configured/)
   assert.doesNotMatch(tty.stderr, /operator authority|not allowed for agents/)
+})
+
+test('through a real Host, host.sock refuses every operator operation to a client that says it is a human; the operator socket directory is 0700', { timeout: 120_000 }, async () => {
+  assert.equal(statSync(dirname(operatorSocketPath(cli.home))).mode & 0o777, 0o700)
+  const operators = Object.entries(table).filter(([, m]) => m.authority === 'operator').map(([name]) => name)
+  const client = await connect(socketPath(cli.home))
+  try {
+    await client.call('host.hello', { version: VERSION, caller: { type: 'human', operatorId: 'a1' } })
+    for (const name of operators) {
+      await assert.rejects(client.call(name, {}), (error: { code: number }) => error.code === NOT_ALLOWED, name)
+    }
+  } finally {
+    client.close()
+  }
 })

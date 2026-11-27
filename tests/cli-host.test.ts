@@ -67,7 +67,7 @@ test('doctor boots DSH and reports that the Host answers', () => {
   assert.equal(ran.status, 0, ran.stderr)
   const { host } = JSON.parse(ran.stdout) as { host: { answering: boolean; detail: string } }
   assert.equal(host.answering, true)
-  assert.match(host.detail, /^version \S+, pid \d+$/)
+  assert.match(host.detail, /^version \S+, pid \d+; operator socket answering$/)
   assert.match(system('doctor').stdout, /host\s+answering: version /)
 })
 

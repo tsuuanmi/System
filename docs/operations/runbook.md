@@ -12,7 +12,9 @@ what to do when it does not. The design is in [Host](../architecture/host.md#run
 
 The Host runs as a process and the CLI is its thin client: every command but
 `init`, `update`, `host` and `doctor` talks to the Host on
-`$DSH_HOME/system/host.sock`, so a Host must run for them.
+`$DSH_HOME/system/host.sock` (the commands of the Operator's Authority, such as `approve`, on
+`$DSH_HOME/system/operator/host.sock`; [ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)),
+so a Host must run for them.
 
 ## Index
 

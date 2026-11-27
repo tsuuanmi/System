@@ -34,7 +34,7 @@ at the same time.
  operator shell
    system <cmd>                   thin client: JSON-RPC 2.0, one message per line
         |                         (sends Workflow file contents, not paths)
-   Unix socket  $DSH_HOME/system/host.sock
+   Unix socket  $DSH_HOME/system/host.sock   (operator operations: operator/host.sock, [ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md))
         |
  ┌──────────────── Host: one process per DSH_HOME, one DSH host ─────────────────┐
  │ operation table   every operation once, with its Authority (`operator`,       │

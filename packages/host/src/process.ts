@@ -1,10 +1,10 @@
 /**
  * The Host as a process (PROP-0004 C1, C10): the operation table on
- * `$DSH_HOME/system/host.sock` for as long as the process lives. The Host core
+ * `$DSH_HOME/system/host.sock` (and the operator's, `operator/host.sock`) for as long as the process lives. The Host core
  * has taken the lock before this runs, so no other Host serves the home and a
  * socket file found here is stale.
  */
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { WorkError, type Host } from '@system/work'
 import { VERSION, codeRoot, codeVersionAt, serve } from './index.ts'
@@ -12,6 +12,9 @@ import { operations, type Services } from './operations.ts'
 
 /** Where a home's Host listens. */
 export const socketPath = (home: string): string => join(home, 'system', 'host.sock')
+
+/** Where a home's Host listens for the operations of the Operator's Authority (ADR-0016 decision 4): a directory of its own, mode 0700, that no sandbox binds. */
+export const operatorSocketPath = (home: string): string => join(home, 'system', 'operator', 'host.sock')
 
 /** Where an upgrading Host leaves the Works it held, for the next Host to continue. */
 const upgradePath = (home: string): string => join(home, 'system', 'upgrade.json')
@@ -47,10 +50,14 @@ export interface ServingHost {
 
 export async function serveHost(options: ServeHostOptions): Promise<ServingHost> {
   const path = socketPath(options.home)
+  const operatorPath = operatorSocketPath(options.home)
   // sockaddr_un holds 108 bytes, with the terminating NUL.
-  if (Buffer.byteLength(path) > 100) throw new WorkError(`${path} is too long for a Unix socket (about 100 bytes at most); use a shorter DSH_HOME`)
+  for (const each of [path, operatorPath]) if (Buffer.byteLength(each) > 100) throw new WorkError(`${each} is too long for a Unix socket (about 100 bytes at most); use a shorter DSH_HOME`)
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  if (lstatSync(path, { throwIfNoEntry: false })?.isSocket()) rmSync(path)
+  // The Host makes the directory itself, so an install that updates from a release without it keeps working; chmod in case it exists with another mode.
+  mkdirSync(dirname(operatorPath), { recursive: true, mode: 0o700 })
+  chmodSync(dirname(operatorPath), 0o700)
+  for (const each of [path, operatorPath]) if (lstatSync(each, { throwIfNoEntry: false })?.isSocket()) rmSync(each)
   const version = options.version ?? VERSION
   const onDisk = options.codeVersion ?? (() => codeVersionAt(codeRoot()))
   // Code being built is no code to upgrade to: a Host started on a half-built tree fails (2026-11-08).
@@ -99,8 +106,9 @@ export async function serveHost(options: ServeHostOptions): Promise<ServingHost>
     return upgrading ? target : undefined
   }
 
-  const served = await serve(options.host, { path, methods: operations(options.services), version, upgrading: asked, onDisk })
+  const served = await serve(options.host, { path, operatorPath, methods: operations(options.services), version, upgrading: asked, onDisk })
   options.log(`started for ${options.home}, listening on ${path}`)
+  options.log(`operator socket ${operatorPath}`)
   continueHeld(options)
 
   // A change counts once the next look finds the same code again: a build still writing its files is not one.
