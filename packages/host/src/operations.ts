@@ -336,7 +336,8 @@ export function operations(services: Services) {
         const ready = await Promise.all(([p.repository ?? []].flat(2) as string[]).map(async (path: string) => {
           try {
             const status = await readStatus(path)
-            return { repository: status.repository, count: readyCount(status, status.repository, records) }
+            if (status.problems.length) return { repository: status.repository, error: status.problems.join('; ') }
+            return { repository: status.repository, count: readyCount(status, status.repository, records, host.view.claims()) }
           } catch (error) {
             return { repository: path, error: (error as Error).message }
           }

@@ -158,6 +158,16 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal(both[0]!.count, 1)
   assert.equal(both[1]!.count, undefined)
   assert.ok(both[1]!.error)
+  // A claimed Item is `doing` (as `item.list` shows it), so it is not Ready; a dev without STATUS.md is an error, not 0.
+  await call('item.claim', { repository: statusRepo, item: 'rm-1', commandId: 'c-ready' })
+  assert.deepEqual((await call('workers.list', { repository: statusRepo }) as { room: { ready: unknown } }).room.ready, [{ repository: realpathSync(statusRepo), count: 0 }])
+  const bare = mkdtempSync(join(dir, 'bare-'))
+  const bgit = (...args: string[]) => execFileSync('git', ['-C', bare, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  bgit('init', '--quiet', '-b', 'dev')
+  bgit('commit', '--quiet', '--allow-empty', '-m', 'empty')
+  const none = (await call('workers.list', { repository: bare }) as { room: { ready: { count?: number; error?: string }[] } }).room.ready
+  assert.equal(none[0]!.count, undefined)
+  assert.match(none[0]!.error!, /no STATUS\.md/)
   assert.deepEqual(await call('workers.login', { ref: 'web/chatgpt/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
   assert.deepEqual(svc.seen.logins, [['web/chatgpt/default', 'the file']])
   assert.deepEqual(await call('workers.loginRemote', { ref: 'web/chatgpt/default' }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })
