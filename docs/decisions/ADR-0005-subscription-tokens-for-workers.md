@@ -4,7 +4,7 @@ type: decision
 status: accepted
 date: 2026-11-05
 summary: Workers authenticate with the operator's Claude and ChatGPT subscriptions through System-held tokens instead of provider API keys; this replaces ADR-0004 decision 7.
-related: [ADR-0004]
+supersedes: [ADR-0004]
 ---
 
 # Workers use subscription tokens, not API keys

@@ -3,7 +3,7 @@ id: ADR-0007
 type: decision
 status: accepted
 date: 2026-11-06
-summary: Replace one short-lived DSH host per CLI command with one long-lived System Host per machine (user-systemd system.service, socket-activated), reached through a Unix-socket API by the CLI and by agents through an MCP adapter; independent steps run in parallel within per-Account limits.
+summary: Replace one short-lived DSH host per CLI command with one long-lived System Host per machine (user-systemd system.service, no socket activation), reached through a Unix-socket API by the CLI and by agents through an MCP adapter; independent steps run in parallel within per-Account limits.
 related: [ADR-0001, ADR-0004, ADR-0005]
 ---
 
@@ -34,8 +34,9 @@ CLI to scrape.
    is its only writer.
 2. **Service.** `system init` installs a user-systemd unit named
    **`system.service`**. The unit of System 1 that used this name was removed
-   at the operator's request. The unit is **socket-activated**: systemd holds
-   the socket and starts the Host on the first connection.
+   at the operator's request. ~~The unit is **socket-activated**: systemd holds
+   the socket and starts the Host on the first connection.~~ *Amended
+   2026-11-06: there is no socket activation; see the amendment below.*
 3. **One API, two clients.**
    - The Host serves one API on a Unix socket under `$DSH_HOME/system/`.
    - The CLI becomes a thin client of that API.
@@ -67,13 +68,16 @@ CLI to scrape.
   owning the same Work. Crash recovery remains: the Host replays and
   reconciles on start, as `work run` does today.
 - Parallel steps become possible without new coordination files.
-- The CLI depends on a running Host. Socket activation starts the Host on
-  demand. A Host that fails to start is reported as such, and the command
-  does not quietly run on its own.
+- The CLI depends on a running Host. ~~Socket activation starts the Host on
+  demand.~~ *(Amended: no socket activation; the CLI pings the Host and
+  reports that it is not running or not answering.)* A Host that fails to
+  start is reported as such, and the command does not quietly run on its own.
 - The milestone is large and hard to reverse. It ships as its own PR after
-  PR #3, with its own gate in [PLAN.md](../../PLAN.md).
+  PR #3 (when this was written; the Host has since shipped), with its own gate
+  in [PLAN.md](../../PLAN.md).
 - Deferred to a later milestone:
-  - the Orchestrator as a scoped caller tied to a Goal (a future ADR);
+  - the Orchestrator as a scoped caller tied to a Goal (a future ADR; the Goal
+    feature was removed in DF2, 2026-11-09, see [ADR-0012](ADR-0012-host-carries-works-on-never-picks-items.md));
   - an Orchestrator that System spawns on a schedule.
 
 ## Amendment (2026-11-06, before implementation)

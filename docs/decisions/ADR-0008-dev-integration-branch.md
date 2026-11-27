@@ -4,7 +4,8 @@ type: decision
 status: accepted
 date: 2026-11-06
 summary: System's own changes integrate into a `dev` branch that System may update and merge into once the required checks pass; only the operator merges `dev` into `main`.
-related: [ADR-0004, ADR-0007]
+supersedes: [ADR-0004]
+related: [ADR-0007]
 ---
 
 # A `dev` integration branch System may merge into
@@ -92,4 +93,6 @@ was checked against a tip that had moved. Decision 2 now reads:
   found there are fixed in the checks, not by reviewing each PR.
 - The `git.publish` provider needs a merge step limited to an allowlist of
   target branches (`dev`). Until it exists, System's PRs into `dev` are
-  opened and merged by the operator's agent after review.
+  opened and merged by the operator's agent after review. *(Amended
+  2026-11-27: the merge step shipped, as the merge queue above; System now
+  merges into `dev` itself.)*
