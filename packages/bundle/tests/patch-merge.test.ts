@@ -51,3 +51,17 @@ test('other entries are untouched, and an entry without config still takes the o
   const fakes = entries.find((e) => e.id === 'fakes')!
   assert.deepEqual([fakes.disabled, fakes.config.workers, fakes.config.verifiers], [false, ['repo.write'], ['code.required-checks', 'research.citation-check']])
 })
+
+test('under the bundle\'s default, a Workflow that merges into web-workers is refused and one into dev is admitted; a profile naming another base overrides', async () => {
+  const { githubPublisher } = await import('../../effects/src/github.ts')
+  const { memoryArtifacts } = await import('../../../test-support/memory.ts')
+  const { GIT_TREE_KIND, gitTreeSchema } = await import('@system/work')
+  const artifacts = memoryArtifacts({ ...GIT_TREE_KIND, content: gitTreeSchema }).artifacts
+  const effects = (overlay: string) => flat(composeEntries([bundle, parse(overlay) as unknown[]])).find((e) => e.id === 'effects')!.config as { mergeInto: string[] }
+  const publisher = (base: string, mergeInto: string[]) => githubPublisher(artifacts, { token: async () => undefined }, { remote: 'origin', base, mergeInto, apiUrl: 'http://x', repository: 'o/r' })
+  const bundled = effects('[]')
+  assert.deepEqual(bundled.mergeInto, ['dev'])
+  assert.doesNotThrow(() => publisher('dev', bundled.mergeInto).validate('git.publish', { merge: true }))
+  assert.throws(() => publisher('web-workers', bundled.mergeInto).validate('git.publish', { merge: true }), /base web-workers is not in mergeInto \[dev\]/)
+  assert.deepEqual(effects('- id: effects\n  config:\n    mergeInto: [dev, other]\n').mergeInto, ['dev', 'other'])
+})
