@@ -157,6 +157,19 @@ test('webPrompt splits a prompt into its header and its fenced body, and keeps a
   assert.equal(webPrompt({ ...ws, context: [] }, req, 0).body, undefined)
 })
 
+test('webPrompt names the Artifact ID and kind of each context Artifact', () => {
+  const dir = join(root, 'prompt-ws-ids')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'context-1')
+  writeFileSync(file, NOTE)
+  const artifact = `sha256:${'b'.repeat(64)}`
+  const ws = { root: dir, home: dir, inputs: dir, outputs: dir, work: dir, instructions: 'Cite it.', listed: [], context: [{ name: 'context-1', where: file, artifact, kind: 'file@1' }] }
+  for (const min of [0, 1_000_000]) {
+    const { text } = webPrompt(ws, request({}, ['report']), min)
+    assert.ok(text.includes(`context-1 (artifact ${artifact}, file@1):`), `min ${min}`)
+  }
+})
+
 // WW1 defect 3: the 1.5 s of `timeouts.load` that this file gives a slow page used to be Chrome's launch timeout too, and failed under load.
 test('Chrome gets a launch clock of its own, 30 s unless configured, whatever the page clocks are', () => {
   const defaults = webDefaults(join(root, 'p'))
