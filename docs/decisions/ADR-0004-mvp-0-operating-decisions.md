@@ -9,6 +9,15 @@ related: [ADR-0001, ADR-0002, ADR-0003, ADR-0005, ADR-0006, RES-0003]
 
 # MVP-0 operating decisions
 
+Status: superseded in part. Decisions not listed here still stand.
+
+| Decision | Replaced or amended by |
+|---|---|
+| 2 (entry point: "MCP is deferred") | [ADR-0007](ADR-0007-one-long-lived-host.md): the CLI is a client of the Host; `system mcp` is its stdio adapter for agents, shipped in milestone O |
+| 3 (human-only approval; `SYSTEM_CALLER=human`) | amended by [ADR-0011](ADR-0011-human-caller-needs-a-terminal.md): a call is human only at a terminal |
+| 7 (model credentials: API keys) | replaced by [ADR-0005](ADR-0005-subscription-tokens-for-workers.md) |
+| 10 (effects: "System never merges") | changed by [ADR-0008](ADR-0008-dev-integration-branch.md): System may merge into `dev`; only the operator merges into `main` |
+
 ## Context
 
 [ADR-0001](ADR-0001-control-plane-on-dsh.md) to
@@ -120,6 +129,8 @@ System tests so far.
   `steps`, `dependsOn`, `capabilities`, `outputs`, `verify` and `accept`).
 
 ## Planned after MVP-1: Website Worker
+
+Shipped: PROP-0005 is "accepted, built" in the [ledger](../governance/retired.md); the text below is the original plan.
 
 A Website Worker drives a provider's web chat UI in a browser for
 brainstorming and research: **another Worker adapter behind the same
