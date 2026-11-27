@@ -22,6 +22,8 @@ The latter include source-level findings and System Work evidence that this surv
 **Architecture follow-up:** [RES-0022](RES-0022-adaptive-component-evolution.md) records the
 operator's adaptive-component direction, strategies A-D, the execution boundary,
 reliability/security cases, comparative experiment and evidence-led replacement loop.
+The [insight synthesis](RES-0023-adaptive-system-insights-and-adoption-gates.md)
+maps the comparison to review gates without promoting research into a decision.
 
 ## Scope, evidence and confidence
 
