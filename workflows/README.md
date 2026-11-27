@@ -15,11 +15,11 @@ update`; `Invariants not to change`; `Out of scope`; `Done when`. `develop.yaml`
 says in its result when the pack is wrong. An Item fits one Worker attempt (about an hour): a Done when with several independent parts is split into several Items by the caller (web-3, work:a216a2f9, ran out of its 60 minutes doing three parts). The MCP `instructions`
 ([packages/app/src/mcp.ts](../packages/app/src/mcp.ts)) tell callers to write it.
 
-A step's `capabilities` are of three kinds (terms in [GLOSSARY.md](../GLOSSARY.md)):
-an **Ability** is what a Runtime can do (`repo.read`, `repo.write`, `web.search`,
-`web.browse`); a **Role** is a step's part in a Workflow, given to Accounts
-(`develop.implement`, `brainstorm.*`, `review.second-opinion`); a **Tier** is a model class
-(`tier.economy`, `tier.standard`, `tier.frontier`). `repo.write` is also what makes
+A step's `capabilities` are of three kinds, defined in the
+[GLOSSARY](../GLOSSARY.md) (Ability, Role, Tier). Abilities used here: `repo.read`,
+`repo.write`, `web.search`, `web.browse`; Roles: `develop.implement`, `brainstorm.*`,
+`review.second-opinion`; Tiers: `tier.economy`, `tier.standard`, `tier.frontier`.
+`repo.write` is also what makes
 the working tree a step's output. The old names (`code-write`, `web-search`,
 `research.web`, `code.develop`) are unknown capabilities: a step needing one is refused at admission.
 

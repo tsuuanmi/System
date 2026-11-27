@@ -25,10 +25,10 @@ poll with `SYSTEM_UPGRADE_POLL_MS`; unset, the defaults apply.
 ## The status of a project
 
 A repository lists its planned work in a `STATUS.md` at its root: one line per
-**Item**, `- [ ] <id> <title>` (`- [x]` when done), with an id such as `df-3`
-(see [GLOSSARY](../../GLOSSARY.md)). A line that does not parse is skipped and
+Item, `- [ ] <id> <title>` (`- [x]` when done), with an id such as `df-3`
+(Item and Blocked: [GLOSSARY](../../GLOSSARY.md)). A line that does not parse is skipped and
 reported by `system status` as a `note:`. `(after: id, id)` at the end of a
-line (with the colon) makes the Item **Blocked** until each named Item is done;
+line (with the colon) makes the Item Blocked until each named Item is done;
 `status` then reads `todo (blocked by <ids>)`, and a cycle or an ID with no line
 is a problem (`cycle: a -> b -> a`, `unknown id`). `(intent: <12 hex>)` beside it
 (either order, each once) names the `intent@1` Artifact the Item carries out, by
