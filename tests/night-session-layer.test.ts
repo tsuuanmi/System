@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -89,4 +89,29 @@ test('with a bwrap that cannot start a namespace the fake claude never runs and 
   assert.equal(existsSync(join(tools, 'claude.ran')), false, 'claude never ran')
   assert.match(report, /cannot create a user namespace/i)
   assert.doesNotMatch(report, /^caller:/m)
+})
+
+test('inside the layer bin/system finds the Node 24 under the home when the PATH node is not Node 24', { skip }, () => {
+  // The passwd home (a fake getent names it) holds the Node 24 that bin/system chooses (~/.nvm/versions/node/v24.99.0); the PATH `node` reports 22.
+  const fake = mkdtempSync(join('/tmp', 'system-layer-home-'))
+  const t = mkdtempSync(join(home, 'node22-'))
+  try {
+    const bin = join(fake, '.nvm', 'versions', 'node', 'v24.99.0', 'bin')
+    mkdirSync(bin, { recursive: true })
+    symlinkSync(process.execPath, join(bin, 'node'))
+    writeFileSync(join(t, 'shim.cjs'), "Object.defineProperty(process, 'versions', { value: { ...process.versions, node: '22.1.0' } })\nObject.defineProperty(process, 'version', { value: 'v22.1.0' })\n")
+    const put = (name: string, body: string) => { writeFileSync(join(t, name), `#!/bin/sh\n${body}\n`); chmodSync(join(t, name), 0o755) }
+    put('node', `exec "${process.execPath}" --require "${join(t, 'shim.cjs')}" "$@"`)
+    put('getent', `echo "tester:x:1000:1000::${fake}:/bin/sh"`)
+    // The real bin/system, started through its `#!/usr/bin/env node` line.
+    symlinkSync(join(repo, 'bin', 'system'), join(t, 'system'))
+    put('claude', `if system work list >"$TMPDIR/status.out" 2>&1; then echo "status: answers"; else echo "status: failed"; cat "$TMPDIR/status.out"; fi`)
+    const res = spawnSync('sh', [launcher], { env: { ...cli.env, HOME: fake, PATH: `${t}:${process.env.PATH}`, SYSTEM_NIGHT_REPOS: night } as NodeJS.ProcessEnv, encoding: 'utf8', cwd: home })
+    const report = cli.run(['artifact', 'cat', res.stdout.trim().split('\n').at(-1)!]).stdout
+    assert.equal(res.status, 0, res.stderr)
+    assert.match(report, /^status: answers$/m, report)
+    assert.doesNotMatch(report, /needs Node/)
+  } finally {
+    rmSync(fake, { recursive: true, force: true })
+  }
 })
