@@ -143,6 +143,12 @@ failed or lost step runs again as a new Attempt; the earlier ones stay in the
 record. See [work-record](docs/architecture/work-record.md).
 _Avoid_: run, try, retry (a retry acts on a Work)
 
+**Attempt log**:
+What the Runtime printed during one Attempt, stored as an Artifact with secrets
+removed: the record of what the Worker did, read when an Attempt has to be
+understood afterwards.
+_Avoid_: session (a caller session), transcript, Conversation (brought in by the operator)
+
 **Artifact**:
 An immutable, typed, content-addressed record, such as a Task's context file, an
 Intent or a step's output; its ID is derived from its kind and content, so equal
@@ -213,8 +219,14 @@ _Avoid_: lot, sprint; merge group (changes a merge queue checks together)
 **Scheduled session**:
 A caller session started on a schedule, with no operator present, that picks
 Ready Items and carries them through Works within fixed limits; it never
-approves, releases or writes Items.
-_Avoid_: night run, bot, autopilot
+approves or writes Items, and it releases only a commit the Operator approved.
+_Avoid_: night run, night session, bot, autopilot
+
+**Schedule** (specified, not built; [ADR-0020](docs/decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md)):
+What the Operator writes down on one machine for a Scheduled session: when it
+starts and what it carries, either the Ready Items of named repositories or one
+Work from a fixed Workflow and Task.
+_Avoid_: job (a Task is the request), cron, routine
 
 ### Checking work
 

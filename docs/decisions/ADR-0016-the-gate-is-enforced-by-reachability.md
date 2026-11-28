@@ -49,7 +49,10 @@ decision 1 describes what runs.
    itself.
 5. **The Scheduled session** runs inside the same layer with only the caller
    socket. An interactive caller session, with the Operator present, is not
-   wrapped: ADR-0011 stays the rule there.
+   wrapped: ADR-0011 stays the rule there. *(Amended 2026-11-28 by
+   [[ADR-0020]] decision 7: once the Scheduled session is a deterministic
+   caller with no model, it runs outside the layer; until sch-6 lands the
+   model caller stays inside it.)*
 6. **Configuration:** the Account option `sandbox` now means this layer. The
    Claude Code settings of sb-1 are deleted. Default on for every CLI Runtime
    is the Operator's decision after one Account has run one night with it.

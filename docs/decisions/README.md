@@ -71,4 +71,10 @@ acceptance does not imply its code exists.
   one commit of `dev` on a `release/<commit>` branch, its report is generated from records by `system release prepare`,
   the Operator may approve that exact commit so a caller session merges and installs it, and docs waivers travel as
   `Docs-Unchanged:` git trailers of the commits instead of a file cleared at each release.
+- [ADR-0020 — The Scheduled session is a deterministic
+  caller](ADR-0020-the-scheduled-session-is-a-deterministic-caller.md) — accepted — The Scheduled session is a
+  deterministic caller driven by a Schedule, with no model in the caller's role; its passes are independent and
+  re-enterable, it runs outside the bubblewrap layer, the next Attempt of a step must be able to run on any capable
+  Account (so a Worker's session is never resumed), and it carries out a Release only for a commit the Operator
+  approved.
 <!-- docs:end index:decision -->
