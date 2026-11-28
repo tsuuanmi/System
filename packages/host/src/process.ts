@@ -6,7 +6,8 @@
  */
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { WorkError, type Host } from '@system/work'
+import type { Host } from '@system/work'
+import { WorkError } from '@system/work/contract'
 import { VERSION, codeRoot, codeVersionAt, serve } from './index.ts'
 import { operations, type Services } from './operations.ts'
 

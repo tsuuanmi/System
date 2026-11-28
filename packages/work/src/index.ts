@@ -3,18 +3,18 @@
  * registry) and `ctx.work` (what the Host core is built over) over the DSH
  * storage domain `system_work`, one key per Work (ADR-0004 decision 9).
  */
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import type { Artifacts, Envelope } from '@system/artifacts'
+import type { Artifacts, Envelope } from '@system/artifacts/contract'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import { putVerdict } from './verification.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { freshBranch, snapshot } from './git.ts'
 import { DEFECT_KIND, WITHDRAWAL_KIND, addDefect, defectSchema, storedDefects, storedWithdrawals, withdrawDefect, withdrawalSchema, type DefectInput, type DefectWithdrawal, type StoredDefect } from './defect.ts'
 import { INTENT_KIND, addIntent, intentSchema, storedIntents, type Intent } from './intent.ts'
+import { RELEASE_APPROVAL_KIND, addReleaseApproval, releaseApprovalSchema, storedReleaseApprovals } from './release-approval.ts'
 import { CONFIRMATION_KIND, addConfirmation, confirmationSchema, storedConfirmations, type ConfirmationInput } from './confirmation.ts'
 import { readStatus, type ClaimTable } from './gate.ts'
 import { WorkError } from './errors.ts'
@@ -34,6 +34,7 @@ export * from './usage.ts'
 export * from './gate.ts'
 export * from './gates.ts'
 export * from './git.ts'
+export * from './home.ts'
 export * from './changed-tests.ts'
 export * from './host.ts'
 export * from './host-lock.ts'
@@ -55,13 +56,14 @@ export * from './measures.ts'
 export * from './later-pass.ts'
 export { defaultChange } from './failure-class.ts'
 export * from './summary.ts'
+export * from './trace.ts'
 export * from './outside.ts'
 export * from './hold.ts'
 export * from './workflow.ts'
 /** The zod the Work schemas are built with, for the packages that validate the same shapes. */
 export { z } from 'zod'
 /** The Artifact ID schema and classifications, for the packages that validate the same shapes. */
-export { CLASSIFICATIONS, contentIdSchema } from '@system/artifacts'
+export { CLASSIFICATIONS, contentIdSchema } from '@system/artifacts/contract'
 
 export const name = 'system-work'
 export const inject = ['storageDomain', 'artifacts']
@@ -123,6 +125,16 @@ export class WorkService {
   /** Store a `confirmation@1` Artifact: the operator confirmed the stored Artifact it names. */
   async newConfirmation(confirmation: ConfirmationInput, caller: Caller): Promise<{ confirmation: string }> {
     return { confirmation: (await addConfirmation(this.artifacts, confirmation, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** Store a `release-approval@1` Artifact: the Operator approved this commit of `dev` for release. */
+  async newReleaseApproval(commit: string, caller: Caller): Promise<{ approval: string }> {
+    return { approval: (await addReleaseApproval(this.artifacts, { commit }, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** The approved release commits, as stored. */
+  releaseApprovals(): string[] {
+    return storedReleaseApprovals(this.artifacts).map((a) => a.commit)
   }
 
   /** The stored Intents and confirmations, for the operator acts of `rangeReport`. */
@@ -234,27 +246,6 @@ export function specStore(artifacts: Artifacts, dispose?: (() => void)[]): SpecS
   }
 }
 
-/** Store a `verdict@1` Artifact bound to its subject, criteria and evidence; returns its ID. */
-export async function putVerdict(artifacts: Artifacts, verdict: Verdict): Promise<string> {
-  return (await artifacts.put({
-    ...VERDICT_KIND, content: verdict, inputs: [verdict.subject, verdict.criteria, ...verdict.evidence],
-    subject: { type: 'artifact', ref: verdict.subject },
-    classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
-  })).id
-}
-
-/** `$DSH_HOME`: the launcher's home resolver when present. */
-export function dshHome(ctx: Context): string {
-  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
-  return homePath ? homePath() : process.env.DSH_HOME || join(homedir(), '.dsh')
-}
-
-/** `$DSH_HOME/system/...`: the launcher's home resolver when present. */
-export function systemPath(ctx: Context, ...segments: string[]): string {
-  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
-  return homePath ? homePath('system', ...segments) : join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', ...segments)
-}
-
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const domains = ctx.get('storageDomain') as DomainFacility
   const domain = await domains.open(workDomain)
@@ -265,6 +256,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     artifacts.registerKind({ ...INTENT_KIND, content: intentSchema }),
     artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema }),
     artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema }),
+    artifacts.registerKind({ ...RELEASE_APPROVAL_KIND, content: releaseApprovalSchema }),
     artifacts.registerKind({ ...WITHDRAWAL_KIND, content: withdrawalSchema }),
     artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema }),
     artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema }),

@@ -9,8 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import type { Spawner } from '@system/agents'
-import type { Artifacts } from '@system/artifacts'
+import type { Spawner } from '@system/runtime-cli/contract'
+import type { Artifacts } from '@system/artifacts/contract'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
 import { captureTree } from '@system/git'
@@ -18,7 +18,10 @@ import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, putVerdict, verdictSchema, gitT
 import { parseCheckFailure } from '../../work/src/failure-class.ts'
 import { failureLine } from '../src/reasons.ts'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, parseChecksFile, requiredChecks } from '../src/checks.ts'
-import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
+import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, type CitationOptions, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
+
+/** The test listener is on 127.0.0.1, an internal address: the verifier may fetch it only when told so. */
+const LOCAL = { internalHosts: ['127.0.0.1'] }
 
 const root = mkdtempSync(join(tmpdir(), 'system-verifiers-'))
 /** The verifier's scratch directory is named by the attempt ID in the shared tmp: an ID of its own per test process, or a parallel run (or another user) removes the directory a check runs in and `spawn timeout` fails with ENOENT. */
@@ -308,7 +311,7 @@ async function sources(artifacts: Artifacts, json: unknown): Promise<string> {
 /** `criteria` pins other criteria content instead of the verifier's own defaults. */
 async function cite(json: unknown, pinned?: Record<string, unknown>) {
   const artifacts = store()
-  const verifier = citationCheck(artifacts)
+  const verifier = citationCheck(artifacts, LOCAL)
   const criteria = pinned
     ? (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: pinned, classification: 'public', producer })).id
     : await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
@@ -317,6 +320,74 @@ async function cite(json: unknown, pinned?: Record<string, unknown>) {
   const evidence = artifacts.get(result.evidence[0]!)
   return { result, evidence: evidence.state === 'stored' ? evidence.envelope.content as { problems: string[]; minConfirmedRatio?: number; confirmedRatio?: number; results: { found: boolean; status: number | null; contentHash?: string }[] } : undefined }
 }
+
+/** A listener counting the requests that reach it, and a page on `base` redirecting to it. */
+async function withListener(run: (hits: string[], port: number) => Promise<void>) {
+  const hits: string[] = []
+  const listener = createServer((req, res) => { hits.push(req.url ?? ''); res.writeHead(200); res.end('System verifies citations') })
+  await new Promise<void>((r) => listener.listen(0, '127.0.0.1', r))
+  try { await run(hits, (listener.address() as { port: number }).port) } finally { listener.close() }
+}
+
+async function citeWith(options: CitationOptions | undefined, url: string) {
+  const artifacts = store()
+  const verifier = citationCheck(artifacts, options)
+  const criteria = await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
+  const subject = await sources(artifacts, { sources: [{ id: 's1', url, quote: 'system verifies citations', claims: ['c'] }] })
+  const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'citations', capability: 'research.citation-check', subject, criteria })
+  const evidence = artifacts.get(result.evidence[0]!)
+  return { result, results: (evidence.state === 'stored' ? evidence.envelope.content : { results: [] }) as { results: { status: number | null; error?: string }[] } }
+}
+
+test('a URL on an internal address is not fetched: unreachable, internal address, no request reaches the listener', async () => {
+  await withListener(async (hits, port) => {
+    const { result, results } = await citeWith(undefined, `http://127.0.0.1:${port}/x`)
+    assert.equal(result.verdict, 'inconclusive')
+    assert.match(results.results[0]!.error ?? '', /internal address/)
+    assert.equal(results.results[0]!.status, null)
+    assert.deepEqual(hits, [])
+  })
+})
+
+test('a redirect to a local listener is not followed: no request reaches the listener', async () => {
+  await withListener(async (hits, port) => {
+    const redirector = createServer((_req, res) => { res.writeHead(302, { location: `http://localhost:${port}/secret` }); res.end() })
+    await new Promise<void>((r) => redirector.listen(0, '127.0.0.1', r))
+    try {
+      // A resolver in code: the redirector's address reads as public, `localhost` as what it is.
+      const resolve = async (host: string) => host === 'localhost' ? ['127.0.0.1'] : ['93.184.216.34']
+      const { results } = await citeWith({ resolve }, `http://127.0.0.1:${(redirector.address() as { port: number }).port}/go`)
+      assert.match(results.results[0]!.error ?? '', /internal address/)
+      assert.deepEqual(hits, [])
+    } finally { redirector.close() }
+  })
+})
+
+test('internal addresses of every kind are refused, a relative redirect to a public page is followed, a redirect loop ends', async () => {
+  const addresses = ['127.0.0.1', '127.1.2.3', '10.0.0.1', '172.16.0.1', '172.31.255.1', '192.168.1.1', '169.254.169.254', '0.0.0.0',
+    '::1', '::', 'fe80::1', 'fc00::1', 'fd12:3456::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', '::ffff:7f00:1']
+  for (const address of addresses) {
+    const { results } = await citeWith({ resolve: async () => [address] }, 'http://example.test/x')
+    assert.match(results.results[0]!.error ?? '', /internal address/, address)
+  }
+  // One internal address among several is enough.
+  assert.match((await citeWith({ resolve: async () => ['93.184.216.34', '10.0.0.1'] }, 'http://example.test/x')).results.results[0]!.error ?? '', /internal address/)
+  // The allow list lets a named internal host through.
+  assert.equal((await citeWith({ resolve: async () => ['10.0.0.1'], internalHosts: ['127.0.0.1'] }, `${base}/article`)).result.verdict, 'pass')
+  // A relative redirect to a public page is followed; a loop ends.
+  const site = createServer((req, res) => {
+    if (req.url === '/a') { res.writeHead(301, { location: '/article' }); res.end() }
+    else if (req.url === '/article') { res.writeHead(200); res.end('System verifies citations') }
+    else { res.writeHead(302, { location: req.url }); res.end() }
+  })
+  await new Promise<void>((r) => site.listen(0, '127.0.0.1', r))
+  const port = (site.address() as { port: number }).port
+  try {
+    const pub = { resolve: async () => ['93.184.216.34'] }
+    assert.equal((await citeWith(pub, `http://127.0.0.1:${port}/a`)).result.verdict, 'pass')
+    assert.match((await citeWith(pub, `http://127.0.0.1:${port}/loop`)).results.results[0]!.error ?? '', /redirect/)
+  } finally { site.close() }
+})
 
 test('a quote found at its URL passes, ignoring markup, entities, case and whitespace; evidence keeps the page hash', async () => {
   const { result, evidence } = await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: 'system verifies CITATIONS exactly & carefully', claims: ['c'] }] })
@@ -340,7 +411,7 @@ test('an unreachable or missing page is inconclusive', async () => {
 
 test('an unknown criteria version, citations-v1 among them, is refused at admission and gives an error verdict, never a pass', async () => {
   const artifacts = store()
-  const verifier = citationCheck(artifacts)
+  const verifier = citationCheck(artifacts, LOCAL)
   const subject = await sources(artifacts, { sources: [{ id: 's1', url: `${base}/article`, quote: 'system verifies citations', claims: ['c'] }] })
   for (const name of ['citations-v1', 'citations-v4', 'v1']) {
     await assert.rejects(verifier.criteria({ capability: 'research.citation-check', name, operatorId: 't' }), /unknown criteria .* known: citations-v2, citations-v3$/, name)
@@ -365,7 +436,7 @@ test('a malformed sources file, no sources, or an empty quote fails', async () =
 /** Like `cite`, with the `citations-v2` criteria the verifier pins itself, and the report as a second input when given. */
 async function citeV2(json: unknown, report?: string, name = 'citations-v2') {
   const artifacts = store()
-  const verifier = citationCheck(artifacts)
+  const verifier = citationCheck(artifacts, LOCAL)
   const criteria = await verifier.criteria({ capability: 'research.citation-check', name, operatorId: 't' })
   const subject = await sources(artifacts, json)
   const reportId = report === undefined ? undefined : (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(report), mediaType: 'text/markdown', classification: 'public', producer })).id
@@ -774,7 +845,7 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   const run = (touched: string[]) => own.checks.filter((c) => c.name !== 'secrets' && selected(c, touched, 'release')).map((c) => c.name)
   assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
   // Markdown among code paths runs no code check (2026-11-17), unless the check names it (the runbook, the Charter).
-  assert.deepEqual(run(['packages/web-worker/README.md', 'packages/web-driver/README.md']), ['docs'])
+  assert.deepEqual(run(['packages/runtime-web/README.md', 'packages/web-driver/README.md']), ['docs'])
   const all = own.checks.map((c) => c.name).filter((name) => name !== 'secrets')
   // The upgrade rehearsal (Item rb-1) has its own `paths`: the release surface only, so it is not in `main` below.
   // The install guide check (Item install-1) has its own `paths` too: bin, the bundle, the runbook, the script.
@@ -794,7 +865,7 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   assert.deepEqual(run(['workflows/code-checks.yaml']), noRatchets(withUpgrade(main)))
   for (const file of ['tests/work.test.ts', 'docs/requirements/purpose.md']) assert.deepEqual(run([file]), noRatchets(main), file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).
-  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts']) assert.deepEqual(run([file]), [...main, 'web'], file)
+  for (const file of ['packages/web-driver/src/driver.ts', 'packages/runtime-web/src/chatgpt.ts']) assert.deepEqual(run([file]), [...main, 'web'], file)
   for (const file of ['tests/chatgpt-web.test.ts', 'test-support/headed.ts']) assert.deepEqual(run([file]), [...noRatchets(main), 'web'], file)
   // The lint check (Item fl-10) runs for a change to the ESLint config as for any code.
   for (const file of ['test-support/fixture.ts', 'package.json', 'pnpm-lock.yaml', 'eslint.config.js']) assert.deepEqual(run([file]), noRatchets(main), file)
@@ -812,7 +883,7 @@ test('a commit checked as it is (code-checks.yaml on its own) runs every check, 
 })
 
 test('a release is checked as a change from the running one: the web check runs only when the diff touches its paths; the first install runs every check', async () => {
-  const checks = 'checks:\n  - name: always\n    run: "true"\n  - name: web\n    run: "true"\n    paths: ["packages/web-worker/**"]\n'
+  const checks = 'checks:\n  - name: always\n    run: "true"\n  - name: web\n    run: "true"\n    paths: ["packages/runtime-web/**"]\n'
   const artifacts = store()
   const repository = repo(checks)
   const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
@@ -826,7 +897,7 @@ test('a release is checked as a change from the running one: the web check runs 
     return git('rev-parse', 'HEAD')
   }
   const docs = commit('docs/note.md')
-  const worker = commit('packages/web-worker/a.ts')
+  const worker = commit('packages/runtime-web/a.ts')
   const verifier = requiredChecks(artifacts, processSpawner)
   const reason = async (commitId: string, parent?: string) => {
     const tree = { ...(await snapshot(repository, commitId)), ...(parent ? { parent } : {}) }
@@ -1052,7 +1123,7 @@ test('on: setup checks (install, build) run whenever a later chosen check needs 
 
 test('on: the schema accepts the three events and refuses an unknown one, an empty list and a string', () => {
   for (const event of ['pull_request', 'merge_group', 'release']) assert.ok(!('problem' in parseChecksFile(`checks:\n  - name: a\n    run: x\n    on: [${event}]\n`)), event)
-  for (const bad of ['[push]', '[]', 'release', '[pull_request, nightly]']) {
+  for (const bad of ['[push]', '[]', 'release', '[pull_request, daily]']) {
     const parsed = parseChecksFile(`checks:\n  - name: a\n    run: x\n    on: ${bad}\n`)
     assert.ok('problem' in parsed, bad)
     assert.match((parsed as { problem: string }).problem, /on/, bad)

@@ -139,6 +139,8 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
   Not delegated (operator, 2026-11-27): a release that touches `packages/verifiers/src`, `packages/effects/src` or
   `workflows/*.yaml`, because those take effect only at a release; a caller's release that touched them is reported as
   a violation (relgate-1) and recorded as an Escaped defect.
+  Unless the Operator approved that release commit (operator, 2026-11-28; ADR-0019): then a caller session may merge
+  and install it.
 - No Item caps (operator, 2026-11-26): the scheduled session and a `/goal` session take every Ready `todo` Item; each
   Item is still one Worker attempt with a test that fails first, and the Operator settles the Intent behind it.
 - Reopened by: Items per operator act on product Batches staying under 3.6 after three Batches; DNA Batches whose
@@ -162,6 +164,11 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
   on since that release (a real attempt, work:69b5e97f, ran under bubblewrap: no `~/.ssh`, no Host state, `hooks/`
   read-only, the repository's Node); the operator decides default on from that night's Verified Success Rate. The `unknown` failure class gets no Item: 66 of its 69 since 2026-11-01 came before
   2026-11-20 (rc-1 catches a recurrence), and Satisfied keeps needing a test a Verifier ran.
+- The Scheduled session is a deterministic caller (operator, 2026-11-28; [ADR-0020](docs/decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md), evidence RES-0022;
+  Intents d914f2a00517 and 9dceb6383af2; Items sch-1 to sch-7, alog-1, alog-2, sum-1, fin-1, trace-1, cite-1). The measure: every Item Ready at the
+  start of a pass ends it merged, held or failed with a recorded cause, and the operator is notified, also when the pass could not start. Not
+  taken up, with what reopens each (RES-0022, "Candidates not taken up"): Claude Code, Codex and Antigravity through DSH headless or ACP adapters
+  (dropped), DSH headless with a DeepSeek model as a Runtime, resume of a Worker's session, `dsh-sandbox-local` for the layer.
 
 ## 4. Future, not current gates
 

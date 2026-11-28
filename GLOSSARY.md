@@ -89,7 +89,8 @@ _Avoid_: idea, prompt, request
 A planned piece of a project's work, with a stable ID in the project's
 status list. An Item can get several Tasks over time (a request rewritten
 after a failure); Works carry them out, and the change that finishes it
-marks it done.
+marks it done. The Item's line is the brief: it names its files, its
+tests and what shows it is done, and is the Task's instructions.
 _Avoid_: task, ticket, issue, todo
 
 **Claim**:
@@ -117,7 +118,7 @@ _Avoid_: waiting, held (a held Work awaits an Approval)
 **Task**:
 An immutable record of what to do: instructions, optionally the repository
 commit to start from, and Artifacts to read as context. A Task does not run;
-several Works can take the same Task.
+the Task of an Item is the Item's line; several Works can take the same Task.
 _Avoid_: job, ticket, Work (for the request)
 
 **Work**:
@@ -142,6 +143,12 @@ One execution of a step by one Account, recorded in the Work's history. A
 failed or lost step runs again as a new Attempt; the earlier ones stay in the
 record. See [work-record](docs/architecture/work-record.md).
 _Avoid_: run, try, retry (a retry acts on a Work)
+
+**Attempt log**:
+What the Runtime printed during one Attempt, stored as an Artifact with secrets
+removed: the record of what the Worker did, read when an Attempt has to be
+understood afterwards.
+_Avoid_: session (a caller session), transcript, Conversation (brought in by the operator)
 
 **Artifact**:
 An immutable, typed, content-addressed record, such as a Task's context file, an
@@ -199,8 +206,9 @@ CLI and agents act on Work only by asking it.
 _Avoid_: daemon, server, backend
 
 **Release**:
-The operator merging `dev` into `main` after reading a release report. System
-never makes a Release.
+Merging one commit of `dev` into `main` and installing it, after the operator
+read its release report or approved that commit. System prepares a Release but
+never decides one.
 _Avoid_: deploy, ship; checkpoint (a milestone's internal gate)
 
 **Batch**:
@@ -212,8 +220,14 @@ _Avoid_: lot, sprint; merge group (changes a merge queue checks together)
 **Scheduled session**:
 A caller session started on a schedule, with no operator present, that picks
 Ready Items and carries them through Works within fixed limits; it never
-approves, releases or writes Items.
-_Avoid_: night run, bot, autopilot
+approves or writes Items, and it releases only a commit the Operator approved.
+_Avoid_: night run, night session, bot, autopilot
+
+**Schedule** ([ADR-0020](docs/decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md)):
+What the Operator writes down on one machine for a Scheduled session: when it
+starts and what it carries, either the Ready Items of named repositories or one
+Work from a fixed Workflow and Task.
+_Avoid_: job (a Task is the request), cron, routine
 
 ### Checking work
 

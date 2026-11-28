@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { QuotaReport } from '../../agents/src/quota.ts'
+import type { QuotaReport } from '../../runtime-cli/src/quota.ts'
 
 // Test-side contract from the SC plan. A URL import lets these tests compile
 // before headroom.ts exists; each case still fails on that missing module.

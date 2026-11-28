@@ -73,7 +73,7 @@ checks:
   does not reopen `implement` (retry `onFail` fires on `fail` only): the Work is
   held for an operator Approval before `publish`; approve lets it publish and merge,
   deny fails it.
-- **Node** (`nodeBin` in [agents/src/node.ts](../agents/src/node.ts), PROP-0007 decision 3; a Worker's `PATH` gets it too, fl-3): when the
+- **Node** (`nodeBin` in [agents/src/node.ts](../runtime-cli/src/node.ts), PROP-0007 decision 3; a Worker's `PATH` gets it too, fl-3): when the
   commit's `package.json` has `engines.node`, a Node that satisfies it goes
   first on the checks' `PATH`: the Host's own, else the newest under
   `~/.nvm/versions/node`, as `bin/system` looks; none is an `error` verdict.
@@ -179,6 +179,7 @@ checks:
     is not one) is in `sources`, every source is cited at least once, and
     every source has a claim. Otherwise `fail`, naming the ids.
   - **Fetch:** User-Agent `System-citation-check/1.0 (+https://github.com/tsuuanmi/System)`.
+  - **Internal addresses** (Item cite-1; no new criteria version, since what passes is unchanged for public pages): `fetchText` follows redirects itself (at most 10) and, before each request, refuses a URL whose scheme is not http or https or whose host resolves (`dns.lookup`, every address) to a loopback, private, link-local, unique-local or unspecified address (IPv4, IPv6, IPv4-mapped). That citation is unreachable (`fetch failed: internal address`), not counted. The `verifiers` row's Config `citationInternalHosts` (host names or addresses, empty by default, never set in the Operator's profile) lists hosts that may be fetched anyway; `tests/verify.test.ts` sets it for its 127.0.0.1 site. Unit tests hand `citationCheck(artifacts, { internalHosts, resolve })` a resolver. Not covered: a host that changes its answer between the lookup and the request (DNS rebinding).
 - **`citations-v3`** (verifier version 5; v2 is unchanged; the Research
   Workflows use v3): v2, except that completeness ignores text inside inline
   code and fenced code blocks when it collects the report's `[id]`s (`?.[1]` in

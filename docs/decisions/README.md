@@ -67,4 +67,14 @@ acceptance does not imply its code exists.
   Accounts in its own row; a Worker registration carries its Account's status, quota and version, and optionally sign-in
   and recheck, so `agents` knows no specific Runtime and `app` reads no Runtime's service; packages are renamed to
   GLOSSARY terms (`runtime-cli`, `runtime-web`), row ids in the one profile migration.
+- [ADR-0019 — A Release is cut at a commit](ADR-0019-a-release-is-cut-at-a-commit.md) — accepted — A Release is cut at
+  one commit of `dev` on a `release/<commit>` branch, its report is generated from records by `system release prepare`,
+  the Operator may approve that exact commit so a caller session merges and installs it, and docs waivers travel as
+  `Docs-Unchanged:` git trailers of the commits instead of a file cleared at each release.
+- [ADR-0020 — The Scheduled session is a deterministic
+  caller](ADR-0020-the-scheduled-session-is-a-deterministic-caller.md) — accepted — The Scheduled session is a
+  deterministic caller driven by a Schedule, with no model in the caller's role; its passes are independent and
+  re-enterable, it runs outside the bubblewrap layer, the next Attempt of a step must be able to run on any capable
+  Account (so a Worker's session is never resumed), and it carries out a Release only for a commit the Operator
+  approved.
 <!-- docs:end index:decision -->

@@ -109,7 +109,7 @@ checks:
     # only when one of these paths differs between the two.
     run: corepack pnpm test:web
     timeoutSeconds: 600
-    paths: [packages/web-worker/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/headed.ts, '!**/*.md']
+    paths: [packages/runtime-web/**, packages/web-driver/**, tests/chatgpt-web.test.ts, test-support/headed.ts, '!**/*.md']
 
 # Item fl-6: what `system update` runs on the installed release (Item fl-5, `release.install-check`), one check per
 # user-visible surface that broke only on the install (2026-11-14/15). Each is read-only. The command runs in a

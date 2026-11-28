@@ -3,11 +3,11 @@
 System 1's ChatGPT web driver, its UI map and its UI engine, ported whole
 (operator's decision, 2026-11-07: System 1 already works against chatgpt.com,
 so its logic is ported, not written again; PROP-0005 ([retired](../../docs/governance/retired.md)) item 7).
-It is a library: the `web` Runtime in [@system/web-worker](../web-worker/README.md)
+It is a library: the `web` Runtime in [@system/runtime-web](../runtime-web/README.md)
 runs an attempt through the generic [Procedures](#generic-procedures-ww2-ii-new-here) bound to this
 package's UI map, and builds a `ChatGptWebDriver` for what login, remote login and recheck still
 ask of it: `checkAuth`, `open`, `diagnostics` and the map. System 1's `ask` (its whole turn)
-was removed with the legacy path (WW2-iv). It starts no browser (the Runtime does, with [chrome.ts](../web-worker/src/chrome.ts))
+was removed with the legacy path (WW2-iv). It starts no browser (the Runtime does, with [chrome.ts](../runtime-web/src/chrome.ts))
 and holds no account, ledger or decision store.
 
 Source: System 1, `tsuuanmi/system`, commit
@@ -44,7 +44,7 @@ changed but the header line.
 - **Not ported:** the Cordis plugin glue (`plugin.ts`, `index.ts`), the
   scheduler, ledger, gateway, accounts and vault, System 1's `Browser`,
   `Display`, registry and portable state (System has its own Host, slots,
-  [chrome.ts](../web-worker/src/chrome.ts) and [display.ts](../web-worker/src/display.ts)),
+  [chrome.ts](../runtime-web/src/chrome.ts) and [display.ts](../runtime-web/src/display.ts)),
   `reconcile.ts` and `start.ts` of provider-core (only the `TurnSnapshot` type
   is kept, in `src/core/driver.ts`), the `ui-outline` schema, and System 1's
   driver specs (cut from its suite by its ADR-0084; `tests/driver.test.ts` is
@@ -70,7 +70,7 @@ changed but the header line.
   it again, so a Host never pairs its code with another version's map (a canary run
   did, after the branch moved to `ui-map@1.7` under a Host that knew 1.6).
   `shippedMapProblem()` is the one-line reason a map did not load, if it did not: the
-  `web-worker` row reports its accounts `unavailable` with it. The Host's code version
+  `runtime-web` row reports its accounts `unavailable` with it. The Host's code version
   hashes `ui/*.yaml` and `ui/*.json`, so changing a map restarts the Host as changing
   code does.
 - **`erasableSyntaxOnly`.** This repository's TypeScript runs without
@@ -88,7 +88,7 @@ changed but the header line.
   copy path (fences by CommonMark's rule, rendered code blocks as `{ label, code }` data,
   the rendered text as data, tilde fences) was in `ask` and its Markdown readers, and went with
   it; the Procedures' `readAnswer` returns the rendered blocks and text, and the Runtime reads
-  the fences (`parseBlocks`, `unblocked`, `outsideChars` in `web-worker/src/chatgpt.ts`). The live
+  the fences (`parseBlocks`, `unblocked`, `outsideChars` in `runtime-web/src/chatgpt.ts`). The live
   site's code widget, a `[data-code-block]` with a header bar and the text in
   `[data-code-block-source] code`, is the first `answer.code` candidate of the map.
 - **Leaked control tokens (WW6b, `ui-map@1.7`).** ChatGPT sometimes leaks a model
@@ -159,7 +159,7 @@ TypeScript control flow over the UI engine, with no Site name in it. Each return
 `{ status: 'ok' | 'failed' | 'unknown', reason?, evidence }` (counts and names, never prompt
 or page text) and throws only for the caller's abort. The Runtime runs every attempt through them (WW2-iv: the
 legacy driver turn and the account option `procedures` are gone, see the
-[web-worker README](../web-worker/README.md)).
+[runtime-web README](../runtime-web/README.md)).
 
 - **The map binds, the code decides** (`ui-map@1.7`; 1.6 maps still load). `site` (origin,
   conversation URL pattern, `temporaryChat.action` or none), `modes` (`switch` element,
@@ -211,7 +211,7 @@ legacy driver turn and the account option `procedures` are gone, see the
 
 ## Used by the Runtime, not in System 1
 
-- `chatGptDriver(web)` (in web-worker) builds the driver on one account's clocks: `readyMs` is
+- `chatGptDriver(web)` (in runtime-web) builds the driver on one account's clocks: `readyMs` is
   `timeouts.load`, `modeReadyMs` is `timeouts.mode`. The Procedures' clocks are the map's
   `settings`, set from the account by `procedureMap`.
 - The page gap (`pageGapMs`) and sessions of System 1's Browser are not used: one attempt owns its

@@ -69,7 +69,7 @@ export function shippedMap(overlay?: string): UiMap {
   return shippedMapOf(MAP_URL, overlay)
 }
 
-/** Why the shipped map did not load (one line), if it did not: the web-worker row reports its accounts unavailable with it. */
+/** Why the shipped map did not load (one line), if it did not: the runtime-web row reports its accounts unavailable with it. */
 export const shippedMapProblem = (file: URL = MAP_URL): string | undefined => shippedMapProblemOf(file)
 shippedMapProblem()
 

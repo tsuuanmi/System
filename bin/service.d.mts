@@ -9,3 +9,8 @@ export const UPGRADE_RETRIES: number
 export function supervise(options: { run: () => Promise<number>; stopped: () => boolean; log: (line: string) => void; wait?: (ms: number) => Promise<void> }): Promise<number>
 export function hostCommand(args: string[]): boolean
 export function installProfile(repo: string, exists: (path: string) => boolean): string | undefined
+export function schedulesDir(installBase: string): string
+export function scheduleServiceText(options: { name: string; node: string; entry: string; home: string; path: string; file: string }): string
+export function scheduleTimerText(options: { name: string; at: string[] }): string
+export function scheduleUnits(options: { node: string; entry: string; home: string; path: string; schedules: { name: string; file: string; at: string[]; checkAt?: string }[] }): Map<string, string>
+export function syncScheduleUnits(dir: string, wanted: Map<string, string>, keep: string[]): { written: string[]; removed: string[] }

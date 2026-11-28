@@ -75,11 +75,15 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    shows your claim, and the Work you submit for the Item takes it over.
 2. \`task_new\` with the repository, the ref and the \`item\`; its result is
    \`{ task, base }\`: pass \`task\` alone as the input.
-   For a change, write the Task's instructions as a context pack, prose under
-   these headings, so the Worker reads the named files first instead of
-   exploring: Goal (what and why); Files to change and why (the files the
-   Worker reads first); Tests to add or update; Invariants not to change;
-   Out of scope; Done when (what shows it is finished).
+   The Task of an Item is the Item's line: the Item names its files, its tests
+   and what shows it is done, so the Worker needs nothing more; write no
+   context pack for it. \`(workflow: <name>)\` at the end of the line picks the
+   Workflow (develop.yaml unless the line says otherwise).
+   For a Task that names no Item, write the instructions as a context pack,
+   prose under these headings, so the Worker reads the named files first
+   instead of exploring: Goal (what and why); Files to change and why (the
+   files the Worker reads first); Tests to add or update; Invariants not to
+   change; Out of scope; Done when (what shows it is finished).
    One Item fits one Worker attempt (about an hour): split a Done when with
    several independent parts into several Items. Template:
    ~/.system/current/workflows/README.md.
@@ -121,6 +125,42 @@ human: print the exact command for the operator to run in a terminal, such as
 \`system approve <work>\`, \`system deny <work>\` or
 \`system work retry <work> --step checks.checks\`.
 `
+
+/** The most an MCP tool result shows, in bytes (alog-2): reads are bounded where they are shown; the Host and the CLI keep everything. */
+export const RESULT_BOUND = 32 * 1024
+/** `artifact.cat`'s part through MCP when the caller gave no `maxBytes`: its base64 and the reply's other fields fit the bound. */
+const CAT_PART = 24_000
+
+const sizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value) ?? 'null')
+
+/** A `work.show` result over the bound without its oldest events, saying how many were left out and which call returns them. */
+export function boundShow(record: unknown): unknown {
+  const shown = record as { events?: unknown[] } | null
+  if (sizeOf(record) <= RESULT_BOUND || !shown || !Array.isArray(shown.events)) return record
+  const events = shown.events
+  const trimmed = (dropped: number) => ({ ...shown, events: events.slice(dropped), omittedEvents: dropped, omittedNote: `the ${dropped} oldest events are left out; \`work.events\` returns them` })
+  let low = 0
+  let high = events.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (sizeOf(trimmed(middle)) <= RESULT_BOUND) high = middle
+    else low = middle + 1
+  }
+  return trimmed(low)
+}
+
+/** The text of a tool result: itself when within the bound, else its first bytes and a marker line with the full size and the call that returns the rest. */
+export function boundText(text: string, tool: string): string {
+  const size = Buffer.byteLength(text)
+  if (size <= RESULT_BOUND) return text
+  const kept = Buffer.from(text).subarray(0, RESULT_BOUND).toString('utf8').replace(/\uFFFD+$/, '')
+  const rest = tool === 'artifact.cat' ? 'call `artifact.cat` with `offset` and a smaller `maxBytes` to read the rest'
+    : tool === 'work.show' ? 'call `work.events` for the events'
+      : tool === 'work.events' ? 'call `work.events` again with `after` set to the last `seq` you read'
+        : tool === 'work.trace' ? 'call `artifact.cat` on the log or check-run IDs, or run `system work trace` in the CLI'
+          : `call \`${tool}\` again with narrower arguments for the rest`
+  return `${kept}\n[cut: the result is ${size} bytes, the first ${Buffer.byteLength(kept)} are shown; ${rest}]`
+}
 
 const WORK_URI = /^system:\/\/work\/(.+)$/
 
@@ -214,7 +254,10 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {
       if (!current.some((tool) => tool.name === params.name)) throw new Error(`unknown tool ${params.name}`)
-      return { content: [{ type: 'text' as const, text: JSON.stringify(await forwarded(params.name, withWorkflowFile(params.name, params.arguments ?? {})) ?? null) }] }
+      let args = withWorkflowFile(params.name, params.arguments ?? {})
+      if (params.name === 'artifact.cat' && args.maxBytes === undefined) args = { ...args, maxBytes: CAT_PART }
+      const result = await forwarded(params.name, args)
+      return { content: [{ type: 'text' as const, text: boundText(JSON.stringify(params.name === 'work.show' ? boundShow(result) : result) ?? 'null', params.name) }] }
     } catch (error) {
       return { isError: true, content: [{ type: 'text' as const, text: (error as Error).message }] }
     }
@@ -223,7 +266,7 @@ export async function runMcp(args: string[], home: string, open: (who: Caller, o
     resources: ((await forwarded('work.list', {})) as { id: string; status: string }[]).map((work) => ({ uri: `system://work/${work.id}`, name: work.id, description: `Work ${work.id}: ${work.status}`, mimeType: 'application/json' })),
   }))
   server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => ({
-    contents: [{ uri: params.uri, mimeType: 'application/json', text: JSON.stringify(await forwarded('work.show', { workId: workOf(params.uri) })) }],
+    contents: [{ uri: params.uri, mimeType: 'application/json', text: boundText(JSON.stringify(boundShow(await forwarded('work.show', { workId: workOf(params.uri) }))), 'work.show') }],
   }))
   server.setRequestHandler(SubscribeRequestSchema, async ({ params }) => {
     const workId = workOf(params.uri)

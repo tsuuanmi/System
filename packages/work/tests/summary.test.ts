@@ -28,7 +28,7 @@ test('a Work run straight through needs no operator touch; observed usage is sum
   assert.deepEqual(summary, {
     id: 'work:1', status: 'succeeded', durationMs: 10_000, attempts: 1, reopenRounds: 0, waitedForSlotMs: 0, rateLimitedAttempts: 0, operatorTouches: 0, touches: [],
     failures: [], outsideFailures: 0, changeFailures: 0, unknownFailures: 0,
-    usage: { inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 7, observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 0 },
+    usage: { inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 7, cacheReadShare: 'unknown', observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 0 },
   })
 })
 
@@ -51,7 +51,7 @@ test('human decisions, retries and cancels are touches; unknown usage is counted
   assert.ok('failures' in summary)
   assert.ok(Array.isArray(summary.failures))
   assert.equal(summary.failures.length, 3)
-  assert.deepEqual(summary.usage, { inputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 1, observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 1 })
+  assert.deepEqual(summary.usage, { inputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 1, cacheReadShare: 'unknown', observedAttempts: 1, unsplitAttempts: 1, unknownAttempts: 1 })
 })
 
 test('cache reads and writes are totalled apart; an attempt without the split is unsplit, never zero cache', () => {
@@ -65,7 +65,7 @@ test('cache reads and writes are totalled apart; an attempt without the split is
     observed(3, { inputTokens: 9, outputTokens: 1 }),
     { type: 'terminal', at: '2026-11-06T00:00:03.000Z', outcome: 'succeeded', reason: 'ok', results: {} },
   ]))
-  assert.deepEqual(summary.usage, { inputTokens: 159, cacheReadTokens: 80, cacheWriteTokens: 10, freshInputTokens: 60, outputTokens: 11, observedAttempts: 3, unsplitAttempts: 1, unknownAttempts: 0 })
+  assert.deepEqual(summary.usage, { inputTokens: 159, cacheReadTokens: 80, cacheWriteTokens: 10, freshInputTokens: 60, outputTokens: 11, cacheReadShare: 80 / 150, observedAttempts: 3, unsplitAttempts: 1, unknownAttempts: 0 })
 })
 
 test('the cost estimate is totalled over the attempts that report it, and absent when none does', () => {

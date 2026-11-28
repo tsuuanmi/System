@@ -1,6 +1,6 @@
 /**
  * M3 on the real profile with the `agents` row pointed at a fake CLI
- * (packages/agents/tests/fake-agent.mjs) by a profile patch: per-attempt
+ * (packages/runtime-cli/tests/fake-agent.mjs) by a profile patch: per-attempt
  * worktrees, cross-process cancel, and a Codex takeover of cancelled Claude
  * work, all through `bin/system`. No model credentials are used.
  */
@@ -36,7 +36,7 @@ let gitRepo = ''
 
 before(async () => {
   assert.equal(system(['init']).status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:
@@ -82,6 +82,17 @@ test('both configured accounts are registered, with the CLI version', () => {
   const out = system(['workers'])
   assert.match(out.stdout, /registered: claude-code\/default, codex\/default/)
   assert.match(out.stdout, /claude-code\/default\s+available\s+0\.0\.0-fake \(Claude Code\)/)
+})
+
+test('sign-in and recheck of an Account whose Runtime has none are refused by name, through the real Host (ADR-0018 decision 2)', () => {
+  for (const args of [['login', 'claude-code/default'], ['login', 'claude-code/default', '--remote'], ['recheck', 'claude-code/default']]) {
+    const ran = cli.run(['workers', ...args], { terminal: true })
+    assert.equal(ran.status, 1, args.join(' '))
+    assert.match(ran.stdout + ran.stderr, /not supported by runtime claude-code/, args.join(' '))
+  }
+  const unknown = cli.run(['workers', 'login', 'nope/none'], { terminal: true })
+  assert.equal(unknown.status, 1)
+  assert.match(unknown.stdout + unknown.stderr, /nope\/none is not a registered Account/)
 })
 
 test('system workers ends with the room line, with Ready Items for --repo', () => {
@@ -161,6 +172,39 @@ test('a retry naming an unknown Worker is refused', () => {
   assert.match(retried.stderr, /no enabled Worker nobody\/default/)
 })
 
+test('system workers shows free when idle and busy while a Work is running', { timeout: 120_000 }, async () => {
+  const idle = system(['workers'])
+  assert.equal(idle.status, 0, idle.stderr)
+  const idleBlocks = idle.stdout.trimEnd().split(/\n(?=\S)/).slice(1, -1)
+  assert.equal(idleBlocks.length, 2)
+  for (const block of idleBlocks) assert.match(block, /^  free$/m)
+
+  const ready = join(cli.home, 'workers-busy-ready')
+  const input = newTask(`FAKE:sleep FAKE:ready=${ready}`)
+  const submit = cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--worker', 'claude-code/default', '--input', input])
+  let workId = ''
+  for (let i = 0; i < 1200 && !workId; i++) {
+    await new Promise((r) => setTimeout(r, 100))
+    if (submit.stdout().trim()) workId = submit.stdout().trim().split('\n')[0]!
+  }
+  assert.ok(workId, 'the submit printed its Work ID')
+  for (let i = 0; i < 1200 && !existsSync(ready); i++) await new Promise((r) => setTimeout(r, 50))
+  assert.ok(existsSync(ready), 'the agent is running')
+
+  try {
+    const busy = system(['workers'])
+    assert.equal(busy.status, 0, busy.stderr)
+    const blocks = busy.stdout.trimEnd().split(/\n(?=\S)/).slice(1, -1)
+    const claude = blocks.find((b) => b.startsWith('claude-code/default'))!
+    const codex = blocks.find((b) => b.startsWith('codex/default'))!
+    assert.match(claude, new RegExp(`^  busy: ${workId} - \\(-\\) step task since `, 'm'))
+    assert.match(codex, /^  free$/m)
+  } finally {
+    cli.run(['work', 'cancel', workId, '--reason', 'done', '--wait'], { terminal: true })
+    await submit.done
+  }
+})
+
 test('a profile with priority: primary loads, and workers notes that it is ignored', () => {
   const out = system(['workers'])
   assert.match(out.stdout, /claude-code\/default[^\n]*main Claude/)
@@ -194,7 +238,7 @@ test('duplicate provider account IDs refuse the later account, while unreadable 
   writeAccount('identity-a', 'same-provider-account')
   writeAccount('identity-b', 'same-provider-account')
   writeAccount('identity-unknown')
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: codex/x1, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-a}\n      - {ref: codex/x2, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-b}\n      - {ref: codex/x3, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-unknown}\n`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli\n  config:\n    $patch: replace\n    accounts:\n      - {ref: codex/x1, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-a}\n      - {ref: codex/x2, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-b}\n      - {ref: codex/x3, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-unknown}\n`)
   await cli.start()
   const out = system(['workers'])
   assert.match(out.stdout, /codex\/x2[^\n]*codex\/x1[^\n]*provider account/i)
@@ -204,11 +248,15 @@ test('duplicate provider account IDs refuse the later account, while unreadable 
 async function readableQuotaAccount() {
   const codexHome = fakeCodexHome(join(home, 'quota-home'), 'quota-provider')
   const fake = fakeQuotaCli(join(home, 'quota-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 } }) })
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:
       - {ref: codex/quota, runtime: codex, capabilities: [research], command: ${JSON.stringify(fake.command)}, codexHome: ${JSON.stringify(codexHome)}}
+- id: runtime-web
+  disabled: false
+  config:
+    accounts:
       - {ref: web/chatgpt/quota, runtime: web, site: chatgpt, capabilities: [research]}
 `)
   await cli.start()
@@ -241,7 +289,7 @@ done
 exec '${fakeAgent}' "$@"
 `)
   chmodSync(command, 0o700)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:

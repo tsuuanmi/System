@@ -5,13 +5,17 @@
 import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
-import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, holdDecision, type WorkRecord } from '@system/work'
-import type { QuotaReport } from '@system/agents'
+import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts/contract'
+import { holdDecision, TERMINAL, type WorkTrace } from '@system/work/contract'
+import type { WorkRecord } from '@system/work'
+import type { QuotaReport } from '@system/runtime-cli/contract'
 import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '@system/host'
 import { operations, type Services } from '@system/host/operations'
+import { prepareRelease } from './release.ts'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
+import { carryCheck, carryItem, carryPass } from './items.ts'
+import { readSchedule } from './schedule.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
@@ -90,11 +94,23 @@ export function quotaLine(quota: QuotaReport, now: number): string {
   return `quota: ${parts.join(', ')}${quota.source === 'rate_limit_event' ? ' (from the last attempt)' : ''}`
 }
 
+export interface BusyAttempt {
+  account: string
+  work: string
+  repository?: string
+  item?: string
+  step: string
+  since: string
+  uncertain?: true
+}
+
 export interface WorkersView {
   registered: string[]
   /** How many Accounts could take one more parallel Work: see `workers.list`. */
   room?: { accounts: number; free: number; unknown: string[]; ready: { repository: string; count?: number; error?: string }[] }
-  accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
+  /** Worker attempts running now or holding a slot, across every repository. */
+  busy?: BusyAttempt[]
+  accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; /** ISO time the Runtime says the sign-in ends, when it says. */ credentialExpiresAt?: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
 /** What `doctor` and `host` run against: the process that boots DSH. */
@@ -103,6 +119,8 @@ export interface HostProcess extends DoctorHost {
   checkStore(): Promise<StoreReport>
   /** Run as the Host of this home until stopped by a signal or by new code on disk; resolves its exit status once it has stopped. */
   runHost(): Promise<number>
+  /** Why the profile cannot start this Host (rows to move, ADR-0018); undefined when it can. Read from the profile's patch files, which are never rewritten. */
+  profileProblem(): string | undefined
 }
 
 /** A command the program selected, run after startup. */
@@ -124,6 +142,8 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
     .option('--store', 'instead of the composition check, walk every Work record and Artifact, read-only: each record folds, each Artifact a Work names is stored, each blob reads in full and matches its digest, each inline Artifact hashes to its ID; prints the counts and one line per problem, exits 1 on any. Safe beside a running Host (it opens SQLite as `doctor` always does and writes nothing)')
     .action((options: { json?: boolean; store?: boolean }) => {
       select(async () => {
+        const problem = host.profileProblem()
+        if (problem) throw new Error(problem)
         if (options.store) {
           const report = await host.checkStore()
           io.out(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatStoreReport(report))
@@ -139,7 +159,11 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
     // Handled by bin/system before DSH starts: the supervisor is that wrapper, which runs this command again after an exit 75.
     .option('--supervise', 'stay as a supervisor and run the Host again after an exit 75 (new code); any other exit ends it')
     .action(() => {
-      select(() => host.runHost())
+      select(() => {
+        const problem = host.profileProblem()
+        if (problem) return Promise.reject(new Error(problem))
+        return host.runHost()
+      })
     })
   return program
 }
@@ -153,7 +177,7 @@ function zonelessUtc(text: string): string | undefined {
   return Number.isNaN(at.getTime()) ? undefined : at.toISOString()
 }
 
-export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => void): Command {
+export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => void, home?: string): Command {
   const program = newProgram()
   const artifactId = (id: string): string => {
     if (!CONTENT_ID_RE.test(id)) throw new Error(`not an Artifact ID: ${id}`)
@@ -242,7 +266,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .option('--repo <path>', 'a project whose Ready Items the room line counts (repeatable)', (path: string, all: string[] = []) => [...all, path])
     .action((options: { repo?: string[] }) => {
       select(async () => {
-        const { registered, accounts, room } = await host.call('workers.list', given({ repository: options.repo?.map((path) => resolve(path)) })) as unknown as WorkersView
+        const { registered, accounts, room, busy } = await host.call('workers.list', given({ repository: options.repo?.map((path) => resolve(path)) })) as unknown as WorkersView
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}${identityOf(a)} (${a.runtime})\n`)
@@ -252,6 +276,9 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
           const models = Object.entries(a.models ?? {})
           if (models.length) io.out(`  models: ${models.map(([tier, model]) => `${tier}=${model}`).join(', ')}\n`)
           if (a.quota) io.out(`  ${quotaLine(a.quota, Date.now())}\n`)
+          const on = (busy ?? []).filter((b) => b.account === a.ref)
+          if (on.length) for (const b of on) io.out(`  busy: ${b.work} ${b.item ?? '-'} (${b.repository ?? '-'}) step ${b.step} since ${b.since}${b.uncertain ? ' uncertain' : ''}\n`)
+          else io.out('  free\n')
         }
         if (room) io.out(`${roomLine(room)}\n`)
         return 0
@@ -339,6 +366,29 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  const release = program.command('release').description('releases: prepare one at a commit of dev; the Operator approves a commit for release')
+  release.command('approve <commit>')
+    .description('approve a commit of dev for release (ADR-0019): a human at a terminal types its 7 hex characters; stores a release-approval@1 Artifact and prints its ID alone on stdout. A caller session may then release that commit')
+    .action((commit: string) => {
+      select(async () => {
+        if (!/^[0-9a-fA-F]{7,40}$/.test(commit)) throw new Error('give the commit as 7 to 40 hex characters')
+        const expected = commit.slice(0, 7).toLowerCase()
+        await io.confirmHuman(`Releasing ${commit} is the Operator's decision. Type its 7 hex characters and press Enter, exactly: ${expected}\n> `, expected)
+        // An operator operation: it goes over the operator socket, as the Operator's.
+        const created = await host.call('release.approve', given({ commit }))
+        io.out(`${created.approval}\n`)
+        return 0
+      })
+    })
+  release.command('prepare <commit>')
+    .description('cut a release (ADR-0019): create and push the branch release/<7 hex of the commit> at a commit of dev, and write the release report (Markdown, from records) to stdout. It never merges and never opens the pull request: run `gh pr create --base main --head release/<commit> --body-file <report>`')
+    .option('--repo <path>', 'the repository (default: the current directory)', '.')
+    .action((commit: string, options: { repo: string }) => {
+      select(async () => {
+        io.out(await prepareRelease(host, resolve(options.repo), commit))
+        return 0
+      })
+    })
   const defect = program.command('defect').description('Escaped defects, recorded so work report counts them')
   defect.command('add <item-or-commit>')
     .description('store an escaped-defect@1 Artifact naming the Item (its ID) or the merge commit (7 to 40 hex characters) that carried the defect, and print its ID alone on stdout')
@@ -373,6 +423,34 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         const claim = await host.call('item.claim', given({ repository: resolve(options.repo), item, force: options.force })) as { who: string; at: string }
         io.out(`${item} claimed by ${claim.who} since ${claim.at}\n`)
         return 0
+      })
+    })
+  const items = program.command('items').description('carry out Items of a project\'s STATUS.md')
+  items.command('carry [id]')
+    .description('carry one Item of STATUS.md, or without an Item ID run one pass over the given repositories in order (up to free Accounts and --max-parallel)')
+    .option('--repo <path>', 'a git repository of the project (repeatable for a pass)', collect, [])
+    .option('--max-parallel <n>', 'maximum Works to run in parallel during a pass')
+    .option('--schedule <file>', 'a Schedule file (~/.system/schedules/<name>.yaml): its repositories and maxParallel')
+    .option('--check', 'with --schedule: start nothing; say what would stop the pass (silent when all is well, else exit 1 and notify)')
+    .action((id: string | undefined, options: { repo: string[]; maxParallel?: string; schedule?: string; check?: boolean }) => {
+      select(async () => {
+        if (options.check && options.schedule === undefined) throw new Error('--check goes with --schedule')
+        if (options.schedule !== undefined) {
+          if (id !== undefined || options.repo.length > 0 || options.maxParallel !== undefined) throw new Error('--schedule is a pass of its own: give no Item ID, --repo or --max-parallel')
+          const schedule = readSchedule(options.schedule)
+          if (options.check) return carryCheck(host, schedule.repositories, { home }, io)
+          return carryPass(host, schedule.repositories, { maxParallel: schedule.maxParallel, home }, io)
+        }
+        if (id !== undefined) {
+          if (options.repo.length > 1) throw new Error('give one --repo with an Item ID')
+          if (options.maxParallel !== undefined) throw new Error('--max-parallel goes with a pass (no Item ID)')
+          return carryItem(host, id, options.repo[0] ?? '.', io)
+        }
+        const maxParallel = options.maxParallel === undefined ? undefined : Number(options.maxParallel)
+        if (maxParallel !== undefined && !(Number.isInteger(maxParallel) && maxParallel >= 1)) {
+          throw new Error('--max-parallel is a positive integer')
+        }
+        return carryPass(host, options.repo, { maxParallel, home }, io)
       })
     })
   program.command('schema')
@@ -600,7 +678,99 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         return replayed.matches ? 0 : 1
       })
     })
+  work.command('trace <workId>')
+    .description('print what happened to a Work, in order, from stored Artifacts and events and with no model')
+    .option('--json', 'print the trace as JSON')
+    .action((workId: string, options: { json?: boolean }) => {
+      select(async () => {
+        const trace = await host.call('work.trace', { workId }) as WorkTrace
+        io.out(options.json ? `${JSON.stringify(trace, null, 2)}\n` : `${formatTrace(trace)}\n`)
+        return 0
+      })
+    })
   return program
+}
+
+function formatUsage(usage: Extract<WorkTrace['timeline'][number], { kind: 'attempt' }>['usage']): string {
+  if (!usage) return 'none'
+  if (usage.state !== 'observed') return 'unknown'
+  const cache = usage.cacheReadTokens !== undefined
+    ? ` (cache_read=${usage.cacheReadTokens}${usage.cacheWriteTokens !== undefined ? `, cache_write=${usage.cacheWriteTokens}` : ''})`
+    : ''
+  const cost = usage.costUsd !== undefined ? ` cost=$${usage.costUsd.toFixed(4)}` : ''
+  return `input=${usage.inputTokens}${cache} output=${usage.outputTokens}${cost}`
+}
+
+/** Format a `WorkTrace` as human-readable lines in chronological order. */
+export function formatTrace(trace: WorkTrace): string {
+  const lines: string[] = [
+    `work ${trace.id}  status: ${trace.status}  spec: ${trace.specId}${trace.item ? `  item: ${trace.item.id}` : ''}`,
+  ]
+  for (const entry of trace.timeline) {
+    if (entry.kind === 'attempt') {
+      lines.push(`attempt ${entry.stepId} (${entry.attemptId})  account: ${entry.account}${entry.model ? `  model: ${entry.model}` : ''}  status: ${entry.status}`)
+      lines.push(`  start: ${entry.startedAt}${entry.durationMs !== undefined ? `  duration: ${entry.durationMs}ms` : ''}`)
+      lines.push(`  usage: ${formatUsage(entry.usage)}`)
+      if (entry.inputs && Object.keys(entry.inputs).length) {
+        lines.push(`  inputs: ${Object.entries(entry.inputs).map(([k, v]) => `${k}=${v}`).join(', ')}`)
+      }
+      if (entry.log) {
+        lines.push(`  log: ${entry.log.id} (${entry.log.size} bytes)`)
+        if (entry.log.commands?.length) {
+          lines.push('  commands:')
+          for (const cmd of entry.log.commands) lines.push(`    $ ${cmd}`)
+        }
+        if (entry.log.filesRead?.length) {
+          lines.push('  files read:')
+          for (const file of entry.log.filesRead) lines.push(`    ${file}`)
+        }
+        if (entry.log.filesWritten?.length) {
+          lines.push('  files written:')
+          for (const file of entry.log.filesWritten) lines.push(`    ${file}`)
+        }
+        if (entry.log.finalStatement !== undefined) {
+          lines.push(`  final: ${entry.log.finalStatement}`)
+        }
+      }
+      if (entry.reason) lines.push(`  reason: ${entry.reason}`)
+    } else if (entry.kind === 'verdict') {
+      lines.push(`verdict ${entry.stepId}: ${entry.verdict} (${entry.at}) - ${entry.reason}`)
+      for (const check of entry.failedChecks) {
+        const exit = check.exitCode !== null ? `exit ${check.exitCode}` : `signal ${check.signal}`
+        lines.push(`  failed check: ${check.name} (${check.id})  ${exit}${check.timedOut ? ' (timed out)' : ''}  cmd: ${check.run}`)
+        if (check.stdoutTail.trim()) {
+          lines.push('    stdout tail:')
+          for (const line of check.stdoutTail.trimEnd().split('\n')) lines.push(`      ${line}`)
+        }
+        if (check.stderrTail.trim()) {
+          lines.push('    stderr tail:')
+          for (const line of check.stderrTail.trimEnd().split('\n')) lines.push(`      ${line}`)
+        }
+      }
+    } else if (entry.kind === 'reopened') {
+      const who = entry.automatic ? 'automatic' : entry.caller ? `${entry.caller.type} ${entry.caller.operatorId}` : 'caller'
+      lines.push(`reopened ${entry.stepId} (${who}, ${entry.at}): ${entry.reason}`)
+      if (entry.previous) lines.push(`  previous: ${entry.previous}`)
+      if (entry.failure) lines.push(`  failure: ${entry.failure}`)
+      if (entry.base) lines.push(`  base: ${entry.base}`)
+    } else if (entry.kind === 'effect') {
+      const cap = entry.capability ? ` (${entry.capability})` : ''
+      lines.push(`effect ${entry.stepId}${cap}: ${entry.state}${entry.reason ? ` - ${entry.reason}` : ''}`)
+      if (entry.subject) lines.push(`  subject: ${entry.subject}`)
+    } else if (entry.kind === 'decided') {
+      lines.push(`decided ${entry.stepId}: ${entry.decision} by ${entry.caller.type} ${entry.caller.operatorId} (${entry.at}) - ${entry.reason}`)
+    } else if (entry.kind === 'skipped') {
+      lines.push(`skipped ${entry.stepId} (${entry.at}): ${entry.reason}`)
+    } else if (entry.kind === 'waiting') {
+      lines.push(`waiting ${entry.stepId} (${entry.at}): ${entry.cause}${entry.resetsAt ? ` until ${entry.resetsAt}` : ''}`)
+    } else if (entry.kind === 'terminal') {
+      lines.push(`outcome: ${entry.outcome} (${entry.at}) - ${entry.reason}`)
+      if (Object.keys(entry.results).length) {
+        lines.push(`  results: ${Object.entries(entry.results).map(([k, v]) => `${k}=${v}`).join(', ')}`)
+      }
+    }
+  }
+  return lines.join('\n')
 }
 
 /** The exit code of a followed Work; leaving it running in the Host is not a failure. */

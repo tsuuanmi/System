@@ -14,7 +14,8 @@ export { blockedText }
 type Admitted = Extract<WorkEvent, { type: 'admitted' }>
 export type ItemRef = NonNullable<Admitted['item']>
 
-const itemOf = (record: WorkRecord): ItemRef | undefined => (record.events[0]!.type === 'admitted' ? (record.events[0] as Admitted).item : undefined)
+/** The Item of a repository's STATUS.md the Work was admitted for, if any. */
+export const itemOf = (record: WorkRecord): ItemRef | undefined => (record.events[0]!.type === 'admitted' ? (record.events[0] as Admitted).item : undefined)
 const admittedAt = (record: WorkRecord): string => record.events[0]!.at
 /** A Work's status for people: `admitted, not running` when it was admitted and nothing has been done for it yet (its record is only its admission). */
 export const workStatus = (record: WorkRecord): string => (record.state.status === 'running' && record.events.length === 1 ? 'admitted, not running' : record.state.status)
@@ -157,7 +158,8 @@ export function itemLines(
       ? `done${satisfied.length && !merged.length ? ', satisfied' : ''}${merged.length && released?.(mergeCommitOf(merged.at(-1)!) ?? '') === false ? ', not yet released' : ''}${last ? `; last ${[last.id, finalArtifactOf(last)].filter(Boolean).join(', ')}` : ''}${outside ? `; outside failures: ${outside}` : ''}`
       : state === 'doing' ? `doing: ${[...active.map((r) => doing(r, live)), ...(claim ? [`claimed by ${claim.who} since ${claim.at}`] : [])].join(' | ')}${idle ? `; idle since ${idle}` : ''}`
         : blocked ? `todo (${blockedText(blocked)})` : 'todo: nobody'
-    lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}${'intent' in item && item.intent ? ` (intent: ${item.intent})` : ''}` : `${item.id} (not in STATUS.md)`} - ${text}`)
+    const markers = `${'intent' in item && item.intent ? ` (intent: ${item.intent})` : ''}${'workflow' in item && item.workflow ? ` (workflow: ${item.workflow})` : ''}`
+    lines.push(`${item.listed ? `[${state === 'done' ? 'x' : ' '}] ${item.id} ${item.title}${markers}` : `${item.id} (not in STATUS.md)`} - ${text}`)
   }
   return lines
 }

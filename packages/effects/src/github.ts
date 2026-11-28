@@ -41,9 +41,10 @@ import { execFile } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { git as runGit } from '@system/git'
-import { GIT_TREE_KIND, gatedFiles, gatesOf, pin, type EffectIntent, type EffectOutcome, type EffectPort, type GitTreeContent, type Reconciled } from '@system/work'
+import { gatedFiles, gatesOf, GIT_TREE_KIND, pin, type EffectPort } from '@system/work/contract'
+import type { EffectIntent, EffectOutcome, GitTreeContent, Reconciled } from '@system/work'
 
 /** What the merge queue's re-check says of a merge commit: `pass` merges, `hold` waits for an operator's Approval of that commit, anything else is refused. `verdicts` are the stored verdict Artifacts. */
 export interface MergeCheck {

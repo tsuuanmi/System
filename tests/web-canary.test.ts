@@ -2,7 +2,7 @@
  * WW4: tools/web-canary. The canary Task is stored by a deterministic command
  * (the real Host, no Worker runs). No browser starts and no test reaches the real
  * site, so it runs in `smoke`; the report tests (a fake `system`) are in
- * packages/web-worker/tests/canary-report.unit.test.ts (web-3a).
+ * packages/runtime-web/tests/canary-report.unit.test.ts (web-3a).
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -18,7 +18,7 @@ const run = (args: string[], env: Record<string, string> = {}) => spawnSync(proc
 
 before(async () => {
   assert.equal(cli.run(['init']).status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     accounts:
       - ref: claude-code/default

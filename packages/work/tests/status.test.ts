@@ -660,3 +660,19 @@ test('readyCount does not count an Item a session has claimed', () => {
   const status = parseStatus('# S\n\n## Items\n\n- [ ] a-1 One\n- [ ] a-2 Two\n')
   assert.equal(readyCount(status, '/r', [], [{ repository: '/r', item: 'a-1', who: 'tan', at: '2026-01-01T00:00:00.000Z' }]), 1)
 })
+
+test('sch-1: an Item line may end with (workflow: <name>) beside (after: ...) and (intent: ...), once each, and status shows it', () => {
+  const hex = 'abc123def456'
+  const parsed = parseStatus(AFTER('- [ ] a-1 One (workflow: research)', `- [ ] a-2 Two (after: a-1) (workflow: hygiene) (intent: ${hex})`, `- [ ] a-3 Three (intent: ${hex}) (workflow: plan-items)`))
+  assert.deepEqual(parsed.problems, [])
+  assert.deepEqual(parsed.items, [
+    { id: 'a-1', title: 'One', done: false, workflow: 'research' },
+    { id: 'a-2', title: 'Two', done: false, after: ['a-1'], intent: hex, workflow: 'hygiene' },
+    { id: 'a-3', title: 'Three', done: false, intent: hex, workflow: 'plan-items' },
+  ])
+  for (const bad of ['', 'bad/name', 'develop.yaml', 'has space']) {
+    assert.ok(parseStatus(AFTER(`- [ ] a-1 One (workflow: ${bad})`)).problems.some((p) => /^line 2: .*workflow/.test(p)), bad)
+  }
+  assert.ok(parseStatus(AFTER('- [ ] a-1 One (workflow: research) (workflow: hygiene)')).problems.some((p) => /workflow/.test(p)))
+  assert.deepEqual(itemLines(parsed, undefined, [], undefined, { item: 'a-2' }), [`[ ] a-2 Two (intent: ${hex}) (workflow: hygiene) - todo (blocked by a-1)`])
+})

@@ -34,4 +34,10 @@ The generated index below is the authoritative list of current research.
   2026-11-27 against the DSH plugin standard of the pinned DSH 0.2.2-rc.5 (the `dsh-doc` skill and DSH's own seam
   packages) - export form, Config, services, inject, and the 40 value imports between packages, edge by edge (Item
   plug-2).
+- [RES-0022 — DSH plugins, how others drive the agent CLIs, and the Scheduled
+  session](RES-0022-dsh-plugins-cli-driving-and-the-scheduled-session.md) — active — What System can use from the DSH
+  bundles dsh-base and dsh-web-app, how Orca, Paradev and dsh-oh-my-claude drive Claude Code, Codex and Antigravity
+  (also over ACP and DSH headless), what System records about tokens and Attempt logs, what resuming a Worker's session
+  would save, and how the Scheduled session did over 11 starts; settled on 2026-11-28 as ADR-0020 and Items sch-1 to
+  sch-7, alog-1, alog-2, sum-1, fin-1, trace-1 and cite-1.
 <!-- docs:end index:research -->

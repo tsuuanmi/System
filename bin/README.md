@@ -12,6 +12,9 @@
   and `loginctl enable-linger`, and prints the command that enables it (it never
   enables or starts it). `--no-service` or `SYSTEM_NO_SERVICE=1` skips that; any
   other home is told to run `system host` in the foreground.
+- For each Schedule file under `~/.system/schedules`, `system init` also writes the user units
+  `system-schedule-<name>.service` and `.timer` (and `-check` ones when the file has `checkAt`), rewrites them when the file changed, removes those of a gone file
+  and enables none ([the runbook](../docs/operations/scheduled-session.md#schedules)).
 - `system update [--wait <minutes>] [--to <release>]` moves the install (`~/.system`, or
   `SYSTEM_INSTALL`) to the newest commit of `main`, only after that commit
   passed its own required checks as a System Work on this machine (a change

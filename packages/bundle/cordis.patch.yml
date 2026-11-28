@@ -49,21 +49,13 @@
         apiUrl: https://api.github.com
         tokenRef: GITHUB_TOKEN
 
-    # The web Runtime (WW2a): `web` accounts of the agents row, served through a
-    # genuine headed Chrome. Optional and off: with it off those accounts are reported
-    # unavailable ("the web-worker row is disabled") and nothing of the browser is loaded.
-    # A profile patch turns it on with `disabled: false` (docs/operations/accounts-and-workers.md, "The web account").
-    - id: web-worker
-      name: '@system/web-worker'
-      disabled: true
-
     # Agent CLI accounts as Workers (ADR-0004, ADR-0005). An account whose CLI
     # or credential is missing is skipped with its reason (`system workers`).
     # One entry per account; routing takes the first capable one. Brainstorm
     # roles (workflows/brainstorm.yaml) are capabilities too: the two
     # independent proposals go to different providers.
-    - id: agents
-      name: '@system/agents'
+    - id: runtime-cli
+      name: '@system/runtime-cli'
       config:
         # Wall-clock limit of one attempt, in minutes (fractions allowed; default 60).
         # An attempt past it is stopped like a cancel but fails, so a hung test
@@ -89,10 +81,17 @@
               standard: gpt-6.1-sol
               frontier: gpt-6-astra
 
+    # The web Runtime (WW2a): its own `web` Accounts (config.accounts), served through a genuine headed Chrome. Optional and off:
+    # with it off there are no web Accounts and nothing of the browser is loaded. A profile patch turns it on and lists them with
+    # `disabled: false` (docs/operations/accounts-and-workers.md, "The web account"); it reads no other Runtime's config (ADR-0018 decision 3).
+    - id: runtime-web
+      name: '@system/runtime-web'
+      disabled: true
+
     # The Classifier (cls-1): answers closed questions (classifiers/*.yaml) about an Artifact with an economy-tier
-    # Account of the agents row and records each answer as a classification@1 Artifact. Report-only: `work report`
+    # Account of the runtime-cli row and records each answer as a classification@1 Artifact. Report-only: `work report`
     # reads it, nothing routes or verifies on it. Optional and off: with it off reports are as before; a profile
-    # patch turns it on with `disabled: false`. Listed after `agents`, whose service it reads.
+    # patch turns it on with `disabled: false`. Listed after `runtime-cli`, whose service it reads.
     - id: classifier
       name: '@system/classifier'
       disabled: true

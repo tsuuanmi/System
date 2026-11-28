@@ -55,7 +55,7 @@ before(async () => {
   const port = await new Promise<string>((r) => server.stdout!.once('data', (d) => r(String(d).trim())))
   site = `http://127.0.0.1:${port}`
   assert.equal((await system(['init'])).status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:
@@ -66,6 +66,9 @@ before(async () => {
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN
         models: { standard: sonnet }
         maxConcurrentAttempts: 6
+- id: verifiers
+  config:
+    citationInternalHosts: [127.0.0.1]
 `)
   // The Host reads its credentials when it starts: store the token, then start it again.
   await cli.start()

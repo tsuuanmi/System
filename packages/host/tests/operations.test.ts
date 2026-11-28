@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { TASK_KIND, taskSchema } from '@system/work'
 import { fixture, workflowFile, type Fixture } from '../../../test-support/fixture.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
@@ -25,7 +25,7 @@ const b64 = (text: string) => Buffer.from(text).toString('base64')
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
 function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
-  const seen: Record<string, unknown[]> = { credentials: [], logins: [] }
+  const seen: Record<string, unknown[]> = { credentials: [] }
   return {
     seen,
     capabilities: f.capabilities,
@@ -46,6 +46,8 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
     defects: () => [],
     async newConfirmation(confirmation) { return { confirmation: `confirmation:${confirmation.subject}` } },
     operatorActs: () => ({ intents: [], confirmations: [] }),
+    async newReleaseApproval(commit) { return { approval: `approval:${commit}` } },
+    releaseApprovals: () => [],
     defectWithdrawals: () => [],
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
     workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
@@ -54,10 +56,6 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       async describe(name) { return name === 'known' ? { configured: true, source: 'store' } : { configured: false } },
     },
     async workers() { return { registered: f.capabilities.workerRefs(), accounts: f.capabilities.workerRefs().map((ref) => ({ ref, runtime: 'fake', available: true, reason: 'registered', quota: { unreadable: 'fake' } })) } },
-    async login(ref, cookies) { seen.logins!.push([ref, cookies]); return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 } },
-    async loginRemote(ref) { seen.logins!.push([ref, 'remote']); return { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 } },
-    async recheck(ref) { seen.logins!.push([ref, 'recheck']); return { ready: false, state: 'needs-sign-in', detail: 'signed out' } },
-    async loginWait(ref, cancel) { seen.logins!.push([ref, cancel ? 'cancel' : 'wait']); return { signedIn: !cancel, detail: cancel ? 'cancelled' : 'signed in' } },
   }
 }
 
@@ -112,7 +110,8 @@ test('every method of the table round-trips over the socket', async () => {
   const put = await call('artifact.put', { data: b64('hello'), mediaType: 'text/plain', classification: 'local-private' }) as { id: string }
   assert.match(put.id, /^sha256:/)
   assert.equal((await call('artifact.show', { id: put.id }) as { state: string }).state, 'stored')
-  assert.deepEqual(await call('artifact.cat', { id: put.id }), { data: b64('hello') })
+  assert.deepEqual(await call('artifact.cat', { id: put.id }), { data: b64('hello'), offset: 0, size: 5 })
+  assert.deepEqual(await call('artifact.cat', { id: put.id, offset: 1, maxBytes: 3 }), { data: b64('ell'), offset: 1, size: 5 })
 
   const work = await call('work.submit', { workflow, input: input(f), commandId: 'c-1', run: false }) as { id: string; state: { status: string } }
   assert.equal(work.state.status, 'running')
@@ -127,6 +126,12 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
   assert.equal((await call('work.run', { workId: work.id }) as { state: { status: string } }).state.status, 'succeeded')
   assert.deepEqual(await call('work.replay', { workId: work.id }), { state: (await call('work.show', { workId: work.id }) as { state: unknown }).state, matches: true })
+  const traced = await call('work.trace', { workId: work.id }) as { id: string; status: string; timeline: { kind: string }[] }
+  assert.equal(traced.id, work.id)
+  assert.equal(traced.status, 'succeeded')
+  assert.ok(traced.timeline.some((e) => e.kind === 'attempt'))
+  assert.equal(traced.timeline.at(-1)?.kind, 'terminal')
+  await assert.rejects(call('work.trace', { workId: 'work:none' }), /no Work work:none/)
   assert.equal(((await call('work.report', { workId: work.id })) as { id?: string; attempts?: unknown }).attempts !== undefined, true)
   const range = await call('work.report', { since: '2000-01-01', escaped: 0 }) as { works: number; verifiedSuccessRate: { accepted: number; ended: number } }
   assert.equal(range.works >= 1, true)
@@ -170,14 +175,12 @@ test('every method of the table round-trips over the socket', async () => {
   const none = (await call('workers.list', { repository: bare }) as { room: { ready: { count?: number; error?: string }[] } }).room.ready
   assert.equal(none[0]!.count, undefined)
   assert.match(none[0]!.error!, /no STATUS\.md/)
-  assert.deepEqual(await call('workers.login', { ref: 'web/chatgpt/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
-  assert.deepEqual(svc.seen.logins, [['web/chatgpt/default', 'the file']])
-  assert.deepEqual(await call('workers.loginRemote', { ref: 'web/chatgpt/default' }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })
-  assert.deepEqual(await call('workers.loginWait', { ref: 'web/chatgpt/default' }), { signedIn: true, detail: 'signed in' })
-  assert.deepEqual(await call('workers.loginWait', { ref: 'web/chatgpt/default', cancel: true }), { signedIn: false, detail: 'cancelled' })
-  assert.deepEqual(svc.seen.logins!.slice(1), [['web/chatgpt/default', 'remote'], ['web/chatgpt/default', 'wait'], ['web/chatgpt/default', 'cancel']])
-  assert.deepEqual(await call('workers.recheck', { ref: 'web/chatgpt/default' }), { ready: false, state: 'needs-sign-in', detail: 'signed out' })
-  assert.deepEqual(svc.seen.logins!.at(-1), ['web/chatgpt/default', 'recheck'])
+  // A Runtime without sign-in or recheck is refused by name (ADR-0018 decision 2); the working path is in the test below.
+  for (const method of ['workers.login', 'workers.loginRemote', 'workers.loginWait', 'workers.recheck']) {
+    await assert.rejects(call(method, { ref: 'fake/claude' }), /not supported by runtime/, method)
+    called.add(method)
+  }
+  await assert.rejects(call('workers.login', { ref: 'nobody/default' }), /nobody\/default is not a registered Account/)
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   // The status of a project: its Items from STATUS.md on dev; no Work names one here, so each is todo.
@@ -210,9 +213,11 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(await call('intent.new', { title: 'Want', body: 'Outcome.' }), { intent: 'intent:Want' })
   assert.deepEqual(await call('intent.new', { title: 'Want', body: 'Outcome.', settledByOperator: true }), { intent: 'intent:Want' })
   assert.deepEqual(await call('artifact.confirm', { subject: `sha256:${'a'.repeat(64)}`, note: 'ok' }), { confirmation: `confirmation:sha256:${'a'.repeat(64)}` })
+  assert.deepEqual(await call('release.approve', { commit: 'ABCDEF1' }), { approval: 'approval:abcdef1' })
   assert.deepEqual(await call('defect.add', { subject: 'p-1', foundBy: 'work:x', reason: 'broke' }), { defect: 'defect:p-1' })
   assert.deepEqual(await call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}`, reason: 'wrong' }), { withdrawal: `withdrawal:sha256:${'a'.repeat(64)}` })
   await assert.rejects(call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}` }), /-32602|invalid|reason/i)
+  assert.deepEqual(await call('defect.list', {}), { defects: [], withdrawals: [] })
   await assert.rejects(call('defect.add', { subject: 'p-1', foundBy: 'work:x' }), /-32602|invalid|reason/i)
   await assert.rejects(call('intent.new', { title: '', body: 'x' }), /-32602|invalid|title/i)
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
@@ -250,7 +255,7 @@ test('work.list takes `since` (admission time, inclusive) and shows the Item of 
   assert.deepEqual((await rows({ since: await at(plain.id) })).map((r) => r.id), [plain.id, itemWork.id])
   assert.deepEqual((await rows({ since: await at(itemWork.id) })).map((r) => r.id), [itemWork.id])
   assert.deepEqual(await rows({ since: new Date(Date.parse(await at(itemWork.id)) + 1).toISOString() }), [])
-  await assert.rejects(client.call('work.list', { since: 'tonight' }), /-32602|date/i)
+  await assert.rejects(client.call('work.list', { since: 'not-a-date' }), /-32602|date/i)
 })
 
 test('an agent connection is refused every operator method, and only those', async () => {
@@ -538,6 +543,35 @@ test('a client that missed the notice reads on from its cursor and loses nothing
   assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', outcome: 'succeeded', seq: all.events.at(-1)!.seq })
 })
 
+test('workers.login, loginRemote, loginWait and recheck call the Worker found by ref, a Worker without them is refused by name (ADR-0018 decision 2)', async () => {
+  const seen: unknown[] = []
+  const quiet = async () => ({ status: 'cancelled' as const, outputs: {} })
+  const { open } = await started({ setup: (f) => {
+    f.capabilities.registerWorker({
+      ref: 'web/chatgpt/default', capabilities: ['research'], run: quiet,
+      status: () => ({ runtime: 'web', available: true, reason: 'registered', capabilities: ['research'] }),
+      async signIn(request) {
+        seen.push(request)
+        if (request.step === 'login') return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 }
+        if (request.step === 'remote') return { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 }
+        return { signedIn: !request.cancel, detail: request.cancel ? 'cancelled' : 'signed in' }
+      },
+      async recheck() { seen.push('recheck'); return { ready: false, state: 'needs-sign-in', detail: 'signed out' } },
+    })
+    f.capabilities.registerWorker({ ref: 'codex/default', capabilities: ['research'], run: quiet, status: () => ({ runtime: 'codex', available: true, reason: 'registered', capabilities: ['research'] }) })
+  } })
+  const operator = await open(human, 'operator')
+  const ref = 'web/chatgpt/default'
+  assert.deepEqual(await operator.call('workers.login', { ref, cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
+  assert.deepEqual(await operator.call('workers.loginRemote', { ref }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })
+  assert.deepEqual(await operator.call('workers.loginWait', { ref }), { signedIn: true, detail: 'signed in' })
+  assert.deepEqual(await operator.call('workers.loginWait', { ref, cancel: true }), { signedIn: false, detail: 'cancelled' })
+  assert.deepEqual(await operator.call('workers.recheck', { ref }), { ready: false, state: 'needs-sign-in', detail: 'signed out' })
+  assert.deepEqual(seen, [{ step: 'login', cookies: 'the file' }, { step: 'remote' }, { step: 'wait', cancel: false }, { step: 'wait', cancel: true }, 'recheck'])
+  await assert.rejects(operator.call('workers.login', { ref: 'codex/default' }), /not supported by runtime codex/)
+  await assert.rejects(operator.call('workers.recheck', { ref: 'codex/default' }), /not supported by runtime codex/)
+})
+
 test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 120_000 }, async () => {
   let twoTurns!: () => void
   const reported = new Promise<void>((resolve) => { twoTurns = resolve })
@@ -656,4 +690,81 @@ test('work.submit without the content of the Sub-workflows: the Host reads them 
   const work = await client.call('work.submit', { workflow: workflowFile('develop.yaml'), input: input(f) }).catch((error: Error) => error)
   assert.ok(!(work instanceof Error), String(work))
   assert.deepEqual(Object.keys((work as { state: { steps: Record<string, unknown> } }).state.steps), ['implement', 'satisfied-check', 'checks.checks', 'publish', 'accept'])
+})
+
+test('workers.list reports busy Accounts across repositories, skips verifier checks, and returns [] when idle', async () => {
+  const { f, host, open } = await started()
+  const client = await open()
+  assert.deepEqual((await client.call('workers.list') as { busy: unknown }).busy, [])
+
+  const taskA = `sha256:${'a'.repeat(64)}`
+  const taskB = `sha256:${'b'.repeat(64)}`
+  const tasks = new Map<string, { task: { instructions: string; base: string; item: string }; repository: string }>([
+    [taskA, { task: { instructions: 'a', base: input(f), item: 'item-a' }, repository: '/repos/alpha' }],
+    [taskB, { task: { instructions: 'b', base: input(f), item: 'item-b' }, repository: '/repos/beta' }],
+  ])
+  f.specStore.taskOf = (id) => tasks.get(id) as never
+  const baseExists = f.specStore.exists
+  f.specStore.exists = (id) => tasks.has(id) || baseExists(id)
+  f.specStore.withNote = async (id) => id
+
+  f.hold('task')
+  const w1 = await client.call('work.submit', { capabilities: ['repo.write'], input: taskA, force: true }) as { id: string }
+  const w2 = await client.call('work.submit', { capabilities: ['brainstorm.idea-b'], input: taskB, force: true }) as { id: string }
+  await f.arrived('task', 2)
+
+  const during = await client.call('workers.list') as { busy: { account: string; work: string; repository?: string; item?: string; step: string; since: string; uncertain?: boolean }[] }
+  assert.equal(during.busy.length, 2)
+  const byAccount = new Map(during.busy.map((b) => [b.account, b]))
+  const claude = byAccount.get('fake/claude')!
+  const codex = byAccount.get('fake/codex')!
+  assert.equal(claude.work, w1.id)
+  assert.equal(claude.repository, '/repos/alpha')
+  assert.equal(claude.item, 'item-a')
+  assert.equal(claude.step, 'task')
+  assert.ok(Number.isFinite(Date.parse(claude.since)))
+  assert.equal(claude.uncertain, undefined)
+
+  assert.equal(codex.work, w2.id)
+  assert.equal(codex.repository, '/repos/beta')
+  assert.equal(codex.item, 'item-b')
+  assert.equal(codex.step, 'task')
+  assert.ok(Number.isFinite(Date.parse(codex.since)))
+  assert.equal(codex.uncertain, undefined)
+
+  f.release('task')
+  assert.equal((await terminal(client, w1.id)).status, 'succeeded')
+  assert.equal((await terminal(client, w2.id)).status, 'succeeded')
+  assert.deepEqual((await client.call('workers.list') as { busy: unknown }).busy, [])
+
+  // An attempt lost at start whose slot is still held is listed with uncertain: true.
+  host.slots.hold('fake/claude', { workId: w1.id, stepId: 'task', attemptId: 'lost-attempt' })
+  const uncertain = await client.call('workers.list') as { busy: { account: string; work: string; repository?: string; item?: string; step: string; since: string; uncertain?: boolean }[] }
+  assert.equal(uncertain.busy.length, 1)
+  assert.equal(uncertain.busy[0]!.account, 'fake/claude')
+  assert.equal(uncertain.busy[0]!.work, w1.id)
+  assert.equal(uncertain.busy[0]!.repository, '/repos/alpha')
+  assert.equal(uncertain.busy[0]!.item, 'item-a')
+  assert.equal(uncertain.busy[0]!.step, 'task')
+  assert.equal(uncertain.busy[0]!.uncertain, true)
+  f.gone('lost-attempt')
+  await host.slots.settle()
+
+  // A verifier's check run is not an Account and is not listed in busy.
+  f.hold('checks.checks')
+  const se = f.files('develop.yaml')
+  const w3 = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f) }) as { id: string }
+  await f.arrived('checks.checks', 1)
+  assert.deepEqual((await client.call('workers.list') as { busy: unknown }).busy, [])
+  f.release('checks.checks')
+  assert.equal((await terminal(client, w3.id)).status, 'succeeded')
+})
+
+test('rel-2: release.approve is refused on the caller socket whatever the caller says, and stored over the operator socket by a human only', async () => {
+  const { open } = await started()
+  for (const who of [human, agent]) await assert.rejects((await open(who)).call('release.approve', { commit: 'abcdef1' }), (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /operator socket/.test(error.message))
+  const operator = await open(human, 'operator')
+  assert.deepEqual(await operator.call('release.approve', { commit: 'abcdef1' }), { approval: 'approval:abcdef1' })
+  await assert.rejects(operator.call('release.approve', { commit: 'main' }), /-32602|invalid|commit/i)
+  await assert.rejects((await open(agent, 'operator')).call('release.approve', { commit: 'abcdef1' }), (error: { code: number }) => error.code === NOT_ALLOWED)
 })

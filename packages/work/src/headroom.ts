@@ -4,7 +4,7 @@
  * whole record of the choice and replay never asks a provider again.
  */
 
-/** One window as a Worker's `quota()` tells it (structurally `@system/agents`' `QuotaWindow`). */
+/** One window as a Worker's `quota()` tells it (structurally `@system/runtime-cli`' `QuotaWindow`). */
 interface QuotaWindowReading {
   /** 0 to 100. */
   percentUsed: number

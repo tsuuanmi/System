@@ -7,13 +7,15 @@ changes future admissions only.
 The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml`, `research-source.yaml`, `plan-items.yaml` and
 `brainstorm.yaml`, and the Sub-workflow `code-checks.yaml`.
 
-**Context pack.** A develop Task's instructions are prose under six headings, so
+**The Item's line is the brief.** The Task of an Item is the Item's line (ADR-0020 decision 2): the Item names its files, its tests and what shows it is done, and the Workflow is `develop.yaml` unless the line ends with `(workflow: <name>)`, which picks that Workflow. A context pack is for a Task that names no Item.
+
+**Context pack.** A develop Task that names no Item has instructions in prose under six headings, so
 the Worker reads the named files first instead of exploring (no Task field; a Task
 without them works as before): `Goal`; `Files to change and why`; `Tests to add or
 update`; `Invariants not to change`; `Out of scope`; `Done when`. `develop.yaml`'s
 `implement` reads the files named first, widens only when they are not enough, and
 says in its result when the pack is wrong. An Item fits one Worker attempt (about an hour): a Done when with several independent parts is split into several Items by the caller (web-3, work:a216a2f9, ran out of its 60 minutes doing three parts). The MCP `instructions`
-([packages/app/src/mcp.ts](../packages/app/src/mcp.ts)) tell callers to write it.
+([packages/app/src/mcp.ts](../packages/app/src/mcp.ts)) tell callers to write it for a Task that names no Item.
 
 A step's `capabilities` are of three kinds, defined in the
 [GLOSSARY](../GLOSSARY.md) (Ability, Role, Tier). Abilities used here: `repo.read`,
@@ -60,7 +62,7 @@ the working tree a step's output. The old names (`code-write`, `web-search`,
   `summary`. No verifier: success means the three outputs exist. The bundle
   gives `idea-a` and `synthesis` to Claude Code and `idea-b` to Codex.
 
-- [plan-items.yaml](plan-items.yaml) — `propose` (`repo.read`, never `repo.write`, `tier.standard`) reads the Intent in the Task's context and the repository's `STATUS.md` and `PLAN.md`, and writes the output `items`: proposed Item lines in STATUS.md's grammar (`- [ ] <id> <text> (intent: <12 hex>) (after: ...)`, `after:` only for real dependencies, new ids, a Done-when clause in each). It has no verify or accept step (an accept step needs a verify step, and a verifier that runs `status-parse.ts` would be a new Host capability). It writes nothing to STATUS: the caller shows `items` to the operator and only after the operator agrees submits a docs Work (`develop.yaml`) that adds the lines. The scheduled session never runs it ([night-session.md](../tools/night-session.md)).
+- [plan-items.yaml](plan-items.yaml) — `propose` (`repo.read`, never `repo.write`, `tier.standard`) reads the Intent in the Task's context and the repository's `STATUS.md` and `PLAN.md`, and writes the output `items`: proposed Item lines in STATUS.md's grammar (`- [ ] <id> <text> (intent: <12 hex>) (after: ...)`, `after:` only for real dependencies, new ids, a Done-when clause in each). It has no verify or accept step (an accept step needs a verify step, and a verifier that runs `status-parse.ts` would be a new Host capability). It writes nothing to STATUS: the caller shows `items` to the operator and only after the operator agrees submits a docs Work (`develop.yaml`) that adds the lines. The scheduled session never runs it.
 
 The Workflows that are not canonical (comparison configurations and measurements)
 are in [experiments](experiments/README.md); it lists them.

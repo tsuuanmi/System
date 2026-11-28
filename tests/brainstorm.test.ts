@@ -1,7 +1,7 @@
 /**
  * Brainstorm (PLAN.md B1, and the B2 recovery checks that need no model) on
  * the real profile: the bundle's own accounts, with only their CLI pointed at
- * the fake (packages/agents/tests/fake-agent.mjs). Two proposals from the
+ * the fake (packages/runtime-cli/tests/fake-agent.mjs). Two proposals from the
  * brief alone on different providers, then a synthesis of both exact
  * proposal Artifacts; no verifier.
  */
@@ -21,7 +21,7 @@ const system = (args: string[], input?: string) => cli.run(args, { input })
 type Account = { ref: string; runtime: string; capabilities: string[]; command?: string }
 const yaml = createRequire(join(repo, 'packages', 'work', 'package.json'))('yaml') as { parse(text: string, options: { logLevel: 'error' }): unknown }
 const bundle = yaml.parse(readFileSync(join(repo, 'packages', 'bundle', 'cordis.patch.yml'), 'utf8'), { logLevel: 'error' }) as { insert: { id: string; config?: { accounts?: Account[] } }[] }[]
-const accounts = bundle[0]!.insert.find((row) => row.id === 'agents')!.config!.accounts!
+const accounts = bundle[0]!.insert.find((row) => row.id === 'runtime-cli')!.config!.accounts!
 
 type Event = { type: string; seq: number; at: string; stepId?: string; selected?: string; inputs?: Record<string, string>; status?: string; outputs?: Record<string, string> }
 type WorkView = { events: Event[]; state: { status: string; reason?: string; specId: string; steps: Record<string, { state: string; outputs: Record<string, string> }> } }
@@ -49,7 +49,7 @@ function brief(markers: string) {
 before(async () => {
   assert.equal(system(['init']).status, 0)
   // JSON is YAML: the bundle's accounts as they are, each running the fake CLI.
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config: ${JSON.stringify({ $patch: 'replace', accounts: accounts.map((a) => ({ ...a, command: fakeAgent })) })}\n`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli\n  config: ${JSON.stringify({ $patch: 'replace', accounts: accounts.map((a) => ({ ...a, command: fakeAgent })) })}\n`)
   mkdirSync(join(home, 'system', 'codex', 'default'), { recursive: true })
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
   // The Host reads its credentials when it starts: store the token, then start it again.
@@ -199,7 +199,7 @@ test('editing the Workflow file after admission changes nothing for an admitted 
 
 test('without a Codex account the Work is refused before any Worker runs: no same-provider substitute', { timeout: 300_000 }, async () => {
   const noCodex = join(home, 'no-codex.yml')
-  writeFileSync(noCodex, `- id: agents\n  config: ${JSON.stringify({ $patch: 'replace', accounts: accounts.filter((a) => a.runtime !== 'codex').map((a) => ({ ...a, command: fakeAgent })) })}\n`)
+  writeFileSync(noCodex, `- id: runtime-cli\n  config: ${JSON.stringify({ $patch: 'replace', accounts: accounts.filter((a) => a.runtime !== 'codex').map((a) => ({ ...a, command: fakeAgent })) })}\n`)
   const before = system(['work', 'list']).stdout.trim().split('\n').filter(Boolean).length
   const input = brief('FAKE:outputs')
   await cli.start({ args: ['--patch', noCodex] })

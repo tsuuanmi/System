@@ -63,10 +63,24 @@ something says to retry once the Host has restarted.
 attempts. A Host run from a development checkout restarts itself on a build
 there, not while the `.building` file `corepack pnpm build` keeps exists.
 
-A release is a pull request from `dev` to `main`, merged by the operator, then `system update`.
+A release is cut at one commit of `dev` ([ADR-0019](../decisions/ADR-0019-a-release-is-cut-at-a-commit.md)):
+
+```
+system release prepare <commit> > report.md
+gh pr create --base main --head release/<commit> --body-file report.md
+```
+
+`system release prepare` creates and pushes the branch `release/<first 7 hex of the commit>` at that commit of
+`dev` (refused for a commit not on `dev`'s first-parent history), so the pull request's head does not move while `dev`
+takes more Works, and writes the release report to stdout as Markdown, from records: the Items and Works merged in
+`main..<commit>` with each Work's Account and cost (as `work report` gives them), the Escaped defects recorded for
+those Items, the docs waivers of the range (the lines of `.system/docs-waivers` the range adds), the paths of the
+range under `packages/verifiers/src`, `packages/effects/src` and `workflows/*.yaml`, and "How to revert" with the
+commit `~/.system/current` runs. It never merges and never opens the pull request: the caller does, then the
+operator merges it, then `system update`. `system release approve <commit>` is the Operator's approval of a commit.
 A release that touches `packages/verifiers/src`, `packages/effects/src` or `workflows/*.yaml` is the
-Operator's own, not delegated ([PLAN.md](../../PLAN.md), "Release delegated"); `system work report` lists
-a caller's release that did (`releaseViolations`).
+Operator's own, not delegated ([PLAN.md](../../PLAN.md), "Release delegated"), unless the Operator approved its commit;
+`system work report` lists a caller's release that did (`releaseViolations`).
 The docs CI's `impact` check fails when the release changes a path a doc `covers:` without changing
 that doc ([the tool](../../tools/docs.py), [governance](../governance/documentation.md)). When the doc
 is still true, a line `docs-unchanged: <path> — <reason>` in the pull request body waives it. System's
@@ -117,4 +131,4 @@ The hook acts only on a push to the remote named `origin` whose URL is not a loc
 and it clears every inherited `GIT_*` repository variable before a check runs,
 so it cannot change the operator's repository.
 The sandbox Account option (iso-1) is the second guard: inside its layer, a linked worktree cannot write
-the main repository's `config` or `hooks/`; `packages/agents/tests/sandbox.test.ts` shows it.
+the main repository's `config` or `hooks/`; `packages/runtime-cli/tests/sandbox.test.ts` shows it.

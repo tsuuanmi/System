@@ -9,12 +9,13 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { callerSchema, type Caller, type Host, type WorkChange, z } from '@system/work'
+import type { Caller, Host, WorkChange } from '@system/work'
+import { callerSchema, z } from '@system/work/contract'
 
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
-const SYSTEM_PACKAGES = ['artifacts', 'work', 'agents', 'web-worker', 'verifiers', 'effects', 'host', 'app']
+const SYSTEM_PACKAGES = ['artifacts', 'work', 'runtime-cli', 'runtime-web', 'verifiers', 'effects', 'host', 'app']
 
 const jsFiles = (dir: string, at = ''): string[] =>
   readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsFiles(dir, join(at, e.name)) : e.name.endsWith('.js') ? [join(at, e.name)] : []))
@@ -22,7 +23,7 @@ const jsFiles = (dir: string, at = ''): string[] =>
 /** Files besides the built code that change what the Host does. */
 const BEHAVIOUR_FILES = [new URL('../../bundle/cordis.patch.yml', import.meta.url).pathname]
 
-/** The shipped UI maps and their schema: data, but part of what the web-worker row runs, so changing one is an upgrade (WW6f). */
+/** The shipped UI maps and their schema: data, but part of what the runtime-web row runs, so changing one is an upgrade (WW6f). */
 const UI_DIR = new URL('../../web-driver/ui', import.meta.url).pathname
 
 /**

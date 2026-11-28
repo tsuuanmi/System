@@ -5,7 +5,7 @@
  * - `git-tree@1`: one commit in one repository, with its tree; the subject of
  *   a code change (ADR-0003: a branch name or path is never the identity).
  */
-import { contentIdSchema } from '@system/artifacts'
+import { contentIdSchema } from '@system/artifacts/contract'
 import { z } from 'zod'
 import { ITEM_ID } from './status-parse.ts'
 

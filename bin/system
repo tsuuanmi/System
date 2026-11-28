@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpat
 import { constants, homedir, userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { MIN_NODE, hostCommand, installProfile, installRoot, nodeChoice, serviceMode, supervise, unitPath, unitText } from './service.mjs'
+import { MIN_NODE, hostCommand, installProfile, installRoot, nodeChoice, scheduleUnits, schedulesDir, serviceMode, supervise, syncScheduleUnits, unitPath, unitText } from './service.mjs'
 import { finishPending, update } from './update.mjs'
 
 const PROFILE = 'system'
@@ -81,7 +81,7 @@ function dsh(args) {
 }
 
 /** The Host's user unit (default home only), or why there is none. It is never enabled or started here. */
-function installService(args) {
+async function installService(args) {
   const mode = serviceMode({ home, homedir: homedir(), platform: process.platform, args, env: process.env })
   if (mode === 'skip') return
   if (mode === 'foreground') {
@@ -94,11 +94,41 @@ function installService(args) {
   const profile = installProfile(repo, existsSync)
   writeFileSync(unit, unitText({ node: process.execPath, entry: join(install, 'bin', 'system'), home, path: process.env.PATH ?? '', patch: profile && existsSync(profile) ? profile : undefined }))
   process.stdout.write(`service unit written: ${unit}\n`)
+  await installSchedules(dirname(unit))
   for (const [command, ...rest] of [['systemctl', '--user', 'daemon-reload'], ['loginctl', 'enable-linger', userInfo().username]]) {
     const ran = spawnSync(command, rest, { stdio: 'inherit' })
     if (ran.error || ran.status !== 0) process.stderr.write(`system: \`${[command, ...rest].join(' ')}\` failed${ran.error ? `: ${ran.error.message}` : ` with status ${ran.status}`}\n`)
   }
   process.stdout.write('to run the Host as a service: systemctl --user enable --now system\n')
+}
+
+/**
+ * The user units of each Schedule file under `<install>/schedules` (ADR-0020 decision 6): written when new or
+ * changed, removed when their file is gone, never enabled. A file that does not parse is said on stderr, fails
+ * `init`, and leaves its earlier units alone.
+ */
+async function installSchedules(unitDir) {
+  const dir = schedulesDir(process.env.SYSTEM_INSTALL || join(homedir(), '.system'))
+  const files = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.yaml')).sort() : []
+  const { readSchedule } = await import(pathToFileURL(join(repo, 'packages', 'app', 'lib', 'schedule.js')).href)
+  const schedules = []
+  const keep = []
+  for (const file of files) {
+    const name = basename(file, '.yaml')
+    try {
+      const { at, checkAt } = readSchedule(join(dir, file))
+      schedules.push({ name, file: join(dir, file), at, checkAt })
+    } catch (error) {
+      keep.push(name)
+      process.stderr.write(`system: ${error.message}\n`)
+      process.exitCode = 1
+    }
+  }
+  const wanted = scheduleUnits({ node: process.execPath, entry: join(install, 'bin', 'system'), home, path: process.env.PATH ?? '', schedules })
+  const { written, removed } = syncScheduleUnits(unitDir, wanted, keep)
+  for (const file of written) process.stdout.write(`schedule unit written: ${join(unitDir, file)}\n`)
+  for (const file of removed) process.stdout.write(`schedule unit removed: ${join(unitDir, file)}\n`)
+  if (written.length) process.stdout.write('to run a Schedule: systemctl --user enable --now system-schedule-<name>.timer\n')
 }
 
 async function init(args) {
@@ -123,7 +153,7 @@ async function init(args) {
   const status = await dsh(['plugin', '--profile', PROFILE, 'install'])
   if (status !== 0) fail(`dsh plugin install failed with status ${status}`)
   process.stdout.write(`profile ready: ${profileDir}\n`)
-  installService(args)
+  await installService(args)
 }
 
 /** `system update [--wait <minutes>] [--to <release>]`: see update.mjs. */

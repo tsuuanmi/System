@@ -1,6 +1,6 @@
 # Plan items (in-3). From an Intent, one read-only Worker proposes Item lines for the repository's STATUS.md. Nothing is
 # written to STATUS: the caller session shows the `items` to the operator and only after the operator agrees submits a docs
-# Work (develop.yaml) that adds them. The scheduled session never runs it (tools/night-session.md).
+# Work (develop.yaml) that adds them. The scheduled session never runs it.
 # The Task is taken as `$work.input`, like develop.yaml; its context holds the `intent@1` Artifact. There is no verify or accept
 # step: an accept step must require a verify step, and the line grammar is read by packages/work/src/status-parse.ts, which a
 # Host verifier cannot call without a new verifier capability and criteria version (a release-boundary change). The caller checks

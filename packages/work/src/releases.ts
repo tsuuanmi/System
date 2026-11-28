@@ -54,12 +54,12 @@ export function releasesByMaker(log: string, devFirstParent: ReadonlySet<string>
 }
 
 /** The releases of a log (`%cI%x1f%P%x1f%B%x1f%H%x1e`; `%H` may be missing): time, whether a caller's, first parent and merge commit. */
-function releaseMerges(log: string, devFirstParent: ReadonlySet<string>): { at: string; caller: boolean; first: string; merge: string }[] {
+function releaseMerges(log: string, devFirstParent: ReadonlySet<string>): { at: string; caller: boolean; first: string; second: string; merge: string }[] {
   const out = []
   for (const entry of log.split('\x1e')) {
     const [time, parents, message, merge] = entry.trim().split('\x1f')
     const [first, second] = parents?.split(/\s+/) ?? []
-    if (time && first && second && devFirstParent.has(second)) out.push({ at: new Date(time).toISOString(), caller: isCallerRelease(message ?? ''), first, merge: merge?.trim() ?? '' })
+    if (time && first && second && devFirstParent.has(second)) out.push({ at: new Date(time).toISOString(), caller: isCallerRelease(message ?? ''), first, second, merge: merge?.trim() ?? '' })
   }
   return out
 }
@@ -81,8 +81,11 @@ export async function releasesOf(repository: string): Promise<string[]> {
   return [...by.operator, ...by.caller].sort()
 }
 
-/** `releasesOf` split by who made each release (ms-4). */
-export async function releasesBy(repository: string): Promise<ReleasesBy> {
+/**
+ * `releasesOf` split by who made each release (ms-4). A caller's release whose second parent is one of the `approved`
+ * commits (7 to 40 hex, a prefix of it: rel-2's `release-approval@1`) is no violation.
+ */
+export async function releasesBy(repository: string, approved: readonly string[] = []): Promise<ReleasesBy> {
   try {
     const main = await firstRef(repository, ['refs/remotes/origin/main', 'refs/heads/main'])
     const dev = await firstRef(repository, ['refs/remotes/origin/dev', 'refs/heads/dev'])
@@ -90,7 +93,7 @@ export async function releasesBy(repository: string): Promise<ReleasesBy> {
     const devCommits = new Set((await git(repository, ['rev-list', '--first-parent', dev])).split('\n').map((l) => l.trim()).filter(Boolean))
     const releases = releaseMerges(await git(repository, ['log', '--merges', '--first-parent', '--format=%cI%x1f%P%x1f%B%x1f%H%x1e', main]), devCommits)
     const violations: ReleaseViolation[] = []
-    for (const r of releases.filter((x) => x.caller)) {
+    for (const r of releases.filter((x) => x.caller && !approved.some((a) => a.length >= 7 && x.second.startsWith(a)))) {
       const paths = releaseViolationPaths((await git(repository, ['diff', '--name-only', r.first, r.merge])).split('\n').filter(Boolean), true)
       if (paths.length) violations.push({ merge: r.merge, paths, at: r.at })
     }

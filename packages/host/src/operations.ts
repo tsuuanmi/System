@@ -6,7 +6,8 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { readyCount, roomOf, activeCoreLines, lateChecks, directTask, itemLines, itemOf, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, traceWork, whoHas, workStatus, CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, z, type Capabilities, type TraceStore } from '@system/work/contract'
+import type { QuotaReading, Admission, Caller, FailureClassifier, Host, WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -24,6 +25,10 @@ export interface Services {
   newConfirmation(confirmation: { subject: string; note: string; date?: string }, caller: Caller): Promise<{ confirmation: string }>
   /** The stored Intents (when, by whom settled) and confirmations, for the operator acts of `work.report`. */
   operatorActs(): { intents: { at: string; settledBy?: 'operator' }[]; confirmations: { date: string }[] }
+  /** Store a `release-approval@1` Artifact. */
+  newReleaseApproval(commit: string, caller: Caller): Promise<{ approval: string }>
+  /** The commits the Operator approved for release. */
+  releaseApprovals(): string[]
   /** Store an `escaped-defect@1` Artifact. */
   newDefect(defect: { subject: string; foundBy: string; reason: string; date?: string; supersedes?: string }, caller: Caller): Promise<{ defect: string }>
   /** Store an `escaped-defect-withdrawal@1` Artifact. */
@@ -41,14 +46,6 @@ export interface Services {
   workers(): Promise<{ registered: string[]; accounts: { ref: string; quota?: QuotaReading }[] }>
   /** The optional Classifier row (cls-1), report-only: undefined when the row is off. */
   classifier?: FailureClassifier
-  /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
-  login(ref: string, cookies: string | undefined): Promise<{ signedIn: boolean; detail: string; imported?: number; skipped?: number }>
-  /** Start the remote sign-in of a browser Account: where to reach its viewer, and until when. */
-  loginRemote(ref: string): Promise<{ url: string; port: number; ssh: string; expiresAt: number }>
-  /** Wait for the remote sign-in of `ref` to end (Save, Cancel, expiry), or end it first with `cancel`; the signed-in state. */
-  loginWait(ref: string, cancel: boolean): Promise<{ signedIn: boolean; detail: string }>
-  /** Check a browser Account without sending anything; it is `ready` again only when the check passes. */
-  recheck(ref: string): Promise<{ ready: boolean; state: string; detail: string }>
   /** Whether `commit` is in the running release of `repository`: false when it is not, undefined when unknown. */
   releaseHolds?(repository: string, commit: string): Promise<boolean | undefined>
 }
@@ -181,10 +178,23 @@ export function operations(services: Services) {
       params: z.object({ workId }).strict(),
       handler: (host, p) => (known(host, p.workId), host.view.replay(p.workId)),
     },
+    'work.trace': {
+      read: true,
+      authority: 'caller',
+      summary: 'What happened to a Work, in order, from stored Artifacts and events: per Attempt its step, Account, model, start, duration, usage and parsed Attempt log (commands run, files read and written, final statement; or the log ID and size only when it has no such events), each verdict with failed `check-run` output tails, each `reopened` event, each effect, and the terminal outcome. Through MCP, results over 32 KiB are cut with a marker.',
+      params: z.object({ workId }).strict(),
+      handler(host, p) {
+        const record = known(host, p.workId)
+        return traceWork(record, {
+          artifact: (id) => services.artifact(id) as ReturnType<TraceStore['artifact']>,
+          readBytes: (id) => services.readBytes(id),
+        })
+      },
+    },
     'work.report': {
       read: true,
       authority: 'caller',
-      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp, read as UTC when it has no zone; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator act, `headline`: Intents the operator settled, confirmations, releases (merges of `dev` into `main`) and human touches) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range and that no later defect supersedes and no withdrawal names: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, `activeCoreLines` (the active core lines on `dev` at the start and end of the range, from git, a trend; `unknown` without git), and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1), and `reopenRounds` (reopened steps per Work and in total, median and p90 over succeeded Works, `failedAfterCap`: failed Works the Workflow\'s `retry` had reopened).',
+      summary: 'With `workId`: duration, attempts, time waited for a slot, rate-limited attempts, operator touches and usage of a Work, from its events; with the classifier row on, an `unknown` failure that has a Classification shows it as `classified`, and `classify` first asks for those it lacks (`classifying` is true while that goes on). With `since` (a date or timestamp, read as UTC when it has no zone; `until` excludes, `escaped` replaces the recorded Escaped defects with a count the report labels as an override): the headline measure (Items merged per operator act, `headline`: Intents the operator settled, confirmations, releases (merges of `dev` into `main`) and human touches) and the five measures of effect over every Work admitted in the range, each with its counts; Escaped defects are the recorded `escaped-defect@1` Artifacts (`defect.add`) whose Item was merged in the range and that no later defect supersedes and no withdrawal names: Verified Success Rate, Recurring Failure Rate, Escaped Defect Rate, Cost per Verified Work, Time to Verified Resolution, `activeCoreLines` (the active core lines on `dev` at the start and end of the range, from git, a trend; `unknown` without git), and the attempts\' tool-seconds per second (`toolSecondsPerSecond`; not a share: parallel tool calls overlap, so it can pass 1), `usage` (token totals, cache-read share, priced cost and attempts by usage outcome, in total and by Runtime, Account and local day of admission), and `reopenRounds` (reopened steps per Work and in total, median and p90 over succeeded Works, `failedAfterCap`: failed Works the Workflow\'s `retry` had reopened).',
       params: z.object({ workId: workId.optional(), since: date.optional(), until: date.optional(), escaped: z.number().int().min(0).optional(), classify: z.boolean().optional() }).strict(),
       async handler(host, p) {
         if ((p.workId === undefined) === (p.since === undefined)) throw new Error('give `workId`, or `since` for a range')
@@ -208,7 +218,7 @@ export function operations(services: Services) {
         const records = host.view.list()
         // Releases are merges of `dev` into `main` seen in each repository the Host knows Items for.
         const repositories = new Set(records.flatMap((r) => { const first = r.events[0]!; return first.type === 'admitted' && first.item?.repository ? [first.item.repository] : [] }))
-        const releasesByMaker = await Promise.all([...repositories].map((repository) => releasesBy(repository)))
+        const releasesByMaker = await Promise.all([...repositories].map((repository) => releasesBy(repository, services.releaseApprovals())))
         const releases = releasesByMaker.flatMap((r) => r.operator)
         const callerReleases = releasesByMaker.flatMap((r) => r.caller)
         const violations = releasesByMaker.flatMap((r) => r.violations)
@@ -249,6 +259,15 @@ export function operations(services: Services) {
         return started(host, p.workId, (go) => host.decide(p.workId, { decision: p.decision, reason: p.reason, caller, commandId: p.commandId, started: go }))
       },
     },
+    'release.approve': {
+      authority: 'operator',
+      summary: 'Store a `release-approval@1` Artifact: the Operator approves the commit of `dev` (7 to 40 hex characters) for release: `{ approval }`, the Artifact ID. A caller session may then release that commit also when it touches what is not delegated; `work.report` does not list it in `releaseViolations`. Only a human caller, on the operator socket; the CLI sends it as `system release approve <commit>` after its terminal confirmation.',
+      params: z.object({ commit: z.string().regex(/^[0-9a-fA-F]{7,40}$/), commandId }).strict(),
+      handler(_host, p, caller) {
+        if (caller.type !== 'human') throw new RpcError(NOT_ALLOWED, 'release.approve: needs a human caller')
+        return services.newReleaseApproval(p.commit.toLowerCase(), caller)
+      },
+    },
     'task.new': {
       authority: 'caller',
       summary: 'Store a `task@1` Artifact (and, with `repository`, the exact base commit): `{ task, base? }`. With `against`, the base is a change from that commit of `repository`, so a verifier selects checks by the files that differ between the two. With `item`, the Task names that Item of the repository\'s STATUS.md (see `status`); it is refused when the repository\'s STATUS.md cannot be read, when its `dev` has no line for the Item, and when the Item is Blocked (it comes after Items not done: `(after: id, id)` in its line; the refusal says "blocked by ...") unless `force` is true. When the Item\'s line has `(intent: <12 hex>)`, that `intent@1` Artifact is added to the Task\'s `context` (refused unless the prefix is exactly one stored `intent@1`). A `ref` that names a local branch with an `origin/<branch>` counterpart is fetched first (`origin <branch>`, bounded); it is refused, naming both commits, when the origin has commits the branch lacks (use `origin/<branch>`), and when the fetch fails the Task is stored and the result\'s `note` says so. An explicit `origin/...` ref or a commit is not checked.',
@@ -275,6 +294,13 @@ export function operations(services: Services) {
       summary: 'Store an `escaped-defect@1` Artifact: a defect that escaped the Item (an Item ID) or the merge commit (7 to 40 hex characters) named by `subject`: `{ defect }`, the Artifact ID. `foundBy` is the Work ID that found it or text; `reason` says what was wrong; `date` (default now) is when it was found. `work.report` counts the recorded defects whose Item was merged in its range. With `supersedes`, the defect replaces an earlier one, which must be a stored `escaped-defect@1` Artifact and is no longer counted; a wrong record is corrected, not edited.',
       params: z.object({ subject: z.string().min(1), foundBy: z.string().min(1).max(500), reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional(), supersedes: artifactId.optional(), commandId }).strict(),
       handler: (_host, { commandId: _id, ...p }, caller) => services.newDefect(p, caller),
+    },
+    'defect.list': {
+      read: true,
+      authority: 'caller',
+      summary: 'The recorded Escaped defects and withdrawals: `{ defects, withdrawals }` as stored (a defect that another supersedes or a withdrawal names is still listed; the reader leaves it out as `work.report` does). `system release prepare` reads it.',
+      params: z.object({}).strict(),
+      handler: () => ({ defects: services.defects(), withdrawals: services.defectWithdrawals() }),
     },
     'defect.withdraw': {
       authority: 'caller',
@@ -319,18 +345,20 @@ export function operations(services: Services) {
     'artifact.cat': {
       read: true,
       authority: 'caller',
-      summary: 'The bytes of a blob Artifact as `{ data }` in base64; refused when they do not fit a frame.',
-      params: z.object({ id: artifactId }).strict(),
+      summary: 'The bytes of a blob Artifact as `{ data, offset, size }`, `data` in base64: from `offset` (default 0), at most `maxBytes` (default all of them); `size` is the whole Artifact\'s byte count, so a caller reads a large one in parts. Refused when the part does not fit a frame. Through MCP, `maxBytes` defaults to what fits the result bound.',
+      params: z.object({ id: artifactId, offset: z.number().int().min(0).optional(), maxBytes: z.number().int().min(1).optional() }).strict(),
       async handler(_host, p) {
-        const data = Buffer.from(await services.readBytes(p.id)).toString('base64')
-        if (!fitsFrame(data)) throw new WorkError(`${p.id} is too large for one reply (${data.length} bytes in base64)`)
-        return { data }
+        const all = await services.readBytes(p.id)
+        const offset = p.offset ?? 0
+        const data = Buffer.from(all.subarray(offset, p.maxBytes === undefined ? undefined : offset + p.maxBytes)).toString('base64')
+        if (!fitsFrame(data)) throw new WorkError(`${p.id} is too large for one reply (${data.length} bytes in base64); read it in parts with offset and maxBytes`)
+        return { data, offset, size: all.byteLength }
       },
     },
     'workers.list': {
       read: true,
       authority: 'caller',
-      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable. `room` says how many Accounts could take one more parallel Work now: `accounts` registered, `free` of them with a free slot (running attempts under `maxConcurrentAttempts`) and Headroom under their Ceiling (as routing reads them), `unknown` the refs among those whose quota is unreadable (counted free when they have a slot), and with `repository` (a path, or several) `ready`: per repository, the number of Ready Items of its STATUS.md (todo, nobody on them, not Blocked), or an `error`. Information for the caller only: the Host never picks an Item.',
+      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable. `busy` lists each Worker attempt running now or holding a slot across every repository, as `{ account, work, repository?, item?, step, since }` (plus `uncertain: true` for an attempt lost at start whose slot is still held; verifier check runs are not listed). `room` says how many Accounts could take one more parallel Work now: `accounts` registered, `free` of them with a free slot (running attempts under `maxConcurrentAttempts`) and Headroom under their Ceiling (as routing reads them), `unknown` the refs among those whose quota is unreadable (counted free when they have a slot), and with `repository` (a path, or several) `ready`: per repository, the number of Ready Items of its STATUS.md (todo, nobody on them, not Blocked), or an `error`. Information for the caller only: the Host never picks an Item.',
       params: z.object({ repository: z.union([z.string().min(1), z.array(z.string().min(1))]).optional() }).strict(),
       async handler(host, p) {
         const view = await services.workers()
@@ -339,6 +367,31 @@ export function operations(services: Services) {
           return worker ? [{ ref: a.ref, slot: host.slots.hasFree(worker), reading: a.quota, ceiling: worker.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT }] : []
         })
         const records = host.view.list()
+        const registered = new Set(services.capabilities.workerRefs())
+        const entry = (account: string, record: WorkRecord, step: string, since: string, uncertain?: true) => {
+          const item = itemOf(record)
+          return {
+            account,
+            work: record.id,
+            ...(item?.repository ? { repository: item.repository } : {}),
+            ...(item?.id ? { item: item.id } : {}),
+            step,
+            since,
+            ...(uncertain ? { uncertain } : {}),
+          }
+        }
+        const busy = records.flatMap((record) => host.view.live(record.id)
+          .filter((a) => !a.waiting && registered.has(a.worker))
+          .map((a) => entry(a.worker, record, a.stepId, a.startedAt)))
+        const byId = new Map(records.map((r) => [r.id, r]))
+        for (const lost of host.slots.uncertain()) {
+          const record = byId.get(lost.workId)
+          if (!record) continue
+          const dispatched = record.events.findLast((e) => e.type === 'dispatched' && e.attemptId === lost.attemptId)
+          const account = dispatched?.type === 'dispatched' ? dispatched.selected : whoHas(record).account
+          if (!account || !registered.has(account)) continue
+          busy.push(entry(account, record, lost.stepId, dispatched?.type === 'dispatched' ? dispatched.at : record.events[0]!.at, true))
+        }
         const ready = await Promise.all(([p.repository ?? []].flat(2) as string[]).map(async (path: string) => {
           try {
             const status = await readStatus(path)
@@ -348,32 +401,32 @@ export function operations(services: Services) {
             return { repository: path, error: (error as Error).message }
           }
         }))
-        return { ...view, room: { ...roomOf(accounts), ready } }
+        return { ...view, busy, room: { ...roomOf(accounts), ready } }
       },
     },
     'workers.login': {
       authority: 'operator',
       summary: 'Sign a browser Account (`web/<site>/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
       params: z.object({ ref: z.string().min(1), cookies: z.string().max(MAX_FRAME).optional() }).strict(),
-      handler: (_host, p) => services.login(p.ref, p.cookies),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'login', cookies: p.cookies })),
     },
     'workers.loginRemote': {
       authority: 'operator',
       summary: 'Start a remote sign-in of a browser Account: its profile opens headed on a private display and a viewer is served on 127.0.0.1 behind a random token. Returns `{ url, port, ssh, expiresAt }`; the operator tunnels to the port over SSH. Follow with `workers.loginWait`.',
       params: z.object({ ref: z.string().min(1) }).strict(),
-      handler: (_host, p) => services.loginRemote(p.ref),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'remote' })),
     },
     'workers.loginWait': {
       authority: 'operator',
       summary: 'Wait until the remote sign-in of an Account ends (Save, Cancel in the viewer, or its 15 minutes), or with `cancel` end it now. Returns whether the profile is signed in.',
       params: z.object({ ref: z.string().min(1), cancel: z.boolean().optional() }).strict(),
-      handler: (_host, p) => services.loginWait(p.ref, p.cancel === true),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'wait', cancel: p.cancel === true })),
     },
     'workers.recheck': {
       authority: 'operator',
       summary: 'Recheck a browser Account that is quarantined or cooling down: its profile opens headed on a private display and the sign-in, Chat mode and temporary chat are checked; nothing is sent. Returns `{ ready, state, detail }`; the Account is `ready` again only when the check passes, and this is the only way out of `needs-sign-in` and `challenged`.',
       params: z.object({ ref: z.string().min(1) }).strict(),
-      handler: (_host, p) => services.recheck(p.ref),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'recheck', (w) => w.recheck?.()),
     },
     'credentials.status': {
       read: true,

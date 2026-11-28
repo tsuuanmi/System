@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-26
+reviewed: 2026-11-28
 summary: The profile config, Accounts and their slots, and the Antigravity and web Workers.
 covers: [packages/bundle/system-web-canary.service, packages/bundle/system-web-canary.timer]
 ---
@@ -18,17 +18,22 @@ replacing it; the merge rules are in the [patches README](../../patches/README.m
 So one account is changed, added or removed alone:
 
 ```yaml
-- id: agents
+- id: runtime-cli
   config:
     accounts:
       - ref: codex/default                # change: only what is named
         capabilities: [develop.implement, brainstorm.idea-b]
-      - ref: web/chatgpt/second           # add
-        runtime: web
-        site: chatgpt
+      - ref: codex/second                 # add
+        runtime: codex
+        capabilities: [brainstorm.idea-b]
       - ref: claude-code/default          # remove
         $patch: delete
 ```
+
+Each Runtime owns its Accounts in its own row: `runtime-cli` holds the CLI Accounts (`claude-code`, `codex`,
+`antigravity`), `runtime-web` the `web` ones ([The web account](#the-web-account)). A row patched by its old id
+(`agents`, `web-worker`) matches nothing, so such a profile is refused at start: see
+[Moving the Accounts to runtime-cli and runtime-web](#moving-the-accounts-to-runtime-cli-and-runtime-web).
 
 A list of names (such as `capabilities`) is replaced whole. `$patch: replace`
 in the `config` takes it whole, as the overlay used to. `system workers` shows
@@ -56,7 +61,7 @@ and `system status`.
 ## Attempts at once, and held slots
 
 Account refs and labels, and the refusal of two accounts on one provider account, are in the
-[agents README](../../packages/agents/README.md#account-identity).
+[agents README](../../packages/runtime-cli/README.md#account-identity).
 
 **Renaming an Account.** Wait until no Work runs (nothing is stopped for it), then:
 
@@ -77,7 +82,7 @@ merely unknown (no window, a web Account) does not make an Account unavailable.
 A step that fails with such a text is an Outside failure with cause `signed-out`.
 
 `system workers` also prints a `quota:` line under each account; see the
-[agents README](../../packages/agents/README.md#quota).
+[agents README](../../packages/runtime-cli/README.md#quota).
 
 `system workers` ends with one line that says whether there is room for more
 parallel Works; `--repo <path>` (repeatable) adds the Ready Items of that
@@ -103,7 +108,7 @@ see the Charter) or a human touch (retry, cancel, decision). The report shows th
 parts and the ratio. Conversation with a caller session is not seen by System
 and not counted.
 
-Each Account (an `agents` account such as `claude-code/default`) runs one
+Each Account (a `runtime-cli` account such as `claude-code/default`) runs one
 attempt at a time; other steps and Works that need it wait in the Host, unless
 another Account offers the same capabilities and has a free slot, which takes
 the step. `system work report` shows the time a Work waited for a slot
@@ -115,11 +120,11 @@ only Escaped defects that no later one supersedes and none withdraws: correct a 
 `system defect add ... --supersedes <defect-id>`, or retract it with `system defect withdraw <defect-id> --reason ...`.
 To allow
 more, set `maxConcurrentAttempts` (a whole number of at least 1, else the account
-is skipped and `system workers` says why) in the profile's `agents` row, then
+is skipped and `system workers` says why) in the profile's `runtime-cli` row, then
 restart the Host:
 
 ```yaml
-- id: agents
+- id: runtime-cli
   config:
     maxConcurrentAttempts: 1      # every account; default 1
     accounts:
@@ -127,7 +132,7 @@ restart the Host:
         maxConcurrentAttempts: 2  # this account only
 ```
 
-A web account always runs one attempt at a time: the row-wide value does not
+A web account always runs one attempt at a time: the `runtime-cli` row's value does not
 apply to it, and an own value other than 1 makes it unavailable. Codex accounts
 share one `auth.json`; with several attempts at once only the first refresh is
 copied back.
@@ -139,7 +144,7 @@ slot never clears, find the process with `pgrep -fa claude` or `pgrep -fa codex`
 ## Antigravity Accounts
 
 How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter details live in the
-[adapters README](../../packages/agents/src/adapters/README.md)):
+[adapters README](../../packages/runtime-cli/src/adapters/README.md)):
 
 1. Install or update the CLI with `agy update` (1.5.18 or later; 1.4.6 lacked what System uses).
 2. Create the Account's home `~/.dsh/system/antigravity/<name>` (mode 700) and sign in from a terminal:
@@ -159,7 +164,7 @@ How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter deta
    or `/usage` read runs per sign-in at a time (two refreshes of one token logged both sign-ins out). Each lists
    only the models of its group under `models` (`economy`, `standard`, `frontier`), checked with
    `HOME=~/.dsh/system/antigravity/<name> agy models`. Add the two account objects (JSON) to the
-   `accounts` array of the `agents` row's `config` in `~/.system/profile.yml` (`- id: agents` followed by
+   `accounts` array of the `runtime-cli` row's `config` in `~/.system/profile.yml` (`- id: runtime-cli` followed by
    `  config: {...}`):
 
    ```json
@@ -203,21 +208,20 @@ To sign in again: `HOME=<agyHome> env -u DBUS_SESSION_BUS_ADDRESS agy`, then the
 
 A Worker that runs a step in the operator's signed-in ChatGPT web session
 (PROP-0005, [retired](../governance/retired.md); options in the
-[web-worker README](../../packages/web-worker/README.md)). It is
-**not enabled by default**, in two steps in the profile's own patch
-(`$DSH_HOME/profiles/system/cordis.patch.yml`), then restart the Host: turn on the
-optional `web-worker` row, and add the account to the `agents` row (it is added to
-the bundle's accounts, see above):
+[runtime-web README](../../packages/runtime-web/README.md)). It is
+**not enabled by default**: in the profile's own patch
+(`$DSH_HOME/profiles/system/cordis.patch.yml`), turn on the optional `runtime-web` row and list the
+account in its own `config`, then restart the Host:
 
 ```yaml
-- id: web-worker
+- id: runtime-web
   disabled: false
-- id: agents
   config:
     accounts:
       - ref: web/chatgpt/default
         runtime: web
         site: chatgpt
+        capabilities: [research]
 ```
 
 The web Runtime declares `web.browse`, so the research Workflow prefers a web account over other capable accounts.
@@ -225,12 +229,12 @@ The web Runtime declares `web.browse`, so the research Workflow prefers a web ac
 The ref is `web/<site>/<name>` with `<site>` equal to the entry's `site`, which picks the shipped UI map and the Site's
 defaults (an unknown site is refused with the list of shipped sites: today `chatgpt`).
 
-With the row off, `system workers` shows the account `unavailable` with the reason
-"the web-worker row is disabled", and `system workers login` says the same.
+With the row off there are no web Accounts: `system workers` lists none, and `system workers login`
+or `recheck` of a web ref says it is not registered. The row reads no other row's config.
 
 It needs `Xvfb` (`apt install xvfb`) and a recent Chrome (and for `--remote` a VNC
 server, see below). The Chrome is chosen, and a pinned one downloaded the first
-time it is needed, as the [web-worker README](../../packages/web-worker/README.md)
+time it is needed, as the [runtime-web README](../../packages/runtime-web/README.md)
 says. `system workers` shows the account as `available` once Xvfb is found and
 the Chrome path exists; that says nothing about the sign-in. It is `unavailable`
 with a reason that names what is missing.
@@ -239,7 +243,7 @@ with a reason that names what is missing.
 - `system workers login web/chatgpt/default --cookies <file>`: a JSON export from
   a browser extension, or a Netscape `cookies.txt`, of chatgpt.com from your
   own signed-in browser. Delete the file yourself when done: it is as good as a
-  password. Which cookies are kept: the [web-worker README](../../packages/web-worker/README.md).
+  password. Which cookies are kept: the [runtime-web README](../../packages/runtime-web/README.md).
 - `system workers login web/chatgpt/default --remote`: for a server with no
   display, and for a Cloudflare challenge. See below.
 - With neither, on a machine with a display: a window opens on the **Host's**
@@ -263,7 +267,7 @@ x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`).
 Without root, unpack the packages into the home directory and put a wrapper script on the `PATH`.
 
 **Account states.** `system workers` shows any state but `ready` as `unavailable` with what to do (states,
-quarantine and recheck: the [web-worker README](../../packages/web-worker/README.md#account-health-ww6d)). After
+quarantine and recheck: the [runtime-web README](../../packages/runtime-web/README.md#account-health-ww6d)). After
 `needs-sign-in` or `challenged`, log in again with `--remote`, then `system workers recheck web/chatgpt/<name>` and
 retry the Work with `work retry`: no prompt is resent automatically.
 
@@ -296,13 +300,29 @@ Runtime has merged into `dev`; the timer runs it every six hours whatever
 merged, and the `web` check (`.system/checks.yaml`) runs the Website Worker's
 tests on a pull request that touches its paths.
 
-Install the timer as a user unit like the night session's (below), from
-`packages/bundle/system-web-canary.{service,timer}`, with `@NODE@` also
-replaced by `$(command -v node)`; it needs the Host running and `system init`
-does not install it.
+Install the timer as a user unit from
+`packages/bundle/system-web-canary.{service,timer}`, replacing `@REPO@`, `@PATH@`
+and `@NODE@` (with `$(command -v node)`), under `~/.config/systemd/user`; it
+needs the Host running and `system init` does not install it.
 
 Read it with `systemctl --user list-timers system-web-canary` and
 `journalctl --user -u system-web-canary`; start a run with
 `systemctl --user start system-web-canary`, stop the series with
 `systemctl --user disable --now system-web-canary.timer`. Changing the
 question's text starts a new series (a new Task ID).
+
+## Moving the Accounts to runtime-cli and runtime-web
+
+[ADR-0018](../decisions/ADR-0018-runtimes-plug-into-the-worker-registry.md) renamed the rows `agents` to
+`runtime-cli` and `web-worker` to `runtime-web`, and moved the `web` Accounts from the first row's `accounts` to
+the second row's. System never rewrites your profile, so `system host` and `system doctor` refuse one that
+still patches `agents` or `web-worker`, or lists a `runtime: web` Account under `runtime-cli`, and print the rows
+to write instead (no row of an old id would match: it would be skipped with a warning). To move:
+
+1. Run `system doctor` and read the rows it prints.
+2. In `~/.system/profile.yml` (and any other patch file the Host reads: the profile's `cordis.patch.yml`, a
+   `--patch` file) replace the patches of `agents` and `web-worker` with them: `id: agents` becomes
+   `id: runtime-cli` with the same `config` minus the `runtime: web` entries; those entries move, line for line, to
+   `config.accounts` of `id: runtime-web`, with `disabled: false`.
+3. Delete `webWorkerWaitSeconds` and `registerWaitSeconds`: there is no hand-over left to wait for.
+4. Restart the Host and check `system workers`: every Account is listed as before.

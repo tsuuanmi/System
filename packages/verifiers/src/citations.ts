@@ -25,8 +25,11 @@
  * the report's `[id]`s. Quote matching is unchanged.
  */
 import { createHash } from 'node:crypto'
-import type { Artifacts } from '@system/artifacts'
-import type { VerifierPort, VerifyResult } from '@system/work'
+import { lookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
+import type { Artifacts } from '@system/artifacts/contract'
+import type { VerifyResult } from '@system/work'
+import type { VerifierPort } from '@system/work/contract'
 import { z } from 'zod'
 
 export const CITATION_CRITERIA_KIND = { kind: 'citation-criteria', schemaVersion: 1 } as const
@@ -151,8 +154,71 @@ export function completeness(report: string, sources: z.infer<typeof sourcesSche
   return problems
 }
 
-async function fetchText(url: string, criteria: CitationCriteria): Promise<{ status: number; text: string; contentHash: string }> {
-  const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(criteria.fetchTimeoutMs), headers: { 'user-agent': USER_AGENT_V2 } })
+const MAX_REDIRECTS = 10
+
+export interface CitationOptions {
+  /** Host names or addresses that may be fetched although internal (`citationInternalHosts`); none by default. */
+  internalHosts?: string[]
+  /** Every address of a host name (default `dns.lookup`, all addresses); tests give one in code. */
+  resolve?: (host: string) => Promise<string[]>
+}
+
+const resolveAll = async (host: string): Promise<string[]> => (await lookup(host, { all: true })).map((a) => a.address)
+
+/** The 16 bytes of an IPv6 address, or undefined when it is not one. */
+function ipv6Bytes(address: string): number[] | undefined {
+  let text = address.toLowerCase()
+  const tail = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text)
+  if (tail) text = text.slice(0, tail.index) + [(+tail[1]! << 8) | +tail[2]!, (+tail[3]! << 8) | +tail[4]!].map((n) => n.toString(16)).join(':')
+  const halves = text.split('::')
+  if (halves.length > 2) return undefined
+  const part = (h: string) => (h ? h.split(':') : [])
+  const head = part(halves[0]!)
+  const rest = halves.length === 2 ? part(halves[1]!) : []
+  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0
+  const groups = [...head, ...Array<string>(Math.max(fill, 0)).fill('0'), ...rest]
+  if (groups.length !== 8) return undefined
+  return groups.flatMap((g) => [parseInt(g, 16) >> 8, parseInt(g, 16) & 255])
+}
+
+/** Whether `address` is loopback, private, link-local, unique-local or unspecified (IPv4, IPv6 or IPv4-mapped); an address that cannot be read counts as internal. */
+export function isInternalAddress(address: string): boolean {
+  const kind = isIP(address)
+  if (kind === 0) return true
+  const v4 = (a: number, b: number) => a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  if (kind === 4) { const [a, b] = address.split('.').map(Number); return v4(a!, b!) }
+  const bytes = ipv6Bytes(address)
+  if (!bytes) return true
+  if (bytes.slice(0, 10).every((b) => b === 0) && bytes[10] === 255 && bytes[11] === 255) return v4(bytes[12]!, bytes[13]!)
+  if (bytes.slice(0, 15).every((b) => b === 0) && bytes[15]! <= 1) return true // :: and ::1
+  return (bytes[0] === 0xfe && (bytes[1]! & 0xc0) === 0x80) || (bytes[0]! & 0xfe) === 0xfc
+}
+
+/** Throws `internal address` unless `url` is http(s) and its host resolves only to public addresses (or is listed in `internalHosts`). */
+async function refuseInternal(url: URL, options: CitationOptions): Promise<void> {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('internal address')
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  const allowed = new Set((options.internalHosts ?? []).map((h) => h.toLowerCase().replace(/^\[|\]$/g, '')))
+  if (allowed.has(host)) return
+  const addresses = await (options.resolve ?? resolveAll)(host)
+  if (!addresses.length) throw new Error('no address')
+  if (addresses.some((a) => isInternalAddress(a)) && !addresses.every((a) => allowed.has(a.toLowerCase()))) throw new Error('internal address')
+}
+
+/** Follows redirects itself (at most 10), checking every URL before the request. */
+async function fetchText(start: string, criteria: CitationCriteria, options: CitationOptions): Promise<{ status: number; text: string; contentHash: string }> {
+  const signal = AbortSignal.timeout(criteria.fetchTimeoutMs)
+  let url = new URL(start)
+  let response: Response
+  for (let hops = 0; ; hops++) {
+    await refuseInternal(url, options)
+    response = await fetch(url, { redirect: 'manual', signal, headers: { 'user-agent': USER_AGENT_V2 } })
+    const location = response.headers.get('location')
+    if (response.status < 300 || response.status >= 400 || !location) break
+    await response.body?.cancel().catch(() => undefined)
+    if (hops >= MAX_REDIRECTS) throw new Error('too many redirects')
+    url = new URL(location, url)
+  }
   const reader = response.body?.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
@@ -167,7 +233,7 @@ async function fetchText(url: string, criteria: CitationCriteria): Promise<{ sta
   return { status: response.status, text: bytes.toString('utf8'), contentHash: `sha256:${createHash('sha256').update(bytes).digest('hex')}` }
 }
 
-export function citationCheck(artifacts: Artifacts): VerifierPort {
+export function citationCheck(artifacts: Artifacts, options: CitationOptions = {}): VerifierPort {
   const producer = { type: 'verifier' as const, ref: 'research.citation-check' }
   return {
     ref: 'research.citation-check',
@@ -207,7 +273,7 @@ export function citationCheck(artifacts: Artifacts): VerifierPort {
       if (parsed && !problems.length) {
         for (const source of parsed.sources) {
           try {
-            const page = await fetchText(source.url, criteria)
+            const page = await fetchText(source.url, criteria, options)
             const readable = page.status < 400
             const near = readable ? looseMatch(normalize(page.text), normalize(source.quote), loose) : { ratio: 0, passage: '' }
             results.push({ id: source.id, url: source.url, status: page.status, found: readable && near.ratio >= loose, contentHash: page.contentHash, readable, ...(readable ? { wordRatio: near.ratio, passage: near.passage } : {}) })

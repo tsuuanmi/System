@@ -11,7 +11,7 @@ const bundle = parse(readFileSync(new URL('../cordis.patch.yml', import.meta.url
 const row = (id: string) => bundle[0]!.insert.find((entry) => entry.id === id)!
 
 test('the shipped Accounts have the develop.implement Role, and grant no ability or old name', () => {
-  const accounts = row('agents').config!.accounts!
+  const accounts = row('runtime-cli').config!.accounts!
   const claude = accounts.find((account) => account.ref === 'claude-code/default')!
   const codex = accounts.find((account) => account.ref === 'codex/default')!
   assert.ok(claude.capabilities!.includes('develop.implement'))
