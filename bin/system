@@ -13,6 +13,36 @@ import { MIN_NODE, hostCommand, installProfile, installRoot, nodeChoice, schedul
 import { finishPending, update } from './update.mjs'
 
 const PROFILE = 'system'
+
+const USAGE = {
+  init: `usage: system init [--no-service]
+
+Create or refresh the \`system\` DSH profile (the System bundle, an operator patch file created once) and run
+\`dsh plugin install\`. On Linux, for the default home, it also writes the Host's user unit and the Schedule units;
+it never enables or starts any. Nothing runs when --help or -h is given.
+
+  --no-service   do not write the user unit (also SYSTEM_NO_SERVICE=1)
+  -h, --help     print this text and exit
+`,
+  update: `usage: system update [--wait <minutes>] [--to <release>]
+       system update --finish-pending
+
+Move the install (~/.system, or SYSTEM_INSTALL) to the newest commit of main that passed its required checks.
+
+  --wait <minutes>   how long to wait for the new release's Host (default 75)
+  --to <release>     switch back to a release kept in releases/
+  --finish-pending   finish the install check of a release that has one pending
+  -h, --help         print this text and exit
+`,
+}
+// `--help` never runs a command: answered before anything is read, created or started.
+{
+  const [command, ...rest] = process.argv.slice(2)
+  if (Object.hasOwn(USAGE, command) && rest.some((arg) => arg === '--help' || arg === '-h')) {
+    process.stdout.write(USAGE[command])
+    process.exit(0)
+  }
+}
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // A release of the install runs as the install's `current` link, so the profile, the unit and the Host's
 // look for new code all follow a switch of that link (`system update`); a checkout runs as itself.
