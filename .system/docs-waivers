@@ -1,9 +1,1 @@
 # Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (docs/operations/releases.md, "The dev branch").
-docs-unchanged: docs/operations/recovery.md - plug-11 only changed an import path in packages/app/src/cli.ts; recovery behaviour is unchanged
-docs-unchanged: docs/operations/using-system.md - plug-11 only changed an import path in packages/app/src/cli.ts and index.ts; behaviour is unchanged
-docs-unchanged: docs/architecture/host.md - busy-1 only adds busy to workers.list in packages/host/src/operations.ts (documented in packages/host/README.md and packages/app/README.md); Host architecture is unchanged
-docs-unchanged: docs/architecture/artifact-verification.md - plug-7 only moves other packages' imports of the Artifact ID helpers and schemas to the new @system/artifacts/contract module; verification behaviour is unchanged
-docs-unchanged: docs/architecture/work-record.md - plug-7 only moves imports in packages/work/src to @system/artifacts/contract; the Work record is unchanged
-docs-unchanged: docs/operations/install-and-update.md - plug-9 only moves other packages' imports of work names to the new @system/work/contract module (including packages/app and packages/host); install and update behaviour is unchanged
-docs-unchanged: docs/architecture/control-plane.md - rt-3 only renames the packages @system/agents and @system/web-worker to @system/runtime-cli and @system/runtime-web; the page names only the row ids (web-worker, agents), which stay, so the architecture is unchanged
-docs-unchanged: docs/operations/scheduled-session.md - rt-3 only renames two packages and their directories; the Scheduled session's behaviour is unchanged
