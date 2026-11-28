@@ -123,7 +123,7 @@ test('a Claude account reads the last rate_limit_event after the Host restarts',
   const task = await artifacts.put({ ...TASK_KIND, content: { instructions: 'observe quota' }, classification: 'local-private', producer: { type: 'operator', ref: 'test' } })
   const stream = [
     { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'seven_day', utilization: .77, status: 'allowed' } },
-    { type: 'result', subtype: 'success', result: 'done', is_error: false },
+    { type: 'result', subtype: 'success', result: 'done', is_error: false, structured_output: { status: 'done', reason: 'done' } },
   ].map((event) => JSON.stringify(event)).join('\n')
   const mountAgain = async () => {
     let worker!: WorkerPort
@@ -169,7 +169,7 @@ test('a Claude account reads the last rate_limit_event even when the CLI version
   const task = await artifacts.put({ ...TASK_KIND, content: { instructions: 'observe quota' }, classification: 'local-private', producer: { type: 'operator', ref: 'test' } })
   const stream = [
     { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'seven_day', utilization: .77, status: 'allowed' } },
-    { type: 'result', subtype: 'success', result: 'done', is_error: false },
+    { type: 'result', subtype: 'success', result: 'done', is_error: false, structured_output: { status: 'done', reason: 'done' } },
   ].map((event) => JSON.stringify(event)).join('\n')
   const mountAgain = async () => {
     let worker!: WorkerPort

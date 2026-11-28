@@ -16,4 +16,4 @@ git add NOTE.md && git -c user.name=t -c user.email=t@t commit -q -m note && add
 echo "require('node:test')('one', () => {})" > one.test.js
 node --test one.test.js >/dev/null 2>&1 && add nodetest=ok || add nodetest=failed
 curl -s -m 5 -o /dev/null "http://127.0.0.1:$PORT/" && add network=open || add network=closed
-printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","usage":{"input_tokens":1,"output_tokens":1}}\n' "$r"
+printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","structured_output":{"status":"done","reason":"%s"},"usage":{"input_tokens":1,"output_tokens":1}}\n' "$r" "$r"
