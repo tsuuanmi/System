@@ -28,10 +28,13 @@ export interface Config {
   checkEnv?: Record<string, string>
   /** How many `code.required-checks` runs go at once on the machine; the others wait for a check slot. Default 2. */
   maxConcurrentChecks: number
+  /** Host names or addresses `research.citation-check` may fetch although internal (loopback, private, link-local); empty by default. Only a test profile sets it. */
+  citationInternalHosts: string[]
 }
 export const Config: Schema<Config> = Schema.object({
   checkEnv: Schema.dict(Schema.string()),
   maxConcurrentChecks: Schema.number().min(1).step(1).default(DEFAULT_MAX_CONCURRENT_CHECKS),
+  citationInternalHosts: Schema.array(Schema.string()).default([]),
 })
 
 export function apply(ctx: Context, config: Config): void {
@@ -44,7 +47,7 @@ export function apply(ctx: Context, config: Config): void {
     artifacts.registerKind({ ...CITATION_CHECK_KIND, content: citationCheckSchema }),
     capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime), Date.now, config.checkEnv, config.maxConcurrentChecks)),
     capabilities.registerVerifier(installCheck(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime))),
-    capabilities.registerVerifier(citationCheck(artifacts)),
+    capabilities.registerVerifier(citationCheck(artifacts, { internalHosts: config.citationInternalHosts })),
   ]
   ctx.effect(() => () => { for (const d of dispose) d() }, 'verifier registrations')
   ctx.provide('verifiers', { refs: ['code.required-checks', 'release.install-check', 'research.citation-check'] })
