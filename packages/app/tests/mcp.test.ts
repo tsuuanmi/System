@@ -303,6 +303,16 @@ test('the instructions tell the caller to write the Task under the six context-p
   assert.match(text, /workflows\/README\.md/)
 })
 
+test('the instructions say the Task of an Item is the Item\'s line, the pack is for a Task with no Item, and what (workflow: <name>) does (sch-7)', async () => {
+  const { INSTRUCTIONS } = await import('../src/mcp.ts')
+  const text = INSTRUCTIONS.replace(/\s+/g, ' ')
+  assert.match(text, /Task of an Item is the Item's line/)
+  assert.match(text, /names its files, its tests and what shows it is done/)
+  assert.match(text, /For a Task that names no Item, write the instructions as a context pack/)
+  assert.match(text, /\(workflow: <name>\)/)
+  assert.match(text, /develop\.yaml unless/)
+})
+
 test('an MCP server of older code than the Host recovers on the code under SYSTEM_CODE, and its session keeps working', { timeout: 120_000 }, async () => {
   // A Host of other code than this build's, and an install whose `current` code is that Host's.
   const dir = mkdtempSync('/tmp/sm-old-')

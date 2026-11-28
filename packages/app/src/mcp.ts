@@ -75,11 +75,15 @@ Steps (the tools may be shown as status, item_claim, task_new, work_submit, with
    shows your claim, and the Work you submit for the Item takes it over.
 2. \`task_new\` with the repository, the ref and the \`item\`; its result is
    \`{ task, base }\`: pass \`task\` alone as the input.
-   For a change, write the Task's instructions as a context pack, prose under
-   these headings, so the Worker reads the named files first instead of
-   exploring: Goal (what and why); Files to change and why (the files the
-   Worker reads first); Tests to add or update; Invariants not to change;
-   Out of scope; Done when (what shows it is finished).
+   The Task of an Item is the Item's line: the Item names its files, its tests
+   and what shows it is done, so the Worker needs nothing more; write no
+   context pack for it. \`(workflow: <name>)\` at the end of the line picks the
+   Workflow (develop.yaml unless the line says otherwise).
+   For a Task that names no Item, write the instructions as a context pack,
+   prose under these headings, so the Worker reads the named files first
+   instead of exploring: Goal (what and why); Files to change and why (the
+   files the Worker reads first); Tests to add or update; Invariants not to
+   change; Out of scope; Done when (what shows it is finished).
    One Item fits one Worker attempt (about an hour): split a Done when with
    several independent parts into several Items. Template:
    ~/.system/current/workflows/README.md.
