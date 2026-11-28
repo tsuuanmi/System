@@ -89,7 +89,8 @@ _Avoid_: idea, prompt, request
 A planned piece of a project's work, with a stable ID in the project's
 status list. An Item can get several Tasks over time (a request rewritten
 after a failure); Works carry them out, and the change that finishes it
-marks it done.
+marks it done. The Item's line is the brief: it names its files, its
+tests and what shows it is done, and is the Task's instructions.
 _Avoid_: task, ticket, issue, todo
 
 **Claim**:
@@ -117,7 +118,7 @@ _Avoid_: waiting, held (a held Work awaits an Approval)
 **Task**:
 An immutable record of what to do: instructions, optionally the repository
 commit to start from, and Artifacts to read as context. A Task does not run;
-several Works can take the same Task.
+the Task of an Item is the Item's line; several Works can take the same Task.
 _Avoid_: job, ticket, Work (for the request)
 
 **Work**:

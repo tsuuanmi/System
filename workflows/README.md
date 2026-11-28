@@ -7,13 +7,15 @@ changes future admissions only.
 The canonical Workflows are `develop.yaml`, `hygiene.yaml`, `research.yaml`, `research-source.yaml`, `plan-items.yaml` and
 `brainstorm.yaml`, and the Sub-workflow `code-checks.yaml`.
 
-**Context pack.** A develop Task's instructions are prose under six headings, so
+**The Item's line is the brief.** The Task of an Item is the Item's line (ADR-0020 decision 2): the Item names its files, its tests and what shows it is done, and the Workflow is `develop.yaml` unless the line ends with `(workflow: <name>)`, which picks that Workflow. A context pack is for a Task that names no Item.
+
+**Context pack.** A develop Task that names no Item has instructions in prose under six headings, so
 the Worker reads the named files first instead of exploring (no Task field; a Task
 without them works as before): `Goal`; `Files to change and why`; `Tests to add or
 update`; `Invariants not to change`; `Out of scope`; `Done when`. `develop.yaml`'s
 `implement` reads the files named first, widens only when they are not enough, and
 says in its result when the pack is wrong. An Item fits one Worker attempt (about an hour): a Done when with several independent parts is split into several Items by the caller (web-3, work:a216a2f9, ran out of its 60 minutes doing three parts). The MCP `instructions`
-([packages/app/src/mcp.ts](../packages/app/src/mcp.ts)) tell callers to write it.
+([packages/app/src/mcp.ts](../packages/app/src/mcp.ts)) tell callers to write it for a Task that names no Item.
 
 A step's `capabilities` are of three kinds, defined in the
 [GLOSSARY](../GLOSSARY.md) (Ability, Role, Tier). Abilities used here: `repo.read`,
