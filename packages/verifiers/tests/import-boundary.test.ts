@@ -17,9 +17,9 @@ const lint = (file: string, source: string) =>
     input: source,
   })
 
-// packages/artifacts/src/index.ts is not in the baseline; packages/app/src/cli.ts is.
+// packages/artifacts/src/index.ts is not in the baseline; packages/app/src/bootstrap.ts is (it keeps a relative import into verifiers, plug-15's neighbour; no entry is against @system/work).
 const CLEAN = 'packages/artifacts/src/index.ts'
-const BASELINED = 'packages/app/src/cli.ts'
+const BASELINED = 'packages/app/src/bootstrap.ts'
 
 test('a new value import of @system/work from another package fails lint', () => {
   const result = lint(CLEAN, "import { TASK_KIND } from '@system/work'\nexport const kind = TASK_KIND\n")
@@ -53,7 +53,7 @@ test('a value import through ./contract or from a library package passes lint', 
   assert.doesNotMatch(result.stdout, /no-restricted-imports/, result.stdout)
 })
 
-test('a baselined file keeps its value import of @system/work', () => {
-  const result = lint(BASELINED, "import { TASK_KIND } from '@system/work'\nexport const s = TASK_KIND\n")
+test('a baselined file keeps its value import of a plugin root or relative path', () => {
+  const result = lint(BASELINED, "import { CHECKS_FILE } from '../../verifiers/lib/checks.js'\nimport { TASK_KIND } from '@system/work'\nexport const s = [CHECKS_FILE, TASK_KIND]\n")
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })
