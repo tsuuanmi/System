@@ -34,4 +34,11 @@ The generated index below is the authoritative list of current research.
   2026-11-27 against the DSH plugin standard of the pinned DSH 0.2.2-rc.5 (the `dsh-doc` skill and DSH's own seam
   packages) - export form, Config, services, inject, and the 40 value imports between packages, edge by edge (Item
   plug-2).
+- [RES-0022 — Agent-workspace landscape and System integration options](RES-0022-agent-workspace-landscape.md) — active
+  — Compare six agent workspaces against System and evaluate evidence-led reuse.
+- [RES-0023 — Adaptive System: evolution beyond any one runtime](RES-0023-adaptive-component-evolution.md) — active —
+  Adaptive component evolution, build-versus-reuse decisions, and execution contracts.
+- [RES-0024 — Adaptive System: eight insights and adoption
+  gates](RES-0024-adaptive-system-insights-and-adoption-gates.md) — active — Eight strategic insights and staged
+  evidence gates for adapting System components safely.
 <!-- docs:end index:research -->
