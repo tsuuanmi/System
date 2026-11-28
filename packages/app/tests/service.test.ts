@@ -122,11 +122,11 @@ test('with a profile file, the unit runs the Host with it as a patch', () => {
   assert.match(text, /^ExecStart=\/n \/home\/tan\/\.system\/current\/bin\/system --patch \/home\/tan\/\.system\/profile\.yml host$/m)
 })
 
-test('a Schedule service waits for doctor, runs the install\'s `items carry --schedule`, and has no start timeout', () => {
+test('a Schedule service runs the install\'s `items carry --schedule`, without ExecStartPre or a start timeout', () => {
   const text = scheduleServiceText({ name: 'daily', node: '/opt/node/bin/node', entry: '/home/tan/.system/current/bin/system', home: '/home/tan/.dsh', path: '/usr/bin', file: '/home/tan/.system/schedules/daily.yaml' })
   assert.match(text, /^Description=.*daily/m)
   assert.match(text, /^Type=oneshot$/m)
-  assert.match(text, /^ExecStartPre=\/bin\/sh -c ".*" sh \/opt\/node\/bin\/node \/home\/tan\/\.system\/current\/bin\/system doctor$/m)
+  assert.doesNotMatch(text, /ExecStartPre/)
   assert.match(text, /^ExecStart=\/opt\/node\/bin\/node \/home\/tan\/\.system\/current\/bin\/system items carry --schedule \/home\/tan\/\.system\/schedules\/daily\.yaml$/m)
   assert.match(text, /^Environment=DSH_HOME=\/home\/tan\/\.dsh$/m)
   assert.match(text, /^Environment=PATH=\/usr\/bin$/m)

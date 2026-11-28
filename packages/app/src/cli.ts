@@ -14,8 +14,7 @@ import { operations, type Services } from '@system/host/operations'
 import { prepareRelease } from './release.ts'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
-import { carryCheck, carryItem, carryPass } from './items.ts'
-import { readSchedule } from './schedule.ts'
+import { carryItem, carryPass, carrySchedule } from './items.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
@@ -437,9 +436,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         if (options.check && options.schedule === undefined) throw new Error('--check goes with --schedule')
         if (options.schedule !== undefined) {
           if (id !== undefined || options.repo.length > 0 || options.maxParallel !== undefined) throw new Error('--schedule is a pass of its own: give no Item ID, --repo or --max-parallel')
-          const schedule = readSchedule(options.schedule)
-          if (options.check) return carryCheck(host, schedule.repositories, { home }, io)
-          return carryPass(host, schedule.repositories, { maxParallel: schedule.maxParallel, home }, io)
+          return carrySchedule(host, options.schedule, { check: options.check, home }, io)
         }
         if (id !== undefined) {
           if (options.repo.length > 1) throw new Error('give one --repo with an Item ID')

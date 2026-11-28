@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-26
+reviewed: 2026-11-29
 summary: Backing up, reading logs, and what to do when the Host or a check fails.
 covers: [packages/app/src/cli.ts, packages/app/src/io.ts]
 related: [operations/runbook, architecture/host]
@@ -67,10 +67,12 @@ that changes something (every write: `submit`, `run`, `retry`, `cancel`,
 `commandId` and is sent once more with the same one, so the Host does it once:
 look at `system work list` before sending it again yourself.
 
-Every command but `system work wait` fails at once with this. `system work wait`
-keeps waiting with a backoff; after 10 minutes unreachable (or its `--timeout`)
-it exits **6**, never a success, and the Works may still be running: run it
-again or `system work list`. Its exits are in the
+Every command but `system work wait` (and `system items carry --schedule <file>`,
+which waits up to 5 minutes for the Host at the start of a pass before notifying
+and exiting 1; see [scheduled session](scheduled-session.md)) fails at once with
+this. `system work wait` keeps waiting with a backoff; after 10 minutes
+unreachable (or its `--timeout`) it exits **6**, never a success, and the Works
+may still be running: run it again or `system work list`. Its exits are in the
 [app README](../../packages/app/README.md).
 
 1. `systemctl --user status system` and `journalctl --user -u system -e`: is

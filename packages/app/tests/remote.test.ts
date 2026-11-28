@@ -141,3 +141,16 @@ test('remote.ts names no operator operation on a client of the ordinary connecti
   const source = readFileSync(new URL('../src/remote.ts', import.meta.url), 'utf8')
   for (const method of operatorMethods) assert.doesNotMatch(source, new RegExp(`client\\.call\\(\\s*'${method.replace('.', '\\.')}'`), `${method} is called on a client; use onOperatorSocket`)
 })
+
+test('a failed open does not poison later calls: once the Host comes up, the next call connects', async () => {
+  let opened = 0
+  const open = async (): Promise<Client> => {
+    opened++
+    if (opened === 1) throw new NotRunning('the Host is not running')
+    return client(async () => ['[ ] a-1 One - todo: nobody'])
+  }
+  const hc = hostClient({ open, err: () => {} })
+  await assert.rejects(hc.call('status', { repository: '/w/A' }), /not running/)
+  assert.deepEqual(await hc.call('status', { repository: '/w/A' }), ['[ ] a-1 One - todo: nobody'])
+  assert.equal(opened, 2)
+})
