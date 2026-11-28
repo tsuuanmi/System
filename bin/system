@@ -116,7 +116,8 @@ async function installSchedules(unitDir) {
   for (const file of files) {
     const name = basename(file, '.yaml')
     try {
-      schedules.push({ name, file: join(dir, file), at: readSchedule(join(dir, file)).at })
+      const { at, checkAt } = readSchedule(join(dir, file))
+      schedules.push({ name, file: join(dir, file), at, checkAt })
     } catch (error) {
       keep.push(name)
       process.stderr.write(`system: ${error.message}\n`)

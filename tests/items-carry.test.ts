@@ -85,3 +85,14 @@ test('sch-2: system items carry --repo <path> without an Item ID runs a pass ove
   assert.match(cat.stdout, /\| p-2 \|.*\| succeeded \| fake-worker \|/)
   assert.deepEqual(calls().map((l) => l.split(' ')[1]), ['implement', 'implement'])
 })
+
+test('sch-5: system items carry --schedule <file> --check starts nothing and names a repository whose status cannot be read', () => {
+  const schedule = join(home, 'check.yaml')
+  writeFileSync(schedule, `kind: items\nrepositories: [${project}, ${join(home, 'no-such-repo')}]\nat: daily\n`)
+  rmSync(log, { force: true })
+  const res = system(['items', 'carry', '--schedule', schedule, '--check'])
+  assert.equal(res.status, 1)
+  assert.match(res.stderr, /no-such-repo: status cannot be read/)
+  assert.equal(res.stdout, '')
+  assert.deepEqual(calls(), [])
+})

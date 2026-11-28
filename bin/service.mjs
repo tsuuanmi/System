@@ -162,12 +162,28 @@ WantedBy=timers.target
 `
 }
 
-/** File name to text of the units of each Schedule (`{ name, file, at }`). */
+/** The `system-schedule-<name>-check.service` text (sch-5): the check before a pass; no wait for the Host, since a Host that does not answer is what it reports. */
+export function scheduleCheckServiceText({ name, node, entry, home, path, file }) {
+  return `[Unit]
+Description=${`System Scheduled session check: Schedule ${name}`}
+
+[Service]
+Type=oneshot
+Environment=${word(`DSH_HOME=${home}`)}
+Environment=${word(`PATH=${path}`)}
+ExecStart=${word(node)} ${word(entry)} items carry --schedule ${word(file)} --check
+`
+}
+
+/** File name to text of the units of each Schedule (`{ name, file, at, checkAt? }`); `checkAt` adds the check's service and timer. */
 export function scheduleUnits({ node, entry, home, path, schedules }) {
   const units = new Map()
-  for (const { name, file, at } of schedules) {
+  for (const { name, file, at, checkAt } of schedules) {
     units.set(scheduleUnit(name, 'service'), scheduleServiceText({ name, node, entry, home, path, file }))
     units.set(scheduleUnit(name, 'timer'), scheduleTimerText({ name, at }))
+    if (checkAt === undefined) continue
+    units.set(scheduleUnit(`${name}-check`, 'service'), scheduleCheckServiceText({ name, node, entry, home, path, file }))
+    units.set(scheduleUnit(`${name}-check`, 'timer'), scheduleTimerText({ name: `${name} check`, at: [checkAt] }))
   }
   return units
 }

@@ -14,6 +14,7 @@ import { basename, join, resolve } from 'node:path'
 import { NotAnswering, NotRunning, codeRoot } from '@system/host'
 import type { WorkEvent, WorkRecord } from '@system/work'
 import { errorLine, explain, operatorId } from './io.ts'
+import type { WorkersView } from './cli.ts'
 import { readWorkflowFile, type HostClient } from './remote.ts'
 
 export interface ItemsIo {
@@ -603,4 +604,43 @@ export async function carryPass(host: HostClient, repoPaths: string[], options: 
   } finally {
     await lock.release()
   }
+}
+
+/** A sign-in that ends within this long is worth a warning while the Operator can still act (ADR-0020 decision 5). */
+const SIGN_IN_WARNING_MS = 3 * 86_400_000
+
+/**
+ * The check before a pass (ADR-0020 decision 5): starts nothing, asks `workers.list` once (the Host answers, each
+ * repository's status reads, how many Items are Ready, which Accounts can take them) and is silent when all is well.
+ * Otherwise it says each finding on stderr, sends one line to the notifier and returns 1.
+ */
+export async function carryCheck(host: HostClient, repoPaths: string[], options: { now?: () => Date; home?: string }, io: ItemsIo): Promise<number> {
+  const repos = repoPaths.map((path) => resolve(path))
+  const now = (options.now ?? (() => new Date()))()
+  const findings: string[] = []
+  let ready = 0
+  try {
+    const workers = await host.call('workers.list', { repository: repos }) as WorkersView
+    const room = workers.room
+    for (const entry of room?.ready ?? []) {
+      if (entry.error !== undefined) findings.push(`${entry.repository}: status cannot be read: ${singleLine(entry.error)}`)
+      else ready += entry.count ?? 0
+    }
+    if (ready > 0) {
+      for (const a of workers.accounts) if (!a.available) findings.push(`${a.ref} is not available: ${singleLine(a.reason)}`)
+      if (room && room.free === 0) findings.push(`${ready} Ready Item${ready === 1 ? '' : 's'} and no free Account (${room.free} of ${room.accounts} free)`)
+    }
+    for (const a of workers.accounts) {
+      const ends = a.credentialExpiresAt === undefined ? NaN : Date.parse(a.credentialExpiresAt)
+      if (a.available && ends - now.getTime() < SIGN_IN_WARNING_MS) findings.push(`${a.ref}: sign-in ends ${a.credentialExpiresAt}`)
+    }
+  } catch (error) {
+    const explained = explain(error, options.home ?? process.env.DSH_HOME ?? join(homedir(), '.dsh'))
+    findings.push(explained instanceof Error ? singleLine(explained.message) : String(explained))
+  }
+  if (findings.length === 0) return 0
+  for (const finding of findings) io.err(`${finding}\n`)
+  const names = repos.map((r) => basename(r) || r).join(',')
+  await notifyPass(`${now.toISOString().slice(0, 10)} ${names}: check failed: ${findings.join('; ')}, ready ${ready}`, io)
+  return 1
 }

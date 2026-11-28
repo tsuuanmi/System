@@ -166,3 +166,13 @@ test('syncing Schedule units writes new ones, rewrites changed ones, leaves same
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('sch-5: a Schedule with checkAt has a check service and timer; one without has none', () => {
+  const base = { node: '/n', entry: '/e/bin/system', home: '/h', path: '/p' }
+  const units = scheduleUnits({ ...base, schedules: [{ name: 'night', file: '/s/night.yaml', at: ['daily'], checkAt: '*-*-* 00:30' }, { name: 'plain', file: '/s/plain.yaml', at: ['daily'] }] })
+  assert.deepEqual([...units.keys()].sort(), ['system-schedule-night-check.service', 'system-schedule-night-check.timer', 'system-schedule-night.service', 'system-schedule-night.timer', 'system-schedule-plain.service', 'system-schedule-plain.timer'])
+  const service = units.get('system-schedule-night-check.service')!
+  assert.match(service, /^ExecStart=\/n \/e\/bin\/system items carry --schedule \/s\/night\.yaml --check$/m)
+  assert.doesNotMatch(service, /ExecStartPre/)
+  assert.deepEqual(units.get('system-schedule-night-check.timer')!.match(/^(OnCalendar|Persistent)=.*$/gm), ['OnCalendar=*-*-* 00:30', 'Persistent=false'])
+})

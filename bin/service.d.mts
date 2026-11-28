@@ -12,5 +12,5 @@ export function installProfile(repo: string, exists: (path: string) => boolean):
 export function schedulesDir(installBase: string): string
 export function scheduleServiceText(options: { name: string; node: string; entry: string; home: string; path: string; file: string }): string
 export function scheduleTimerText(options: { name: string; at: string[] }): string
-export function scheduleUnits(options: { node: string; entry: string; home: string; path: string; schedules: { name: string; file: string; at: string[] }[] }): Map<string, string>
+export function scheduleUnits(options: { node: string; entry: string; home: string; path: string; schedules: { name: string; file: string; at: string[]; checkAt?: string }[] }): Map<string, string>
 export function syncScheduleUnits(dir: string, wanted: Map<string, string>, keep: string[]): { written: string[]; removed: string[] }

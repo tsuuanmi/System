@@ -61,3 +61,17 @@ test('a Schedule file that does not parse (or is kind: work) writes no unit, kee
   assert.equal(cli.run(['init']).status, 0)
   assert.equal(existsSync(join(units, 'system-schedule-night.timer')), false)
 })
+
+test('sch-5: init writes the check units from checkAt and removes them when checkAt goes', { timeout: 300_000 }, () => {
+  mkdirSync(schedules, { recursive: true })
+  writeFileSync(join(schedules, 'night.yaml'), 'kind: items\nrepositories: [/w/System]\nat: "*-*-* 03:00"\ncheckAt: "*-*-* 02:30"\n')
+  assert.equal(cli.run(['init']).status, 0)
+  assert.deepEqual(names(), ['system-schedule-night-check.service', 'system-schedule-night-check.timer', 'system-schedule-night.service', 'system-schedule-night.timer'])
+  assert.match(readFileSync(join(units, 'system-schedule-night-check.service'), 'utf8'), /items carry --schedule .*night\.yaml --check$/m)
+  assert.match(readFileSync(join(units, 'system-schedule-night-check.timer'), 'utf8'), /^OnCalendar=\*-\*-\* 02:30$/m)
+  writeFileSync(join(schedules, 'night.yaml'), 'kind: items\nrepositories: [/w/System]\nat: "*-*-* 03:00"\n')
+  assert.equal(cli.run(['init']).status, 0)
+  assert.deepEqual(names(), ['system-schedule-night.service', 'system-schedule-night.timer'])
+  rmSync(join(schedules, 'night.yaml'))
+  assert.equal(cli.run(['init']).status, 0)
+})

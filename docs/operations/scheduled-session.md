@@ -111,7 +111,7 @@ Schedule) is a file `~/.system/schedules/<name>.yaml` (under `SYSTEM_INSTALL` wh
 | `repositories` | Absolute paths (or `~/...`), in the order the pass reads them. |
 | `at` | One or more systemd calendar expressions (a string or a list); each is checked with `systemd-analyze calendar` when that is on the `PATH`. |
 | `maxParallel` | Optional: the most Works the pass runs at once. |
-| `checkAt` | Optional: the time of the check before a pass (read from sch-5 on). |
+| `checkAt` | Optional: one calendar expression, the time of the check before a pass (below). |
 
 This file equals today's set-up (System and DNA at 01:00, then hourly to 07:00):
 
@@ -131,6 +131,17 @@ then runs the install's `system items carry --schedule <file>`; no start timeout
 `system-schedule-<name>.timer` (one `OnCalendar=` for each `at`, `Persistent=false`) under
 `~/.config/systemd/user`. It enables none, rewrites a unit when its file changed, and removes the units of a file
 that is gone. A file that does not parse is named on stderr, fails `init`, and keeps its earlier units.
+
+### The check before a pass
+
+`system items carry --schedule <file> --check` starts nothing. It asks `workers.list` once and finds: the Host does not
+answer; a repository's status cannot be read; Items are Ready and an Account is not available (for example signed
+out) or no Account is free (under its Ceiling, with a slot); an available Account whose sign-in the Runtime says ends
+within 3 days (`credentialExpiresAt` of the Account, when the Host reports it). All well, it prints nothing and exits 0
+(no Ready Item is not a finding). Otherwise it names each finding on stderr, sends one line to the notifier of a pass
+(`SYSTEM_SCHEDULE_NOTIFY_URL` or `_COMMAND`) and exits 1. With `checkAt`, `system init` also writes
+`system-schedule-<name>-check.service` (no wait for the Host: a Host that is down is what it reports) and
+`system-schedule-<name>-check.timer`; enable it like the other timer.
 
 ### Moving from the `system-night-session` units
 

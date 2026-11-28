@@ -14,7 +14,7 @@ import { operations, type Services } from '@system/host/operations'
 import { prepareRelease } from './release.ts'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
-import { carryItem, carryPass } from './items.ts'
+import { carryCheck, carryItem, carryPass } from './items.ts'
 import { readSchedule } from './schedule.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
 
@@ -110,7 +110,7 @@ export interface WorkersView {
   room?: { accounts: number; free: number; unknown: string[]; ready: { repository: string; count?: number; error?: string }[] }
   /** Worker attempts running now or holding a slot, across every repository. */
   busy?: BusyAttempt[]
-  accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
+  accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; /** ISO time the Runtime says the sign-in ends, when it says. */ credentialExpiresAt?: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
 /** What `doctor` and `host` run against: the process that boots DSH. */
@@ -431,11 +431,14 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .option('--repo <path>', 'a git repository of the project (repeatable for a pass)', collect, [])
     .option('--max-parallel <n>', 'maximum Works to run in parallel during a pass')
     .option('--schedule <file>', 'a Schedule file (~/.system/schedules/<name>.yaml): its repositories and maxParallel')
-    .action((id: string | undefined, options: { repo: string[]; maxParallel?: string; schedule?: string }) => {
+    .option('--check', 'with --schedule: start nothing; say what would stop the pass (silent when all is well, else exit 1 and notify)')
+    .action((id: string | undefined, options: { repo: string[]; maxParallel?: string; schedule?: string; check?: boolean }) => {
       select(async () => {
+        if (options.check && options.schedule === undefined) throw new Error('--check goes with --schedule')
         if (options.schedule !== undefined) {
           if (id !== undefined || options.repo.length > 0 || options.maxParallel !== undefined) throw new Error('--schedule is a pass of its own: give no Item ID, --repo or --max-parallel')
           const schedule = readSchedule(options.schedule)
+          if (options.check) return carryCheck(host, schedule.repositories, { home }, io)
           return carryPass(host, schedule.repositories, { maxParallel: schedule.maxParallel, home }, io)
         }
         if (id !== undefined) {
