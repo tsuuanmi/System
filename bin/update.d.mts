@@ -17,6 +17,8 @@ export interface UpdateDeps {
   waitMs: number
   /** `system update --to <release>` (Item revert-1): revert to this kept release instead of upgrading. */
   to?: string
+  /** Path to the installed Host's systemd user unit (`unitPath(homedir())`), if any. */
+  unit?: string
 }
 export function update(deps: UpdateDeps): Promise<number>
 export const PENDING: string

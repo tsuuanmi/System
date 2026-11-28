@@ -23,6 +23,7 @@
 // The releases other than the current one and the one before are removed.
 // `system update --to <release>` (Item revert-1) is the way back: it switches `current` to a kept release through steps 4-6 only.
 import { dirname, join } from 'node:path'
+import { unitOverlays } from './service.mjs'
 
 /** The Work of the install check: a verify step of `release.install-check`, its input the release commit's task. */
 const INSTALL_CHECK_WORKFLOW = `# Written by \`system update\` (Item fl-5); not a file of the repository, so no Workflow pins the verifier (Q0).
@@ -209,7 +210,7 @@ export async function update({ to, ...deps }) {
   return upgrade(deps)
 }
 
-async function upgrade({ install, cli, origin, run, write, read, remove, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
+async function upgrade({ install, cli, origin, unit, run, write, read, remove, exists, readlink, switchLink, releases, probe, sleep, now, log, waitMs }) {
   const repo = join(install, 'source')
   const link = join(install, 'current')
   // corepack beside the Node running this (Item ns-2); its `pnpm` shim finds `node` on the PATH `run` is given, which starts with that Node's directory.
@@ -234,6 +235,19 @@ async function upgrade({ install, cli, origin, run, write, read, remove, exists,
     log(`building ${commit.slice(0, 12)} in ${release}`)
     await must('pnpm install', run(corepack, ['pnpm', 'install', '--frozen-lockfile'], release))
     await must('pnpm build', run(corepack, ['pnpm', 'build'], release))
+
+    // Item safeup-1: prove the new release composes with the installed Host unit's overlays before checking or switching.
+    const installedUnit = unit ? read(unit) : undefined
+    if (installedUnit !== undefined) {
+      const patchArgs = unitOverlays(installedUnit).flatMap((overlay) => ['--patch', overlay])
+      log(`checking ${commit.slice(0, 12)} against the Host unit's profile`)
+      const composed = await run(process.execPath, [join(release, 'bin', 'system'), ...patchArgs, '--dump-config'])
+      if (composed.status !== 0) {
+        const output = composed.stdout.trim()
+        log(`the new release ${commit.slice(0, 12)} failed to compose with the Host unit's profile (status ${composed.status})${output ? `:\n${output}` : ''}; current stays ${before ?? 'unset'}`)
+        return 1
+      }
+    }
 
     // The commit `current` points to, when it is a release of this install; the new commit is checked as a change from it.
     const running = before?.startsWith('releases/') ? before.slice('releases/'.length) : undefined

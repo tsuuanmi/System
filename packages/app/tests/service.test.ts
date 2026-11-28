@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MIN_NODE, UPGRADE_EXIT, hostCommand, installRoot, nodeChoice, scheduleServiceText, scheduleTimerText, scheduleUnits, serviceMode, supervise, syncScheduleUnits, unitPath, unitText } from '../../../bin/service.mjs'
+import { MIN_NODE, UPGRADE_EXIT, hostCommand, installRoot, nodeChoice, scheduleServiceText, scheduleTimerText, scheduleUnits, serviceMode, supervise, syncScheduleUnits, unitOverlays, unitPath, unitText } from '../../../bin/service.mjs'
 
 test('a Node that is new enough runs the command itself', () => {
   assert.deepEqual(nodeChoice('24.9.0', ['v24.21.0']), { use: 'current' })
@@ -175,4 +175,15 @@ test('sch-5: a Schedule with checkAt has a check service and timer; one without 
   assert.match(service, /^ExecStart=\/n \/e\/bin\/system items carry --schedule \/s\/daily\.yaml --check$/m)
   assert.doesNotMatch(service, /ExecStartPre/)
   assert.deepEqual(units.get('system-schedule-daily-check.timer')!.match(/^(OnCalendar|Persistent)=.*$/gm), ['OnCalendar=*-*-* 00:30', 'Persistent=false'])
+})
+
+test('safeup-1: unitOverlays reads --patch overlay paths from ExecStart, unquoting and unescaping systemd words', () => {
+  const plain = unitText({ node: '/n', entry: '/e', home: '/h', path: '/p', patch: '/home/tan/.system/profile.yml' })
+  assert.deepEqual(unitOverlays(plain), ['/home/tan/.system/profile.yml'])
+  const escaped = unitText({ node: '/n', entry: '/e', home: '/h', path: '/p', patch: '/home/tan/my dir/100%$profile.yml' })
+  assert.deepEqual(unitOverlays(escaped), ['/home/tan/my dir/100%$profile.yml'])
+  const multi = '[Service]\nExecStart=/n /e --patch /a.yml --patch=/b.yml host\n'
+  assert.deepEqual(unitOverlays(multi), ['/a.yml', '/b.yml'])
+  const none = unitText({ node: '/n', entry: '/e', home: '/h', path: '/p' })
+  assert.deepEqual(unitOverlays(none), [])
 })

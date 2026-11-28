@@ -415,3 +415,47 @@ test('revert: the release already current is nothing to do; a Host that never co
   assert.equal(down.links.get('/i/current'), `releases/${SHA}`)
   assert.equal(down.written.has(`/i/${PENDING}`), false)
 })
+
+// Item safeup-1: `system update` proves the new release starts on the Operator's profile before it switches.
+test('safeup-1: an overlay that does not parse, or one the release refuses, leaves current unchanged and exits 1 with its output', async () => {
+  const unit = '/h/.config/systemd/user/system.service'
+  const unitText = '[Service]\nExecStart=/n /i/current/bin/system --patch /i/profile.yml host\n'
+  for (const [label, output] of [
+    ['unparseable overlay', 'YAMLParseError: unexpected scalar at line 1\n'],
+    ['refused overlay', 'Error: unknown configuration key "mergeBatchSize"\n'],
+  ] as const) {
+    const m = machine({ current: OLD })
+    m.written.set(unit, unitText)
+    const run = m.deps.run
+    m.deps.run = async (command: string, args: string[], cwd?: string) => {
+      if (command === process.execPath && args[0] === `/i/releases/${SHA}/bin/system` && args.includes('--dump-config')) {
+        m.ran.push([command, ...args].join(' '))
+        return { status: 1, stdout: output }
+      }
+      return run(command, args, cwd)
+    }
+    assert.equal(await update({ ...m.deps, unit }), 1, label)
+    assert.equal(m.links.get('/i/current'), `releases/${OLD}`, label)
+    assert.equal(m.probes(), 0, label)
+    assert.ok(m.ran.some((line) => line === `${process.execPath} /i/releases/${SHA}/bin/system --patch /i/profile.yml --dump-config`), label)
+    assert.ok(!m.ran.some((line) => line.includes('task new')), label)
+    assert.ok(m.log.some((line) => line.includes(output.trim())), label)
+  }
+})
+
+test('safeup-1: when the new release composes with the Host unit overlays, the update proceeds and switches current', async () => {
+  const unit = '/h/.config/systemd/user/system.service'
+  const m = machine({ current: OLD })
+  m.written.set(unit, '[Service]\nExecStart=/n /i/current/bin/system --patch /i/profile.yml host\n')
+  const run = m.deps.run
+  m.deps.run = async (command: string, args: string[], cwd?: string) => {
+    if (command === process.execPath && args[0] === `/i/releases/${SHA}/bin/system` && args.includes('--dump-config')) {
+      m.ran.push([command, ...args].join(' '))
+      return { status: 0, stdout: '- id: storage\n' }
+    }
+    return run(command, args, cwd)
+  }
+  assert.equal(await update({ ...m.deps, unit }), 0)
+  assert.ok(m.ran.some((line) => line === `${process.execPath} /i/releases/${SHA}/bin/system --patch /i/profile.yml --dump-config`))
+  assert.equal(m.links.get('/i/current'), `releases/${SHA}`)
+})
