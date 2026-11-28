@@ -19,8 +19,9 @@
 //   FAKE:turns    (claude, stream-json) first print two assistant messages that use tools, as progress
 //   FAKE:background=FILE  (claude) start a background job (its pid in FILE), unless background tasks are disabled and Monitor is disallowed
 //   FAKE:fail     report an error
-//   FAKE:blocked=REASON  (codex, agy) end with structured result { status: 'blocked', reason: REASON }
-//   FAKE:no-result       (codex, agy) omit the structured final result
+//   FAKE:blocked=REASON  (claude, codex, agy) end with structured result { status: 'blocked', reason: REASON }
+//   FAKE:no-result       (claude, codex, agy) omit the structured final result
+//   FAKE:invalid-result  (claude) end with a structured result that is not {status: done|blocked, reason}
 //   FAKE:cause=LABEL  (cls-1) with FAKE:fail, the error message carries this marker; a Classifier question (a prompt that says "Reply with only a JSON object") that quotes it is answered {"label":"LABEL"}
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
@@ -51,7 +52,7 @@ const cause = /FAKE:cause=(\S+)/.exec(prompt)?.[1]
 const blockedReason = /FAKE:blocked=([^\n]+)/.exec(prompt)?.[1]
 
 function finish(ok, message) {
-  const structured = !has('no-result') && (agy ? args.includes('--json-schema') : codex ? args.includes('-o') : false)
+  const structured = !has('no-result') && (codex ? args.includes('-o') : args.includes('--json-schema'))
   const payload = structured ? JSON.stringify({ status: blockedReason ? 'blocked' : 'done', reason: blockedReason ?? message }) : message
   if (agy) {
     console.log(JSON.stringify({ event: 'init', init: { model, cwd: process.cwd() } }))
@@ -72,7 +73,7 @@ function finish(ok, message) {
     const result = (usage, cost) => {
       const perModel = (u, costUSD) => ({ inputTokens: u.input_tokens, cacheReadInputTokens: u.cache_read_input_tokens, cacheCreationInputTokens: u.cache_creation_input_tokens, outputTokens: u.output_tokens, costUSD })
       const subagent = { input_tokens: 100, cache_creation_input_tokens: 25, cache_read_input_tokens: 100, output_tokens: 20 }
-      return JSON.stringify({ type: 'result', is_error: !ok, result: message, usage, total_cost_usd: cost + 0.25, modelUsage: { [main]: perModel(usage, cost), 'served-subagent': perModel(subagent, 0.25) } })
+      return JSON.stringify({ type: 'result', is_error: !ok, result: message, usage, total_cost_usd: cost + 0.25, ...(structured ? { structured_output: has('invalid-result') ? { status: 'maybe' } : JSON.parse(payload) } : {}), modelUsage: { [main]: perModel(usage, cost), 'served-subagent': perModel(subagent, 0.25) } })
     }
     // `--output-format stream-json` prints every event as a line; the json format prints only the last result.
     const stream = args.includes('stream-json')

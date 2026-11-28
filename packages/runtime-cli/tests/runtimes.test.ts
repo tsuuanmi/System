@@ -6,11 +6,11 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { baseEnv } from '../src/runtimes.ts'
 import { ADAPTERS, adapterFor, checkSandbox } from '../src/adapters/index.ts'
-
+import { FINAL_RESULT_SCHEMA } from '../src/adapters/final-result.ts'
 
 const claude = adapterFor('claude-code')!
 const codex = adapterFor('codex')!
-const parseClaude = (out: string) => claude.parse(out)
+const parseClaude = (out: string) => claude.parse(out, { structured: false })
 const parseCodex = (out: string) => codex.parse(out)
 const claudeInvocation = (command: string, ws: never, prompt: string, token: string, model?: string, codeWrite = false) => claude.invocation({ command, ws, prompt, model, codeWrite, env: { CLAUDE_CODE_OAUTH_TOKEN: token } })
 const codexInvocation = (command: string, ws: never, prompt: string, home: string, model?: string) => codex.invocation({ command, ws, prompt, model, codeWrite: false, env: { CODEX_HOME: home } })
@@ -117,6 +117,29 @@ test('Claude Code progress is read as the stream grows: turns are messages, toke
 test('Codex progress counts completed turns and their tokens', () => {
   const read = codex.progress()
   assert.deepEqual(read(`${line({ type: 'item.completed', item: { type: 'command_execution' } })}\n${line({ type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 } })}\n`), { turns: 1, lastTool: 'command_execution', tokens: 8, inputTokens: 10 })
+})
+
+const structuredStream = (structured_output: unknown) => result({ input_tokens: 3, output_tokens: 4 }, { result: 'prose', ...(structured_output === undefined ? {} : { structured_output }) })
+
+test('Claude Code reads the structured final result of the last result event: done, blocked, missing and invalid', () => {
+  const done = claude.parse(structuredStream({ status: 'done', reason: 'all good' }))
+  assert.deepEqual([done.ok, done.message, done.finalResult], [true, 'all good', { status: 'done', reason: 'all good' }])
+  assert.deepEqual(done.usage, { inputTokens: 3, outputTokens: 4, source: SOURCE(1) })
+  const blocked = claude.parse(structuredStream({ status: 'blocked', reason: 'no context artifact' }))
+  assert.deepEqual([blocked.ok, blocked.message, blocked.finalResult], [false, 'no context artifact', { status: 'blocked', reason: 'no context artifact' }])
+  const missing = claude.parse(structuredStream(undefined))
+  assert.equal(missing.ok, false)
+  assert.match(missing.message, /structured final result/)
+  const invalid = claude.parse(structuredStream({ status: 'maybe' }))
+  assert.equal(invalid.ok, false)
+  assert.match(invalid.message, /invalid structured final result/)
+  const last = claude.parse([structuredStream({ status: 'done', reason: 'first' }), structuredStream({ status: 'blocked', reason: 'second' })].join('\n'))
+  assert.deepEqual([last.ok, last.message], [false, 'second'])
+})
+
+test('Claude Code passes the final-result schema as --json-schema', () => {
+  const { argv } = claudeInvocation('claude', ws, 'do it', 'token')
+  assert.equal(argv[argv.indexOf('--json-schema') + 1], FINAL_RESULT_SCHEMA)
 })
 
 const ws = { inputs: '/ws/in', outputs: '/ws/out', work: '/ws/work' } as never

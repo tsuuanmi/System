@@ -8,7 +8,8 @@ import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
 import { createQuotaCache, probeClaudeQuota, quotaFromRateLimitEvent, readClaudeQuota, type QuotaEvent } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
 import { readClaudeAccountId } from '../identity.ts'
-import type { CliAdapter, InvocationInput } from './types.ts'
+import { applyFinalResult, FINAL_RESULT_SCHEMA } from './final-result.ts'
+import type { CliAdapter, InvocationInput, ParseOptions } from './types.ts'
 
 /**
  * `codeWrite`: the attempt changes a repository (PROP-0007 decision 1), so it
@@ -25,6 +26,7 @@ function invocation({ command, ws, prompt, model, codeWrite, env, sandbox }: Inv
       ...(model ? ['--model', model] : []),
       '--permission-mode', 'acceptEdits',
       '--add-dir', ws.inputs, '--add-dir', ws.outputs,
+      '--json-schema', FINAL_RESULT_SCHEMA,
       '--allowedTools', ...allowed,
       '--disallowedTools', ...denied,
     ],
@@ -36,6 +38,7 @@ function invocation({ command, ws, prompt, model, codeWrite, env, sandbox }: Inv
 interface ClaudeResult {
   is_error?: boolean
   result?: unknown
+  structured_output?: unknown
   subtype?: string
   usage?: Record<string, number>
   total_cost_usd?: unknown
@@ -78,7 +81,7 @@ function totalUsage(results: ClaudeResult[], byModel: boolean): Omit<NonNullable
 }
 
 /** `stream-json` prints one `result` per turn, so a follow-up turn (a background command's notification) adds one; usage is summed over all of them, and over every model in each. */
-function parse(stdout: string): Parsed {
+function parse(stdout: string, options?: ParseOptions): Parsed {
   const results: ClaudeResult[] = []
   for (const line of stdout.split('\n')) {
     try {
@@ -93,7 +96,7 @@ function parse(stdout: string): Parsed {
   /** `modelUsage` counts subagents, `usage` does not; use it when every result has it (a result that has none leaves the whole stream on `usage`). */
   const byModel = results.every((r) => r.modelUsage && Object.keys(r.modelUsage).length > 0)
   const usage = totalUsage(results, byModel)
-  return {
+  const base: Parsed = {
     ...(usage ? {} : { usageGap: 'claude-code result events carried no input and output token counts' }),
     ok: last.is_error === false,
     message: String(last.result ?? last.subtype ?? ''),
@@ -105,6 +108,8 @@ function parse(stdout: string): Parsed {
         : `claude-code usage (excludes subagents) over ${results.length} result(s) (input_tokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate`,
     },
   }
+  if (!base.ok || options?.structured === false) return base
+  return applyFinalResult(base, last.structured_output === undefined ? undefined : JSON.stringify(last.structured_output))
 }
 
 /** The last quota event of each window in a Claude Code stream. */
