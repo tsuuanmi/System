@@ -8,13 +8,15 @@ export const ITEM_ID = /^[a-z][a-z0-9-]*-[0-9]+$/
 
 export interface Item {
   id: string
-  /** Without the `(after: ...)` and `(intent: ...)` markers. */
+  /** Without the `(after: ...)`, `(intent: ...)` and `(workflow: ...)` markers. */
   title: string
   done: boolean
   /** The IDs of the Items this one comes after, from `(after: id, id)` at the end of its line; absent when it has none. */
   after?: string[]
   /** The first 12 hex characters of the `intent@1` Artifact ID the Item carries out, from `(intent: <12 hex>)` at the end of its line; absent when it has none. */
   intent?: string
+  /** The Workflow name (without `.yaml`) from `(workflow: <name>)` at the end of its line; absent when it has none. */
+  workflow?: string
 }
 
 export interface ParsedStatus {
@@ -27,9 +29,10 @@ export interface ParsedStatus {
 /** `STATUS.md` is about this long at most; details go elsewhere, as links. */
 const MAX_LINES = 100
 const MAX_AIM = 3
-/** Markers end the Item line, each at most once and in either order: `(after: cm-1, cm-3)`, `(intent: 0123456789ab)`. Without the colon it is title text. */
-const MARKER = /^(.*?)\s*\((after|intent):\s*([^)]*)\)$/
+/** Markers end the Item line, each at most once and in any order: `(after: cm-1, cm-3)`, `(intent: 0123456789ab)`, `(workflow: develop)`. Without the colon it is title text. */
+const MARKER = /^(.*?)\s*\((after|intent|workflow):\s*([^)]*)\)$/
 const INTENT_PREFIX = /^[0-9a-f]{12}$/
+const WORKFLOW_NAME = /^[a-z0-9][a-z0-9-]*$/
 
 /** The cycles of the `after` relation (each once, as `a -> b -> a`), found from the Items in file order. */
 function cycles(items: Item[]): string[][] {
@@ -122,9 +125,11 @@ export function parseStatus(text: string, options: { strict?: boolean } = {}): P
       const list = seen.get('after')
       const after = list === undefined ? [] : [...new Set(list.split(',').map((id) => id.trim()).filter(Boolean))]
       const intent = seen.get('intent')?.trim()
+      const workflow = seen.get('workflow')?.trim()
       if (list !== undefined && !after.length) problems.push(`${here}: Item ${item[2]} has an empty (after: ) list`)
       if (intent !== undefined && !INTENT_PREFIX.test(intent)) problems.push(`${here}: Item ${item[2]} has (intent: ${intent}): expected the first 12 lower-case hex characters of an intent@1 Artifact ID`)
-      items.push({ id: item[2]!, title, done: item[1] !== ' ', ...(after.length ? { after } : {}), ...(intent && INTENT_PREFIX.test(intent) ? { intent } : {}) })
+      if (workflow !== undefined && !WORKFLOW_NAME.test(workflow)) problems.push(`${here}: Item ${item[2]} has (workflow: ${workflow}): expected a Workflow name without .yaml`)
+      items.push({ id: item[2]!, title, done: item[1] !== ' ', ...(after.length ? { after } : {}), ...(intent && INTENT_PREFIX.test(intent) ? { intent } : {}), ...(workflow && WORKFLOW_NAME.test(workflow) ? { workflow } : {}) })
       at.set(item[2]!, n + 1)
       if (!title) problems.push(`${here}: Item ${item[2]} has no title`)
     }
