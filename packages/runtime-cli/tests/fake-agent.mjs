@@ -25,7 +25,7 @@
 //   FAKE:cause=LABEL  (cls-1) with FAKE:fail, the error message carries this marker; a Classifier question (a prompt that says "Reply with only a JSON object") that quotes it is answered {"label":"LABEL"}
 //   FAKE:env      write the environment's variable names to ENV.json
 //   FAKE:followup (claude) emit two results with different usage, as a background command's notification starts a second turn
-//   FAKE:noise    with FAKE:followup, print 300 KB of other events between the results
+//   FAKE:noise    with FAKE:followup, print 400 KiB of other events between the results
 //   FAKE:ratelimit=<five_hour|seven_day>:<fraction> (claude, stream-json) emit a quota event before the result
 //   FAKE:unified=<five>,<seven> (claude, stream-json) emit both fractional unified quota windows
 //   (agy: told by `--mode`; prints the init and result events of `--output-format stream-json`, and FAKE:fail prints an ERROR result)
@@ -93,7 +93,7 @@ function finish(ok, message) {
     if (has('followup')) {
       const first = result({ input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, 0.5)
       if (stream) console.log(first)
-      if (stream && has('noise')) console.log(JSON.stringify({ type: 'assistant', text: 'x'.repeat(300 * 1024) }))
+      if (stream && has('noise')) console.log(JSON.stringify({ type: 'assistant', text: 'x'.repeat(400 * 1024) }))
       console.log(result({ input_tokens: 1, cache_creation_input_tokens: 2, cache_read_input_tokens: 4, output_tokens: 6 }, 0.25))
     } else {
       console.log(result({ input_tokens: 3, cache_creation_input_tokens: 10, cache_read_input_tokens: 20, output_tokens: 5 }, 0.5))

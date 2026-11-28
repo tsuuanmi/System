@@ -1,6 +1,6 @@
 /**
  * The Worker attempt lifecycle, written once for every Runtime (the CLI agents of agent.ts and the web Runtime): prepare
- * the workspace, enforce the time limit, map a cancel, store the bounded log as an Artifact, capture the declared outputs
+ * the workspace, enforce the time limit, map a cancel, store the whole log and prompt as Artifacts, capture the declared outputs
  * and shape the `WorkerResult`. A Runtime gives only its turn: run it, and say what came of it.
  *
  * The limit stops the turn through the same abort as an operator cancel (`TurnContext.signal`), so a Runtime has one path
@@ -10,7 +10,6 @@
  */
 import type { Artifacts } from '@system/artifacts/contract'
 import type { PortCause, UsageObserved, WorkerRequest, WorkerResult } from '@system/work'
-import { boundLog } from './attempt-summary.ts'
 import { redactLog, redactString, redactValue } from './redact.ts'
 import { capture, cleanup, prepare, type Workspace } from './workspace.ts'
 
@@ -66,15 +65,17 @@ interface AttemptOptions {
   outputNoun?: 'file' | 'block'
   /** Whether the lifecycle captures `out/<slot>` files when the turn reports none of its own; true by default. */
   files?: boolean
-  /** The log as the turn has it so far, read after `settle`; bounded here. */
+  /** The log as the turn has it so far, read after `settle`; stored whole (redacted). */
   log: () => string
   logMediaType?: string
+  /** The prompt given to the Worker for this attempt, read after `settle` and stored redacted as an Artifact. */
+  prompt?: () => string | undefined
   /** Inputs recorded on the Artifacts the lifecycle (and `ctx.put`) stores. */
   inputs?: string[]
-  /** Values masked wherever they appear in the log, the reason and the summary: the Account's own token (Item redact-1). */
+  /** Values masked wherever they appear in the log, the prompt, the reason and the summary: the Account's own token (Item redact-1). */
   secrets?: readonly (string | undefined)[]
   /** Runs once the result is known and before the log is read: end the Runtime's resources, record what it saw; returns more partial outputs. */
-  settle?: (result: Omit<WorkerResult, 'executor' | 'log'>) => Promise<Record<string, string> | void>
+  settle?: (result: Omit<WorkerResult, 'executor' | 'log' | 'prompt'>) => Promise<Record<string, string> | void>
   /** Runs last, before the workspace is cleaned, whatever happened. */
   teardown?: () => Promise<void>
   turn: Turn
@@ -104,9 +105,9 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
     const partial = { ...captured?.outputs, ...outcome.partial }
     const kept = captured || Object.keys(partial).length ? { partial } : {}
     // A stopped turn's output is incomplete, so its usage is unknown rather than a partial count.
-    const stopped = (reason: string, status: WorkerResult['status']): Omit<WorkerResult, 'executor' | 'log'> => ({ status, outputs: {}, ...kept, reason, usageGap: 'the attempt was stopped before the Runtime reported usage', ...(outcome.summary ? { summary: outcome.summary } : {}) })
+    const stopped = (reason: string, status: WorkerResult['status']): Omit<WorkerResult, 'executor' | 'log' | 'prompt'> => ({ status, outputs: {}, ...kept, reason, usageGap: 'the attempt was stopped before the Runtime reported usage', ...(outcome.summary ? { summary: outcome.summary } : {}) })
     const noun = o.outputNoun ?? 'file'
-    let result: Omit<WorkerResult, 'executor' | 'log'>
+    let result: Omit<WorkerResult, 'executor' | 'log' | 'prompt'>
     if (request.signal.aborted) result = stopped(o.cancelReason, 'cancelled')
     else if (stoppedFor) result = stopped(stoppedFor, 'failed')
     else if (timedOut) result = stopped(`attempt exceeded its time limit of ${limit} minutes`, 'failed')
@@ -122,8 +123,10 @@ export async function runAttempt(o: AttemptOptions): Promise<WorkerResult> {
     if (result.summary) result.summary = redactValue(result.summary, o.secrets)
     const more = await o.settle?.(result)
     if (more) result.partial = { ...result.partial, ...more }
-    const log = await put(Buffer.from(boundLog(redactLog(o.log(), o.secrets))), o.logMediaType ?? 'application/x-ndjson')
-    return { ...result, log, executor: o.executor }
+    const log = await put(Buffer.from(redactLog(o.log(), o.secrets)), o.logMediaType ?? 'application/x-ndjson')
+    const rawPrompt = o.prompt?.()
+    const prompt = rawPrompt !== undefined ? await put(Buffer.from(redactLog(rawPrompt, o.secrets)), 'text/plain') : undefined
+    return { ...result, log, ...(prompt ? { prompt } : {}), executor: o.executor }
   } finally {
     clearTimeout(timer)
     request.signal.removeEventListener('abort', forward)

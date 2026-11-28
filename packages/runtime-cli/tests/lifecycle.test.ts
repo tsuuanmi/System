@@ -1,5 +1,5 @@
 /**
- * The attempt lifecycle written once (the time limit, cancel, the bounded log, the declared outputs, the result's shape),
+ * The attempt lifecycle written once (the time limit, cancel, the whole log and prompt, the declared outputs, the result's shape),
  * with a stand-in turn in place of a Runtime.
  */
 import assert from 'node:assert/strict'
@@ -9,7 +9,6 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import type { WorkerRequest } from '@system/work'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { MAX_LOG_BYTES } from '../src/attempt-summary.ts'
 import { runAttempt, type Turn, type TurnContext } from '../src/lifecycle.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'system-lifecycle-'))
@@ -106,14 +105,13 @@ test('the turn\'s own failure fails the attempt with the usage and summary it re
   assert.deepEqual(result.executor, executor)
 })
 
-test('the log is stored as an Artifact, bounded to its limit', async () => {
+test('the log is stored whole as an Artifact', async () => {
   const big = `${'line of log\n'.repeat(60_000)}`
-  assert.ok(big.length > MAX_LOG_BYTES)
+  assert.ok(big.length > 256 * 1024)
   const { result, artifacts } = await run(request([]), async () => ({}), { log: () => big })
   assert.equal(result.status, 'succeeded')
   const bytes = await artifacts.readBytes(result.log!)
-  assert.ok(bytes.length <= MAX_LOG_BYTES, `${bytes.length} bytes`)
-  assert.match(Buffer.from(bytes).toString(), /bytes cut by System/)
+  assert.equal(Buffer.from(bytes).toString(), big)
 })
 
 test('settle runs before the log is read, and what it returns joins the partial outputs; the teardown and the workspace cleanup always run', async () => {
@@ -179,21 +177,31 @@ test('the Account token is masked by value, in the log, the failure reason and t
   assert.match(r.result.reason!, /^exit 1: bad /)
 })
 
-test('a token cut by the log bound is still masked', async () => {
+test('a token in a large log is still masked', async () => {
   const filler = 'x'.repeat(100)
   const line = (n: number) => `${filler} ${n}\n`
   let text = ''
-  for (let i = 0; text.length < MAX_LOG_BYTES * 2; i++) text += line(i)
-  // Put the token where the bound's tail starts, and one where its cut is.
-  const at = text.length - Math.floor(MAX_LOG_BYTES / 2)
+  for (let i = 0; text.length < 512 * 1024; i++) text += line(i)
+  const at = text.length - 128 * 1024
   const log = `${text.slice(0, at)}ANTHROPIC_API_KEY=${TOKEN} trailing${text.slice(at)}`
   const r = await run(request([]), async () => ({}), { log: () => log })
   const out = await stored(r)
-  assert.ok(out.includes('bytes cut by System'))
+  assert.equal(out.includes('bytes cut by System'), false)
   assert.ok(!out.includes('A1b2C3d4E5f6'))
   const plain = 'ACCOUNT-SECRET-123'
   const cut = await run(request([]), async () => ({}), { log: () => `${plain}\n${text}${plain}`, secrets: [plain] })
   assert.ok(!(await stored(cut)).includes(plain))
+})
+
+test('the prompt is stored redacted as an Artifact when provided, and omitted otherwise', async () => {
+  const secret = 'prompt-secret-token'
+  const withPrompt = await run(request([]), async () => ({}), { prompt: () => `run with ${secret}`, secrets: [secret] })
+  assert.ok(withPrompt.result.prompt)
+  const storedPrompt = Buffer.from(await withPrompt.artifacts.readBytes(withPrompt.result.prompt!)).toString()
+  assert.ok(!storedPrompt.includes(secret), storedPrompt)
+  assert.ok(storedPrompt.startsWith('run with '))
+  const withoutPrompt = await run(request([]), async () => ({}))
+  assert.equal(withoutPrompt.result.prompt, undefined)
 })
 
 test('a non-secret line is unchanged', async () => {

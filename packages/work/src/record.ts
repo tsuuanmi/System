@@ -111,8 +111,10 @@ export const eventSchema = z.discriminatedUnion('type', [
     outputs: z.record(z.string(), contentIdSchema), reason: z.string().optional(), usage: usageSchema,
     /** What a cancelled attempt left behind: kept, never accepted as the step's output. */
     partial: z.record(z.string(), contentIdSchema).optional(),
-    /** The bounded agent output, for audit only; never handed to another Worker. */
+    /** The whole agent output (truncated only at the 64 MiB spawner capture limit), for audit only; never handed to another Worker. */
     log: contentIdSchema.optional(),
+    /** alog-1: the redacted prompt given to the Worker for this attempt, as an Artifact. */
+    prompt: contentIdSchema.optional(),
     /** fl-4: what the attempt did (tool calls, files, longest calls, tool share), computed by System from its log; absent in old records and for Runtimes with no log. */
     summary: attemptSummarySchema.optional(),
     /** finish-1: structured final result reported by Codex and Antigravity attempts. */

@@ -878,6 +878,7 @@ export class WorkController {
       usage: usageRecord(result.usage, result.usageGap),
       ...(Object.keys(partial).length ? { partial } : {}),
       ...(result.log && this.specs.exists(result.log) ? { log: result.log } : {}),
+      ...(result.prompt && this.specs.exists(result.prompt) ? { prompt: result.prompt } : {}),
       ...(result.summary ? { summary: result.summary } : {}),
       ...(result.finalResult ? { finalResult: result.finalResult } : {}),
       ...(result.executor ? { worker: result.executor } : {}),
