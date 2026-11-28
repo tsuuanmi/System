@@ -17,9 +17,9 @@ const lint = (file: string, source: string) =>
     input: source,
   })
 
-// packages/artifacts/src/index.ts is not in the baseline; packages/classifier/src/schema.ts is.
+// packages/artifacts/src/index.ts is not in the baseline; packages/app/src/cli.ts is.
 const CLEAN = 'packages/artifacts/src/index.ts'
-const BASELINED = 'packages/classifier/src/schema.ts'
+const BASELINED = 'packages/app/src/cli.ts'
 
 test('a new value import of @system/work from another package fails lint', () => {
   const result = lint(CLEAN, "import { TASK_KIND } from '@system/work'\nexport const kind = TASK_KIND\n")
@@ -53,7 +53,7 @@ test('a value import through ./contract or from a library package passes lint', 
   assert.doesNotMatch(result.stdout, /no-restricted-imports/, result.stdout)
 })
 
-test('a baselined file keeps its value import of @system/artifacts', () => {
-  const result = lint(BASELINED, "import { contentIdSchema } from '@system/artifacts'\nexport const s = contentIdSchema\n")
+test('a baselined file keeps its value import of @system/work', () => {
+  const result = lint(BASELINED, "import { TASK_KIND } from '@system/work'\nexport const s = TASK_KIND\n")
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })

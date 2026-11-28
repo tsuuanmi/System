@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { FakeChatGpt, type FakeOptions } from '../../web-driver/tests/fake-chatgpt.ts'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'

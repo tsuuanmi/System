@@ -25,7 +25,7 @@
  * the report's `[id]`s. Quote matching is unchanged.
  */
 import { createHash } from 'node:crypto'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import type { VerifierPort, VerifyResult } from '@system/work'
 import { z } from 'zod'
 

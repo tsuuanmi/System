@@ -4,7 +4,7 @@
  * replay of the recorded events always yields the stored state; replay never
  * re-runs a Worker, a verifier or an external effect.
  */
-import { contentIdSchema } from '@system/artifacts'
+import { contentIdSchema } from '@system/artifacts/contract'
 import { z } from 'zod'
 import { outsideNext, type OutsideRun } from './outside.ts'
 

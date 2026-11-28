@@ -3,7 +3,7 @@
  * `schemas/` are generated from these (`generatedSchemas`, `node packages/classifier/src/generate.ts`), never kept by hand;
  * a test fails when they drift.
  */
-import { contentIdSchema } from '@system/artifacts'
+import { contentIdSchema } from '@system/artifacts/contract'
 import { z } from 'zod'
 
 const name = z.string().regex(/^[a-z][a-z0-9-]*$/)

@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { GIT_TREE_KIND, gitTreeSchema, pin, snapshot, type EffectIntent, type EffectOutcome } from '@system/work'
 import { githubPublisher, type PublishConfig } from '../src/github.ts'

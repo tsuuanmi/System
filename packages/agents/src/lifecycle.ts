@@ -8,7 +8,7 @@
  * The order is: a cancel, then a stop the turn asked for (`ctx.stop`), then the time limit, then the turn's own failure,
  * then a declared output that is missing or empty.
  */
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import type { PortCause, UsageObserved, WorkerRequest, WorkerResult } from '@system/work'
 import { boundLog } from './attempt-summary.ts'
 import { redactLog, redactString, redactValue } from './redact.ts'

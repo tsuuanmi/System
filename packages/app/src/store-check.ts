@@ -3,7 +3,7 @@
  * deletes nothing. Reading a Work through its record schema re-folds its state; each Artifact ID its events name must be
  * stored; each stored Artifact is verified by `Artifacts.verify` (a blob read in full, inline content re-hashed).
  */
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import type { WorkRecord, WorkTable } from '@system/work'
 
 export interface StoreReport {

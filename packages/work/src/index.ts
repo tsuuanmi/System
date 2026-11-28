@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import type { Artifacts, Envelope } from '@system/artifacts'
+import type { Artifacts, Envelope } from '@system/artifacts/contract'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
@@ -61,7 +61,7 @@ export * from './workflow.ts'
 /** The zod the Work schemas are built with, for the packages that validate the same shapes. */
 export { z } from 'zod'
 /** The Artifact ID schema and classifications, for the packages that validate the same shapes. */
-export { CLASSIFICATIONS, contentIdSchema } from '@system/artifacts'
+export { CLASSIFICATIONS, contentIdSchema } from '@system/artifacts/contract'
 
 export const name = 'system-work'
 export const inject = ['storageDomain', 'artifacts']

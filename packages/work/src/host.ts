@@ -11,7 +11,7 @@
  * waits for an explicit `run` or `retry`. A held Work keeps waiting for a human.
  */
 import { createHash } from 'node:crypto'
-import { hashDomain } from '@system/artifacts'
+import { hashDomain } from '@system/artifacts/contract'
 import { WorkController, type Admission, type CancelRequest, type Command, type Approval, type RetryOptions, type SpecStore, type WorkTable } from './controller.ts'
 import { WorkError } from './errors.ts'
 import { ItemGate, type ClaimTable, type GateOptions } from './gate.ts'

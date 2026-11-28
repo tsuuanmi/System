@@ -4,7 +4,7 @@
  * `gate` reads a report and answers pass or fail. No control path reads either: a Classification stays report-only.
  */
 import type { Ask } from '@system/agents/contract'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { defaultChange, laterPasses, summarize, type WorkRecord } from '@system/work'
 import { createClassifier } from './classifier.ts'
 import { failureEvidence } from './evidence.ts'

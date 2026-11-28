@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
-import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
+import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts/contract'
 import { TERMINAL, holdDecision, type WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/agents/contract'
 import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '@system/host'

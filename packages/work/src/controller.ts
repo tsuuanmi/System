@@ -6,7 +6,7 @@
  * execute runs outside it and touches no Work state.
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { canonicalJson } from '@system/artifacts'
+import { canonicalJson } from '@system/artifacts/contract'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'

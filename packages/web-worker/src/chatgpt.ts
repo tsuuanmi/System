@@ -17,7 +17,7 @@ import { chmodSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright-core'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { bindsPower, ChatGptWebDriver, Procedures, ProviderError, type PageDiagnostics, type PowerTier, type ProviderErrorKind, type Result, type UiMap } from '@system/web-driver'
 import { exited, mediaTypeOf, runAttempt, type TurnContext, type Workspace } from '@system/agents/contract'
 import { addConversation, requestedTier, TIERS, tierCapability, type PortCause, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
