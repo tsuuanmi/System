@@ -15,6 +15,9 @@ import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '.
 import { RUNTIME_ABILITIES } from '../src/runtimes.ts'
 import { observed, viewOf } from '../../../test-support/accounts-view.ts'
 
+/** The fake context's `ctx.inject`: the declared services are the ones in `services`, mounted at once. */
+const injecting = (services: Record<string, unknown>) => (_names: string[], callback: (ctx: { get(key: string): unknown }) => void): void => { callback({ get: (key) => services[key] }) }
+
 /** `provide` for a bare context: the `agents` service plus the Accounts read from the `capabilities` registry in `services`, as the Host reads them (ADR-0018). */
 const providing = (provided: Record<string, any>, services: Record<string, unknown>) => (key: string, value: unknown) => { provided[key] = key === 'agents' ? { ...(value as object), ...viewOf(services.capabilities as never) } : value }
 
@@ -23,7 +26,7 @@ async function mount(webWorker: unknown, hold = false, accounts: object[] = [{}]
   const provided: Record<string, any> = {}
   const effects: (() => () => void)[] = []
   const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: observed(), artifacts: {}, subprocess: {}, credentials: {}, webWorker, ...services_ }
-  const ctx = { get: (key: string) => services[key], effect: (fn: () => () => void) => { effects.push(fn) }, provide: providing(provided, services) }
+  const ctx = { get: (key: string) => services[key], inject: injecting(services), effect: (fn: () => () => void) => { effects.push(fn) }, provide: providing(provided, services) }
   const started = apply(ctx as never, { maxConcurrentAttempts: rowSlots, accounts: accounts.map((own) => ({ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], models: { standard: 'x' }, url: 'http://localhost/', ...own })) })
   if (hold) return { before: await provided.agents.accounts() as { available: boolean; reason: string }[], started }
   await started
@@ -79,6 +82,7 @@ test('an account whose registration is not done is listed as registering, and an
   let release!: () => void
   const { before, started } = await mount({ expect: (_ref: string, done: Promise<unknown>) => { announced.push(done) }, announced: () => {}, register: () => new Promise((resolve) => { release = () => resolve({ command: '/chrome', version: async () => '155', dispose: () => {} }) }) }, true)
   assert.deepEqual([before[0]!.available, before[0]!.reason], [false, REGISTERING])
+  await new Promise((r) => setImmediate(r)) // the `webWorker` declaration mounts by the next turn of the loop, and the accounts are announced after it
   let done = false
   void announced[0]!.then(() => { done = true })
   await new Promise((r) => setTimeout(r, 20))
@@ -140,7 +144,7 @@ const cliMount = async (accounts: object[], hold = false): Promise<{ registered:
     artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
     subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
   } as Record<string, unknown>
-  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: providing(provided, services), baseDir: tempDir('base-') }
+  const ctx = { get: (key: string) => services[key], inject: injecting(services), effect: () => {}, provide: providing(provided, services), baseDir: tempDir('base-') }
   const started = apply(ctx as never, { accounts: accounts as never })
   const before = await provided.agents.accounts() as any[]
   if (hold) return { registered, before, accounts: before, started }
@@ -232,7 +236,7 @@ test('a Claude account reads the last rate_limit_event after the Host restarts',
         collected: { stdout: { readFrom: () => ({ text: spec.argv.includes('--version') ? '2.1.322 (Claude Code)' : stream }) } },
       }) },
     }
-    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = { ...(value as object), ...viewOf(services.capabilities as never) } }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
+    await apply({ get: (key: string) => services[key], inject: injecting(services), provide: (_key: string, value: unknown) => { agents = { ...(value as object), ...viewOf(services.capabilities as never) } }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
       { accounts: [claude('claude-code/restart', { command: fake.command, claudeHome: join(dir, 'home') })] } as never)
     return { worker, agents, unload: () => effects.forEach((fn) => fn()()) }
   }
@@ -278,7 +282,7 @@ test('a Claude account reads the last rate_limit_event even when the CLI version
         collected: { stdout: { readFrom: () => ({ text: spec.argv.includes('--version') ? '2.1.325 (Claude Code)' : stream }) } },
       }) },
     }
-    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = { ...(value as object), ...viewOf(services.capabilities as never) } }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
+    await apply({ get: (key: string) => services[key], inject: injecting(services), provide: (_key: string, value: unknown) => { agents = { ...(value as object), ...viewOf(services.capabilities as never) } }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
       { accounts: [claude('claude-code/newer', { command: fake.command, claudeHome: join(dir, 'home') })] } as never)
     return { worker, agents, unload: () => effects.forEach((fn) => fn()()) }
   }
@@ -308,7 +312,7 @@ test('a CLI Account registers with its Runtime abilities and what its profile gr
     artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
     subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
   } as Record<string, unknown>
-  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: providing(provided, services), baseDir: tempDir('base-') }
+  const ctx = { get: (key: string) => services[key], inject: injecting(services), effect: () => {}, provide: providing(provided, services), baseDir: tempDir('base-') }
   await apply(ctx as never, { accounts: [
     claude('claude-code/a', { claudeHome: tempDir(), capabilities: ['develop.implement', 'research'], models: { standard: 'm' } }),
     codex('codex/b', fakeCodexHome(undefined, 'acct-b'), { capabilities: ['research'] }),

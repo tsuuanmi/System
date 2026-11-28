@@ -11,6 +11,9 @@ import type { WorkerPort } from '../../work/src/registry.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { webDefaults, webWorker } from '../../web-worker/src/chatgpt.ts'
 
+/** The fake context's `ctx.inject`: the declared services are the ones in `services`, mounted at once. */
+const injecting = (services: Record<string, unknown>) => (_names: string[], callback: (ctx: { get(key: string): unknown }) => void): void => { callback({ get: (key) => services[key] }) }
+
 async function mount(dir: string, accounts: AccountConfig[], now: () => number, options: { ports?: WorkerPort[]; quotaCeilingPercent?: unknown; configured?: boolean; token?: string } = {}) {
   const capabilities = observed((worker) => { options.ports?.push(worker) })
   const services: Record<string, unknown> = {
@@ -22,7 +25,7 @@ async function mount(dir: string, accounts: AccountConfig[], now: () => number, 
     capabilities,
   }
   let agents: unknown
-  const ctx = { baseDir: dir, get: (key: string): unknown => services[key], effect: (_fn: () => () => void): void => {}, provide: (key: string, value: unknown): void => { if (key === 'agents') agents = value } }
+  const ctx = { baseDir: dir, get: (key: string): unknown => services[key], inject: injecting(services), effect: (_fn: () => () => void): void => {}, provide: (key: string, value: unknown): void => { if (key === 'agents') agents = value } }
   // The optional quota clock is the plan's test seam, added by implement.
   // Unknown allows deliberately invalid configuration values at this boundary.
   const config = { accounts, quota: { now }, ...(options.quotaCeilingPercent === undefined ? {} : { quotaCeilingPercent: options.quotaCeilingPercent }) }

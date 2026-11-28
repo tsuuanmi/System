@@ -10,6 +10,9 @@ import { apply, type AccountConfig, type AgentsService } from '../src/index.ts'
 import { readAntigravityQuota } from '../src/quota.ts'
 import { observed, viewOf } from '../../../test-support/accounts-view.ts'
 
+/** The fake context's `ctx.inject`: the declared services are the ones in `services`, mounted at once. */
+const injecting = (services: Record<string, unknown>) => (_names: string[], callback: (ctx: { get(key: string): unknown }) => void): void => { callback({ get: (key) => services[key] }) }
+
 async function mount(dir: string, accounts: AccountConfig[], now: () => number) {
   const capabilities = observed()
   const services: Record<string, unknown> = {
@@ -21,7 +24,7 @@ async function mount(dir: string, accounts: AccountConfig[], now: () => number) 
     capabilities,
   }
   let agents: unknown
-  const ctx = { baseDir: dir, get: (key: string): unknown => services[key], effect: (_fn: () => () => void): void => {}, provide: (key: string, value: unknown): void => { if (key === 'agents') agents = value } }
+  const ctx = { baseDir: dir, get: (key: string): unknown => services[key], inject: injecting(services), effect: (_fn: () => () => void): void => {}, provide: (key: string, value: unknown): void => { if (key === 'agents') agents = value } }
   await apply(ctx as never, { accounts, quota: { now } } as never)
   object(agents)
   return viewOf(capabilities)

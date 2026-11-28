@@ -146,15 +146,18 @@ function modelsOf(models: AccountConfig['models']): Partial<Record<Tier, string>
 
 
 export async function apply(ctx: Context, config: Config): Promise<void> {
-  const capabilities = ctx.get('capabilities') as Capabilities
+  const capabilities = ctx.get('capabilities')!
   const artifacts = ctx.get('artifacts') as Artifacts
   const subprocess = ctx.get('subprocess') as SubprocessRuntime
   const credentials = ctx.get('credentials') as CredentialProvider
-  // Optional: the web-worker row, listed before this one in the bundle; absent when it is disabled.
-  let webWorker = ctx.get('webWorker') as WebWorkerService | undefined
-  // Cordis applies rows that wait for the same services in no fixed order: the web-worker row, when it is on, may provide its service after this
-  // row applies. Its accounts are then handed to it when it does (bounded), never reported "disabled" and left unannounced (flaky-2).
-  const webWorkerComing = !webWorker && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-web-worker')
+  // Optional: the web-worker row, listed before this one in the bundle; absent when it is disabled. Declared through `ctx.inject`, so the row
+  // stays active without it; the declaration is read below, once it has mounted.
+  let webWorker: WebWorkerService | undefined
+  let arrived: ((service: WebWorkerService | undefined) => void) | undefined
+  ctx.inject(['webWorker'], (inner) => {
+    webWorker = inner.get('webWorker') as WebWorkerService | undefined
+    arrived?.(webWorker)
+  })
   const attempts = systemPath(ctx, 'attempts')
   const statuses: AccountStatus[] = []
   // The first registered ref of each provider account (runtime:id).
@@ -202,13 +205,18 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
   const ceiling = config.quotaCeilingPercent
   if (ceiling !== undefined && !(typeof ceiling === 'number' && ceiling >= 1 && ceiling <= 100)) throw new Error(`quotaCeilingPercent is ${String(ceiling)}; it must be a number from 1 to 100`)
+  // The `webWorker` declaration above mounts by the next turn of the loop, after the accounts are listed (they are listed from the first moment).
+  await new Promise<void>((resolve) => { setImmediate(resolve) })
+  // Cordis applies rows that wait for the same services in no fixed order: the web-worker row, when it is on, may provide its service after this
+  // row applies. Its accounts are then handed to it when it does (bounded), never reported "disabled" and left unannounced (flaky-2).
+  const webWorkerComing = !webWorker && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-web-worker')
   let webWorkerLate: string | undefined
   if (webWorkerComing && entries.some(({ account }) => isWebRuntime(account.runtime))) {
     const seconds = config.webWorkerWaitSeconds ?? 30
     let timer: NodeJS.Timeout | undefined
     webWorker = await new Promise<WebWorkerService | undefined>((resolve) => {
       timer = setTimeout(() => resolve(undefined), seconds * 1000)
-      ctx.inject(['webWorker'], (inner) => { resolve(inner.get('webWorker') as WebWorkerService | undefined) })
+      arrived = resolve
     })
     clearTimeout(timer)
     if (!webWorker) webWorkerLate = `the web-worker row did not start within ${seconds} s`
