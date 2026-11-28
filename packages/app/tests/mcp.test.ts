@@ -25,7 +25,9 @@ const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema })
 const services = {
   capabilities: undefined as unknown as Services['capabilities'],
   artifact: (id: string) => artifacts.get(id),
-} as Services
+  readBytes: (id: string) => artifacts.readBytes(id),
+  putFile: (data: Uint8Array, mediaType: string, classification: string, who: { operatorId: string }) => artifacts.putBytes({ kind: 'file', schemaVersion: 1, data, mediaType, classification: classification as 'local-private', producer: { type: 'operator', ref: who.operatorId } }),
+} as unknown as Services
 const table = tableOf(operations(services))
 let stop: () => Promise<void>
 let human1: Awaited<ReturnType<typeof connect>>
@@ -489,4 +491,67 @@ test('work.watch (MCP work_watch) names the same outcome as system work wait', {
   await call(client, 'work.cancel', { workId: cancelled.value.id, reason: 'stop' })
   const watchedCancelled = await call(client, 'work.watch', { workId: cancelled.value.id })
   assert.equal(watchedCancelled.value.outcome, 'cancelled')
+})
+
+const BOUND = 32 * 1024
+
+test('alog-2: an MCP tool result over 32 KiB is cut with a marker; artifact.cat reads an Artifact in parts; work.show drops the oldest events', { timeout: 120_000 }, async () => {
+  const client = await mcp()
+  // An Artifact over the bound (its bytes are 100 KB of text lines).
+  const bytes = Buffer.from(Array.from({ length: 5000 }, (_, i) => `line ${String(i).padStart(5, '0')} of an attempt log\n`).join(''))
+  assert.ok(bytes.length > 100_000)
+  const stored = await call(client, 'artifact.put', { data: bytes.toString('base64'), mediaType: 'text/plain' })
+  assert.equal(stored.error, undefined)
+  const id = stored.value.id as string
+
+  // With no arguments the first part comes back, within the bound, and says how to read on.
+  const first = await call(client, 'artifact.cat', { id })
+  assert.equal(first.error, undefined)
+  assert.equal(first.value.size, bytes.length)
+  assert.equal(first.value.offset, 0)
+  const head = Buffer.from(first.value.data, 'base64')
+  assert.ok(head.length > 0 && head.length < bytes.length)
+  assert.deepEqual(head, bytes.subarray(0, head.length))
+  // The parts put together are the whole Artifact.
+  const parts = [head]
+  while (Buffer.concat(parts).length < bytes.length) {
+    const part = await call(client, 'artifact.cat', { id, offset: Buffer.concat(parts).length, maxBytes: 10_000 })
+    assert.equal(part.error, undefined)
+    parts.push(Buffer.from(part.value.data, 'base64'))
+  }
+  assert.deepEqual(Buffer.concat(parts), bytes)
+  assert.deepEqual(Buffer.from((await call(client, 'artifact.cat', { id, offset: bytes.length - 5 })).value.data, 'base64'), bytes.subarray(bytes.length - 5))
+
+  // A result over the bound that is not cut by its own tool is cut by the MCP server, with a marker line.
+  const raw = await client.callTool({ name: 'artifact.cat', arguments: { id, maxBytes: 60_000 } }) as { isError?: boolean; content: { text: string }[] }
+  const text = raw.content[0]!.text
+  assert.ok(Buffer.byteLength(text) < BOUND + 512, `${Buffer.byteLength(text)} bytes`)
+  const marker = text.split('\n').at(-1)!
+  assert.match(marker, new RegExp(`${Buffer.byteLength(JSON.stringify(await human1.call('artifact.cat', { id })))}|\\d+ bytes`))
+  assert.match(marker, /artifact\.cat/)
+  assert.match(marker, /offset/)
+
+  // The CLI path (the Host call itself) still gives everything.
+  assert.deepEqual(Buffer.from(((await human1.call('artifact.cat', { id })) as { data: string }).data, 'base64'), bytes)
+
+  // A Work whose record is over the bound: work.show drops the oldest events and says how many.
+  const workId = (await call(client, 'work.submit', { capabilities: ['repo.write'], run: false })).value.id as string
+  const reason = 'r'.repeat(20_000)
+  // The cancel and the retry each record their reason as an event, and the retried Work runs to its end.
+  const ok = async (name: string, args: Record<string, unknown>) => { const r = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[] }; assert.notEqual(r.isError, true, r.content[0]!.text.slice(0, 300)) }
+  await ok('work.cancel', { workId, reason })
+  await ok('work.retry', { workId, step: 'task', reason })
+  await until('the retried Work to end', async () => (await (human1.call('work.events', { workId }) as Promise<any>)).status === 'succeeded')
+  const all = (await (human1.call('work.events', { workId }) as Promise<any>)).events as { seq: number }[]
+  const full = await (human1.call('work.show', { workId }) as Promise<any>)
+  assert.ok(JSON.stringify(full).length > BOUND, 'the fixture record is over the bound')
+  const shown = await call(client, 'work.show', { workId })
+  assert.equal(shown.error, undefined)
+  assert.ok(JSON.stringify(shown.value).length <= BOUND)
+  assert.ok(shown.value.omittedEvents > 0)
+  assert.equal(shown.value.events.length + shown.value.omittedEvents, all.length)
+  assert.deepEqual(shown.value.events.map((e: { seq: number }) => e.seq), all.slice(all.length - shown.value.events.length).map((e) => e.seq))
+  assert.match(shown.value.omittedNote, /work\.events/)
+  // The CLI path keeps every event.
+  assert.equal(full.events.length, all.length)
 })

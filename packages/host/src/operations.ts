@@ -332,12 +332,14 @@ export function operations(services: Services) {
     'artifact.cat': {
       read: true,
       authority: 'caller',
-      summary: 'The bytes of a blob Artifact as `{ data }` in base64; refused when they do not fit a frame.',
-      params: z.object({ id: artifactId }).strict(),
+      summary: 'The bytes of a blob Artifact as `{ data, offset, size }`, `data` in base64: from `offset` (default 0), at most `maxBytes` (default all of them); `size` is the whole Artifact\'s byte count, so a caller reads a large one in parts. Refused when the part does not fit a frame. Through MCP, `maxBytes` defaults to what fits the result bound.',
+      params: z.object({ id: artifactId, offset: z.number().int().min(0).optional(), maxBytes: z.number().int().min(1).optional() }).strict(),
       async handler(_host, p) {
-        const data = Buffer.from(await services.readBytes(p.id)).toString('base64')
-        if (!fitsFrame(data)) throw new WorkError(`${p.id} is too large for one reply (${data.length} bytes in base64)`)
-        return { data }
+        const all = await services.readBytes(p.id)
+        const offset = p.offset ?? 0
+        const data = Buffer.from(all.subarray(offset, p.maxBytes === undefined ? undefined : offset + p.maxBytes)).toString('base64')
+        if (!fitsFrame(data)) throw new WorkError(`${p.id} is too large for one reply (${data.length} bytes in base64); read it in parts with offset and maxBytes`)
+        return { data, offset, size: all.byteLength }
       },
     },
     'workers.list': {
