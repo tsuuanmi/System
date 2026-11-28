@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-credentials": "0.2.2-rc.5",
+    "@deepseek-ai/schemastery": "~3.19.0",
     "@system/artifacts": "workspace:*",
     "@system/work": "workspace:*"
   },

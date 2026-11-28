@@ -4,6 +4,7 @@
  * evidence (ADR-0003 decisions 6-8, ADR-0004 decisions 12-13).
  */
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { subprocessSpawner } from '@system/agents'
 import type { Artifacts } from '@system/artifacts'
@@ -20,26 +21,28 @@ export * from './install-check.ts'
 export const name = 'system-verifiers'
 export const inject = ['capabilities', 'artifacts', 'subprocess']
 
+export const DEFAULT_MAX_CONCURRENT_CHECKS = 2
+
 export interface Config {
   /** Variables (names `[A-Z_][A-Z0-9_]*`, not HOME, PATH or CI) given to every `code.required-checks` check, e.g. RUSTUP_HOME. */
   checkEnv?: Record<string, string>
   /** How many `code.required-checks` runs go at once on the machine; the others wait for a check slot. Default 2. */
-  maxConcurrentChecks?: number
+  maxConcurrentChecks: number
 }
+export const Config: Schema<Config> = Schema.object({
+  checkEnv: Schema.dict(Schema.string()),
+  maxConcurrentChecks: Schema.number().min(1).step(1).default(DEFAULT_MAX_CONCURRENT_CHECKS),
+})
 
-export const DEFAULT_MAX_CONCURRENT_CHECKS = 2
-
-export function apply(ctx: Context, config: Config = {}): void {
+export function apply(ctx: Context, config: Config): void {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
   artifacts.registerKind({ ...CHECKS_KIND, content: checksSchema })
   artifacts.registerKind({ ...CHECK_RUN_KIND, content: checkRunSchema })
   artifacts.registerKind({ ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema })
   artifacts.registerKind({ ...CITATION_CHECK_KIND, content: citationCheckSchema })
-  const maxConcurrentChecks = config.maxConcurrentChecks ?? DEFAULT_MAX_CONCURRENT_CHECKS
-  if (!Number.isInteger(maxConcurrentChecks) || maxConcurrentChecks < 1) throw new Error(`maxConcurrentChecks must be a whole number of at least 1, not ${String(config.maxConcurrentChecks)}`)
   const dispose = [
-    capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime), Date.now, config.checkEnv, maxConcurrentChecks)),
+    capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime), Date.now, config.checkEnv, config.maxConcurrentChecks)),
     capabilities.registerVerifier(installCheck(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime))),
     capabilities.registerVerifier(citationCheck(artifacts)),
   ]
