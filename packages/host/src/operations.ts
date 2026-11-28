@@ -282,6 +282,13 @@ export function operations(services: Services) {
       params: z.object({ subject: z.string().min(1), foundBy: z.string().min(1).max(500), reason: z.string().min(1).max(8 * 1024), date: z.string().min(10).max(40).optional(), supersedes: artifactId.optional(), commandId }).strict(),
       handler: (_host, { commandId: _id, ...p }, caller) => services.newDefect(p, caller),
     },
+    'defect.list': {
+      read: true,
+      authority: 'caller',
+      summary: 'The recorded Escaped defects and withdrawals: `{ defects, withdrawals }` as stored (a defect that another supersedes or a withdrawal names is still listed; the reader leaves it out as `work.report` does). `system release prepare` reads it.',
+      params: z.object({}).strict(),
+      handler: () => ({ defects: services.defects(), withdrawals: services.defectWithdrawals() }),
+    },
     'defect.withdraw': {
       authority: 'caller',
       summary: 'Store an `escaped-defect-withdrawal@1` Artifact: the `escaped-defect@1` Artifact `withdraws` was recorded wrongly and is no longer counted by `work.report`: `{ withdrawal }`, the Artifact ID. `reason` says why; `date` (default now) is when. `withdraws` must be a stored `escaped-defect@1` Artifact.',

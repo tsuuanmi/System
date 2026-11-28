@@ -11,6 +11,7 @@ import type { WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/runtime-cli/contract'
 import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '@system/host'
 import { operations, type Services } from '@system/host/operations'
+import { prepareRelease } from './release.ts'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
@@ -363,7 +364,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
-  const release = program.command('release').description('releases: the Operator approves a commit of dev for release')
+  const release = program.command('release').description('releases: prepare one at a commit of dev; the Operator approves a commit for release')
   release.command('approve <commit>')
     .description('approve a commit of dev for release (ADR-0019): a human at a terminal types its 7 hex characters; stores a release-approval@1 Artifact and prints its ID alone on stdout. A caller session may then release that commit')
     .action((commit: string) => {
@@ -374,6 +375,15 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         // An operator operation: it goes over the operator socket, as the Operator's.
         const created = await host.call('release.approve', given({ commit }))
         io.out(`${created.approval}\n`)
+        return 0
+      })
+    })
+  release.command('prepare <commit>')
+    .description('cut a release (ADR-0019): create and push the branch release/<7 hex of the commit> at a commit of dev, and write the release report (Markdown, from records) to stdout. It never merges and never opens the pull request: run `gh pr create --base main --head release/<commit> --body-file <report>`')
+    .option('--repo <path>', 'the repository (default: the current directory)', '.')
+    .action((commit: string, options: { repo: string }) => {
+      select(async () => {
+        io.out(await prepareRelease(host, resolve(options.repo), commit))
         return 0
       })
     })

@@ -210,6 +210,7 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(await call('defect.add', { subject: 'p-1', foundBy: 'work:x', reason: 'broke' }), { defect: 'defect:p-1' })
   assert.deepEqual(await call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}`, reason: 'wrong' }), { withdrawal: `withdrawal:sha256:${'a'.repeat(64)}` })
   await assert.rejects(call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}` }), /-32602|invalid|reason/i)
+  assert.deepEqual(await call('defect.list', {}), { defects: [], withdrawals: [] })
   await assert.rejects(call('defect.add', { subject: 'p-1', foundBy: 'work:x' }), /-32602|invalid|reason/i)
   await assert.rejects(call('intent.new', { title: '', body: 'x' }), /-32602|invalid|title/i)
   // A Blocked Item's Task is refused, naming what blocks it, unless `force`; the refusal for work.submit is the controller's.
