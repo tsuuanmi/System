@@ -13,9 +13,8 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { TERMINAL, parseWorkflow, type Caller, type WorkRecord, type WorkState, type z } from '@system/work'
-// By path, not by package: declaring @system/host here would change the lockfile.
-import { NotAnswering, NotRunning, RpcError, UPGRADING, type Client, type Methods } from '../../host/lib/index.js'
-import { operations, type Services } from '../../host/lib/operations.js'
+import { NotAnswering, NotRunning, RpcError, UPGRADING, type Client, type Methods } from '@system/host'
+import { operations, type Services } from '@system/host/operations'
 import { caller } from './io.ts'
 
 /** The operation table of the code this client runs with: the one source of method names and params. */

@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { Command } from 'commander'
 import { addWorktree, git, parseStatus, removeWorktree } from '@system/work'
-// By path, as client.ts imports the Host: declaring @system/verifiers here would change the lockfile.
+// By path: declaring @system/verifiers here would change the lockfile.
 import { CHECKS_FILE, parseChecksFile } from '../../verifiers/lib/checks.js'
 
 interface BootstrapResult {

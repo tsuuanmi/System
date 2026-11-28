@@ -3,13 +3,12 @@
  * `init`, `update`, `host` and `doctor` runs here (`bootstrap check` reads git alone and never connects), in a process that does not boot DSH
  * and talks to the Host on `$DSH_HOME/system/host.sock`, and over `operator/host.sock` for an `operator` operation (ADR-0016).
  */
-// By path, not by package: declaring @system/host here would change the lockfile.
 import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Caller } from '@system/work'
-import { REFUSED, RpcError, VERSION, codeRoot, connectHello, type Client } from '../../host/lib/index.js'
-import { operatorSocketPath, socketPath } from '../../host/lib/process.js'
+import { REFUSED, RpcError, VERSION, codeRoot, connectHello, type Client } from '@system/host'
+import { operatorSocketPath, socketPath } from '@system/host/process'
 import { bootstrapMain } from './bootstrap.ts'
 import { buildProgram, type Run } from './cli.ts'
 import { confirmHuman, errorLine, explain, readSecret } from './io.ts'
@@ -35,7 +34,7 @@ export async function openCurrent(home: string, who: Caller, { onCode, ...option
     // Node pins the target of a symlinked import path for the life of the process, so importing through `current`
     // would keep loading the release the link held at the first import. Import the real path, resolved on every call.
     let lib: string
-    let current: typeof import('../../host/lib/index.js')
+    let current: typeof import('@system/host')
     try {
       lib = join(realpathSync(codeRoot()), 'packages', 'host', 'lib')
       current = await import(pathToFileURL(join(lib, 'index.js')).href)
@@ -45,7 +44,7 @@ export async function openCurrent(home: string, who: Caller, { onCode, ...option
     if (current.VERSION === VERSION) throw error
     const client = await current.connectHello(socketPath(home), { version: current.VERSION, ...hello })
     try {
-      const { operations } = await import(pathToFileURL(join(lib, 'operations.js')).href) as typeof import('../../host/lib/operations.js')
+      const { operations } = await import(pathToFileURL(join(lib, 'operations.js')).href) as typeof import('@system/host/operations')
       onCode?.({ operations, tableOf: current.tableOf })
     } catch {
       // The list stays as it is; the session works.

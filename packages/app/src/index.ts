@@ -21,10 +21,9 @@ import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.
 import { checkStore } from './store-check.ts'
 import { completePendingInstallCheck } from './pending-install-check.ts'
 import { caller, errorLine, explain } from './io.ts'
-// By path, not by package: declaring @system/host here would change the lockfile.
-import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
-import type { Services } from '../../host/lib/operations.js'
-import { exitWithin, operatorSocketPath, serveHost, socketPath } from '../../host/lib/process.js'
+import { VERSION, codeRoot, connect } from '@system/host'
+import type { Services } from '@system/host/operations'
+import { exitWithin, operatorSocketPath, serveHost, socketPath } from '@system/host/process'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']

@@ -252,6 +252,9 @@ importers:
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@system/host':
+        specifier: workspace:*
+        version: link:../host
       '@system/work':
         specifier: workspace:*
         version: link:../work
