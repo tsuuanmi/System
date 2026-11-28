@@ -51,6 +51,10 @@ export interface CliAdapter {
   readonly runtime: Runtime
   /** The CLI's name, resolved on PATH when the account names none. */
   readonly defaultCommand: string
+  /** What accounts share one slot: those with the same key run one attempt at a time (antigravity: the resolved agyHome). Absent: the Account's ref is the key. */
+  slotKey?(account: Account): string | undefined
+  /** Run `fn` while no other use of the Account's sign-in runs, such as an attempt of another Account or a quota read of the same home. Absent: at once. */
+  exclusive?<T>(account: Account, fn: () => Promise<T>): Promise<T>
   /** The account's credential problem, or how to stage it in a directory: checked before anything is prepared. */
   preflight(account: Account): Promise<Preflight>
   invocation(input: InvocationInput): Invocation

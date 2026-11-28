@@ -7,7 +7,7 @@
  * supplies a reason per file, in its final message; the list never holds,
  * fails or blocks a Work.
  */
-import { git } from './git.ts'
+import { git } from '@system/git'
 
 export interface ChangedTest {
   path: string

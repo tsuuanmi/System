@@ -25,7 +25,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
+import { isSignedOut } from '@system/work'
+import { exclusiveHome } from './agy-home.ts'
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
 
 export interface QuotaWindow {
@@ -37,7 +39,7 @@ export interface QuotaWindow {
 type QuotaWindowName = 'five_hour' | 'seven_day'
 export type QuotaReport =
   | { observedAt: string; windows: { five_hour?: QuotaWindow; seven_day?: QuotaWindow }; source?: 'rate_limit_event'; /** The CLI's version when probed: evidence, never a gate. */ cliVersion?: string }
-  | { unreadable: string; /** A `retry-after` the provider gave, in milliseconds: the cache does not read again before it. */ retryAfterMs?: number }
+  | { unreadable: string; /** The read failed with an authentication error: the Account is signed out until a later read succeeds (authgate-1). */ signedOut?: true; /** A `retry-after` the provider gave, in milliseconds: the cache does not read again before it. */ retryAfterMs?: number }
 
 /** Why `get_usage` has no plan limits (a `setup-token` token without the profile scope); the cache falls back to attempt events only for it. */
 export const NO_PLAN_LIMITS = 'no plan limits: API key, third-party provider or no profile scope'
@@ -374,7 +376,7 @@ function retryAfterOf(error: unknown): number | undefined {
   }
   return typeof error.message === 'string' ? retryAfterOf(error.message) : undefined
 }
-const failed = (outcome: { fail: string; retryAfterMs?: number }): QuotaReport => ({ unreadable: outcome.fail, ...(outcome.retryAfterMs ? { retryAfterMs: outcome.retryAfterMs } : {}) })
+const failed = (outcome: { fail: string; retryAfterMs?: number }): QuotaReport => ({ unreadable: outcome.fail, ...(isSignedOut(outcome.fail) ? { signedOut: true as const } : {}), ...(outcome.retryAfterMs ? { retryAfterMs: outcome.retryAfterMs } : {}) })
 
 interface ClaudeQuotaOptions extends ReadOptions {
   /** The account's `claudeHome`, passed as HOME. */
@@ -503,7 +505,12 @@ interface AntigravityQuotaOptions extends ReadOptions {
 }
 
 /** `agy -p /usage --output-format json` with the Account's HOME and no session bus (so no keyring is asked), and no model turn. */
-export async function readAntigravityQuota(options: AntigravityQuotaOptions): Promise<QuotaReport> {
+export function readAntigravityQuota(options: AntigravityQuotaOptions): Promise<QuotaReport> {
+  // Not while an attempt, or another read, uses the same sign-in (agyconc-1).
+  return exclusiveHome(resolvePath(options.home), () => readAntigravityQuotaNow(options))
+}
+
+async function readAntigravityQuotaNow(options: AntigravityQuotaOptions): Promise<QuotaReport> {
   try {
     if (!existsSync(options.home)) return { unreadable: `its agyHome ${options.home} does not exist` }
     const now = options.now ?? Date.now

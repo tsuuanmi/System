@@ -2,7 +2,7 @@
  * The active core's lines (ir-9, ADR-0015): the .ts lines of packages/work/src and packages/artifacts/src on `dev`, counted from git.
  * A trend `work report --since` shows at the range's start and end, never a gate.
  */
-import { git } from './git.ts'
+import { git } from '@system/git'
 import type { Unknown } from './measures.ts'
 
 export type CoreLines = { start: number | Unknown; end: number | Unknown } | Unknown

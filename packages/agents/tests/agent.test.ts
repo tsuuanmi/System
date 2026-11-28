@@ -779,6 +779,25 @@ test('a reopen after a failing check has each failing check\'s command, exit cod
   } finally { await cleanup(ws) }
 })
 
+test('a check that failed only for leftover processes has a failure file for the reopened step (reopen-2)', async () => {
+  const { artifacts } = memoryArtifacts({ ...TASK_KIND, content: taskSchema }, { ...GIT_TREE_KIND, content: gitTreeSchema }, { ...VERDICT_KIND, content: verdictSchema }, { ...CHECK_RUN_KIND, content: checkRunSchema })
+  const producer = { type: 'system' as const, ref: 'test' }
+  const input = await task(artifacts, 'fix it', repo())
+  const ran = async (name: string, leftovers: string[]) => (await artifacts.put({ ...CHECK_RUN_KIND, content: { name, run: `pnpm ${name}`, commit: 'c1', exitCode: 0, signal: null, timedOut: false, durationMs: 5, stdoutTail: 'all passed\n', stderrTail: '', ...(leftovers.length ? { leftovers } : {}) }, classification: 'local-private', producer })).id
+  const left = await ran('e2e', ['Xvfb', 'chrome'])
+  const clean = await ran('lint', [])
+  const subject = (await artifacts.put({ ...TASK_KIND, content: { instructions: 's' }, classification: 'local-private', producer })).id
+  const verdict = (await artifacts.put({ ...VERDICT_KIND, content: { subject, criteria: subject, capability: 'code.required-checks', verifier: { ref: 'v', version: '1' }, verdict: 'fail', reason: 'failed: e2e (left running: Xvfb, chrome)', evidence: [left, clean] }, inputs: [subject, left, clean], classification: 'local-private', producer })).id
+  const ws = await prepare(artifacts, request({ task: input, failure: verdict }, ['change']), join(root, 'ws-leftovers'))
+  try {
+    const files = readdirSync(ws.inputs).filter((f) => f.startsWith('failure-'))
+    assert.equal(files.length, 1, files.join())
+    const text = readFileSync(join(ws.inputs, files[0]!), 'utf8')
+    assert.match(text, /check: e2e/)
+    assert.match(text, /left running: Xvfb, chrome/)
+  } finally { await cleanup(ws) }
+})
+
 test('Claude attempt hook receives both unified windows', async (t) => {
   const ownRoot = mkdtempSync(join(tmpdir(), 'agent-unified-'))
   t.after(() => rmSync(ownRoot, { recursive: true, force: true }))

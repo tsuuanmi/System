@@ -30,7 +30,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
 - [src/hold.ts](src/hold.ts) — `holdDecision`: a pure statement of what a held Work awaits, the options and the command for each (printed by `work show` and `approve`).
 - [src/status.ts](src/status.ts) — a project's status: `parseStatus` (in [src/status-parse.ts](src/status-parse.ts), import-free; `strict` throws on any problem; `(after: id, id)` makes an Item Blocked) `itemLines` (done, doing, todo from the Work records, a `done` line naming its Works' Outside failures when there are any) and `itemNote` (what a Worker is told of an Item); see [the runbook](../../docs/operations/using-system.md#the-status-of-a-project).
-- [src/outside.ts](src/outside.ts) — `outsideCause`: the one place where a recorded failure reason is classed as an Outside failure ([GLOSSARY](../../GLOSSARY.md)) with its cause (`quota`, `restart`, `conflict`, `load`, `slow-host`, `attach`; a check timeout in a verdict is a change failure unless the base fails it too), or, when no pattern matches, as a failure of the change.
+- [src/outside.ts](src/outside.ts) — `outsideCause`: the one place where a recorded failure reason is classed as an Outside failure ([GLOSSARY](../../GLOSSARY.md)) with its cause (`quota`, `restart`, `conflict`, `load`, `slow-host`, `attach`, `signed-out`; a check timeout in a verdict is a change failure unless the base fails it too), or, when no pattern matches, as a failure of the change.
 - [src/slots.ts](src/slots.ts) — `Slots`: the Accounts' slots.
 - [src/admission.ts](src/admission.ts) — `AccountAdmission`: the quota waits and their timers, limited Accounts and today's attempt counts; the controller asks it which Account may take a step.
 - [src/live.ts](src/live.ts) — `LiveAttempts`: each running Worker attempt's
@@ -159,7 +159,7 @@ task's inputs, optional `item`: the Item of the repository's `STATUS.md`) and
 [src/intent.ts](src/intent.ts): `intent@1` (`title`, Markdown `body`, optional
 `supersedes`: a stored `intent@1`), what the operator settled with a caller
 session, stored before Items carry it out (`addIntent`).
-The `admitted` event's optional `goal` and the `orchestrator` caller type are read-only: records stored before the Goal feature was removed (ADR-0009, superseded) still open and replay, and new events never carry either. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
+The `admitted` event's optional `goal` and the `orchestrator` caller type are read-only: records stored before the Goal feature was removed (ADR-0009, superseded) still open and replay, and new events never carry either. [src/git.ts](src/git.ts) snapshots and pins commits and checks a branch against its origin; the git call, worktrees and capture are [@system/git](../git/README.md).
 
 ## Crash boundaries
 

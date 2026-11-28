@@ -1,0 +1,15 @@
+{
+  "name": "@system/git",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The git operations System runs: a safe git call, detached worktrees and exact capture of a worktree (ADR-0017 decision 2); a library, no Cordis entry",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ]
+}

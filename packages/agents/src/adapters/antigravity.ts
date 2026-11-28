@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync }
 import { isAbsolute, join, resolve } from 'node:path'
 import type { AttemptSummary, Progress } from '@system/work'
 import { jsonEvents, unknownSummary } from '../attempt-summary.ts'
+import { exclusiveHome } from '../agy-home.ts'
 import { AGY_GROUPS, createQuotaCache, readAntigravityQuota, type AgyQuotaGroup } from '../quota.ts'
 import { baseEnv, type Invocation, type Parsed } from '../runtimes.ts'
 import { applyFinalResult, FINAL_RESULT_SCHEMA } from './final-result.ts'
@@ -23,14 +24,15 @@ const MODE = 'accept-edits'
 /**
  * `cwd` is the checkout (agy has no cwd flag) and HOME the attempt's throwaway `ws.home` (`.gemini/antigravity-cli` a real directory holding links to the Account's token and settings);
  * `--mode auto` is refused for these Accounts, so `accept-edits`; never `--dangerously-skip-permissions`. The session bus is never passed
- * (baseEnv has none), so the token is read from a file.
+ * (baseEnv has none), so the token is read from a file. Under the Account's `sandbox` option (the bubblewrap layer, ADR-0016) agy's own `--sandbox` is left out: it hides the
+ * home, so `node` in a shell command is the system's, not the repository's; the layer already hides the passwd home and the Host's state and binds the toolchain. The scope says which boundary ran.
  */
-function invocation({ command, ws, prompt, model, env }: InvocationInput): Invocation {
+function invocation({ command, ws, prompt, model, env, sandbox }: InvocationInput): Invocation {
   return {
-    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', MODE, '--sandbox', '--add-dir', ws.inputs, '--add-dir', ws.outputs, '--json-schema', FINAL_RESULT_SCHEMA],
+    argv: [command, '-p', prompt, '--output-format', 'stream-json', ...(model ? ['--model', model] : []), '--mode', MODE, ...(sandbox ? [] : ['--sandbox']), '--add-dir', ws.inputs, '--add-dir', ws.outputs, '--json-schema', FINAL_RESULT_SCHEMA],
     env: { ...baseEnv(ws), ...env },
     // The settings bytes `writeSettings` stages are SETTINGS.
-    scope: { permissionMode: MODE, sandbox: true, settingsSha256: createHash('sha256').update(SETTINGS).digest('hex') },
+    scope: { permissionMode: MODE, sandbox: sandbox ? 'bubblewrap' : true, settingsSha256: createHash('sha256').update(SETTINGS).digest('hex') },
   }
 }
 
@@ -146,6 +148,8 @@ export const antigravity: CliAdapter = {
       },
     }
   },
+  slotKey: (account) => account.agyHome && resolve(account.agyHome),
+  exclusive: (account, fn) => (account.agyHome ? exclusiveHome(resolve(account.agyHome), fn) : fn()),
   invocation,
   // agy has no verified way to run a turn without tools, and the staged rules allow every command: no Classifier question runs on it.
   askArgv: () => { throw new Error('the antigravity Runtime does not answer a question without tools') },

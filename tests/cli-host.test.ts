@@ -10,6 +10,7 @@ import { createConnection, createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { systemCli, type Running } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
 const cli = systemCli('system-cli-host')
 const home = cli.home
@@ -33,15 +34,7 @@ async function admitted(run: Running): Promise<string> {
 
 before(async () => {
   assert.equal(system('init').status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write]
-`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), withFakes({ workers: ['repo.write'] }))
   await cli.start({ env: held })
 })
 

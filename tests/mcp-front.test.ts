@@ -8,18 +8,9 @@ import { Client } from '../packages/app/node_modules/@modelcontextprotocol/sdk/d
 import { StdioClientTransport } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { codeVersionAt } from '../packages/host/src/index.ts'
 import { copyRelease, repo, systemCli } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
-const FAKES = `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write, develop.implement, tier.standard]
-    verifiers: [code.required-checks]
-    effects: [git.publish]
-`
+const FAKES = withFakes({ workers: ['repo.write', 'develop.implement', 'tier.standard'], verifiers: ['code.required-checks'], effects: ['git.publish'] })
 
 test('after the install moves to a second release and the Host restarts, status and work.submit succeed at the first call, served by the new release client', { timeout: 240_000 }, async () => {
   const base = realpathSync(mkdtempSync('/tmp/sm-front-'))

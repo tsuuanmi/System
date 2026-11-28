@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { baseEnv } from '../src/runtimes.ts'
-import { adapterFor, checkSandbox } from '../src/adapters/index.ts'
+import { ADAPTERS, adapterFor, checkSandbox } from '../src/adapters/index.ts'
 
 
 const claude = adapterFor('claude-code')!
@@ -224,16 +224,16 @@ test("a Worker's environment never holds the Host's credentials, whatever the Ho
   const forbidden = ['SSH_AUTH_SOCK', 'GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'MY_SECRET', 'CLIENT_SECRET_X', 'AWS_ACCESS_KEY_ID', 'AWS_PROFILE', 'GOOGLE_APPLICATION_CREDENTIALS', 'DBUS_SESSION_BUS_ADDRESS']
   // An Account's own model credential is the only allowed exception, and it comes from the Account's env, not the Host's.
   const accountOwn = new Set(['CLAUDE_CODE_OAUTH_TOKEN'])
-  const saved = new Map(forbidden.map((k) => [k, process.env[k]]))
+  const saved = new Map([...forbidden, 'CLAUDE_CODE_OAUTH_TOKEN'].map((k) => [k, process.env[k]]))
   const bad = /^(SSH_AUTH_SOCK|GH_TOKEN|GITHUB_TOKEN|GOOGLE_APPLICATION_CREDENTIALS|DBUS_SESSION_BUS_ADDRESS|AWS_.*|.*_API_KEY|.*_SECRET.*)$/
   try {
     for (const k of forbidden) process.env[k] = 'host-value'
     process.env.CLAUDE_CODE_OAUTH_TOKEN = 'host-token'
-    const envs: Record<string, Record<string, string>> = {
-      baseEnv: baseEnv(ws as never),
-      'claude-code': claude.invocation({ command: 'claude', ws: ws as never, prompt: 'p', codeWrite: false, env: { CLAUDE_CODE_OAUTH_TOKEN: 'acct' } }).env,
-      codex: codex.invocation({ command: 'codex', ws: ws as never, prompt: 'p', codeWrite: false, env: { CODEX_HOME: '/h' } }).env,
-      antigravity: adapterFor('antigravity')!.invocation({ command: 'agy', ws: ws as never, prompt: 'p', codeWrite: false, env: {} }).env,
+    // Every registered adapter, so a new one is checked without an edit here; each gets the env its Account would give it.
+    const accountEnv: Record<string, Record<string, string>> = { 'claude-code': { CLAUDE_CODE_OAUTH_TOKEN: 'acct' }, codex: { CODEX_HOME: '/h' } }
+    const envs: Record<string, Record<string, string>> = { baseEnv: baseEnv(ws as never) }
+    for (const [name, adapter] of Object.entries(ADAPTERS)) {
+      envs[name] = adapter.invocation({ command: name, ws: ws as never, prompt: 'p', codeWrite: false, env: accountEnv[name] ?? {} }).env
     }
     for (const [name, env] of Object.entries(envs)) {
       for (const k of Object.keys(env)) assert.ok(accountOwn.has(k) || !bad.test(k), `${name} holds ${k}`)
@@ -243,6 +243,5 @@ test("a Worker's environment never holds the Host's credentials, whatever the Ho
     assert.equal(envs['claude-code']!.CLAUDE_CODE_OAUTH_TOKEN, 'acct')
   } finally {
     for (const [k, v] of saved) if (v === undefined) delete process.env[k]; else process.env[k] = v
-    delete process.env.CLAUDE_CODE_OAUTH_TOKEN
   }
 })

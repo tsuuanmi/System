@@ -3,7 +3,7 @@
  * a merge commit on the first parent of `main` whose second parent is on the first-parent history of `dev`
  * (pull requests from other branches merged into `main` are not releases).
  */
-import { git } from './git.ts'
+import { git } from '@system/git'
 
 /**
  * The merge times (ISO, UTC) in the output of `git log --merges --first-parent --format='%cI %P'` whose second parent

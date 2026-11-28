@@ -5,6 +5,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Artifacts } from '@system/artifacts'
 import { askVerifier, putVerdict, settleVerdict, type Capabilities, type EffectIntent, type VerificationStore } from '@system/work'
@@ -15,10 +16,18 @@ export * from './github.ts'
 export const name = 'system-effects'
 export const inject = ['capabilities', 'artifacts', 'credentials']
 
-export interface Config extends Partial<PublishConfig> {
+export interface Config extends PublishConfig {
   /** The credential-store name of System's GitHub token. */
-  tokenRef?: string
+  tokenRef: string
 }
+export const Config: Schema<Config> = Schema.object({
+  remote: Schema.string().default('origin'),
+  base: Schema.string().default('main'),
+  mergeInto: Schema.array(Schema.string()).default([]),
+  apiUrl: Schema.string().default('https://api.github.com'),
+  repository: Schema.string(),
+  tokenRef: Schema.string().default('GITHUB_TOKEN'),
+})
 
 /**
  * The merge queue's re-check on a merge commit, a verification like any other:
@@ -61,19 +70,19 @@ export function mergeCheck(capabilities: Capabilities, artifacts: Artifacts): (s
   }
 }
 
-export function apply(ctx: Context, config: Config = {}): void {
+export function apply(ctx: Context, config: Config): void {
   // ct-4: the merge queue's batch mode (ct-3) was removed; an operator who set it must not have it silently ignored.
   if ('mergeBatchSize' in config) throw new Error('the effects option mergeBatchSize was removed (ct-4): the merge queue merges one change at a time; delete it from the profile')
   const capabilities = ctx.get('capabilities') as Capabilities
   const credentials = ctx.get('credentials') as CredentialProvider
-  const ref = credentialRef(config.tokenRef ?? 'GITHUB_TOKEN')
+  const ref = credentialRef(config.tokenRef)
   const publisher = githubPublisher(
     ctx.get('artifacts') as Artifacts,
     {
       token: async () => (await credentials.resolve(ref))?.value,
       check: mergeCheck(capabilities, ctx.get('artifacts') as Artifacts),
     },
-    { remote: config.remote ?? 'origin', base: config.base ?? 'main', mergeInto: config.mergeInto ?? [], apiUrl: config.apiUrl ?? 'https://api.github.com', repository: config.repository },
+    { remote: config.remote, base: config.base, mergeInto: config.mergeInto, apiUrl: config.apiUrl, repository: config.repository },
   )
   const dispose = capabilities.registerEffect(publisher)
   ctx.effect(() => dispose, 'effect registrations')

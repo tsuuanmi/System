@@ -23,3 +23,36 @@ test('maskValues masks a value plain and JSON-escaped, and ignores one under 3 c
   assert.equal(maskValues('a"b a\\"b ab', ['a"b']), '[redacted] [redacted] ab')
   assert.equal(maskValues('ab', ['ab', undefined]), 'ab')
 })
+
+// The fixture is built at run time so no key literal sits in the source.
+const pemHeader = '-----BEGIN ' + 'PRIVATE KEY-----'
+const pemFooter = '-----END ' + 'PRIVATE KEY-----'
+const pemBody = ['A', 'B', 'C'].map((c) => c.repeat(64))
+
+test('redactLog redacts a multi-line PEM block from BEGIN to END', () => {
+  const out = redactLog(['before', pemHeader, ...pemBody, pemFooter, 'after'].join('\n'))
+  for (const b of pemBody) assert.ok(!out.includes(b))
+  assert.ok(!out.includes('PRIVATE KEY'))
+  assert.ok(out.includes('[redacted:pem]'))
+  assert.ok(out.startsWith('before\n') && out.endsWith('\nafter'))
+})
+
+test('redactLog redacts a PEM block cut before END to the end of the log', () => {
+  const out = redactLog(['before', pemHeader, ...pemBody].join('\n'))
+  for (const b of pemBody) assert.ok(!out.includes(b))
+  assert.ok(out.startsWith('before\n'))
+})
+
+test('redactLog keeps the text after the END line and plain lines unchanged', () => {
+  const log = 'one\ntwo'
+  assert.equal(redactLog(log), log)
+  const out = redactLog([pemHeader, ...pemBody, pemFooter + ' tail', 'last'].join('\n'))
+  assert.ok(out.endsWith('tail\nlast'))
+})
+
+test('redactLog still redacts a PEM inside a JSON line', () => {
+  const line = JSON.stringify({ text: [pemHeader, ...pemBody, pemFooter].join('\n') })
+  const out = redactLog(line + '\nnext')
+  for (const b of pemBody) assert.ok(!out.includes(b))
+  assert.ok(out.endsWith('\nnext'))
+})

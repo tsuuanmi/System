@@ -69,12 +69,21 @@ Account refs and labels, and the refusal of two accounts on one provider account
 
 The old ref is retired: do not give it to another Account. Records keep it.
 
+An Account whose quota read fails with an authentication error (Antigravity
+"authentication failed" or "Authentication required", Claude Code "Please run /login",
+Codex "Not logged in") is `unavailable - signed out`: it takes no step, and a step
+waits when no other Account is left, until a later read succeeds. A quota that is
+merely unknown (no window, a web Account) does not make an Account unavailable.
+A step that fails with such a text is an Outside failure with cause `signed-out`.
+
 `system workers` also prints a `quota:` line under each account; see the
 [agents README](../../packages/agents/README.md#quota).
 
 `system workers` ends with one line that says whether there is room for more
 parallel Works; `--repo <path>` (repeatable) adds the Ready Items of that
-project's `STATUS.md`. It is information for you: the Host never picks an Item.
+project's `STATUS.md`. An Item a session has claimed is not Ready, and a
+`STATUS.md` that cannot be read shows its error, not 0. It is information for
+you: the Host never picks an Item.
 
 ```
 room: 3 of 8 Accounts free (slot and Headroom under Ceiling); Ready Items: System 5
@@ -145,7 +154,9 @@ How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter deta
    all Accounts. A Google account that `agy -p /usage` calls "not eligible" must be verified in a browser
    first.
 3. One sign-in is two Accounts ([GLOSSARY](../../GLOSSARY.md)): one with `"quotaGroup": "gemini"` and one
-   with `"quotaGroup": "3p"` (Claude and GPT), both sharing `"agyHome": "antigravity/<name>"`. Each lists
+   with `"quotaGroup": "3p"` (Claude and GPT), both sharing `"agyHome": "antigravity/<name>"`.
+   Accounts of one resolved `agyHome` share one slot: one attempt
+   or `/usage` read runs per sign-in at a time (two refreshes of one token logged both sign-ins out). Each lists
    only the models of its group under `models` (`economy`, `standard`, `frontier`), checked with
    `HOME=~/.dsh/system/antigravity/<name> agy models`. Add the two account objects (JSON) to the
    `accounts` array of the `agents` row's `config` in `~/.system/profile.yml` (`- id: agents` followed by
@@ -184,6 +195,9 @@ How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter deta
    `available` with a `quota:` line.
 5. System writes `<home>/.gemini/antigravity-cli/settings.json` before each attempt (allow `command(*)`,
    deny `command(git push)` and `command(gh)`); do not edit it.
+
+Two Accounts of one sign-in share its login; until agyconc-1 (STATUS) they must not run at once.
+To sign in again: `HOME=<agyHome> env -u DBUS_SESSION_BUS_ADDRESS agy`, then the login flow; check `system workers`.
 
 ## The web account
 

@@ -18,5 +18,11 @@ jobs:
         run: corepack enable
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Make bubblewrap usable (ADR-0016 layer tests)
+        run: |
+          command -v bwrap >/dev/null || sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Build, typecheck, unit and offline smoke tests
         run: pnpm check
+        env:
+          SYSTEM_REQUIRE_SANDBOX: '1'

@@ -20,7 +20,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Artifacts, Envelope } from '@system/artifacts'
-import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, addWorktree, git, captureTree, pin, removeWorktree, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
+import { addWorktree, captureTree, git, removeWorktree } from '@system/git'
+import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, pin, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
 
 export interface Workspace {
   root: string
@@ -107,12 +108,13 @@ function writeFailingChecks(artifacts: Artifacts, ws: Workspace, verdict: { evid
   for (const id of verdict.evidence ?? []) {
     const read = artifacts.get(id)
     if (read.state !== 'stored' || read.envelope.kind !== 'check-run') continue
-    const run = read.envelope.content as { name: string; run: string; commit: string; exitCode: number | null; signal: string | null; timedOut: boolean; stdoutTail: string; stderrTail: string }
-    if (run.exitCode === 0 && !run.timedOut) continue
+    const run = read.envelope.content as { name: string; run: string; commit: string; exitCode: number | null; signal: string | null; timedOut: boolean; leftovers?: string[]; stdoutTail: string; stderrTail: string }
+    if (run.exitCode === 0 && !run.timedOut && !run.leftovers?.length) continue
     const file = `failure-${++n}-${run.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60)}.txt`
     const text = [
       `check: ${run.name}`, `command: ${run.run}`, `commit: ${run.commit}`,
       `exit code: ${run.exitCode ?? `none (signal ${run.signal})`}${run.timedOut ? ' (timed out)' : ''}`,
+      ...(run.leftovers?.length ? [`left running: ${run.leftovers.join(', ')}`] : []),
       '', '--- stdout (tail) ---', run.stdoutTail, '--- stderr (tail) ---', run.stderrTail,
     ].join('\n')
     const path = join(ws.inputs, file)

@@ -111,8 +111,10 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   contents, never a path (`system mcp` reads a path and sends its contents;
   see [the app README](../../packages/app/README.md)), and `work.run`, `work.retry` and `approval.decide`
   answer once the Work is being driven, so a refusal still reaches the caller
-  and a long run does not hold the call. A closed connection never cancels a
-  Work.
+  and a long run does not hold the call. `work.retry` refuses a verify step whatever the
+  caller type; asking a check again is `work.verifyAgain`, an `operator` operation served only on the operator
+  socket (`system work retry <work> --step <verify step>`, after the terminal confirmation
+  of ADR-0011). A closed connection never cancels a Work.
 - **Following a Work.** `work.events` takes `{ workId, after }` and returns the
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
@@ -166,6 +168,9 @@ is out of quota or credits (the reasons are listed in
 the Account's quota reading is read again at once, the step goes back to
 pending and is dispatched again by routing on another Account, without
 spending an attempt or retry, or waits (`waiting: quota`) when none is left.
+An Account whose quota read fails with an authentication error is `unavailable` with the
+reason `signed out`: routing skips it until a later read succeeds, and a step failing with
+that text is an Outside failure with cause `signed-out`.
 Old records carry `rateLimited` on a failed step, which stays failed.
 `system work report` sums the waits and limits as `waitedForSlotMs` and
 `rateLimitedAttempts`. The wait is measured in the Host's memory, so a Host
@@ -179,8 +184,9 @@ time. Steps after them in the same Work wait, as their `dependsOn` already
 says.
 
 **Implemented (H5, R2):** a Work's `drive`, the Account slots (`maxConcurrentAttempts`), waiting in admission
-order, stopping and uncertain attempts are in the [work README](../../packages/work/README.md#scheduling-and-slots)
-and `controller.ts`, `slots.ts`. There are no priorities, fairness tuning or queue on disk. An agent attempt is gone
+order, stopping and uncertain attempts (Accounts of one `agyHome` share one slot) are in the
+[work README](../../packages/work/README.md#scheduling-and-slots) and `controller.ts`, `slots.ts`. There are no
+priorities, fairness tuning or queue on disk. An agent attempt is gone
 when its pid file is absent or names no live process.
 
 ### Start, stop and recovery

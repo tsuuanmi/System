@@ -23,6 +23,8 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@system/agents": "workspace:*",
     "@system/artifacts": "workspace:*",
+    "@system/git": "workspace:*",
+    "@system/host": "workspace:*",
     "@system/work": "workspace:*",
     "commander": "15.0.0",
     "zod": "4.6.6"

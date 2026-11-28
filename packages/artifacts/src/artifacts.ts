@@ -94,10 +94,13 @@ export class Artifacts {
     this.registerKind(FILE_KIND)
   }
 
-  registerKind(spec: KindSpec): void {
+  registerKind(spec: KindSpec): () => void {
     const key = `${spec.kind}@${spec.schemaVersion}`
     if (this.kinds.has(key)) throw new TypeError(`kind ${key} is already registered`)
     this.kinds.set(key, spec)
+    return () => {
+      if (this.kinds.get(key) === spec) this.kinds.delete(key)
+    }
   }
 
   /** Store inline content; returns the stored envelope (the existing one on deduplication). */

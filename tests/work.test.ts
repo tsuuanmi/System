@@ -9,22 +9,13 @@ import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
 const cli = systemCli('system-work', { SYSTEM_OPERATOR_ID: 'tester' })
 const home = cli.home
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 const log = join(home, 'fake-calls.log')
-const FAKES_ON = `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write, develop.implement, research, web.search, tier.standard]
-    verifiers: [code.required-checks, research.citation-check]
-    effects: [git.publish]
-`
+const FAKES_ON = withFakes({ workers: ['repo.write', 'develop.implement', 'research', 'web.search', 'tier.standard'], verifiers: ['code.required-checks', 'research.citation-check'], effects: ['git.publish'] })
 
 
 const system = (args: string[]) => cli.run(args)

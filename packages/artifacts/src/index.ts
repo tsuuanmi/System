@@ -4,6 +4,7 @@
  */
 import { existsSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import type { AttachmentStore, FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { Artifacts, type BlobStore, type RecordTable } from './artifacts.ts'
@@ -43,7 +44,11 @@ function blobStore(attachments: AttachmentStore): BlobStore {
   }
 }
 
-export async function apply(ctx: Context): Promise<void> {
+/** The row's configuration: none today; the Loader refuses a row whose config is not an object. */
+export interface Config {}
+export const Config: Schema<Config> = Schema.object({})
+
+export async function apply(ctx: Context, _config: Config): Promise<void> {
   const domains = ctx.get('storageDomain') as DomainFacility
   const domain = await domains.open(artifactsDomain)
   ctx.effect(() => () => { void domain.close() }, 'system_artifacts domain')

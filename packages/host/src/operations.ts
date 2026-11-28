@@ -130,9 +130,15 @@ export function operations(services: Services) {
     },
     'work.retry': {
       authority: 'caller',
-      summary: 'Run a step of failed, cancelled or held Work again as a new attempt, and return its record once it is running; the steps after it are reset. A verify step is asked again on the same subject with the same pinned criteria, by a human caller only; its earlier verdict stays recorded and no longer counts.',
+      summary: 'Run a step of failed, cancelled or held Work again as a new attempt, and return its record once it is running; the steps after it are reset. A verify step is refused here, whatever the caller type: it is asked again with `work.verifyAgain`, served only on the operator socket.',
       params: z.object({ workId, step: z.string().min(1).optional(), worker: z.string().min(1).optional(), reason: z.string().default('retried by the operator'), commandId }).strict(),
       handler: (host, p, caller) => started(host, p.workId, (go) => host.retry(p.workId, { step: p.step, worker: p.worker, reason: p.reason, caller, commandId: p.commandId, started: go })),
+    },
+    'work.verifyAgain': {
+      authority: 'operator',
+      summary: 'Ask a verify step of failed, cancelled or held Work again as a new attempt on the same subject with the same pinned criteria, and return its record once it is running; its earlier verdict stays recorded and no longer counts, the steps after it are reset. Only a human caller, on the operator socket; the CLI sends it as `system work retry <work> --step <verify step>` after its terminal confirmation.',
+      params: z.object({ workId, step: z.string().min(1), reason: z.string().default('retried by the operator'), commandId }).strict(),
+      handler: (host, p, caller) => started(host, p.workId, (go) => host.retry(p.workId, { step: p.step, reason: p.reason, caller, verifyAgain: true, commandId: p.commandId, started: go })),
     },
     'work.cancel': {
       destructive: true,
@@ -336,7 +342,8 @@ export function operations(services: Services) {
         const ready = await Promise.all(([p.repository ?? []].flat(2) as string[]).map(async (path: string) => {
           try {
             const status = await readStatus(path)
-            return { repository: status.repository, count: readyCount(status, status.repository, records) }
+            if (status.problems.length) return { repository: status.repository, error: status.problems.join('; ') }
+            return { repository: status.repository, count: readyCount(status, status.repository, records, host.view.claims()) }
           } catch (error) {
             return { repository: path, error: (error as Error).message }
           }

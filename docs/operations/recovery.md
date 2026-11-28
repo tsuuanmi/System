@@ -100,8 +100,15 @@ If the second run passes, the Work goes on and `system work show <id>` notes
 the check as flaky. If it fails again, the verdict is `inconclusive` with both
 runs as evidence and the Work is **held**: `system approve <work>` lets it
 go on, `system deny <work> --reason ...` fails it, and `system work retry <id> --step <verify
-step>` asks the check again. This re-run (sc-9) is separate from the verifier's own one re-run of an
+step>` asks the check again (a human at a terminal types the Work's short code; an agent or
+script cannot, even over `host.sock`). This re-run (sc-9) is separate from the verifier's own one re-run of an
 inconclusive verdict (sc-13, [above](#a-check-the-base-fails-too)).
+
+## A Gate path change is held
+
+A change that touches a Gate path waits for `system approve <work>`. The Approval is of the change's commit, so a
+re-merge of it onto a newer `dev` is not held again; if it is, the commit or the `gates:` list at `dev` changed
+([using System](using-system.md)). `system approve` and `system deny` print what was recorded, then follow the Work.
 
 ## Errors
 

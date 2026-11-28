@@ -14,17 +14,17 @@ import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh
 import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts'
 import { WEB_WORKER_DISABLED, type AgentsService, type QuotaReport, type WebWorkerService } from '@system/agents'
-import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type FailureClassifier, type GitTreeContent, type Task, type WorkService } from '@system/work'
+import { git } from '@system/git'
+import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities, type FailureClassifier, type GitTreeContent, type Task, type WorkService } from '@system/work'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
 import { checkStore } from './store-check.ts'
 import { completePendingInstallCheck } from './pending-install-check.ts'
 import { caller, errorLine, explain } from './io.ts'
-// By path, not by package: declaring @system/host here would change the lockfile.
-import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
-import type { Services } from '../../host/lib/operations.js'
-import { exitWithin, operatorSocketPath, serveHost, socketPath } from '../../host/lib/process.js'
+import { VERSION, codeRoot, connect } from '@system/host'
+import type { Services } from '@system/host/operations'
+import { exitWithin, operatorSocketPath, serveHost, socketPath } from '@system/host/process'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -142,10 +142,13 @@ function credentialCommands(ctx: Context): Services['credentials'] {
 async function workersView(ctx: Context): Promise<WorkersView> {
   const capabilities = ctx.get('capabilities') as Capabilities | undefined
   const agents = ctx.get('agents') as AgentsService | undefined
-  const accounts = (await agents?.accounts()) ?? []
+  const listed = (await agents?.accounts()) ?? []
   // The cache and the readers' own timeouts bound each read; none sends a model turn.
   const quota = async (ref: string): Promise<QuotaReport> => agents!.quota(ref).catch(() => ({ unreadable: 'the quota read failed' }))
-  return { registered: capabilities?.workerRefs() ?? [], accounts: await Promise.all(accounts.map(async (a) => ({ ...a, quota: await quota(a.ref) }))) }
+  const quotas = await Promise.all(listed.map((a) => quota(a.ref)))
+  // Listed again after the reads: an Account whose read failed with an authentication error is `unavailable: signed out` (authgate-1).
+  const accounts = (await agents?.accounts()) ?? []
+  return { registered: capabilities?.workerRefs() ?? [], accounts: accounts.map((a) => ({ ...a, quota: quotas[listed.findIndex((l) => l.ref === a.ref)]! })) }
 }
 
 /** The web Runtime's service: its row is optional, and off by default. */

@@ -157,6 +157,11 @@ test('inconclusive base failures and failing change verdicts are counted from th
   ], 1, 1)
 })
 
+test('a fail verdict is not Outside by its text: one check failing on the base too does not class the change\'s own failure (reopen-2)', () => {
+  const reason = 'failed: broken: x (broken: the base fails it too; value: the change broke it, the base passes)'
+  failures([verdict('fail', reason)], [{ event: 'verified#0', kind: 'verdict', reason }], 0, 1)
+})
+
 test('an inconclusive hold inherits the Outside classification of its verdict', () => {
   const reason = 'inconclusive verification needs an operator decision: verify'
   failures([verdict('inconclusive', 'the base fails it too (base abc)'), held(reason, 'verify')], [
