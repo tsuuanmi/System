@@ -12,6 +12,7 @@
   and `loginctl enable-linger`, and prints the command that enables it (it never
   enables or starts it). `--no-service` or `SYSTEM_NO_SERVICE=1` skips that; any
   other home is told to run `system host` in the foreground.
+- `system init --help` and `system update --help` (and `-h`) print what the command does and its options, exit 0 and run nothing.
 - For each Schedule file under `~/.system/schedules`, `system init` also writes the user units
   `system-schedule-<name>.service` and `.timer` (and `-check` ones when the file has `checkAt`), rewrites them when the file changed, removes those of a gone file
   and enables none ([the runbook](../docs/operations/scheduled-session.md#schedules)).
