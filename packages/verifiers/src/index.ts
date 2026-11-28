@@ -37,11 +37,11 @@ export const Config: Schema<Config> = Schema.object({
 export function apply(ctx: Context, config: Config): void {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
-  artifacts.registerKind({ ...CHECKS_KIND, content: checksSchema })
-  artifacts.registerKind({ ...CHECK_RUN_KIND, content: checkRunSchema })
-  artifacts.registerKind({ ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema })
-  artifacts.registerKind({ ...CITATION_CHECK_KIND, content: citationCheckSchema })
   const dispose = [
+    artifacts.registerKind({ ...CHECKS_KIND, content: checksSchema }),
+    artifacts.registerKind({ ...CHECK_RUN_KIND, content: checkRunSchema }),
+    artifacts.registerKind({ ...CITATION_CRITERIA_KIND, content: citationCriteriaSchema }),
+    artifacts.registerKind({ ...CITATION_CHECK_KIND, content: citationCheckSchema }),
     capabilities.registerVerifier(requiredChecks(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime), Date.now, config.checkEnv, config.maxConcurrentChecks)),
     capabilities.registerVerifier(installCheck(artifacts, subprocessSpawner(ctx.get('subprocess') as SubprocessRuntime))),
     capabilities.registerVerifier(citationCheck(artifacts)),

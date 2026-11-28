@@ -175,3 +175,17 @@ test('supersededBy finds the Artifacts that name an ID in their lineage', async 
   assert.deepEqual(artifacts.supersededBy(first.id).sort(), [second.id, third.id].sort())
   assert.deepEqual(artifacts.supersededBy(second.id), [])
 })
+
+test('registerKind returns a disposer that removes the kind so it can be registered again', async () => {
+  const { artifacts } = store()
+  const spec = { kind: 'ephemeral', schemaVersion: 1, content: z.object({ n: z.number() }).strict() }
+  const dispose = artifacts.registerKind(spec) as unknown as (() => void) | undefined
+  assert.equal(typeof dispose, 'function')
+  assert.throws(() => artifacts.registerKind(spec), /kind ephemeral@1 is already registered/)
+  dispose!()
+  const disposeAgain = artifacts.registerKind(spec) as unknown as (() => void) | undefined
+  assert.equal(typeof disposeAgain, 'function')
+  await artifacts.put({ kind: 'ephemeral', schemaVersion: 1, content: { n: 1 }, classification: 'public', producer: worker })
+  disposeAgain!()
+  await refusedWith('unknown-kind', () => artifacts.put({ kind: 'ephemeral', schemaVersion: 1, content: { n: 2 }, classification: 'public', producer: worker }))
+})
