@@ -853,3 +853,33 @@ test('sch-3: a failing notifier is said on stderr and does not change the exit c
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('sch-4: --schedule reads the Schedule file: its repositories in order and maxParallel; it refuses other selectors and kind: work', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'system-items-sched-'))
+  const home = mkdtempSync(join(tmpdir(), 'system-items-home-'))
+  try {
+    const a = join(dir, 'a')
+    const b = join(dir, 'b')
+    mkdirSync(a)
+    mkdirSync(b)
+    const file = join(dir, 'night.yaml')
+    writeFileSync(file, `kind: items\nrepositories: [${a}, ${b}]\nat: [daily]\nmaxParallel: 1\n`)
+    const asked: unknown[] = []
+    const host = fakeHost({
+      status: (p) => { asked.push(p); return [] },
+      'work.list': () => [],
+      'workers.list': () => [],
+    })
+    const res = await system(['items', 'carry', '--schedule', file], host, home)
+    assert.equal(res.code, 0, res.err)
+    assert.deepEqual(asked, [{ repository: a }, { repository: b }])
+    for (const extra of [['--repo', a], ['--max-parallel', '2'], ['a-1']]) {
+      await assert.rejects(system(['items', 'carry', '--schedule', file, ...extra], host, home), /--schedule is a pass of its own/)
+    }
+    writeFileSync(file, 'kind: work\nat: daily\n')
+    await assert.rejects(system(['items', 'carry', '--schedule', file], host, home), /kind: work is not built yet/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})

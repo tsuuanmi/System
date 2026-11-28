@@ -1,6 +1,7 @@
 // What `bin/system` decides before it runs DSH: which Node to use, and whether
 // `system init` installs the systemd user unit. Plain JavaScript that needs no
 // build, so it also runs under the Node it replaces.
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 export const MIN_NODE = '24.9.0'
@@ -124,4 +125,73 @@ export function serviceMode({ home, homedir, platform, args, env }) {
   if (args.includes('--no-service') || env.SYSTEM_NO_SERVICE === '1') return 'skip'
   if (platform !== 'linux') return 'skip'
   return home.replace(/\/+$/, '') === join(homedir, '.dsh') ? 'install' : 'foreground'
+}
+
+/** The Schedule files' directory of an install (`~/.system/schedules`, or under `SYSTEM_INSTALL`). */
+export const schedulesDir = (installBase) => join(installBase, 'schedules')
+
+const scheduleUnit = (name, kind) => `system-schedule-${name}.${kind}`
+
+/** The `system-schedule-<name>.service` text (ADR-0020 decision 6): one pass of the install's `system items carry --schedule <file>`, once the Host answers. */
+export function scheduleServiceText({ name, node, entry, home, path, file }) {
+  const wait = 'for i in 1 2 3 4 5 6 7 8 9 10; do "$@" >/dev/null 2>&1 && exit 0; sleep 30; done; echo "the Host does not answer" >&2; exit 1'
+  return `[Unit]
+Description=${`System Scheduled session: Schedule ${name}`}
+
+[Service]
+Type=oneshot
+Environment=${word(`DSH_HOME=${home}`)}
+Environment=${word(`PATH=${path}`)}
+# Wait up to 5 minutes for the Host: \`system doctor\` exits 1 until it answers.
+ExecStartPre=/bin/sh -c ${word(wait)} sh ${word(node)} ${word(entry)} doctor
+ExecStart=${word(node)} ${word(entry)} items carry --schedule ${word(file)}
+`
+}
+
+/** The `system-schedule-<name>.timer` text: one `OnCalendar=` for each `at`; a start missed while the machine was off is not run late. */
+export function scheduleTimerText({ name, at }) {
+  return `[Unit]
+Description=${`System Scheduled session timer: Schedule ${name}`}
+
+[Timer]
+${at.map((expression) => `OnCalendar=${expression}`).join('\n')}
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+`
+}
+
+/** File name to text of the units of each Schedule (`{ name, file, at }`). */
+export function scheduleUnits({ node, entry, home, path, schedules }) {
+  const units = new Map()
+  for (const { name, file, at } of schedules) {
+    units.set(scheduleUnit(name, 'service'), scheduleServiceText({ name, node, entry, home, path, file }))
+    units.set(scheduleUnit(name, 'timer'), scheduleTimerText({ name, at }))
+  }
+  return units
+}
+
+/**
+ * Make `dir` hold `wanted` (file name to text) among its `system-schedule-*` units: write the new and changed ones,
+ * remove those no Schedule wants any more. `keep` are names of Schedule files that exist but did not parse: their
+ * earlier units stay as they are. Never enables or starts anything.
+ */
+export function syncScheduleUnits(dir, wanted, keep) {
+  mkdirSync(dir, { recursive: true })
+  const written = []
+  const removed = []
+  for (const [file, text] of wanted) {
+    const path = join(dir, file)
+    if (existsSync(path) && readFileSync(path, 'utf8') === text) continue
+    writeFileSync(path, text)
+    written.push(file)
+  }
+  for (const file of readdirSync(dir).sort()) {
+    const stem = /^system-schedule-(.+)\.(?:service|timer)$/.exec(file)?.[1]
+    if (stem === undefined || wanted.has(file) || keep.some((name) => stem === name || stem.startsWith(`${name}-`))) continue
+    rmSync(join(dir, file))
+    removed.push(file)
+  }
+  return { written, removed }
 }

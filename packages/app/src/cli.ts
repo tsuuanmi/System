@@ -15,6 +15,7 @@ import { prepareRelease } from './release.ts'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
 import { carryItem, carryPass } from './items.ts'
+import { readSchedule } from './schedule.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
@@ -429,8 +430,14 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .description('carry one Item of STATUS.md, or without an Item ID run one pass over the given repositories in order (up to free Accounts and --max-parallel)')
     .option('--repo <path>', 'a git repository of the project (repeatable for a pass)', collect, [])
     .option('--max-parallel <n>', 'maximum Works to run in parallel during a pass')
-    .action((id: string | undefined, options: { repo: string[]; maxParallel?: string }) => {
+    .option('--schedule <file>', 'a Schedule file (~/.system/schedules/<name>.yaml): its repositories and maxParallel')
+    .action((id: string | undefined, options: { repo: string[]; maxParallel?: string; schedule?: string }) => {
       select(async () => {
+        if (options.schedule !== undefined) {
+          if (id !== undefined || options.repo.length > 0 || options.maxParallel !== undefined) throw new Error('--schedule is a pass of its own: give no Item ID, --repo or --max-parallel')
+          const schedule = readSchedule(options.schedule)
+          return carryPass(host, schedule.repositories, { maxParallel: schedule.maxParallel, home }, io)
+        }
         if (id !== undefined) {
           if (options.repo.length > 1) throw new Error('give one --repo with an Item ID')
           if (options.maxParallel !== undefined) throw new Error('--max-parallel goes with a pass (no Item ID)')

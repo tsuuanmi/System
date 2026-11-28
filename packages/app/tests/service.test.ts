@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MIN_NODE, UPGRADE_EXIT, hostCommand, installRoot, nodeChoice, serviceMode, supervise, unitPath, unitText } from '../../../bin/service.mjs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { MIN_NODE, UPGRADE_EXIT, hostCommand, installRoot, nodeChoice, scheduleServiceText, scheduleTimerText, scheduleUnits, serviceMode, supervise, syncScheduleUnits, unitPath, unitText } from '../../../bin/service.mjs'
 
 test('a Node that is new enough runs the command itself', () => {
   assert.deepEqual(nodeChoice('24.9.0', ['v24.21.0']), { use: 'current' })
@@ -117,4 +120,49 @@ test('a release under <install>/releases runs as the install, through its curren
 test('with a profile file, the unit runs the Host with it as a patch', () => {
   const text = unitText({ node: '/n', entry: '/home/tan/.system/current/bin/system', home: '/home/tan/.dsh', path: '/usr/bin', patch: '/home/tan/.system/profile.yml' })
   assert.match(text, /^ExecStart=\/n \/home\/tan\/\.system\/current\/bin\/system --patch \/home\/tan\/\.system\/profile\.yml host$/m)
+})
+
+test('a Schedule service waits for doctor, runs the install\'s `items carry --schedule`, and has no start timeout', () => {
+  const text = scheduleServiceText({ name: 'night', node: '/opt/node/bin/node', entry: '/home/tan/.system/current/bin/system', home: '/home/tan/.dsh', path: '/usr/bin', file: '/home/tan/.system/schedules/night.yaml' })
+  assert.match(text, /^Description=.*night/m)
+  assert.match(text, /^Type=oneshot$/m)
+  assert.match(text, /^ExecStartPre=\/bin\/sh -c ".*" sh \/opt\/node\/bin\/node \/home\/tan\/\.system\/current\/bin\/system doctor$/m)
+  assert.match(text, /^ExecStart=\/opt\/node\/bin\/node \/home\/tan\/\.system\/current\/bin\/system items carry --schedule \/home\/tan\/\.system\/schedules\/night\.yaml$/m)
+  assert.match(text, /^Environment=DSH_HOME=\/home\/tan\/\.dsh$/m)
+  assert.match(text, /^Environment=PATH=\/usr\/bin$/m)
+  assert.doesNotMatch(text, /TimeoutStartSec/)
+  assert.doesNotMatch(text, /\[Install\]/)
+})
+
+test('a Schedule timer has one OnCalendar for each `at`, Persistent=false, and is wanted by timers.target', () => {
+  const text = scheduleTimerText({ name: 'night', at: ['*-*-* 01:00', '*-*-* 02..07:00'] })
+  assert.deepEqual(text.match(/^OnCalendar=.*$/gm), ['OnCalendar=*-*-* 01:00', 'OnCalendar=*-*-* 02..07:00'])
+  assert.match(text, /^Persistent=false$/m)
+  assert.match(text, /^WantedBy=timers\.target$/m)
+})
+
+test('scheduleUnits names a pair of units for each Schedule', () => {
+  const units = scheduleUnits({ node: 'n', entry: 'e', home: 'h', path: 'p', schedules: [{ name: 'a', file: '/s/a.yaml', at: ['daily'] }] })
+  assert.deepEqual([...units.keys()], ['system-schedule-a.service', 'system-schedule-a.timer'])
+})
+
+test('syncing Schedule units writes new ones, rewrites changed ones, leaves same ones and removes those of a gone file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'units-'))
+  try {
+    writeFileSync(join(dir, 'system.service'), 'host')
+    writeFileSync(join(dir, 'system-night-session.timer'), 'old launcher')
+    writeFileSync(join(dir, 'system-schedule-gone.service'), 'x')
+    writeFileSync(join(dir, 'system-schedule-gone.timer'), 'x')
+    writeFileSync(join(dir, 'system-schedule-kept.timer'), 'x')
+    writeFileSync(join(dir, 'system-schedule-same.service'), 'same')
+    const wanted = new Map([['system-schedule-same.service', 'same'], ['system-schedule-new.service', 'n']])
+    const changed = syncScheduleUnits(dir, wanted, ['kept'])
+    assert.deepEqual(changed, { written: ['system-schedule-new.service'], removed: ['system-schedule-gone.service', 'system-schedule-gone.timer'] })
+    assert.deepEqual(readdirSync(dir).sort(), ['system-night-session.timer', 'system-schedule-kept.timer', 'system-schedule-new.service', 'system-schedule-same.service', 'system.service'])
+    writeFileSync(join(dir, 'system-schedule-new.service'), 'edited')
+    assert.deepEqual(syncScheduleUnits(dir, wanted, []).written, ['system-schedule-new.service'])
+    assert.equal(readFileSync(join(dir, 'system-schedule-new.service'), 'utf8'), 'n')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
