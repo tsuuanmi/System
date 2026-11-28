@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /** Test-only line protocol peer. Append logs synchronously before replying or waiting. */
-import { appendFileSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 const args = process.argv.slice(2)
 const option = (key) => args.find((arg) => arg.startsWith(`--fake-${key}=`))?.split('=').slice(1).join('=')
 const kind = option('kind')
 const version = option('version')
+// While `--fake-error-file` names a file, every read fails with its text (a signed-out Account); deleting it lets a later read succeed.
+const errorFile = option('error-file')
+const failing = () => (errorFile && existsSync(errorFile) ? readFileSync(errorFile, 'utf8') : undefined)
 const mode = option('mode')
 const argv = args.filter((arg) => !arg.startsWith('--fake-'))
 const log = (entry) => appendFileSync(option('log'), `${JSON.stringify(entry)}\n`)
@@ -34,10 +37,10 @@ if (argv.includes('--version')) {
     if (kind === 'claude') {
       if (message.type === 'control_request' && message.request?.subtype === 'get_usage') {
         send({ type: 'system', subtype: 'init' })
-        send({ type: 'control_response', response: { request_id: message.request_id, ...(mode === 'error' ? { subtype: 'error', error: 'scripted failure' } : { subtype: 'success', response: answer }) } })
+        send({ type: 'control_response', response: { request_id: message.request_id, ...(mode === 'error' || failing() !== undefined ? { subtype: 'error', error: failing() ?? 'scripted failure' } : { subtype: 'success', response: answer }) } })
       }
     } else if (message.method === 'initialize') {
-      send(mode === 'error' ? { id: message.id, error: { code: -1, message: 'scripted initialize failure' } } : { id: message.id, result: {} })
+      send(mode === 'error' || failing() !== undefined ? { id: message.id, error: { code: -1, message: failing() ?? 'scripted initialize failure' } } : { id: message.id, result: {} })
     } else if (message.method === 'account/rateLimits/read') send({ id: message.id, result: answer })
   }
 }

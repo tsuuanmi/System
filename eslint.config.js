@@ -5,6 +5,32 @@
 // Type-aware through the repository's tsconfig.json.
 import tseslint from 'typescript-eslint'
 
+// Item plug-5 (ADR-0017 decision 5): a module under packages/<a>/src imports values from another
+// `@system/*` package only through its `./contract` subpath or a library package, never from a
+// plugin package's root and never by a relative path into another package. `import type` is allowed.
+const LIBRARIES = ['host', 'web-driver', 'git']
+const boundary = {
+  patterns: [
+    {
+      regex: `^@system/(?!(${LIBRARIES.join('|')})$)[^/]+$`,
+      allowTypeImports: true,
+      message: "Import values from another plugin package through its './contract' subpath (ADR-0017); `import type` is allowed.",
+    },
+    {
+      regex: '^(\\.\\./){2,}[^/]+/(lib|src)(/|$)',
+      allowTypeImports: true,
+      message: "Do not import a value from another package by a relative path; use its package name (ADR-0017).",
+    },
+  ],
+}
+
+// TODAY'S VIOLATIONS (RES-0021), one file each. THIS LIST MAY ONLY SHRINK: never add a file to it;
+// remove a file when its imports are fixed (plug-7 to plug-11, plug-15 do so).
+const BASELINE = [
+  'packages/app/src/bootstrap-plan.ts',
+  'packages/app/src/bootstrap.ts',
+]
+
 export default [
   // The fixture is a deliberate violation: lint.test.ts lints it with --no-ignore.
   { ignores: ['**/lib/', '**/dist/', '**/node_modules/', 'packages/verifiers/tests/fixtures/'] },
@@ -26,5 +52,11 @@ export default [
       ],
       '@typescript-eslint/return-await': ['error', 'in-try-catch'],
     },
+  },
+  {
+    files: ['packages/*/src/**/*.ts'],
+    ignores: BASELINE,
+    plugins: { '@typescript-eslint': tseslint.plugin },
+    rules: { '@typescript-eslint/no-restricted-imports': ['error', boundary] },
   },
 ]

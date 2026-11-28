@@ -7,8 +7,9 @@
  */
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Artifacts } from '@system/artifacts'
-import { systemPath, type Capabilities, type VerifyResult, type WorkerRequest } from '@system/work'
+import type { Artifacts } from '@system/artifacts/contract'
+import type { VerifyResult, WorkerRequest } from '@system/work'
+import { systemPath, type Capabilities } from '@system/work/contract'
 import { z } from 'zod'
 
 export const name = 'system-fakes'
@@ -25,11 +26,13 @@ const VERDICTS = ['pass', 'fail', 'inconclusive', 'error'] as const
 export function apply(ctx: Context, config: Config = {}): void {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
-  artifacts.registerKind({
-    kind: 'fake-output', schemaVersion: 1,
-    content: z.object({ stepId: z.string(), slot: z.string(), inputs: z.record(z.string(), z.string()), attemptId: z.string(), state: z.enum(['complete', 'partial']) }).strict(),
-  })
-  artifacts.registerKind({ kind: 'fake-criteria', schemaVersion: 1, content: z.object({ capability: z.string(), name: z.string() }).strict() })
+  const dispose = [
+    artifacts.registerKind({
+      kind: 'fake-output', schemaVersion: 1,
+      content: z.object({ stepId: z.string(), slot: z.string(), inputs: z.record(z.string(), z.string()), attemptId: z.string(), state: z.enum(['complete', 'partial']) }).strict(),
+    }),
+    artifacts.registerKind({ kind: 'fake-criteria', schemaVersion: 1, content: z.object({ capability: z.string(), name: z.string() }).strict() }),
+  ]
   /** A `fake-criteria@1` Artifact: the fake verifier's criteria and evidence. */
   const note = async (capability: string, name: string) => (await artifacts.put({
     kind: 'fake-criteria', schemaVersion: 1, content: { capability, name },
@@ -41,7 +44,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     inputs: Object.values(request.inputs), classification: 'public',
     producer: { type: 'worker', ref: 'fake-worker' }, workId: request.workId, attemptId: request.attemptId,
   })).id
-  const dispose = [
+  dispose.push(
     capabilities.registerWorker({
       ref: 'fake-worker',
       // It runs no process: a lost attempt of it is gone at once.
@@ -82,7 +85,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         return { verdict, reason: `scripted ${verdict}`, subject: request.subject, criteria: request.criteria, evidence: [evidence] }
       },
     }),
-  ]
+  )
   const published = systemPath(ctx, 'fake-effects.json')
   const read = (): Record<string, string> => (existsSync(published) ? JSON.parse(readFileSync(published, 'utf8')) as Record<string, string> : {})
   dispose.push(capabilities.registerEffect({

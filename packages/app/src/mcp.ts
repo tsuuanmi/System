@@ -17,9 +17,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema, SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { Caller } from '@system/work'
-// By path, not by package: declaring @system/host here would change the lockfile.
-import { NotRunning, RpcError, annotationsOf, paramsSchemaOf, tableOf, type Client, type Methods } from '../../host/lib/index.js'
-import { operations, type Services } from '../../host/lib/operations.js'
+import { NotRunning, RpcError, annotationsOf, paramsSchemaOf, tableOf, type Client, type Methods } from '@system/host'
+import { operations, type Services } from '@system/host/operations'
 import { explain, operatorId } from './io.ts'
 import { readWorkflowFile, repeatable, rowsOf, withCommandId, type Row } from './remote.ts'
 

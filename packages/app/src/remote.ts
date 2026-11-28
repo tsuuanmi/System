@@ -12,10 +12,10 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { TERMINAL, parseWorkflow, type Caller, type WorkRecord, type WorkState, type z } from '@system/work'
-// By path, not by package: declaring @system/host here would change the lockfile.
-import { NotAnswering, NotRunning, RpcError, UPGRADING, type Client, type Methods } from '../../host/lib/index.js'
-import { operations, type Services } from '../../host/lib/operations.js'
+import { parseWorkflow, TERMINAL, type z } from '@system/work/contract'
+import type { Caller, WorkRecord, WorkState } from '@system/work'
+import { NotAnswering, NotRunning, RpcError, UPGRADING, type Client, type Methods } from '@system/host'
+import { operations, type Services } from '@system/host/operations'
 import { caller } from './io.ts'
 
 /** The operation table of the code this client runs with: the one source of method names and params. */
@@ -35,6 +35,8 @@ interface FollowOptions {
   patient?: boolean
   /** Told whether the last call failed (true) or was answered (false); for `waitFor`. */
   outage?: (down: boolean) => void
+  /** Told of each event as it is read (`approve` and `deny` print one line per event). */
+  onEvent?: (event: { seq: number; type: string; stepId?: string }) => void
 }
 
 /** What `work wait` accepts: with `any` it returns at the first Work that ended, otherwise when all have; after `timeoutMs` it gives up. */
@@ -69,10 +71,10 @@ export interface HostClient {
   /** Start the Work in the Host and follow it until it is terminal. */
   run(workId: string, follow?: FollowOptions): Promise<Followed>
   retry(params: Params<'work.retry'>, follow?: FollowOptions): Promise<Followed>
-  /** A decision is a human's: its own connection says so. Then follow the Work. */
-  decide(params: Params<'approval.decide'>, operatorId: string): Promise<Followed>
+  /** A decision is a human's: its own connection says so. `recorded` is called as soon as the Host has it, then the Work is followed, `onEvent` told of each event. */
+  decide(params: Params<'approval.decide'>, operatorId: string, hooks?: { recorded?: () => void; onEvent?: FollowOptions['onEvent'] }): Promise<Followed>
   /** Wait until nothing runs the Work, as after a cancel was requested. */
-  wait(workId: string): Promise<Followed>
+  wait(workId: string, follow?: FollowOptions): Promise<Followed>
   /** Wait for every one of `workIds`, or with `any` the first, to end, be held or await approval. */
   waitFor(workIds: string[], options: WaitOptions): Promise<Waited>
   /** The remote sign-in: `show` is given where to reach the viewer once it is up; resolves when it ends. Ctrl-C cancels it. */
@@ -264,9 +266,10 @@ export function hostClient(remote: Remote): HostClient {
     }
     try {
       for (;;) {
-        const polled = await Promise.race([reread('work.events', { workId, after }, options.patient, options.signal, options.outage) as Promise<{ events: { seq: number }[]; status: WorkState['status'] }>, interrupted, stopped])
+        const polled = await Promise.race([reread('work.events', { workId, after }, options.patient, options.signal, options.outage) as Promise<{ events: { seq: number; type: string; stepId?: string }[]; status: WorkState['status'] }>, interrupted, stopped])
         if (polled === 'stopped') return 'stopped'
         if (polled === 'interrupted') return detach()
+        for (const event of polled.events) options.onEvent?.(event)
         after = polled.events.at(-1)?.seq ?? after
         if (TERMINAL.has(polled.status)) {
           await cancelling
@@ -291,12 +294,13 @@ export function hostClient(remote: Remote): HostClient {
       await call('work.retry', params)
       return follow(params.workId, options)
     },
-    async decide(params, operator) {
+    async decide(params, operator, hooks) {
       // A decision is a human's: its own connection, on the operator socket, says so, whoever the other calls are.
       await onOperatorSocket('approval.decide', params, undefined, { type: 'human', operatorId: operator })
-      return follow(params.workId)
+      hooks?.recorded?.()
+      return follow(params.workId, { onEvent: hooks?.onEvent })
     },
-    wait: (workId) => follow(workId),
+    wait: (workId, options) => follow(workId, options),
     async waitFor(workIds, { any, timeoutMs }: WaitOptions): Promise<Waited> {
       const stop = new AbortController()
       let timedOut = false

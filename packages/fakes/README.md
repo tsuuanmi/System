@@ -1,15 +1,16 @@
 # @system/fakes
 
 The `fakes` row: a scripted Worker (`fake-worker`) and verifier
-(`fake-verifier`) for offline tests. It is **disabled** in the
-[System bundle](../bundle/README.md); a profile patch turns it on:
+(`fake-verifier`) for offline tests. It is **not in** the
+[System bundle](../bundle/README.md); a test inserts it through its profile patch (`withFakes` in `test-support/fakes.ts`):
 
 ```yaml
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write, develop.implement, research, web.search, tier.standard]
-    verifiers: [code.required-checks, research.citation-check]
+- insert:
+    - id: fakes
+      name: '@system/fakes'
+      config:
+        workers: [repo.write, develop.implement, research, web.search, tier.standard]
+        verifiers: [code.required-checks, research.citation-check]
 ```
 
 The Worker stores one `fake-output@1` Artifact per output slot, with the

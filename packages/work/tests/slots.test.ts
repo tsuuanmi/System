@@ -6,7 +6,7 @@ import { after, test } from 'node:test'
 import { CLAUDE, CODEX, SPARE, assertConsistent, caller, fixture, seeded } from '../../../test-support/fixture.ts'
 import type { WorkRecord } from '../src/record.ts'
 import { Slots } from '../src/slots.ts'
-import { Capabilities, type VerifierPort } from '../src/registry.ts'
+import { Capabilities, type VerifierPort, type WorkerPort } from '../src/registry.ts'
 import { summarize } from '../src/summary.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'system-slots-'))
@@ -392,4 +392,20 @@ test('withCheck waits for a free check slot and releases it on a throw', async (
   await first
   await assert.rejects(second, /boom/)
   assert.equal(slots.reserveCheck(verifier, 'c'), true)
+})
+
+test('Accounts with one slotKey share one slot; other Accounts and the Account limit still apply (agyconc-1)', () => {
+  const slots = new Slots(new Capabilities())
+  const worker = (ref: string, slotKey?: string, maxConcurrentAttempts?: number) => ({ ref, capabilities: [], slotKey, maxConcurrentAttempts, run: async () => ({}) }) as never as WorkerPort
+  const a = worker('antigravity/a2', '/h/a2'), b = worker('antigravity/a2-3p', '/h/a2'), c = worker('antigravity/a1', '/h/a1'), d = worker('claude/x', undefined, 2)
+  assert.equal(slots.reserve(a, 'one'), true)
+  assert.equal(slots.hasFree(b), false, 'same sign-in: busy while the first runs')
+  assert.equal(slots.reserve(b, 'two'), false)
+  assert.equal(slots.reserve(c, 'three'), true, 'another sign-in runs at once')
+  assert.equal(slots.reserve(d, 'four') && slots.reserve(d, 'five'), true, 'no key: the Account limit alone')
+  slots.release('antigravity/a2', 'one')
+  assert.equal(slots.reserve(b, 'two'), true)
+  assert.equal(slots.hasFree(a), false)
+  slots.release('antigravity/a2-3p', 'two')
+  assert.equal(slots.hasFree(a), true)
 })

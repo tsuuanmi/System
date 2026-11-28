@@ -6,7 +6,8 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { readyCount, roomOf, activeCoreLines, lateChecks, directTask, itemLines, itemOf, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, whoHas, workStatus, CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, z, type Capabilities } from '@system/work/contract'
+import type { QuotaReading, Admission, Caller, FailureClassifier, Host, WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -41,14 +42,6 @@ export interface Services {
   workers(): Promise<{ registered: string[]; accounts: { ref: string; quota?: QuotaReading }[] }>
   /** The optional Classifier row (cls-1), report-only: undefined when the row is off. */
   classifier?: FailureClassifier
-  /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
-  login(ref: string, cookies: string | undefined): Promise<{ signedIn: boolean; detail: string; imported?: number; skipped?: number }>
-  /** Start the remote sign-in of a browser Account: where to reach its viewer, and until when. */
-  loginRemote(ref: string): Promise<{ url: string; port: number; ssh: string; expiresAt: number }>
-  /** Wait for the remote sign-in of `ref` to end (Save, Cancel, expiry), or end it first with `cancel`; the signed-in state. */
-  loginWait(ref: string, cancel: boolean): Promise<{ signedIn: boolean; detail: string }>
-  /** Check a browser Account without sending anything; it is `ready` again only when the check passes. */
-  recheck(ref: string): Promise<{ ready: boolean; state: string; detail: string }>
   /** Whether `commit` is in the running release of `repository`: false when it is not, undefined when unknown. */
   releaseHolds?(repository: string, commit: string): Promise<boolean | undefined>
 }
@@ -130,9 +123,15 @@ export function operations(services: Services) {
     },
     'work.retry': {
       authority: 'caller',
-      summary: 'Run a step of failed, cancelled or held Work again as a new attempt, and return its record once it is running; the steps after it are reset. A verify step is asked again on the same subject with the same pinned criteria, by a human caller only; its earlier verdict stays recorded and no longer counts.',
+      summary: 'Run a step of failed, cancelled or held Work again as a new attempt, and return its record once it is running; the steps after it are reset. A verify step is refused here, whatever the caller type: it is asked again with `work.verifyAgain`, served only on the operator socket.',
       params: z.object({ workId, step: z.string().min(1).optional(), worker: z.string().min(1).optional(), reason: z.string().default('retried by the operator'), commandId }).strict(),
       handler: (host, p, caller) => started(host, p.workId, (go) => host.retry(p.workId, { step: p.step, worker: p.worker, reason: p.reason, caller, commandId: p.commandId, started: go })),
+    },
+    'work.verifyAgain': {
+      authority: 'operator',
+      summary: 'Ask a verify step of failed, cancelled or held Work again as a new attempt on the same subject with the same pinned criteria, and return its record once it is running; its earlier verdict stays recorded and no longer counts, the steps after it are reset. Only a human caller, on the operator socket; the CLI sends it as `system work retry <work> --step <verify step>` after its terminal confirmation.',
+      params: z.object({ workId, step: z.string().min(1), reason: z.string().default('retried by the operator'), commandId }).strict(),
+      handler: (host, p, caller) => started(host, p.workId, (go) => host.retry(p.workId, { step: p.step, reason: p.reason, caller, verifyAgain: true, commandId: p.commandId, started: go })),
     },
     'work.cancel': {
       destructive: true,
@@ -324,7 +323,7 @@ export function operations(services: Services) {
     'workers.list': {
       read: true,
       authority: 'caller',
-      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable. `room` says how many Accounts could take one more parallel Work now: `accounts` registered, `free` of them with a free slot (running attempts under `maxConcurrentAttempts`) and Headroom under their Ceiling (as routing reads them), `unknown` the refs among those whose quota is unreadable (counted free when they have a slot), and with `repository` (a path, or several) `ready`: per repository, the number of Ready Items of its STATUS.md (todo, nobody on them, not Blocked), or an `error`. Information for the caller only: the Host never picks an Item.',
+      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable. `busy` lists each Worker attempt running now or holding a slot across every repository, as `{ account, work, repository?, item?, step, since }` (plus `uncertain: true` for an attempt lost at start whose slot is still held; verifier check runs are not listed). `room` says how many Accounts could take one more parallel Work now: `accounts` registered, `free` of them with a free slot (running attempts under `maxConcurrentAttempts`) and Headroom under their Ceiling (as routing reads them), `unknown` the refs among those whose quota is unreadable (counted free when they have a slot), and with `repository` (a path, or several) `ready`: per repository, the number of Ready Items of its STATUS.md (todo, nobody on them, not Blocked), or an `error`. Information for the caller only: the Host never picks an Item.',
       params: z.object({ repository: z.union([z.string().min(1), z.array(z.string().min(1))]).optional() }).strict(),
       async handler(host, p) {
         const view = await services.workers()
@@ -333,40 +332,66 @@ export function operations(services: Services) {
           return worker ? [{ ref: a.ref, slot: host.slots.hasFree(worker), reading: a.quota, ceiling: worker.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT }] : []
         })
         const records = host.view.list()
+        const registered = new Set(services.capabilities.workerRefs())
+        const entry = (account: string, record: WorkRecord, step: string, since: string, uncertain?: true) => {
+          const item = itemOf(record)
+          return {
+            account,
+            work: record.id,
+            ...(item?.repository ? { repository: item.repository } : {}),
+            ...(item?.id ? { item: item.id } : {}),
+            step,
+            since,
+            ...(uncertain ? { uncertain } : {}),
+          }
+        }
+        const busy = records.flatMap((record) => host.view.live(record.id)
+          .filter((a) => !a.waiting && registered.has(a.worker))
+          .map((a) => entry(a.worker, record, a.stepId, a.startedAt)))
+        const byId = new Map(records.map((r) => [r.id, r]))
+        for (const lost of host.slots.uncertain()) {
+          const record = byId.get(lost.workId)
+          if (!record) continue
+          const dispatched = record.events.findLast((e) => e.type === 'dispatched' && e.attemptId === lost.attemptId)
+          const account = dispatched?.type === 'dispatched' ? dispatched.selected : whoHas(record).account
+          if (!account || !registered.has(account)) continue
+          busy.push(entry(account, record, lost.stepId, dispatched?.type === 'dispatched' ? dispatched.at : record.events[0]!.at, true))
+        }
         const ready = await Promise.all(([p.repository ?? []].flat(2) as string[]).map(async (path: string) => {
           try {
             const status = await readStatus(path)
-            return { repository: status.repository, count: readyCount(status, status.repository, records) }
+            if (status.problems.length) return { repository: status.repository, error: status.problems.join('; ') }
+            return { repository: status.repository, count: readyCount(status, status.repository, records, host.view.claims()) }
           } catch (error) {
             return { repository: path, error: (error as Error).message }
           }
         }))
-        return { ...view, room: { ...roomOf(accounts), ready } }
+        return { ...view, busy, room: { ...roomOf(accounts), ready } }
       },
     },
     'workers.login': {
       authority: 'operator',
       summary: 'Sign a browser Account (`web/<site>/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
       params: z.object({ ref: z.string().min(1), cookies: z.string().max(MAX_FRAME).optional() }).strict(),
-      handler: (_host, p) => services.login(p.ref, p.cookies),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'login', cookies: p.cookies })),
     },
     'workers.loginRemote': {
       authority: 'operator',
       summary: 'Start a remote sign-in of a browser Account: its profile opens headed on a private display and a viewer is served on 127.0.0.1 behind a random token. Returns `{ url, port, ssh, expiresAt }`; the operator tunnels to the port over SSH. Follow with `workers.loginWait`.',
       params: z.object({ ref: z.string().min(1) }).strict(),
-      handler: (_host, p) => services.loginRemote(p.ref),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'remote' })),
     },
     'workers.loginWait': {
       authority: 'operator',
       summary: 'Wait until the remote sign-in of an Account ends (Save, Cancel in the viewer, or its 15 minutes), or with `cancel` end it now. Returns whether the profile is signed in.',
       params: z.object({ ref: z.string().min(1), cancel: z.boolean().optional() }).strict(),
-      handler: (_host, p) => services.loginWait(p.ref, p.cancel === true),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'wait', cancel: p.cancel === true })),
     },
     'workers.recheck': {
       authority: 'operator',
       summary: 'Recheck a browser Account that is quarantined or cooling down: its profile opens headed on a private display and the sign-in, Chat mode and temporary chat are checked; nothing is sent. Returns `{ ready, state, detail }`; the Account is `ready` again only when the check passes, and this is the only way out of `needs-sign-in` and `challenged`.',
       params: z.object({ ref: z.string().min(1) }).strict(),
-      handler: (_host, p) => services.recheck(p.ref),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'recheck', (w) => w.recheck?.()),
     },
     'credentials.status': {
       read: true,

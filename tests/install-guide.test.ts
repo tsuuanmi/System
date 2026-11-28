@@ -9,18 +9,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
-const FAKES_ON = `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write, develop.implement, tier.standard]
-    verifiers: [code.required-checks]
-    effects: [git.publish]
-`
+const FAKES_ON = withFakes({ workers: ['repo.write', 'develop.implement', 'tier.standard'], verifiers: ['code.required-checks'], effects: ['git.publish'] })
 
 /** The commands of the page: every line of its fenced blocks whose info string is `sh install`. */
 export function pageCommands(markdown: string): string[] {

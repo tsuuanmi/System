@@ -7,7 +7,7 @@
  * `escaped-defect-withdrawal@1`, its own kind because it has no Item or commit (the exactly-one rule stays). `work report`
  * counts only defects neither superseded nor withdrawn.
  */
-import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts'
+import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts/contract'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { ITEM_ID } from './status-parse.ts'

@@ -7,6 +7,7 @@ import { chmodSync, readdirSync, rmSync, statSync, truncateSync, unlinkSync, wri
 import { basename, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { systemCli } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
 const cli = systemCli('system-store-check')
 const home = cli.home
@@ -29,15 +30,7 @@ const put = (name: string, text: string): string => {
 
 before(async () => {
   assert.equal(system('init').status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write]
-`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), withFakes({ workers: ['repo.write'] }))
   await cli.start()
 })
 

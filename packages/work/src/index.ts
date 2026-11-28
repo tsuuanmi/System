@@ -3,12 +3,12 @@
  * registry) and `ctx.work` (what the Host core is built over) over the DSH
  * storage domain `system_work`, one key per Work (ADR-0004 decision 9).
  */
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import type { Artifacts, Envelope } from '@system/artifacts'
+import type { Artifacts, Envelope } from '@system/artifacts/contract'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import { putVerdict } from './verification.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { freshBranch, snapshot } from './git.ts'
@@ -18,6 +18,7 @@ import { CONFIRMATION_KIND, addConfirmation, confirmationSchema, storedConfirmat
 import { readStatus, type ClaimTable } from './gate.ts'
 import { WorkError } from './errors.ts'
 import { Host } from './host.ts'
+import { DEFAULT_STALL_MINUTES } from './live.ts'
 import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, gitTreeSchema, taskSchema, verdictSchema, type GitTreeContent, type Task, type Verdict } from './kinds.ts'
 import type { Caller } from './record.ts'
 import { claimSchema, workRecordSchema } from './record.ts'
@@ -32,6 +33,7 @@ export * from './usage.ts'
 export * from './gate.ts'
 export * from './gates.ts'
 export * from './git.ts'
+export * from './home.ts'
 export * from './changed-tests.ts'
 export * from './host.ts'
 export * from './host-lock.ts'
@@ -59,7 +61,7 @@ export * from './workflow.ts'
 /** The zod the Work schemas are built with, for the packages that validate the same shapes. */
 export { z } from 'zod'
 /** The Artifact ID schema and classifications, for the packages that validate the same shapes. */
-export { CLASSIFICATIONS, contentIdSchema } from '@system/artifacts'
+export { CLASSIFICATIONS, contentIdSchema } from '@system/artifacts/contract'
 
 export const name = 'system-work'
 export const inject = ['storageDomain', 'artifacts']
@@ -73,8 +75,9 @@ export const workDomain = defineDomain({
 /** The row's configuration. */
 export interface Config {
   /** How long a running attempt may be quiet before the Host reports it stalled; default `DEFAULT_STALL_MINUTES` (10). */
-  stallMinutes?: number
+  stallMinutes: number
 }
+export const Config: Schema<Config> = Schema.object({ stallMinutes: Schema.number().min(0).default(DEFAULT_STALL_MINUTES) })
 
 /** What the Host core is built over: the row's own table and specs. */
 export interface HostStorage {
@@ -90,7 +93,7 @@ export class WorkService {
   private readonly storage: HostStorage
   private readonly config: Config
 
-  constructor(capabilities: Capabilities, artifacts: Artifacts, storage: HostStorage, config: Config = {}) {
+  constructor(capabilities: Capabilities, artifacts: Artifacts, storage: HostStorage, config: Config = { stallMinutes: DEFAULT_STALL_MINUTES }) {
     this.capabilities = capabilities
     this.artifacts = artifacts
     this.storage = storage
@@ -179,8 +182,8 @@ export class WorkService {
   }
 }
 
-export function specStore(artifacts: Artifacts): SpecStore {
-  artifacts.registerKind({ kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: resolvedSpecSchema })
+export function specStore(artifacts: Artifacts, dispose?: (() => void)[]): SpecStore {
+  dispose?.push(artifacts.registerKind({ kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: resolvedSpecSchema }))
   /** The stored Artifact `id`, if it is stored and (when given) of `kind`. */
   const stored = (id: string, kind?: string): Envelope | undefined => {
     const read = artifacts.get(id)
@@ -231,44 +234,26 @@ export function specStore(artifacts: Artifacts): SpecStore {
   }
 }
 
-/** Store a `verdict@1` Artifact bound to its subject, criteria and evidence; returns its ID. */
-export async function putVerdict(artifacts: Artifacts, verdict: Verdict): Promise<string> {
-  return (await artifacts.put({
-    ...VERDICT_KIND, content: verdict, inputs: [verdict.subject, verdict.criteria, ...verdict.evidence],
-    subject: { type: 'artifact', ref: verdict.subject },
-    classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
-  })).id
-}
-
-/** `$DSH_HOME`: the launcher's home resolver when present. */
-export function dshHome(ctx: Context): string {
-  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
-  return homePath ? homePath() : process.env.DSH_HOME || join(homedir(), '.dsh')
-}
-
-/** `$DSH_HOME/system/...`: the launcher's home resolver when present. */
-export function systemPath(ctx: Context, ...segments: string[]): string {
-  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
-  return homePath ? homePath('system', ...segments) : join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', ...segments)
-}
-
-export async function apply(ctx: Context, config: Config = {}): Promise<void> {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const domains = ctx.get('storageDomain') as DomainFacility
   const domain = await domains.open(workDomain)
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
   const artifacts = ctx.get('artifacts') as Artifacts
-  artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
-  artifacts.registerKind({ ...INTENT_KIND, content: intentSchema })
-  artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema })
-  artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema })
-  artifacts.registerKind({ ...WITHDRAWAL_KIND, content: withdrawalSchema })
-  artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
-  artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
-  artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
+  const dispose = [
+    artifacts.registerKind({ ...TASK_KIND, content: taskSchema }),
+    artifacts.registerKind({ ...INTENT_KIND, content: intentSchema }),
+    artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema }),
+    artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema }),
+    artifacts.registerKind({ ...WITHDRAWAL_KIND, content: withdrawalSchema }),
+    artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema }),
+    artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema }),
+    artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema }),
+  ]
   const capabilities = new Capabilities()
   const table = domain.table('work') as unknown as WorkTable
   const claims = domain.table('claims') as unknown as ClaimTable
-  const specs = specStore(artifacts)
+  const specs = specStore(artifacts, dispose)
+  ctx.effect(() => () => { for (const d of dispose) d() }, 'work kinds')
   ctx.provide('capabilities', capabilities)
   ctx.provide('work', new WorkService(capabilities, artifacts, { table, claims, specs }, config))
 }

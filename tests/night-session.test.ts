@@ -12,6 +12,7 @@ import { after, before, test } from 'node:test'
 import { Client } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
 import { StdioClientTransport } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { repo, systemCli } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
 const cli = systemCli('system-night', { SYSTEM_OPERATOR_ID: 'night' })
 const home = cli.home
@@ -23,17 +24,7 @@ const client = new Client({ name: 'night', version: '0' })
 before(async () => {
   const init = cli.run(['init'])
   assert.equal(init.status, 0, init.stderr)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write, develop.implement, tier.standard]
-    verifiers: [code.required-checks]
-    effects: [git.publish]
-`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), withFakes({ workers: ['repo.write', 'develop.implement', 'tier.standard'], verifiers: ['code.required-checks'], effects: ['git.publish'] }))
   await cli.start({ env: { SYSTEM_FAKE_HOLD_AT: 'implement', SYSTEM_FAKE_HOLD_FILE: hold } })
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(repo, 'bin', 'system'), 'mcp'], env: cli.env as Record<string, string> }))
 })

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as cli from '../src/cli.ts'
 import { fakeHost } from './fake-host.ts'
-import type { QuotaReport } from '../../agents/src/quota.ts'
+import type { QuotaReport } from '../../runtime-cli/src/quota.ts'
 
 // Resolve the planned export at runtime so the tests compile before it exists.
 function quotaLine(report: QuotaReport, now: number): string {
@@ -87,4 +87,27 @@ test('workers ends with the room line, after every account line, and passes --re
   assert.deepEqual(seen, [{ repository: ['/w/System', '/w/Other'] }])
   assert.ok(output.endsWith('room: 3 of 8 Accounts free (slot and Headroom under Ceiling); quota unknown: web/chatgpt/x; Ready Items: System 5, Other unknown\n'), output)
   assert.ok(output.indexOf('codex/x1') < output.indexOf('room:'))
+})
+
+test('workers prints busy entries under busy Accounts and free under idle ones', async () => {
+  const accounts = [
+    { ref: 'codex/x1', runtime: 'codex', available: true, reason: 'registered' },
+    { ref: 'claude-code/x2', runtime: 'claude-code', available: true, reason: 'registered' },
+    { ref: 'codex/x3', runtime: 'codex', available: true, reason: 'registered' },
+  ]
+  const busy = [
+    { account: 'codex/x1', work: 'work:1', repository: '/w/System', item: 'busy-1', step: 'implement', since: '2026-11-28T05:00:00.000Z' },
+    { account: 'claude-code/x2', work: 'work:2', step: 'task', since: '2026-11-28T05:01:00.000Z', uncertain: true as const },
+  ]
+  let output = ''
+  let run: cli.Run | undefined
+  const program = cli.buildProgram(fakeHost({ 'workers.list': () => ({ registered: accounts.map((a) => a.ref), accounts, busy }) }), { out: (text: string) => { output += text } } as Parameters<typeof cli.buildProgram>[1], (selected) => { run = selected })
+  program.exitOverride()
+  await program.parseAsync(['node', 'system', 'workers'])
+  assert.equal(await run!(), 0)
+  const blocks = output.trimEnd().split(/\n(?=\S)/).slice(1)
+  assert.equal(blocks.length, 3)
+  assert.match(blocks[0]!, /^codex\/x1[\s\S]*\n  busy: work:1 busy-1 \(\/w\/System\) step implement since 2026-11-28T05:00:00\.000Z$/)
+  assert.match(blocks[1]!, /^claude-code\/x2[\s\S]*\n  busy: work:2 - \(-\) step task since 2026-11-28T05:01:00\.000Z uncertain$/)
+  assert.match(blocks[2]!, /^codex\/x3[\s\S]*\n  free$/)
 })

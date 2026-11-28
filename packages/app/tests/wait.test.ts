@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Client } from '../../host/lib/index.js'
+import type { Client } from '@system/host'
 import { buildProgram, type Run } from '../src/cli.ts'
 import { hostClient, type WaitOptions, type Waited } from '../src/remote.ts'
 import { fakeHost } from './fake-host.ts'
-import { NotAnswering, NotRunning } from '../../host/lib/index.js'
+import { NotAnswering, NotRunning } from '@system/host'
 
 const record = (id: string, status: string, extra: object = {}) => ({ id, events: [], state: { status, ...extra } }) as any
 

@@ -117,4 +117,4 @@ The hook acts only on a push to the remote named `origin` whose URL is not a loc
 and it clears every inherited `GIT_*` repository variable before a check runs,
 so it cannot change the operator's repository.
 The sandbox Account option (iso-1) is the second guard: inside its layer, a linked worktree cannot write
-the main repository's `config` or `hooks/`; `packages/agents/tests/sandbox.test.ts` shows it.
+the main repository's `config` or `hooks/`; `packages/runtime-cli/tests/sandbox.test.ts` shows it.

@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { repo, systemCli } from '../test-support/cli.ts'
 import { CHROME, skipHeaded } from '../test-support/headed.ts'
-import { findVnc } from '../packages/web-worker/src/display.ts'
+import { findVnc } from '../packages/runtime-web/src/display.ts'
 
 const skip = skipHeaded
 const serve = join(repo, 'packages', 'web-driver', 'tests', 'serve-fake-chatgpt.ts')

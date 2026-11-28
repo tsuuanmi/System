@@ -4,7 +4,7 @@
  * whole record of the choice and replay never asks a provider again.
  */
 
-/** One window as a Worker's `quota()` tells it (structurally `@system/agents`' `QuotaWindow`). */
+/** One window as a Worker's `quota()` tells it (structurally `@system/runtime-cli`' `QuotaWindow`). */
 interface QuotaWindowReading {
   /** 0 to 100. */
   percentUsed: number
@@ -14,7 +14,7 @@ interface QuotaWindowReading {
 /** A reading, or why there is none (structurally `QuotaReport`). */
 export type QuotaReading =
   | { windows: { five_hour?: QuotaWindowReading; seven_day?: QuotaWindowReading } }
-  | { unreadable: string }
+  | { unreadable: string; /** An authentication error: the Account is signed out (authgate-1). */ signedOut?: true }
 
 export const DEFAULT_QUOTA_CEILING_PERCENT = 80
 
@@ -50,6 +50,12 @@ export function rankByHeadroom(candidates: readonly Candidate[]): Ranking {
   const waits: { resetsAt?: string; at?: number }[] = []
   for (const { ref, attempts, reading, ceiling } of candidates) {
     const windows = reading && 'windows' in reading ? (Object.entries(reading.windows) as [keyof typeof NAMES, QuotaWindowReading | undefined][]).filter((w): w is Window => !!w[1]) : []
+    // Signed out (authgate-1): takes no step until a later read succeeds; the step waits when no other Account is left.
+    if (reading && 'unreadable' in reading && reading.signedOut) {
+      reasons[ref] = 'unavailable: signed out'
+      waits.push({})
+      continue
+    }
     if (!windows.length) {
       reasons[ref] = !reading ? 'no quota reader' : 'unreadable' in reading ? `quota unreadable: ${reading.unreadable}` : 'quota unreadable: no window reported'
       blind.push({ ref, attempts })

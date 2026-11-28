@@ -5,8 +5,7 @@
  */
 import { userInfo } from 'node:os'
 import type { Caller } from '@system/work'
-// By path, not by package: declaring @system/host here would change the lockfile.
-import { NotAnswering, NotRunning } from '../../host/lib/index.js'
+import { NotAnswering, NotRunning } from '@system/host'
 
 /** The operator a CLI call acts for (ADR-0004 decision 1). */
 export function operatorId(): string {

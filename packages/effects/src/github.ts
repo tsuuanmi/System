@@ -41,8 +41,10 @@ import { execFile } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { Artifacts } from '@system/artifacts'
-import { GIT_TREE_KIND, gatedFiles, gatesOf, git as runGit, pin, type EffectIntent, type EffectOutcome, type EffectPort, type GitTreeContent, type Reconciled } from '@system/work'
+import type { Artifacts } from '@system/artifacts/contract'
+import { git as runGit } from '@system/git'
+import { gatedFiles, gatesOf, GIT_TREE_KIND, pin, type EffectPort } from '@system/work/contract'
+import type { EffectIntent, EffectOutcome, GitTreeContent, Reconciled } from '@system/work'
 
 /** What the merge queue's re-check says of a merge commit: `pass` merges, `hold` waits for an operator's Approval of that commit, anything else is refused. `verdicts` are the stored verdict Artifacts. */
 export interface MergeCheck {
@@ -78,13 +80,21 @@ const MERGE_ROUNDS = 3
 /** The file whose `gates:` list names the paths that hold a change for the Operator's Approval. */
 const GATES_FILE = '.system/checks.yaml'
 
-/** `git merge-tree --write-tree`: the merged tree, or the files in conflict. */
+/** The oldest git with the global `--attr-source`, which the merge needs to read attributes from the base tip. */
+const ATTR_SOURCE_GIT = '2.40'
+
+/**
+ * `git merge-tree --write-tree`: the merged tree, or the files in conflict.
+ * Attributes (`.gitattributes`: `.system/docs-waivers merge=union`) are read from `tip`, never from
+ * the working tree, which merge-tree would otherwise use and a bare or moved-on repository lacks.
+ */
 function mergeTree(repository: string, tip: string, commit: string): Promise<{ tree: string } | { conflicts: string[] }> {
   return new Promise((resolve, reject) => {
-    execFile('git', ['-C', repository, 'merge-tree', '--write-tree', '--name-only', '--no-messages', tip, commit], (error, stdout) => {
+    execFile('git', ['-C', repository, `--attr-source=${tip}`, 'merge-tree', '--write-tree', '--name-only', '--no-messages', tip, commit], (error, stdout, stderr) => {
       const [tree, ...files] = stdout.trim().split('\n')
       if (!error) resolve({ tree: tree! })
       else if ((error as { code?: number }).code === 1) resolve({ conflicts: files.filter(Boolean) })
+      else if (/attr-source/.test(stderr)) reject(new Error(`git merge-tree in ${repository} needs git ${ATTR_SOURCE_GIT} or newer (--attr-source): ${stderr.trim()}`))
       else reject(new Error(`git merge-tree in ${repository} failed: ${error.message}`))
     })
   })
@@ -295,12 +305,21 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
       const content = read.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? read.envelope.content as { commit: string; parent?: string } : undefined
       return content?.parent === tip ? content.commit : undefined
     }
-    /** The files the change touches (against the tip) that the tip's `gates:` select. */
-    const gatedPaths = async (t2: typeof t, tip: string, commit: string): Promise<string[]> => {
-      const file = await git(t2.tree.repository, ['show', `${tip}:${GATES_FILE}`]).catch(() => '')
+    /** The files the change touches (against the tip) that the `gates:` of `gatesAt` select. */
+    const gatedPaths = async (t2: typeof t, tip: string, commit: string, gatesAt = tip): Promise<string[]> => {
+      const file = await git(t2.tree.repository, ['show', `${gatesAt}:${GATES_FILE}`]).catch(() => '')
       const gates = gatesOf(file)
       if (!gates.length) return []
       return gatedFiles((await git(t2.tree.repository, ['diff', '--name-only', '-z', `${tip}...${commit}`])).split('\0').filter(Boolean), gates)
+    }
+    /** Item gate-3: the gate paths of `change` that an Approval already covers. It is of the change's own commit (the merge's second parent, or the commit itself), under the gate list at the base tip it was given on. */
+    const approvedGated = async (subject: string | undefined, tip: string, change: string): Promise<string[]> => {
+      const read = subject ? artifacts.get(subject) : undefined
+      const content = read?.state === 'stored' && read.envelope.kind === GIT_TREE_KIND.kind ? read.envelope.content as { commit: string; parent?: string } : undefined
+      if (!content?.parent) return []
+      const commits = (await git(t.tree.repository, ['rev-list', '--parents', '-n', '1', content.commit]).catch(() => '')).trim().split(' ')
+      if ((commits[2] ?? commits[0]) !== change) return []
+      return gatedPaths(t, tip, change, content.parent).catch(() => [])
     }
     const named = (ids: string[]): Record<string, string> => (ids.length ? { verdicts: ids.join(',') } : {})
     for (let round = 0; round < MERGE_ROUNDS; round++) {
@@ -340,7 +359,12 @@ export function githubPublisher(artifacts: Artifacts, deps: PublishDeps, config:
         }
       } else if (approved === change) approvedMerge = true
       // Item gate-1: a change touching a gate path (the base's list, never the change's own) waits for the Operator's Approval of the commit that would go in.
-      const gated = approvedMerge ? [] : await gatedPaths(t, tip, change)
+      // The Approval is of the change's commit, so main moving on does not ask again (the merge checks above still ran); a gate list widened since covers more of it and does.
+      let gated = approvedMerge ? [] : await gatedPaths(t, tip, change)
+      if (gated.length) {
+        const covered = await approvedGated(intent.approvedMerge, tip, change)
+        gated = gated.filter((file) => !covered.includes(file))
+      }
       if (gated.length) {
         mergeSubject ??= (await artifacts.put({
           ...GIT_TREE_KIND, content: { repository: t.tree.repository, commit, tree: (await git(t.tree.repository, ['rev-parse', `${commit}^{tree}`])).trim(), parent: tip }, subject: { type: 'git-commit', ref: commit },

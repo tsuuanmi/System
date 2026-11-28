@@ -13,6 +13,10 @@ const CHECK = 'check:'
 /** The account of a verifier's check slots. */
 export const checkAccount = (verifier: Pick<VerifierPort, 'ref'>): string => `${CHECK}${verifier.ref}`
 
+/** The slot of a sign-in that several Accounts share (`WorkerPort.slotKey`): one attempt at a time, whichever Account runs it. */
+const SHARED = 'shared:'
+const shared = (key: string): string => `${SHARED}${key}`
+
 /** An attempt that was dispatched and never observed. */
 export interface LostAttempt {
   workId: string
@@ -28,6 +32,8 @@ export class Slots {
   private readonly lost = new Map<string, { account: string; attempt: LostAttempt }>()
   /** Callers of `withCheck` waiting for a slot of an account, in order. */
   private readonly waiters = new Map<string, Array<{ limit: number; attemptId: string; go: () => void }>>()
+  /** Attempt ID -> the shared slot it holds besides its Account's. */
+  private readonly sharedBy = new Map<string, string>()
   private freed: () => void = () => {}
 
   constructor(capabilities: Capabilities) {
@@ -41,11 +47,13 @@ export class Slots {
 
   /** Whether the Worker's Account has a free slot. */
   hasFree(worker: WorkerPort): boolean {
-    return (this.held.get(worker.ref)?.size ?? 0) < (worker.maxConcurrentAttempts ?? 1)
+    return (this.held.get(worker.ref)?.size ?? 0) < (worker.maxConcurrentAttempts ?? 1) && (worker.slotKey === undefined || !this.held.get(shared(worker.slotKey))?.size)
   }
 
   /** Take a slot of the Worker's Account, if one is free. */
   reserve(worker: WorkerPort, attemptId: string): boolean {
+    if (!this.hasFree(worker)) return false
+    if (worker.slotKey !== undefined) { this.take(shared(worker.slotKey), 1, attemptId); this.sharedBy.set(attemptId, shared(worker.slotKey)) }
     return this.take(worker.ref, worker.maxConcurrentAttempts ?? 1, attemptId)
   }
 
@@ -82,6 +90,8 @@ export class Slots {
 
   release(account: string, attemptId: string): void {
     if (!this.held.get(account)?.delete(attemptId)) return
+    const key = this.sharedBy.get(attemptId)
+    if (key !== undefined && !account.startsWith(SHARED)) { this.sharedBy.delete(attemptId); this.release(key, attemptId) }
     const queue = this.waiters.get(account) ?? []
     while (queue.length && this.take(account, queue[0]!.limit, queue[0]!.attemptId)) queue.shift()!.go()
     if (queue.length) this.waiters.set(account, queue)
@@ -92,6 +102,8 @@ export class Slots {
   /** Keep `account`'s slot for a lost attempt until it is settled. */
   hold(account: string, attempt: LostAttempt): void {
     this.held.set(account, (this.held.get(account) ?? new Set()).add(attempt.attemptId))
+    const key = this.capabilities.workerFor(account)?.slotKey
+    if (key !== undefined) { this.held.set(shared(key), (this.held.get(shared(key)) ?? new Set()).add(attempt.attemptId)); this.sharedBy.set(attempt.attemptId, shared(key)) }
     this.lost.set(attempt.attemptId, { account, attempt })
   }
 

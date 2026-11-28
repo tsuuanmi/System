@@ -139,6 +139,8 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
   Not delegated (operator, 2026-11-27): a release that touches `packages/verifiers/src`, `packages/effects/src` or
   `workflows/*.yaml`, because those take effect only at a release; a caller's release that touched them is reported as
   a violation (relgate-1) and recorded as an Escaped defect.
+  Unless the Operator approved that release commit (operator, 2026-11-28; ADR-0019): then a caller session may merge
+  and install it.
 - No Item caps (operator, 2026-11-26): the scheduled session and a `/goal` session take every Ready `todo` Item; each
   Item is still one Worker attempt with a test that fails first, and the Operator settles the Intent behind it.
 - Reopened by: Items per operator act on product Batches staying under 3.6 after three Batches; DNA Batches whose

@@ -1,5 +1,5 @@
 /** Readers shared by the operator records (`intent@1`, `escaped-defect@1`, `confirmation@1`). */
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { WorkError } from './errors.ts'
 
 /** Every stored Artifact of `kind`, with its ID and creation time. */

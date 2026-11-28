@@ -18,6 +18,9 @@ has the exit codes). While attempts run, `work show` prints `live`; one quiet
 for `stallMinutes` (10 by default, the `work` row's config) is `stalled: true`,
 a notice, not a verdict.
 
+The `system-app` row takes no configuration; its `Config` is a Cordis schema,
+so a config that is not an object is refused at activation.
+
 Tests shorten the client's waits with `SYSTEM_WAIT_RECONNECT_MS`, `SYSTEM_WAIT_RETRY_MS`,
 `SYSTEM_CALL_TIMEOUT_MS` and `SYSTEM_CONNECT_RETRY_MS`, and the Host's upgrade
 poll with `SYSTEM_UPGRADE_POLL_MS`; unset, the defaults apply.
@@ -78,12 +81,19 @@ A Workflow submitted through `work.submit` may use Sub-workflows without
 sending them: the Host reads each from `workflows/` at the input Task's base
 commit, else beside its own code.
 
+`system approve` and `system deny` print, once the typed confirmation is accepted and the Host has recorded it, what was
+decided (`approved ship of work:… (commit 1c2e7cda5f3b)`), then follow the Work with one line per event; Ctrl-C only
+detaches. An Approval of a Gate path change is of that change's commit: a re-merge of it onto a newer `dev`
+needs no new one (the merge checks still run), another commit or a `gates:` list widened since does.
+
 The session is an agent: it may use every agent operation on every Work, store
 Tasks and files, and list the Workers. It cannot approve or deny (only the operator socket
 serves them, and the session does not reach it:
 [ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)), set
 credentials, sign an account in, or merge into `main`; only a human runs
 `system work retry <work> --step checks.checks` for a check that failed outside
-the change. Each Work is also an MCP resource, `system://work/<id>`: subscribe
+the change. `system workers` shows an account whose quota read failed with an authentication error as
+`unavailable` with the reason `signed out`; it takes no step until a later read succeeds (log in again, see
+[accounts and workers](accounts-and-workers.md)). Each Work is also an MCP resource, `system://work/<id>`: subscribe
 to be woken when it ends, is held, waits for approval or stalls, then read
 `work.events` from your last `seq`.

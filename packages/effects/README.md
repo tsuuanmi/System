@@ -49,7 +49,10 @@ The controller records `effect-intended` before `apply` and
 - **Merge (`merge: true`), the merge queue** ([ADR-0008 amendment](../../docs/decisions/ADR-0008-dev-integration-branch.md)):
   one change at a time per base. A change that holds the base's tip goes in
   as it is. Any other is merged with the tip by `git merge-tree` (a conflict
-  is `failed`, naming the files); the merge commit is pinned, stored as a
+  is `failed`, naming the files); the merge reads attributes from the base tip
+  (`--attr-source`, git 2.40 or newer, else the publish fails naming it), so
+  `.system/docs-waivers` (`.gitattributes`: `merge=union`) merges by union
+  whatever is checked out; the merge commit is pinned, stored as a
   `git-tree@1` and checked with the effect's `required` checks and their
   pinned criteria. The re-check is a verification like any other
   (`mergeCheck`): it runs the verifier ref and version pinned at admission,
@@ -66,7 +69,12 @@ The controller records `effect-intended` before `apply` and
   that commit (a change that already holds the tip is held too, without a
   check). The approved commit is pushed as it
   is (`approvedMerge`) while the base is still its parent, and an Approval
-  given for another commit counts for nothing. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
+  given for another commit counts for nothing. A gate-path Approval is of the
+  change's own commit (Item gate-3): when the base moved, the change is merged
+  and its merge checks run again, and no second Approval is asked while the
+  change's commit is the approved one and the `gates:` list at the new tip
+  selects no file of it that the list the Approval was given under did not;
+  another commit, or a list widened over the change, holds again. The commit goes to `system/<work>`, the pull request is opened ready, and the base moves to
   exactly that commit by a push with a lease on the checked tip; if the base
   moved, the change is merged and checked again (three rounds at most). A
   conflict and a failing check on the merge return `rejected: 'conflict' |

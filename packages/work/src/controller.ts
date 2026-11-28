@@ -6,7 +6,7 @@
  * execute runs outside it and touches no Work state.
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { canonicalJson } from '@system/artifacts'
+import { canonicalJson } from '@system/artifacts/contract'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { noLane, type Lane } from './lane.ts'
@@ -89,6 +89,8 @@ export interface RetryOptions {
   step?: string
   caller: Caller
   reason: string
+  /** Set only by the Operator's `work.verifyAgain` (served on the operator socket): the one way to run a verify step again. */
+  verifyAgain?: true
 }
 
 /** A human's approval or denial of what held Work awaits (GLOSSARY: Approval). */
@@ -535,7 +537,10 @@ export class WorkController {
       : spec.steps.filter(isWorkerStep).find((s) => ['failed', 'cancelled', 'pending'].includes(record.state.steps[s.id]!.state) && (s.dependsOn ?? []).every((d) => settled(record.state, d)))
     if (!step) throw new WorkError(options.step ? `${options.step} is not a Worker, verify or effect step of ${workId}` : `${workId} has no Worker step to take over; name one with --step`)
     // Choosing among runs of a check would let an agent keep the lucky one: verifying again is the operator's.
-    if (isVerifyStep(step) && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} should tell the operator`)
+    // `work.retry` (the caller socket) never does it, whatever the caller says it is; `work.verifyAgain` (the operator socket) does, for a human.
+    if (isVerifyStep(step) && !options.verifyAgain) throw new WorkError(`${step.id} is a verify step: only the Operator verifies again, in a terminal with \`system work retry ${workId} --step ${step.id}\`; tell the operator`)
+    if (options.verifyAgain && options.caller.type !== 'human') throw new WorkError(`only a human verifies again; an ${options.caller.type} should tell the operator`)
+    if (options.verifyAgain && !isVerifyStep(step)) throw new WorkError(`${step.id} is not a verify step; retry it with work.retry`)
     if (!isWorkerStep(step) && options.worker) throw new WorkError(`${step.id} is ${isVerifyStep(step) ? 'a verify' : 'an effect'} step; --worker names Workers only`)
     if (!(step.dependsOn ?? []).every((d) => settled(record.state, d))) throw new WorkError(`step ${step.id} depends on steps that have not succeeded`)
     const partial = Object.values(record.state.steps[step.id]!.partial ?? {})[0]

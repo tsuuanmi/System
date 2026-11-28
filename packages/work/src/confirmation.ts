@@ -2,7 +2,7 @@
  * `confirmation@1` (Item ms-2): the operator confirmed a stored Artifact (a dataset, a set of labels), recorded beside it
  * because an Artifact is immutable and any kind can be confirmed; `work report` counts each as an operator act.
  */
-import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts'
+import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts/contract'
 import { z } from 'zod'
 import { WorkError } from './errors.ts'
 import { storedOf } from './stored.ts'

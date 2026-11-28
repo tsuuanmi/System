@@ -8,23 +8,24 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
-import type { Artifacts, Classification } from '@system/artifacts'
-import { WEB_WORKER_DISABLED, type AgentsService, type QuotaReport, type WebWorkerService } from '@system/agents'
-import { GIT_TREE_KIND, TASK_KIND, dshHome, git, type Capabilities, type FailureClassifier, type GitTreeContent, type Task, type WorkService } from '@system/work'
+import type { Artifacts, Classification } from '@system/artifacts/contract'
+import { git } from '@system/git'
+import type { FailureClassifier, GitTreeContent, Task, WorkService } from '@system/work'
+import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities } from '@system/work/contract'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
 import { checkStore } from './store-check.ts'
 import { completePendingInstallCheck } from './pending-install-check.ts'
 import { caller, errorLine, explain } from './io.ts'
-// By path, not by package: declaring @system/host here would change the lockfile.
-import { VERSION, codeRoot, connect } from '../../host/lib/index.js'
-import type { Services } from '../../host/lib/operations.js'
-import { exitWithin, operatorSocketPath, serveHost, socketPath } from '../../host/lib/process.js'
+import { VERSION, codeRoot, connect } from '@system/host'
+import type { Services } from '@system/host/operations'
+import { exitWithin, operatorSocketPath, serveHost, socketPath } from '@system/host/process'
 
 export const name = 'system-app'
 export const inject = ['cmdlineArgs', 'appExit']
@@ -51,7 +52,7 @@ function dshVersion(): string {
  * Write a record and read it back. The key is this probe's own: every `system` command probes the one store, and a
  * shared key let another process's write land between this write and read ("read back a different record" under load).
  */
-export async function probeStorage(ctx: Context): Promise<StorageStatus> {
+export async function probeStorage(ctx: Pick<Context, 'get'>): Promise<StorageStatus> {
   const hub = ctx.get('storage') as Storage | undefined
   const domains = ctx.get('storageDomain') as DomainFacility | undefined
   if (!hub || !domains) return { ok: false, backend: REQUIRED_BACKEND, detail: 'storage services unavailable' }
@@ -83,7 +84,7 @@ const BUNDLED_WORKFLOWS = fileURLToPath(new URL('../../../workflows/', import.me
  * the base commit of the input Task, so a Work pins the files of the commit it
  * changes; else the Host's own. Undefined when neither has it.
  */
-export function workflowFile(artifacts: Artifacts, name: string, input: string | undefined): string | undefined {
+export function workflowFile(artifacts: Context['artifacts'], name: string, input: string | undefined): string | undefined {
   const content = <T>(id: string | undefined, kind: string): T | undefined => {
     const read = id ? artifacts.get(id) : undefined
     return read?.state === 'stored' && read.envelope.kind === kind ? read.envelope.content as T : undefined
@@ -130,29 +131,60 @@ async function probeHost(home: string): Promise<HostStatus> {
   }
 }
 
-function credentialCommands(ctx: Context): Services['credentials'] {
-  const store = ctx.get('credentials') as CredentialProvider | undefined
-  if (!store) throw new Error('the credentials row is not mounted (run `system doctor`)')
+/**
+ * The optional services the app reads, each declared through `ctx.inject` so a Host composed without one still runs `system doctor`
+ * (the app stays active) and a command that needs it names it. A service is here while its row is up; `get` is the same answer as
+ * `ctx.get` for the names in `OPTIONAL`.
+ */
+const OPTIONAL = ['appReady', 'artifacts', 'capabilities', 'classifier', 'credentials', 'storage', 'storageDomain', 'work'] as const
+type Optional = typeof OPTIONAL[number]
+/** The type of each service: its contract's `Context` entry where a contract declares one, else the shape the app reads. */
+interface Provided {
+  appReady: NonNullable<Context['appReady']>
+  artifacts: Context['artifacts']
+  capabilities: Context['capabilities']
+  classifier: { failures: FailureClassifier }
+  credentials: CredentialProvider
+  storage: Storage
+  storageDomain: DomainFacility
+  work: Context['work']
+}
+interface Mounted {
+  get<K extends Optional>(name: K): Provided[K] | undefined
+  /** The services named, or an error naming those not available. */
+  need<K extends Optional>(...names: K[]): { [N in K]: Provided[N] }
+}
+
+function track(ctx: Context): Mounted {
+  const live = new Map<Optional, unknown>()
+  for (const name of OPTIONAL) {
+    ctx.inject([name], (inner) => {
+      live.set(name, (inner as Context).get(name))
+      inner.effect(() => () => { live.delete(name) }, `${name} service`)
+    })
+  }
+  return {
+    get: (name) => live.get(name) as never,
+    need: (...names) => {
+      const missing = names.filter((name) => live.get(name) === undefined)
+      if (missing.length) throw new Error(`the ${missing.join(' and ')} service${missing.length > 1 ? 's are' : ' is'} not available (run \`system doctor\`)`)
+      return Object.fromEntries(names.map((name) => [name, live.get(name)])) as never
+    },
+  }
+}
+
+function credentialCommands(mounted: Mounted): Services['credentials'] {
+  const { credentials: store } = mounted.need('credentials')
   return {
     set: (name, value) => store.set(credentialRef(name), value),
     describe: (name) => store.describe(credentialRef(name)),
   }
 }
 
-async function workersView(ctx: Context): Promise<WorkersView> {
-  const capabilities = ctx.get('capabilities') as Capabilities | undefined
-  const agents = ctx.get('agents') as AgentsService | undefined
-  const accounts = (await agents?.accounts()) ?? []
-  // The cache and the readers' own timeouts bound each read; none sends a model turn.
-  const quota = async (ref: string): Promise<QuotaReport> => agents!.quota(ref).catch(() => ({ unreadable: 'the quota read failed' }))
-  return { registered: capabilities?.workerRefs() ?? [], accounts: await Promise.all(accounts.map(async (a) => ({ ...a, quota: await quota(a.ref) }))) }
-}
-
-/** The web Runtime's service: its row is optional, and off by default. */
-function webWorkerService(ctx: Context): WebWorkerService {
-  const web = ctx.get('webWorker') as WebWorkerService | undefined
-  if (!web) throw new Error(WEB_WORKER_DISABLED)
-  return web
+export async function workersView(mounted: Pick<Mounted, 'get'>): Promise<WorkersView> {
+  const capabilities = mounted.get('capabilities')
+  // Every Runtime's Accounts come from its Workers' registrations (ADR-0018): none of a Runtime's own service is read.
+  return { registered: capabilities?.workerRefs() ?? [], accounts: (await capabilities?.accounts()) as WorkersView['accounts'] ?? [] }
 }
 
 /** Whether `commit` is in the code this Host runs (its commit read once): false when it is not (git exits 1 without a message), undefined when git cannot say. */
@@ -168,11 +200,8 @@ export async function releaseHolds(repository: string, commit: string): Promise<
 }
 
 /** Be the Host of this home: take the lock, serve the table, and stop on SIGTERM or SIGINT (status 0) or on new code on disk (`UPGRADE_EXIT`). */
-async function runHost(ctx: Context): Promise<number> {
-  const work = ctx.get('work') as WorkService | undefined
-  const artifacts = ctx.get('artifacts') as Artifacts | undefined
-  const capabilities = ctx.get('capabilities') as Capabilities | undefined
-  if (!work || !artifacts || !capabilities) throw new Error('the work row is not mounted (run `system doctor`)')
+async function runHost(ctx: Context, mounted: Mounted): Promise<number> {
+  const { work, artifacts, capabilities } = mounted.need('work', 'artifacts', 'capabilities')
   const home = dshHome(ctx)
   // The launcher stops its tree on a signal and exits 130 for SIGINT; the Host stops itself and exits 0. Its handler
   // goes on before the launcher's comes off, so a signal is never lost between the two (libuv drops one sent to a
@@ -188,13 +217,13 @@ async function runHost(ctx: Context): Promise<number> {
   }
   const host = await work.startHost(home)
   // The optional classifier row (cls-1): a Work that ends has the failures no rule places classified, for `work report`; never in the controller's way.
-  const classifier = ctx.get('classifier') as { failures: FailureClassifier } | undefined
+  const classifier = mounted.get('classifier')
   const stopClassifying = classifier && host.view.onChange((change) => {
     if (change.type !== 'terminal') return
     const record = host.view.get(change.workId)
     if (record) void classifier.failures.classify(record).catch(() => {})
   })
-  const credentials = credentialCommands(ctx)
+  const credentials = credentialCommands(mounted)
   const pollOverride = Number(process.env.SYSTEM_UPGRADE_POLL_MS)
   const upgradePoll = Number.isFinite(pollOverride) && pollOverride > 0 ? pollOverride : undefined
   serving = await serveHost({
@@ -219,11 +248,7 @@ async function runHost(ctx: Context): Promise<number> {
       defectWithdrawals: () => work.defectWithdrawals(),
       workflowFile: (name, input) => workflowFile(artifacts, name, input),
       credentials,
-      workers: () => workersView(ctx),
-      login: async (ref, cookies) => webWorkerService(ctx).login(ref, cookies),
-      loginRemote: async (ref) => webWorkerService(ctx).loginRemote(ref),
-      loginWait: async (ref, cancel) => webWorkerService(ctx).loginWait(ref, cancel),
-      recheck: async (ref) => webWorkerService(ctx).recheck(ref),
+      workers: () => workersView(mounted),
       releaseHolds: (repository, commit) => releaseHolds(repository, commit),
       ...(classifier ? { classifier: classifier.failures } : {}),
     },
@@ -239,19 +264,22 @@ async function runHost(ctx: Context): Promise<number> {
   return status
 }
 
-export function apply(ctx: Context): void {
+/** The row has no configuration; a config that is not an object is refused at activation. */
+export interface Config {}
+export const Config: Schema<Config> = Schema.object({})
+
+export function apply(ctx: Context, _config: Config): void {
+  const mounted = track(ctx)
   const host: HostProcess = {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,
-    probeStorage: () => probeStorage(ctx),
+    probeStorage: () => probeStorage(mounted),
     probeHost: () => probeHost(dshHome(ctx)),
     checkStore: () => {
-      const work = ctx.get('work') as WorkService | undefined
-      const artifacts = ctx.get('artifacts') as Artifacts | undefined
-      if (!work || !artifacts) throw new Error('the work and artifacts rows are not mounted (run `system doctor`)')
+      const { work, artifacts } = mounted.need('work', 'artifacts')
       return checkStore({ works: work.records(), artifacts })
     },
-    runHost: () => runHost(ctx),
+    runHost: () => runHost(ctx, mounted),
   }
   let selected: Run | undefined
   const io = { out: (text: string) => { process.stdout.write(text) } }
@@ -266,7 +294,10 @@ export function apply(ctx: Context): void {
       exit(1)
     })
   }
-  const ready = ctx.get('appReady')
-  if (ready) ready.onReady(start)
-  else start()
+  // The services declared above are mounted by the next turn of the loop, not inside this call.
+  setImmediate(() => {
+    const ready = mounted.get('appReady')
+    if (ready) ready.onReady(start)
+    else start()
+  })
 }

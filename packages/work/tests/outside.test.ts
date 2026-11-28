@@ -103,3 +103,12 @@ test('reworded attach failures with a cause count toward the hold; old ones coun
   assert.equal(outsideRun(seq([attached(reworded), attached(reworded)]), 'task').count, 0, 'no cause and no old text: not Outside')
   assert.equal(outsideRun(seq([attached(ATTACH), attached(STILL), attached(ATTACH)]), 'task').count, 3, 'old records by text')
 })
+
+test('a step failing with an Account signed-out text is an Outside failure with cause signed-out (authgate-1)', () => {
+  for (const reason of ['exit 1: authentication failed or timed out', 'Authentication required', 'Invalid API key · Please run /login', 'Not logged in']) {
+    assert.equal(outsideCause(reason), 'signed-out', reason)
+    assert.equal(attemptCause(reason), 'signed-out', reason)
+  }
+  assert.equal(outsideCause('tests failed: authentication tests'), undefined)
+  assert.equal(outsideCause('exit 1: authentication failed or timed out', 'verdict'), undefined, 'a verdict is Outside only by its marker')
+})

@@ -3,7 +3,7 @@
 # Started by system-night-session.service; the allowlist and the prompt are checked against each other by
 # packages/bundle/tests/night-session-units.test.ts. Nothing here approves, denies, cancels, retries or releases.
 # `claude -p` alone runs inside a bubblewrap layer with only the caller socket (ADR-0016 decision 5; docs/operations/scheduled-session.md).
-# The layer is built here, not by packages/agents/src/adapters/sandbox.ts: that builds an attempt's layer in TypeScript from an attempt
+# The layer is built here, not by packages/runtime-cli/src/adapters/sandbox.ts: that builds an attempt's layer in TypeScript from an attempt
 # Workspace (its own directory and git data read-write), and calling it from this script would need a new Node entry point for an
 # argv that shares only the first lines (hide the home and the Host state, keep the network).
 # The session's final answer is the night report (Markdown); this launcher stores it as an Artifact, prints its ID
@@ -47,7 +47,7 @@ if [ -s "$skipped" ]; then
 fi
 # Runs the argv in "$@" inside the layer. When the layer cannot start, layer_error says why and nothing runs. Hidden: the passwd home (so ~/.ssh), and all of $DSH_HOME/system but its caller socket
 # (so no operator/, state.sqlite or Account homes). Bound read-only: the night's repositories (and their git data), this checkout, the
-# installed `system` and `claude`, the PATH directories, Claude Code's configuration. Bound read-write: a temporary directory, and what
+# installed `system` and `claude`, the PATH directories, ~/.nvm/versions/node (the Node 24 that bin/system runs under), Claude Code's configuration. Bound read-write: a temporary directory, and what
 # Claude Code writes (~/.claude.json and, of ~/.claude, only projects, session-env, sessions, shell-snapshots, todos, .credentials.json).
 layer_error=
 in_layer() {
@@ -65,7 +65,9 @@ in_layer() {
     echo "$e" >> "$ro"
     git -C "$e" rev-parse --path-format=absolute --git-common-dir >> "$ro" 2>/dev/null || true
   done < "$list"
-  { echo "$repo"; echo "$HOME/.system"; echo "$HOME/.claude"
+  # ~/.nvm/versions/node is the whole directory bin/system's `nodeChoice` (bin/service.mjs) picks a Node 24 from when the PATH `node` is older:
+  # it holds only the installed Node releases (their npm and global packages), no credentials; the rest of ~/.nvm and ~/.npmrc stay hidden.
+  { echo "$repo"; echo "$HOME/.system"; echo "$HOME/.claude"; echo "$HOME/.nvm/versions/node"
     for c in system claude; do
       f=$(command -v "$c") || continue
       r=$(realpath "$f")

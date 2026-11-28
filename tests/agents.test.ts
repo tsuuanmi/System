@@ -1,6 +1,6 @@
 /**
  * M3 on the real profile with the `agents` row pointed at a fake CLI
- * (packages/agents/tests/fake-agent.mjs) by a profile patch: per-attempt
+ * (packages/runtime-cli/tests/fake-agent.mjs) by a profile patch: per-attempt
  * worktrees, cross-process cancel, and a Codex takeover of cancelled Claude
  * work, all through `bin/system`. No model credentials are used.
  */
@@ -84,6 +84,17 @@ test('both configured accounts are registered, with the CLI version', () => {
   assert.match(out.stdout, /claude-code\/default\s+available\s+0\.0\.0-fake \(Claude Code\)/)
 })
 
+test('sign-in and recheck of an Account whose Runtime has none are refused by name, through the real Host (ADR-0018 decision 2)', () => {
+  for (const args of [['login', 'claude-code/default'], ['login', 'claude-code/default', '--remote'], ['recheck', 'claude-code/default']]) {
+    const ran = cli.run(['workers', ...args], { terminal: true })
+    assert.equal(ran.status, 1, args.join(' '))
+    assert.match(ran.stdout + ran.stderr, /not supported by runtime claude-code/, args.join(' '))
+  }
+  const unknown = cli.run(['workers', 'login', 'nope/none'], { terminal: true })
+  assert.equal(unknown.status, 1)
+  assert.match(unknown.stdout + unknown.stderr, /nope\/none is not a registered Account/)
+})
+
 test('system workers ends with the room line, with Ready Items for --repo', () => {
   const out = system(['workers', '--repo', gitRepo])
   assert.equal(out.status, 0, out.stderr)
@@ -159,6 +170,39 @@ test('a retry naming an unknown Worker is refused', () => {
   const retried = system(['work', 'retry', workId, '--worker', 'nobody/default'])
   assert.equal(retried.status, 1)
   assert.match(retried.stderr, /no enabled Worker nobody\/default/)
+})
+
+test('system workers shows free when idle and busy while a Work is running', { timeout: 120_000 }, async () => {
+  const idle = system(['workers'])
+  assert.equal(idle.status, 0, idle.stderr)
+  const idleBlocks = idle.stdout.trimEnd().split(/\n(?=\S)/).slice(1, -1)
+  assert.equal(idleBlocks.length, 2)
+  for (const block of idleBlocks) assert.match(block, /^  free$/m)
+
+  const ready = join(cli.home, 'workers-busy-ready')
+  const input = newTask(`FAKE:sleep FAKE:ready=${ready}`)
+  const submit = cli.runAsync(['work', 'submit', '--capability', 'repo.write', '--worker', 'claude-code/default', '--input', input])
+  let workId = ''
+  for (let i = 0; i < 1200 && !workId; i++) {
+    await new Promise((r) => setTimeout(r, 100))
+    if (submit.stdout().trim()) workId = submit.stdout().trim().split('\n')[0]!
+  }
+  assert.ok(workId, 'the submit printed its Work ID')
+  for (let i = 0; i < 1200 && !existsSync(ready); i++) await new Promise((r) => setTimeout(r, 50))
+  assert.ok(existsSync(ready), 'the agent is running')
+
+  try {
+    const busy = system(['workers'])
+    assert.equal(busy.status, 0, busy.stderr)
+    const blocks = busy.stdout.trimEnd().split(/\n(?=\S)/).slice(1, -1)
+    const claude = blocks.find((b) => b.startsWith('claude-code/default'))!
+    const codex = blocks.find((b) => b.startsWith('codex/default'))!
+    assert.match(claude, new RegExp(`^  busy: ${workId} - \\(-\\) step task since `, 'm'))
+    assert.match(codex, /^  free$/m)
+  } finally {
+    cli.run(['work', 'cancel', workId, '--reason', 'done', '--wait'], { terminal: true })
+    await submit.done
+  }
 })
 
 test('a profile with priority: primary loads, and workers notes that it is ignored', () => {

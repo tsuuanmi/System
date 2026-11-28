@@ -10,7 +10,12 @@ import { isQuotaLimited } from './limits.ts'
 import type { PortCause, WorkEvent } from './record.ts'
 
 /** `flaky` and `process` (cls-3) are placed by structure in `summarize`, never by a reason's text: a check that passed on the re-run of the same change, and a "no change" after a correct change (a Process failure, GLOSSARY). */
-export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach' | 'flaky' | 'process'
+export type OutsideCause = 'quota' | 'restart' | 'conflict' | 'load' | 'slow-host' | 'attach' | 'flaky' | 'process' | 'signed-out'
+
+/** What the Runtimes print when the Account is signed out: Antigravity "authentication failed or timed out" and "Authentication required", Claude Code "Invalid API key · Please run /login" and "OAuth token has expired", Codex "Not logged in" and "...please log out and sign in again" (authgate-1). */
+const SIGNED_OUT = /authentication (?:failed|required)|not (?:logged|signed) in|please run \/login|invalid api key|oauth token (?:has )?expired|authentication_error|\b401 unauthori[sz]ed|log out and sign in again|refresh token (?:was|has been) (?:already used|revoked|expired)/i
+/** Whether a failure or quota-read text says the Account is signed out. */
+export const isSignedOut = (text?: string): boolean => SIGNED_OUT.test(text ?? '')
 
 const PATTERNS: [OutsideCause, RegExp][] = [
   ['restart', /host stopped before the attempt reported|host restart/i],
@@ -55,6 +60,7 @@ export function outsideCause(reason: string, from?: 'verdict', cause?: PortCause
   if (from === 'verdict') return /the base fails it too/i.test(reason) ? 'load' : undefined
   if (parseCheckFailure(reason)) return undefined
   if (isQuotaLimited(reason)) return 'quota'
+  if (isSignedOut(reason)) return 'signed-out'
   return PATTERNS.find(([, pattern]) => pattern.test(reason))?.[0]
 }
 

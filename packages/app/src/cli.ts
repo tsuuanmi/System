@@ -5,11 +5,12 @@
 import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
-import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts'
-import { TERMINAL, holdDecision, type WorkRecord } from '@system/work'
-import type { QuotaReport } from '@system/agents'
-import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '../../host/lib/index.js'
-import { operations, type Services } from '../../host/lib/operations.js'
+import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts/contract'
+import { holdDecision, TERMINAL } from '@system/work/contract'
+import type { WorkRecord } from '@system/work'
+import type { QuotaReport } from '@system/runtime-cli/contract'
+import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '@system/host'
+import { operations, type Services } from '@system/host/operations'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
@@ -90,10 +91,22 @@ export function quotaLine(quota: QuotaReport, now: number): string {
   return `quota: ${parts.join(', ')}${quota.source === 'rate_limit_event' ? ' (from the last attempt)' : ''}`
 }
 
+export interface BusyAttempt {
+  account: string
+  work: string
+  repository?: string
+  item?: string
+  step: string
+  since: string
+  uncertain?: true
+}
+
 export interface WorkersView {
   registered: string[]
   /** How many Accounts could take one more parallel Work: see `workers.list`. */
   room?: { accounts: number; free: number; unknown: string[]; ready: { repository: string; count?: number; error?: string }[] }
+  /** Worker attempts running now or holding a slot, across every repository. */
+  busy?: BusyAttempt[]
   accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
@@ -209,9 +222,16 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       // The token is alone and last on its line, so the decision word is never read as the answer.
       const operatorId = await io.confirmHuman(`To ${what}, type ${typeWhat} and press Enter, exactly: ${expected}\n> `, expected)
       let code = 0
-      for (const workId of workIds) {
+      for (const [index, workId] of workIds.entries()) {
+        const held = records[index]!
+        const step = held.state.awaiting
+        const commit = Object.values(held.state.effects ?? {}).find((e) => e.stepId === step && e.held)?.detail?.mergeCommit
         try {
-          const outcome = exitOf(await host.decide({ workId, decision, reason: options.reason }, operatorId))
+          // What the Host recorded is said at once; then the Work is followed, one line per event, and Ctrl-C only detaches.
+          const outcome = exitOf(await host.decide({ workId, decision, reason: options.reason }, operatorId, {
+            recorded: () => io.out(`${decision} ${step ?? 'the decision'} of ${workId}${commit ? ` (commit ${commit.slice(0, 12)})` : ''}; following it (Ctrl-C only detaches, the Work goes on in the Host)\n`),
+            onEvent: (event) => io.out(`${workId} #${event.seq} ${event.type}${event.stepId ? ` ${event.stepId}` : ''}\n`),
+          }))
           code = code || outcome
         } catch (error) {
           if (workIds.length === 1) throw error
@@ -235,7 +255,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .option('--repo <path>', 'a project whose Ready Items the room line counts (repeatable)', (path: string, all: string[] = []) => [...all, path])
     .action((options: { repo?: string[] }) => {
       select(async () => {
-        const { registered, accounts, room } = await host.call('workers.list', given({ repository: options.repo?.map((path) => resolve(path)) })) as unknown as WorkersView
+        const { registered, accounts, room, busy } = await host.call('workers.list', given({ repository: options.repo?.map((path) => resolve(path)) })) as unknown as WorkersView
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}${identityOf(a)} (${a.runtime})\n`)
@@ -245,6 +265,9 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
           const models = Object.entries(a.models ?? {})
           if (models.length) io.out(`  models: ${models.map(([tier, model]) => `${tier}=${model}`).join(', ')}\n`)
           if (a.quota) io.out(`  ${quotaLine(a.quota, Date.now())}\n`)
+          const on = (busy ?? []).filter((b) => b.account === a.ref)
+          if (on.length) for (const b of on) io.out(`  busy: ${b.work} ${b.item ?? '-'} (${b.repository ?? '-'}) step ${b.step} since ${b.since}${b.uncertain ? ' uncertain' : ''}\n`)
+          else io.out('  free\n')
         }
         if (room) io.out(`${roomLine(room)}\n`)
         return 0
@@ -466,7 +489,13 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .action((workId: string, options: { step?: string; worker?: string; reason: string; cancelOnInterrupt?: boolean }) => {
       select(async () => {
         // Choosing among runs of a check is the operator's (ADR-0011): the same typed confirmation as `system approve`.
-        if (options.step && await isVerifyStep(workId, options.step)) await io.confirmHuman(`Verifying again is a human's decision. Type exactly ${shortCode(workId)} to run ${options.step} again\n> `, shortCode(workId))
+        if (options.step && await isVerifyStep(workId, options.step)) {
+          if (options.worker) throw new Error(`${options.step} is a verify step; --worker names Workers only`)
+          await io.confirmHuman(`Verifying again is a human's decision. Type exactly ${shortCode(workId)} to run ${options.step} again\n> `, shortCode(workId))
+          // An operator operation: it goes over the operator socket, as the Operator's.
+          await host.call('work.verifyAgain', given({ workId, step: options.step, reason: options.reason }))
+          return exitOf(await host.wait(workId, { cancelOnInterrupt: options.cancelOnInterrupt }))
+        }
         return exitOf(await host.retry(given({ workId, worker: options.worker, reason: options.reason, step: options.step }), { cancelOnInterrupt: options.cancelOnInterrupt }))
       })
     })

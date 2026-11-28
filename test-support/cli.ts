@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { VERSION, connect } from '../packages/host/src/index.ts'
 
 export const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-export const fakeAgent = join(repo, 'packages', 'agents', 'tests', 'fake-agent.mjs')
+export const fakeAgent = join(repo, 'packages', 'runtime-cli', 'tests', 'fake-agent.mjs')
 
 /**
  * Copy a release tree into `dest` using hardlinks (`cp -al`) so `node_modules`

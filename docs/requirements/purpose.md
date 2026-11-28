@@ -153,7 +153,7 @@ Each criterion names the test that pins it today (`file`: "test name").
 - **Authority:** only a human at a terminal approves; a denial fails the Work.
   `tests/publish-approval.test.ts`: "marking the pull request ready waits for a
   human at a terminal; an agent or a pipe cannot approve".
-  `packages/agents/tests/runtimes.test.ts`: "an attempt's git over ssh is refused by GIT_SSH_COMMAND, without a
+  `packages/runtime-cli/tests/runtimes.test.ts`: "an attempt's git over ssh is refused by GIT_SSH_COMMAND, without a
   network" (a Guardrail against accident, not a sandbox: an agent that unsets the variable gets past it). Egress limits:
   not pinned.
 - **Exact-subject verification:** a verdict about another subject, other
@@ -198,7 +198,7 @@ System results or automatically adopted release thresholds.
 - A proprietary replacement for every community plugin or model adapter.
 - Treating token arbitrage, complex multi-agent debate, a full project
   board, or a rich dashboard as the reason System exists. Website Workers
-  (`packages/web-worker`, an optional Worker type, off by default) are not the product's purpose.
+  (`packages/runtime-web`, an optional Worker type, off by default) are not the product's purpose.
 - Creating a new runtime service for every logical boundary.
 - Claiming universality without an executed second domain.
 - A planner inside the Host.

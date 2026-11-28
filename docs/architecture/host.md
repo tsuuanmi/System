@@ -111,8 +111,10 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   contents, never a path (`system mcp` reads a path and sends its contents;
   see [the app README](../../packages/app/README.md)), and `work.run`, `work.retry` and `approval.decide`
   answer once the Work is being driven, so a refusal still reaches the caller
-  and a long run does not hold the call. A closed connection never cancels a
-  Work.
+  and a long run does not hold the call. `work.retry` refuses a verify step whatever the
+  caller type; asking a check again is `work.verifyAgain`, an `operator` operation served only on the operator
+  socket (`system work retry <work> --step <verify step>`, after the terminal confirmation
+  of ADR-0011). A closed connection never cancels a Work.
 - **Following a Work.** `work.events` takes `{ workId, after }` and returns the
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.
@@ -154,7 +156,7 @@ is appended, and released when `observed` or `attempt-lost` is.
 Routing takes, among the capable Accounts **with a free slot**, the one with
 the most quota headroom (among those with the step's `prefer` capability, when
 any can take it; ties by attempts that UTC day; rules in the
-[agents README](../../packages/agents/README.md#routing-by-headroom)); a full
+[agents README](../../packages/runtime-cli/README.md#routing-by-headroom)); a full
 Account is passed over (its candidate reason is `capable; no free slot`). The
 step waits when every capable Account is full, or over the quota ceiling
 (`waiting: quota`, no attempt spent), and each candidate's reason records the
@@ -166,6 +168,9 @@ is out of quota or credits (the reasons are listed in
 the Account's quota reading is read again at once, the step goes back to
 pending and is dispatched again by routing on another Account, without
 spending an attempt or retry, or waits (`waiting: quota`) when none is left.
+An Account whose quota read fails with an authentication error is `unavailable` with the
+reason `signed out`: routing skips it until a later read succeeds, and a step failing with
+that text is an Outside failure with cause `signed-out`.
 Old records carry `rateLimited` on a failed step, which stays failed.
 `system work report` sums the waits and limits as `waitedForSlotMs` and
 `rateLimitedAttempts`. The wait is measured in the Host's memory, so a Host
@@ -179,8 +184,9 @@ time. Steps after them in the same Work wait, as their `dependsOn` already
 says.
 
 **Implemented (H5, R2):** a Work's `drive`, the Account slots (`maxConcurrentAttempts`), waiting in admission
-order, stopping and uncertain attempts are in the [work README](../../packages/work/README.md#scheduling-and-slots)
-and `controller.ts`, `slots.ts`. There are no priorities, fairness tuning or queue on disk. An agent attempt is gone
+order, stopping and uncertain attempts (Accounts of one `agyHome` share one slot) are in the
+[work README](../../packages/work/README.md#scheduling-and-slots) and `controller.ts`, `slots.ts`. There are no
+priorities, fairness tuning or queue on disk. An agent attempt is gone
 when its pid file is absent or names no live process.
 
 ### Start, stop and recovery
@@ -331,4 +337,4 @@ before the code (Charter 12, fixture first).
 | Recovery is conservative for effects and unknown side effects; a settled Worker attempt is dispatched again | Held (H2, and the slot at H5, see the next row): `a lost Worker attempt confirmed gone at start is dispatched again without work run`, `a lost Worker attempt not confirmed gone is not dispatched again`, `replay is deterministic after automatic re-dispatch and another Host restart adds no event`, `a settled Worker attempt with an effect found absent at start is not dispatched again`, `a lost check (verifier) attempt confirmed gone at start is not dispatched again`, `a Work that finished is not marked, and a held Work stays held`, `an effect left intended is reconciled on start, and an applied one is not applied again`, `an effect found absent on start is published only by an explicit run`, `an effect whose outcome stays unknown holds the Work when it is run` (host.test.ts). The slot held until settled: `a Host killed with two attempts in flight: both are lost, their slots are held until settled, and nothing is dispatched by itself` and `a lost attempt whose Worker cannot confirm it gone keeps its slot` (packages/work/tests/slots.test.ts). |
 | New code replaces the Host without interrupting an attempt | Held (D): `a draining Host starts no new attempt, lets the running one finish, and names the Works it held`, `resume continues what a draining Host held, and nothing that start found interrupted` (packages/work/tests/upgrade.test.ts); `on new code a supervised Host starts nothing new, finishes its attempt, exits 75, and the next Host serves the new version and runs what was queued` (which includes a client call during the swap), `a client built from the new code upgrades an idle Host at once, and is told to retry`, `a change seen once is not enough...`, `a stop while the Host drains exits 0 and leaves nothing to continue`, `a connection retries while the Host is away...` (packages/host/tests/upgrade.test.ts); `the supervisor runs the Host again after exit 75 and after nothing else` (packages/app/tests/service.test.ts). |
 | Version skew is caught | Held (H3a): `a Host of another version refuses the hello and names the fix` (packages/host/tests/transport.test.ts). |
-| Slots hold (R2) | Held (H5), in packages/work/tests/slots.test.ts: `Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once`, `a synthesis step waits for both proposals`, `two Works on one Account never run two attempts at once with a limit of 1`, `two Works on one Account run two attempts at once with a limit of 2`, `a waiting step goes in Work admission order when its slot frees`, `a step whose first capable Account is full goes to the next capable Account with a free slot, and the record says why`, `a step waits when every capable Account is full; the time it waited is recorded and summed by the report`, `a cancel while two attempts run records both, then one terminal event`, and `seed 1` to `seed 50: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event` (also never above the limit). Through the process: `the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both` (tests/brainstorm.test.ts). The agent side: `the account's slots are the Host's: the worker offers its limit and never queues attempts itself` and `a lost attempt is gone when its pid file is absent or names no process, and not while the process runs` (packages/agents/tests/agent.test.ts). |
+| Slots hold (R2) | Held (H5), in packages/work/tests/slots.test.ts: `Brainstorm: idea-a (Claude) and idea-b (Codex) are in execute at once`, `a synthesis step waits for both proposals`, `two Works on one Account never run two attempts at once with a limit of 1`, `two Works on one Account run two attempts at once with a limit of 2`, `a waiting step goes in Work admission order when its slot frees`, `a step whose first capable Account is full goes to the next capable Account with a free slot, and the record says why`, `a step waits when every capable Account is full; the time it waited is recorded and summed by the report`, `a cancel while two attempts run records both, then one terminal event`, and `seed 1` to `seed 50: three concurrent Brainstorms with random delays replay exactly, losing and repeating no event` (also never above the limit). Through the process: `the two proposals overlap in time: both are dispatched before either is observed, and the synthesis waits for both` (tests/brainstorm.test.ts). The agent side: `the account's slots are the Host's: the worker offers its limit and never queues attempts itself` and `a lost attempt is gone when its pid file is absent or names no process, and not while the process runs` (packages/runtime-cli/tests/agent.test.ts). |

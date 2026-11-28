@@ -25,8 +25,9 @@
  * the report's `[id]`s. Quote matching is unchanged.
  */
 import { createHash } from 'node:crypto'
-import type { Artifacts } from '@system/artifacts'
-import type { VerifierPort, VerifyResult } from '@system/work'
+import type { Artifacts } from '@system/artifacts/contract'
+import type { VerifyResult } from '@system/work'
+import type { VerifierPort } from '@system/work/contract'
 import { z } from 'zod'
 
 export const CITATION_CRITERIA_KIND = { kind: 'citation-criteria', schemaVersion: 1 } as const

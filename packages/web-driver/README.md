@@ -3,11 +3,11 @@
 System 1's ChatGPT web driver, its UI map and its UI engine, ported whole
 (operator's decision, 2026-11-07: System 1 already works against chatgpt.com,
 so its logic is ported, not written again; PROP-0005 ([retired](../../docs/governance/retired.md)) item 7).
-It is a library: the `web` Runtime in [@system/web-worker](../web-worker/README.md)
+It is a library: the `web` Runtime in [@system/runtime-web](../runtime-web/README.md)
 runs an attempt through the generic [Procedures](#generic-procedures-ww2-ii-new-here) bound to this
 package's UI map, and builds a `ChatGptWebDriver` for what login, remote login and recheck still
 ask of it: `checkAuth`, `open`, `diagnostics` and the map. System 1's `ask` (its whole turn)
-was removed with the legacy path (WW2-iv). It starts no browser (the Runtime does, with [chrome.ts](../web-worker/src/chrome.ts))
+was removed with the legacy path (WW2-iv). It starts no browser (the Runtime does, with [chrome.ts](../runtime-web/src/chrome.ts))
 and holds no account, ledger or decision store.
 
 Source: System 1, `tsuuanmi/system`, commit
@@ -44,7 +44,7 @@ changed but the header line.
 - **Not ported:** the Cordis plugin glue (`plugin.ts`, `index.ts`), the
   scheduler, ledger, gateway, accounts and vault, System 1's `Browser`,
   `Display`, registry and portable state (System has its own Host, slots,
-  [chrome.ts](../web-worker/src/chrome.ts) and [display.ts](../web-worker/src/display.ts)),
+  [chrome.ts](../runtime-web/src/chrome.ts) and [display.ts](../runtime-web/src/display.ts)),
   `reconcile.ts` and `start.ts` of provider-core (only the `TurnSnapshot` type
   is kept, in `src/core/driver.ts`), the `ui-outline` schema, and System 1's
   driver specs (cut from its suite by its ADR-0084; `tests/driver.test.ts` is
@@ -159,7 +159,7 @@ TypeScript control flow over the UI engine, with no Site name in it. Each return
 `{ status: 'ok' | 'failed' | 'unknown', reason?, evidence }` (counts and names, never prompt
 or page text) and throws only for the caller's abort. The Runtime runs every attempt through them (WW2-iv: the
 legacy driver turn and the account option `procedures` are gone, see the
-[web-worker README](../web-worker/README.md)).
+[web-worker README](../runtime-web/README.md)).
 
 - **The map binds, the code decides** (`ui-map@1.7`; 1.6 maps still load). `site` (origin,
   conversation URL pattern, `temporaryChat.action` or none), `modes` (`switch` element,

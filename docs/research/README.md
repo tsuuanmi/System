@@ -29,11 +29,16 @@ The generated index below is the authoritative list of current research.
 - [RES-0020 — Review eval set (evalset-1)](RES-0020-review-eval-set.md) — active — The review eval set (evalset-1) - one
   case per Escaped defect with a known change (diff, one-sentence answer key, defect ID), seeded with st-1, ag-2 and
   finish-1 of 2026-11-26; rev-1's replay reports recall on it; nothing gates on it.
-- [RES-0021 — Agent-workspace landscape and System integration options](RES-0021-agent-workspace-landscape.md) — active
+- [RES-0021 — The packages against the DSH plugin standard
+  (plug-2)](RES-0021-packages-against-the-dsh-plugin-standard.md) — active — The `packages/*` plugins measured on
+  2026-11-27 against the DSH plugin standard of the pinned DSH 0.2.2-rc.5 (the `dsh-doc` skill and DSH's own seam
+  packages) - export form, Config, services, inject, and the 40 value imports between packages, edge by edge (Item
+  plug-2).
+- [RES-0022 — Agent-workspace landscape and System integration options](RES-0022-agent-workspace-landscape.md) — active
   — Compare six agent workspaces against System and evaluate evidence-led reuse.
-- [RES-0022 — Adaptive System: evolution beyond any one runtime](RES-0022-adaptive-component-evolution.md) — active —
+- [RES-0023 — Adaptive System: evolution beyond any one runtime](RES-0023-adaptive-component-evolution.md) — active —
   Adaptive component evolution, build-versus-reuse decisions, and execution contracts.
-- [RES-0023 — Adaptive System: eight insights and adoption
-  gates](RES-0023-adaptive-system-insights-and-adoption-gates.md) — active — Eight strategic insights and staged
+- [RES-0024 — Adaptive System: eight insights and adoption
+  gates](RES-0024-adaptive-system-insights-and-adoption-gates.md) — active — Eight strategic insights and staged
   evidence gates for adapting System components safely.
 <!-- docs:end index:research -->

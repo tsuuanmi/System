@@ -14,7 +14,8 @@ export { blockedText }
 type Admitted = Extract<WorkEvent, { type: 'admitted' }>
 export type ItemRef = NonNullable<Admitted['item']>
 
-const itemOf = (record: WorkRecord): ItemRef | undefined => (record.events[0]!.type === 'admitted' ? (record.events[0] as Admitted).item : undefined)
+/** The Item of a repository's STATUS.md the Work was admitted for, if any. */
+export const itemOf = (record: WorkRecord): ItemRef | undefined => (record.events[0]!.type === 'admitted' ? (record.events[0] as Admitted).item : undefined)
 const admittedAt = (record: WorkRecord): string => record.events[0]!.at
 /** A Work's status for people: `admitted, not running` when it was admitted and nothing has been done for it yet (its record is only its admission). */
 export const workStatus = (record: WorkRecord): string => (record.state.status === 'running' && record.events.length === 1 ? 'admitted, not running' : record.state.status)
@@ -163,8 +164,8 @@ export function itemLines(
 }
 
 /** How many Items of the repository's STATUS.md are Ready: todo, with nobody on them and not Blocked (the `todo: nobody` lines of `itemLines`). */
-export const readyCount = (status: Pick<ParsedStatus, 'items'>, repository: string | undefined, records: WorkRecord[]): number =>
-  itemLines(status, repository, records, undefined, { state: 'todo' }).filter((line) => line.endsWith(' - todo: nobody')).length
+export const readyCount = (status: Pick<ParsedStatus, 'items'>, repository: string | undefined, records: WorkRecord[], claims: Claim[] = []): number =>
+  itemLines(status, repository, records, undefined, { state: 'todo' }, claims).filter((line) => line.endsWith(' - todo: nobody')).length
 
 /** The most recent earlier Works a Worker is told of in detail. */
 const MAX_EARLIER = 3

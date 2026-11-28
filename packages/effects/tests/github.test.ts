@@ -5,11 +5,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { GIT_TREE_KIND, gitTreeSchema, pin, snapshot, type EffectIntent, type EffectOutcome } from '@system/work'
 import { githubPublisher, type PublishConfig } from '../src/github.ts'
@@ -407,7 +407,7 @@ test('merge: a held check leaves main alone and names the merge commit; once tha
 async function gatedChange(artifacts: Artifacts, files: Record<string, string>, gates = '[".system/checks.yaml", "packages/effects/**"]', edit?: (text: string) => string) {
   const w = setup()
   const base = w.run('rev-parse', 'HEAD~1')
-  w.run('checkout', '--quiet', '--detach', base)
+  w.run('checkout', '--quiet', '--force', '--detach', base)
   mkdirSync(join(w.work, '.system'), { recursive: true })
   const gap = '\n'.repeat(4)
   const original = `gates: ${gates}\n${gap}checks: []\n${gap}tip: 0\n`
@@ -473,6 +473,62 @@ test('gate-1: a gate list the change empties does not free it: the base\'s list 
   const emptied = await gatedChange(artifacts, {}, undefined, (t) => t.replace(/^gates:.*$/m, 'gates: []'))
   const held: EffectOutcome & { held?: string } = await queue(artifacts).publisher.apply(intent(emptied.subject, merging))
   assert.ok(held.held, held.reason)
+})
+
+/** Main moves on (the text of `.system/checks.yaml` through `edit`) after an Approval was asked for; the work tree returns to the change. */
+function moveMain(w: ReturnType<typeof setup>, edit: (text: string) => string): string {
+  const change = w.run('rev-parse', 'HEAD')
+  w.run('fetch', '--quiet', 'origin')
+  w.run('checkout', '--quiet', '--force', '--detach', 'origin/main')
+  const file = join(w.work, '.system/checks.yaml')
+  writeFileSync(file, edit(readFileSync(file, 'utf8')))
+  w.run('commit', '--quiet', '-am', 'main moves again')
+  w.run('push', '--quiet', 'origin', 'HEAD:main')
+  const tip = w.run('rev-parse', 'HEAD')
+  w.run('checkout', '--quiet', '--detach', change)
+  return tip
+}
+
+test('gate-3: an Approval of a gate-path change survives main moving: the merge is checked again and goes in without a second hold', async () => {
+  fresh()
+  const artifacts = store()
+  const g = await gatedChange(artifacts, {}, undefined, (t) => t.replace('checks: []', 'checks: [x]'))
+  const { publisher, checked } = queue(artifacts)
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(g.subject, merging, 'work:1111-aaaa'))
+  assert.ok(held.held)
+  moveMain(g, (t) => t.replace('tip: 1', 'tip: 2'))
+  const done = await publisher.apply({ ...intent(g.subject, merging, 'work:1111-aaaa'), approvedMerge: held.held })
+  assert.equal(done.state, 'applied', done.reason)
+  assert.equal(checked.length, 2, 'the merge checks ran on the new merge')
+  assert.notEqual(done.detail.mergeCommit, held.held)
+  assert.equal(g.remoteRef('main'), done.detail.mergeCommit)
+})
+
+test('gate-3: an Approval given for another commit of the change holds again', async () => {
+  fresh()
+  const artifacts = store()
+  const g = await gatedChange(artifacts, {}, undefined, (t) => t.replace('checks: []', 'checks: [x]'))
+  const { publisher } = queue(artifacts)
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(g.subject, merging, 'work:1111-aaaa'))
+  writeFileSync(join(g.work, '.system/checks.yaml'), readFileSync(join(g.work, '.system/checks.yaml'), 'utf8').replace('checks: [x]', 'checks: [y]'))
+  g.run('commit', '--quiet', '-am', 'amended')
+  moveMain(g, (t) => t.replace('tip: 1', 'tip: 2'))
+  const amended = await subjectOf(artifacts, g.work)
+  const again: EffectOutcome & { held?: string } = await publisher.apply({ ...intent(amended, merging, 'work:1111-aaaa'), approvedMerge: held.held })
+  assert.ok(again.held, again.reason)
+})
+
+test('gate-3: a gate list widened on main after the Approval holds again', async () => {
+  fresh()
+  const artifacts = store()
+  const g = await gatedChange(artifacts, { 'docs/NOTE.md': 'note\n' }, '[".system/checks.yaml"]', (t) => t.replace('checks: []', 'checks: [x]'))
+  const { publisher } = queue(artifacts)
+  const held: EffectOutcome & { held?: string } = await publisher.apply(intent(g.subject, merging, 'work:1111-aaaa'))
+  assert.ok(held.held)
+  moveMain(g, (t) => t.replace(/^gates:.*$/m, 'gates: [".system/checks.yaml", "docs/**"]'))
+  const again: EffectOutcome & { held?: string } = await publisher.apply({ ...intent(g.subject, merging, 'work:1111-aaaa'), approvedMerge: held.held })
+  assert.ok(again.held, again.reason)
+  assert.match(again.reason, /docs\/NOTE\.md/)
 })
 
 test('merge: main moving while the merge is checked is caught by the lease; the change is merged and checked again on the new tip', async () => {
@@ -674,4 +730,77 @@ test('fl-8: a file the base\'s .gitignore ignores is refused; a file the change 
   const ok = await publisher.apply(intent(await subjectOf(artifacts, work), {}, 'work:5555-eeee'))
   assert.equal(ok.state, 'applied', ok.reason)
   assert.equal(pulls.length, 1)
+})
+
+// waiver-1: `.system/docs-waivers` merges by union, with the attributes read from the base tip.
+const WAIVER_HEAD = '# Waivers for the docs check, one line each.\n'
+const waiverLine = (n: string) => `docs-unchanged: docs/${n}.md - reason ${n}\n`
+
+/** A bare remote whose `main` commits `.gitattributes` and the waivers file; the work repository has `.gitattributes` removed from disk. Returns a function committing `files` on the base as one change. */
+function waiverRepo(baseWaivers = WAIVER_HEAD) {
+  const bare = mkdtempSync(join(root, 'remote-'))
+  execFileSync('git', ['init', '--bare', '--quiet', bare])
+  const work = mkdtempSync(join(root, 'work-'))
+  const run = (...args: string[]) => execFileSync('git', ['-C', work, ...args], { env, encoding: 'utf8' }).trim()
+  run('init', '--quiet', '-b', 'main')
+  mkdirSync(join(work, '.system'))
+  writeFileSync(join(work, '.gitattributes'), '.system/docs-waivers merge=union\n')
+  writeFileSync(join(work, '.system/docs-waivers'), baseWaivers)
+  writeFileSync(join(work, 'README.md'), 'base\n')
+  run('add', '.')
+  run('commit', '--quiet', '-m', 'base')
+  run('remote', 'add', 'origin', `file://${bare}`)
+  run('push', '--quiet', 'origin', 'main')
+  const base = run('rev-parse', 'HEAD')
+  bareOf = bare
+  const change = async (artifacts: Artifacts, files: Record<string, string>) => {
+    run('checkout', '--quiet', '--force', '--detach', base)
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(work, file), text)
+    run('add', '-A')
+    run('commit', '--quiet', '-m', 'change')
+    rmSync(join(work, '.gitattributes'))
+    return subjectOf(artifacts, work)
+  }
+  return { bare, work, run, change, waivers: (ref: string) => execFileSync('git', ['-C', bare, 'show', `${ref}:.system/docs-waivers`], { encoding: 'utf8' }) }
+}
+
+async function twoPublishes(a: Record<string, string>, b: Record<string, string>, baseWaivers?: string) {
+  fresh()
+  const artifacts = store()
+  const r = waiverRepo(baseWaivers)
+  const first = await r.change(artifacts, a)
+  const second = await r.change(artifacts, b)
+  const { publisher } = queue(artifacts)
+  const one = await publisher.apply(intent(first, merging, 'work:1111-aaaa'))
+  const two = await publisher.apply(intent(second, merging, 'work:2222-bbbb'))
+  return { ...r, one, two, tip: () => execFileSync('git', ['-C', r.bare, 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' }).trim() }
+}
+
+test('waivers: two changes each appending a waiver line merge by union, with no .gitattributes on disk', async () => {
+  const w = await twoPublishes({ '.system/docs-waivers': WAIVER_HEAD + waiverLine('a') }, { '.system/docs-waivers': WAIVER_HEAD + waiverLine('b') })
+  assert.equal(w.one.state, 'applied', w.one.reason)
+  assert.equal(w.two.state, 'applied', w.two.reason)
+  const text = w.waivers(w.tip())
+  assert.equal(text.split(WAIVER_HEAD).length - 1, 1, 'the comment line once')
+  assert.ok(text.includes(waiverLine('a')) && text.includes(waiverLine('b')))
+})
+
+test('waivers: a conflict in any other file is still refused, naming it', async () => {
+  const w = await twoPublishes({ 'README.md': 'one\n', '.system/docs-waivers': WAIVER_HEAD + waiverLine('a') }, { 'README.md': 'two\n', '.system/docs-waivers': WAIVER_HEAD + waiverLine('b') })
+  assert.equal(w.two.state, 'failed')
+  assert.match(w.two.reason, /merge conflict with main at [0-9a-f]{12}: README\.md$/)
+})
+
+test('waivers: a change that clears the file merged with one that adds a line keeps the added line (union keeps what either side has)', async () => {
+  const w = await twoPublishes({ '.system/docs-waivers': WAIVER_HEAD }, { '.system/docs-waivers': WAIVER_HEAD + waiverLine('b') }, WAIVER_HEAD + waiverLine('old'))
+  assert.equal(w.two.state, 'applied', w.two.reason)
+  assert.ok(w.waivers(w.tip()).includes(waiverLine('b')), 'tools/check-docs-waivers.py still sees the added line')
+})
+
+test('waivers: two changes editing the same line differently keep both versions, without conflict markers (accepted: a release clears the file)', async () => {
+  const w = await twoPublishes({ '.system/docs-waivers': WAIVER_HEAD + 'docs-unchanged: x.md - one\n' }, { '.system/docs-waivers': WAIVER_HEAD + 'docs-unchanged: x.md - two\n' }, WAIVER_HEAD + 'docs-unchanged: x.md - old\n')
+  assert.equal(w.two.state, 'applied', w.two.reason)
+  const text = w.waivers(w.tip())
+  assert.ok(text.includes('- one\n') && text.includes('- two\n'))
+  assert.ok(!text.includes('<<<<<<<'))
 })

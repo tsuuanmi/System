@@ -3,7 +3,7 @@
  * `work report` counts a failed release verdict on one of them as a late-caught defect.
  */
 import { parse } from 'yaml'
-import { git } from './git.ts'
+import { git } from '@system/git'
 
 export async function lateChecks(repositories: readonly string[]): Promise<Set<string>> {
   const names = new Set<string>()
