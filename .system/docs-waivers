@@ -1,1 +1,4 @@
 # Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (docs/operations/releases.md, "The dev branch").
+docs-unchanged: docs/architecture/host.md - rt-4 moves the web Accounts and renames the rows agents and web-worker; this doc names neither, and docs/operations/accounts-and-workers.md holds the migration
+docs-unchanged: docs/operations/recovery.md - rt-4 moves the web Accounts and renames the rows agents and web-worker; this doc names neither, and docs/operations/accounts-and-workers.md holds the migration
+docs-unchanged: docs/operations/using-system.md - rt-4 moves the web Accounts and renames the rows agents and web-worker; this doc names neither, and docs/operations/accounts-and-workers.md holds the migration

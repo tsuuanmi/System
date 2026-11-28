@@ -22,6 +22,10 @@ test('workers.list through MCP returns each account quota without a token or a m
     $patch: replace
     accounts:
       - {ref: codex/quota, runtime: codex, capabilities: [research], command: ${JSON.stringify(fake.command)}, codexHome: ${JSON.stringify(codexHome)}}
+- id: runtime-web
+  disabled: false
+  config:
+    accounts:
       - {ref: web/chatgpt/quota, runtime: web, site: chatgpt, capabilities: [research]}
 `)
   await cli.start()
