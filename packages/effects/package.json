@@ -18,6 +18,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-credentials": "0.2.2-rc.5",
     "@system/artifacts": "workspace:*",
+    "@system/git": "workspace:*",
     "@system/work": "workspace:*"
   },
   "peerDependencies": {

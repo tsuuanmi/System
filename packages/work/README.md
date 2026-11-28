@@ -159,7 +159,7 @@ task's inputs, optional `item`: the Item of the repository's `STATUS.md`) and
 [src/intent.ts](src/intent.ts): `intent@1` (`title`, Markdown `body`, optional
 `supersedes`: a stored `intent@1`), what the operator settled with a caller
 session, stored before Items carry it out (`addIntent`).
-The `admitted` event's optional `goal` and the `orchestrator` caller type are read-only: records stored before the Goal feature was removed (ADR-0009, superseded) still open and replay, and new events never carry either. [src/git.ts](src/git.ts) snapshots, checks out, captures and pins commits.
+The `admitted` event's optional `goal` and the `orchestrator` caller type are read-only: records stored before the Goal feature was removed (ADR-0009, superseded) still open and replay, and new events never carry either. [src/git.ts](src/git.ts) snapshots and pins commits and checks a branch against its origin; the git call, worktrees and capture are [@system/git](../git/README.md).
 
 ## Crash boundaries
 

@@ -9,7 +9,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { Command } from 'commander'
-import { addWorktree, git, parseStatus, removeWorktree } from '@system/work'
+import { addWorktree, git, removeWorktree } from '@system/git'
+import { parseStatus } from '@system/work'
 // By path: declaring @system/verifiers here would change the lockfile.
 import { CHECKS_FILE, parseChecksFile } from '../../verifiers/lib/checks.js'
 
