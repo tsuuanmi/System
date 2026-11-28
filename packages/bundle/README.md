@@ -16,7 +16,6 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` | `attachments` | yes | content-addressed Artifact bytes under `$DSH_HOME/attachments/v1` |
 | `artifacts` | `@system/artifacts` | `artifacts` | yes | immutable Artifacts over `storageDomain` and `attachments` (ADR-0003) |
 | `work` | `@system/work` | `work`, `capabilities` | yes | Work records, the capability registry and the controller (ADR-0002, ADR-0004) |
-| `fakes` | `@system/fakes` | — | no, **disabled** | scripted Worker and verifier for offline tests |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
 | `verifiers` | `@system/verifiers` | `verifiers` | no | `code.required-checks`, `research.citation-check` (ADR-0003, ADR-0004) |
 | `effects` | `@system/effects` | `effects` | no | `git.publish` to GitHub (ADR-0004 decision 10): push, a pull request, and a merge only into `mergeInto` (`dev`, ADR-0008); token `GITHUB_TOKEN` |
@@ -25,6 +24,8 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `classifier` | `@system/classifier` | `classifier` | no, **off** | answers closed questions (`classifiers/*.yaml`) about an Artifact with an economy-tier Account of `agents`, recorded as `classification@1`; report-only (`work report`); enable with `disabled: false`; off, reports are as before |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
 | `system-app` | `@system/app` | — | yes | the CLI |
+
+The test-only `fakes` plugin (`@system/fakes`) is not a row: a test inserts it through its own profile patch, `withFakes` in [`test-support/fakes.ts`](../../test-support/fakes.ts).
 
 Each row is mounted because a System contract needs it; adding a row adds a
 line here, to `ROWS` in [`packages/app/src/doctor.ts`](../app/src/doctor.ts)
