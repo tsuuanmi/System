@@ -18,6 +18,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-attachment": "0.2.2-rc.5",
     "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.5",
+    "@deepseek-ai/schemastery": "~3.19.0",
     "zod": "4.6.6"
   },
   "peerDependencies": {
