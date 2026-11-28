@@ -363,4 +363,4 @@ run any shell command except `git push` and `gh`.
 ## Reuse
 
 The git capture technique follows System 1's worktree recorder; see
-[`@system/work`'s git.ts](../work/src/git.ts).
+[`@system/git`](../git/src/index.ts).

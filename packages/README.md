@@ -9,6 +9,8 @@ only when lifecycle or configuration demands it (package guidance of the [MVP-0 
   immutable content-addressed Artifacts.
 - [work](work/README.md) — `@system/work`, the `work` row: Work records, the
   Workflow compiler and the Work Controller.
+- [git](git/README.md) — `@system/git`, a library: the safe `git` call, detached
+  worktrees and exact capture of a worktree; no Cordis entry.
 - [host](host/README.md) — `@system/host`, the Host's transport: JSON-RPC
   over a Unix socket, the version handshake and the caller.
 - [fakes](fakes/README.md) — `@system/fakes`, a scripted Worker and verifier,

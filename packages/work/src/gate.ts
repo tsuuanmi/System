@@ -7,7 +7,8 @@
  */
 import { realpathSync } from 'node:fs'
 import { WorkError } from './errors.ts'
-import { fetchOrigin, git, snapshot } from './git.ts'
+import { git } from '@system/git'
+import { fetchOrigin, snapshot } from './git.ts'
 import { parseStatus, type ParsedStatus } from './status-parse.ts'
 import type { Caller, Claim, WorkRecord } from './record.ts'
 import { activeWork, blockedText, itemBlockedBy, itemNote, whoHas, type ItemRef } from './status.ts'

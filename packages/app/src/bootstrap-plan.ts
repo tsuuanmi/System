@@ -8,7 +8,7 @@ import { readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { git } from '@system/work'
+import { git } from '@system/git'
 // By path, as bootstrap.ts does.
 import { CHECKS_FILE } from '../../verifiers/lib/checks.js'
 import { draftChecks, type DraftChecks } from '../../verifiers/lib/draft-checks.js'
