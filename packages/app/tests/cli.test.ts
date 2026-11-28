@@ -227,3 +227,47 @@ test('the approve and deny prompt ends with the token alone, not the decision wo
   await run!()
   assert.match(prompt, /^To deny ship of work:abcdef0123, type the Work's short ID and press Enter, exactly: [0-9a-f]+\n> $/)
 })
+
+test('work trace prints the trace in order and --json prints the same as data; an empty log prints ID and size only', async () => {
+  const sampleTrace = {
+    id: 'work:t1',
+    status: 'succeeded',
+    specId: 'sha256:spec',
+    admittedAt: '2026-11-28T00:00:00.000Z',
+    timeline: [
+      {
+        kind: 'attempt',
+        stepId: 'implement',
+        attemptId: 'a1',
+        account: 'claude-code/default',
+        model: 'sonnet',
+        startedAt: '2026-11-28T00:00:01.000Z',
+        durationMs: 1200,
+        status: 'succeeded',
+        usage: { state: 'observed', inputTokens: 10, cacheReadTokens: 4, outputTokens: 2, source: 's' },
+        log: { id: 'sha256:log1', size: 42 },
+      },
+      {
+        kind: 'verdict',
+        stepId: 'checks',
+        attemptId: 'v1',
+        at: '2026-11-28T00:00:03.000Z',
+        verdict: 'fail',
+        reason: 'unit failed',
+        subject: 'sha256:sub1',
+        failedChecks: [{ id: 'sha256:cr1', name: 'unit', run: 'pnpm test', commit: 'abc', exitCode: 1, signal: null, timedOut: false, stdoutTail: 'fail out', stderrTail: 'fail err' }],
+      },
+      { kind: 'terminal', at: '2026-11-28T00:00:04.000Z', outcome: 'failed', reason: 'unit failed', results: {} },
+    ],
+  }
+  const host = fakeHost({ 'work.trace': () => sampleTrace })
+  const text = await system(['work', 'trace', 'work:t1'], host)
+  assert.match(text.out, /attempt implement \(a1\)/)
+  assert.match(text.out, /log: sha256:log1 \(42 bytes\)/)
+  assert.doesNotMatch(text.out, /commands:|files read:|files written:|final:/)
+  assert.match(text.out, /failed check: unit \(sha256:cr1\)/)
+  assert.match(text.out, /fail err/)
+  assert.match(text.out, /outcome: failed/)
+  const json = await system(['work', 'trace', 'work:t1', '--json'], host)
+  assert.deepEqual(JSON.parse(json.out), sampleTrace)
+})

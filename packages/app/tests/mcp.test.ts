@@ -564,4 +564,13 @@ test('alog-2: an MCP tool result over 32 KiB is cut with a marker; artifact.cat 
   assert.match(shown.value.omittedNote, /work\.events/)
   // The CLI path keeps every event.
   assert.equal(full.events.length, all.length)
+
+  // work.trace is a caller operation, bounded at 32 KiB through MCP just like other tool results.
+  const fullTrace = await (human1.call('work.trace', { workId }) as Promise<any>)
+  assert.ok(JSON.stringify(fullTrace).length > BOUND, 'the fixture trace is over the bound')
+  const rawTrace = await client.callTool({ name: 'work.trace', arguments: { workId } }) as { isError?: boolean; content: { text: string }[] }
+  assert.notEqual(rawTrace.isError, true)
+  const traceText = rawTrace.content[0]!.text
+  assert.ok(Buffer.byteLength(traceText) < BOUND + 512, `${Buffer.byteLength(traceText)} bytes`)
+  assert.match(traceText.split('\n').at(-1)!, /\[cut: the result is \d+ bytes/)
 })

@@ -126,6 +126,12 @@ test('every method of the table round-trips over the socket', async () => {
   assert.equal((await terminal(client, work.id)).status, 'succeeded')
   assert.equal((await call('work.run', { workId: work.id }) as { state: { status: string } }).state.status, 'succeeded')
   assert.deepEqual(await call('work.replay', { workId: work.id }), { state: (await call('work.show', { workId: work.id }) as { state: unknown }).state, matches: true })
+  const traced = await call('work.trace', { workId: work.id }) as { id: string; status: string; timeline: { kind: string }[] }
+  assert.equal(traced.id, work.id)
+  assert.equal(traced.status, 'succeeded')
+  assert.ok(traced.timeline.some((e) => e.kind === 'attempt'))
+  assert.equal(traced.timeline.at(-1)?.kind, 'terminal')
+  await assert.rejects(call('work.trace', { workId: 'work:none' }), /no Work work:none/)
   assert.equal(((await call('work.report', { workId: work.id })) as { id?: string; attempts?: unknown }).attempts !== undefined, true)
   const range = await call('work.report', { since: '2000-01-01', escaped: 0 }) as { works: number; verifiedSuccessRate: { accepted: number; ended: number } }
   assert.equal(range.works >= 1, true)
