@@ -15,7 +15,7 @@ for (const command of ['init', 'update']) {
     test(`system ${command} ${flag} prints usage and writes nothing`, () => {
       const home = mkdtempSync(join(tmpdir(), 'system-help-'))
       try {
-        const env = { ...process.env, HOME: home, SYSTEM_NO_SERVICE: '1' }
+        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, SYSTEM_NO_SERVICE: '1' }
         delete env.DSH_HOME
         delete env.SYSTEM_INSTALL
         const ran = spawnSync(process.execPath, [join(repo, 'bin', 'system'), command, flag], { env, encoding: 'utf8', timeout: 30_000 })
