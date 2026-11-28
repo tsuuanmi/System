@@ -8,22 +8,23 @@ import { claudeUsage, codexRateLimits, fakeQuotaCli, object } from '../../../tes
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { apply, type AccountConfig, type AgentsService } from '../src/index.ts'
 import { readAntigravityQuota } from '../src/quota.ts'
-import type { WorkerPort } from '../../work/src/registry.ts'
+import { observed, viewOf } from '../../../test-support/accounts-view.ts'
 
 async function mount(dir: string, accounts: AccountConfig[], now: () => number) {
+  const capabilities = observed()
   const services: Record<string, unknown> = {
     storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
     dshHomePath: (...segments: string[]) => join(dir, ...segments),
     artifacts: memoryArtifacts(),
     subprocess: { resolveExecutable: async (c: string): Promise<string> => c, spawn: (): never => { throw new Error('registration must not spawn') } },
     credentials: { describe: async (): Promise<{ configured: boolean }> => ({ configured: true }), resolve: async (): Promise<{ value: string }> => ({ value: 'tok' }) },
-    capabilities: { registerWorker: (_worker: WorkerPort): (() => void) => () => {} },
+    capabilities,
   }
   let agents: unknown
   const ctx = { baseDir: dir, get: (key: string): unknown => services[key], effect: (_fn: () => () => void): void => {}, provide: (key: string, value: unknown): void => { if (key === 'agents') agents = value } }
   await apply(ctx as never, { accounts, quota: { now } } as never)
   object(agents)
-  return agents as AgentsService
+  return viewOf(capabilities)
 }
 
 const SIGNED_OUT = {

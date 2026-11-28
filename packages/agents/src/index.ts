@@ -164,12 +164,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const unavailable = new Map<string, () => string | undefined>()
   // Accounts whose last quota read failed with an authentication error, until a later read succeeds (authgate-1).
   const signedOut = new Set<string>()
-  const accounts = () => Promise.all(statuses.map(async (status) => {
-    const askVersion = versions.get(status.ref)
+  // The Account's view as its Runtime tells it: a refused or registering one included; its version is asked apart (`versions`).
+  const statusOf = (status: AccountStatus): AccountStatus => {
     const reason = unavailable.get(status.ref)?.() ?? (signedOut.has(status.ref) ? SIGNED_OUT_REASON : undefined)
-    if (reason) return { ...status, available: false, reason, ...(askVersion ? { version: await askVersion() } : {}) }
-    return askVersion ? { ...status, version: await askVersion() } : { ...status }
-  }))
+    return reason ? { ...status, available: false, reason } : { ...status }
+  }
   const quotas = new Map<string, QuotaCache>()
   // The registered CLI Accounts, for `ask`.
   const resolvedAccounts = new Map<string, Account>()
@@ -190,13 +189,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (status.reason === REGISTERING) return { unreadable: 'still registering' }
     return { unreadable: status.available ? `no quota reader for ${ref}` : `not registered: ${status.reason}` }
   }
-  // Provided before the loop: `system workers` shows the accounts still registering.
-  ctx.provide('agents', { accounts, quota, ask } satisfies AgentsService)
+  ctx.provide('agents', { ask } satisfies AgentsService)
   const dispose: (() => void)[] = []
   // Every account is listed from the start, as registering: the Host serves while this loop is still going (WW6e).
   const entries = (config.accounts ?? []).map((account) => {
     const status: AccountStatus = { ref: account.ref, runtime: account.runtime, abilities: [...(RUNTIME_ABILITIES as Record<string, readonly string[]>)[account.runtime] ?? []], capabilities: account.capabilities, models: modelsOf(account.models), ...(account.label ? { label: account.label } : {}), ...(account.priority !== undefined ? { note: 'priority is ignored: routing goes by quota headroom' } : {}), available: false, reason: REGISTERING }
     statuses.push(status)
+    // Listed from the start: `system workers` shows the accounts still registering, and one that is refused; its Worker, once registered, supplies the same view.
+    dispose.push(capabilities.registerListing({ ref: account.ref, status: () => statusOf(status), quota: (fresh) => quota(account.ref, { fresh }), version: async () => (await versions.get(account.ref)?.()) as string }))
     return { account, status }
   })
   // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
@@ -271,7 +271,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const key = id && `${account.runtime}:${id}`
         if (id) status.providerAccount = id
         if (key && seen.has(key)) throw new Error(`provider account ${id} is already registered as ${seen.get(key)}; two refs on one account would count its quota twice`)
-        dispose.push(capabilities.registerWorker(agentWorker(resolved, artifacts, spawner, attempts)))
+        dispose.push(capabilities.registerWorker({ ...agentWorker(resolved, artifacts, spawner, attempts), status: () => statusOf(status), version: askVersion }))
         resolvedAccounts.set(account.ref, resolved)
         dispose.push(() => { resolvedAccounts.delete(account.ref) })
         if (key) seen.set(key, account.ref)

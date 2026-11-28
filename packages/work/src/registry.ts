@@ -75,10 +75,44 @@ export function requestedTier(capabilities: readonly string[]): Tier | undefined
 /** Whether the attempt changes a repository: it has the ability `repo.write`. */
 export const writesRepository = (capabilities: readonly string[]): boolean => capabilities.includes('repo.write')
 
+/** An Account as `system workers` shows it, supplied by the Runtime that registers its Worker (ADR-0018 decision 1). */
+export interface WorkerStatus {
+  /** The Runtime that serves the Account (`claude-code`, `codex`, `web`...). */
+  runtime: string
+  available: boolean
+  reason: string
+  /** What the profile grants it: Roles and Tiers. */
+  capabilities: string[]
+  /** What its Runtime can do. */
+  abilities?: string[]
+  /** The model of each configured tier (never a credential). */
+  models?: Record<string, string>
+  label?: string
+  note?: string
+  /** The provider's own account ID (never a token). */
+  providerAccount?: string
+  command?: string
+}
+
+/** An Account that is listed but is not a Worker (yet): still registering, or refused. Never routed. */
+export interface AccountListing {
+  ref: string
+  status(): WorkerStatus | Promise<WorkerStatus>
+  quota?(fresh?: boolean): Promise<QuotaReading>
+  version?(): Promise<string>
+}
+
+/** One row of `system workers`: the Account's status, its quota and its version. */
+export type AccountView = WorkerStatus & { ref: string; version?: string; quota: QuotaReading }
+
 export interface WorkerPort {
   /** A stable name, recorded in routing decisions. */
   ref: string
   capabilities: readonly string[]
+  /** The Account's view for `system workers`; absent: available, with these capabilities. */
+  status?(): WorkerStatus | Promise<WorkerStatus>
+  /** The version of the Runtime's tool, asked when listed; absent: none shown. */
+  version?(): Promise<string>
   /** How many attempts of this Account run at once; default 1. */
   maxConcurrentAttempts?: number
   /** Accounts with the same key share one slot (one sign-in): at most one attempt runs across them. Absent: the Account has its own. */
@@ -224,11 +258,53 @@ export class Capabilities {
   /** The Host's slots (the Host sets it at start): the merge queue's re-check takes its check slots here. */
   slots: Slots = new Slots(this)
   private readonly workers: WorkerPort[] = []
+  private readonly listings: AccountListing[] = []
   private readonly verifiers: VerifierPort[] = []
   private readonly effects: EffectPort[] = []
 
   registerWorker(port: WorkerPort): () => void {
     return add(this.workers, port)
+  }
+
+  /** List an Account that is not a Worker (yet), such as one still registering or refused; its Worker, once registered, supplies the fields it knows. */
+  registerListing(listing: AccountListing): () => void {
+    return add(this.listings, listing)
+  }
+
+  /** Every Account, in listing order and then registration order, with its status and version, and no quota read: the Worker's own `status()` and `version()` over those of a listing of the same ref. */
+  async statuses(): Promise<Omit<AccountView, 'quota'>[]> {
+    return Promise.all(this.refs().map(async (ref) => {
+      const { listing, worker } = this.sources(ref)
+      const base = listing ? await listing.status() : undefined
+      const own = worker ? await (worker.status?.() ?? { runtime: 'unknown', available: true, reason: 'registered', capabilities: [...worker.capabilities] }) : undefined
+      const version = await (worker?.version ? worker.version() : listing?.version?.())
+      return { ...base, ...own, ref, ...(version !== undefined ? { version } : {}) } as Omit<AccountView, 'quota'>
+    }))
+  }
+
+  /**
+   * Every Account as `system workers` shows it: `statuses()` and the quota of each, from the Worker's `quota()` over a listing's. The quotas are read first,
+   * so an Account whose read failed with an authentication error is then listed as signed out (authgate-1).
+   */
+  async accounts(): Promise<AccountView[]> {
+    const quotas = await Promise.all(this.refs().map((ref) => this.quotaOf(ref)))
+    return (await this.statuses()).map((status, i) => ({ ...status, quota: quotas[i]! }))
+  }
+
+  /** One Account's quota, from its Worker's `quota()` or else its listing's; the cache and the readers' own timeouts bound the read, and none sends a model turn. */
+  async quotaOf(ref: string, fresh?: boolean): Promise<QuotaReading> {
+    const { listing, worker } = this.sources(ref)
+    const read = worker?.quota ? () => worker.quota!(fresh) : listing?.quota ? () => listing.quota!(fresh) : undefined
+    if (!read) return { unreadable: 'this account has no quota reader' }
+    return read().catch(() => ({ unreadable: 'the quota read failed' }))
+  }
+
+  private refs(): string[] {
+    return [...new Set([...this.listings.map((l) => l.ref), ...this.workers.map((w) => w.ref)])]
+  }
+
+  private sources(ref: string) {
+    return { listing: this.listings.find((l) => l.ref === ref), worker: this.workers.find((w) => w.ref === ref) }
   }
 
   registerVerifier(port: VerifierPort): () => void {

@@ -13,13 +13,17 @@ import { test } from 'node:test'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
 import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '../src/index.ts'
 import { RUNTIME_ABILITIES } from '../src/runtimes.ts'
+import { observed, viewOf } from '../../../test-support/accounts-view.ts'
+
+/** `provide` for a bare context: the `agents` service plus the Accounts read from the `capabilities` registry in `services`, as the Host reads them (ADR-0018). */
+const providing = (provided: Record<string, any>, services: Record<string, unknown>) => (key: string, value: unknown) => { provided[key] = key === 'agents' ? { ...(value as object), ...viewOf(services.capabilities as never) } : value }
 
 /** Mount the row on a bare context with `webWorker` (if any); the accounts it reports and what it disposed. */
 async function mount(webWorker: unknown, hold = false, accounts: object[] = [{}], services_: Record<string, unknown> = {}, rowSlots = 2): Promise<any> {
   const provided: Record<string, any> = {}
   const effects: (() => () => void)[] = []
-  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: {}, artifacts: {}, subprocess: {}, credentials: {}, webWorker, ...services_ }
-  const ctx = { get: (key: string) => services[key], effect: (fn: () => () => void) => { effects.push(fn) }, provide: (key: string, value: unknown) => { provided[key] = value } }
+  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: observed(), artifacts: {}, subprocess: {}, credentials: {}, webWorker, ...services_ }
+  const ctx = { get: (key: string) => services[key], effect: (fn: () => () => void) => { effects.push(fn) }, provide: providing(provided, services) }
   const started = apply(ctx as never, { maxConcurrentAttempts: rowSlots, accounts: accounts.map((own) => ({ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], models: { standard: 'x' }, url: 'http://localhost/', ...own })) })
   if (hold) return { before: await provided.agents.accounts() as { available: boolean; reason: string }[], started }
   await started
@@ -51,7 +55,7 @@ test('the capabilities the web-worker row reports (the tiers its Site map binds)
 })
 
 test('an account reports the model of each tier it configures, in tier order, from the first moment', async () => {
-  const { before } = await mount(undefined, true, [{ models: { frontier: 'f', economy: 'e' } }, { models: undefined }])
+  const { before } = await mount(undefined, true, [{ models: { frontier: 'f', economy: 'e' } }, { ref: 'web/chatgpt/other', models: undefined }])
   assert.deepEqual((before as any[]).map((a) => a.models), [{ economy: 'e', frontier: 'f' }, {}])
 })
 
@@ -101,7 +105,7 @@ test('a web account has one slot whatever the row says, and an agent CLI account
   const resolved: unknown[] = []
   const subprocess = { resolveExecutable: async (name: string) => `/bin/${name}` }
   const credentials = { describe: async () => ({ configured: true }), resolve: async () => ({ value: 't' }) }
-  const capabilities = { registerWorker: (worker: { maxConcurrentAttempts?: number }) => { resolved.push(worker.maxConcurrentAttempts); return () => {} } }
+  const capabilities = observed((worker) => { resolved.push(worker.maxConcurrentAttempts) })
   const { accounts } = await mount(web, false, [{}, { ref: 'claude-code/default', runtime: 'claude-code', capabilities: ['research'], models: undefined, url: undefined }], { subprocess, credentials, capabilities }, 4)
   assert.deepEqual([accounts[0]!.available, registered[0]!.maxConcurrentAttempts], [true, 1])
   assert.equal(accounts[1]!.available, true, accounts[1]!.reason)
@@ -132,11 +136,11 @@ const cliMount = async (accounts: object[], hold = false): Promise<{ registered:
   const provided: Record<string, any> = {}
   const services = {
     storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
-    capabilities: { registerWorker: (w: { ref: string }) => { registered.push(w.ref); return () => {} } },
+    capabilities: observed((w) => { registered.push(w.ref) }),
     artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
     subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
   } as Record<string, unknown>
-  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value }, baseDir: tempDir('base-') }
+  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: providing(provided, services), baseDir: tempDir('base-') }
   const started = apply(ctx as never, { accounts: accounts as never })
   const before = await provided.agents.accounts() as any[]
   if (hold) return { registered, before, accounts: before, started }
@@ -222,13 +226,13 @@ test('a Claude account reads the last rate_limit_event after the Host restarts',
     const services: Record<string, unknown> = {
       storageDomain, artifacts, dshHomePath: (...parts: string[]) => join(dir, ...parts),
       credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'token' }) },
-      capabilities: { registerWorker: (port: WorkerPort) => { worker = port; return () => {} } },
+      capabilities: observed((port) => { worker = port }),
       subprocess: { resolveExecutable: async () => fake.command, spawn: (spec: { argv: string[] }) => ({
         done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: async () => true,
         collected: { stdout: { readFrom: () => ({ text: spec.argv.includes('--version') ? '2.1.322 (Claude Code)' : stream }) } },
       }) },
     }
-    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = value }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
+    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = { ...(value as object), ...viewOf(services.capabilities as never) } }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
       { accounts: [claude('claude-code/restart', { command: fake.command, claudeHome: join(dir, 'home') })] } as never)
     return { worker, agents, unload: () => effects.forEach((fn) => fn()()) }
   }
@@ -268,13 +272,13 @@ test('a Claude account reads the last rate_limit_event even when the CLI version
     const services: Record<string, unknown> = {
       storageDomain, artifacts, dshHomePath: (...parts: string[]) => join(dir, ...parts),
       credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'token' }) },
-      capabilities: { registerWorker: (port: WorkerPort) => { worker = port; return () => {} } },
+      capabilities: observed((port) => { worker = port }),
       subprocess: { resolveExecutable: async () => fake.command, spawn: (spec: { argv: string[] }) => ({
         done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: async () => true,
         collected: { stdout: { readFrom: () => ({ text: spec.argv.includes('--version') ? '2.1.325 (Claude Code)' : stream }) } },
       }) },
     }
-    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = value }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
+    await apply({ get: (key: string) => services[key], provide: (_key: string, value: unknown) => { agents = { ...(value as object), ...viewOf(services.capabilities as never) } }, effect: (fn: () => () => void) => { effects.push(fn) } } as never,
       { accounts: [claude('claude-code/newer', { command: fake.command, claudeHome: join(dir, 'home') })] } as never)
     return { worker, agents, unload: () => effects.forEach((fn) => fn()()) }
   }
@@ -300,11 +304,11 @@ test('a CLI Account registers with its Runtime abilities and what its profile gr
   const provided: Record<string, any> = {}
   const services = {
     storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
-    capabilities: { registerWorker: (w: WorkerPort) => { ports.push(w); return () => {} } },
+    capabilities: observed((w) => { ports.push(w) }),
     artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
     subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
   } as Record<string, unknown>
-  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value }, baseDir: tempDir('base-') }
+  const ctx = { get: (key: string) => services[key], effect: () => {}, provide: providing(provided, services), baseDir: tempDir('base-') }
   await apply(ctx as never, { accounts: [
     claude('claude-code/a', { claudeHome: tempDir(), capabilities: ['develop.implement', 'research'], models: { standard: 'm' } }),
     codex('codex/b', fakeCodexHome(undefined, 'acct-b'), { capabilities: ['research'] }),
@@ -335,13 +339,13 @@ test('a web Account is handed over with the web abilities, and its status lists 
 function mountBeforeWebWorker(waitSeconds?: number) {
   const provided: Record<string, any> = {}
   let appeared: ((ctx: { get(key: string): unknown }) => void) | undefined
-  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: {}, artifacts: {}, subprocess: {}, credentials: {} }
+  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: observed(), artifacts: {}, subprocess: {}, credentials: {} }
   const ctx = {
     get: (key: string) => services[key],
     registry: { values: () => [{ name: 'system-web-worker' }] },
     inject: (_names: string[], callback: (ctx: { get(key: string): unknown }) => void) => { appeared = callback },
     effect: () => {},
-    provide: (key: string, value: unknown) => { provided[key] = value },
+    provide: providing(provided, services),
   }
   const started = apply(ctx as never, { webWorkerWaitSeconds: waitSeconds, accounts: [{ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], url: 'http://localhost/' }] } as never)
   return {

@@ -74,6 +74,8 @@ export interface WebAccount {
   health?: AccountHealth
   /** When the Host counts as busy (load average); only a page timeout under load is the Host's. */
   healthSettings?: HealthSettings
+  /** The capabilities `system workers` lists for the Account (the profile's and the tiers its map offers), without the Runtime's abilities; default `capabilities`. */
+  offered?: string[]
 }
 
 /** Chrome's launch clock when the account sets none, in seconds. */
@@ -624,6 +626,11 @@ export function webWorker(account: WebAccount, artifacts: Artifacts, attemptsDir
     ref: account.ref,
     capabilities: account.capabilities,
     maxConcurrentAttempts: account.maxConcurrentAttempts,
+    status() {
+      const reason = account.health?.unavailable()
+      return { runtime: 'web', available: !reason, reason: reason ?? 'registered', capabilities: [...(account.offered ?? account.capabilities)], command: account.command }
+    },
+    version: account.version,
     run: (request) => webAttempt(account, artifacts, attemptsDir, request, launcher),
     async gone() {
       const pid = profileLockPid(account.web.profileDir)

@@ -80,9 +80,9 @@ created: Codex needs a signed-in home.
 
 ## Quota
 
-`quota(ref)` says how much of an account's 5-hour and weekly window is used and
+A registered Worker's `quota()` (`WorkerPort` in `@system/work/contract`; a listed Account that is not a Worker yet has the same through its listing) says how much of an account's 5-hour and weekly window is used and
 when each resets, without a model turn. It spawns only when asked, never at
-registration or in `accounts()`.
+registration or in a status listing (`Capabilities.statuses()`).
 
 - **Claude Code:** `claude -p --input-format stream-json --output-format stream-json
   --verbose --no-session-persistence --strict-mcp-config` with no prompt and no model,
@@ -165,8 +165,8 @@ profile scope` (`get_usage` has no plan limits; a Claude Account may still have 
 `its <what> answer does not match the checked schema: …` (the answer's shape is not the checked one); `its token is not configured`;
 `its claudeHome <path> does not exist and could not be created` (the home is missing at
 read time, so the CLI is never spawned; the row creates it at registration, see Account
-identity); `not registered: <why>` or `still registering` for an account that is not up. `accounts()` itself never spawns; the Host's `workers` view
-asks `quota(ref)` for each account.
+identity); `not registered: <why>` or `still registering` for an account that is not up. A status listing never spawns; the Host's `workers` view
+reads `Capabilities.accounts()`, which asks each account's `quota()`.
 
 ## Routing by headroom
 

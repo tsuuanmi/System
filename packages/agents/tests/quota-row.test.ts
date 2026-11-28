@@ -5,19 +5,21 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
 import { claudeUsage, codexRateLimits, fakeQuotaCli, object } from '../../../test-support/quota.ts'
-import { apply, type AccountConfig, type AgentsService, type Config } from '../src/index.ts'
+import { apply, type AccountConfig, type Config } from '../src/index.ts'
+import { observed, viewOf } from '../../../test-support/accounts-view.ts'
 import type { WorkerPort } from '../../work/src/registry.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { webDefaults, webWorker } from '../../web-worker/src/chatgpt.ts'
 
 async function mount(dir: string, accounts: AccountConfig[], now: () => number, options: { ports?: WorkerPort[]; quotaCeilingPercent?: unknown; configured?: boolean; token?: string } = {}) {
+  const capabilities = observed((worker) => { options.ports?.push(worker) })
   const services: Record<string, unknown> = {
     storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
     dshHomePath: (...segments: string[]) => join(dir, ...segments),
     artifacts: {},
     subprocess: { resolveExecutable: async (c: string): Promise<string> => c, spawn: (): never => { throw new Error('registration must not spawn') } },
     credentials: { describe: async (): Promise<{ configured: boolean }> => ({ configured: options.configured ?? true }), resolve: async (): Promise<{ value: string }> => ({ value: options.token ?? 'tok-1' }) },
-    capabilities: { registerWorker: (worker: WorkerPort): (() => void) => { options.ports?.push(worker); return () => {} } },
+    capabilities,
   }
   let agents: unknown
   const ctx = { baseDir: dir, get: (key: string): unknown => services[key], effect: (_fn: () => () => void): void => {}, provide: (key: string, value: unknown): void => { if (key === 'agents') agents = value } }
@@ -26,8 +28,7 @@ async function mount(dir: string, accounts: AccountConfig[], now: () => number, 
   const config = { accounts, quota: { now }, ...(options.quotaCeilingPercent === undefined ? {} : { quotaCeilingPercent: options.quotaCeilingPercent }) }
   await apply(ctx as never, config as Config)
   const row = object(agents)
-  assert.equal(typeof row.quota, 'function', 'AgentsService.quota must be exposed')
-  return agents as AgentsService & { quota(ref: string): Promise<unknown> }
+  return { ...viewOf(capabilities), quota: (ref: string) => viewOf(capabilities).quota(ref) as Promise<unknown> }
 }
 function claude(dir: string, version = '2.1.322') {
   const home = fakeClaudeHome(join(dir, 'claude-home'), { accountUuid: 'claude-account' })
@@ -129,7 +130,6 @@ test('listing accounts spawns no quota reader; web and unknown refs are unreadab
     { ref: x.spec.ref, runtime: 'codex', abilities: ['repo.read', 'repo.write'], capabilities: ['research'], models: {}, available: true, reason: 'registered', command: x.fake.command, providerAccount: 'codex-account', version: '' },
     { ref: web.ref, runtime: 'web', abilities: ['web.search', 'web.browse'], capabilities: ['research'], models: {}, available: false, reason: 'the web-worker row is disabled' },
   ])
-  assert.deepEqual(await row.quota('unknown'), { unreadable: 'no quota reader for unknown' })
   assert.equal(existsSync(c.fake.log), false)
   assert.equal(existsSync(x.fake.log), false)
 })

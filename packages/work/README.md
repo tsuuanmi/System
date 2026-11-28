@@ -120,7 +120,7 @@ its quota ceiling, is passed over for the next one; see the
 [agents README](../agents/README.md#routing-by-headroom)), in Workflow file order, then waits for an attempt to
 report or a slot to be freed. An Account is a Worker's `ref`; a `WorkerPort`
 offers `maxConcurrentAttempts` (default 1, set per Account in the `agents` row)
-and an optional `gone(attemptId)`. A slot is reserved in the lane before
+and an optional `gone(attemptId)`. It also carries the Account's view for `system workers`: `status()`, `quota()` and `version()` ([ADR-0018](../../docs/decisions/ADR-0018-runtimes-plug-into-the-worker-registry.md) decision 1), read by `Capabilities.accounts()`. A slot is reserved in the lane before
 `dispatched` is appended and released after `observed` is. Verifier and effect
 steps take none. Steps that find no slot wait in memory; a freed slot wakes the
 waiting Works in Work admission order. A step whose every free capable Account
