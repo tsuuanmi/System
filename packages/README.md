@@ -14,7 +14,7 @@ only when lifecycle or configuration demands it (package guidance of the [MVP-0 
 - [host](host/README.md) — `@system/host`, the Host's transport: JSON-RPC
   over a Unix socket, the version handshake and the caller.
 - [fakes](fakes/README.md) — `@system/fakes`, a scripted Worker and verifier,
-  off by default.
+  test-only and not in the shipped bundle.
 - [web-driver](web-driver/README.md) — `@system/web-driver`, System 1's ChatGPT
   web driver, its UI map and its UI engine, ported whole; the page logic of the
   `web` Runtime (used by web-worker).

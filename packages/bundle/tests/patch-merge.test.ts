@@ -47,9 +47,10 @@ test('$patch: delete removes an account; $patch: replace takes the overlay whole
 })
 
 test('other entries are untouched, and an entry without config still takes the overlay\'s', () => {
-  const entries = flat(composeEntries([bundle, parse('- id: fakes\n  disabled: false\n  config:\n    workers: [repo.write]\n') as unknown[]]))
-  const fakes = entries.find((e) => e.id === 'fakes')!
-  assert.deepEqual([fakes.disabled, fakes.config.workers, fakes.config.verifiers], [false, ['repo.write'], ['code.required-checks', 'research.citation-check']])
+  const entries = flat(composeEntries([bundle, parse('- id: verifiers\n  disabled: true\n') as unknown[]]))
+  const verifiers = entries.find((e) => e.id === 'verifiers')!
+  assert.equal(verifiers.disabled, true)
+  assert.equal(entries.find((e) => e.id === 'effects')!.disabled, undefined)
 })
 
 test('under the bundle\'s default, a Workflow that merges into web-workers is refused and one into dev is admitted; a profile naming another base overrides', async () => {

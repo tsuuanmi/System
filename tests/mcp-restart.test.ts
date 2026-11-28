@@ -7,21 +7,12 @@ import { after, before, test } from 'node:test'
 import { Client } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
 import { StdioClientTransport } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { repo, systemCli } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
 const cli = systemCli('system-mcprs', { SYSTEM_OPERATOR_ID: 'tester' })
 const home = cli.home
 const client = new Client({ name: 'restart', version: '0' })
-const FAKES = `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write, develop.implement, tier.standard]
-    verifiers: [code.required-checks]
-    effects: [git.publish]
-`
+const FAKES = withFakes({ workers: ['repo.write', 'develop.implement', 'tier.standard'], verifiers: ['code.required-checks'], effects: ['git.publish'] })
 
 before(async () => {
   assert.equal(cli.run(['init']).status, 0)

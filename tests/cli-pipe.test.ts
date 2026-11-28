@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { VERSION, connectHello } from '../packages/host/src/index.ts'
 import { repo, systemCli } from '../test-support/cli.ts'
+import { withFakes } from '../test-support/fakes.ts'
 
 const cli = systemCli('system-pipe')
 const home = cli.home
@@ -18,15 +19,7 @@ const system = (...args: string[]) => cli.run(args)
 
 before(async () => {
   assert.equal(system('init').status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: verifiers
-  disabled: true
-- id: effects
-  disabled: true
-- id: fakes
-  disabled: false
-  config:
-    workers: [repo.write]
-`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), withFakes({ workers: ['repo.write'] }))
   await cli.start()
 })
 
