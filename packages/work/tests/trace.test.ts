@@ -14,7 +14,8 @@ const HASH_3 = `sha256:${'3'.repeat(64)}`
 const HASH_4 = `sha256:${'4'.repeat(64)}`
 
 function recordOf(events: WorkEvent[]) {
-  return { id: 'work:trace-1', events, state: fold(events) }
+  const stepIds = [...new Set(events.flatMap((e) => ('stepId' in e && e.stepId ? [e.stepId] : [])))]
+  return { id: 'work:trace-1', events, state: fold(stepIds, events) }
 }
 
 function storeOf(artifacts: Record<string, { kind: string; content?: unknown; bytes?: string }>): TraceStore {

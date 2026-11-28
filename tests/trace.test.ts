@@ -7,8 +7,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { Client } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+import { StdioClientTransport } from '../packages/app/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { fakeAgent, repo, systemCli } from '../test-support/cli.ts'
 
 const cli = systemCli('system-trace')
@@ -20,6 +20,7 @@ function gitRepo(checks: string): string {
   const git = (...args: string[]) => execFileSync('git', ['-C', dir, ...args], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
   git('init', '--quiet')
   writeFileSync(join(dir, 'README.md'), 'base\n')
+  writeFileSync(join(dir, 'NOTE.md'), 'base\n')
   mkdirSync(join(dir, '.system'))
   writeFileSync(join(dir, '.system', 'checks.yaml'), checks)
   git('add', '.')
@@ -59,11 +60,11 @@ after(async () => {
 })
 
 test('trace-1: system work trace and work.trace show a Work with one failed check and one repair in order', { timeout: 120_000 }, async () => {
-  // First attempt writes one line to NOTE.md and fails `two-edits`; automatic reopen repairs it on the second attempt.
-  const repository = gitRepo('checks:\n  - name: two-edits\n    run: test "$(wc -l < NOTE.md)" -ge 2 || (echo "need two edits" >&2; exit 1)\n')
+  // The base NOTE.md has one line and passes `two-edits`; the first attempt makes it two lines and fails; the automatic reopen's attempt makes three and passes.
+  const repository = gitRepo('checks:\n  - name: two-edits\n    run: test "$(wc -l < NOTE.md)" -ne 2 || (echo "need two edits" >&2; exit 1)\n')
   const taskId = (await system(['task', 'new', '--text', 'FAKE:edit FAKE:append FAKE:turns', '--repo', repository])).stdout.trim().split('\n').at(-1)!
   const ran = await system(['work', 'submit', '--workflow', SE, '--input', taskId])
-  assert.equal(ran.status, 0, ran.stderr)
+  assert.equal(ran.status, 0, ran.stdout + ran.stderr)
   const workId = ran.stdout.trim()
 
   const traced = await system(['work', 'trace', workId])
@@ -79,14 +80,14 @@ test('trace-1: system work trace and work.trace show a Work with one failed chec
   const data = JSON.parse(jsonRes.stdout) as { id: string; status: string; timeline: Array<{ kind: string; stepId?: string; account?: string; verdict?: string; failedChecks?: Array<{ name: string; stderrTail: string }>; previous?: string; failure?: string }> }
   assert.equal(data.id, workId)
   assert.equal(data.status, 'succeeded')
-  assert.deepEqual(data.timeline.map((e) => e.kind), ['attempt', 'verdict', 'reopened', 'attempt', 'verdict', 'terminal'])
+  assert.deepEqual(data.timeline.map((e) => e.kind), ['attempt', 'skipped', 'verdict', 'reopened', 'attempt', 'skipped', 'verdict', 'terminal'])
   assert.equal(data.timeline[0]!.account, 'claude-code/default')
-  assert.equal(data.timeline[1]!.verdict, 'fail')
-  assert.equal(data.timeline[1]!.failedChecks![0]!.name, 'two-edits')
-  assert.match(data.timeline[1]!.failedChecks![0]!.stderrTail, /need two edits/)
-  assert.ok(data.timeline[2]!.previous)
-  assert.ok(data.timeline[2]!.failure)
-  assert.equal(data.timeline[4]!.verdict, 'pass')
+  assert.equal(data.timeline[2]!.verdict, 'fail')
+  assert.equal(data.timeline[2]!.failedChecks![0]!.name, 'two-edits')
+  assert.match(data.timeline[2]!.failedChecks![0]!.stderrTail, /need two edits/)
+  assert.ok(data.timeline[3]!.previous)
+  assert.ok(data.timeline[3]!.failure)
+  assert.equal(data.timeline[6]!.verdict, 'pass')
 
   // Caller operation `work.trace` through `system mcp`
   const client = new Client({ name: 'trace-test', version: '1.0.0' })
