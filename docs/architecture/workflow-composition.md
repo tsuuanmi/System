@@ -17,6 +17,8 @@ third domain without a new controller. Work/Task
 is the basic durable unit. A Workflow is a versioned **config file** interpreted
 by a single generic Work Controller; it is not a code module per use case.
 The decision is [ADR-0002](../decisions/ADR-0002-work-primitive-configured-workflows.md).
+The Scheduled session ([ADR-0020](../decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md))
+never runs `workflows/plan-items.yaml`; only the Operator's caller session does.
 
 ## Ownership and lifecycle
 
