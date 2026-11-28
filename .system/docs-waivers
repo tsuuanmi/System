@@ -4,3 +4,4 @@ docs-unchanged: docs/operations/using-system.md - plug-11 only changed an import
 docs-unchanged: docs/architecture/host.md - busy-1 only adds busy to workers.list in packages/host/src/operations.ts (documented in packages/host/README.md and packages/app/README.md); Host architecture is unchanged
 docs-unchanged: docs/architecture/artifact-verification.md - plug-7 only moves other packages' imports of the Artifact ID helpers and schemas to the new @system/artifacts/contract module; verification behaviour is unchanged
 docs-unchanged: docs/architecture/work-record.md - plug-7 only moves imports in packages/work/src to @system/artifacts/contract; the Work record is unchanged
+docs-unchanged: docs/operations/install-and-update.md - plug-9 only moves other packages' imports of work names to the new @system/work/contract module (including packages/app and packages/host); install and update behaviour is unchanged
