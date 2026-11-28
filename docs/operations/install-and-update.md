@@ -53,7 +53,9 @@ systemctl --user enable --now system
 ```
 
 Run `system init` again after changing Node or `PATH` (the unit holds those of
-the last init) or adding `profile.yml`. A development checkout runs as itself:
+the last init) or adding `profile.yml`. `system init` also writes, for each
+file in `~/.system/schedules/`, a timer and service unit it never enables
+([scheduled session](scheduled-session.md)). A development checkout runs as itself:
 `bin/system host --supervise` with a `DSH_HOME` of its own, never the default
 home while the installed Host runs.
 
