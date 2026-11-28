@@ -5,7 +5,8 @@
  */
 import type { Ask } from '@system/agents/contract'
 import type { Artifacts } from '@system/artifacts/contract'
-import { defaultChange, summarize, type ClassifiedFailure, type ClassifiedLookup, type Failure, type WorkRecord } from '@system/work'
+import { defaultChange, summarize } from '@system/work/contract'
+import type { ClassifiedFailure, ClassifiedLookup, Failure, WorkRecord } from '@system/work'
 import { failureEvidence } from './evidence.ts'
 import { hashText, type LoadedQuestion } from './question.ts'
 import { CLASSIFICATION_KIND, classificationSchema, type Classification } from './schema.ts'

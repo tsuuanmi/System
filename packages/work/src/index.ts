@@ -8,6 +8,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { Artifacts, Envelope } from '@system/artifacts/contract'
 import { SPEC_KIND, SPEC_SCHEMA_VERSION, resolvedSpecSchema, type SpecStore, type WorkTable } from './controller.ts'
+import { putVerdict } from './verification.ts'
 import { CONVERSATION_KIND, conversationSchema } from './conversation.ts'
 import { changedTests } from './changed-tests.ts'
 import { freshBranch, snapshot } from './git.ts'
@@ -231,15 +232,6 @@ export function specStore(artifacts: Artifacts, dispose?: (() => void)[]): SpecS
     },
     putVerdict: (verdict) => putVerdict(artifacts, verdict),
   }
-}
-
-/** Store a `verdict@1` Artifact bound to its subject, criteria and evidence; returns its ID. */
-export async function putVerdict(artifacts: Artifacts, verdict: Verdict): Promise<string> {
-  return (await artifacts.put({
-    ...VERDICT_KIND, content: verdict, inputs: [verdict.subject, verdict.criteria, ...verdict.evidence],
-    subject: { type: 'artifact', ref: verdict.subject },
-    classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
-  })).id
 }
 
 export async function apply(ctx: Context, config: Config): Promise<void> {

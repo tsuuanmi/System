@@ -4,7 +4,8 @@
  * exact Artifact ID, criteria and verifier version). Also the one definition of
  * when a verdict is flaky.
  */
-import type { Verdict } from './kinds.ts'
+import type { Artifacts } from '@system/artifacts/contract'
+import { VERDICT_KIND, type Verdict } from './kinds.ts'
 import type { WorkEvent } from './record.ts'
 import type { VerifierPort, VerifyRequest, VerifyResult } from './registry.ts'
 
@@ -111,3 +112,12 @@ export const verifierRerunReason = (names: string[], firstFailed: string): strin
 
 /** Whether a pass is flaky: the controller's re-run of the check (`rerunOf`), or the verifier's own re-run. */
 export const isFlakyPass = (verdict: { verdict: string; reason: string; rerunOf?: string }): boolean => verdict.verdict === 'pass' && (!!verdict.rerunOf || verdict.reason.includes(VERIFIER_RERUN_MARK))
+
+/** Store a `verdict@1` Artifact bound to its subject, criteria and evidence; returns its ID. */
+export async function putVerdict(artifacts: Artifacts, verdict: Verdict): Promise<string> {
+  return (await artifacts.put({
+    ...VERDICT_KIND, content: verdict, inputs: [verdict.subject, verdict.criteria, ...verdict.evidence],
+    subject: { type: 'artifact', ref: verdict.subject },
+    classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
+  })).id
+}

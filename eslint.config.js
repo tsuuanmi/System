@@ -29,15 +29,6 @@ const boundary = {
 const BASELINE = [
   'packages/app/src/bootstrap-plan.ts',
   'packages/app/src/bootstrap.ts',
-  'packages/app/src/cli.ts',
-  'packages/app/src/remote.ts',
-  'packages/classifier/src/classifier.ts',
-  'packages/classifier/src/eval.ts',
-  'packages/effects/src/github.ts',
-  'packages/effects/src/index.ts',
-  'packages/host/src/operations.ts',
-  'packages/verifiers/src/checks.ts',
-  'packages/web-worker/src/chatgpt.ts',
 ]
 
 export default [

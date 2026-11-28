@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { laterPasses, type WorkRecord } from '@system/work'
+import { laterPasses } from '@system/work/contract'
+import type { WorkRecord } from '@system/work'
 import type { Ask } from '@system/agents/contract'
 import { createClassifier, failureEvidence, failureText, hashText, parseQuestion } from '../src/index.ts'
 

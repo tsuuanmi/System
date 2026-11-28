@@ -5,7 +5,8 @@
  */
 import type { Ask } from '@system/agents/contract'
 import type { Artifacts } from '@system/artifacts/contract'
-import { defaultChange, laterPasses, summarize, type WorkRecord } from '@system/work'
+import { defaultChange, laterPasses, summarize } from '@system/work/contract'
+import type { WorkRecord } from '@system/work'
 import { createClassifier } from './classifier.ts'
 import { failureEvidence } from './evidence.ts'
 import type { LoadedQuestion } from './question.ts'
