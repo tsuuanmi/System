@@ -77,12 +77,11 @@ test('sch-2: system items carry --repo <path> without an Item ID runs a pass ove
 
   rmSync(log, { force: true })
   const res = system(['items', 'carry', '--repo', passRepo])
-  const records = res.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { item: string; works: string[]; outcome: string; account: string | null })
-  assert.deepEqual(records.map((r) => r.item), ['p-1', 'p-2'])
-  for (const r of records) {
-    assert.equal(r.works.length, 1)
-    assert.equal(r.outcome, 'succeeded')
-    assert.equal(r.account, 'fake-worker')
-  }
+  const reportId = res.stdout.trim()
+  assert.match(reportId, /^sha256:[0-9a-f]{64}$/, `expected report Artifact ID, got: ${res.stdout}`)
+  const cat = system(['artifact', 'cat', reportId])
+  assert.equal(cat.status, 0, cat.stderr)
+  assert.match(cat.stdout, /\| p-1 \|.*\| succeeded \| fake-worker \|/)
+  assert.match(cat.stdout, /\| p-2 \|.*\| succeeded \| fake-worker \|/)
   assert.deepEqual(calls().map((l) => l.split(' ')[1]), ['implement', 'implement'])
 })
