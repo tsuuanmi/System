@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, itemOf, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, whoHas, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */
@@ -330,7 +330,7 @@ export function operations(services: Services) {
     'workers.list': {
       read: true,
       authority: 'caller',
-      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable. `room` says how many Accounts could take one more parallel Work now: `accounts` registered, `free` of them with a free slot (running attempts under `maxConcurrentAttempts`) and Headroom under their Ceiling (as routing reads them), `unknown` the refs among those whose quota is unreadable (counted free when they have a slot), and with `repository` (a path, or several) `ready`: per repository, the number of Ready Items of its STATUS.md (todo, nobody on them, not Blocked), or an `error`. Information for the caller only: the Host never picks an Item.',
+      summary: 'The registered Workers, and each configured agent account with why it is or is not available, its label, provider account ID (never a token), a note when the profile still sets `priority` (ignored), and its last quota reading (5-hour and weekly share used, reset time, when read) or why it is unreadable. `busy` lists each Worker attempt running now or holding a slot across every repository, as `{ account, work, repository?, item?, step, since }` (plus `uncertain: true` for an attempt lost at start whose slot is still held; verifier check runs are not listed). `room` says how many Accounts could take one more parallel Work now: `accounts` registered, `free` of them with a free slot (running attempts under `maxConcurrentAttempts`) and Headroom under their Ceiling (as routing reads them), `unknown` the refs among those whose quota is unreadable (counted free when they have a slot), and with `repository` (a path, or several) `ready`: per repository, the number of Ready Items of its STATUS.md (todo, nobody on them, not Blocked), or an `error`. Information for the caller only: the Host never picks an Item.',
       params: z.object({ repository: z.union([z.string().min(1), z.array(z.string().min(1))]).optional() }).strict(),
       async handler(host, p) {
         const view = await services.workers()
@@ -339,6 +339,31 @@ export function operations(services: Services) {
           return worker ? [{ ref: a.ref, slot: host.slots.hasFree(worker), reading: a.quota, ceiling: worker.quotaCeilingPercent ?? DEFAULT_QUOTA_CEILING_PERCENT }] : []
         })
         const records = host.view.list()
+        const registered = new Set(services.capabilities.workerRefs())
+        const entry = (account: string, record: WorkRecord, step: string, since: string, uncertain?: true) => {
+          const item = itemOf(record)
+          return {
+            account,
+            work: record.id,
+            ...(item?.repository ? { repository: item.repository } : {}),
+            ...(item?.id ? { item: item.id } : {}),
+            step,
+            since,
+            ...(uncertain ? { uncertain } : {}),
+          }
+        }
+        const busy = records.flatMap((record) => host.view.live(record.id)
+          .filter((a) => !a.waiting && registered.has(a.worker))
+          .map((a) => entry(a.worker, record, a.stepId, a.startedAt)))
+        const byId = new Map(records.map((r) => [r.id, r]))
+        for (const lost of host.slots.uncertain()) {
+          const record = byId.get(lost.workId)
+          if (!record) continue
+          const dispatched = record.events.findLast((e) => e.type === 'dispatched' && e.attemptId === lost.attemptId)
+          const account = dispatched?.type === 'dispatched' ? dispatched.selected : whoHas(record).account
+          if (!account || !registered.has(account)) continue
+          busy.push(entry(account, record, lost.stepId, dispatched?.type === 'dispatched' ? dispatched.at : record.events[0]!.at, true))
+        }
         const ready = await Promise.all(([p.repository ?? []].flat(2) as string[]).map(async (path: string) => {
           try {
             const status = await readStatus(path)
@@ -348,7 +373,7 @@ export function operations(services: Services) {
             return { repository: path, error: (error as Error).message }
           }
         }))
-        return { ...view, room: { ...roomOf(accounts), ready } }
+        return { ...view, busy, room: { ...roomOf(accounts), ready } }
       },
     },
     'workers.login': {

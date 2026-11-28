@@ -657,3 +657,71 @@ test('work.submit without the content of the Sub-workflows: the Host reads them 
   assert.ok(!(work instanceof Error), String(work))
   assert.deepEqual(Object.keys((work as { state: { steps: Record<string, unknown> } }).state.steps), ['implement', 'satisfied-check', 'checks.checks', 'publish', 'accept'])
 })
+
+test('workers.list reports busy Accounts across repositories, skips verifier checks, and returns [] when idle', async () => {
+  const { f, host, open } = await started()
+  const client = await open()
+  assert.deepEqual((await client.call('workers.list') as { busy: unknown }).busy, [])
+
+  const taskA = `sha256:${'a'.repeat(64)}`
+  const taskB = `sha256:${'b'.repeat(64)}`
+  const tasks = new Map<string, { task: { instructions: string; base: string; item: string }; repository: string }>([
+    [taskA, { task: { instructions: 'a', base: input(f), item: 'item-a' }, repository: '/repos/alpha' }],
+    [taskB, { task: { instructions: 'b', base: input(f), item: 'item-b' }, repository: '/repos/beta' }],
+  ])
+  f.specStore.taskOf = (id) => tasks.get(id) as never
+  const baseExists = f.specStore.exists
+  f.specStore.exists = (id) => tasks.has(id) || baseExists(id)
+  f.specStore.withNote = async (id) => id
+
+  f.hold('task')
+  const w1 = await client.call('work.submit', { capabilities: ['repo.write'], input: taskA, force: true }) as { id: string }
+  const w2 = await client.call('work.submit', { capabilities: ['brainstorm.idea-b'], input: taskB, force: true }) as { id: string }
+  await f.arrived('task', 2)
+
+  const during = await client.call('workers.list') as { busy: { account: string; work: string; repository?: string; item?: string; step: string; since: string; uncertain?: boolean }[] }
+  assert.equal(during.busy.length, 2)
+  const byAccount = new Map(during.busy.map((b) => [b.account, b]))
+  const claude = byAccount.get('fake/claude')!
+  const codex = byAccount.get('fake/codex')!
+  assert.equal(claude.work, w1.id)
+  assert.equal(claude.repository, '/repos/alpha')
+  assert.equal(claude.item, 'item-a')
+  assert.equal(claude.step, 'task')
+  assert.ok(Number.isFinite(Date.parse(claude.since)))
+  assert.equal(claude.uncertain, undefined)
+
+  assert.equal(codex.work, w2.id)
+  assert.equal(codex.repository, '/repos/beta')
+  assert.equal(codex.item, 'item-b')
+  assert.equal(codex.step, 'task')
+  assert.ok(Number.isFinite(Date.parse(codex.since)))
+  assert.equal(codex.uncertain, undefined)
+
+  f.release('task')
+  assert.equal((await terminal(client, w1.id)).status, 'succeeded')
+  assert.equal((await terminal(client, w2.id)).status, 'succeeded')
+  assert.deepEqual((await client.call('workers.list') as { busy: unknown }).busy, [])
+
+  // An attempt lost at start whose slot is still held is listed with uncertain: true.
+  host.slots.hold('fake/claude', { workId: w1.id, stepId: 'task', attemptId: 'lost-attempt' })
+  const uncertain = await client.call('workers.list') as { busy: { account: string; work: string; repository?: string; item?: string; step: string; since: string; uncertain?: boolean }[] }
+  assert.equal(uncertain.busy.length, 1)
+  assert.equal(uncertain.busy[0]!.account, 'fake/claude')
+  assert.equal(uncertain.busy[0]!.work, w1.id)
+  assert.equal(uncertain.busy[0]!.repository, '/repos/alpha')
+  assert.equal(uncertain.busy[0]!.item, 'item-a')
+  assert.equal(uncertain.busy[0]!.step, 'task')
+  assert.equal(uncertain.busy[0]!.uncertain, true)
+  f.gone('lost-attempt')
+  await host.slots.settle()
+
+  // A verifier's check run is not an Account and is not listed in busy.
+  f.hold('checks.checks')
+  const se = f.files('develop.yaml')
+  const w3 = await client.call('work.submit', { workflow: se, uses: { 'code-checks.yaml': f.files('code-checks.yaml') }, input: input(f) }) as { id: string }
+  await f.arrived('checks.checks', 1)
+  assert.deepEqual((await client.call('workers.list') as { busy: unknown }).busy, [])
+  f.release('checks.checks')
+  assert.equal((await terminal(client, w3.id)).status, 'succeeded')
+})

@@ -90,10 +90,22 @@ export function quotaLine(quota: QuotaReport, now: number): string {
   return `quota: ${parts.join(', ')}${quota.source === 'rate_limit_event' ? ' (from the last attempt)' : ''}`
 }
 
+export interface BusyAttempt {
+  account: string
+  work: string
+  repository?: string
+  item?: string
+  step: string
+  since: string
+  uncertain?: true
+}
+
 export interface WorkersView {
   registered: string[]
   /** How many Accounts could take one more parallel Work: see `workers.list`. */
   room?: { accounts: number; free: number; unknown: string[]; ready: { repository: string; count?: number; error?: string }[] }
+  /** Worker attempts running now or holding a slot, across every repository. */
+  busy?: BusyAttempt[]
   accounts: { ref: string; runtime: string; label?: string; note?: string; providerAccount?: string; available: boolean; reason: string; version?: string; abilities?: string[]; capabilities?: string[]; models?: Record<string, string>; quota?: QuotaReport }[]
 }
 
@@ -242,7 +254,7 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
     .option('--repo <path>', 'a project whose Ready Items the room line counts (repeatable)', (path: string, all: string[] = []) => [...all, path])
     .action((options: { repo?: string[] }) => {
       select(async () => {
-        const { registered, accounts, room } = await host.call('workers.list', given({ repository: options.repo?.map((path) => resolve(path)) })) as unknown as WorkersView
+        const { registered, accounts, room, busy } = await host.call('workers.list', given({ repository: options.repo?.map((path) => resolve(path)) })) as unknown as WorkersView
         io.out(`registered: ${registered.join(', ') || 'none'}\n`)
         for (const a of accounts) {
           io.out(`${a.ref.padEnd(22)} ${a.available ? 'available  ' : 'unavailable'} ${a.version ?? ''} ${a.available ? '' : `- ${a.reason}`}${identityOf(a)} (${a.runtime})\n`)
@@ -252,6 +264,9 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
           const models = Object.entries(a.models ?? {})
           if (models.length) io.out(`  models: ${models.map(([tier, model]) => `${tier}=${model}`).join(', ')}\n`)
           if (a.quota) io.out(`  ${quotaLine(a.quota, Date.now())}\n`)
+          const on = (busy ?? []).filter((b) => b.account === a.ref)
+          if (on.length) for (const b of on) io.out(`  busy: ${b.work} ${b.item ?? '-'} (${b.repository ?? '-'}) step ${b.step} since ${b.since}${b.uncertain ? ' uncertain' : ''}\n`)
+          else io.out('  free\n')
         }
         if (room) io.out(`${roomLine(room)}\n`)
         return 0
