@@ -66,6 +66,8 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   the operator asserts and a fixed notice.
 - [src/index.ts](src/index.ts) — the Cordis row and `WorkService` (new task,
   and `startHost`: the `Host` over the row's own table, specs and capabilities).
+- [src/contract.ts](src/contract.ts) — `@system/work/contract` (ADR-0017 decision 1): the kinds, tiers, ids, errors and port types other
+  packages import, and `work`/`capabilities` in `Context`.
 
 ## Cancel and retry
 

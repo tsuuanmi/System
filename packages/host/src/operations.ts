@@ -6,7 +6,8 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, directTask, itemLines, itemOf, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, whoHas, workStatus, z, type Admission, type Capabilities, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { readyCount, roomOf, type QuotaReading, activeCoreLines, lateChecks, directTask, itemLines, itemOf, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, whoHas, workStatus, type Admission, type Caller, type FailureClassifier, type Host, type WorkRecord } from '@system/work'
+import { CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, z, type Capabilities } from '@system/work/contract'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
 /** What the operations need besides the Host: the DSH-backed parts, which tests replace. */

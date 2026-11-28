@@ -21,7 +21,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { join } from 'node:path'
 import type { Artifacts, Envelope } from '@system/artifacts/contract'
 import { addWorktree, captureTree, git, removeWorktree } from '@system/git'
-import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, pin, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
+import type { Conversation, GitTreeContent, Task, WorkerRequest } from '@system/work'
+import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, pin } from '@system/work/contract'
 
 export interface Workspace {
   root: string

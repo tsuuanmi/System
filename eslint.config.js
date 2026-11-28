@@ -27,28 +27,17 @@ const boundary = {
 // TODAY'S VIOLATIONS (RES-0021), one file each. THIS LIST MAY ONLY SHRINK: never add a file to it;
 // remove a file when its imports are fixed (plug-7 to plug-11, plug-15 do so).
 const BASELINE = [
-  'packages/agents/src/agent.ts',
-  'packages/agents/src/index.ts',
-  'packages/agents/src/quota.ts',
-  'packages/agents/src/workspace.ts',
   'packages/app/src/bootstrap-plan.ts',
   'packages/app/src/bootstrap.ts',
   'packages/app/src/cli.ts',
-  'packages/app/src/index.ts',
   'packages/app/src/remote.ts',
   'packages/classifier/src/classifier.ts',
   'packages/classifier/src/eval.ts',
-  'packages/classifier/src/index.ts',
   'packages/effects/src/github.ts',
   'packages/effects/src/index.ts',
-  'packages/fakes/src/index.ts',
-  'packages/host/src/index.ts',
   'packages/host/src/operations.ts',
-  'packages/host/src/process.ts',
   'packages/verifiers/src/checks.ts',
-  'packages/verifiers/src/install-check.ts',
   'packages/web-worker/src/chatgpt.ts',
-  'packages/web-worker/src/index.ts',
 ]
 
 export default [

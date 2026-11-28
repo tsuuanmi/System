@@ -9,7 +9,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { cpus, loadavg } from 'node:os'
 import { join } from 'node:path'
-import type { WorkerPort } from '@system/work'
+import type { WorkerPort } from '@system/work/contract'
 
 export type HealthState = 'ready' | 'cooling' | 'needs-sign-in' | 'challenged'
 

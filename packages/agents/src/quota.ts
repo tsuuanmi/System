@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
-import { isSignedOut } from '@system/work'
+import { isSignedOut } from '@system/work/contract'
 import { exclusiveHome } from './agy-home.ts'
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
 

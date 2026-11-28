@@ -3,8 +3,6 @@
  * registry) and `ctx.work` (what the Host core is built over) over the DSH
  * storage domain `system_work`, one key per Work (ADR-0004 decision 9).
  */
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -34,6 +32,7 @@ export * from './usage.ts'
 export * from './gate.ts'
 export * from './gates.ts'
 export * from './git.ts'
+export * from './home.ts'
 export * from './changed-tests.ts'
 export * from './host.ts'
 export * from './host-lock.ts'
@@ -241,18 +240,6 @@ export async function putVerdict(artifacts: Artifacts, verdict: Verdict): Promis
     subject: { type: 'artifact', ref: verdict.subject },
     classification: 'operator-shared', producer: { type: 'verifier', ref: verdict.verifier.ref },
   })).id
-}
-
-/** `$DSH_HOME`: the launcher's home resolver when present. */
-export function dshHome(ctx: Context): string {
-  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
-  return homePath ? homePath() : process.env.DSH_HOME || join(homedir(), '.dsh')
-}
-
-/** `$DSH_HOME/system/...`: the launcher's home resolver when present. */
-export function systemPath(ctx: Context, ...segments: string[]): string {
-  const homePath = ctx.get('dshHomePath' as never) as ((...s: string[]) => string) | undefined
-  return homePath ? homePath('system', ...segments) : join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'system', ...segments)
 }
 
 export async function apply(ctx: Context, config: Config): Promise<void> {

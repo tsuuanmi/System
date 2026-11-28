@@ -8,7 +8,8 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Artifacts } from '@system/artifacts/contract'
-import { systemPath, type Capabilities, type VerifyResult, type WorkerRequest } from '@system/work'
+import type { VerifyResult, WorkerRequest } from '@system/work'
+import { systemPath, type Capabilities } from '@system/work/contract'
 import { z } from 'zod'
 
 export const name = 'system-fakes'

@@ -9,7 +9,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { createConnection, createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { callerSchema, type Caller, type Host, type WorkChange, z } from '@system/work'
+import type { Caller, Host, WorkChange } from '@system/work'
+import { callerSchema, z } from '@system/work/contract'
 
 /** The package version, shown by `host.hello`; it does not tell two builds apart. */
 export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
