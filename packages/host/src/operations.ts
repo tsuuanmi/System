@@ -6,7 +6,7 @@
  * (Artifacts, credentials, Workers) comes in as `Services`.
  */
 import { createHash } from 'node:crypto'
-import { readyCount, roomOf, activeCoreLines, lateChecks, directTask, itemLines, itemOf, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, whoHas, workStatus, CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, z, type Capabilities } from '@system/work/contract'
+import { readyCount, roomOf, activeCoreLines, lateChecks, directTask, itemLines, itemOf, mergeCommitOf, parseWorkflow, rangeReport, readStatus, releasesBy, resolve, summarize, traceWork, whoHas, workStatus, CLASSIFICATIONS, DEFAULT_QUOTA_CEILING_PERCENT, ITEM_ID, WorkError, WorkflowError, contentIdSchema as artifactId, z, type Capabilities, type TraceStore } from '@system/work/contract'
 import type { QuotaReading, Admission, Caller, FailureClassifier, Host, WorkRecord } from '@system/work'
 import { MAX_FRAME, NOT_ALLOWED, RpcError, fitsFrame, type Link, type Method, type Methods } from './index.ts'
 
@@ -177,6 +177,19 @@ export function operations(services: Services) {
       summary: 'Fold the recorded events again: `{ state, matches }`. Runs nothing.',
       params: z.object({ workId }).strict(),
       handler: (host, p) => (known(host, p.workId), host.view.replay(p.workId)),
+    },
+    'work.trace': {
+      read: true,
+      authority: 'caller',
+      summary: 'What happened to a Work, in order, from stored Artifacts and events: per Attempt its step, Account, model, start, duration, usage and parsed Attempt log (commands run, files read and written, final statement; or the log ID and size only when it has no such events), each verdict with failed `check-run` output tails, each `reopened` event, each effect, and the terminal outcome. Through MCP, results over 32 KiB are cut with a marker.',
+      params: z.object({ workId }).strict(),
+      handler(host, p) {
+        const record = known(host, p.workId)
+        return traceWork(record, {
+          artifact: (id) => services.artifact(id) as ReturnType<TraceStore['artifact']>,
+          readBytes: (id) => services.readBytes(id),
+        })
+      },
     },
     'work.report': {
       read: true,

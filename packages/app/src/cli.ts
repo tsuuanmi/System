@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
 import { CLASSIFICATIONS, CONTENT_ID_RE, type Envelope, type ReadResult } from '@system/artifacts/contract'
-import { holdDecision, TERMINAL } from '@system/work/contract'
+import { holdDecision, TERMINAL, type WorkTrace } from '@system/work/contract'
 import type { WorkRecord } from '@system/work'
 import type { QuotaReport } from '@system/runtime-cli/contract'
 import { MAX_FRAME, fitsFrame, schemaOf, tableOf } from '@system/host'
@@ -668,7 +668,99 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         return replayed.matches ? 0 : 1
       })
     })
+  work.command('trace <workId>')
+    .description('print what happened to a Work, in order, from stored Artifacts and events and with no model')
+    .option('--json', 'print the trace as JSON')
+    .action((workId: string, options: { json?: boolean }) => {
+      select(async () => {
+        const trace = await host.call('work.trace', { workId }) as WorkTrace
+        io.out(options.json ? `${JSON.stringify(trace, null, 2)}\n` : `${formatTrace(trace)}\n`)
+        return 0
+      })
+    })
   return program
+}
+
+function formatUsage(usage: Extract<WorkTrace['timeline'][number], { kind: 'attempt' }>['usage']): string {
+  if (!usage) return 'none'
+  if (usage.state !== 'observed') return 'unknown'
+  const cache = usage.cacheReadTokens !== undefined
+    ? ` (cache_read=${usage.cacheReadTokens}${usage.cacheWriteTokens !== undefined ? `, cache_write=${usage.cacheWriteTokens}` : ''})`
+    : ''
+  const cost = usage.costUsd !== undefined ? ` cost=$${usage.costUsd.toFixed(4)}` : ''
+  return `input=${usage.inputTokens}${cache} output=${usage.outputTokens}${cost}`
+}
+
+/** Format a `WorkTrace` as human-readable lines in chronological order. */
+export function formatTrace(trace: WorkTrace): string {
+  const lines: string[] = [
+    `work ${trace.id}  status: ${trace.status}  spec: ${trace.specId}${trace.item ? `  item: ${trace.item.id}` : ''}`,
+  ]
+  for (const entry of trace.timeline) {
+    if (entry.kind === 'attempt') {
+      lines.push(`attempt ${entry.stepId} (${entry.attemptId})  account: ${entry.account}${entry.model ? `  model: ${entry.model}` : ''}  status: ${entry.status}`)
+      lines.push(`  start: ${entry.startedAt}${entry.durationMs !== undefined ? `  duration: ${entry.durationMs}ms` : ''}`)
+      lines.push(`  usage: ${formatUsage(entry.usage)}`)
+      if (entry.inputs && Object.keys(entry.inputs).length) {
+        lines.push(`  inputs: ${Object.entries(entry.inputs).map(([k, v]) => `${k}=${v}`).join(', ')}`)
+      }
+      if (entry.log) {
+        lines.push(`  log: ${entry.log.id} (${entry.log.size} bytes)`)
+        if (entry.log.commands?.length) {
+          lines.push('  commands:')
+          for (const cmd of entry.log.commands) lines.push(`    $ ${cmd}`)
+        }
+        if (entry.log.filesRead?.length) {
+          lines.push('  files read:')
+          for (const file of entry.log.filesRead) lines.push(`    ${file}`)
+        }
+        if (entry.log.filesWritten?.length) {
+          lines.push('  files written:')
+          for (const file of entry.log.filesWritten) lines.push(`    ${file}`)
+        }
+        if (entry.log.finalStatement !== undefined) {
+          lines.push(`  final: ${entry.log.finalStatement}`)
+        }
+      }
+      if (entry.reason) lines.push(`  reason: ${entry.reason}`)
+    } else if (entry.kind === 'verdict') {
+      lines.push(`verdict ${entry.stepId}: ${entry.verdict} (${entry.at}) - ${entry.reason}`)
+      for (const check of entry.failedChecks) {
+        const exit = check.exitCode !== null ? `exit ${check.exitCode}` : `signal ${check.signal}`
+        lines.push(`  failed check: ${check.name} (${check.id})  ${exit}${check.timedOut ? ' (timed out)' : ''}  cmd: ${check.run}`)
+        if (check.stdoutTail.trim()) {
+          lines.push('    stdout tail:')
+          for (const line of check.stdoutTail.trimEnd().split('\n')) lines.push(`      ${line}`)
+        }
+        if (check.stderrTail.trim()) {
+          lines.push('    stderr tail:')
+          for (const line of check.stderrTail.trimEnd().split('\n')) lines.push(`      ${line}`)
+        }
+      }
+    } else if (entry.kind === 'reopened') {
+      const who = entry.automatic ? 'automatic' : entry.caller ? `${entry.caller.type} ${entry.caller.operatorId}` : 'caller'
+      lines.push(`reopened ${entry.stepId} (${who}, ${entry.at}): ${entry.reason}`)
+      if (entry.previous) lines.push(`  previous: ${entry.previous}`)
+      if (entry.failure) lines.push(`  failure: ${entry.failure}`)
+      if (entry.base) lines.push(`  base: ${entry.base}`)
+    } else if (entry.kind === 'effect') {
+      const cap = entry.capability ? ` (${entry.capability})` : ''
+      lines.push(`effect ${entry.stepId}${cap}: ${entry.state}${entry.reason ? ` - ${entry.reason}` : ''}`)
+      if (entry.subject) lines.push(`  subject: ${entry.subject}`)
+    } else if (entry.kind === 'decided') {
+      lines.push(`decided ${entry.stepId}: ${entry.decision} by ${entry.caller.type} ${entry.caller.operatorId} (${entry.at}) - ${entry.reason}`)
+    } else if (entry.kind === 'skipped') {
+      lines.push(`skipped ${entry.stepId} (${entry.at}): ${entry.reason}`)
+    } else if (entry.kind === 'waiting') {
+      lines.push(`waiting ${entry.stepId} (${entry.at}): ${entry.cause}${entry.resetsAt ? ` until ${entry.resetsAt}` : ''}`)
+    } else if (entry.kind === 'terminal') {
+      lines.push(`outcome: ${entry.outcome} (${entry.at}) - ${entry.reason}`)
+      if (Object.keys(entry.results).length) {
+        lines.push(`  results: ${Object.entries(entry.results).map(([k, v]) => `${k}=${v}`).join(', ')}`)
+      }
+    }
+  }
+  return lines.join('\n')
 }
 
 /** The exit code of a followed Work; leaving it running in the Host is not a failure. */

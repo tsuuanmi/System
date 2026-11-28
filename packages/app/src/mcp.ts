@@ -157,7 +157,8 @@ export function boundText(text: string, tool: string): string {
   const rest = tool === 'artifact.cat' ? 'call `artifact.cat` with `offset` and a smaller `maxBytes` to read the rest'
     : tool === 'work.show' ? 'call `work.events` for the events'
       : tool === 'work.events' ? 'call `work.events` again with `after` set to the last `seq` you read'
-      : `call \`${tool}\` again with narrower arguments for the rest`
+        : tool === 'work.trace' ? 'call `artifact.cat` on the log or check-run IDs, or run `system work trace` in the CLI'
+          : `call \`${tool}\` again with narrower arguments for the rest`
   return `${kept}\n[cut: the result is ${size} bytes, the first ${Buffer.byteLength(kept)} are shown; ${rest}]`
 }
 
