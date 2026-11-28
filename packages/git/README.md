@@ -1,7 +1,7 @@
 # @system/git
 
 A library (ADR-0017 decision 2), not a Cordis plugin: it has no `apply`, no
-`Config` and no row in the bundle. [work](../work/README.md), [agents](../agents/README.md),
+`Config` and no row in the bundle. [work](../work/README.md), [agents](../runtime-cli/README.md),
 [app](../app/README.md), [effects](../effects/README.md) and [verifiers](../verifiers/README.md) import it.
 
 - `git(dir, args, env?, timeoutMs?)` runs git with no hooks, no signing and no prompt, and a

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as cli from '../src/cli.ts'
 import { fakeHost } from './fake-host.ts'
-import type { QuotaReport } from '../../agents/src/quota.ts'
+import type { QuotaReport } from '../../runtime-cli/src/quota.ts'
 
 // Resolve the planned export at runtime so the tests compile before it exists.
 function quotaLine(report: QuotaReport, now: number): string {

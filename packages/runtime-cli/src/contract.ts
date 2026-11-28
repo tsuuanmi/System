@@ -1,5 +1,5 @@
 /**
- * What other packages may import from `@system/agents` (ADR-0017 decision 1): the service's type and its place in `Context`, the
+ * What other packages may import from `@system/runtime-cli` (ADR-0017 decision 1): the service's type and its place in `Context`, the
  * types and pure functions its callers use. It imports no plugin entry and opens no service.
  */
 export { nodeBin, satisfies } from './node.ts'

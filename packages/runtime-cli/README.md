@@ -1,4 +1,4 @@
-# @system/agents
+# @system/runtime-cli
 
 The `agents` row: each configured agent CLI account (and a `web` account, through
 the optional web-worker row) becomes a System Worker
@@ -223,7 +223,7 @@ Tiers are those of System 1: `economy`, `standard`, `frontier`. An account's
 `models` maps each tier it offers to a model; each listed tier adds the
 capability `tier.<name>`, so a Workflow step asks for one like any other
 capability (`capabilities: [repo.write, tier.frontier]`) and preflight refuses
-a tier no enabled account offers. A `web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../web-worker/README.md)). A step with no tier gets the `standard`
+a tier no enabled account offers. A `web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../runtime-web/README.md)). A step with no tier gets the `standard`
 model, or the CLI's default when the account lists none. Each attempt records
 the tier, the configured model, and the models the CLI reports it served.
 
@@ -346,7 +346,7 @@ Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 
 ## The `web` Runtime
 
-An account with `runtime: web` is not run here: the optional [`web-worker` row](../web-worker/README.md)
+An account with `runtime: web` is not run here: the optional [`web-worker` row](../runtime-web/README.md)
 serves it, and `agents` only hands it over through the `webWorker` service ([web.ts](src/web.ts):
 the contract, and `WEB_WORKER_DISABLED`). With that row off the account is reported
 `unavailable` with the reason "the web-worker row is disabled". It keeps the `agents` row's settings

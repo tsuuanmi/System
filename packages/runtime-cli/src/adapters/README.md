@@ -1,4 +1,4 @@
-# @system/agents adapters
+# @system/runtime-cli adapters
 
 One adapter per CLI Runtime. Everything that differs between Runtimes lives here; `agent.ts`, `ask.ts` and `index.ts` ask the registry and never branch on a Runtime's name (`tests/adapters.test.ts` fails if one does).
 

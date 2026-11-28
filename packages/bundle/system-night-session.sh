@@ -3,7 +3,7 @@
 # Started by system-night-session.service; the allowlist and the prompt are checked against each other by
 # packages/bundle/tests/night-session-units.test.ts. Nothing here approves, denies, cancels, retries or releases.
 # `claude -p` alone runs inside a bubblewrap layer with only the caller socket (ADR-0016 decision 5; docs/operations/scheduled-session.md).
-# The layer is built here, not by packages/agents/src/adapters/sandbox.ts: that builds an attempt's layer in TypeScript from an attempt
+# The layer is built here, not by packages/runtime-cli/src/adapters/sandbox.ts: that builds an attempt's layer in TypeScript from an attempt
 # Workspace (its own directory and git data read-write), and calling it from this script would need a new Node entry point for an
 # argv that shares only the first lines (hide the home and the Host state, keep the network).
 # The session's final answer is the night report (Markdown); this launcher stores it as an Artifact, prints its ID

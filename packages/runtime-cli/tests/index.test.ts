@@ -346,7 +346,7 @@ function mountBeforeWebWorker(waitSeconds?: number) {
   const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: observed(), artifacts: {}, subprocess: {}, credentials: {} }
   const ctx = {
     get: (key: string) => services[key],
-    registry: { values: () => [{ name: 'system-web-worker' }] },
+    registry: { values: () => [{ name: 'system-runtime-web' }] },
     inject: (_names: string[], callback: (ctx: { get(key: string): unknown }) => void) => { appeared = callback },
     effect: () => {},
     provide: providing(provided, services),

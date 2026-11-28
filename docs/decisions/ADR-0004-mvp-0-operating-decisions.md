@@ -137,7 +137,7 @@ brainstorming and research: **another Worker adapter behind the same
 contract**, with no controller change, weak usage data, and each provider's
 terms for automated web use reviewed before activation. Its first form is
 PROP-0005 ([retired](../governance/retired.md); the Worker is in the
-[web-worker README](../../packages/web-worker/README.md)).
+[web-worker README](../../packages/runtime-web/README.md)).
 
 The earlier reference implementation (`tsuuanmi/system`, commit `f199a27`)
 has working `website` Workers for ChatGPT and Gemini (patchright-driven

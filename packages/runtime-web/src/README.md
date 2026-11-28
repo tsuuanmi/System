@@ -1,4 +1,4 @@
-# @system/web-worker source
+# @system/runtime-web source
 
 - [index.ts](index.ts) — the Cordis row: `register` an account of the `agents` row, and the sign-in operations (`ctx.webWorker`).
 - [chatgpt.ts](chatgpt.ts) — the `web` Runtime's attempt: patchright on a genuine headed Chrome, the prompt, the generic Procedures of `@system/web-driver` for the page, labelled blocks, the `conversation@1`; the account as a `WorkerPort`.

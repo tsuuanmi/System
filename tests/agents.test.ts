@@ -1,6 +1,6 @@
 /**
  * M3 on the real profile with the `agents` row pointed at a fake CLI
- * (packages/agents/tests/fake-agent.mjs) by a profile patch: per-attempt
+ * (packages/runtime-cli/tests/fake-agent.mjs) by a profile patch: per-attempt
  * worktrees, cross-process cancel, and a Codex takeover of cancelled Claude
  * work, all through `bin/system`. No model credentials are used.
  */

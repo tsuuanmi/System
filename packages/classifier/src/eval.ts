@@ -3,7 +3,7 @@
  * `evaluate` is pure but for the `Ask` it is given (a fake in tests, a real Runtime in the operator's one run);
  * `gate` reads a report and answers pass or fail. No control path reads either: a Classification stays report-only.
  */
-import type { Ask } from '@system/agents/contract'
+import type { Ask } from '@system/runtime-cli/contract'
 import type { Artifacts } from '@system/artifacts/contract'
 import { defaultChange, laterPasses, summarize } from '@system/work/contract'
 import type { WorkRecord } from '@system/work'

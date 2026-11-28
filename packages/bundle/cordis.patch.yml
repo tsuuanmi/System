@@ -54,7 +54,7 @@
     # unavailable ("the web-worker row is disabled") and nothing of the browser is loaded.
     # A profile patch turns it on with `disabled: false` (docs/operations/accounts-and-workers.md, "The web account").
     - id: web-worker
-      name: '@system/web-worker'
+      name: '@system/runtime-web'
       disabled: true
 
     # Agent CLI accounts as Workers (ADR-0004, ADR-0005). An account whose CLI
@@ -63,7 +63,7 @@
     # roles (workflows/brainstorm.yaml) are capabilities too: the two
     # independent proposals go to different providers.
     - id: agents
-      name: '@system/agents'
+      name: '@system/runtime-cli'
       config:
         # Wall-clock limit of one attempt, in minutes (fractions allowed; default 60).
         # An attempt past it is stopped like a cancel but fails, so a hung test

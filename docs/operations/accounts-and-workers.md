@@ -56,7 +56,7 @@ and `system status`.
 ## Attempts at once, and held slots
 
 Account refs and labels, and the refusal of two accounts on one provider account, are in the
-[agents README](../../packages/agents/README.md#account-identity).
+[agents README](../../packages/runtime-cli/README.md#account-identity).
 
 **Renaming an Account.** Wait until no Work runs (nothing is stopped for it), then:
 
@@ -77,7 +77,7 @@ merely unknown (no window, a web Account) does not make an Account unavailable.
 A step that fails with such a text is an Outside failure with cause `signed-out`.
 
 `system workers` also prints a `quota:` line under each account; see the
-[agents README](../../packages/agents/README.md#quota).
+[agents README](../../packages/runtime-cli/README.md#quota).
 
 `system workers` ends with one line that says whether there is room for more
 parallel Works; `--repo <path>` (repeatable) adds the Ready Items of that
@@ -139,7 +139,7 @@ slot never clears, find the process with `pgrep -fa claude` or `pgrep -fa codex`
 ## Antigravity Accounts
 
 How to add an Antigravity CLI (`agy`) sign-in as Workers (flags and adapter details live in the
-[adapters README](../../packages/agents/src/adapters/README.md)):
+[adapters README](../../packages/runtime-cli/src/adapters/README.md)):
 
 1. Install or update the CLI with `agy update` (1.5.18 or later; 1.4.6 lacked what System uses).
 2. Create the Account's home `~/.dsh/system/antigravity/<name>` (mode 700) and sign in from a terminal:
@@ -203,7 +203,7 @@ To sign in again: `HOME=<agyHome> env -u DBUS_SESSION_BUS_ADDRESS agy`, then the
 
 A Worker that runs a step in the operator's signed-in ChatGPT web session
 (PROP-0005, [retired](../governance/retired.md); options in the
-[web-worker README](../../packages/web-worker/README.md)). It is
+[web-worker README](../../packages/runtime-web/README.md)). It is
 **not enabled by default**, in two steps in the profile's own patch
 (`$DSH_HOME/profiles/system/cordis.patch.yml`), then restart the Host: turn on the
 optional `web-worker` row, and add the account to the `agents` row (it is added to
@@ -230,7 +230,7 @@ With the row off, `system workers` shows the account `unavailable` with the reas
 
 It needs `Xvfb` (`apt install xvfb`) and a recent Chrome (and for `--remote` a VNC
 server, see below). The Chrome is chosen, and a pinned one downloaded the first
-time it is needed, as the [web-worker README](../../packages/web-worker/README.md)
+time it is needed, as the [web-worker README](../../packages/runtime-web/README.md)
 says. `system workers` shows the account as `available` once Xvfb is found and
 the Chrome path exists; that says nothing about the sign-in. It is `unavailable`
 with a reason that names what is missing.
@@ -239,7 +239,7 @@ with a reason that names what is missing.
 - `system workers login web/chatgpt/default --cookies <file>`: a JSON export from
   a browser extension, or a Netscape `cookies.txt`, of chatgpt.com from your
   own signed-in browser. Delete the file yourself when done: it is as good as a
-  password. Which cookies are kept: the [web-worker README](../../packages/web-worker/README.md).
+  password. Which cookies are kept: the [web-worker README](../../packages/runtime-web/README.md).
 - `system workers login web/chatgpt/default --remote`: for a server with no
   display, and for a Cloudflare challenge. See below.
 - With neither, on a machine with a display: a window opens on the **Host's**
@@ -263,7 +263,7 @@ x11vnc`) or TigerVNC's `x0vncserver` (`apt install tigervnc-scraping-server`).
 Without root, unpack the packages into the home directory and put a wrapper script on the `PATH`.
 
 **Account states.** `system workers` shows any state but `ready` as `unavailable` with what to do (states,
-quarantine and recheck: the [web-worker README](../../packages/web-worker/README.md#account-health-ww6d)). After
+quarantine and recheck: the [web-worker README](../../packages/runtime-web/README.md#account-health-ww6d)). After
 `needs-sign-in` or `challenged`, log in again with `--remote`, then `system workers recheck web/chatgpt/<name>` and
 retry the Work with `work retry`: no prompt is resent automatically.
 

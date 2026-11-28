@@ -1,17 +1,17 @@
-# @system/web-worker
+# @system/runtime-web
 
 The `web-worker` row: the `web` Runtime, where an account is the
 operator's own signed-in ChatGPT website session driven through a genuine
 headed Chrome (PROP-0005 ([retired](../../docs/governance/retired.md))).
 It is its own package and an **optional, off** row (WW2a, config-first
-optionality): System's core and the CLI Runtimes of [@system/agents](../agents/README.md)
+optionality): System's core and the CLI Runtimes of [@system/runtime-cli](../runtime-cli/README.md)
 do not depend on it, are tested without it, and work when it is off. Its
 browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 `ws`, [`@system/web-driver`](../web-driver/README.md)) are this package's alone.
 
 - **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH).
   **Provides:** `ctx.webWorker`, the `WebWorkerService` contract that
-  [`@system/agents`](../agents/src/web.ts) declares: `register` (an account), `login`, `loginRemote`, `loginWait`, `recheck`.
+  [`@system/runtime-cli`](../runtime-cli/src/web.ts) declares: `register` (an account), `login`, `loginRemote`, `loginWait`, `recheck`.
 - **Accounts** stay in the `agents` row's `accounts` (`runtime: web`).
   The `agents` row hands each to `register`, which checks it (Xvfb, no `headless`, the Chrome, the settings), registers its Worker
   and keeps its sign-in state; `system workers` shows the result.

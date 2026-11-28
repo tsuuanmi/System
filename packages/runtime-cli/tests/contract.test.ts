@@ -4,7 +4,7 @@ import * as contract from '../src/contract.ts'
 import * as entry from '../src/index.ts'
 import pkg from '../package.json' with { type: 'json' }
 
-// ADR-0017 decision 1: what other packages import from `@system/agents` is behind `./contract`.
+// ADR-0017 decision 1: what other packages import from `@system/runtime-cli` is behind `./contract`.
 test('the contract exports the values other packages use, the same ones the entry has', () => {
   for (const name of ['maskValues', 'subprocessSpawner', 'runAttempt', 'exited', 'lazyVersion', 'mediaTypeOf', 'WEB_WORKER_DISABLED', 'nodeBin', 'satisfies', 'recordingPid'] as const) {
     assert.ok(name in contract, `${name} is exported by the contract`)

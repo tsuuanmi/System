@@ -22,7 +22,7 @@
     "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.5",
     "@deepseek-ai/schemastery": "~3.19.0",
     "@modelcontextprotocol/sdk": "1.32.2",
-    "@system/agents": "workspace:*",
+    "@system/runtime-cli": "workspace:*",
     "@system/artifacts": "workspace:*",
     "@system/git": "workspace:*",
     "@system/host": "workspace:*",

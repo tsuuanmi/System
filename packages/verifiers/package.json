@@ -18,7 +18,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-subprocess": "0.2.2-rc.5",
     "@deepseek-ai/schemastery": "~3.19.0",
-    "@system/agents": "workspace:*",
+    "@system/runtime-cli": "workspace:*",
     "@system/artifacts": "workspace:*",
     "@system/git": "workspace:*",
     "@system/work": "workspace:*",

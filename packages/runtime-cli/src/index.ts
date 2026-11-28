@@ -37,7 +37,7 @@ export * from './spawner.ts'
 export * from './web.ts'
 export * from './workspace.ts'
 
-export const name = 'system-agents'
+export const name = 'system-runtime-cli'
 export const inject = ['capabilities', 'artifacts', 'subprocess', 'credentials', 'storageDomain']
 
 const windowSchema = z.object({ percentUsed: z.number(), resetsAt: z.string().optional() })
@@ -209,7 +209,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await new Promise<void>((resolve) => { setImmediate(resolve) })
   // Cordis applies rows that wait for the same services in no fixed order: the web-worker row, when it is on, may provide its service after this
   // row applies. Its accounts are then handed to it when it does (bounded), never reported "disabled" and left unannounced (flaky-2).
-  const webWorkerComing = !webWorker && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-web-worker')
+  const webWorkerComing = !webWorker && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-runtime-web')
   let webWorkerLate: string | undefined
   if (webWorkerComing && entries.some(({ account }) => isWebRuntime(account.runtime))) {
     const seconds = config.webWorkerWaitSeconds ?? 30

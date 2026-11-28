@@ -1,6 +1,6 @@
 /**
  * cls-1 on the real profile with the optional `classifier` row on (a profile patch) and a fake economy Account
- * (packages/agents/tests/fake-agent.mjs): a Work fails for a reason no rule knows, its failure gets a Classification
+ * (packages/runtime-cli/tests/fake-agent.mjs): a Work fails for a reason no rule knows, its failure gets a Classification
  * from the Account that did not fail, and `work report` shows it under the label, marked as classified. With the row
  * off (the bundle's default) the report is as before. No model credentials are used.
  */

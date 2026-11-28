@@ -10,6 +10,8 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { parse } from 'yaml'
 
+/** Row ids stay `agents` and `web-worker` (ADR-0018 decision 4); their packages are `runtime-cli` and `runtime-web`. */
+const DIRS: Record<string, string> = { agents: 'runtime-cli', 'web-worker': 'runtime-web' }
 const SERVICES = ['storageDomain', 'attachments', 'artifacts', 'capabilities', 'credentials', 'subprocess']
 
 /** Activates one row through a real Loader, the services it injects standing as empty objects; resolves with the fiber's startup error. */
@@ -18,7 +20,7 @@ async function activate(id: string, config: unknown): Promise<unknown> {
   for (const service of SERVICES) root.provide(service as never, {} as never)
   await root.plugin(Loader, { baseUrl: import.meta.url })
   const loader = (root as unknown as { loader: { create(options: object): Promise<string>; await(): Promise<void>; resolve(id: string): { fiber: { await(): Promise<unknown> } } } }).loader
-  await loader.create({ id, name: pathToFileURL(new URL(`../../${id}/src/index.ts`, import.meta.url).pathname).href, config })
+  await loader.create({ id, name: pathToFileURL(new URL(`../../${DIRS[id] ?? id}/src/index.ts`, import.meta.url).pathname).href, config })
   await loader.await()
   try { await loader.resolve(id).fiber.await(); return undefined } catch (error) { return error } finally { await root.fiber.dispose() }
 }
@@ -46,8 +48,8 @@ for (const { id, config, message } of wrong) {
 }
 
 test('the shipped patch accounts and the defaults of today validate', async () => {
-  const agents = await import('../../agents/src/index.ts')
-  const web = await import('../../web-worker/src/index.ts')
+  const agents = await import('../../runtime-cli/src/index.ts')
+  const web = await import('../../runtime-web/src/index.ts')
   const app = await import('../../app/src/index.ts')
   const check = (schema: unknown, value: unknown) => (schema as { (value: unknown): any })(value)
   const patch = parse(readFileSync(new URL('../../bundle/cordis.patch.yml', import.meta.url), 'utf8')) as { insert: { id: string; config?: unknown }[] }[]
@@ -63,7 +65,7 @@ test('the shipped patch accounts and the defaults of today validate', async () =
 })
 
 test('an unset list, map or budget stays unset: the schema adds no [] or {} that apply would read as a value', async () => {
-  const agents = await import('../../agents/src/index.ts')
+  const agents = await import('../../runtime-cli/src/index.ts')
   const config = (agents.Config as unknown as { (value: unknown): any })({ accounts: [{ ref: 'web/chatgpt/default', runtime: 'web', capabilities: ['research'] }] })
   const account = config.accounts[0]
   for (const field of ['cooldownSeconds', 'models', 'timeouts', 'attemptBudget']) assert.equal(account[field], undefined, field)

@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { shippedMap, shippedMapProblem } from '@system/web-driver'
-import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents/contract'
+import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/runtime-cli/contract'
 import type { Artifacts } from '@system/artifacts/contract'
 import { systemPath, type Capabilities } from '@system/work/contract'
 import { SITES, offeredTiers, webDefaults, webWorker, type WebConfig } from './chatgpt.ts'
@@ -26,7 +26,7 @@ export * from './display.ts'
 export * from './health.ts'
 export * from './recheck.ts'
 
-export const name = 'system-web-worker'
+export const name = 'system-runtime-web'
 export const inject = ['capabilities', 'artifacts', 'subprocess']
 
 export interface Config {
@@ -112,7 +112,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   let isAnnounced = false
   const announcedDone = new Promise<void>((resolve) => { announce = () => { isAnnounced = true; resolve() } })
   const announced = () => { announce() }
-  const agentsComing = () => !isAnnounced && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-agents')
+  const agentsComing = () => !isAnnounced && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-runtime-cli')
   const waitSeconds = config.registerWaitSeconds ?? 60
   const account = async (ref: string): Promise<{ web: WebConfig; health: AccountHealth }> => {
     const deadline = Date.now() + waitSeconds * 1000

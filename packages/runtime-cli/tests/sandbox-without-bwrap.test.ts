@@ -13,11 +13,11 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const self = 'packages/agents/tests/sandbox-without-bwrap.test.ts'
+const self = 'packages/runtime-cli/tests/sandbox-without-bwrap.test.ts'
 
 /** Every test file that exercises the layer or the launcher that starts it. A new such file is added here; the last test keeps the list honest. */
 export const LAYER_TEST_FILES = [
-  'packages/agents/tests/sandbox.test.ts',
+  'packages/runtime-cli/tests/sandbox.test.ts',
   'packages/bundle/tests/night-session-launcher.test.ts',
   'tests/layer-gate.test.ts',
   'tests/night-session-layer.test.ts',

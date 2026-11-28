@@ -1,6 +1,6 @@
 /**
  * The seam to the web Runtime (WW2a). `web` accounts are configured in the `agents` row but served by the
- * optional `web-worker` row (`@system/web-worker`), which provides this service; with the row off the accounts are
+ * optional `web-worker` row (`@system/runtime-web`), which provides this service; with the row off the accounts are
  * reported unavailable. Only types and one message live here: nothing of the browser is loaded.
  */
 

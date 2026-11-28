@@ -19,8 +19,8 @@ agent loop, model adapter, sandbox, web server or telemetry row is mounted
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `subprocess` | yes | Worker and verifier processes (from M3) |
 | `verifiers` | `@system/verifiers` | `verifiers` | no | `code.required-checks`, `research.citation-check` (ADR-0003, ADR-0004) |
 | `effects` | `@system/effects` | `effects` | no | `git.publish` to GitHub (ADR-0004 decision 10): push, a pull request, and a merge only into `mergeInto` (`dev`, ADR-0008); token `GITHUB_TOKEN` |
-| `web-worker` | `@system/web-worker` | `webWorker` | no, **off** | the `web` Runtime for accounts of the `agents` row; enable with `disabled: false` ([runbook](../../docs/operations/accounts-and-workers.md#the-web-account)); off, such accounts are unavailable ("the web-worker row is disabled") and nothing of the browser is loaded |
-| `agents` | `@system/agents` | `agents` | no | Claude Code and Codex accounts as Workers (ADR-0004, ADR-0005); accounts without a CLI or credential are skipped; Brainstorm roles are account capabilities |
+| `web-worker` | `@system/runtime-web` | `webWorker` | no, **off** | the `web` Runtime for accounts of the `agents` row; enable with `disabled: false` ([runbook](../../docs/operations/accounts-and-workers.md#the-web-account)); off, such accounts are unavailable ("the web-worker row is disabled") and nothing of the browser is loaded |
+| `agents` | `@system/runtime-cli` | `agents` | no | Claude Code and Codex accounts as Workers (ADR-0004, ADR-0005); accounts without a CLI or credential are skipped; Brainstorm roles are account capabilities |
 | `classifier` | `@system/classifier` | `classifier` | no, **off** | answers closed questions (`classifiers/*.yaml`) about an Artifact with an economy-tier Account of `agents`, recorded as `classification@1`; report-only (`work report`); enable with `disabled: false`; off, reports are as before |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` | `credentials` | no | Worker tokens (`system credentials`, ADR-0005); may be disabled when no real Worker runs |
 | `system-app` | `@system/app` | — | yes | the CLI |

@@ -179,12 +179,12 @@ importers:
       '@deepseek-ai/dsh':
         specifier: 0.2.2-rc.5
         version: 0.2.2-rc.5(patch_hash=1a5c745a94e90f2759306f2620aeb36c95488e78b90e456315e5f025cfe450a1)(2cc433834883d18177b96a434bd989b1)
-      '@system/agents':
-        specifier: workspace:*
-        version: link:packages/agents
       '@system/artifacts':
         specifier: workspace:*
         version: link:packages/artifacts
+      '@system/runtime-cli':
+        specifier: workspace:*
+        version: link:packages/runtime-cli
       '@system/work':
         specifier: workspace:*
         version: link:packages/work
@@ -203,37 +203,6 @@ importers:
       typescript-eslint:
         specifier: 8.72.1
         version: 8.72.1(eslint@10.14.0)(typescript@6.0.3)
-
-  packages/agents:
-    dependencies:
-      '@deepseek-ai/dsh-credentials':
-        specifier: 0.2.2-rc.5
-        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)
-      '@deepseek-ai/dsh-storage-domain':
-        specifier: 0.2.2-rc.5
-        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
-      '@deepseek-ai/dsh-subprocess':
-        specifier: 0.2.2-rc.5
-        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-error@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-http-proxy@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
-      '@deepseek-ai/schemastery':
-        specifier: ~3.19.0
-        version: 3.19.0
-      '@system/artifacts':
-        specifier: workspace:*
-        version: link:../artifacts
-      '@system/git':
-        specifier: workspace:*
-        version: link:../git
-      '@system/work':
-        specifier: workspace:*
-        version: link:../work
-      ajv:
-        specifier: 8.20.0
-        version: 8.20.0
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 4.1.0
-        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
 
   packages/app:
     dependencies:
@@ -255,9 +224,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.6)
-      '@system/agents':
-        specifier: workspace:*
-        version: link:../agents
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
@@ -267,6 +233,9 @@ importers:
       '@system/host':
         specifier: workspace:*
         version: link:../host
+      '@system/runtime-cli':
+        specifier: workspace:*
+        version: link:../runtime-cli
       '@system/work':
         specifier: workspace:*
         version: link:../work
@@ -320,9 +289,6 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: 0.2.2-rc.5
         version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-error@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-subprocess@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-error@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-http-proxy@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)))(@deepseek-ai/dsh-timeout@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
-      '@system/agents':
-        specifier: workspace:*
-        version: link:../agents
       '@system/app':
         specifier: workspace:*
         version: link:../app
@@ -338,12 +304,15 @@ importers:
       '@system/fakes':
         specifier: workspace:*
         version: link:../fakes
+      '@system/runtime-cli':
+        specifier: workspace:*
+        version: link:../runtime-cli
+      '@system/runtime-web':
+        specifier: workspace:*
+        version: link:../runtime-web
       '@system/verifiers':
         specifier: workspace:*
         version: link:../verifiers
-      '@system/web-worker':
-        specifier: workspace:*
-        version: link:../web-worker
       '@system/work':
         specifier: workspace:*
         version: link:../work
@@ -353,12 +322,12 @@ importers:
       '@deepseek-ai/dsh-storage-domain':
         specifier: 0.2.2-rc.5
         version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
-      '@system/agents':
-        specifier: workspace:*
-        version: link:../agents
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@system/runtime-cli':
+        specifier: workspace:*
+        version: link:../runtime-cli
       '@system/work':
         specifier: workspace:*
         version: link:../work
@@ -422,6 +391,77 @@ importers:
         specifier: workspace:*
         version: link:../work
 
+  packages/runtime-cli:
+    dependencies:
+      '@deepseek-ai/dsh-credentials':
+        specifier: 0.2.2-rc.5
+        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: 0.2.2-rc.5
+        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-storage@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
+      '@deepseek-ai/dsh-subprocess':
+        specifier: 0.2.2-rc.5
+        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-error@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-http-proxy@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
+      '@deepseek-ai/schemastery':
+        specifier: ~3.19.0
+        version: 3.19.0
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      '@system/git':
+        specifier: workspace:*
+        version: link:../git
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+
+  packages/runtime-web:
+    dependencies:
+      '@deepseek-ai/dsh-subprocess':
+        specifier: 0.2.2-rc.5
+        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-error@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-http-proxy@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
+      '@deepseek-ai/schemastery':
+        specifier: ~3.19.0
+        version: 3.19.0
+      '@novnc/novnc':
+        specifier: 1.7.0
+        version: 1.7.0
+      '@puppeteer/browsers':
+        specifier: 3.2.3
+        version: 3.2.3
+      '@system/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
+      '@system/runtime-cli':
+        specifier: workspace:*
+        version: link:../runtime-cli
+      '@system/web-driver':
+        specifier: workspace:*
+        version: link:../web-driver
+      '@system/work':
+        specifier: workspace:*
+        version: link:../work
+      patchright-core:
+        specifier: 1.63.0
+        version: 1.63.0
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
+
   packages/verifiers:
     dependencies:
       '@deepseek-ai/dsh-subprocess':
@@ -430,15 +470,15 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ~3.19.0
         version: 3.19.0
-      '@system/agents':
-        specifier: workspace:*
-        version: link:../agents
       '@system/artifacts':
         specifier: workspace:*
         version: link:../artifacts
       '@system/git':
         specifier: workspace:*
         version: link:../git
+      '@system/runtime-cli':
+        specifier: workspace:*
+        version: link:../runtime-cli
       '@system/work':
         specifier: workspace:*
         version: link:../work
@@ -464,46 +504,6 @@ importers:
       yaml:
         specifier: 2.9.1
         version: 2.9.1
-
-  packages/web-worker:
-    dependencies:
-      '@deepseek-ai/dsh-subprocess':
-        specifier: 0.2.2-rc.5
-        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-error@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-http-proxy@0.2.2-rc.5(@deepseek-ai/cordis@4.1.0))
-      '@deepseek-ai/schemastery':
-        specifier: ~3.19.0
-        version: 3.19.0
-      '@novnc/novnc':
-        specifier: 1.7.0
-        version: 1.7.0
-      '@puppeteer/browsers':
-        specifier: 3.2.3
-        version: 3.2.3
-      '@system/agents':
-        specifier: workspace:*
-        version: link:../agents
-      '@system/artifacts':
-        specifier: workspace:*
-        version: link:../artifacts
-      '@system/web-driver':
-        specifier: workspace:*
-        version: link:../web-driver
-      '@system/work':
-        specifier: workspace:*
-        version: link:../work
-      patchright-core:
-        specifier: 1.63.0
-        version: 1.63.0
-      ws:
-        specifier: 8.22.0
-        version: 8.22.0
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 4.1.0
-        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
-      '@types/ws':
-        specifier: 8.18.2
-        version: 8.18.2
 
   packages/work:
     dependencies:

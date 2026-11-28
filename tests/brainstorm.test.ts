@@ -1,7 +1,7 @@
 /**
  * Brainstorm (PLAN.md B1, and the B2 recovery checks that need no model) on
  * the real profile: the bundle's own accounts, with only their CLI pointed at
- * the fake (packages/agents/tests/fake-agent.mjs). Two proposals from the
+ * the fake (packages/runtime-cli/tests/fake-agent.mjs). Two proposals from the
  * brief alone on different providers, then a synthesis of both exact
  * proposal Artifacts; no verifier.
  */

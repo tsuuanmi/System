@@ -2,7 +2,7 @@
  * The ported driver against System 1's stand-in for chatgpt.com (fake-chatgpt.ts): what
  * the login and the recheck rely on (the sign-in states, a temporary chat opened in Chat mode
  * with the switch awaited, the page diagnostics). A turn is the Procedures' (conformance.test.ts)
- * and the Runtime's attempts are tested in packages/web-worker/tests/chatgpt.test.ts.
+ * and the Runtime's attempts are tested in packages/runtime-web/tests/chatgpt.test.ts.
  * Headed Chrome on a private Xvfb; no network, no account.
  */
 import assert from 'node:assert/strict'

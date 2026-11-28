@@ -1,35 +1,38 @@
 {
-  "name": "@system/agents",
+  "name": "@system/runtime-web",
   "version": "0.0.0",
   "private": true,
-  "description": "Claude Code and Codex accounts as System Workers, run headless through DSH subprocess (ADR-0004, ADR-0005); the seam to the optional web Runtime (WW2a)",
+  "description": "The web Runtime as its own, optional row: ChatGPT website accounts as System Workers through patchright on a genuine Chrome (PROP-0005, WW2a)",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
-    "./contract": "./lib/contract.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "chrome.lock.json"
   ],
   "engines": {
     "dsh": "0.2.2-rc.5"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-credentials": "0.2.2-rc.5",
-    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.5",
     "@deepseek-ai/dsh-subprocess": "0.2.2-rc.5",
     "@deepseek-ai/schemastery": "~3.19.0",
+    "@novnc/novnc": "1.7.0",
+    "@puppeteer/browsers": "3.2.3",
+    "@system/runtime-cli": "workspace:*",
     "@system/artifacts": "workspace:*",
-    "@system/git": "workspace:*",
+    "@system/web-driver": "workspace:*",
     "@system/work": "workspace:*",
-    "ajv": "8.20.0"
+    "patchright-core": "1.63.0",
+    "ws": "8.22.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.1.0"
+    "@deepseek-ai/cordis": "4.1.0",
+    "@types/ws": "8.18.2"
   }
 }

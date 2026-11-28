@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import type { Ask } from '@system/agents/contract'
+import type { Ask } from '@system/runtime-cli/contract'
 import type { WorkRecord } from '@system/work'
 import { DEFAULT_DIRECTORY, evaluate, formatReport, gate, loadQuestions, wilson, type EvalReport, type LabelledSet } from '../src/index.ts'
 

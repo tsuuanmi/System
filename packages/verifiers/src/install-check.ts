@@ -12,7 +12,7 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Spawner } from '@system/agents/contract'
+import type { Spawner } from '@system/runtime-cli/contract'
 import type { Artifacts } from '@system/artifacts/contract'
 import { addWorktree, git, removeWorktree } from '@system/git'
 import type { GitTreeContent, Task, VerifyResult } from '@system/work'

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { laterPasses } from '@system/work/contract'
 import type { WorkRecord } from '@system/work'
-import type { Ask } from '@system/agents/contract'
+import type { Ask } from '@system/runtime-cli/contract'
 import { createClassifier, failureEvidence, failureText, hashText, parseQuestion } from '../src/index.ts'
 
 const QUESTION = parseQuestion(`

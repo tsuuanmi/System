@@ -1,4 +1,4 @@
-# @system/agents tests
+# @system/runtime-cli tests
 
 [fake-agent.mjs](fake-agent.mjs) stands in for `claude -p` and `codex exec`;
 markers in the task's instructions (`FAKE:edit`, `FAKE:sleep`, `FAKE:holdstdout` for a child that holds stdout open, ...) choose
@@ -10,7 +10,7 @@ the time limit and its reason, cancel with partial outputs, a missing declared o
 
 [index.test.ts](index.test.ts) tests the seam to the web Runtime: a `web` account is unavailable
 with "the web-worker row is disabled" when the row is off, and handed to its service when it is on.
-The web Runtime's own tests are in [web-worker](../../web-worker/tests/README.md).
+The web Runtime's own tests are in [web-worker](../../runtime-web/tests/README.md).
 
 The booted profile is covered by [tests/agents.test.ts](../../../tests/README.md),
 and the real CLIs by the credential-gated `tests/real-agents.test.ts`.

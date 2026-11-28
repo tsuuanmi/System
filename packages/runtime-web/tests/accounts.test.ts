@@ -25,7 +25,7 @@ test('an account that is not configured is refused at once', { timeout: 10_000 }
 
 // flaky-1: the Host serves while the agents row is still waiting for its services, so a login can come before the row has announced any account.
 test('an account the agents row has not announced yet is waited for, not refused as "not configured"', { timeout: 10_000 }, async () => {
-  const web = mount(undefined, undefined, [{ name: 'system-agents' }])
+  const web = mount(undefined, undefined, [{ name: 'system-runtime-cli' }])
   let settled = false
   const asked = web.loginRemote('web/chatgpt/default').finally(() => { settled = true })
   asked.catch(() => {})
@@ -37,7 +37,7 @@ test('an account the agents row has not announced yet is waited for, not refused
 })
 
 test('once the agents row has announced, a ref it did not announce is refused at once', { timeout: 10_000 }, async () => {
-  const web = mount(undefined, undefined, [{ name: 'system-agents' }])
+  const web = mount(undefined, undefined, [{ name: 'system-runtime-cli' }])
   const asked = web.loginRemote('web/chatgpt/none')
   asked.catch(() => {})
   web.announced()
@@ -46,7 +46,7 @@ test('once the agents row has announced, a ref it did not announce is refused at
 })
 
 test('the wait for the agents row is bounded by registerWaitSeconds', { timeout: 10_000 }, async () => {
-  const web = mount({ registerWaitSeconds: 0.2 }, undefined, [{ name: 'system-agents' }])
+  const web = mount({ registerWaitSeconds: 0.2 }, undefined, [{ name: 'system-runtime-cli' }])
   await assert.rejects(web.loginRemote('web/chatgpt/default'), /web\/chatgpt\/default is still registering after 0\.2 s/)
 })
 

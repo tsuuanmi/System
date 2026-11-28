@@ -94,7 +94,7 @@ a mandatory model verifier.
 
 - No System 1 Team/session persistence, voting, ballots, debate engine,
   consensus-as-truth or third model provider for Brainstorm V0.
-- The Website Worker ([`packages/web-worker`](../../packages/web-worker/README.md), off by default) is built; it
+- The Website Worker ([`packages/runtime-web`](../../packages/runtime-web/README.md), off by default) is built; it
   and any import of external web conversations or source provenance use the same Artifact/Worker
   contracts rather than replacing this Workflow.
 - Research claim verification is future work; existing configured verifiers

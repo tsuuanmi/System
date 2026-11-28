@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
-import type { Spawner } from '@system/agents/contract'
+import type { Spawner } from '@system/runtime-cli/contract'
 import type { Artifacts } from '@system/artifacts/contract'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
 import { processSpawner } from '../../../test-support/process.ts'
@@ -774,7 +774,7 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   const run = (touched: string[]) => own.checks.filter((c) => c.name !== 'secrets' && selected(c, touched, 'release')).map((c) => c.name)
   assert.deepEqual(run(['docs/architecture/host.md', 'PLAN.md']), ['docs'])
   // Markdown among code paths runs no code check (2026-11-17), unless the check names it (the runbook, the Charter).
-  assert.deepEqual(run(['packages/web-worker/README.md', 'packages/web-driver/README.md']), ['docs'])
+  assert.deepEqual(run(['packages/runtime-web/README.md', 'packages/web-driver/README.md']), ['docs'])
   const all = own.checks.map((c) => c.name).filter((name) => name !== 'secrets')
   // The upgrade rehearsal (Item rb-1) has its own `paths`: the release surface only, so it is not in `main` below.
   // The install guide check (Item install-1) has its own `paths` too: bin, the bundle, the runbook, the script.
@@ -794,7 +794,7 @@ test('System\'s own checks: a change to docs alone runs only docs; code, tests o
   assert.deepEqual(run(['workflows/code-checks.yaml']), noRatchets(withUpgrade(main)))
   for (const file of ['tests/work.test.ts', 'docs/requirements/purpose.md']) assert.deepEqual(run([file]), noRatchets(main), file)
   // The Website Worker's headed-browser tests run only when the web Runtime, its driver, its test or the headed helper change (PLAN WW).
-  for (const file of ['packages/web-driver/src/driver.ts', 'packages/web-worker/src/chatgpt.ts']) assert.deepEqual(run([file]), [...main, 'web'], file)
+  for (const file of ['packages/web-driver/src/driver.ts', 'packages/runtime-web/src/chatgpt.ts']) assert.deepEqual(run([file]), [...main, 'web'], file)
   for (const file of ['tests/chatgpt-web.test.ts', 'test-support/headed.ts']) assert.deepEqual(run([file]), [...noRatchets(main), 'web'], file)
   // The lint check (Item fl-10) runs for a change to the ESLint config as for any code.
   for (const file of ['test-support/fixture.ts', 'package.json', 'pnpm-lock.yaml', 'eslint.config.js']) assert.deepEqual(run([file]), noRatchets(main), file)
@@ -812,7 +812,7 @@ test('a commit checked as it is (code-checks.yaml on its own) runs every check, 
 })
 
 test('a release is checked as a change from the running one: the web check runs only when the diff touches its paths; the first install runs every check', async () => {
-  const checks = 'checks:\n  - name: always\n    run: "true"\n  - name: web\n    run: "true"\n    paths: ["packages/web-worker/**"]\n'
+  const checks = 'checks:\n  - name: always\n    run: "true"\n  - name: web\n    run: "true"\n    paths: ["packages/runtime-web/**"]\n'
   const artifacts = store()
   const repository = repo(checks)
   const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
@@ -826,7 +826,7 @@ test('a release is checked as a change from the running one: the web check runs 
     return git('rev-parse', 'HEAD')
   }
   const docs = commit('docs/note.md')
-  const worker = commit('packages/web-worker/a.ts')
+  const worker = commit('packages/runtime-web/a.ts')
   const verifier = requiredChecks(artifacts, processSpawner)
   const reason = async (commitId: string, parent?: string) => {
     const tree = { ...(await snapshot(repository, commitId)), ...(parent ? { parent } : {}) }

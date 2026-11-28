@@ -18,9 +18,9 @@ only when lifecycle or configuration demands it (package guidance of the [MVP-0 
 - [web-driver](web-driver/README.md) — `@system/web-driver`, System 1's ChatGPT
   web driver, its UI map and its UI engine, ported whole; the page logic of the
   `web` Runtime (used by web-worker).
-- [agents](agents/README.md) — `@system/agents`, the `agents` row: Claude Code
+- [runtime-cli](runtime-cli/README.md) — `@system/runtime-cli`, the `agents` row: Claude Code
   and Codex accounts as Workers, and the seam to the web Runtime.
-- [web-worker](web-worker/README.md) — `@system/web-worker`, the optional,
+- [runtime-web](runtime-web/README.md) — `@system/runtime-web`, the optional,
   off-by-default `web-worker` row: the `web` Runtime (browser, sign-in and
   remote viewer) and the browser dependencies, depended on by nothing in the core.
 - [classifier](classifier/README.md) — `@system/classifier`, the optional,

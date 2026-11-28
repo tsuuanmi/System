@@ -9,8 +9,8 @@ import { join } from 'node:path'
 import { after } from 'node:test'
 import type { BrowserContext, Page } from 'patchright-core'
 import { CHROME, skipHeaded } from '../../../test-support/headed.ts'
-import { launch, webDefaults } from '../../web-worker/src/chatgpt.ts'
-import { startXvfb, type Display } from '../../web-worker/src/display.ts'
+import { launch, webDefaults } from '../../runtime-web/src/chatgpt.ts'
+import { startXvfb, type Display } from '../../runtime-web/src/display.ts'
 
 export const starts = { xvfb: 0, chrome: 0 }
 const root = mkdtempSync(join(tmpdir(), 'system-shared-chrome-'))

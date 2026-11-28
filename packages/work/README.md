@@ -25,7 +25,7 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
 - [src/registry.ts](src/registry.ts) — `Capabilities`: register Workers and
   verifiers, route by capability, then (for a step's `prefer` capability) by preference, then by quota headroom, with a reason for
   every candidate. The ranking is [src/headroom.ts](src/headroom.ts) (pure);
-  the rule is in the [agents README](../agents/README.md#routing-by-headroom).
+  the rule is in the [agents README](../runtime-cli/README.md#routing-by-headroom).
 - [src/controller.ts](src/controller.ts) — `WorkController`: admit, run,
   recover, replay, and the scheduler (ready steps). No domain-specific branch.
 - [src/hold.ts](src/hold.ts) — `holdDecision`: a pure statement of what a held Work awaits, the options and the command for each (printed by `work show` and `approve`).
@@ -117,7 +117,7 @@ which dispatches a lost attempt again at once.
 A `drive` dispatches every ready step (pending, every `dependsOn` succeeded) whose
 Account routing chooses has a free slot (a capable Account that is full, or over
 its quota ceiling, is passed over for the next one; see the
-[agents README](../agents/README.md#routing-by-headroom)), in Workflow file order, then waits for an attempt to
+[agents README](../runtime-cli/README.md#routing-by-headroom)), in Workflow file order, then waits for an attempt to
 report or a slot to be freed. An Account is a Worker's `ref`; a `WorkerPort`
 offers `maxConcurrentAttempts` (default 1, set per Account in the `agents` row)
 and an optional `gone(attemptId)`. It also carries the Account's view for `system workers`: `status()`, `quota()` and `version()` ([ADR-0018](../../docs/decisions/ADR-0018-runtimes-plug-into-the-worker-registry.md) decision 1), read by `Capabilities.accounts()`, and optionally `signIn(step)` and `recheck()` ([ADR-0018](../../docs/decisions/ADR-0018-runtimes-plug-into-the-worker-registry.md) decision 2), called by ref through `Capabilities.operateOn`; a Worker without one is "not supported by runtime X". A slot is reserved in the lane before

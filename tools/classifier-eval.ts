@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { memoryArtifacts } from '../test-support/memory.ts'
-import type { Ask } from '@system/agents/contract'
+import type { Ask } from '@system/runtime-cli/contract'
 import { DEFAULT_DIRECTORY, loadQuestions } from '../packages/classifier/src/index.ts'
 import { evaluate, formatReport, type LabelledSet } from '../packages/classifier/src/eval.ts'
 

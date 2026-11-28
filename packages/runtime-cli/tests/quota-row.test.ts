@@ -9,7 +9,7 @@ import { apply, type AccountConfig, type Config } from '../src/index.ts'
 import { observed, viewOf } from '../../../test-support/accounts-view.ts'
 import type { WorkerPort } from '../../work/src/registry.ts'
 import { memoryArtifacts } from '../../../test-support/memory.ts'
-import { webDefaults, webWorker } from '../../web-worker/src/chatgpt.ts'
+import { webDefaults, webWorker } from '../../runtime-web/src/chatgpt.ts'
 
 /** The fake context's `ctx.inject`: the declared services are the ones in `services`, mounted at once. */
 const injecting = (services: Record<string, unknown>) => (_names: string[], callback: (ctx: { get(key: string): unknown }) => void): void => { callback({ get: (key) => services[key] }) }

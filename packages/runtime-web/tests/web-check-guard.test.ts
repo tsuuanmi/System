@@ -17,7 +17,7 @@ const scripts = (JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')) as
 const webFiles = (): string[] => scripts['test:web']!.split(/\s+/).filter((word) => /\.test\.ts$/.test(word)).flatMap((word) => globSync(word, { cwd: repo })).sort()
 
 /** Whether the test file starts a browser through the shared helper: it imports it, or imports chatgpt-support.ts, which does. */
-const usesHeadedHelper = (file: string): boolean => /test-support\/(headed|browser-test)\.ts'/.test(readFileSync(join(repo, file), 'utf8')) || (/from '\.\/chatgpt-support\.ts'/.test(readFileSync(join(repo, file), 'utf8')) && usesHeadedHelper('packages/web-worker/tests/chatgpt-support.ts'))
+const usesHeadedHelper = (file: string): boolean => /test-support\/(headed|browser-test)\.ts'/.test(readFileSync(join(repo, file), 'utf8')) || (/from '\.\/chatgpt-support\.ts'/.test(readFileSync(join(repo, file), 'utf8')) && usesHeadedHelper('packages/runtime-web/tests/chatgpt-support.ts'))
 
 test('test:web lists files, and every one exists', () => {
   const files = webFiles()
