@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-26
+reviewed: 2026-11-28
 summary: Installing System on a new machine and running its Host as a user service.
 covers: [tools/install.sh, bin/system, bin/service.mjs, packages/host/src/process.ts]
 ---
@@ -54,7 +54,8 @@ systemctl --user enable --now system
 
 Run `system init` again after changing Node or `PATH` (the unit holds those of
 the last init) or adding `profile.yml`. `system init` also writes, for each
-file in `~/.system/schedules/`, a timer and service unit it never enables
+file in `~/.system/schedules/`, a timer and service unit (plus a `-check` pair
+when the file sets `checkAt`) it never enables
 ([scheduled session](scheduled-session.md)). A development checkout runs as itself:
 `bin/system host --supervise` with a `DSH_HOME` of its own, never the default
 home while the installed Host runs.
