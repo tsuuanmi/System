@@ -52,7 +52,9 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   `dispatched.waitedMs`), rate-limited attempts (`rateLimitedAttempts`, from
   `observed.limited` and the old `observed.rateLimited`) and usage from a Work's events (`system work report`):
   total, cache read, cache write and fresh input tokens, with attempts that
-  did not split their cache use counted in `unsplitAttempts`, never as zero;
+  did not split their cache use counted in `unsplitAttempts`, never as zero,
+  and `cacheReadShare` (cache read over input tokens, over the attempts that
+  split; `unknown` when none did);
   `costUsdEstimate` totals the CLI's API-equivalent cost estimate (not what the
   subscription is billed) over the attempts that report it, from records'
   `costUsd`, old ones included. It also lists each failed attempt, failed or

@@ -266,3 +266,12 @@ test('relgate-1: releaseViolations are the violations of the range, as merge and
   assert.deepEqual(r.releaseViolations, [{ merge: 'm1', paths: ['workflows/develop.yaml'] }])
   assert.deepEqual(rangeReport([A], { since: '2026-11-15' }).releaseViolations, [])
 })
+
+test('rangeReport carries usage totals of the Works in the range; the Work without usage is counted apart (sum-1)', () => {
+  const r = rangeReport([A, B, C, OLD], { since: '2026-11-15' })
+  assert.equal(r.usage.total.inputTokens, 2)
+  assert.equal(r.usage.total.costUsd, 2)
+  assert.equal(r.usage.total.cacheReadShare, 'unknown')
+  assert.deepEqual(r.usage.total.attempts, { known: 0, partial: 2, unavailable: 1 })
+  assert.deepEqual(Object.keys(r.usage.byRuntime), ['w'])
+})

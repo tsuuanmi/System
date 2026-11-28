@@ -56,5 +56,7 @@ optional `outcome` (`known`, `partial` or `unavailable`), a `reason` and an
 `origin` (`stream`, `transcript` or `none`) saying where the counts were read.
 `known` has tokens and cost; `partial` has tokens without a cost or a cache
 split; `unavailable` has nothing. `work report` counts the outcomes per Runtime
-(`costCoverage`) instead of reading unknown cost as zero. Records stored
+(`costCoverage`) instead of reading unknown cost as zero, and `work report --since`
+adds `usage` (`usageTotals`): token totals, cache-read share, cost and outcomes in
+total and by Runtime, Account and local day of admission. Records stored
 without them parse, and `usageOutcome` derives the outcome from what they hold.

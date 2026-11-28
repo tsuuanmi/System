@@ -3,7 +3,7 @@
  * never by hand; records are only read. A measure with nothing to divide by, or an input nobody gave, is `unknown`,
  * never zero. Admission decides the range: `since` inclusive, `until` exclusive.
  */
-import { costCoverage, type CostCoverage } from './usage.ts'
+import { costCoverage, usageTotals, type CostCoverage, type UsageReport } from './usage.ts'
 import type { WorkRecord } from './record.ts'
 import { failureClass, parseCheckFailure } from './failure-class.ts'
 import { laterPasses } from './later-pass.ts'
@@ -72,6 +72,8 @@ export interface RangeReport {
   costPerVerifiedWork: { usd: number | Unknown; knownCostUsd: number; accepted: number; acceptedWithKnownCost: number; worksWithUnknownCost: number }
   /** usage-1: attempts of the range per Runtime by usage outcome (`known`: tokens and cost; `partial`: tokens without cost or cache split; `unavailable`: none), so cost the Runtime did not report is not read as zero. */
   costCoverage: CostCoverage
+  /** sum-1: token totals, the cache-read share, the priced cost and the attempts by usage outcome, in total and by Runtime, Account and local day of admission; an attempt without usage is only counted by outcome. */
+  usage: UsageReport
   /** Admission to acceptance of the accepted Works. */
   timeToVerifiedResolution: { medianMs: number | Unknown; p90Ms: number | Unknown; accepted: number }
   /** rounds-1: reopened steps per Work and in total; `medianToPass`/`p90ToPass` are over the succeeded Works (rounds before success); `failedAfterCap` are the failed Works that were automatically reopened (develop.yaml `retry max`) and still failed. */
@@ -186,6 +188,7 @@ export function rangeReport(records: readonly WorkRecord[], { since, until, esca
     escapedDefectRate: { rate: count === undefined ? 'unknown' : ratio(count, merged.size), escaped: count ?? 'unknown', itemsMerged: merged.size, source: escaped !== undefined ? 'override (--escaped)' : recorded !== undefined ? 'records' : 'none' },
     lateCaughtDefects: { count: late.length, checks: [...new Set(late)].sort() },
     costCoverage: costCoverage(inRange),
+    usage: usageTotals(inRange),
     costPerVerifiedWork: { usd: acceptedWithKnownCost === 0 ? 'unknown' : knownCostUsd / acceptedWithKnownCost, knownCostUsd, accepted, acceptedWithKnownCost, worksWithUnknownCost },
     timeToVerifiedResolution: resolution.length === 0 ? { medianMs: 'unknown', p90Ms: 'unknown', accepted } : { medianMs: (resolution[Math.floor((resolution.length - 1) / 2)]! + resolution[Math.floor(resolution.length / 2)]!) / 2, p90Ms: percentile(resolution, 0.9), accepted },
     reopenRounds: { total: rounds.reduce((n, r) => n + r.rounds, 0), perWork: rounds, passed: toPass.length, medianToPass: toPass.length === 0 ? 'unknown' : (toPass[Math.floor((toPass.length - 1) / 2)]! + toPass[Math.floor(toPass.length / 2)]!) / 2, p90ToPass: toPass.length === 0 ? 'unknown' : percentile(toPass, 0.9), failedAfterCap },

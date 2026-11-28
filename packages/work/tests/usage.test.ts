@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { costCoverage, usageOutcome, usageRecord } from '../src/usage.ts'
+import { costCoverage, usageOutcome, usageRecord, usageTotals } from '../src/usage.ts'
 import type { WorkEvent, WorkRecord } from '../src/record.ts'
 
 const counts = { inputTokens: 10, cacheReadTokens: 2, outputTokens: 3, source: 's' }
@@ -32,4 +32,46 @@ test('costCoverage counts known, partial and unavailable attempts per Runtime, n
     ...attempt(4, 'codex', { state: 'unknown' }),
   ] } as unknown as WorkRecord
   assert.deepEqual(costCoverage([record]), { 'claude-code': { known: 1, partial: 0, unavailable: 1 }, codex: { known: 0, partial: 1, unavailable: 1 } })
+})
+
+const day = (d: string, h = '12') => `2026-11-${d}T${h}:00:00.000Z`
+const work = (name: string, admittedAt: string, ...attempts: [string, Parameters<typeof usageRecord>[0] | 'unknown'][]): WorkRecord => ({
+  id: `work:${name}`,
+  events: [
+    { type: 'admitted', seq: 0, at: admittedAt, caller: { type: 'agent', operatorId: 't' }, specId: 'x', source: { kind: 'direct-task' } },
+    ...attempts.flatMap(([ref, usage], n) => attempt(n, ref.split('/')[0]!, usage === 'unknown' ? { state: 'unknown' } : usageRecord(usage)).map((e) => (e.type === 'dispatched' ? { ...e, selected: ref } : e))),
+  ],
+} as unknown as WorkRecord)
+
+test('usageTotals: sums over a fixed set of records, in total and per Runtime, Account and local day; no usage is counted apart, never as zero', () => {
+  const local = new Date(2026, 10, 20, 12).toISOString()
+  const localNext = new Date(2026, 10, 21, 12).toISOString()
+  const records = [
+    work('a', local, ['claude-code/main', { inputTokens: 100, cacheReadTokens: 60, cacheWriteTokens: 10, outputTokens: 7, costUsd: 1.5, source: 's' }], ['claude-code/main', 'unknown']),
+    work('b', localNext, ['codex/alt', { inputTokens: 50, cacheReadTokens: 20, outputTokens: 3, source: 's' }], ['codex/alt', { inputTokens: 9, outputTokens: 1, costUsd: 0.25, source: 's' }]),
+  ]
+  const t = usageTotals(records)
+  assert.deepEqual(t.total, {
+    inputTokens: 159, cacheReadTokens: 80, cacheWriteTokens: 10, freshInputTokens: 60, outputTokens: 11, cacheReadShare: 80 / 150, costUsd: 1.75,
+    attempts: { known: 1, partial: 2, unavailable: 1 },
+  })
+  assert.deepEqual(Object.keys(t.byRuntime).sort(), ['claude-code', 'codex'])
+  assert.equal(t.byRuntime['claude-code']!.inputTokens, 100)
+  assert.deepEqual(t.byRuntime['claude-code']!.attempts, { known: 1, partial: 0, unavailable: 1 })
+  assert.equal(t.byRuntime.codex!.cacheReadShare, 20 / 50)
+  assert.equal(t.byRuntime.codex!.costUsd, 0.25)
+  assert.deepEqual(Object.keys(t.byAccount).sort(), ['claude-code/main', 'codex/alt'])
+  assert.equal(t.byAccount['codex/alt']!.outputTokens, 4)
+  const days = Object.keys(t.byDay).sort()
+  assert.equal(days.length, 2)
+  assert.equal(t.byDay[days[0]!]!.inputTokens, 100)
+  assert.equal(t.byDay[days[1]!]!.inputTokens, 59)
+})
+
+test('usageTotals: nothing observed gives unknown share and no cost, not zero', () => {
+  const t = usageTotals([work('c', day('20'), ['codex/alt', 'unknown'])])
+  assert.equal(t.total.cacheReadShare, 'unknown')
+  assert.equal('costUsd' in t.total, false)
+  assert.deepEqual(t.total.attempts, { known: 0, partial: 0, unavailable: 1 })
+  assert.equal(usageTotals([]).total.cacheReadShare, 'unknown')
 })

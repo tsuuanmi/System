@@ -8,6 +8,7 @@ import type { LaterPass } from './later-pass.ts'
 import { defaultChange } from './failure-class.ts'
 import { attemptCause, outsideCause, type OutsideCause } from './outside.ts'
 import type { WorkRecord } from './record.ts'
+import { cacheReadShare } from './usage.ts'
 import { flakyFirstRuns } from './verification.ts'
 
 /** One failed attempt, failed or inconclusive verdict, hold, failed publish or operator touch, read from `event` (`<type>#<index>`); `outside` when its reason is an Outside failure, `unknown` when its cause cannot be placed, absent for a failure of the change. */
@@ -47,6 +48,8 @@ interface WorkSummary {
   /** `inputTokens` is the total; fresh input counts only attempts that split their cache use. */
   usage: {
     inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; freshInputTokens: number; outputTokens: number
+    /** Cache-read tokens over input tokens, over the attempts that split their cache use; `unknown` when none did. */
+    cacheReadShare: number | 'unknown'
     observedAttempts: number; unsplitAttempts: number; unknownAttempts: number
     /** The CLI's client-side API-equivalent cost estimate (not what a subscription is billed), over the attempts that report it, old records' `costUsd` included; absent when none does. */
     costUsdEstimate?: number
@@ -56,7 +59,8 @@ interface WorkSummary {
 /** `classified`: the recorded Classifications (cls-1); an `unknown` failure that has one is reported under its label, marked as classified. The classes and counts are the rules' alone. `later` (cls-5): the cross-Work view, from the Host's records: a failed check whose change passed it later, in this Work or another, is `flaky`, and a "no change" after a reopen whose previous change passed later is `process`; without it only this Work is read. */
 export function summarize(record: WorkRecord, classified?: ClassifiedLookup, later?: LaterPass): WorkSummary {
   const touches: string[] = []
-  const usage: WorkSummary['usage'] = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
+  const usage: WorkSummary['usage'] = { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, freshInputTokens: 0, outputTokens: 0, cacheReadShare: 'unknown', observedAttempts: 0, unsplitAttempts: 0, unknownAttempts: 0 }
+  let splitInputTokens = 0
   let attempts = 0
   let waitedForSlotMs = 0
   let rateLimitedAttempts = 0
@@ -100,6 +104,7 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
           usage.cacheReadTokens += cacheReadTokens
           usage.cacheWriteTokens += cacheWriteTokens
           usage.freshInputTokens += event.usage.inputTokens - cacheReadTokens - cacheWriteTokens
+          splitInputTokens += event.usage.inputTokens
         }
       } else {
         usage.unknownAttempts += 1
@@ -109,6 +114,7 @@ export function summarize(record: WorkRecord, classified?: ClassifiedLookup, lat
     if (event.type === 'reopened' && event.caller?.type === 'human') { touches.push(`retry ${event.stepId}`); add(index, 'touch', event.reason, lastCause()) }
     if (event.type === 'decided') { touches.push(`${event.decision} ${event.stepId}`); add(index, 'touch', event.reason, lastCause()) }
   }
+  usage.cacheReadShare = cacheReadShare(usage.cacheReadTokens, splitInputTokens)
   const first = Date.parse(record.events[0]!.at)
   const last = Date.parse(record.events.at(-1)!.at)
   const counts: Record<string, number> = {}
