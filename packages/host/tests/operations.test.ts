@@ -110,7 +110,8 @@ test('every method of the table round-trips over the socket', async () => {
   const put = await call('artifact.put', { data: b64('hello'), mediaType: 'text/plain', classification: 'local-private' }) as { id: string }
   assert.match(put.id, /^sha256:/)
   assert.equal((await call('artifact.show', { id: put.id }) as { state: string }).state, 'stored')
-  assert.deepEqual(await call('artifact.cat', { id: put.id }), { data: b64('hello') })
+  assert.deepEqual(await call('artifact.cat', { id: put.id }), { data: b64('hello'), offset: 0, size: 5 })
+  assert.deepEqual(await call('artifact.cat', { id: put.id, offset: 1, maxBytes: 3 }), { data: b64('ell'), offset: 1, size: 5 })
 
   const work = await call('work.submit', { workflow, input: input(f), commandId: 'c-1', run: false }) as { id: string; state: { status: string } }
   assert.equal(work.state.status, 'running')
