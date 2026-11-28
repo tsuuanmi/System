@@ -1,12 +1,12 @@
 /**
  * What a check needs besides its command (PROP-0007 decision 4): one line saying why it failed, read from
- * the output of Node's test runner (its `spec` reporter). The Node the repository asks for (decision 3) is `nodeBin` of `@system/agents`, which a Worker's PATH uses too (fl-3).
+ * the output of Node's test runner (its `spec` reporter). The Node the repository asks for (decision 3) is `nodeBin` of `@system/agents/contract`, which a Worker's PATH uses too (fl-3).
  */
 import { basename } from 'node:path'
 
-import { maskValues } from '@system/agents'
+import { maskValues } from '@system/agents/contract'
 
-export { nodeBin, satisfies } from '@system/agents'
+export { nodeBin, satisfies } from '@system/agents/contract'
 
 /** The file a test runner location names: `test at file:///a/b.test.ts:3:1` gives `b.test.ts`. */
 const fileOf = (location: string) => basename(location.replace(/:\d+:\d+$/, ''))

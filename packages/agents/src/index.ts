@@ -11,12 +11,14 @@ import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Artifacts } from '@system/artifacts'
 import { TIERS, systemPath, z, tierCapability, type Capabilities, type Tier } from '@system/work'
-import { DRAIN_MS, agentWorker, recordingPid, type Account, type AttemptBudget, type Spawner } from './agent.ts'
-import { chooseAsker, type Ask } from './ask.ts'
+import { agentWorker, type Account, type AttemptBudget } from './agent.ts'
+import { chooseAsker } from './ask.ts'
 import { adapterFor, checkSandbox } from './adapters/index.ts'
 import type { SandboxOption } from './adapters/sandbox.ts'
 import type { QuotaCache, QuotaReport } from './quota.ts'
 import { RUNTIME_ABILITIES, type Runtime } from './runtimes.ts'
+import { REGISTERING, SIGNED_OUT_REASON, type AccountRuntime, type AccountStatus, type AgentsService } from './service.ts'
+import { lazyVersion, subprocessSpawner } from './spawner.ts'
 import { WEB_WORKER_DISABLED, isWebRuntime, webRefProblem, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
 export * from './adapters/index.ts'
@@ -29,6 +31,8 @@ export * from './node.ts'
 export * from './quota.ts'
 export * from './redact.ts'
 export * from './runtimes.ts'
+export * from './service.ts'
+export * from './spawner.ts'
 export * from './web.ts'
 export * from './workspace.ts'
 
@@ -43,8 +47,6 @@ export const agentsDomain = defineDomain({
   tables: { quota: domainTable(z.object({ observedAt: z.number(), windows: z.object({ five_hour: windowSchema.optional(), seven_day: windowSchema.optional() }) })) },
 })
 
-/** `web` is the web Runtime, served by the `web-worker` row; its Site is the account's `site`. */
-export type AccountRuntime = Runtime | 'web'
 
 export interface AccountConfig extends WebAccountSettings {
   ref: string
@@ -141,82 +143,6 @@ function modelsOf(models: AccountConfig['models']): Partial<Record<Tier, string>
   return Object.fromEntries(TIERS.filter((tier) => models?.[tier]).map((tier) => [tier, models![tier]]))
 }
 
-/** The reason of an account whose registration is not done yet. */
-export const REGISTERING = 'registering'
-
-export interface AccountStatus {
-  ref: string
-  runtime: AccountConfig['runtime']
-  /** What its Runtime can do (declared in code, `RUNTIME_ABILITIES`); empty for a runtime that is refused. */
-  abilities: string[]
-  /** What the profile grants it: Roles and Tiers. */
-  capabilities: string[]
-  /** The model of each configured tier (never a credential). */
-  models: Partial<Record<Tier, string>>
-  /** What people call the account (free text). */
-  label?: string
-  /** Set when the profile still carries a field that is ignored. */
-  note?: string
-  /** The provider's own account ID (never a token); absent while unknown, and for a web account. */
-  providerAccount?: string
-  available: boolean
-  reason: string
-  command?: string
-  version?: string
-}
-
-/** Why an Account whose quota read failed with an authentication error is unavailable. */
-export const SIGNED_OUT_REASON = 'signed out'
-
-export interface AgentsService {
-  /** Every configured account; the CLI version of each available one is asked here, once. */
-  accounts(): Promise<AccountStatus[]>
-  /** The account's 5-hour and weekly quota, read without a model turn and cached for 10 minutes (`fresh` drops the cache and reads again); a Claude reading may come from the last attempt's rate-limit event when `get_usage` has no plan limits (`source`); `unreadable` for a `web` or unknown ref. */
-  quota(ref: string, options?: { fresh?: boolean }): Promise<QuotaReport>
-  /** One model turn with no tools on an economy-tier Account that is not in `exclude` (the Classifier's, cls-1); a refusal says why none could answer. Never throws. */
-  ask: Ask
-}
-
-/** A `Spawner` over the DSH subprocess service, which owns each process range. */
-export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
-  return {
-    spawn(spec) {
-      const handle = subprocess.spawn({
-        argv: recordingPid(spec), cwd: spec.cwd, env: spec.env, signal: spec.signal, graceMs: spec.graceMs,
-        stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
-      })
-      return {
-        // The agent's exit ends the attempt. Its range gets a bounded time to empty (and its output to arrive); what a leaked
-        // process (an Xvfb of its own tests) still holds after that is terminated, never waited for: 33 min on 2026-11-07.
-        done: handle.done.then(async (outcome) => {
-          const drained = await handle.waitForExit(AbortSignal.timeout(spec.drainMs ?? DRAIN_MS)).catch(() => false)
-          if (!drained) handle.terminate()
-          return { exitCode: outcome.exitCode, signal: outcome.signal }
-        }),
-        stdout: () => handle.collected.stdout?.readFrom(0).text ?? '',
-        stderr: () => handle.collected.stderr?.readFrom(0).text ?? '',
-      }
-    },
-  }
-}
-
-/** `<command> --version`, spawned once, on first use: startup spawns nothing. */
-export function lazyVersion(subprocess: SubprocessRuntime, command: string): () => Promise<string> {
-  let asked: Promise<string> | undefined
-  return () => {
-    asked ??= (async () => {
-      try {
-        const handle = subprocess.spawn({ argv: [command, '--version'], cwd: process.cwd(), graceMs: 2000, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } } })
-        await handle.done
-        return (handle.collected.stdout?.readFrom(0).text ?? '').trim().split('\n')[0] ?? ''
-      } catch {
-        // A managed Chrome that is not installed yet has no version to report.
-        return ''
-      }
-    })()
-    return asked
-  }
-}
 
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const capabilities = ctx.get('capabilities') as Capabilities

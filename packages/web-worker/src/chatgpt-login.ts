@@ -6,7 +6,7 @@
  * cookie value is never stored outside the profile or reported.
  */
 import type { BrowserContext, Cookie } from 'patchright-core'
-import type { LoginReport } from '@system/agents'
+import type { LoginReport } from '@system/agents/contract'
 import { startXvfb, type Display } from './display.ts'
 import { authState, chatGptDriver, launch, type WebConfig } from './chatgpt.ts'
 

@@ -5,7 +5,7 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { recordingPid, type Spawner } from '@system/agents'
+import { recordingPid, type Spawner } from '@system/agents/contract'
 
 /** How long a test's process may still be read after it exits: far over the default, so a loaded machine never closes the pipes before the output is read. */
 const DRAIN_TEST_MS = 60_000

@@ -7,5 +7,6 @@
 - [ask.ts](ask.ts) — one model turn with no tools on an economy-tier Account (`ask`), for the Classifier.
 - [agent.ts](agent.ts) — one account as a `WorkerPort`, behind a `Spawner` seam.
 - [index.ts](index.ts) — the Cordis row: accounts, DSH subprocess and credentials; hands `web` accounts to the web-worker row.
+- [contract.ts](contract.ts) — what other packages import (`@system/agents/contract`, ADR-0017): the `agents` service type with its `Context` entry ([service.ts](service.ts)), `subprocessSpawner` and `lazyVersion` ([spawner.ts](spawner.ts)), and the pure helpers and types callers use.
 
 See the [package README](../README.md).

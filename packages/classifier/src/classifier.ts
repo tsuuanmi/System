@@ -3,7 +3,7 @@
  * Account of an existing Runtime), votes, and records the answer once as a `classification@1` Artifact. A reader gets a
  * recorded answer and never calls the model. It never throws: a Classifier that cannot answer records nothing.
  */
-import type { Ask } from '@system/agents'
+import type { Ask } from '@system/agents/contract'
 import type { Artifacts } from '@system/artifacts'
 import { defaultChange, summarize, type ClassifiedFailure, type ClassifiedLookup, type Failure, type WorkRecord } from '@system/work'
 import { failureEvidence } from './evidence.ts'

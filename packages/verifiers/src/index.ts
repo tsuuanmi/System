@@ -6,7 +6,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { subprocessSpawner } from '@system/agents'
+import { subprocessSpawner } from '@system/agents/contract'
 import type { Artifacts } from '@system/artifacts'
 import type { Capabilities } from '@system/work'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkRunSchema, checksSchema, requiredChecks } from './checks.ts'
