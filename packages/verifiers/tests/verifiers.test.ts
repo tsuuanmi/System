@@ -18,7 +18,10 @@ import { GIT_TREE_KIND, TASK_KIND, VERDICT_KIND, putVerdict, verdictSchema, gitT
 import { parseCheckFailure } from '../../work/src/failure-class.ts'
 import { failureLine } from '../src/reasons.ts'
 import { CHECKS_KIND, CHECK_RUN_KIND, checkEnvSchema, checkRunSchema, checksSchema, parseChecksFile, requiredChecks } from '../src/checks.ts'
-import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
+import { CITATION_CHECK_KIND, CITATION_CRITERIA_KIND, citationCheck, type CitationOptions, citationCheckSchema, citationCriteriaSchema, normalize } from '../src/citations.ts'
+
+/** The test listener is on 127.0.0.1, an internal address: the verifier may fetch it only when told so. */
+const LOCAL = { internalHosts: ['127.0.0.1'] }
 
 const root = mkdtempSync(join(tmpdir(), 'system-verifiers-'))
 /** The verifier's scratch directory is named by the attempt ID in the shared tmp: an ID of its own per test process, or a parallel run (or another user) removes the directory a check runs in and `spawn timeout` fails with ENOENT. */
@@ -308,7 +311,7 @@ async function sources(artifacts: Artifacts, json: unknown): Promise<string> {
 /** `criteria` pins other criteria content instead of the verifier's own defaults. */
 async function cite(json: unknown, pinned?: Record<string, unknown>) {
   const artifacts = store()
-  const verifier = citationCheck(artifacts)
+  const verifier = citationCheck(artifacts, LOCAL)
   const criteria = pinned
     ? (await artifacts.put({ ...CITATION_CRITERIA_KIND, content: pinned, classification: 'public', producer })).id
     : await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
@@ -317,6 +320,74 @@ async function cite(json: unknown, pinned?: Record<string, unknown>) {
   const evidence = artifacts.get(result.evidence[0]!)
   return { result, evidence: evidence.state === 'stored' ? evidence.envelope.content as { problems: string[]; minConfirmedRatio?: number; confirmedRatio?: number; results: { found: boolean; status: number | null; contentHash?: string }[] } : undefined }
 }
+
+/** A listener counting the requests that reach it, and a page on `base` redirecting to it. */
+async function withListener(run: (hits: string[], port: number) => Promise<void>) {
+  const hits: string[] = []
+  const listener = createServer((req, res) => { hits.push(req.url ?? ''); res.writeHead(200); res.end('System verifies citations') })
+  await new Promise<void>((r) => listener.listen(0, '127.0.0.1', r))
+  try { await run(hits, (listener.address() as { port: number }).port) } finally { listener.close() }
+}
+
+async function citeWith(options: CitationOptions | undefined, url: string) {
+  const artifacts = store()
+  const verifier = citationCheck(artifacts, options)
+  const criteria = await verifier.criteria({ capability: 'research.citation-check', name: 'citations-v2', operatorId: 't' })
+  const subject = await sources(artifacts, { sources: [{ id: 's1', url, quote: 'system verifies citations', claims: ['c'] }] })
+  const result = await verifier.verify({ workId: 'w', attemptId: `${RUN}-a`, stepId: 'citations', capability: 'research.citation-check', subject, criteria })
+  const evidence = artifacts.get(result.evidence[0]!)
+  return { result, results: (evidence.state === 'stored' ? evidence.envelope.content : { results: [] }) as { results: { status: number | null; error?: string }[] } }
+}
+
+test('a URL on an internal address is not fetched: unreachable, internal address, no request reaches the listener', async () => {
+  await withListener(async (hits, port) => {
+    const { result, results } = await citeWith(undefined, `http://127.0.0.1:${port}/x`)
+    assert.equal(result.verdict, 'inconclusive')
+    assert.match(results.results[0]!.error ?? '', /internal address/)
+    assert.equal(results.results[0]!.status, null)
+    assert.deepEqual(hits, [])
+  })
+})
+
+test('a redirect to a local listener is not followed: no request reaches the listener', async () => {
+  await withListener(async (hits, port) => {
+    const redirector = createServer((_req, res) => { res.writeHead(302, { location: `http://localhost:${port}/secret` }); res.end() })
+    await new Promise<void>((r) => redirector.listen(0, '127.0.0.1', r))
+    try {
+      // A resolver in code: the redirector's address reads as public, `localhost` as what it is.
+      const resolve = async (host: string) => host === 'localhost' ? ['127.0.0.1'] : ['93.184.216.34']
+      const { results } = await citeWith({ resolve }, `http://127.0.0.1:${(redirector.address() as { port: number }).port}/go`)
+      assert.match(results.results[0]!.error ?? '', /internal address/)
+      assert.deepEqual(hits, [])
+    } finally { redirector.close() }
+  })
+})
+
+test('internal addresses of every kind are refused, a relative redirect to a public page is followed, a redirect loop ends', async () => {
+  const addresses = ['127.0.0.1', '127.1.2.3', '10.0.0.1', '172.16.0.1', '172.31.255.1', '192.168.1.1', '169.254.169.254', '0.0.0.0',
+    '::1', '::', 'fe80::1', 'fc00::1', 'fd12:3456::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', '::ffff:7f00:1']
+  for (const address of addresses) {
+    const { results } = await citeWith({ resolve: async () => [address] }, 'http://example.test/x')
+    assert.match(results.results[0]!.error ?? '', /internal address/, address)
+  }
+  // One internal address among several is enough.
+  assert.match((await citeWith({ resolve: async () => ['93.184.216.34', '10.0.0.1'] }, 'http://example.test/x')).results.results[0]!.error ?? '', /internal address/)
+  // The allow list lets a named internal host through.
+  assert.equal((await citeWith({ resolve: async () => ['10.0.0.1'], internalHosts: ['127.0.0.1'] }, `${base}/article`)).result.verdict, 'pass')
+  // A relative redirect to a public page is followed; a loop ends.
+  const site = createServer((req, res) => {
+    if (req.url === '/a') { res.writeHead(301, { location: '/article' }); res.end() }
+    else if (req.url === '/article') { res.writeHead(200); res.end('System verifies citations') }
+    else { res.writeHead(302, { location: req.url }); res.end() }
+  })
+  await new Promise<void>((r) => site.listen(0, '127.0.0.1', r))
+  const port = (site.address() as { port: number }).port
+  try {
+    const pub = { resolve: async () => ['93.184.216.34'] }
+    assert.equal((await citeWith(pub, `http://127.0.0.1:${port}/a`)).result.verdict, 'pass')
+    assert.match((await citeWith(pub, `http://127.0.0.1:${port}/loop`)).results.results[0]!.error ?? '', /redirect/)
+  } finally { site.close() }
+})
 
 test('a quote found at its URL passes, ignoring markup, entities, case and whitespace; evidence keeps the page hash', async () => {
   const { result, evidence } = await cite({ sources: [{ id: 's1', url: `${base}/article`, quote: 'system verifies CITATIONS exactly & carefully', claims: ['c'] }] })
@@ -340,7 +411,7 @@ test('an unreachable or missing page is inconclusive', async () => {
 
 test('an unknown criteria version, citations-v1 among them, is refused at admission and gives an error verdict, never a pass', async () => {
   const artifacts = store()
-  const verifier = citationCheck(artifacts)
+  const verifier = citationCheck(artifacts, LOCAL)
   const subject = await sources(artifacts, { sources: [{ id: 's1', url: `${base}/article`, quote: 'system verifies citations', claims: ['c'] }] })
   for (const name of ['citations-v1', 'citations-v4', 'v1']) {
     await assert.rejects(verifier.criteria({ capability: 'research.citation-check', name, operatorId: 't' }), /unknown criteria .* known: citations-v2, citations-v3$/, name)
@@ -365,7 +436,7 @@ test('a malformed sources file, no sources, or an empty quote fails', async () =
 /** Like `cite`, with the `citations-v2` criteria the verifier pins itself, and the report as a second input when given. */
 async function citeV2(json: unknown, report?: string, name = 'citations-v2') {
   const artifacts = store()
-  const verifier = citationCheck(artifacts)
+  const verifier = citationCheck(artifacts, LOCAL)
   const criteria = await verifier.criteria({ capability: 'research.citation-check', name, operatorId: 't' })
   const subject = await sources(artifacts, json)
   const reportId = report === undefined ? undefined : (await artifacts.putBytes({ kind: 'file', schemaVersion: 1, data: Buffer.from(report), mediaType: 'text/markdown', classification: 'public', producer })).id
