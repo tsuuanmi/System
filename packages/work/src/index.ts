@@ -182,8 +182,8 @@ export class WorkService {
   }
 }
 
-export function specStore(artifacts: Artifacts): SpecStore {
-  artifacts.registerKind({ kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: resolvedSpecSchema })
+export function specStore(artifacts: Artifacts, dispose?: (() => void)[]): SpecStore {
+  dispose?.push(artifacts.registerKind({ kind: SPEC_KIND, schemaVersion: SPEC_SCHEMA_VERSION, content: resolvedSpecSchema }))
   /** The stored Artifact `id`, if it is stored and (when given) of `kind`. */
   const stored = (id: string, kind?: string): Envelope | undefined => {
     const read = artifacts.get(id)
@@ -260,18 +260,21 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const domain = await domains.open(workDomain)
   ctx.effect(() => () => { void domain.close() }, 'system_work domain')
   const artifacts = ctx.get('artifacts') as Artifacts
-  artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
-  artifacts.registerKind({ ...INTENT_KIND, content: intentSchema })
-  artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema })
-  artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema })
-  artifacts.registerKind({ ...WITHDRAWAL_KIND, content: withdrawalSchema })
-  artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
-  artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema })
-  artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema })
+  const dispose = [
+    artifacts.registerKind({ ...TASK_KIND, content: taskSchema }),
+    artifacts.registerKind({ ...INTENT_KIND, content: intentSchema }),
+    artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema }),
+    artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema }),
+    artifacts.registerKind({ ...WITHDRAWAL_KIND, content: withdrawalSchema }),
+    artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema }),
+    artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema }),
+    artifacts.registerKind({ ...CONVERSATION_KIND, content: conversationSchema }),
+  ]
   const capabilities = new Capabilities()
   const table = domain.table('work') as unknown as WorkTable
   const claims = domain.table('claims') as unknown as ClaimTable
-  const specs = specStore(artifacts)
+  const specs = specStore(artifacts, dispose)
+  ctx.effect(() => () => { for (const d of dispose) d() }, 'work kinds')
   ctx.provide('capabilities', capabilities)
   ctx.provide('work', new WorkService(capabilities, artifacts, { table, claims, specs }, config))
 }
