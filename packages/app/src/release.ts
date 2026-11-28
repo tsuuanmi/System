@@ -7,7 +7,6 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { git } from '@system/git'
 import { mergeCommitOf, releaseViolationPaths } from '@system/work/contract'
-import type { WorkRecord } from '@system/work'
 import type { HostClient } from './remote.ts'
 
 const WAIVER = /^docs-unchanged:\s*\S/i
@@ -42,7 +41,8 @@ export async function prepareRelease(host: HostClient, repository: string, given
   const inRange = new Set(lines(await git(repository, ['rev-list', `${main}..${commit}`])))
   const merged: { id: string; item?: string; commit: string; accounts: string[]; cost: string }[] = []
   for (const listed of await host.call('work.list', {})) {
-    const record = await host.call('work.show', { workId: listed.id }) as unknown as WorkRecord
+    const record = await host.call('work.show', { workId: listed.id })
+    if (!record) continue
     const at = mergeCommitOf(record)
     if (!at || !inRange.has(at)) continue
     const accounts = [...new Set(record.events.flatMap((e) => (e.type === 'dispatched' && e.executor === 'worker' ? [e.selected] : [])))]
