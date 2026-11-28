@@ -199,8 +199,9 @@ CLI and agents act on Work only by asking it.
 _Avoid_: daemon, server, backend
 
 **Release**:
-The operator merging `dev` into `main` after reading a release report. System
-never makes a Release.
+Merging one commit of `dev` into `main` and installing it, after the operator
+read its release report or approved that commit. System prepares a Release but
+never decides one.
 _Avoid_: deploy, ship; checkpoint (a milestone's internal gate)
 
 **Batch**:
