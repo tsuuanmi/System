@@ -25,6 +25,10 @@ export interface Services {
   newConfirmation(confirmation: { subject: string; note: string; date?: string }, caller: Caller): Promise<{ confirmation: string }>
   /** The stored Intents (when, by whom settled) and confirmations, for the operator acts of `work.report`. */
   operatorActs(): { intents: { at: string; settledBy?: 'operator' }[]; confirmations: { date: string }[] }
+  /** Store a `release-approval@1` Artifact. */
+  newReleaseApproval(commit: string, caller: Caller): Promise<{ approval: string }>
+  /** The commits the Operator approved for release. */
+  releaseApprovals(): string[]
   /** Store an `escaped-defect@1` Artifact. */
   newDefect(defect: { subject: string; foundBy: string; reason: string; date?: string; supersedes?: string }, caller: Caller): Promise<{ defect: string }>
   /** Store an `escaped-defect-withdrawal@1` Artifact. */
@@ -201,7 +205,7 @@ export function operations(services: Services) {
         const records = host.view.list()
         // Releases are merges of `dev` into `main` seen in each repository the Host knows Items for.
         const repositories = new Set(records.flatMap((r) => { const first = r.events[0]!; return first.type === 'admitted' && first.item?.repository ? [first.item.repository] : [] }))
-        const releasesByMaker = await Promise.all([...repositories].map((repository) => releasesBy(repository)))
+        const releasesByMaker = await Promise.all([...repositories].map((repository) => releasesBy(repository, services.releaseApprovals())))
         const releases = releasesByMaker.flatMap((r) => r.operator)
         const callerReleases = releasesByMaker.flatMap((r) => r.caller)
         const violations = releasesByMaker.flatMap((r) => r.violations)
@@ -240,6 +244,15 @@ export function operations(services: Services) {
       handler(host, p, caller) {
         if (caller.type !== 'human') throw new RpcError(NOT_ALLOWED, 'approval.decide: needs a human caller')
         return started(host, p.workId, (go) => host.decide(p.workId, { decision: p.decision, reason: p.reason, caller, commandId: p.commandId, started: go }))
+      },
+    },
+    'release.approve': {
+      authority: 'operator',
+      summary: 'Store a `release-approval@1` Artifact: the Operator approves the commit of `dev` (7 to 40 hex characters) for release: `{ approval }`, the Artifact ID. A caller session may then release that commit also when it touches what is not delegated; `work.report` does not list it in `releaseViolations`. Only a human caller, on the operator socket; the CLI sends it as `system release approve <commit>` after its terminal confirmation.',
+      params: z.object({ commit: z.string().regex(/^[0-9a-fA-F]{7,40}$/), commandId }).strict(),
+      handler(_host, p, caller) {
+        if (caller.type !== 'human') throw new RpcError(NOT_ALLOWED, 'release.approve: needs a human caller')
+        return services.newReleaseApproval(p.commit.toLowerCase(), caller)
       },
     },
     'task.new': {

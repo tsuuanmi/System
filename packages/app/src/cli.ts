@@ -355,6 +355,20 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         return 0
       })
     })
+  const release = program.command('release').description('releases: the Operator approves a commit of dev for release')
+  release.command('approve <commit>')
+    .description('approve a commit of dev for release (ADR-0019): a human at a terminal types its 7 hex characters; stores a release-approval@1 Artifact and prints its ID alone on stdout. A caller session may then release that commit')
+    .action((commit: string) => {
+      select(async () => {
+        if (!/^[0-9a-fA-F]{7,40}$/.test(commit)) throw new Error('give the commit as 7 to 40 hex characters')
+        const expected = commit.slice(0, 7).toLowerCase()
+        await io.confirmHuman(`Releasing ${commit} is the Operator's decision. Type its 7 hex characters and press Enter, exactly: ${expected}\n> `, expected)
+        // An operator operation: it goes over the operator socket, as the Operator's.
+        const created = await host.call('release.approve', given({ commit }))
+        io.out(`${created.approval}\n`)
+        return 0
+      })
+    })
   const defect = program.command('defect').description('Escaped defects, recorded so work report counts them')
   defect.command('add <item-or-commit>')
     .description('store an escaped-defect@1 Artifact naming the Item (its ID) or the merge commit (7 to 40 hex characters) that carried the defect, and print its ID alone on stdout')

@@ -46,6 +46,8 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
     defects: () => [],
     async newConfirmation(confirmation) { return { confirmation: `confirmation:${confirmation.subject}` } },
     operatorActs: () => ({ intents: [], confirmations: [] }),
+    async newReleaseApproval(commit) { return { approval: `approval:${commit}` } },
+    releaseApprovals: () => [],
     defectWithdrawals: () => [],
     async newTask(instructions, repository, ref, context) { return { task: `task:${instructions}:${repository ?? ''}:${ref ?? ''}:${context.join(',')}` } },
     workflowFile: (name) => { try { return workflowFile(name) } catch { return undefined } },
@@ -204,6 +206,7 @@ test('every method of the table round-trips over the socket', async () => {
   assert.deepEqual(await call('intent.new', { title: 'Want', body: 'Outcome.' }), { intent: 'intent:Want' })
   assert.deepEqual(await call('intent.new', { title: 'Want', body: 'Outcome.', settledByOperator: true }), { intent: 'intent:Want' })
   assert.deepEqual(await call('artifact.confirm', { subject: `sha256:${'a'.repeat(64)}`, note: 'ok' }), { confirmation: `confirmation:sha256:${'a'.repeat(64)}` })
+  assert.deepEqual(await call('release.approve', { commit: 'ABCDEF1' }), { approval: 'approval:abcdef1' })
   assert.deepEqual(await call('defect.add', { subject: 'p-1', foundBy: 'work:x', reason: 'broke' }), { defect: 'defect:p-1' })
   assert.deepEqual(await call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}`, reason: 'wrong' }), { withdrawal: `withdrawal:sha256:${'a'.repeat(64)}` })
   await assert.rejects(call('defect.withdraw', { withdraws: `sha256:${'a'.repeat(64)}` }), /-32602|invalid|reason/i)
@@ -747,4 +750,13 @@ test('workers.list reports busy Accounts across repositories, skips verifier che
   assert.deepEqual((await client.call('workers.list') as { busy: unknown }).busy, [])
   f.release('checks.checks')
   assert.equal((await terminal(client, w3.id)).status, 'succeeded')
+})
+
+test('rel-2: release.approve is refused on the caller socket whatever the caller says, and stored over the operator socket by a human only', async () => {
+  const { open } = await started()
+  for (const who of [human, agent]) await assert.rejects((await open(who)).call('release.approve', { commit: 'abcdef1' }), (error: { code: number; message: string }) => error.code === NOT_ALLOWED && /operator socket/.test(error.message))
+  const operator = await open(human, 'operator')
+  assert.deepEqual(await operator.call('release.approve', { commit: 'abcdef1' }), { approval: 'approval:abcdef1' })
+  await assert.rejects(operator.call('release.approve', { commit: 'main' }), /-32602|invalid|commit/i)
+  await assert.rejects((await open(agent, 'operator')).call('release.approve', { commit: 'abcdef1' }), (error: { code: number }) => error.code === NOT_ALLOWED)
 })

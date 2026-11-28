@@ -243,6 +243,8 @@ async function runHost(ctx: Context, mounted: Mounted): Promise<number> {
       newDefect: (defect, who) => work.newDefect(defect, who),
       newConfirmation: (confirmation, who) => work.newConfirmation(confirmation, who),
       operatorActs: () => work.operatorActs(),
+      newReleaseApproval: (commit, who) => work.newReleaseApproval(commit, who),
+      releaseApprovals: () => work.releaseApprovals(),
       withdrawDefect: (input, who) => work.withdrawDefect(input, who),
       defects: () => work.defects(),
       defectWithdrawals: () => work.defectWithdrawals(),

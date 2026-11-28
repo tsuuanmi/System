@@ -14,6 +14,7 @@ import { changedTests } from './changed-tests.ts'
 import { freshBranch, snapshot } from './git.ts'
 import { DEFECT_KIND, WITHDRAWAL_KIND, addDefect, defectSchema, storedDefects, storedWithdrawals, withdrawDefect, withdrawalSchema, type DefectInput, type DefectWithdrawal, type StoredDefect } from './defect.ts'
 import { INTENT_KIND, addIntent, intentSchema, storedIntents, type Intent } from './intent.ts'
+import { RELEASE_APPROVAL_KIND, addReleaseApproval, releaseApprovalSchema, storedReleaseApprovals } from './release-approval.ts'
 import { CONFIRMATION_KIND, addConfirmation, confirmationSchema, storedConfirmations, type ConfirmationInput } from './confirmation.ts'
 import { readStatus, type ClaimTable } from './gate.ts'
 import { WorkError } from './errors.ts'
@@ -123,6 +124,16 @@ export class WorkService {
   /** Store a `confirmation@1` Artifact: the operator confirmed the stored Artifact it names. */
   async newConfirmation(confirmation: ConfirmationInput, caller: Caller): Promise<{ confirmation: string }> {
     return { confirmation: (await addConfirmation(this.artifacts, confirmation, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** Store a `release-approval@1` Artifact: the Operator approved this commit of `dev` for release. */
+  async newReleaseApproval(commit: string, caller: Caller): Promise<{ approval: string }> {
+    return { approval: (await addReleaseApproval(this.artifacts, { commit }, { type: 'operator', ref: caller.operatorId })).id }
+  }
+
+  /** The approved release commits, as stored. */
+  releaseApprovals(): string[] {
+    return storedReleaseApprovals(this.artifacts).map((a) => a.commit)
   }
 
   /** The stored Intents and confirmations, for the operator acts of `rangeReport`. */
@@ -244,6 +255,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     artifacts.registerKind({ ...INTENT_KIND, content: intentSchema }),
     artifacts.registerKind({ ...DEFECT_KIND, content: defectSchema }),
     artifacts.registerKind({ ...CONFIRMATION_KIND, content: confirmationSchema }),
+    artifacts.registerKind({ ...RELEASE_APPROVAL_KIND, content: releaseApprovalSchema }),
     artifacts.registerKind({ ...WITHDRAWAL_KIND, content: withdrawalSchema }),
     artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema }),
     artifacts.registerKind({ ...VERDICT_KIND, content: verdictSchema }),

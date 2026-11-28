@@ -87,8 +87,8 @@ detaches. An Approval of a Gate path change is of that change's commit: a re-mer
 needs no new one (the merge checks still run), another commit or a `gates:` list widened since does.
 
 The session is an agent: it may use every agent operation on every Work, store
-Tasks and files, and list the Workers. It cannot approve or deny (only the operator socket
-serves them, and the session does not reach it:
+Tasks and files, and list the Workers. It cannot approve or deny, or approve a release commit (`system release approve`;
+only the operator socket serves them, and the session does not reach it:
 [ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)), set
 credentials, sign an account in, or merge into `main`; only a human runs
 `system work retry <work> --step checks.checks` for a check that failed outside

@@ -91,3 +91,25 @@ test('relgate-1: notDelegated matches packages/verifiers/src, packages/effects/s
   assert.deepEqual(releaseViolationPaths(files, true), ['workflows/develop.yaml', 'packages/verifiers/src/checks.ts', 'packages/effects/src/a/b.ts'])
   assert.deepEqual(releaseViolationPaths(files, false), [])
 })
+
+test('rel-2: a caller\'s release of an approved commit is not a violation; one of another commit is', async () => {
+  const r = repo()
+  const write = (path: string) => { mkdirSync(dirname(join(r.dir, path)), { recursive: true }); writeFileSync(join(r.dir, path), `${path} ${r.g('rev-list', '--all', '--count')}`); r.g('add', path); r.g('commit', '-q', '-m', path) }
+  const release = (at: string, file: string) => {
+    r.g('checkout', '-q', ...(r.g('branch', '--list', 'dev') ? ['dev'] : ['-b', 'dev'])); write(file)
+    const devTip = r.g('rev-parse', 'HEAD').trim()
+    r.g('checkout', '-q', 'main')
+    execFileSync('git', ['-C', r.dir, '-c', 'commit.gpgsign=false', 'merge', '--no-ff', '-q', '-m', `Release ${at}\n\nReleased-By: caller`, devTip], { env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@x', GIT_COMMITTER_DATE: at, GIT_AUTHOR_DATE: at } })
+    return { merge: r.g('rev-parse', 'HEAD').trim(), devTip }
+  }
+  try {
+    r.commit('base', '2026-11-01T00:00:00Z')
+    const approved = release('2026-11-27T01:00:00Z', 'packages/effects/src/a.ts')
+    const other = release('2026-11-27T02:00:00Z', 'packages/effects/src/b.ts')
+    assert.equal((await releasesBy(r.dir)).violations.length, 2)
+    // The approval is by commit (7 hex or more), never by the release before it.
+    const by = await releasesBy(r.dir, [approved.devTip.slice(0, 7)])
+    assert.deepEqual(by.violations.map((v) => v.merge), [other.merge])
+    assert.equal(by.caller.length, 2)
+  } finally { r.done() }
+})

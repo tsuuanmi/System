@@ -114,7 +114,8 @@ TCP-only, and DSH's own JSON-RPC server uses stdio framing.
   and a long run does not hold the call. `work.retry` refuses a verify step whatever the
   caller type; asking a check again is `work.verifyAgain`, an `operator` operation served only on the operator
   socket (`system work retry <work> --step <verify step>`, after the terminal confirmation
-  of ADR-0011). A closed connection never cancels a Work.
+  of ADR-0011); approving a release commit is `release.approve`, the same way (`system release approve <commit>`,
+  ADR-0019). A closed connection never cancels a Work.
 - **Following a Work.** `work.events` takes `{ workId, after }` and returns the
   events after that `seq` with the current status. The CLI polls it every
   second. Ctrl-C detaches the client, and the Work goes on.

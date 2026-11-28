@@ -61,6 +61,16 @@ test('confirm prints the Artifact ID alone', async () => {
   assert.deepEqual(seen, [{ subject: 'sha256:subject', note: 'checked' }])
 })
 
+test('rel-2: release approve asks for the 7 hex of the commit, then stores the approval and prints its ID alone', async () => {
+  const seen: unknown[] = []
+  const prompts: string[] = []
+  const result = await system(['release', 'approve', 'ABCDEF1234'], fakeHost({ 'release.approve': (params) => { seen.push(params); return { approval: 'sha256:appr' } } }), async (prompt, expected) => { prompts.push(expected); return 'tan' })
+  assert.equal(result.out, 'sha256:appr\n')
+  assert.deepEqual(prompts, ['abcdef1'])
+  assert.deepEqual(seen, [{ commit: 'ABCDEF1234' }])
+  await assert.rejects(system(['release', 'approve', 'main'], fakeHost({})), /7 to 40 hex/)
+})
+
 for (const verb of ['approve', 'deny'] as const) {
   test(`${verb} several Works asks for one typed confirmation and decides each`, async () => {
     const decided: string[] = []
