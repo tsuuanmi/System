@@ -43,6 +43,40 @@ function word(text) {
   return /[\s"']/.test(text) ? `"${escaped.replace(/"/g, '\\"')}"` : escaped
 }
 
+/** Unquote and unescape the `ExecStart=` words of a systemd unit and return the `--patch` overlay paths in order. */
+export function unitOverlays(text) {
+  const line = /^ExecStart=(.*)$/m.exec(text)?.[1]
+  if (!line) return []
+  const words = []
+  let current = ''
+  let inWord = false
+  let quote = ''
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (quote) {
+      if (ch === quote) { quote = ''; continue }
+      if (quote === '"' && ch === '\\' && i + 1 < line.length) { current += line[++i]; continue }
+    } else {
+      if (/\s/.test(ch)) {
+        if (inWord) { words.push(current); current = ''; inWord = false }
+        continue
+      }
+      inWord = true
+      if (ch === '"' || ch === "'") { quote = ch; continue }
+      if (ch === '\\' && i + 1 < line.length) { current += line[++i]; continue }
+    }
+    if ((ch === '%' || ch === '$') && line[i + 1] === ch) i++
+    current += ch
+  }
+  if (inWord) words.push(current)
+  const overlays = []
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === '--patch' && i + 1 < words.length) overlays.push(words[++i])
+    else if (words[i].startsWith('--patch=')) overlays.push(words[i].slice('--patch='.length))
+  }
+  return overlays
+}
+
 /**
  * The code a Host runs and watches: for a release under `<install>/releases/<commit>`
  * (`system update`), the install's `current` link, so a switch of that link is new code;

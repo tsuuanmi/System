@@ -18,6 +18,10 @@ Part of the [runbook](runbook.md).
 - it fetches `main` (the commit already current is nothing to do), adds
   `releases/<commit>` and runs `corepack pnpm install --frozen-lockfile` and
   `corepack pnpm build` there;
+- when the Host's systemd user unit exists, it runs the new release's own
+  composition with the overlays read from the unit `system init` wrote
+  (`node <release>/bin/system --patch <overlay> --dump-config`); when that
+  exits non-zero, it prints its output, leaves `current` where it was and exits 1;
 - it checks that commit by a Work, `workflows/code-checks.yaml` on a task whose
   base is the commit, and prints the Work ID: the evidence, bound to the exact
   commit. Both the release check and the `afterInstall` check below are judged

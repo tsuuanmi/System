@@ -211,6 +211,7 @@ async function runUpdate(args) {
     install: base,
     cli: join(repo, 'bin', 'system'),
     origin,
+    unit: unitPath(homedir()),
     run: capture,
     write: (path, text) => writeFileSync(path, text),
     read: (path) => { try { return readFileSync(path, 'utf8') } catch { return undefined } },
