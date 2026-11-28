@@ -1,7 +1,7 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-28
+reviewed: 2026-11-29
 summary: The scheduled session: the deterministic caller, Schedules, the check before a pass and the notifier.
 covers: [packages/app/src/items.ts, packages/app/src/schedule.ts]
 ---
@@ -34,8 +34,9 @@ A pass applies fixed rules:
    has two failed Works, is blocked, or has a running or held Work is skipped with the reason recorded.
 
 Each pass is independent and re-enterable. A pass holds a per-repository lock under `$DSH_HOME/system` (released by the
-kernel when the process exits), so an overlapping start exits at once. After a killed pass, the next pass reads the
-Claims and Works left in `status`, adopts any running Work, and submits nothing twice.
+kernel when the process exits), so an overlapping start is not a failure: it exits 0 at once and sends nothing to the
+notifier. After a killed pass, the next pass reads the Claims and Works left in `status`, adopts any running Work, and
+submits nothing twice.
 
 ## Schedules
 
@@ -63,11 +64,12 @@ at:
 ```
 
 `system init` (default home `~/.dsh` on Linux) writes, for each Schedule file, the user units
-`system-schedule-<name>.service` (waits up to 5 minutes for `system doctor`, then runs the install's
-`system items carry --schedule <file>`; no start timeout) and `system-schedule-<name>.timer` (one `OnCalendar=` for
-each `at`, `Persistent=false`, so a start missed while the machine was off is not run late) under
-`~/.config/systemd/user`. It enables none, rewrites a unit when its file changed, and removes the units of a file that
-is gone. A file that does not parse is named on stderr, fails `init`, and keeps its earlier units.
+`system-schedule-<name>.service` (runs the install's `system items carry --schedule <file>`, with no `ExecStartPre` and
+no start timeout; the command itself asks the Host for up to 5 minutes before giving up) and
+`system-schedule-<name>.timer` (one `OnCalendar=` for each `at`, `Persistent=false`, so a start missed while the machine
+was off is not run late) under `~/.config/systemd/user`. It enables none, rewrites a unit when its file or template
+changed, and removes the units of a file that is gone. A file that does not parse is named on stderr, fails `init`, and
+keeps its earlier units.
 
 Enable a timer with `systemctl --user enable --now system-schedule-<name>.timer`, inspect it with
 `systemctl --user list-timers 'system-schedule-*'` and `journalctl --user -u system-schedule-<name>`, and stop it with
@@ -96,7 +98,10 @@ outcome, Account, tokens, cache-read share and cost, then skipped Items and erro
 Artifact and prints its ID on stdout. Read it with `system artifact cat <id>`.
 
 A pass exits non-zero when the Host does not answer, a repository's status cannot be read, no free Account is
-available, or an Item it took ended failed.
+available, or an Item it took ended failed. On the `--schedule` path, the pass asks the Host for up to 5 minutes before
+giving up, and every failure (the Host does not answer, the Schedule file does not parse, or an uncaught error) sends
+one notifier line with the cause and exits 1. A pass that finds an earlier pass still running is not a failure (exits 0)
+and sends nothing.
 
 To receive the one-line verdict (date, repositories, counts of merged, held, failed and skipped, report ID, and any
 cause) on your phone or elsewhere, set one of these in the service's environment (for a systemd unit, an `Environment=`

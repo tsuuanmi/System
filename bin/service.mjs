@@ -166,9 +166,8 @@ export const schedulesDir = (installBase) => join(installBase, 'schedules')
 
 const scheduleUnit = (name, kind) => `system-schedule-${name}.${kind}`
 
-/** The `system-schedule-<name>.service` text (ADR-0020 decision 6): one pass of the install's `system items carry --schedule <file>`, once the Host answers. */
+/** The `system-schedule-<name>.service` text (ADR-0020 decision 6): one pass of the install's `system items carry --schedule <file>`. */
 export function scheduleServiceText({ name, node, entry, home, path, file }) {
-  const wait = 'for i in 1 2 3 4 5 6 7 8 9 10; do "$@" >/dev/null 2>&1 && exit 0; sleep 30; done; echo "the Host does not answer" >&2; exit 1'
   return `[Unit]
 Description=${`System Scheduled session: Schedule ${name}`}
 
@@ -176,8 +175,6 @@ Description=${`System Scheduled session: Schedule ${name}`}
 Type=oneshot
 Environment=${word(`DSH_HOME=${home}`)}
 Environment=${word(`PATH=${path}`)}
-# Wait up to 5 minutes for the Host: \`system doctor\` exits 1 until it answers.
-ExecStartPre=/bin/sh -c ${word(wait)} sh ${word(node)} ${word(entry)} doctor
 ExecStart=${word(node)} ${word(entry)} items carry --schedule ${word(file)}
 `
 }

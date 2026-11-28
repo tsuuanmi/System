@@ -11,11 +11,12 @@ import { existsSync, realpathSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { NotAnswering, NotRunning, codeRoot } from '@system/host'
+import { NotAnswering, NotRunning, RpcError, UPGRADING, codeRoot } from '@system/host'
 import type { WorkEvent, WorkRecord } from '@system/work'
 import { errorLine, explain, operatorId } from './io.ts'
 import type { WorkersView } from './cli.ts'
 import { readWorkflowFile, type HostClient } from './remote.ts'
+import { readSchedule } from './schedule.ts'
 
 export interface ItemsIo {
   out(text: string): void
@@ -26,6 +27,18 @@ export interface CarryPassOptions {
   maxParallel?: number
   home?: string
   now?: () => Date
+  /** How long to wait for the Host to answer at the start of the pass (ms); 0 or unset means do not wait. */
+  waitForHostMs?: number
+  /** Delay between Host checks while waiting (ms). */
+  waitIntervalMs?: number
+}
+
+export interface CarryScheduleOptions {
+  check?: boolean
+  home?: string
+  now?: () => Date
+  waitForHostMs?: number
+  waitIntervalMs?: number
 }
 
 interface ItemCarryResult {
@@ -270,8 +283,19 @@ function parseStatusItems(repository: string, lines: string[]): ParsedStatusItem
 }
 
 const NOTIFY_TIMEOUT_MS = 15_000
+/** How long a scheduled pass waits for the Host to answer before giving up (ADR-0020 decision 5). */
+export const SCHEDULE_HOST_WAIT_MS = 5 * 60_000
+const SCHEDULE_HOST_WAIT_INTERVAL_MS = 10_000
 
-const isHostDown = (error: unknown): boolean => error instanceof NotRunning || error instanceof NotAnswering
+function positiveEnvMs(name: string): number | undefined {
+  const raw = process.env[name]
+  if (raw === undefined) return undefined
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+const isHostDown = (error: unknown): boolean =>
+  error instanceof NotRunning || error instanceof NotAnswering || (error instanceof RpcError && error.code === UPGRADING)
 
 const singleLine = (text: string): string => text.replace(/[\r\n]+/g, ' ').trim()
 
@@ -399,11 +423,37 @@ export async function carryPass(host: HostClient, repoPaths: string[], options: 
   const lock = await acquirePassLock(home, repos)
   if ('busy' in lock) {
     io.err(`another pass is already running for ${lock.busy}\n`)
-    return 1
+    return 0
   }
 
   try {
     const me = operatorId()
+    const waitForHostMs = options.waitForHostMs ?? 0
+    const waitIntervalMs = options.waitIntervalMs ?? Math.min(SCHEDULE_HOST_WAIT_INTERVAL_MS, waitForHostMs || SCHEDULE_HOST_WAIT_INTERVAL_MS)
+    let hostAnswered = false
+    const readStatus = async (repository: string): Promise<string[]> => {
+      if (hostAnswered || waitForHostMs <= 0) {
+        const lines = await host.call('status', { repository })
+        hostAnswered = true
+        return lines
+      }
+      const deadline = Date.now() + waitForHostMs
+      for (;;) {
+        try {
+          const lines = await host.call('status', { repository })
+          hostAnswered = true
+          return lines
+        } catch (error) {
+          if (!isHostDown(error)) {
+            hostAnswered = true
+            throw error
+          }
+          const remaining = deadline - Date.now()
+          if (remaining <= 0) throw error
+          await new Promise<void>((done) => setTimeout(done, Math.min(waitIntervalMs, remaining)))
+        }
+      }
+    }
     const settled = new Set<string>()
     const inFlight = new Map<string, Promise<{ key: string; result: ItemCarryResult }>>()
     const results: ItemCarryResult[] = []
@@ -429,7 +479,7 @@ export async function carryPass(host: HostClient, repoPaths: string[], options: 
             if (unreadableRepos.has(repository)) continue
             let statusLines: string[]
             try {
-              statusLines = await host.call('status', { repository })
+              statusLines = await readStatus(repository)
             } catch (error) {
               if (isHostDown(error)) throw error
               const reason = error instanceof Error ? error.message : String(error)
@@ -643,4 +693,33 @@ export async function carryCheck(host: HostClient, repoPaths: string[], options:
   const names = repos.map((r) => basename(r) || r).join(',')
   await notifyPass(`${now.toISOString().slice(0, 10)} ${names}: check failed: ${findings.join('; ')}, ready ${ready}`, io)
   return 1
+}
+
+/**
+ * Run a Schedule file (`system items carry --schedule <file>` or `--check`, ADR-0020 decision 5):
+ * waits up to 5 minutes for the Host on a pass (not on `--check`), and turns every failure on the
+ * `--schedule` path (unparseable Schedule, Host not answering, uncaught error) into stderr, one
+ * notifier line with the cause, and exit 1.
+ */
+export async function carrySchedule(host: HostClient, file: string, options: CarryScheduleOptions, io: ItemsIo): Promise<number> {
+  const home = options.home ?? process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  const now = options.now ?? (() => new Date())
+  try {
+    const schedule = readSchedule(file)
+    if (options.check) return await carryCheck(host, schedule.repositories, { home, now }, io)
+    const waitForHostMs = options.waitForHostMs ?? positiveEnvMs('SYSTEM_SCHEDULE_HOST_WAIT_MS') ?? SCHEDULE_HOST_WAIT_MS
+    const waitIntervalMs = options.waitIntervalMs ?? positiveEnvMs('SYSTEM_SCHEDULE_HOST_WAIT_INTERVAL_MS')
+    return await carryPass(host, schedule.repositories, { maxParallel: schedule.maxParallel, home, now, waitForHostMs, waitIntervalMs }, io)
+  } catch (error) {
+    const explained = explain(error, home)
+    const message = explained instanceof Error ? explained.message : String(explained)
+    io.err(errorLine(explained))
+    const date = now().toISOString().slice(0, 10)
+    const name = basename(file, '.yaml') || file
+    const line = options.check
+      ? `${date} ${name}: check failed: ${singleLine(message)}`
+      : `${date} ${name}: pass failed, cause: ${singleLine(message)}`
+    await notifyPass(line, io)
+    return 1
+  }
 }

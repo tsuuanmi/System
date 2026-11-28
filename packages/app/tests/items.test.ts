@@ -387,11 +387,17 @@ test('sch-2: pass lock rejects a second concurrent pass for the same repositorie
     const pass1 = system(['items', 'carry', '--repo', repoA, '--repo', repoB], host1, home)
     await started
 
-    // Second pass for the same repositories (even in reversed order) exits at once without calling the Host
+    // Second pass for the same repositories (even in reversed order) exits 0 at once without calling the Host or notifying
     const neverCall = () => { throw new Error('must not call Host while locked') }
-    const pass2 = await system(['items', 'carry', '--repo', repoB, '--repo', repoA], fakeHost({ status: neverCall }), home)
-    assert.equal(pass2.code, 1)
-    assert.match(pass2.err, /already running/i)
+    const listener = await startNotifyListener()
+    try {
+      const pass2 = await withNotifyEnv({ url: listener.url }, () => system(['items', 'carry', '--repo', repoB, '--repo', repoA], fakeHost({ status: neverCall }), home))
+      assert.equal(pass2.code, 0)
+      assert.match(pass2.err, /already running/i)
+      assert.equal(listener.received.length, 0)
+    } finally {
+      await listener.close()
+    }
 
     // Once pass1 ends, the lock is gone and a new pass can enter
     releaseWork()
@@ -423,7 +429,7 @@ test('sch-2: pass lock is gone when a process holding it is SIGKILLed', async ()
       child.once('exit', (code) => reject(new Error(`child exited early: ${code}`)))
     })
     const blocked = await system(['items', 'carry', '--repo', repo], fakeHost({ status: () => { throw new Error('must not call Host') } }), home)
-    assert.equal(blocked.code, 1)
+    assert.equal(blocked.code, 0)
     assert.match(blocked.err, /already running/i)
 
     child.kill('SIGKILL')
@@ -877,8 +883,150 @@ test('sch-4: --schedule reads the Schedule file: its repositories in order and m
       await assert.rejects(system(['items', 'carry', '--schedule', file, ...extra], host, home), /--schedule is a pass of its own/)
     }
     writeFileSync(file, 'kind: work\nat: daily\n')
-    await assert.rejects(system(['items', 'carry', '--schedule', file], host, home), /kind: work is not built yet/)
+    const refused = await system(['items', 'carry', '--schedule', file], host, home)
+    assert.equal(refused.code, 1)
+    assert.match(refused.err, /kind: work is not built yet/)
   } finally {
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('pass-1: Schedule file with a bad `at` sends one notifier line with cause and exits 1', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'system-pass1-bad-at-'))
+  const home = mkdtempSync(join(tmpdir(), 'system-pass1-home-'))
+  const listener = await startNotifyListener()
+  try {
+    const file = join(dir, 'daily.yaml')
+    writeFileSync(file, `kind: items\nrepositories: [${dir}]\nat: "not-a-valid-calendar-expression"\n`)
+    const res = await withNotifyEnv({ url: listener.url }, () => system(['items', 'carry', '--schedule', file], fakeHost({}), home))
+    assert.equal(res.code, 1)
+    assert.match(res.err, /at:/)
+    assert.equal(listener.received.length, 1)
+    assert.equal(listener.received[0]!.method, 'POST')
+    const line = listener.received[0]!.body
+    assert.ok(!line.includes('\n'), 'notifier payload is one line')
+    assert.match(line, /daily/)
+    assert.match(line, /at:/)
+  } finally {
+    await listener.close()
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('pass-1: --schedule waits for the Host before giving up, then sends one notifier line with cause and exits 1', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'system-pass1-wait-'))
+  const home = mkdtempSync(join(tmpdir(), 'system-pass1-home-'))
+  const listener = await startNotifyListener()
+  const prevWait = process.env.SYSTEM_SCHEDULE_HOST_WAIT_MS
+  const prevInterval = process.env.SYSTEM_SCHEDULE_HOST_WAIT_INTERVAL_MS
+  process.env.SYSTEM_SCHEDULE_HOST_WAIT_MS = '80'
+  process.env.SYSTEM_SCHEDULE_HOST_WAIT_INTERVAL_MS = '20'
+  try {
+    const file = join(dir, 'daily.yaml')
+    writeFileSync(file, `kind: items\nrepositories: [${dir}]\nat: daily\n`)
+    let attempts = 0
+    const deadHost = fakeHost({
+      status: () => {
+        attempts += 1
+        throw new NotRunning('socket missing')
+      },
+    })
+    const res = await withNotifyEnv({ url: listener.url }, () => system(['items', 'carry', '--schedule', file], deadHost, home))
+    assert.equal(res.code, 1)
+    assert.ok(attempts >= 2, `expected --schedule to wait and retry the Host, got ${attempts} attempt(s)`)
+    assert.match(res.err, /not running/i)
+    assert.equal(listener.received.length, 1)
+    const line = listener.received[0]!.body
+    assert.ok(!line.includes('\n'))
+    assert.match(line, /cause:.*not running/i)
+
+    // When the Host answers before the wait expires, the pass proceeds normally and exits 0.
+    let recoveringAttempts = 0
+    const recoveringHost = fakeHost({
+      status: () => {
+        recoveringAttempts += 1
+        if (recoveringAttempts < 3) throw new NotRunning('starting')
+        return []
+      },
+    })
+    const ok = await withNotifyEnv({ url: listener.url }, () => system(['items', 'carry', '--schedule', file], recoveringHost, home))
+    assert.equal(ok.code, 0, ok.err)
+    assert.equal(recoveringAttempts, 3)
+    assert.equal(listener.received.length, 1, 'no notification when nothing Ready')
+  } finally {
+    if (prevWait === undefined) delete process.env.SYSTEM_SCHEDULE_HOST_WAIT_MS
+    else process.env.SYSTEM_SCHEDULE_HOST_WAIT_MS = prevWait
+    if (prevInterval === undefined) delete process.env.SYSTEM_SCHEDULE_HOST_WAIT_INTERVAL_MS
+    else process.env.SYSTEM_SCHEDULE_HOST_WAIT_INTERVAL_MS = prevInterval
+    await listener.close()
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('pass-1: uncaught error on --schedule sends one notifier line with cause and exits 1', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'system-pass1-err-'))
+  const home = mkdtempSync(join(tmpdir(), 'system-pass1-home-'))
+  const listener = await startNotifyListener()
+  try {
+    const file = join(dir, 'daily.yaml')
+    writeFileSync(file, `kind: items\nrepositories: [${dir}]\nat: daily\n`)
+    // A Host whose `status` throws an unexpected non-Host error inside a failing io.err, or a missing Schedule file
+    const missing = join(dir, 'missing.yaml')
+    const res = await withNotifyEnv({ url: listener.url }, () => system(['items', 'carry', '--schedule', missing], fakeHost({}), home))
+    assert.equal(res.code, 1)
+    assert.match(res.err, /missing\.yaml/)
+    assert.equal(listener.received.length, 1)
+    assert.match(listener.received[0]!.body, /missing\.yaml/)
+  } finally {
+    await listener.close()
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('pass-1: --schedule pass that finds an earlier pass still running exits 0 and sends nothing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'system-pass1-lock-'))
+  const home = mkdtempSync(join(tmpdir(), 'system-pass1-home-'))
+  const listener = await startNotifyListener()
+  try {
+    const file = join(dir, 'daily.yaml')
+    writeFileSync(file, `kind: items\nrepositories: [${dir}]\nat: daily\n`)
+    let releaseWork!: () => void
+    let workStarted!: () => void
+    const started = new Promise<void>((r) => { workStarted = r })
+    const gate = new Promise<void>((r) => { releaseWork = r })
+    let done = false
+    const host1 = fakeHost({
+      status: () => [done ? '[x] a-1 One - done' : '[ ] a-1 One - todo: nobody'],
+      'workers.list': () => ({ registered: ['a'], accounts: [], room: { accounts: 1, free: 1, unknown: [], ready: [] } }),
+      'work.list': () => [],
+      'item.claim': () => ({ who: 'tan', at: 'T' }),
+      'task.new': () => ({ task: 'sha256:t1' }),
+      'work.submit': () => ({ id: 'work:1' }),
+      'artifact.put': () => ({ id: 'sha256:report-lock' }),
+    }, {
+      run: async (id) => {
+        workStarted()
+        await gate
+        done = true
+        return workRecord(id, dir, 'a-1', 'succeeded', { merged: true })
+      },
+    })
+    const pass1 = system(['items', 'carry', '--schedule', file], host1, home)
+    await started
+
+    const pass2 = await withNotifyEnv({ url: listener.url }, () => system(['items', 'carry', '--schedule', file], fakeHost({}), home))
+    assert.equal(pass2.code, 0)
+    assert.match(pass2.err, /already running/i)
+    assert.equal(listener.received.length, 0)
+
+    releaseWork()
+    assert.equal((await pass1).code, 0)
+  } finally {
+    await listener.close()
     rmSync(dir, { recursive: true, force: true })
     rmSync(home, { recursive: true, force: true })
   }

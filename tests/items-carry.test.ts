@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { systemCli } from '../test-support/cli.ts'
@@ -95,4 +96,52 @@ test('sch-5: system items carry --schedule <file> --check starts nothing and nam
   assert.match(res.stderr, /no-such-repo: status cannot be read/)
   assert.equal(res.stdout, '')
   assert.deepEqual(calls(), [])
+})
+
+test('pass-1: bad `at` in Schedule and a Host that never answers each notify a local HTTP listener and exit 1', async () => {
+  const received: string[] = []
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    req.on('end', () => {
+      received.push(Buffer.concat(chunks).toString('utf8'))
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('ok')
+    })
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  const addr = server.address()
+  if (!addr || typeof addr === 'string') throw new Error('expected TCP address')
+  const url = `http://127.0.0.1:${addr.port}/notify`
+  const emptyHome = mkdtempSync(join(home, 'no-host-'))
+  try {
+    const badAt = join(home, 'bad-at.yaml')
+    writeFileSync(badAt, `kind: items\nrepositories: [${project}]\nat: "not-a-valid-calendar-expression"\n`)
+    const bad = await cli.runAsync(['items', 'carry', '--schedule', badAt], { env: { SYSTEM_SCHEDULE_NOTIFY_URL: url } }).done
+    assert.equal(bad.status, 1)
+    assert.match(bad.stderr, /at:/)
+    assert.equal(received.length, 1)
+    assert.ok(!received[0]!.includes('\n'))
+    assert.match(received[0]!, /at:/)
+
+    const good = join(home, 'good.yaml')
+    writeFileSync(good, `kind: items\nrepositories: [${project}]\nat: daily\n`)
+    const dead = await cli.runAsync(['items', 'carry', '--schedule', good], {
+      env: {
+        DSH_HOME: emptyHome,
+        SYSTEM_SCHEDULE_NOTIFY_URL: url,
+        SYSTEM_CONNECT_RETRY_MS: '50',
+        SYSTEM_SCHEDULE_HOST_WAIT_MS: '150',
+        SYSTEM_SCHEDULE_HOST_WAIT_INTERVAL_MS: '50',
+      },
+    }).done
+    assert.equal(dead.status, 1)
+    assert.match(dead.stderr, /Host/i)
+    assert.equal(received.length, 2)
+    assert.ok(!received[1]!.includes('\n'))
+    assert.match(received[1]!, /cause:.*Host/i)
+  } finally {
+    await new Promise<void>((resolve) => { server.close(() => resolve()) })
+    rmSync(emptyHome, { recursive: true, force: true })
+  }
 })

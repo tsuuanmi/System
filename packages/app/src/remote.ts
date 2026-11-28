@@ -175,8 +175,9 @@ export function readWorkflowFile(path: string): { workflow: string; uses: Record
 
 export function hostClient(remote: Remote): HostClient {
   let session: Promise<Client> | undefined
-  const link = (): Promise<Client> => (session ??= remote.open(caller()))
+  const link = (): Promise<Client> => (session ??= remote.open(caller()).catch((error) => { session = undefined; throw error }))
   let reading: Promise<Client> | undefined
+  const readOnly = (): Promise<Client> => (reading ??= remote.open(caller(), { readOnly: true }).catch((error) => { reading = undefined; throw error }))
   /** A read goes over the session; while the Host waits on attempts to upgrade to other code, over a read-only one. */
   const read = async (method: string, params?: object, timeout?: number): Promise<any> => {
     let client: Client
@@ -185,9 +186,17 @@ export function hostClient(remote: Remote): HostClient {
     } catch (error) {
       if (!(error instanceof RpcError && error.code === UPGRADING)) throw error
       session = undefined
-      client = await (reading ??= remote.open(caller(), { readOnly: true }))
+      client = await readOnly()
     }
-    return client.call(method, params, timeout)
+    try {
+      return await client.call(method, params, timeout)
+    } catch (error) {
+      if (error instanceof NotRunning || error instanceof NotAnswering) {
+        session = undefined
+        reading = undefined
+      }
+      throw error
+    }
   }
   /**
    * A read that outlives a Host's swap for new code: a connection it closed is opened again (`open` waits for the next Host), once.
