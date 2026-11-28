@@ -1,104 +1,41 @@
 ---
 type: operations
 status: active
-reviewed: 2026-11-26
-summary: The nightly scheduled session: its prompt, repositories, report and timer.
-covers: [packages/app/src/schedule.ts, packages/bundle/system-night-session.sh, packages/bundle/system-night-session.service, packages/bundle/system-night-session.timer]
+reviewed: 2026-11-28
+summary: The scheduled session: the deterministic caller, Schedules, the check before a pass and the notifier.
+covers: [packages/app/src/items.ts, packages/app/src/schedule.ts]
 ---
 
 # The scheduled session
 
 Part of the [runbook](runbook.md).
 
-## The scheduled session's prompt
+## The deterministic caller
 
-`tools/night-session.md` is the prompt of the scheduled session (PLAN SS, section 1, ss-1,
-ss-8): a Claude Code caller of System, not part of it. It reads `status`, takes
-`todo` Items in STATUS order and works each through the MCP tools (`mcp__system__work_submit`
-and the others) and `system work wait` (the prompt holds the sequence and its limits). It never approves,
-denies, retries a held step or releases, and stores the night report (below).
+The scheduled session is `system items carry`, a deterministic caller with no model in the caller's role
+([ADR-0020](../decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md) decisions 1 to 7). It talks only
+to the caller socket (`$DSH_HOME/system/host.sock`), runs outside the bubblewrap layer, and never approves, denies,
+retries a verify step, releases, or writes Items.
 
-`packages/bundle/system-night-session.sh` (what the service starts) runs
-`claude -p` with `--allowedTools` naming exactly the tools the prompt uses, so
-anything else is refused by permission, as `claude -p` has no one to ask. That one
-`claude -p` runs inside a bubblewrap layer with only the caller socket, so it cannot
-call an operation of the Operator's Authority ([ADR-0016](../decisions/ADR-0016-the-gate-is-enforced-by-reachability.md)
-decision 5); without `bwrap` or user namespaces it does not run and the night report says the layer could not start.
-The comment above `in_layer` in the script lists what is hidden and bound.
-That includes `~/.nvm/versions/node`, read-only, so `bin/system` finds the Node 24 it needs when the unit's `PATH`
-`node` is older (night-node-1); the directory holds only installed Node releases, no credentials.
-To check the layer is on, run the script
-with a `claude` on the `PATH` that runs `ls "$DSH_HOME/system"`: it shows `host.sock` only. The
-tests under `packages/app/tests`, `packages/bundle/tests` and `tests` check the
-prompt against the commands, the allowlist and a real Host. What they cannot
-show is that your `claude` accepts these rules, so do one real run before
-enabling the timer, with no `todo` Item: `packages/bundle/system-night-session.sh`
-in a checkout after the Host answers. It should find no `todo` Item, store a
-report and print its ID. A "permission" refusal names a rule to fix in the script.
+- `system items carry <id> --repo <path>` carries one Item and prints one JSON record on stdout (exits 0 only when the
+  Item ended merged or held).
+- `system items carry --repo <path>... [--max-parallel <n>]` or `system items carry --schedule <file>` runs one pass
+  over the repositories in order.
 
-### Which repositories the session works on
+A pass applies fixed rules:
 
-By default the session works on this repository. `SYSTEM_NIGHT_REPOS` (paths of
-checkouts separated by `:`) names the repositories instead; the launcher passes
-the list to the prompt in that order, and an entry that is not a git checkout is
-reported (stderr, and the night report) and skipped. Before the prompt the
-launcher runs `git fetch origin dev` in each of them (60 s at most); a failure is
-logged on stderr and the night goes on with the `origin/dev` it has. There is no cap on the number of Items
-(operator, 2026-11-26; it was 6 over all repositories). To add DNA, keep this repository first and set it in
-the installed unit, with an `Environment=` line or a drop-in
-(`systemctl --user edit system-night-session`):
+1. Read `status` of each repository in the order given and take Ready Items in `STATUS.md` order.
+2. Claim the Item, store the Task `Carry out Item <id> of STATUS.md: <line>`, and pick the Workflow (`develop.yaml`, or
+   `<name>.yaml` when the line carries `(workflow: <name>)`; from `<repo>/workflows/` when present, else from the
+   install's `workflows/`).
+3. Submit and wait, running Works in parallel up to the free Accounts (`workers.list` `room`) and `maxParallel` when
+   set. When a merged Item unblocks another Ready Item, the pass takes it too.
+4. When a Work fails, submit one more Work with the failed Work's verdict Artifact in its context. An Item that already
+   has two failed Works, is blocked, or has a running or held Work is skipped with the reason recorded.
 
-```ini
-[Service]
-Environment=SYSTEM_NIGHT_REPOS=%h/workspaces/System:%h/workspaces/DNA
-```
-
-### The night report and its notifier
-
-The session's final answer is the report, in Markdown (the prompt lists its
-parts). The launcher stores it with `system artifact put` and prints the
-Artifact ID; if `claude` fails or answers nothing it stores a short report
-saying so. Read it with `system artifact cat <id>`.
-
-To get the ID on your phone, set one of these in the session's environment
-(for the timer, an `Environment=` or `EnvironmentFile=` line of the user unit,
-kept outside the repository; they are the only place a secret may live):
-
-- `SYSTEM_NIGHT_NOTIFY_URL`: an ntfy-style URL; the launcher POSTs the ID to it with `curl`.
-- `SYSTEM_NIGHT_NOTIFY_COMMAND`: a shell command the launcher runs with the ID as `$1`.
-
-A notifier that fails is reported on stderr and does not fail the night.
-
-Neither is required: without one the ID only goes to the session's output, which
-the timer sends to the journal (`journalctl --user -u <the session's unit>`).
-
-### Running it every night
-
-`packages/bundle/system-night-session.service` and `.timer` are templates (like
-the web canary's; `system init` does not install them) that run
-`claude -p` with that prompt (through `system-night-session.sh`) in this checkout, once a night at 01:00. The
-service first waits up to 5 minutes for the Host (`system doctor` exits 0).
-The check runs the installed `system` on the `PATH`, not the checkout's `bin/system`: a checkout build
-older than the installed release fails doctor ("the client is older") and the night would never start;
-the launcher's output, the report's Artifact ID, goes to the journal. `Persistent=false`:
-a night missed while the machine was off is not run late. Nothing runs until
-you enable the timer. `claude` must be on the `PATH` the install records and
-signed in.
-
-```
-mkdir -p ~/.config/systemd/user
-for u in service timer; do
-  sed -e "s|@REPO@|$PWD|g" -e "s|@PATH@|$PATH|" \
-    packages/bundle/system-night-session.$u > ~/.config/systemd/user/system-night-session.$u
-done
-systemctl --user daemon-reload
-systemctl --user enable --now system-night-session.timer
-```
-
-Read it with `systemctl --user list-timers system-night-session` and
-`journalctl --user -u system-night-session`; stop the series with
-`systemctl --user disable --now system-night-session.timer`. To change the time
-edit `OnCalendar=` in the installed timer, then `daemon-reload` and `restart` it.
+Each pass is independent and re-enterable. A pass holds a per-repository lock under `$DSH_HOME/system` (released by the
+kernel when the process exits), so an overlapping start exits at once. After a killed pass, the next pass reads the
+Claims and Works left in `status`, adopts any running Work, and submits nothing twice.
 
 ## Schedules
 
@@ -113,7 +50,7 @@ Schedule) is a file `~/.system/schedules/<name>.yaml` (under `SYSTEM_INSTALL` wh
 | `maxParallel` | Optional: the most Works the pass runs at once. |
 | `checkAt` | Optional: one calendar expression, the time of the check before a pass (below). |
 
-This file equals today's set-up (System and DNA at 01:00, then hourly to 07:00):
+Example `~/.system/schedules/daily.yaml` (System and DNA at 01:00, then hourly to 07:00):
 
 ```yaml
 kind: items
@@ -125,32 +62,71 @@ at:
   - "*-*-* 02..07:00"
 ```
 
-`system items carry --schedule <file>` runs one pass for the file. `system init` (default home `~/.dsh` on Linux)
-writes, for each file, the user units `system-schedule-<name>.service` (waits up to 5 minutes for `system doctor`,
-then runs the install's `system items carry --schedule <file>`; no start timeout) and
-`system-schedule-<name>.timer` (one `OnCalendar=` for each `at`, `Persistent=false`) under
-`~/.config/systemd/user`. It enables none, rewrites a unit when its file changed, and removes the units of a file
-that is gone. A file that does not parse is named on stderr, fails `init`, and keeps its earlier units.
+`system init` (default home `~/.dsh` on Linux) writes, for each Schedule file, the user units
+`system-schedule-<name>.service` (waits up to 5 minutes for `system doctor`, then runs the install's
+`system items carry --schedule <file>`; no start timeout) and `system-schedule-<name>.timer` (one `OnCalendar=` for
+each `at`, `Persistent=false`, so a start missed while the machine was off is not run late) under
+`~/.config/systemd/user`. It enables none, rewrites a unit when its file changed, and removes the units of a file that
+is gone. A file that does not parse is named on stderr, fails `init`, and keeps its earlier units.
 
-### The check before a pass
+Enable a timer with `systemctl --user enable --now system-schedule-<name>.timer`, inspect it with
+`systemctl --user list-timers 'system-schedule-*'` and `journalctl --user -u system-schedule-<name>`, and stop it with
+`systemctl --user disable --now system-schedule-<name>.timer`.
 
-`system items carry --schedule <file> --check` starts nothing. It asks `workers.list` once and finds: the Host does not
-answer; a repository's status cannot be read; Items are Ready and an Account is not available (for example signed
-out) or no Account is free (under its Ceiling, with a slot); an available Account whose sign-in the Runtime says ends
-within 3 days (`credentialExpiresAt` of the Account, when the Host reports it). All well, it prints nothing and exits 0
-(no Ready Item is not a finding). Otherwise it names each finding on stderr, sends one line to the notifier of a pass
-(`SYSTEM_SCHEDULE_NOTIFY_URL` or `_COMMAND`) and exits 1. With `checkAt`, `system init` also writes
+## The check before a pass
+
+`system items carry --schedule <file> --check` starts nothing. It asks `workers.list` once and reports any of:
+
+- the Host does not answer;
+- a repository's status cannot be read;
+- Items are Ready and an Account is not available (for example signed out) or no Account is free (under its Ceiling,
+  with a slot);
+- an available Account whose sign-in the Runtime says ends within 3 days (`credentialExpiresAt` of the Account, when
+  the Host reports it).
+
+When all is well it prints nothing and exits 0 (no Ready Item is not a finding). Otherwise it writes each finding to
+stderr, sends one line to the notifier (below), and exits 1. With `checkAt`, `system init` also writes
 `system-schedule-<name>-check.service` (no wait for the Host: a Host that is down is what it reports) and
-`system-schedule-<name>-check.timer`; enable it like the other timer.
+`system-schedule-<name>-check.timer`; enable it like the pass timer.
 
-### Moving from the `system-night-session` units
+## The pass report and its notifier
 
-1. Write the file above as `~/.system/schedules/night.yaml`.
-2. Run `system init`, then `systemctl --user enable --now system-schedule-night.timer`.
-3. Check it with `systemctl --user list-timers 'system-schedule-*'`.
-4. Once a pass has run from it, stop the old series:
-   `systemctl --user disable --now system-night-session.timer`, then delete
-   `~/.config/systemd/user/system-night-session.{service,timer}` and run `systemctl --user daemon-reload`.
+When a pass takes an Item or hits an error, it generates a Markdown report from the Works' records (per Item its Works,
+outcome, Account, tokens, cache-read share and cost, then skipped Items and errors), stores it as a `local-private`
+Artifact and prints its ID on stdout. Read it with `system artifact cat <id>`.
 
-The old units keep working until you do step 4; run only one of the two timers at a time,
-as both start Works for the same Items.
+A pass exits non-zero when the Host does not answer, a repository's status cannot be read, no free Account is
+available, or an Item it took ended failed.
+
+To receive the one-line verdict (date, repositories, counts of merged, held, failed and skipped, report ID, and any
+cause) on your phone or elsewhere, set one of these in the service's environment (for a systemd unit, an `Environment=`
+or `EnvironmentFile=` drop-in via `systemctl --user edit system-schedule-<name>`, kept outside the repository; they are
+the only place a secret may live):
+
+- `SYSTEM_SCHEDULE_NOTIFY_URL`: an ntfy-style URL; the pass POSTs the one-line verdict to it (`text/plain`).
+- `SYSTEM_SCHEDULE_NOTIFY_COMMAND`: a shell command run with the one-line verdict as `$1`.
+
+The notifier runs for every pass that took an Item or failed, and for a failed `--check`, never for a pass that found
+nothing Ready. A notifier that fails is reported on stderr and does not change the exit code. Without a notifier, the
+report ID and errors still go to the journal.
+
+## Removing the installed `system-night-session` units
+
+The old model-caller launcher (`system-night-session`) has been deleted. If its user units are still installed on the
+machine, remove them after enabling your Schedule timer:
+
+1. Write your Schedule file (for example `~/.system/schedules/daily.yaml`), run `system init`, and enable it with
+   `systemctl --user enable --now system-schedule-daily.timer`.
+2. Stop and disable the old timer:
+
+```sh
+systemctl --user disable --now system-night-session.timer
+```
+
+3. Delete the old unit files (and any drop-in directory) and reload systemd:
+
+```sh
+rm -f ~/.config/systemd/user/system-night-session.service ~/.config/systemd/user/system-night-session.timer
+rm -rf ~/.config/systemd/user/system-night-session.service.d
+systemctl --user daemon-reload
+```

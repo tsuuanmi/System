@@ -1123,7 +1123,7 @@ test('on: setup checks (install, build) run whenever a later chosen check needs 
 
 test('on: the schema accepts the three events and refuses an unknown one, an empty list and a string', () => {
   for (const event of ['pull_request', 'merge_group', 'release']) assert.ok(!('problem' in parseChecksFile(`checks:\n  - name: a\n    run: x\n    on: [${event}]\n`)), event)
-  for (const bad of ['[push]', '[]', 'release', '[pull_request, nightly]']) {
+  for (const bad of ['[push]', '[]', 'release', '[pull_request, daily]']) {
     const parsed = parseChecksFile(`checks:\n  - name: a\n    run: x\n    on: ${bad}\n`)
     assert.ok('problem' in parsed, bad)
     assert.match((parsed as { problem: string }).problem, /on/, bad)

@@ -255,7 +255,7 @@ test('work.list takes `since` (admission time, inclusive) and shows the Item of 
   assert.deepEqual((await rows({ since: await at(plain.id) })).map((r) => r.id), [plain.id, itemWork.id])
   assert.deepEqual((await rows({ since: await at(itemWork.id) })).map((r) => r.id), [itemWork.id])
   assert.deepEqual(await rows({ since: new Date(Date.parse(await at(itemWork.id)) + 1).toISOString() }), [])
-  await assert.rejects(client.call('work.list', { since: 'tonight' }), /-32602|date/i)
+  await assert.rejects(client.call('work.list', { since: 'not-a-date' }), /-32602|date/i)
 })
 
 test('an agent connection is refused every operator method, and only those', async () => {

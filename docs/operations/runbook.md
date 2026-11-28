@@ -25,7 +25,7 @@ so a Host must run for them.
 - [Accounts and Workers](accounts-and-workers.md)
   — The profile config, Accounts and their slots, and the Antigravity and web Workers.
 - [The scheduled session](scheduled-session.md)
-  — The nightly scheduled session: its prompt, repositories, report and timer.
+  — The deterministic caller, Schedules, the check before a pass and the notifier.
 - [Using System](using-system.md)
   — Following a Work, the STATUS.md of a project, and using System from an agent.
 - [Recovery](recovery.md)

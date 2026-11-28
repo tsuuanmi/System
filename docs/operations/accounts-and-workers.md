@@ -300,10 +300,10 @@ Runtime has merged into `dev`; the timer runs it every six hours whatever
 merged, and the `web` check (`.system/checks.yaml`) runs the Website Worker's
 tests on a pull request that touches its paths.
 
-Install the timer as a user unit like the night session's (below), from
-`packages/bundle/system-web-canary.{service,timer}`, with `@NODE@` also
-replaced by `$(command -v node)`; it needs the Host running and `system init`
-does not install it.
+Install the timer as a user unit from
+`packages/bundle/system-web-canary.{service,timer}`, replacing `@REPO@`, `@PATH@`
+and `@NODE@` (with `$(command -v node)`), under `~/.config/systemd/user`; it
+needs the Host running and `system init` does not install it.
 
 Read it with `systemctl --user list-timers system-web-canary` and
 `journalctl --user -u system-web-canary`; start a run with

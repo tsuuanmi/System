@@ -15,12 +15,10 @@ import { promisify } from 'node:util'
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const self = 'packages/runtime-cli/tests/sandbox-without-bwrap.test.ts'
 
-/** Every test file that exercises the layer or the launcher that starts it. A new such file is added here; the last test keeps the list honest. */
+/** Every test file that exercises the layer. A new such file is added here; the last test keeps the list honest. */
 export const LAYER_TEST_FILES = [
   'packages/runtime-cli/tests/sandbox.test.ts',
-  'packages/bundle/tests/night-session-launcher.test.ts',
   'tests/layer-gate.test.ts',
-  'tests/night-session-layer.test.ts',
 ]
 
 const broken = mkdtempSync(join(tmpdir(), 'system-nobwrap-'))
@@ -47,20 +45,17 @@ const hosts = {
   'no bwrap': { ...base, PATH: without },
 }
 
-/** The launcher file puts its own `bwrap` first on PATH in every test (it takes about 3 s a test), so a host without `bwrap` is the same run: one child. */
-const hostsOf = (file: string) => (file.endsWith('night-session-launcher.test.ts') ? { 'a bwrap that cannot start': hosts['a bwrap that cannot start'] } : hosts)
-
 // One child per (file, host), all started now so the wall time is the slowest file, not the sum.
 const children = new Map<string, Promise<{ code: number; stdout: string; stderr: string }>>()
 for (const file of LAYER_TEST_FILES) {
-  for (const [name, env] of Object.entries(hostsOf(file))) {
+  for (const [name, env] of Object.entries(hosts)) {
     const args = ['--import', './test-support/clean-git-env.mjs', '--test', '--test-reporter=spec', file]
     children.set(`${file}\0${name}`, run(process.execPath, args, { cwd: repo, env, encoding: 'utf8', maxBuffer: 64 << 20 }).then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code as number, stdout: String(e.stdout), stderr: String(e.stderr) })))
   }
 }
 
 for (const file of LAYER_TEST_FILES) {
-  for (const name of Object.keys(hostsOf(file))) {
+  for (const name of Object.keys(hosts)) {
     test(`${file} passes or skips with ${name}`, async () => {
       const child = await children.get(`${file}\0${name}`)!
       const failed = child.stdout.split('\n').filter((l) => /^\s*✖/.test(l)).join('\n')

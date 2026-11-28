@@ -40,7 +40,7 @@ async function check(host: HostClient, schedule = 'kind: items\nrepositories: [/
   const saved = process.env.SYSTEM_SCHEDULE_NOTIFY_COMMAND
   process.env.SYSTEM_SCHEDULE_NOTIFY_COMMAND = `printf '%s\\n' "$1" >> ${marker}`
   try {
-    const file = join(dir, 'night.yaml')
+    const file = join(dir, 'daily.yaml')
     writeFileSync(file, schedule)
     const result = await system(['items', 'carry', '--schedule', file, '--check'], host)
     let notified = ''

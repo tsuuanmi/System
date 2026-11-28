@@ -72,7 +72,7 @@ test('the default checker uses systemd-analyze when it is on the PATH, and passe
 test('readSchedule names the file in its errors', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sched-'))
   try {
-    const file = join(dir, 'night.yaml')
+    const file = join(dir, 'daily.yaml')
     writeFileSync(file, 'kind: items\nat: daily\n')
     assert.throws(() => readSchedule(file, { calendar: ok }), new RegExp(`${file.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}: .*repositories`))
     assert.throws(() => readSchedule(join(dir, 'missing.yaml'), { calendar: ok }), /missing\.yaml/)

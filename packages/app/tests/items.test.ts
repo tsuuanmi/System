@@ -862,7 +862,7 @@ test('sch-4: --schedule reads the Schedule file: its repositories in order and m
     const b = join(dir, 'b')
     mkdirSync(a)
     mkdirSync(b)
-    const file = join(dir, 'night.yaml')
+    const file = join(dir, 'daily.yaml')
     writeFileSync(file, `kind: items\nrepositories: [${a}, ${b}]\nat: [daily]\nmaxParallel: 1\n`)
     const asked: unknown[] = []
     const host = fakeHost({
