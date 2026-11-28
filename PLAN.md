@@ -169,6 +169,10 @@ CT log) are in [PLAN.md at `4f6cb24`](https://github.com/tsuuanmi/System/blob/4f
   start of a pass ends it merged, held or failed with a recorded cause, and the operator is notified, also when the pass could not start. Not
   taken up, with what reopens each (RES-0022, "Candidates not taken up"): Claude Code, Codex and Antigravity through DSH headless or ACP adapters
   (dropped), DSH headless with a DeepSeek model as a Runtime, resume of a Worker's session, `dsh-sandbox-local` for the layer.
+- Next directions, in order (operator, 2026-11-28, second grilling; Intent 023403c7c532): harden the release of 2026-11-28 (Items pass-1 to pass-7, brief-1,
+  smoke-1, safeup-1, safeup-2, help-1, ref-1, docimp-1, rel-4, rel-5, agyf-1, agyf-2, rsrc-1, cat-1, fin-2; rel-3 is replaced by rel-4 and rel-5); fewer
+  failed rounds, the docs check first; supply of Items; the research Worker; a Schedule that carries one Work, with the web canary as its first use. The
+  Schedule runs at most 4 Works at once for the first week. The citation ratio policy stays until the operator has read work:b88bf2af.
 
 ## 4. Future, not current gates
 
