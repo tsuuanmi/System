@@ -38,11 +38,16 @@ export async function fetchOrigin(repository: string, branch: string, timeoutMs 
 /**
  * A `ref` that names a local branch with an `origin/<branch>` counterpart is checked against the origin: fetch it
  * (bounded; a failure is no refusal and comes back as the note), and refuse when the origin has commits the local
- * branch lacks, naming both commits and `origin/<branch>`. Any other ref (`origin/dev`, a commit, `HEAD`) is left alone.
+ * branch lacks, naming both commits and `origin/<branch>`. An explicit `origin/<branch>` is fetched too (never refused; the note on failure). A commit or `HEAD` is left alone.
  * Returns a note for the caller when the fetch failed.
  */
 export async function freshBranch(repository: string, ref: string | undefined, timeoutMs = FETCH_MS): Promise<string | undefined> {
   if (!ref) return undefined
+  const explicit = /^origin\/(.+)$/.exec(ref)
+  if (explicit) {
+    const fetched = await fetchOrigin(repository, explicit[1]!, timeoutMs)
+    return fetched.state === 'failed' ? `fetch of origin ${explicit[1]} failed (${fetched.error}); ${ref} was taken as last fetched` : undefined
+  }
   const top = (await git(repository, ['rev-parse', '--show-toplevel'])).trim()
   const resolve = (full: string) => git(top, ['rev-parse', '--verify', '--quiet', `${full}^{commit}`]).then((out) => out.trim(), () => undefined)
   if (!(await resolve(`refs/heads/${ref}`))) return undefined

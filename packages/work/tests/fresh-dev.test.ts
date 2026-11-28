@@ -62,9 +62,7 @@ test('task.new with dev behind origin/dev is refused, naming both commits; equal
       assert.match(e.message, /origin\/dev/)
       return true
     })
-    // Explicit origin/dev and a commit are unaffected.
-    const viaOrigin = await service().newTask('x', s.local, 'origin/dev', caller)
-    assert.ok(viaOrigin.base)
+    // A commit is taken as given.
     assert.equal((await service().newTask('x', s.local, stale, caller)).note, undefined)
     git(s.local, 'merge', '-q', '--ff-only', 'origin/dev')
     const equal = await service().newTask('x', s.local, 'dev', caller)
@@ -160,4 +158,29 @@ test('b684f18 broke `system update`: status\'s fetch must reach the same origin 
     for (const [key, value] of [['GIT_SSH_COMMAND', saved.ssh], ['GIT_SSH_VARIANT', saved.variant]] as const) { if (value === undefined) delete process.env[key]; else process.env[key] = value }
     s.cleanup()
   }
+})
+
+test('task.new with origin/dev reads the origin, not the clone\'s stale refs/remotes/origin/dev', async () => {
+  const s = setup()
+  try {
+    const landed = s.land()
+    const artifacts = new Artifacts(memoryRecordTable(), memoryBlobStore())
+    artifacts.registerKind({ ...TASK_KIND, content: taskSchema })
+    artifacts.registerKind({ ...GIT_TREE_KIND, content: gitTreeSchema })
+    const made = await new WorkService(undefined as never, artifacts, undefined as never).newTask('x', s.local, 'origin/dev', caller)
+    assert.equal(made.note, undefined)
+    const got = artifacts.get(made.base!) as { envelope: { content: { commit: string } } }
+    assert.equal(got.envelope.content.commit, landed)
+    assert.equal(git(s.local, 'rev-parse', 'refs/remotes/origin/dev'), landed)
+  } finally { s.cleanup() }
+})
+
+test('task.new with origin/dev goes on with a note when the fetch fails', async () => {
+  const s = setup()
+  try {
+    git(s.local, 'remote', 'set-url', 'origin', join(s.root, 'missing.git'))
+    const made = await service().newTask('x', s.local, 'origin/dev', caller)
+    assert.ok(made.base)
+    assert.match(made.note ?? '', /fetch of origin dev failed/)
+  } finally { s.cleanup() }
 })
