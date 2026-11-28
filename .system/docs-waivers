@@ -1,3 +1,1 @@
 # Waivers for the docs check (Item dc-1), one line each: the word docs-unchanged, a colon, the doc path, a dash, the reason. Cleared at release (docs/operations/releases.md, "The dev branch").
-docs-unchanged: docs/operations/recovery.md — plug-15 only replaces relative host imports with @system/host; recovery behaviour unchanged
-docs-unchanged: docs/operations/using-system.md — plug-15 only replaces relative host imports with @system/host; CLI and MCP behaviour unchanged
