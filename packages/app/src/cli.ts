@@ -14,6 +14,7 @@ import { operations, type Services } from '@system/host/operations'
 import { prepareRelease } from './release.ts'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
+import { carryItem } from './items.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
@@ -422,6 +423,13 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
         io.out(`${item} claimed by ${claim.who} since ${claim.at}\n`)
         return 0
       })
+    })
+  const items = program.command('items').description('carry out Items of a project\'s STATUS.md')
+  items.command('carry <id>')
+    .description('carry one Item of STATUS.md as a deterministic caller (claim, store Task, pick Workflow, submit, wait, retry once on failure, print JSON record)')
+    .option('--repo <path>', 'a git repository of the project', '.')
+    .action((id: string, options: { repo: string }) => {
+      select(() => carryItem(host, id, options.repo, io))
     })
   program.command('schema')
     .description('print the operation table as JSON: each operation\'s name, summary, Authority, read or write, whether a write is destructive, and its parameters (the MCP tools and their annotations come from the same table); needs no Host')
