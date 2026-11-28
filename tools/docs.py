@@ -410,14 +410,18 @@ class Graph:
 
     def impact(self, base: str, waiver_file: str | None = None) -> int:
         try:
-            output = subprocess.check_output(
-                ["git", "diff", "--name-only", f"{base}...HEAD"],
+            diff_out = subprocess.check_output(
+                ["git", "diff", "-z", "--name-only", base],
+                cwd=ROOT, text=True, stderr=subprocess.PIPE
+            )
+            untracked_out = subprocess.check_output(
+                ["git", "ls-files", "-z", "--others", "--exclude-standard"],
                 cwd=ROOT, text=True, stderr=subprocess.PIPE
             )
         except subprocess.CalledProcessError as exc:
             print(exc.stderr.strip(), file=sys.stderr)
             return 1
-        changed = set(output.splitlines())
+        changed = {p for p in diff_out.split("\0") + untracked_out.split("\0") if p}
         text = os.environ.get("PR_BODY", "")
         if waiver_file and os.path.exists(waiver_file):
             with open(waiver_file, encoding="utf-8") as handle:
@@ -426,11 +430,17 @@ class Graph:
         errors = []
         for doc in self.docs:
             patterns = doc.meta.get("covers", [])
-            if patterns and any(fnmatch.fnmatch(path, pattern)
-                                for path in changed for pattern in patterns):
-                path = f"docs/{doc.rel}"
-                if path not in changed and path not in waivers:
-                    errors.append(f"DOC-IMP-001 {path}: covered path changed; update it or waive it (PR body or .system/docs-waivers)")
+            hits = sorted(
+                path for path in changed
+                if any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+            )
+            if hits:
+                doc_path = f"docs/{doc.rel}"
+                if doc_path not in changed and doc_path not in waivers:
+                    errors.append(
+                        f"DOC-IMP-001 {doc_path}: covered path changed ({', '.join(hits)}); "
+                        "update it or waive it (PR body or .system/docs-waivers)"
+                    )
         if errors:
             print("\n".join(errors), file=sys.stderr)
         return int(bool(errors))

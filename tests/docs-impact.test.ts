@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -18,8 +18,8 @@ function git(cwd: string, ...args: string[]): string {
   return run.stdout.trim()
 }
 
-/** tools/, docs/ and the covered file as a one-commit repository, then `change` committed on top; returns the impact run. */
-function impact(change: (root: string) => void, waivers?: string): { status: number | null; stderr: string } {
+/** tools/, docs/ and the covered file as a one-commit repository, then `change` (committed by default); returns the impact run. */
+function impact(change: (root: string) => void, waivers?: string, commit = true): { status: number | null; stderr: string } {
   const root = mkdtempSync(join(tmpdir(), 'docs-impact-'))
   try {
     for (const path of ['tools', 'docs']) cpSync(path, join(root, path), { recursive: true, filter: (src) => !src.includes('__pycache__') })
@@ -30,8 +30,10 @@ function impact(change: (root: string) => void, waivers?: string): { status: num
     const base = git(root, 'rev-parse', 'HEAD')
     change(root)
     if (waivers !== undefined) writeFileSync(join(root, 'waivers'), waivers)
-    git(root, 'add', '-A')
-    git(root, 'commit', '-qm', 'change')
+    if (commit) {
+      git(root, 'add', '-A')
+      git(root, 'commit', '-qm', 'change')
+    }
     const argv = ['tools/docs.py', 'impact', base, ...(waivers !== undefined ? ['--waivers', 'waivers'] : [])]
     const run = spawnSync('python3', argv, { cwd: root, encoding: 'utf8' })
     return { status: run.status, stderr: run.stderr }
@@ -40,10 +42,63 @@ function impact(change: (root: string) => void, waivers?: string): { status: num
   }
 }
 
-test('a covered path changed without its doc fails, naming DOC-IMP-001', () => {
+test('a covered path changed without its doc fails, naming DOC-IMP-001 and the changed path', () => {
   const run = impact((root) => appendFileSync(join(root, COVERED), '# touched\n'))
   assert.equal(run.status, 1)
-  assert.match(run.stderr, new RegExp(`DOC-IMP-001 ${DOC}`))
+  assert.match(run.stderr, new RegExp(`DOC-IMP-001 ${DOC}:.*${COVERED}`))
+})
+
+test('an uncommitted change to a covered path fails, naming DOC-IMP-001 and the changed path', () => {
+  const run = impact((root) => appendFileSync(join(root, COVERED), '# touched\n'), undefined, false)
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, new RegExp(`DOC-IMP-001 ${DOC}:.*${COVERED}`))
+})
+
+test('a staged change to a covered path fails, naming the changed path', () => {
+  const added = 'packages/host/src/staged-new.ts'
+  const run = impact((root) => {
+    mkdirSync(join(root, 'packages/host/src'), { recursive: true })
+    writeFileSync(join(root, added), 'export const x = 1\n')
+    git(root, 'add', added)
+  }, undefined, false)
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, new RegExp(`DOC-IMP-001 docs/architecture/host\\.md:.*${added}`))
+})
+
+test('an untracked non-ignored file matching covers fails, naming the path; gitignored files are ignored', () => {
+  const untracked = 'packages/host/src/untracked.ts'
+  const ignored = 'packages/host/src/ignored.log'
+  const run = impact((root) => {
+    writeFileSync(join(root, '.gitignore'), '*.log\n')
+    mkdirSync(join(root, 'packages/host/src'), { recursive: true })
+    writeFileSync(join(root, untracked), 'export const y = 2\n')
+    writeFileSync(join(root, ignored), 'log\n')
+  }, undefined, false)
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, new RegExp(`DOC-IMP-001 docs/architecture/host\\.md:.*${untracked}`))
+  assert.doesNotMatch(run.stderr, new RegExp(ignored))
+})
+
+test('an uncommitted doc update alongside an uncommitted covered path passes', () => {
+  const run = impact((root) => {
+    appendFileSync(join(root, COVERED), '# touched\n')
+    appendFileSync(join(root, DOC), '\nUpdated.\n')
+  }, undefined, false)
+  assert.equal(run.status, 0, run.stderr)
+})
+
+test('committed and uncommitted changes to multiple covered paths name every changed path', () => {
+  const a = 'packages/host/src/a.ts'
+  const b = 'packages/host/src/b.ts'
+  const run = impact((root) => {
+    mkdirSync(join(root, 'packages/host/src'), { recursive: true })
+    writeFileSync(join(root, a), 'export const a = 1\n')
+    git(root, 'add', a)
+    git(root, 'commit', '-qm', 'add a')
+    writeFileSync(join(root, b), 'export const b = 2\n')
+  }, undefined, false)
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, new RegExp(`DOC-IMP-001 docs/architecture/host\\.md:.*${a}.*${b}`))
 })
 
 test('a waiver line in the waivers file passes it', () => {
