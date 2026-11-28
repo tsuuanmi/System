@@ -1,17 +1,38 @@
 /**
- * Deterministic caller for carrying out Items of `STATUS.md` (ADR-0020 decisions 1, 2, 4):
+ * Deterministic caller for carrying out Items of `STATUS.md` (ADR-0020 decisions 1, 2, 3, 4):
  * no model call anywhere; fixed rules for skipping, claiming, storing the Task, picking the
- * Workflow, submitting, waiting, retrying once with the failed Work's verdict, and reporting.
+ * Workflow, submitting, waiting, retrying once with the failed Work's verdict, and running a
+ * multi-repository pass in parallel up to free Accounts and `--max-parallel`.
  */
+import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
+import { createServer, type Server } from 'node:net'
+import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { codeRoot } from '@system/host'
 import type { WorkEvent, WorkRecord } from '@system/work'
+import { operatorId } from './io.ts'
 import { readWorkflowFile, type HostClient } from './remote.ts'
 
 export interface ItemsIo {
   out(text: string): void
   err(text: string): void
+}
+
+export interface CarryPassOptions {
+  maxParallel?: number
+  home?: string
+}
+
+interface ItemCarryResult {
+  item: string
+  repository?: string
+  works: string[]
+  outcome: string
+  reason?: string
+  account: string | null
+  tokens: number
+  cost: number | null
 }
 
 function canonicalRepo(path: string): string {
@@ -56,6 +77,109 @@ function summaryOf(records: WorkRecord[]): { account: string | null; tokens: num
 }
 
 /**
+ * The abstract Unix socket name for a pass lock scoped to `$DSH_HOME/system` and one canonical
+ * repository; the kernel releases it the instant the process ends (even on SIGKILL).
+ */
+function passLockName(home: string, canonicalRepository: string): string {
+  const systemDir = canonicalRepo(join(home, 'system'))
+  return `\0system-carry:${createHash('sha256').update(`${systemDir}\0${canonicalRepository}`).digest('hex')}`
+}
+
+export async function acquirePassLock(home: string, repositories: string[]): Promise<{ release(): Promise<void> } | { busy: string }> {
+  if (process.platform !== 'linux') throw new Error(`the pass lock needs Linux abstract Unix sockets; this is ${process.platform}`)
+  const sorted = [...new Set(repositories.map(canonicalRepo))].sort()
+  const servers: Server[] = []
+  const release = async () => {
+    await Promise.all(servers.map((server) => new Promise<void>((done) => { server.close(() => done()) })))
+  }
+  for (const repo of sorted) {
+    const server = createServer((socket) => socket.destroy())
+    try {
+      await new Promise<void>((bound, refuse) => {
+        server.once('error', refuse)
+        server.listen({ path: passLockName(home, repo) }, bound)
+      })
+      servers.push(server)
+    } catch (error) {
+      await release()
+      if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') return { busy: repo }
+      throw error
+    }
+  }
+  return { release }
+}
+
+async function submitWork(
+  host: HostClient,
+  repository: string,
+  id: string,
+  itemLine: string,
+  priorVerdict: string | undefined,
+): Promise<string> {
+  const workflow = readWorkflowFile(workflowPathFor(repository, itemLine))
+  const instructions = `Carry out Item ${id} of STATUS.md: ${itemLine}`
+  const created = await host.call('task.new', {
+    instructions,
+    repository,
+    item: id,
+    ...(priorVerdict ? { context: [priorVerdict] } : {}),
+  })
+  const admitted = await host.call('work.submit', { ...workflow, input: created.task, run: false })
+  return admitted.id
+}
+
+async function runAndMaybeRetry(
+  host: HostClient,
+  repository: string,
+  id: string,
+  itemLine: string,
+  firstWorkId: string,
+  firstMode: 'run' | 'wait',
+  priorFailedCount: number,
+  includeRepository: boolean,
+): Promise<ItemCarryResult> {
+  const works: string[] = [firstWorkId]
+  const ran: WorkRecord[] = []
+  let outcome = 'failed'
+  let priorVerdict: string | undefined
+  let failedCount = priorFailedCount
+
+  let currentId = firstWorkId
+  let mode: 'run' | 'wait' = firstMode
+  for (;;) {
+    const followed = mode === 'wait' ? await host.wait(currentId) : await host.run(currentId)
+    if (typeof followed === 'string') {
+      outcome = followed
+      break
+    }
+    ran.push(followed)
+    if (isMerged(followed)) {
+      outcome = 'merged'
+      break
+    }
+    outcome = followed.state.status
+    if (followed.state.status !== 'failed') break
+    failedCount += 1
+    if (failedCount >= 2) break
+    priorVerdict = verdictOf(followed)
+    currentId = await submitWork(host, repository, id, itemLine, priorVerdict)
+    works.push(currentId)
+    mode = 'run'
+  }
+
+  const { account, tokens, cost } = summaryOf(ran)
+  return {
+    ...(includeRepository ? { repository } : {}),
+    item: id,
+    works,
+    outcome,
+    account,
+    tokens,
+    cost,
+  }
+}
+
+/**
  * Carry one Item of `STATUS.md` as a deterministic caller.
  * Prints one JSON record (`item`, `works`, `outcome`, `account`, `tokens`, `cost`) on stdout and
  * returns 0 only when the Item ended merged or held.
@@ -87,38 +211,213 @@ export async function carryItem(host: HostClient, id: string, repoPath: string, 
   if (failed.length >= 2) return skip(`Item ${id} already has ${failed.length} failed Works`)
 
   await host.call('item.claim', { repository, item: id })
-  const workflow = readWorkflowFile(workflowPathFor(repository, itemLine))
-  const instructions = `Carry out Item ${id} of STATUS.md: ${itemLine}`
-  const works: string[] = []
-  const ran: WorkRecord[] = []
-  let priorVerdict = failed.length ? verdictOf(failed.at(-1)!) : undefined
-  let outcome = 'failed'
-  const maxAttempts = 2 - failed.length
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const created = await host.call('task.new', {
-      instructions,
-      repository,
-      item: id,
-      ...(priorVerdict ? { context: [priorVerdict] } : {}),
-    })
-    const admitted = await host.call('work.submit', { ...workflow, input: created.task, run: false })
-    works.push(admitted.id)
-    const followed = await host.run(admitted.id)
-    if (typeof followed === 'string') {
-      outcome = followed
-      break
+  const firstWorkId = await submitWork(host, repository, id, itemLine, failed.length ? verdictOf(failed.at(-1)!) : undefined)
+  const result = await runAndMaybeRetry(host, repository, id, itemLine, firstWorkId, 'run', failed.length, false)
+  io.out(`${JSON.stringify(result)}\n`)
+  return result.outcome === 'merged' || result.outcome === 'held' ? 0 : 1
+}
+
+interface ParsedStatusItem {
+  repository: string
+  canonical: string
+  id: string
+  key: string
+  itemLine: string
+  statePart: string
+  kind: 'ready' | 'claimed' | 'active'
+  claimedBy?: string
+}
+
+function parseStatusItems(repository: string, lines: string[]): ParsedStatusItem[] {
+  const canonical = canonicalRepo(repository)
+  const items: ParsedStatusItem[] = []
+  for (const line of lines) {
+    if (line.startsWith('note: ') || !line.startsWith('[ ] ')) continue
+    const sep = line.indexOf(' - ')
+    if (sep < 0) continue
+    const head = line.slice(4, sep)
+    const id = head.split(/\s+/, 1)[0]
+    if (!id) continue
+    const statePart = line.slice(sep + 3)
+    const key = `${canonical}\0${id}`
+    if (statePart === 'todo: nobody') {
+      items.push({ repository, canonical, id, key, itemLine: line, statePart, kind: 'ready' })
+      continue
     }
-    ran.push(followed)
-    if (isMerged(followed)) {
-      outcome = 'merged'
-      break
+    const claimed = /^doing: claimed by (\S+) since /.exec(statePart)
+    if (claimed) {
+      items.push({ repository, canonical, id, key, itemLine: line, statePart, kind: 'claimed', claimedBy: claimed[1] })
+      continue
     }
-    outcome = followed.state.status
-    if (followed.state.status !== 'failed') break
-    priorVerdict = verdictOf(followed)
+    if (statePart.startsWith('doing: ')) {
+      items.push({ repository, canonical, id, key, itemLine: line, statePart, kind: 'active' })
+    }
+  }
+  return items
+}
+
+/**
+ * Run one deterministic pass over `repoPaths` in order (ADR-0020 decisions 3, 4):
+ * reads `status` of each repository in order, carries every Ready Item with sch-1's rules,
+ * runs Works in parallel up to `workers.list` `room` and `--max-parallel`, picks up Items
+ * unblocked by merges, adopts Claims and running Works left by a killed pass without
+ * submitting anything twice, and exits at once if another pass already holds the lock for
+ * any of the repositories.
+ */
+export async function carryPass(host: HostClient, repoPaths: string[], options: CarryPassOptions, io: ItemsIo): Promise<number> {
+  const seenCanon = new Set<string>()
+  const repos: string[] = []
+  for (const raw of repoPaths.length ? repoPaths : ['.']) {
+    const resolved = resolve(raw)
+    const canon = canonicalRepo(resolved)
+    if (seenCanon.has(canon)) continue
+    seenCanon.add(canon)
+    repos.push(resolved)
   }
 
-  const { account, tokens, cost } = summaryOf(ran)
-  io.out(`${JSON.stringify({ item: id, works, outcome, account, tokens, cost })}\n`)
-  return outcome === 'merged' || outcome === 'held' ? 0 : 1
+  const home = options.home ?? process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  const lock = await acquirePassLock(home, repos)
+  if ('busy' in lock) {
+    io.err(`another pass is already running for ${lock.busy}\n`)
+    return 1
+  }
+
+  try {
+    const me = operatorId()
+    const settled = new Set<string>()
+    const inFlight = new Map<string, Promise<{ key: string; result: ItemCarryResult }>>()
+    const results: ItemCarryResult[] = []
+    let interrupted = false
+    let noRoom = false
+
+    const skipItem = (item: ParsedStatusItem, reason: string) => {
+      io.err(`skipping ${item.id}: ${reason}\n`)
+      const record: ItemCarryResult = { repository: item.repository, item: item.id, works: [], outcome: 'skipped', reason, account: null, tokens: 0, cost: null }
+      io.out(`${JSON.stringify(record)}\n`)
+      results.push(record)
+      settled.add(item.key)
+    }
+
+    for (;;) {
+      if (!interrupted) {
+        const candidates: ParsedStatusItem[] = []
+        for (const repository of repos) {
+          const statusLines = await host.call('status', { repository })
+          for (const item of parseStatusItems(repository, statusLines)) {
+            if (inFlight.has(item.key) || settled.has(item.key)) continue
+            if (item.kind === 'claimed' && item.claimedBy !== me) continue
+            candidates.push(item)
+          }
+        }
+
+        if (candidates.length > 0) {
+          const allWorks = await host.call('work.list', {})
+          const shown = new Map<string, WorkRecord>()
+          const showWork = async (workId: string): Promise<WorkRecord> => {
+            let record = shown.get(workId)
+            if (!record) {
+              record = await host.call('work.show', { workId })
+              shown.set(workId, record)
+            }
+            return record
+          }
+          const recordsFor = async (item: ParsedStatusItem): Promise<WorkRecord[]> => {
+            const matching = allWorks.filter((w) => w.item === item.id)
+            const loaded = await Promise.all(matching.map((w) => showWork(w.id)))
+            return loaded.filter((r) => sameRepository(r, item.repository))
+          }
+
+          // Re-entry: adopt running Works left by a killed pass without submitting anything twice.
+          for (const item of candidates.filter((c) => c.kind === 'active')) {
+            const records = await recordsFor(item)
+            let active = records.find((r) => r.state.status === 'running' || r.state.status === 'held')
+            if (!active) {
+              const workId = /^doing: (\S+)/.exec(item.statePart)?.[1]
+              if (workId) active = await showWork(workId)
+            }
+            if (!active || active.state.status !== 'running') {
+              settled.add(item.key)
+              continue
+            }
+            const failedCount = records.filter((r) => r.state.status === 'failed').length
+            const mode = active.events.length === 1 ? 'run' : 'wait'
+            const promise = runAndMaybeRetry(host, item.repository, item.id, item.itemLine, active.id, mode, failedCount, true)
+              .then((result) => ({ key: item.key, result }))
+            inFlight.set(item.key, promise)
+          }
+
+          // Start Ready (and our own claimed-only) Items up to room and --max-parallel.
+          const startable = candidates.filter((c) => c.kind === 'ready' || c.kind === 'claimed')
+          if (startable.length > 0) {
+            const workers = await host.call('workers.list', {})
+            const room = workers.room
+            const totalAccounts = room && room.accounts > 0 ? room.accounts : workers.registered.length
+            const freeFromRoom = room && room.accounts > 0 ? room.free : Math.max(0, totalAccounts - inFlight.size)
+            const cap = Math.min(totalAccounts, options.maxParallel ?? Infinity)
+            let canStart = Math.max(0, Math.min(freeFromRoom, cap - inFlight.size))
+            let deferred = false
+
+            for (const item of startable) {
+              const records = await recordsFor(item)
+              const active = records.find((r) => r.state.status === 'running' || r.state.status === 'held')
+              if (active) {
+                if (active.state.status === 'running') {
+                  const failedCount = records.filter((r) => r.state.status === 'failed').length
+                  const mode = active.events.length === 1 ? 'run' : 'wait'
+                  const promise = runAndMaybeRetry(host, item.repository, item.id, item.itemLine, active.id, mode, failedCount, true)
+                    .then((result) => ({ key: item.key, result }))
+                  inFlight.set(item.key, promise)
+                } else {
+                  settled.add(item.key)
+                }
+                continue
+              }
+              const failed = records.filter((r) => r.state.status === 'failed')
+              if (failed.length >= 2) {
+                skipItem(item, `Item ${item.id} already has ${failed.length} failed Works`)
+                continue
+              }
+              if (canStart <= 0) {
+                deferred = true
+                break
+              }
+              try {
+                await host.call('item.claim', { repository: item.repository, item: item.id })
+              } catch (error) {
+                skipItem(item, (error as Error).message)
+                continue
+              }
+              const firstWorkId = await submitWork(host, item.repository, item.id, item.itemLine, failed.length ? verdictOf(failed.at(-1)!) : undefined)
+              const promise = runAndMaybeRetry(host, item.repository, item.id, item.itemLine, firstWorkId, 'run', failed.length, true)
+                .then((result) => ({ key: item.key, result }))
+              inFlight.set(item.key, promise)
+              canStart -= 1
+            }
+
+            if (deferred && inFlight.size === 0) {
+              io.err(`no free Accounts available (0 of ${totalAccounts} free); stopping pass\n`)
+              noRoom = true
+              break
+            }
+          }
+        }
+      }
+
+      if (inFlight.size === 0) break
+      const finished = await Promise.race(inFlight.values())
+      inFlight.delete(finished.key)
+      settled.add(finished.key)
+      results.push(finished.result)
+      io.out(`${JSON.stringify(finished.result)}\n`)
+      if (finished.result.outcome === 'detached' || finished.result.outcome === 'stopped') {
+        interrupted = true
+      }
+    }
+
+    if (noRoom || interrupted) return 1
+    const anyFailed = results.some((r) => r.outcome !== 'merged' && r.outcome !== 'held' && r.outcome !== 'skipped')
+    return anyFailed ? 1 : 0
+  } finally {
+    await lock.release()
+  }
 }

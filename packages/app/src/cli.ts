@@ -14,7 +14,7 @@ import { operations, type Services } from '@system/host/operations'
 import { prepareRelease } from './release.ts'
 import { formatReport, runDoctor, type DoctorHost } from './doctor.ts'
 import { formatStoreReport, type StoreReport } from './store-check.ts'
-import { carryItem } from './items.ts'
+import { carryItem, carryPass } from './items.ts'
 import { RECONNECT_MS, readWorkflowFile, type Followed, type HostClient } from './remote.ts'
 
 /** How long `workers.login` may take: a manual sign-in waits up to ten minutes. */
@@ -176,7 +176,7 @@ function zonelessUtc(text: string): string | undefined {
   return Number.isNaN(at.getTime()) ? undefined : at.toISOString()
 }
 
-export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => void): Command {
+export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => void, home?: string): Command {
   const program = newProgram()
   const artifactId = (id: string): string => {
     if (!CONTENT_ID_RE.test(id)) throw new Error(`not an Artifact ID: ${id}`)
@@ -425,11 +425,23 @@ export function buildProgram(host: HostClient, io: CliIo, select: (run: Run) => 
       })
     })
   const items = program.command('items').description('carry out Items of a project\'s STATUS.md')
-  items.command('carry <id>')
-    .description('carry one Item of STATUS.md as a deterministic caller (claim, store Task, pick Workflow, submit, wait, retry once on failure, print JSON record)')
-    .option('--repo <path>', 'a git repository of the project', '.')
-    .action((id: string, options: { repo: string }) => {
-      select(() => carryItem(host, id, options.repo, io))
+  items.command('carry [id]')
+    .description('carry one Item of STATUS.md, or without an Item ID run one pass over the given repositories in order (up to free Accounts and --max-parallel)')
+    .option('--repo <path>', 'a git repository of the project (repeatable for a pass)', collect, [])
+    .option('--max-parallel <n>', 'maximum Works to run in parallel during a pass')
+    .action((id: string | undefined, options: { repo: string[]; maxParallel?: string }) => {
+      select(async () => {
+        if (id !== undefined) {
+          if (options.repo.length > 1) throw new Error('give one --repo with an Item ID')
+          if (options.maxParallel !== undefined) throw new Error('--max-parallel goes with a pass (no Item ID)')
+          return carryItem(host, id, options.repo[0] ?? '.', io)
+        }
+        const maxParallel = options.maxParallel === undefined ? undefined : Number(options.maxParallel)
+        if (maxParallel !== undefined && !(Number.isInteger(maxParallel) && maxParallel >= 1)) {
+          throw new Error('--max-parallel is a positive integer')
+        }
+        return carryPass(host, options.repo, { maxParallel, home }, io)
+      })
     })
   program.command('schema')
     .description('print the operation table as JSON: each operation\'s name, summary, Authority, read or write, whether a write is destructive, and its parameters (the MCP tools and their annotations come from the same table); needs no Host')

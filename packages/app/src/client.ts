@@ -82,7 +82,7 @@ export async function main(args: string[], home: string): Promise<number> {
   }
   let selected: Run | undefined
   const io = { out, err, write: (data: Uint8Array) => { process.stdout.write(data) }, readSecret, confirmHuman }
-  buildProgram(hostClient({ open, err, reconnectMs: testMs('SYSTEM_WAIT_RECONNECT_MS'), retryMs: testMs('SYSTEM_WAIT_RETRY_MS') }), io, (run) => { selected = run }).parse(args, { from: 'user' })
+  buildProgram(hostClient({ open, err, reconnectMs: testMs('SYSTEM_WAIT_RECONNECT_MS'), retryMs: testMs('SYSTEM_WAIT_RETRY_MS') }), io, (run) => { selected = run }, home).parse(args, { from: 'user' })
   if (selected === undefined) return 0
   try {
     return await selected()
