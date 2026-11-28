@@ -3,7 +3,7 @@
  * stored as a manifest over `file@1` part Artifacts. Contract:
  * docs/architecture/artifact-verification.md.
  */
-import { contentIdSchema, type Artifacts, type Envelope, type Producer } from '@system/artifacts'
+import { contentIdSchema, type Artifacts, type Envelope, type Producer } from '@system/artifacts/contract'
 import { z } from 'zod'
 
 export const CONVERSATION_KIND = { kind: 'conversation', schemaVersion: 1 } as const

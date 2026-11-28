@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { Host, type HostOptions, TERMINAL, WorkController, Capabilities, parseWorkflow, resolve, type Admission, type SpecStore, type Verdict, type WorkRecord, type ResolvedSpec } from '@system/work'
 import { memoryWorkTable } from './memory.ts'
 

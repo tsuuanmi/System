@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { askVerifier, putVerdict, settleVerdict, type Capabilities, type EffectIntent, type VerificationStore } from '@system/work'
 import { githubPublisher, type MergeCheck, type PublishConfig } from './github.ts'
 

@@ -2,7 +2,7 @@
  * `intent@1`: what the operator settled with a caller session, stored before
  * Items carry it out so a result can be traced back to what was wanted.
  */
-import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts'
+import { contentIdSchema, type Artifacts, type Envelope } from '@system/artifacts/contract'
 import { z } from 'zod'
 import { requireStored, storedOf } from './stored.ts'
 

@@ -8,7 +8,7 @@
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { requestedTier, writesRepository, type Tier, type WorkerPort, type WorkerRequest, type WorkerResult } from '@system/work'
 import { adapterFor } from './adapters/index.ts'
 import { realHost, sandboxed, type SandboxHost, type SandboxOption } from './adapters/sandbox.ts'

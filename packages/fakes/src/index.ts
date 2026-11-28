@@ -7,7 +7,7 @@
  */
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { systemPath, type Capabilities, type VerifyResult, type WorkerRequest } from '@system/work'
 import { z } from 'zod'
 

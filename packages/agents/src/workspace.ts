@@ -19,7 +19,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Artifacts, Envelope } from '@system/artifacts'
+import type { Artifacts, Envelope } from '@system/artifacts/contract'
 import { addWorktree, captureTree, git, removeWorktree } from '@system/git'
 import { CONVERSATION_KIND, GIT_TREE_KIND, TASK_KIND, writesRepository, pin, type Conversation, type GitTreeContent, type Task, type WorkerRequest } from '@system/work'
 

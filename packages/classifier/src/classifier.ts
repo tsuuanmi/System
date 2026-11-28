@@ -4,7 +4,7 @@
  * recorded answer and never calls the model. It never throws: a Classifier that cannot answer records nothing.
  */
 import type { Ask } from '@system/agents/contract'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { defaultChange, summarize, type ClassifiedFailure, type ClassifiedLookup, type Failure, type WorkRecord } from '@system/work'
 import { failureEvidence } from './evidence.ts'
 import { hashText, type LoadedQuestion } from './question.ts'

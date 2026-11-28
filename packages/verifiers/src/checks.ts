@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } fr
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, matchesGlob, normalize, sep } from 'node:path'
 import type { Spawner } from '@system/agents/contract'
-import type { Artifacts } from '@system/artifacts'
+import type { Artifacts } from '@system/artifacts/contract'
 import { addWorktree, git, removeWorktree } from '@system/git'
 import { TASK_KIND, type GitTreeContent, type Task, type VerifierPort, type VerifyResult, verifierRerunReason } from '@system/work'
 import { parse } from 'yaml'
