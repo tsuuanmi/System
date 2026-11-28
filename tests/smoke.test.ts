@@ -98,7 +98,7 @@ test('the shipped patch has no fakes row', () => {
 
 test('the web-worker row is installed but off by default', () => {
   const ran = system('--dump-config')
-  assert.match(ran.stdout, /- id: web-worker\n  name: '@system\/web-worker'\n  disabled: true/)
+  assert.match(ran.stdout, /- id: web-worker\n  name: '@system\/runtime-web'\n  disabled: true/)
 })
 
 test('an Artifact stored in one Host is read by ID alone after a restart', async () => {
