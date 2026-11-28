@@ -8,6 +8,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -242,7 +243,11 @@ async function runHost(ctx: Context): Promise<number> {
   return status
 }
 
-export function apply(ctx: Context): void {
+/** The row has no configuration; a config that is not an object is refused at activation. */
+export interface Config {}
+export const Config: Schema<Config> = Schema.object({})
+
+export function apply(ctx: Context, _config: Config): void {
   const host: HostProcess = {
     hasService: (service) => ctx.get(service as never) !== undefined,
     dshVersion,

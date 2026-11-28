@@ -5,6 +5,7 @@
  * the optional `web-worker` row (see web.ts), or reported unavailable when it is off.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -95,6 +96,46 @@ export interface Config {
   webWorkerWaitSeconds?: number
 }
 
+/** Optional composites default to `undefined`: Schemastery would otherwise fill an unset list or object with `[]`/`{}`, which `apply` reads as a value. */
+const budgetSchema = Schema.object({ inputTokens: Schema.number(), minutes: Schema.number() }).default(undefined as never)
+/** Types only: range and enum checks (tiers, runtimes, whole-number slots) stay in `apply`, whose messages name the account. */
+const accountSchema = Schema.object({
+  ref: Schema.string().required(),
+  runtime: Schema.string().required(),
+  site: Schema.string(),
+  capabilities: Schema.array(Schema.string()).required(),
+  command: Schema.string(),
+  tokenRef: Schema.string(),
+  label: Schema.string(),
+  priority: Schema.any(),
+  claudeHome: Schema.string(),
+  codexHome: Schema.string(),
+  agyHome: Schema.string(),
+  quotaGroup: Schema.string(),
+  models: Schema.dict(Schema.string()).default(undefined as never),
+  attemptTimeoutMinutes: Schema.number(),
+  maxConcurrentAttempts: Schema.number(),
+  attemptBudget: budgetSchema,
+  sandbox: Schema.boolean(),
+  profileDir: Schema.string(),
+  temporaryChat: Schema.boolean(),
+  url: Schema.string(),
+  executablePath: Schema.string(),
+  timeouts: Schema.dict(Schema.number()).default(undefined as never),
+  maxOutsideChars: Schema.number(),
+  cooldownSeconds: Schema.array(Schema.number()).default(undefined as never),
+  hostLoad: Schema.number(),
+})
+export const Config: Schema<Config> = Schema.object({
+  attemptTimeoutMinutes: Schema.number(),
+  maxConcurrentAttempts: Schema.number(),
+  attemptBudget: budgetSchema,
+  quotaCeilingPercent: Schema.number(),
+  accounts: Schema.array(accountSchema).default([]),
+  quota: Schema.object({ ttlMs: Schema.number(), now: Schema.function() }).default(undefined as never),
+  webWorkerWaitSeconds: Schema.number().default(30),
+}) as Schema<Config>
+
 /** The configured models in tier order; a tier that is not a tier is left for the registration to refuse. */
 function modelsOf(models: AccountConfig['models']): Partial<Record<Tier, string>> {
   return Object.fromEntries(TIERS.filter((tier) => models?.[tier]).map((tier) => [tier, models![tier]]))
@@ -177,7 +218,7 @@ export function lazyVersion(subprocess: SubprocessRuntime, command: string): () 
   }
 }
 
-export async function apply(ctx: Context, config: Config = {}): Promise<void> {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const capabilities = ctx.get('capabilities') as Capabilities
   const artifacts = ctx.get('artifacts') as Artifacts
   const subprocess = ctx.get('subprocess') as SubprocessRuntime

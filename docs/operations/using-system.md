@@ -18,6 +18,9 @@ has the exit codes). While attempts run, `work show` prints `live`; one quiet
 for `stallMinutes` (10 by default, the `work` row's config) is `stalled: true`,
 a notice, not a verdict.
 
+The `system-app` row takes no configuration; its `Config` is a Cordis schema,
+so a config that is not an object is refused at activation.
+
 Tests shorten the client's waits with `SYSTEM_WAIT_RECONNECT_MS`, `SYSTEM_WAIT_RETRY_MS`,
 `SYSTEM_CALL_TIMEOUT_MS` and `SYSTEM_CONNECT_RETRY_MS`, and the Host's upgrade
 poll with `SYSTEM_UPGRADE_POLL_MS`; unset, the defaults apply.

@@ -5,6 +5,7 @@
  */
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { shippedMap, shippedMapProblem } from '@system/web-driver'
 import { lazyVersion, type RecheckReport, type RemoteView, type WebRegistration, type WebWorkerService } from '@system/agents'
@@ -32,6 +33,8 @@ export interface Config {
   /** How long an operation on an account waits for its registration in progress, in seconds (default 60). */
   registerWaitSeconds?: number
 }
+
+export const Config: Schema<Config> = Schema.object({ registerWaitSeconds: Schema.number().default(60) }) as Schema<Config>
 
 export function apply(ctx: Context, config: Config = {}): void {
   const capabilities = ctx.get('capabilities') as Capabilities
