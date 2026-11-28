@@ -15,7 +15,7 @@ const on = systemCli('system-cls-on')
 const off = systemCli('system-cls-off')
 let repository = ''
 
-const PROFILE = `- id: agents
+const PROFILE = `- id: runtime-cli
   config:
     $patch: replace
     accounts:

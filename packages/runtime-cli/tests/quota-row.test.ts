@@ -1,4 +1,4 @@
-/** Quota on the agents row: registration stays lazy; each account owns its read/cache. */
+/** Quota on the runtime-cli row: registration stays lazy; each account owns its read/cache. */
 import assert from 'node:assert/strict'
 import { existsSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -120,18 +120,16 @@ test('two accounts read independently from their own homes and logs', async (t) 
   assert.equal(c.fake.readLog().filter((entry) => entry.stdin !== undefined).length, 1)
   assert.deepEqual(x.fake.readLog().filter((entry) => entry.stdin !== undefined).map((entry) => object(entry.stdin).method), ['initialize', 'initialized', 'account/rateLimits/read'])
 })
-test('listing accounts spawns no quota reader; web and unknown refs are unreadable', async (t) => {
+test('listing accounts spawns no quota reader', async (t) => {
   const dir = tempDir('quota-row-')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const c = claude(dir)
   const x = codex(dir)
-  const web: AccountConfig = { ref: 'web/chatgpt/x', runtime: 'web', site: 'chatgpt', capabilities: ['research'] }
-  const row = await mount(dir, [c.spec, x.spec, web], () => 0)
+  const row = await mount(dir, [c.spec, x.spec], () => 0)
   const statuses = await row.accounts()
   assert.deepEqual(statuses, [
     { ref: c.spec.ref, runtime: 'claude-code', abilities: ['repo.read', 'repo.write', 'web.search'], capabilities: ['research'], models: {}, available: true, reason: 'registered', command: c.fake.command, providerAccount: 'claude-account', version: '' },
     { ref: x.spec.ref, runtime: 'codex', abilities: ['repo.read', 'repo.write'], capabilities: ['research'], models: {}, available: true, reason: 'registered', command: x.fake.command, providerAccount: 'codex-account', version: '' },
-    { ref: web.ref, runtime: 'web', abilities: ['web.search', 'web.browse'], capabilities: ['research'], models: {}, available: false, reason: 'the web-worker row is disabled' },
   ])
   assert.equal(existsSync(c.fake.log), false)
   assert.equal(existsSync(x.fake.log), false)
@@ -191,13 +189,6 @@ test('web port has no quota; CLI default ceiling is unset', async (t) => {
   await mount(dir, [c.spec], () => 0, { ports })
   assert.equal(ports.length, 1)
   assert.equal(Reflect.get(ports[0]!, 'quotaCeilingPercent'), undefined)
-})
-
-test('quota() of a web account says it has no quota reader', async (t) => {
-  const dir = tempDir('quota-web-reason-')
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const row = await mount(dir, [{ ref: 'web/chatgpt/x', runtime: 'web', site: 'chatgpt', capabilities: ['research'] }], () => 0)
-  assert.deepEqual(await row.quota('web/chatgpt/x'), { unreadable: 'a web account has no quota reader' })
 })
 
 test('quota() of an account whose registration failed says it is not registered', async (t) => {

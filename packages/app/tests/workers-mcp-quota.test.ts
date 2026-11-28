@@ -17,7 +17,7 @@ test('workers.list through MCP returns each account quota without a token or a m
   assert.equal(initialized.status, 0, initialized.stderr)
   const codexHome = fakeCodexHome(join(home, 'quota-home'), 'quota-provider')
   const fake = fakeQuotaCli(join(home, 'quota-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: reset } }) })
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:

@@ -36,7 +36,7 @@ let gitRepo = ''
 
 before(async () => {
   assert.equal(system(['init']).status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:
@@ -238,7 +238,7 @@ test('duplicate provider account IDs refuse the later account, while unreadable 
   writeAccount('identity-a', 'same-provider-account')
   writeAccount('identity-b', 'same-provider-account')
   writeAccount('identity-unknown')
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - {ref: codex/x1, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-a}\n      - {ref: codex/x2, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-b}\n      - {ref: codex/x3, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-unknown}\n`)
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli\n  config:\n    $patch: replace\n    accounts:\n      - {ref: codex/x1, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-a}\n      - {ref: codex/x2, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-b}\n      - {ref: codex/x3, runtime: codex, capabilities: [repo.write], command: ${fakeAgent}, codexHome: codex/identity-unknown}\n`)
   await cli.start()
   const out = system(['workers'])
   assert.match(out.stdout, /codex\/x2[^\n]*codex\/x1[^\n]*provider account/i)
@@ -248,11 +248,15 @@ test('duplicate provider account IDs refuse the later account, while unreadable 
 async function readableQuotaAccount() {
   const codexHome = fakeCodexHome(join(home, 'quota-home'), 'quota-provider')
   const fake = fakeQuotaCli(join(home, 'quota-cli'), { kind: 'codex', version: '0.166.0', answer: codexRateLimits({ primary: { usedPercent: 17, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 } }) })
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:
       - {ref: codex/quota, runtime: codex, capabilities: [research], command: ${JSON.stringify(fake.command)}, codexHome: ${JSON.stringify(codexHome)}}
+- id: runtime-web
+  disabled: false
+  config:
+    accounts:
       - {ref: web/chatgpt/quota, runtime: web, site: chatgpt, capabilities: [research]}
 `)
   await cli.start()
@@ -285,7 +289,7 @@ done
 exec '${fakeAgent}' "$@"
 `)
   chmodSync(command, 0o700)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:

@@ -178,7 +178,7 @@ Each criterion names the test that pins it today (`file`: "test name").
   matches. `packages/work/tests/controller.test.ts`: "a succeeded attempt keeps
   the Artifacts it reports beside its outputs, and replay matches".
 - **Optional plugins stay optional:** a disabled row is unavailable without
-  breaking the rest. `tests/web-worker-off.test.ts`: "the web-worker row is off
+  breaking the rest. `tests/web-worker-off.test.ts`: "the runtime-web row is off
   in the bundle". Disabling a plugin with in-flight work: not pinned.
 - **Accounting and operator touches:** usage the Worker does not report is
   unknown, never zero; decisions, retries and cancels count as touches.

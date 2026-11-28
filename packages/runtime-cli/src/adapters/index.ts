@@ -1,6 +1,6 @@
 /**
  * The registry of CLI Runtimes, keyed by Runtime name: the one place that knows which Runtime does what. Callers ask it; none branches on a
- * Runtime's name (a test fails if one does). `web` has no adapter here: the web-worker row serves it (web.ts).
+ * Runtime's name (a test fails if one does). `web` has no adapter here: the runtime-web row serves it.
  */
 import type { AttemptSummary } from '@system/work'
 import { unknownSummary } from '../attempt-summary.ts'

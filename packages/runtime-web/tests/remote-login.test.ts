@@ -318,24 +318,20 @@ test('Xvfbs that start together from the same display number each get their own 
   }
 })
 
-/** Mount the `web-worker` row on a bare context and register an account with it: whether it is available, and the reason if not. */
+/** Mount the `runtime-web` row on a bare context with one account: whether it is available, and the reason if not. */
 async function accountsOf(account: Record<string, unknown>, path?: string) {
   let registered = 0
-  const provided: Record<string, any> = {}
-  const services: Record<string, unknown> = { capabilities: { registerWorker: () => { registered += 1; return () => {} } }, artifacts: {}, subprocess: { resolveExecutable: async (command: string) => command } }
-  const ctx = { get: (key: string) => services[key], effect() {}, provide: (key: string, value: unknown) => { provided[key] = value } }
+  const listings: { status(): { available: boolean; reason: string } }[] = []
+  const services: Record<string, unknown> = { capabilities: { registerWorker: () => { registered += 1; return () => {} }, registerListing: (listing: { status(): { available: boolean; reason: string } }) => { listings.push(listing); return () => {} } }, artifacts: {}, subprocess: { resolveExecutable: async (command: string) => command } }
+  const ctx = { get: (key: string) => services[key], effect() {}, provide() {} }
   const was = process.env.PATH
   if (path !== undefined) process.env.PATH = path
-  let reason = 'registered'
   try {
-    apply(ctx as never)
-    await provided.webWorker.register({ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], executablePath: CHROME, ...account })
-  } catch (error) {
-    reason = (error as Error).message
+    apply(ctx as never, { accounts: [{ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], executablePath: CHROME, ...account }] })
   } finally {
     process.env.PATH = was
   }
-  return { accounts: [{ available: reason === 'registered', reason }], registered }
+  return { accounts: listings.map((listing) => listing.status()), registered }
 }
 
 test('without Xvfb the account is unavailable and the reason names it', { timeout: 30_000 }, async () => {

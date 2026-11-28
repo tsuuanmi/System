@@ -38,7 +38,7 @@ export function createPublishEnv(prefix: string) {
   }
 
   function profile(apiUrl: string, mergeInto = '[]') {
-    writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents
+    writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli
   config:
     $patch: replace
     accounts:

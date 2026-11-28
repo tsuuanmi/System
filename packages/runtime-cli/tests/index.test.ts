@@ -1,7 +1,6 @@
 /**
- * The `agents` row's seam to the optional web Runtime (WW2a): a `web`
- * account is reported unavailable when the `web-worker` row is off, and
- * handed to its service, with the offered capabilities, when it is on.
+ * The `runtime-cli` row's Accounts as the Worker registry shows them: every CLI Account is listed from the first moment, with its models and
+ * slots; a `web` Account is not this row's (ADR-0018 decision 3), so it is refused with the row to use.
  */
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
@@ -11,7 +10,7 @@ import { fakeQuotaCli } from '../../../test-support/quota.ts'
 import { TASK_KIND, taskSchema, type WorkerPort } from '@system/work'
 import { test } from 'node:test'
 import { fakeClaudeHome, fakeCodexHome, tempDir } from '../../../test-support/accounts.ts'
-import { REGISTERING, WEB_WORKER_DISABLED, apply, type WebRegistration } from '../src/index.ts'
+import { REGISTERING, apply } from '../src/index.ts'
 import { RUNTIME_ABILITIES } from '../src/runtimes.ts'
 import { observed, viewOf } from '../../../test-support/accounts-view.ts'
 
@@ -21,131 +20,36 @@ const injecting = (services: Record<string, unknown>) => (_names: string[], call
 /** `provide` for a bare context: the `agents` service plus the Accounts read from the `capabilities` registry in `services`, as the Host reads them (ADR-0018). */
 const providing = (provided: Record<string, any>, services: Record<string, unknown>) => (key: string, value: unknown) => { provided[key] = key === 'agents' ? { ...(value as object), ...viewOf(services.capabilities as never) } : value }
 
-/** Mount the row on a bare context with `webWorker` (if any); the accounts it reports and what it disposed. */
-async function mount(webWorker: unknown, hold = false, accounts: object[] = [{}], services_: Record<string, unknown> = {}, rowSlots = 2): Promise<any> {
-  const provided: Record<string, any> = {}
-  const effects: (() => () => void)[] = []
-  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: observed(), artifacts: {}, subprocess: {}, credentials: {}, webWorker, ...services_ }
-  const ctx = { get: (key: string) => services[key], inject: injecting(services), effect: (fn: () => () => void) => { effects.push(fn) }, provide: providing(provided, services) }
-  const started = apply(ctx as never, { maxConcurrentAttempts: rowSlots, accounts: accounts.map((own) => ({ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], models: { standard: 'x' }, url: 'http://localhost/', ...own })) })
-  if (hold) return { before: await provided.agents.accounts() as { available: boolean; reason: string }[], started }
-  await started
-  return { accounts: await provided.agents.accounts() as { ref: string; available: boolean; reason: string; command?: string; version?: string; capabilities: string[] }[], unload: () => effects.forEach((fn) => fn()()) }
-}
-
-test('with the web-worker row off, a web account is unavailable and the reason names the row', async () => {
-  const { accounts } = await mount(undefined)
-  assert.equal(accounts[0]!.available, false)
-  assert.equal(accounts[0]!.reason, WEB_WORKER_DISABLED)
-  assert.equal(WEB_WORKER_DISABLED, 'the web-worker row is disabled')
-})
-
-test('with the row on, the account goes to its service with its offered capabilities and one slot, and is released with the row', async () => {
-  const registered: WebRegistration[] = []
-  let disposed = 0
-  const { accounts, unload } = await mount({ expect: () => {}, announced: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => { disposed += 1 }, unavailable: () => undefined } } })
-  assert.equal(accounts[0]!.available, true)
-  assert.deepEqual([accounts[0]!.command, accounts[0]!.version, accounts[0]!.capabilities], ['/chrome', '155', ['research', 'tier.standard']])
-  assert.deepEqual([registered[0]!.capabilities, registered[0]!.maxConcurrentAttempts, registered[0]!.url], [['research', 'tier.standard'], 1, 'http://localhost/'])
-  unload()
-  assert.equal(disposed, 1)
-})
-
-test('the capabilities the web-worker row reports (the tiers its Site map binds) are the account\'s', async () => {
-  const offered = ['research', 'tier.economy', 'tier.standard', 'tier.frontier']
-  const { accounts } = await mount({ expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', capabilities: offered, dispose: () => {}, unavailable: () => undefined }) })
-  assert.deepEqual(accounts[0]!.capabilities, offered)
-})
-
 test('an account reports the model of each tier it configures, in tier order, from the first moment', async () => {
-  const { before } = await mount(undefined, true, [{ models: { frontier: 'f', economy: 'e' } }, { ref: 'web/chatgpt/other', models: undefined }])
+  const { before } = await cliMount([claude('claude-code/a', { models: { frontier: 'f', economy: 'e' }, claudeHome: tempDir() }), claude('claude-code/b', { claudeHome: tempDir() })], true)
   assert.deepEqual((before as any[]).map((a) => a.models), [{ economy: 'e', frontier: 'f' }, {}])
 })
 
-test('an account the web-worker row says is not ready is unavailable with its reason, until it is ready again', async () => {
-  let reason: string | undefined = 'needs sign-in since 05:10: run `system workers login web/chatgpt/default --remote`, then `system workers recheck web/chatgpt/default`'
-  const web = { expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => reason }) }
-  const first = await mount(web)
-  assert.deepEqual([first.accounts[0]!.available, first.accounts[0]!.reason, first.accounts[0]!.version], [false, reason, '155'])
-  reason = undefined
-  const second = await mount(web)
-  assert.deepEqual([second.accounts[0]!.available, second.accounts[0]!.reason], [true, 'registered'])
+test('an Account of the web Runtime under this row is refused with the row it belongs to', async () => {
+  const { accounts, registered } = await cliMount([{ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'] }])
+  assert.deepEqual([accounts[0].available, registered], [false, []])
+  assert.match(accounts[0].reason, /runtime-web row/)
 })
 
-test('a service that refuses the account gives its reason', async () => {
-  const { accounts } = await mount({ expect: () => {}, announced: () => {}, register: async () => { throw new Error('Xvfb is not installed') } })
-  assert.deepEqual([accounts[0]!.available, accounts[0]!.reason], [false, 'Xvfb is not installed'])
-})
-
-test('an account whose registration is not done is listed as registering, and announced to the service until it is', async () => {
-  const announced: Promise<unknown>[] = []
-  let release!: () => void
-  const { before, started } = await mount({ expect: (_ref: string, done: Promise<unknown>) => { announced.push(done) }, announced: () => {}, register: () => new Promise((resolve) => { release = () => resolve({ command: '/chrome', version: async () => '155', dispose: () => {} }) }) }, true)
-  assert.deepEqual([before[0]!.available, before[0]!.reason], [false, REGISTERING])
-  await new Promise((r) => setImmediate(r)) // the `webWorker` declaration mounts by the next turn of the loop, and the accounts are announced after it
-  let done = false
-  void announced[0]!.then(() => { done = true })
-  await new Promise((r) => setTimeout(r, 20))
-  assert.equal(done, false)
-  release()
-  await started
-  await announced[0]
-})
-
-// flaky-2: an announced account whose registration the row never reached (its apply threw, or it was unloaded first) must be refused, not left pending until the operation's wait runs out.
-test('an announced account is refused, not left pending, when the row stops before it registers the account', async () => {
-  const announced: Promise<unknown>[] = []
-  const web = { expect: (_ref: string, done: Promise<unknown>) => { announced.push(done) }, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
-  await assert.rejects(mount(web, false, [{}], { storageDomain: { open: async () => { throw new Error('database is locked') } } }), /database is locked/)
-  assert.equal(announced.length, 1)
-  await assert.rejects(Promise.race([announced[0], new Promise((r) => setTimeout(() => r('still pending'), 200))]), /database is locked/)
-})
-
-const ONE_CHROME = 'a web account runs one attempt at a time (one Chrome profile); maxConcurrentAttempts must be 1'
-
-test('a web account has one slot whatever the row says, and an agent CLI account inherits the row', async () => {
-  const registered: WebRegistration[] = []
-  const web = { expect: () => {}, announced: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined } } }
-  const resolved: unknown[] = []
-  const subprocess = { resolveExecutable: async (name: string) => `/bin/${name}` }
-  const credentials = { describe: async () => ({ configured: true }), resolve: async () => ({ value: 't' }) }
-  const capabilities = observed((worker) => { resolved.push(worker.maxConcurrentAttempts) })
-  const { accounts } = await mount(web, false, [{}, { ref: 'claude-code/default', runtime: 'claude-code', capabilities: ['research'], models: undefined, url: undefined }], { subprocess, credentials, capabilities }, 4)
-  assert.deepEqual([accounts[0]!.available, registered[0]!.maxConcurrentAttempts], [true, 1])
-  assert.equal(accounts[1]!.available, true, accounts[1]!.reason)
-  assert.deepEqual(resolved, [4])
-})
-
-test('a web account that sets its own maxConcurrentAttempts other than 1 is unavailable', async () => {
-  const web = { expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
-  const { accounts } = await mount(web, false, [{ maxConcurrentAttempts: 2 }, { ref: 'web/chatgpt/two', maxConcurrentAttempts: 1 }])
-  assert.deepEqual([accounts[0]!.available, accounts[0]!.reason], [false, ONE_CHROME])
-  assert.deepEqual([accounts[1]!.ref, accounts[1]!.available], ['web/chatgpt/two', true])
-})
-
-// WW-rename: the runtime is `web` with a `site`, and the ref says the same.
-const SERVICE = { expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '155', dispose: () => {}, unavailable: () => undefined }) }
-
-test('a web account whose ref is not web/<site>/<name> with its own site is unavailable', async () => {
-  const { accounts } = await mount(SERVICE, false, [{ ref: 'web/gemini/default' }, { ref: 'web/default' }, { site: undefined }, { ref: 'web/chatgpt/second' }])
-  assert.deepEqual(accounts.map((a: { available: boolean }) => a.available), [false, false, false, true])
-  assert.equal(accounts[0]!.reason, 'the ref web/gemini/default does not match site chatgpt: a web account is web/<site>/<name>, here web/chatgpt/<name>')
-  assert.match(accounts[1]!.reason, /web\/default does not match site chatgpt/)
-  assert.equal(accounts[2]!.reason, 'a web account names its site (site: chatgpt)', 'a site is required')
+test('a CLI account inherits the row\'s slots, and its own wins', async () => {
+  const resolved: Record<string, unknown> = {}
+  const { accounts } = await cliMount([claude('claude-code/a', { claudeHome: tempDir() }), claude('claude-code/b', { claudeHome: tempDir(), maxConcurrentAttempts: 3 })], false, { maxConcurrentAttempts: 4 }, (w) => { resolved[w.ref] = w.maxConcurrentAttempts })
+  assert.deepEqual(accounts.map((a) => a.available), [true, true])
+  assert.deepEqual(resolved, { 'claude-code/a': 4, 'claude-code/b': 3 })
 })
 
 // Account identity (sc-1): CLI accounts over fake homes.
-const cliMount = async (accounts: object[], hold = false): Promise<{ registered: string[]; accounts: any[]; before: any[]; started: Promise<void> }> => {
+const cliMount = async (accounts: object[], hold = false, row: object = {}, onWorker: (w: WorkerPort) => void = () => {}): Promise<{ registered: string[]; accounts: any[]; before: any[]; started: Promise<void> }> => {
   const registered: string[] = []
   const provided: Record<string, any> = {}
   const services = {
     storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) },
-    capabilities: observed((w) => { registered.push(w.ref) }),
+    capabilities: observed((w) => { registered.push(w.ref); onWorker(w) }),
     artifacts: {}, credentials: { describe: async () => ({ configured: true }), resolve: async () => ({ value: 'TOKEN-VALUE' }) },
     subprocess: { resolveExecutable: async (c: string) => c, spawn: () => ({ done: Promise.resolve({}), collected: {} }) },
   } as Record<string, unknown>
   const ctx = { get: (key: string) => services[key], inject: injecting(services), effect: () => {}, provide: providing(provided, services), baseDir: tempDir('base-') }
-  const started = apply(ctx as never, { accounts: accounts as never })
+  const started = apply(ctx as never, { ...row, accounts: accounts as never })
   const before = await provided.agents.accounts() as any[]
   if (hold) return { registered, before, accounts: before, started }
   await started
@@ -201,11 +105,9 @@ test('the listing shows label, ignored-priority note and provider account from t
   assert.doesNotMatch(JSON.stringify(accounts), /SECRET-|TOKEN-VALUE/)
 })
 
-test('a ref without a rename stays valid, and a web account has no provider account', async () => {
+test('a ref without a rename stays valid', async () => {
   const { accounts } = await cliMount([claude('claude-code/default')])
   assert.deepEqual([accounts[0].available, accounts[0].priority], [true, undefined])
-  const web = await mount({ expect: () => {}, announced: () => {}, register: async () => ({ command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined }) }, false, [{ label: 'w', priority: 'primary' }])
-  assert.deepEqual([web.accounts[0]!.available, web.accounts[0]!.providerAccount, web.accounts[0]!.note], [true, undefined, 'priority is ignored: routing goes by quota headroom'])
 })
 
 test('a Claude account reads the last rate_limit_event after the Host restarts', async (t) => {
@@ -328,59 +230,7 @@ test('a CLI Account registers with its Runtime abilities and what its profile gr
   ])
 })
 
-test('a web Account is handed over with the web abilities, and its status lists them apart from its granted capabilities', async () => {
-  const registered: WebRegistration[] = []
-  const { accounts } = await mount({ expect: () => {}, announced: () => {}, register: async (account: WebRegistration) => { registered.push(account); return { command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined } } })
-  assert.deepEqual(registered[0]!.abilities, ['web.search', 'web.browse'])
-  assert.deepEqual((accounts[0] as any).abilities, ['web.search', 'web.browse'])
-  assert.deepEqual(accounts[0]!.capabilities, ['research', 'tier.standard'])
-})
-
-// flaky-2 (third occurrence): Cordis applies the rows that were waiting for the same services in no fixed order, so the agents row can apply
-// before the web-worker row has provided `webWorker`. It then reported its web accounts as "the web-worker row is disabled" and never announced
-// them, and the web-worker row waited 60 s for an announcement that was never coming ("still registering after 60 s").
-/** A bare context whose registry lists the web-worker row, which provides its service only when the test says (`provide`). */
-function mountBeforeWebWorker(waitSeconds?: number) {
-  const provided: Record<string, any> = {}
-  let appeared: ((ctx: { get(key: string): unknown }) => void) | undefined
-  const services: Record<string, unknown> = { storageDomain: { open: async () => ({ table: () => ({ get: () => undefined, put: async () => {} }), close: async () => {} }) }, capabilities: observed(), artifacts: {}, subprocess: {}, credentials: {} }
-  const ctx = {
-    get: (key: string) => services[key],
-    registry: { values: () => [{ name: 'system-runtime-web' }] },
-    inject: (_names: string[], callback: (ctx: { get(key: string): unknown }) => void) => { appeared = callback },
-    effect: () => {},
-    provide: providing(provided, services),
-  }
-  const started = apply(ctx as never, { webWorkerWaitSeconds: waitSeconds, accounts: [{ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], url: 'http://localhost/' }] } as never)
-  return {
-    started,
-    accounts: () => provided.agents.accounts() as Promise<{ available: boolean; reason: string }[]>,
-    provide: (service: unknown) => { services.webWorker = service; appeared!(ctx) },
-  }
-}
-
-test('a web-worker row that provides its service after the agents row applied is still handed the accounts and told they are announced', async () => {
-  const calls: string[] = []
-  const row = mountBeforeWebWorker()
-  assert.deepEqual((await row.accounts()).map((a) => a.reason), [REGISTERING], 'the account is listed as registering while the row is awaited')
-  row.provide({ expect: (ref: string) => { calls.push(`expect ${ref}`) }, announced: () => { calls.push('announced') }, register: async (account: WebRegistration) => { calls.push(`register ${account.ref}`); return { command: '/chrome', version: async () => '1', dispose: () => {}, unavailable: () => undefined } } })
-  await row.started
-  assert.deepEqual(calls, ['expect web/chatgpt/default', 'announced', 'register web/chatgpt/default'])
-  assert.deepEqual((await row.accounts()).map((a) => [a.available, a.reason]), [[true, 'registered']])
-})
-
-test('a web-worker row that never provides its service is waited for, bounded by webWorkerWaitSeconds, and the account says so', async () => {
-  const row = mountBeforeWebWorker(0.05)
-  await row.started
-  const [account] = await row.accounts()
-  assert.equal(account!.available, false)
-  assert.match(account!.reason, /web-worker row did not start within 0\.05 s/)
-})
-
-test('the sandbox option on a web account is refused with the reason, a shape of sb-1 too', async () => {
-  const { accounts } = await mount(undefined, false, [{ sandbox: true }])
-  assert.equal(accounts[0]!.available, false)
-  assert.match(accounts[0]!.reason, /a web account has none/)
-  const old = await mount(undefined, false, [{ runtime: 'claude-code', ref: 'claude-code/x', sandbox: { allowRead: ['/x'] } }])
-  assert.match(old.accounts[0]!.reason, /sandbox must be true/)
+test('the sandbox option is refused unless it is true, a shape of sb-1', async () => {
+  const old = await cliMount([claude('claude-code/x', { claudeHome: tempDir(), sandbox: { allowRead: ['/x'] } })])
+  assert.match(old.accounts[0].reason, /sandbox must be true/)
 })

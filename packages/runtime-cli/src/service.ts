@@ -6,8 +6,8 @@ import type { Ask } from './ask.ts'
 import type { QuotaReport } from './quota.ts'
 import type { Runtime } from './runtimes.ts'
 
-/** `web` is the web Runtime, served by the `web-worker` row; its Site is the account's `site`. */
-export type AccountRuntime = Runtime | 'web'
+/** The CLI Runtimes of this row; the web Runtime's Accounts are the `runtime-web` row's. */
+export type AccountRuntime = Runtime
 
 /** The reason of an account whose registration is not done yet. */
 export const REGISTERING = 'registering'

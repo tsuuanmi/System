@@ -1,8 +1,8 @@
 /**
- * WW2a: System without the web Runtime. The `web-worker` row is off (the bundle's
+ * WW2a: System without the web Runtime. The `runtime-web` row is off (the bundle's
  * default) and the profile still runs its main path on the fake Runtimes: a
- * Software Engineering Work and a Brainstorm. A `web` account is
- * reported unavailable with the row named; nothing of the web package is loaded.
+ * Software Engineering Work and a Brainstorm. With the row off there are no `web`
+ * Accounts (ADR-0018 decision 3: disabling a Runtime's row removes its Accounts); nothing of the web package is loaded.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -27,9 +27,9 @@ writeFileSync(join(home, 'code-checks.yaml'), readFileSync(join(repo, 'workflows
 
 before(async () => {
   assert.equal(system(['init']).status, 0)
-  // The bundle's accounts on the fake CLI, and a web account the off row cannot serve. No patch touches the web-worker row.
-  const accounts = [...row('agents').config!.accounts!.map((a) => ({ ...a, command: fakeAgent })), { ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'] }]
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: agents\n  config: ${JSON.stringify({ accounts })}\n`)
+  // The bundle's accounts on the fake CLI. No patch touches the runtime-web row.
+  const accounts = row('runtime-cli').config!.accounts!.map((a) => ({ ...a, command: fakeAgent }))
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-cli\n  config: ${JSON.stringify({ accounts })}\n`)
   mkdirSync(join(home, 'system', 'codex', 'default'), { recursive: true })
   writeFileSync(join(home, 'system', 'codex', 'default', 'auth.json'), '{}')
   await cli.start()
@@ -42,17 +42,16 @@ after(async () => {
   rmSync(home, { recursive: true, force: true })
 })
 
-test('the web-worker row is off in the bundle', () => {
-  assert.equal(row('web-worker').disabled, true)
+test('the runtime-web row is off in the bundle', () => {
+  assert.equal(row('runtime-web').disabled, true)
 })
 
-test('system workers reports a web account unavailable because the row is disabled; the CLI accounts are available', () => {
+test('system workers lists no web account while the row is off; the CLI accounts are available', () => {
   const out = system(['workers'])
   assert.equal(out.status, 0, out.stderr)
   assert.match(out.stdout, /registered: claude-code\/default, codex\/default\n/)
-  assert.match(out.stdout, /web\/chatgpt\/default\s+unavailable\s+- the web-worker row is disabled/)
-  assert.match(out.stdout, /claude-code\/default\s+available.*\(claude-code\)\n/)
-  assert.match(out.stdout, /web\/chatgpt\/default\s+unavailable.*\(web\)\n/, 'the runtime ends each account line: tools/web-canary reads it')
+  assert.doesNotMatch(out.stdout, /web\//)
+  assert.match(out.stdout, /claude-code\/default\s+available.*\(claude-code\)\n/, 'the runtime ends each account line: tools/web-canary reads it')
 })
 
 test('system workers shows each account\'s capabilities and the model of each tier (df-23), and no secret', () => {
@@ -63,13 +62,13 @@ test('system workers shows each account\'s capabilities and the model of each ti
   assert.doesNotMatch(out.stdout, /CLAUDE_CODE_OAUTH_TOKEN|auth\.json/)
 })
 
-test('login, the remote viewer and recheck say the row is disabled', () => {
+test('login, the remote viewer and recheck of a web ref are refused: no such Account', () => {
   writeFileSync(join(home, 'cookies.json'), '[]')
   for (const args of [['workers', 'login', 'web/chatgpt/default', '--cookies', join(home, 'cookies.json')], ['workers', 'login', 'web/chatgpt/default', '--remote'], ['workers', 'recheck', 'web/chatgpt/default']]) {
     // A human's commands: a pseudo-terminal, which merges stderr into stdout (ADR-0011).
     const ran = cli.run(args, { terminal: true })
     assert.equal(ran.status, 1)
-    assert.match(ran.stdout, /the web-worker row is disabled/)
+    assert.match(ran.stdout, /web\/chatgpt\/default/)
   }
 })
 

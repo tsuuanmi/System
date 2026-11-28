@@ -1,12 +1,10 @@
 # @system/runtime-cli
 
-The `agents` row: each configured agent CLI account (and a `web` account, through
-the optional web-worker row) becomes a System Worker
+The `runtime-cli` row: each configured agent CLI account becomes a System Worker
 ([ADR-0004](../../docs/decisions/ADR-0004-mvp-0-operating-decisions.md) decisions 4-6,
 [ADR-0005](../../docs/decisions/ADR-0005-subscription-tokens-for-workers.md)).
 
-- **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH), `credentials` (DSH). Reads
-  `webWorker` if the web-worker row provides it.
+- **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH), `credentials` (DSH). It reads no other Runtime's service or config.
   **Provides:** `ctx.agents` (`system workers`; `quota(ref)`; `ask`, one model turn with no tools on an economy-tier Account, for the [Classifier](../classifier/README.md)).
 - **Accounts:** one config entry per account; an account whose CLI or
   credential is missing is skipped with its reason. Routing is by headroom (see
@@ -14,12 +12,12 @@ the optional web-worker row) becomes a System Worker
   An account may set `label` (free text for people, e.g. an email). A profile
   that still sets `priority` loads: the field is ignored and `system workers`
   says so. Name refs `<runtime>/<n>` (`claude-code/1`, `codex/1`,
-  `web/chatgpt/1`), with `label` the name for people. A retired ref is never
+  `antigravity/1`), with `label` the name for people. A retired ref is never
   reused and records keep it; existing refs such as `claude-code/default` stay
   valid. Renaming an Account: see the [runbook](../../docs/operations/accounts-and-workers.md).
 
 ```yaml
-- id: agents
+- id: runtime-cli
   config:
     attemptTimeoutMinutes: 60           # row-wide default; an account may set its own
     maxConcurrentAttempts: 1            # row-wide default (1); an account may set its own
@@ -33,7 +31,7 @@ the optional web-worker row) becomes a System Worker
         capabilities: [develop.implement, research]
         tokenRef: CLAUDE_CODE_OAUTH_TOKEN  # system credentials set <name>
         models: {economy: haiku, standard: sonnet, frontier: opus}  # adds tier.* capabilities
-        maxConcurrentAttempts: 2        # attempts of this account at once; default 1 (a web account: always 1)
+        maxConcurrentAttempts: 2        # attempts of this account at once; default 1
         # sandbox: true                 # off by default: the Runtime's process runs in one bubblewrap layer (adapters/README.md)
       - ref: codex/default
         runtime: codex
@@ -48,7 +46,7 @@ Each CLI Runtime has one adapter in `src/adapters/` (`claude-code.ts`, `codex.ts
 `src/adapters/index.ts`. It holds that Runtime's invocation and flags, credential staging (`preflight`), output parse, progress, attempt
 summary, quota reader and account identity; `agent.ts`, `ask.ts` and `index.ts` ask it and never branch on a Runtime's name
 (`tests/adapters.test.ts` fails if one does). Adding a CLI Runtime is writing one adapter and registering it. The `web` Runtime has no
-adapter: the web-worker row serves it, and `web.ts` (`isWebRuntime`, `webRefProblem`) is its seam here.
+adapter: the `runtime-web` row serves it and owns its Accounts.
 
 ### Abilities and grants
 
@@ -194,7 +192,7 @@ each, once per choice):
    routed again: another account under the ceiling takes it, or with none it waits as in rule 4.
    It spends no attempt or retry.
 
-The ceiling is `quotaCeilingPercent` on the `agents` row (1 to 100, default 80; another value
+The ceiling is `quotaCeilingPercent` on the `runtime-cli` row (1 to 100, default 80; another value
 refuses every account). The `dispatched` event records each candidate's reason
 (`headroom 57% (5h 43%, 7d 31%)`, `over 80% (5h 91%)`,
 `quota unreadable: ...`), so replay reads the record and never asks a provider. The 10-minute
@@ -223,7 +221,7 @@ Tiers are those of System 1: `economy`, `standard`, `frontier`. An account's
 `models` maps each tier it offers to a model; each listed tier adds the
 capability `tier.<name>`, so a Workflow step asks for one like any other
 capability (`capabilities: [repo.write, tier.frontier]`) and preflight refuses
-a tier no enabled account offers. A `web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `web-worker` row reports them; see its [README](../runtime-web/README.md)). A step with no tier gets the `standard`
+a tier no enabled account offers. A `web` account offers the three tiers when its Site map binds a Power control and it runs the generic Procedures (the `runtime-web` row reports them; see its [README](../runtime-web/README.md)). A step with no tier gets the `standard`
 model, or the CLI's default when the account lists none. Each attempt records
 the tier, the configured model, and the models the CLI reports it served.
 
@@ -346,11 +344,10 @@ Codex CLI 0.166.0 with a device-auth login: both run headless with a throwaway
 
 ## The `web` Runtime
 
-An account with `runtime: web` is not run here: the optional [`web-worker` row](../runtime-web/README.md)
-serves it, and `agents` only hands it over through the `webWorker` service ([web.ts](src/web.ts):
-the contract, and `WEB_WORKER_DISABLED`). With that row off the account is reported
-`unavailable` with the reason "the web-worker row is disabled". It keeps the `agents` row's settings
-(`models` tiers, `attemptTimeoutMinutes`, `maxConcurrentAttempts`) and its entry in `accounts`.
+The `web` Accounts are not this row's: the optional [`runtime-web` row](../runtime-web/README.md) owns them in its own
+`config.accounts` and registers their Workers (ADR-0018 decision 3). A `runtime: web` entry under this row is refused
+(`a web Account belongs to the runtime-web row`), and a profile that has one does not start
+([how to move](../../docs/operations/accounts-and-workers.md#moving-the-accounts-to-runtime-cli-and-runtime-web)).
 
 ## Limits
 

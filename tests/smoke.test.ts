@@ -13,7 +13,7 @@ const home = cli.home
 const patch = join(home, 'profiles', 'system', 'cordis.patch.yml')
 
 /** The rows the profile must mount, in order: nothing from dsh-base. */
-const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'subprocess', 'verifiers', 'effects', 'web-worker', 'agents', 'classifier', 'credentials', 'system-app']
+const EXPECTED_ROWS = ['storage', 'storage-sqlite', 'storage-domain', 'attachment-local', 'artifacts', 'work', 'subprocess', 'verifiers', 'effects', 'runtime-cli', 'runtime-web', 'classifier', 'credentials', 'system-app']
 
 const system = (...args: string[]) => cli.run(args)
 
@@ -96,9 +96,9 @@ test('the shipped patch has no fakes row', () => {
   assert.doesNotMatch(system('--dump-config').stdout, /id: fakes/)
 })
 
-test('the web-worker row is installed but off by default', () => {
+test('the runtime-web row is installed but off by default', () => {
   const ran = system('--dump-config')
-  assert.match(ran.stdout, /- id: web-worker\n  name: '@system\/runtime-web'\n  disabled: true/)
+  assert.match(ran.stdout, /- id: runtime-web\n  name: '@system\/runtime-web'\n  disabled: true/)
 })
 
 test('an Artifact stored in one Host is read by ID alone after a restart', async () => {

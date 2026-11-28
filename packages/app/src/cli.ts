@@ -116,6 +116,8 @@ export interface HostProcess extends DoctorHost {
   checkStore(): Promise<StoreReport>
   /** Run as the Host of this home until stopped by a signal or by new code on disk; resolves its exit status once it has stopped. */
   runHost(): Promise<number>
+  /** Why the profile cannot start this Host (rows to move, ADR-0018); undefined when it can. Read from the profile's patch files, which are never rewritten. */
+  profileProblem(): string | undefined
 }
 
 /** A command the program selected, run after startup. */
@@ -137,6 +139,8 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
     .option('--store', 'instead of the composition check, walk every Work record and Artifact, read-only: each record folds, each Artifact a Work names is stored, each blob reads in full and matches its digest, each inline Artifact hashes to its ID; prints the counts and one line per problem, exits 1 on any. Safe beside a running Host (it opens SQLite as `doctor` always does and writes nothing)')
     .action((options: { json?: boolean; store?: boolean }) => {
       select(async () => {
+        const problem = host.profileProblem()
+        if (problem) throw new Error(problem)
         if (options.store) {
           const report = await host.checkStore()
           io.out(options.json ? `${JSON.stringify(report, null, 2)}\n` : formatStoreReport(report))
@@ -152,7 +156,11 @@ export function buildHostProgram(host: HostProcess, io: Pick<CliIo, 'out'>, sele
     // Handled by bin/system before DSH starts: the supervisor is that wrapper, which runs this command again after an exit 75.
     .option('--supervise', 'stay as a supervisor and run the Host again after an exit 75 (new code); any other exit ends it')
     .action(() => {
-      select(() => host.runHost())
+      select(() => {
+        const problem = host.profileProblem()
+        if (problem) return Promise.reject(new Error(problem))
+        return host.runHost()
+      })
     })
   return program
 }

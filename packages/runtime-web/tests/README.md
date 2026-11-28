@@ -14,7 +14,7 @@ runs the remote sign-in against that page over a real Xvfb and VNC server
 (skipped with the reason where there is none): the token, the WebSocket reaching
 the VNC socket of the whole screen, real pointer input reaching the page, Save,
 Cancel, expiry, and that Xvfb, the VNC server and the browser are gone after;
-and the failure at once without a VNC server on `PATH`, an attempt on its own Xvfb, Xvfbs started together from one display number, and the `register` refusal
-without Xvfb or with `headless`, and its refusal of an account that still sets `procedures`, of an unknown site, and the move at registration ([accounts.test.ts](accounts.test.ts)).
+and the failure at once without a VNC server on `PATH`, an attempt on its own Xvfb, Xvfbs started together from one display number, and the refusal
+without Xvfb or with `headless`, and of an account that still sets `procedures`, of an unknown site, a ref that does not fit it and a second slot ([accounts.test.ts](accounts.test.ts)).
 
-The booted profile is covered by [tests/chatgpt-web.test.ts](../../../tests/README.md) (the row on), [tests/web-worker-off.test.ts](../../../tests/web-worker-off.test.ts) (the row off), and the website by the credential-gated `tests/real-web.test.ts`.
+The booted profile is covered by [tests/chatgpt-web.test.ts](../../../tests/README.md) (the row on), [tests/web-worker-off.test.ts](../../../tests/web-worker-off.test.ts) (the row off: no web Accounts), and the website by the credential-gated `tests/real-web.test.ts`.

@@ -35,9 +35,8 @@ before(async () => {
   const signedIn = await site({ answer })
   const signedOut = await site({ answer, signedIn: false })
   assert.equal(system(['init']).status, 0)
-  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: web-worker
+  writeFileSync(join(home, 'profiles', 'system', 'cordis.patch.yml'), `- id: runtime-web
   disabled: false
-- id: agents
   config:
     accounts:
       - ref: web/chatgpt/default

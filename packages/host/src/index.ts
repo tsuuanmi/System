@@ -23,7 +23,7 @@ const jsFiles = (dir: string, at = ''): string[] =>
 /** Files besides the built code that change what the Host does. */
 const BEHAVIOUR_FILES = [new URL('../../bundle/cordis.patch.yml', import.meta.url).pathname]
 
-/** The shipped UI maps and their schema: data, but part of what the web-worker row runs, so changing one is an upgrade (WW6f). */
+/** The shipped UI maps and their schema: data, but part of what the runtime-web row runs, so changing one is an upgrade (WW6f). */
 const UI_DIR = new URL('../../web-driver/ui', import.meta.url).pathname
 
 /**

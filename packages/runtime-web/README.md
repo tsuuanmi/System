@@ -1,6 +1,6 @@
 # @system/runtime-web
 
-The `web-worker` row: the `web` Runtime, where an account is the
+The `runtime-web` row: the `web` Runtime, where an account is the
 operator's own signed-in ChatGPT website session driven through a genuine
 headed Chrome (PROP-0005 ([retired](../../docs/governance/retired.md))).
 It is its own package and an **optional, off** row (WW2a, config-first
@@ -9,21 +9,16 @@ do not depend on it, are tested without it, and work when it is off. Its
 browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 `ws`, [`@system/web-driver`](../web-driver/README.md)) are this package's alone.
 
-- **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH).
-  **Provides:** `ctx.webWorker`, the `WebWorkerService` contract that
-  [`@system/runtime-cli`](../runtime-cli/src/web.ts) declares: `register` (an account), `login`, `loginRemote`, `loginWait`, `recheck`.
-- **Accounts** stay in the `agents` row's `accounts` (`runtime: web`).
-  The `agents` row hands each to `register`, which checks it (Xvfb, no `headless`, the Chrome, the settings), registers its Worker
-  and keeps its sign-in state; `system workers` shows the result.
-- **Registering (WW6e):** the Host serves while the `agents` row is still handing accounts over, so the row announces each
-  `web` account (`expect`) before the first registration. `system workers` lists one not yet registered as
-  `registering`; `login` and `login --remote` wait for it, at most `registerWaitSeconds` (row
-  config, default 60) and then fail "still registering after N s". An account whose registration failed, before or after the operation came, is refused with that
-  reason (`web/chatgpt/<name>: <reason>`), one not configured with "is not a configured web account". An attempt needs no
-  wait: the Worker exists only once registered. [tests/accounts.test.ts](tests/accounts.test.ts) holds a registration open by hand.
-- **Row off:** such an account is reported `unavailable` with the reason
-  "the web-worker row is disabled", `system workers login` says it is not registered, and none of
-  this package is loaded.
+- **Injects:** `capabilities`, `artifacts`, `subprocess` (DSH). It provides no service and reads no other Runtime's
+  service or config (ADR-0018 decision 3).
+- **Accounts** are this row's own `config.accounts` (`runtime: web` may be written, or left out).
+  At start the row checks each (Xvfb, no `headless`, the Chrome, the settings), registers its Worker in the Worker registry
+  and keeps its sign-in state; `system workers` shows the result, a refused Account with its reason. Sign-in and recheck
+  are the Worker's own (`signIn`, `recheck`), so `system workers login` and `recheck` reach them by ref; an Account that
+  is not registered is refused there with the reason it was not. Registration is synchronous: there is nothing to wait for.
+- **Row off:** there are no web Accounts: `system workers` lists none, `system workers login` says the ref is not
+  registered, and none of this package is loaded. An old profile that patches `web-worker` or `agents`
+  is refused at start ([how to move](../../docs/operations/accounts-and-workers.md#moving-the-accounts-to-runtime-cli-and-runtime-web)).
 - **Tests:** this package's tests drive a real headed Chrome, so they are outside `corepack pnpm test`
   and `smoke`: `corepack pnpm test:web` runs them (the `web` check of `.system/checks.yaml`).
   [tests/web-worker-off.test.ts](../../tests/web-worker-off.test.ts) (a smoke test) boots System with the row
@@ -34,13 +29,11 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
 
 ```yaml
 # $DSH_HOME/profiles/system/cordis.patch.yml
-- id: web-worker
+- id: runtime-web
   disabled: false
-  # config: {registerWaitSeconds: 60}   # how long an operation on an account waits for its registration
-- id: agents
   config:
+    attemptTimeoutMinutes: 60              # default for every account here; an account may set its own
     accounts:
-      # the bundle's accounts, plus:
       - ref: web/chatgpt/default             # web/<site>/<name>, <site> equal to `site`
         runtime: web
         site: chatgpt                          # picks the shipped UI map and the Site's defaults; an unknown one is refused with the shipped sites
@@ -63,7 +56,7 @@ An Account `web/chatgpt/<name>` runs one step as one prompt in the operator's
 own signed-in ChatGPT web session (PROP-0005 ([retired](../../docs/governance/retired.md))).
 It is in [chatgpt.ts](src/chatgpt.ts) (the sign-in is in [chatgpt-login.ts](src/chatgpt-login.ts)), drives a genuine headed Chrome with
 `patchright-core` 1.63.0 (System 1's pin; [chrome.ts](src/chrome.ts) chooses the Chrome and installs the pinned Chrome for Testing on first use), and runs inside the Host,
-not as a spawned process. The account is configured in the `agents` row like any other;
+not as a spawned process. The account is configured in this row's `config.accounts`;
 this row serves it (see above) and is off by default: [enable it](../../docs/operations/accounts-and-workers.md#the-web-account).
 
 One attempt:

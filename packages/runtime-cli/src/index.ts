@@ -1,8 +1,7 @@
 /**
- * The `agents` row: registers each configured agent account whose CLI and
+ * The `runtime-cli` row: registers each configured agent account whose CLI and
  * credential are present as a Worker; reports every account's state through
- * `ctx.agents` (`system workers`). Spawns through the DSH subprocess service. A `web` account is served by
- * the optional `web-worker` row (see web.ts), or reported unavailable when it is off.
+ * `ctx.agents` (`system workers`). Spawns through the DSH subprocess service. The `web` Accounts are the `runtime-web` row's (ADR-0018 decision 3).
  */
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
@@ -20,7 +19,6 @@ import type { QuotaCache, QuotaReport } from './quota.ts'
 import { RUNTIME_ABILITIES, type Runtime } from './runtimes.ts'
 import { REGISTERING, SIGNED_OUT_REASON, type AccountRuntime, type AccountStatus, type AgentsService } from './service.ts'
 import { lazyVersion, subprocessSpawner } from './spawner.ts'
-import { WEB_WORKER_DISABLED, isWebRuntime, webRefProblem, type WebAccountSettings, type WebWorkerService } from './web.ts'
 
 export * from './adapters/index.ts'
 export * from './agent.ts'
@@ -34,7 +32,6 @@ export * from './redact.ts'
 export * from './runtimes.ts'
 export * from './service.ts'
 export * from './spawner.ts'
-export * from './web.ts'
 export * from './workspace.ts'
 
 export const name = 'system-runtime-cli'
@@ -49,11 +46,9 @@ export const agentsDomain = defineDomain({
 })
 
 
-export interface AccountConfig extends WebAccountSettings {
+export interface AccountConfig {
   ref: string
   runtime: AccountRuntime
-  /** web: the Site (`chatgpt`), which picks the shipped UI map and the defaults; the ref is `web/<site>/<name>`. */
-  site?: string
   capabilities: string[]
   /** The CLI to run; resolved on PATH unless absolute. */
   command?: string
@@ -75,7 +70,7 @@ export interface AccountConfig extends WebAccountSettings {
   models?: Partial<Record<Tier, string>>
   /** Wall-clock limit of one attempt, in minutes; overrides the row's. */
   attemptTimeoutMinutes?: number
-  /** How many attempts of this account run at once; overrides the row's. A web account must leave it unset or 1. */
+  /** How many attempts of this account run at once; overrides the row's. */
   maxConcurrentAttempts?: number
   /** What one attempt may spend (input tokens, minutes) before it is stopped as over budget; overrides the row's. */
   attemptBudget?: AttemptBudget
@@ -95,8 +90,6 @@ export interface Config {
   accounts?: AccountConfig[]
   /** A test hook: the quota cache's lifetime (default 10 minutes) and clock. */
   quota?: { ttlMs?: number; now?: () => number }
-  /** How long the row waits for the web-worker row to provide its service, when that row is on but has not yet, in seconds (default 30). */
-  webWorkerWaitSeconds?: number
 }
 
 /** Optional composites default to `undefined`: Schemastery would otherwise fill an unset list or object with `[]`/`{}`, which `apply` reads as a value. */
@@ -105,7 +98,6 @@ const budgetSchema = Schema.object({ inputTokens: Schema.number(), minutes: Sche
 const accountSchema = Schema.object({
   ref: Schema.string().required(),
   runtime: Schema.string().required(),
-  site: Schema.string(),
   capabilities: Schema.array(Schema.string()).required(),
   command: Schema.string(),
   tokenRef: Schema.string(),
@@ -120,14 +112,6 @@ const accountSchema = Schema.object({
   maxConcurrentAttempts: Schema.number(),
   attemptBudget: budgetSchema,
   sandbox: Schema.boolean(),
-  profileDir: Schema.string(),
-  temporaryChat: Schema.boolean(),
-  url: Schema.string(),
-  executablePath: Schema.string(),
-  timeouts: Schema.dict(Schema.number()).default(undefined as never),
-  maxOutsideChars: Schema.number(),
-  cooldownSeconds: Schema.array(Schema.number()).default(undefined as never),
-  hostLoad: Schema.number(),
 })
 export const Config: Schema<Config> = Schema.object({
   attemptTimeoutMinutes: Schema.number(),
@@ -136,7 +120,6 @@ export const Config: Schema<Config> = Schema.object({
   quotaCeilingPercent: Schema.number(),
   accounts: Schema.array(accountSchema).default([]),
   quota: Schema.object({ ttlMs: Schema.number(), now: Schema.function() }).default(undefined as never),
-  webWorkerWaitSeconds: Schema.number().default(30),
 }) as Schema<Config>
 
 /** The configured models in tier order; a tier that is not a tier is left for the registration to refuse. */
@@ -150,26 +133,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const artifacts = ctx.get('artifacts') as Artifacts
   const subprocess = ctx.get('subprocess') as SubprocessRuntime
   const credentials = ctx.get('credentials') as CredentialProvider
-  // Optional: the web-worker row, listed before this one in the bundle; absent when it is disabled. Declared through `ctx.inject`, so the row
-  // stays active without it; the declaration is read below, once it has mounted.
-  let webWorker: WebWorkerService | undefined
-  let arrived: ((service: WebWorkerService | undefined) => void) | undefined
-  ctx.inject(['webWorker'], (inner) => {
-    webWorker = inner.get('webWorker') as WebWorkerService | undefined
-    arrived?.(webWorker)
-  })
   const attempts = systemPath(ctx, 'attempts')
   const statuses: AccountStatus[] = []
   // The first registered ref of each provider account (runtime:id).
   const seen = new Map<string, string>()
   const versions = new Map<string, () => Promise<string>>()
-  // An account the web-worker row quarantines or cools down is unavailable, with what to do, until it is ready again.
-  const unavailable = new Map<string, () => string | undefined>()
   // Accounts whose last quota read failed with an authentication error, until a later read succeeds (authgate-1).
   const signedOut = new Set<string>()
   // The Account's view as its Runtime tells it: a refused or registering one included; its version is asked apart (`versions`).
   const statusOf = (status: AccountStatus): AccountStatus => {
-    const reason = unavailable.get(status.ref)?.() ?? (signedOut.has(status.ref) ? SIGNED_OUT_REASON : undefined)
+    const reason = signedOut.has(status.ref) ? SIGNED_OUT_REASON : undefined
     return reason ? { ...status, available: false, reason } : { ...status }
   }
   const quotas = new Map<string, QuotaCache>()
@@ -188,7 +161,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     const status = statuses.find((s) => s.ref === ref)
     if (!status) return { unreadable: `no quota reader for ${ref}` }
-    if (isWebRuntime(status.runtime)) return { unreadable: 'a web account has no quota reader' }
     if (status.reason === REGISTERING) return { unreadable: 'still registering' }
     return { unreadable: status.available ? `no quota reader for ${ref}` : `not registered: ${status.reason}` }
   }
@@ -202,96 +174,47 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     dispose.push(capabilities.registerListing({ ref: account.ref, status: () => statusOf(status), quota: (fresh) => quota(account.ref, { fresh }), version: async () => (await versions.get(account.ref)?.()) as string }))
     return { account, status }
   })
-  // A web account's operations wait for its turn in the loop below; its registration ends with the entry's outcome.
   const ceiling = config.quotaCeilingPercent
   if (ceiling !== undefined && !(typeof ceiling === 'number' && ceiling >= 1 && ceiling <= 100)) throw new Error(`quotaCeilingPercent is ${String(ceiling)}; it must be a number from 1 to 100`)
-  // The `webWorker` declaration above mounts by the next turn of the loop, after the accounts are listed (they are listed from the first moment).
-  await new Promise<void>((resolve) => { setImmediate(resolve) })
-  // Cordis applies rows that wait for the same services in no fixed order: the web-worker row, when it is on, may provide its service after this
-  // row applies. Its accounts are then handed to it when it does (bounded), never reported "disabled" and left unannounced (flaky-2).
-  const webWorkerComing = !webWorker && [...(ctx.registry?.values() ?? [])].some((runtime) => runtime.name === 'system-runtime-web')
-  let webWorkerLate: string | undefined
-  if (webWorkerComing && entries.some(({ account }) => isWebRuntime(account.runtime))) {
-    const seconds = config.webWorkerWaitSeconds ?? 30
-    let timer: NodeJS.Timeout | undefined
-    webWorker = await new Promise<WebWorkerService | undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), seconds * 1000)
-      arrived = resolve
-    })
-    clearTimeout(timer)
-    if (!webWorker) webWorkerLate = `the web-worker row did not start within ${seconds} s`
-  }
-  const outcomes = new Map<string, { done(): void; refuse(error: Error): void }>()
-  for (const { account } of entries) {
-    if (!isWebRuntime(account.runtime) || webRefProblem(account) || !webWorker) continue
-    const done = new Promise<void>((resolve, refuse) => outcomes.set(account.ref, { done: resolve, refuse }))
-    done.catch(() => {})
-    webWorker.expect(account.ref, done)
-  }
-  webWorker?.announced()
-  // After the accounts are listed (as registering), which `system workers` serves while this awaits. Optional like `webWorker`: a bare context (a test's) keeps no readings across a restart.
-  // Opening can fail: the announced accounts are then refused with that reason, never left pending until an operation's wait runs out (flaky-2).
-  const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain).catch((error: Error) => {
-    for (const outcome of outcomes.values()) outcome.refuse(error)
-    throw error
-  })
+  // After the accounts are listed (as registering), which `system workers` serves while this awaits. Optional: a bare context (a test's) keeps no readings across a restart.
+  const domain = await (ctx.get('storageDomain') as DomainFacility | undefined)?.open(agentsDomain)
   if (domain) ctx.effect(() => () => { void domain.close() }, 'system_agents domain')
   const observations = domain?.table('quota')
   for (const { account, status } of entries) {
     try {
       const sandbox = checkSandbox(account.runtime, account.sandbox)
-      if (isWebRuntime(account.runtime)) {
-        const problem = webRefProblem(account)
-        if (problem) throw new Error(problem)
-        if (!webWorker) throw new Error(webWorkerLate ?? WEB_WORKER_DISABLED)
-      }
       const unknown = Object.keys(account.models ?? {}).filter((tier) => !(TIERS as readonly string[]).includes(tier))
       if (unknown.length) throw new Error(`unknown tier ${unknown.join(', ')}; tiers are ${TIERS.join(', ')}`)
       const tiers = TIERS.filter((tier) => account.models?.[tier])
-      // A web account is one Chrome profile: one attempt at a time, whatever the row says.
-      const web = isWebRuntime(account.runtime)
-      if (web && account.maxConcurrentAttempts !== undefined && account.maxConcurrentAttempts !== 1) throw new Error('a web account runs one attempt at a time (one Chrome profile); maxConcurrentAttempts must be 1')
-      const slots = web ? 1 : account.maxConcurrentAttempts ?? config.maxConcurrentAttempts
+      const slots = account.maxConcurrentAttempts ?? config.maxConcurrentAttempts
       if (slots !== undefined && !(Number.isInteger(slots) && slots >= 1)) throw new Error(`maxConcurrentAttempts is ${slots}; it must be a whole number of at least 1`)
       const offered = [...account.capabilities, ...tiers.map(tierCapability)]
       status.capabilities = offered
       const attemptTimeoutMinutes = account.attemptTimeoutMinutes ?? config.attemptTimeoutMinutes
       let askVersion: () => Promise<string>
-      if (web) {
-        // The web-worker row checks the account, registers its Worker and owns its sign-in.
-        const registered = await webWorker!.register({ ...account, site: account.site!, capabilities: offered, abilities: status.abilities, attemptTimeoutMinutes, maxConcurrentAttempts: slots })
-        status.command = registered.command
-        status.capabilities = registered.capabilities ?? offered
-        askVersion = registered.version
-        unavailable.set(account.ref, registered.unavailable)
-        dispose.push(registered.dispose)
-      } else {
-        // A runtime that is neither web nor a CLI with an adapter is refused here, with what the profile may name.
-        const adapter = adapterFor(account.runtime)
-        if (!adapter) throw new Error(`unknown runtime ${account.runtime}`)
-        const command = await subprocess.resolveExecutable(account.command ?? adapter.defaultCommand)
-        status.command = command
-        askVersion = lazyVersion(subprocess, command)
-        const resolved: Account = { ref: account.ref, runtime: account.runtime as Runtime, capabilities: [...new Set([...status.abilities, ...offered])], command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, ...(sandbox ? { sandbox } : {}), maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
-        // The adapter checks the credential and sets the Account's hooks; the provider's account ID comes from the account's own files: unknown leaves it registered; a known one registers once.
-        const { quota: cache, providerAccount: id } = await adapter.register({ account, resolved, command, credentials, home: (relative) => systemPath(ctx, relative), quota: { ttlMs: config.quota?.ttlMs, now: config.quota?.now }, observations })
-        quotas.set(account.ref, cache)
-        const key = id && `${account.runtime}:${id}`
-        if (id) status.providerAccount = id
-        if (key && seen.has(key)) throw new Error(`provider account ${id} is already registered as ${seen.get(key)}; two refs on one account would count its quota twice`)
-        dispose.push(capabilities.registerWorker({ ...agentWorker(resolved, artifacts, spawner, attempts), status: () => statusOf(status), version: askVersion }))
-        resolvedAccounts.set(account.ref, resolved)
-        dispose.push(() => { resolvedAccounts.delete(account.ref) })
-        if (key) seen.set(key, account.ref)
-      }
+      // A runtime with no adapter is refused here; the web Runtime's Accounts are the runtime-web row's.
+      const adapter = adapterFor(account.runtime)
+      if (!adapter) throw new Error((account.runtime as string) === 'web' ? 'a web Account belongs to the runtime-web row (docs/operations/accounts-and-workers.md)' : `unknown runtime ${account.runtime}`)
+      const command = await subprocess.resolveExecutable(account.command ?? adapter.defaultCommand)
+      status.command = command
+      askVersion = lazyVersion(subprocess, command)
+      const resolved: Account = { ref: account.ref, runtime: account.runtime as Runtime, capabilities: [...new Set([...status.abilities, ...offered])], command, version: askVersion, models: account.models, attemptTimeoutMinutes, attemptBudget: account.attemptBudget ?? config.attemptBudget, ...(sandbox ? { sandbox } : {}), maxConcurrentAttempts: slots, quotaCeilingPercent: ceiling, quota: (fresh) => quota(account.ref, { fresh }) }
+      // The adapter checks the credential and sets the Account's hooks; the provider's account ID comes from the account's own files: unknown leaves it registered; a known one registers once.
+      const { quota: cache, providerAccount: id } = await adapter.register({ account, resolved, command, credentials, home: (relative) => systemPath(ctx, relative), quota: { ttlMs: config.quota?.ttlMs, now: config.quota?.now }, observations })
+      quotas.set(account.ref, cache)
+      const key = id && `${account.runtime}:${id}`
+      if (id) status.providerAccount = id
+      if (key && seen.has(key)) throw new Error(`provider account ${id} is already registered as ${seen.get(key)}; two refs on one account would count its quota twice`)
+      dispose.push(capabilities.registerWorker({ ...agentWorker(resolved, artifacts, spawner, attempts), status: () => statusOf(status), version: askVersion }))
+      resolvedAccounts.set(account.ref, resolved)
+      dispose.push(() => { resolvedAccounts.delete(account.ref) })
+      if (key) seen.set(key, account.ref)
       status.available = true
       status.reason = 'registered'
       versions.set(account.ref, askVersion)
-      outcomes.get(account.ref)?.done()
     } catch (error) {
       status.reason = (error as Error).message
       quotas.delete(account.ref)
-      outcomes.get(account.ref)?.refuse(error as Error)
     }
   }
   ctx.effect(() => () => { for (const d of dispose) d() }, 'agent registrations')

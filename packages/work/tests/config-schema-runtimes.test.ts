@@ -1,5 +1,5 @@
 /**
- * plug-13 (ADR-0017 decision 4): `agents`, `web-worker` and `system-app` export `Config` as a Cordis schema, so the Loader validates
+ * plug-13 (ADR-0017 decision 4): `runtime-cli`, `runtime-web` and `system-app` export `Config` as a Cordis schema, so the Loader validates
  * a row's config at activation and refuses a wrongly typed field, naming it. The shipped patch's accounts still validate.
  */
 import assert from 'node:assert/strict'
@@ -10,8 +10,8 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { parse } from 'yaml'
 
-/** Row ids stay `agents` and `web-worker` (ADR-0018 decision 4); their packages are `runtime-cli` and `runtime-web`. */
-const DIRS: Record<string, string> = { agents: 'runtime-cli', 'web-worker': 'runtime-web' }
+/** The row ids are the packages' names (ADR-0018 decision 4, rt-4). */
+const DIRS: Record<string, string> = { 'runtime-cli': 'runtime-cli', 'runtime-web': 'runtime-web' }
 const SERVICES = ['storageDomain', 'attachments', 'artifacts', 'capabilities', 'credentials', 'subprocess']
 
 /** Activates one row through a real Loader, the services it injects standing as empty objects; resolves with the fiber's startup error. */
@@ -27,15 +27,16 @@ async function activate(id: string, config: unknown): Promise<unknown> {
 
 const account = { ref: 'claude-code/default', runtime: 'claude-code', capabilities: ['research'] }
 const wrong: { id: string; config: unknown; message: RegExp }[] = [
-  { id: 'agents', config: 'oops', message: /expected object but got oops/ },
-  { id: 'agents', config: { accounts: [{ ...account, maxConcurrentAttempts: 'two' }] }, message: /maxConcurrentAttempts expected number but got two/ },
-  { id: 'agents', config: { accounts: [{ ...account, capabilities: 'research' }] }, message: /capabilities/ },
-  { id: 'agents', config: { accounts: [{ ref: 'a', runtime: 'codex' }] }, message: /capabilities/ },
-  { id: 'agents', config: { accounts: [{ ...account, models: { economy: 1 } }] }, message: /models/ },
-  { id: 'agents', config: { attemptTimeoutMinutes: 'soon' }, message: /attemptTimeoutMinutes expected number but got soon/ },
-  { id: 'agents', config: { quotaCeilingPercent: '80' }, message: /quotaCeilingPercent expected number but got 80/ },
-  { id: 'agents', config: { webWorkerWaitSeconds: 'x' }, message: /webWorkerWaitSeconds/ },
-  { id: 'web-worker', config: { registerWaitSeconds: 'x' }, message: /registerWaitSeconds expected number but got x/ },
+  { id: 'runtime-cli', config: 'oops', message: /expected object but got oops/ },
+  { id: 'runtime-cli', config: { accounts: [{ ...account, maxConcurrentAttempts: 'two' }] }, message: /maxConcurrentAttempts expected number but got two/ },
+  { id: 'runtime-cli', config: { accounts: [{ ...account, capabilities: 'research' }] }, message: /capabilities/ },
+  { id: 'runtime-cli', config: { accounts: [{ ref: 'a', runtime: 'codex' }] }, message: /capabilities/ },
+  { id: 'runtime-cli', config: { accounts: [{ ...account, models: { economy: 1 } }] }, message: /models/ },
+  { id: 'runtime-cli', config: { attemptTimeoutMinutes: 'soon' }, message: /attemptTimeoutMinutes expected number but got soon/ },
+  { id: 'runtime-cli', config: { quotaCeilingPercent: '80' }, message: /quotaCeilingPercent expected number but got 80/ },
+  { id: 'runtime-web', config: { attemptTimeoutMinutes: 'soon' }, message: /attemptTimeoutMinutes expected number but got soon/ },
+  { id: 'runtime-web', config: { accounts: [{ ref: 'web/chatgpt/default', capabilities: 'research' }] }, message: /capabilities/ },
+  { id: 'runtime-web', config: { accounts: [{ ref: 'web/chatgpt/default', capabilities: [], hostLoad: 'busy' }] }, message: /hostLoad expected number but got busy/ },
 ]
 
 for (const { id, config, message } of wrong) {
@@ -53,22 +54,24 @@ test('the shipped patch accounts and the defaults of today validate', async () =
   const app = await import('../../app/src/index.ts')
   const check = (schema: unknown, value: unknown) => (schema as { (value: unknown): any })(value)
   const patch = parse(readFileSync(new URL('../../bundle/cordis.patch.yml', import.meta.url), 'utf8')) as { insert: { id: string; config?: unknown }[] }[]
-  const row = patch.flatMap((entry) => entry.insert ?? []).find((entry) => entry.id === 'agents')!
+  const row = patch.flatMap((entry) => entry.insert ?? []).find((entry) => entry.id === 'runtime-cli')!
   const config = check(agents.Config, row.config)
   assert.equal(config.accounts.length, 2)
   assert.equal(config.accounts[0].models.frontier, 'opus')
   assert.equal(config.attemptTimeoutMinutes, 60)
   assert.deepEqual(check(agents.Config, undefined).accounts, [])
-  assert.equal(check(agents.Config, undefined).webWorkerWaitSeconds, 30)
-  assert.equal(check(web.Config, undefined).registerWaitSeconds, 60)
+  assert.deepEqual(check(web.Config, undefined).accounts, [])
   assert.deepEqual(check(app.Config, undefined), {})
 })
 
 test('an unset list, map or budget stays unset: the schema adds no [] or {} that apply would read as a value', async () => {
   const agents = await import('../../runtime-cli/src/index.ts')
-  const config = (agents.Config as unknown as { (value: unknown): any })({ accounts: [{ ref: 'web/chatgpt/default', runtime: 'web', capabilities: ['research'] }] })
+  const web = await import('../../runtime-web/src/index.ts')
+  const config = (agents.Config as unknown as { (value: unknown): any })({ accounts: [{ ref: 'claude-code/default', runtime: 'claude-code', capabilities: ['research'] }] })
   const account = config.accounts[0]
-  for (const field of ['cooldownSeconds', 'models', 'timeouts', 'attemptBudget']) assert.equal(account[field], undefined, field)
+  for (const field of ['models', 'attemptBudget']) assert.equal(account[field], undefined, field)
+  const webAccount = (web.Config as unknown as { (value: unknown): any })({ accounts: [{ ref: 'web/chatgpt/default', capabilities: ['research'] }] }).accounts[0]
+  for (const field of ['cooldownSeconds', 'timeouts']) assert.equal(webAccount[field], undefined, field)
   assert.equal(config.attemptBudget, undefined)
   assert.equal(config.quota, undefined)
 })

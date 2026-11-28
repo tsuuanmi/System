@@ -105,11 +105,11 @@ test('the code version is a short hash of the built files: equal for equal build
 test('the code version also covers the extra files that change behaviour, such as the bundle\'s Cordis patch', () => {
   const dirs = build()
   const file = join(fresh(), 'cordis.patch.yml')
-  writeFileSync(file, '- id: agents\n')
+  writeFileSync(file, '- id: runtime-cli\n')
   const before = codeVersion(dirs, [file])
   assert.notEqual(before, codeVersion(dirs), 'the file is part of the hash')
   assert.equal(codeVersion(dirs, [file]), before)
-  writeFileSync(file, '- id: agents\n  disabled: true\n')
+  writeFileSync(file, '- id: runtime-cli\n  disabled: true\n')
   assert.notEqual(codeVersion(dirs, [file]), before)
   assert.match(readFileSync(new URL('../../bundle/cordis.patch.yml', import.meta.url), 'utf8'), /\S/, 'the default file exists')
 })

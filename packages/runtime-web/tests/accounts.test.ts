@@ -1,89 +1,75 @@
 /**
- * WW6e: an operation on a web account waits, bounded, for that account's registration in progress (the Host reports
- * "started" before the `agents` row has handed every account over), and is refused with the registration's own
- * reason when it failed. No browser: the registrations here are held open by hand.
+ * ADR-0018 decision 3: the `runtime-web` row owns its Accounts in its own `config.accounts` and registers its own Workers; it reads no other
+ * Runtime's config, so there is nothing to hand over and nothing to wait for. A refused Account is listed with its reason and the others go on.
+ * No browser: these are refused before one is looked for.
  */
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { shippedMap } from '@system/web-driver'
-import { apply, offeredTiers } from '../src/index.ts'
+import { apply, offeredTiers, type AccountConfig } from '../src/index.ts'
 
-/** Mount the row on a bare context; its service. */
-function mount(config?: { registerWaitSeconds?: number }, home = '/nonexistent', plugins: { name: string }[] = []) {
-  const provided: Record<string, any> = {}
-  const services: Record<string, unknown> = { capabilities: {}, artifacts: {}, subprocess: {}, dshHomePath: (...segments: string[]) => join(home, ...segments) }
-  const ctx = { get: (key: string) => services[key], registry: { values: () => plugins }, effect: () => {}, provide: (key: string, value: unknown) => { provided[key] = value } }
-  apply(ctx as never, config as never)
-  return provided.webWorker as { register(account: Record<string, unknown>): Promise<unknown>; expect(ref: string, done: Promise<unknown>): void; announced(): void; loginWait(ref: string, cancel: boolean): Promise<unknown>; loginRemote(ref: string): Promise<unknown> }
+interface Listing { ref: string; status(): { runtime: string; available: boolean; reason: string; abilities?: string[]; capabilities: string[]; label?: string; note?: string }; quota?(fresh?: boolean): Promise<unknown> }
+
+/** Mount the row on a bare context with these Accounts; what it listed, which Workers it registered, and whether it read a service of another Runtime. */
+function mount(accounts: Partial<AccountConfig>[], row: { attemptTimeoutMinutes?: number } = {}, home = '/nonexistent') {
+  const listings: Listing[] = []
+  const workers: string[] = []
+  const read: string[] = []
+  const services: Record<string, unknown> = {
+    capabilities: { registerListing: (listing: Listing) => { listings.push(listing); return () => {} }, registerWorker: (worker: { ref: string }) => { workers.push(worker.ref); return () => {} } },
+    artifacts: {}, subprocess: {}, dshHomePath: (...segments: string[]) => join(home, ...segments),
+  }
+  const ctx = { get: (key: string) => { read.push(key); return services[key] }, registry: { values: () => [] }, effect: () => {}, provide: () => {} }
+  apply(ctx as never, { ...row, accounts: accounts.map((own) => ({ ref: 'web/chatgpt/default', runtime: 'web', site: 'chatgpt', capabilities: ['research'], ...own })) })
+  return { listings, workers, read }
 }
 
-test('an account that is not configured is refused at once', { timeout: 10_000 }, async () => {
-  const web = mount()
-  await assert.rejects(web.loginRemote('web/chatgpt/none'), /web\/chatgpt\/none is not a configured web account/)
+test('every Account of the row is listed from its own config, with the web abilities and what the profile grants', () => {
+  const { listings } = mount([{ label: 'main', priority: 'primary', procedures: 'x' } as never, { ref: 'web/chatgpt/second', capabilities: ['research.lane-b'] }])
+  assert.deepEqual(listings.map((l) => l.ref), ['web/chatgpt/default', 'web/chatgpt/second'])
+  const [first, second] = listings.map((l) => l.status())
+  assert.deepEqual([first!.runtime, first!.abilities, first!.capabilities, first!.label, first!.note], ['web', ['web.search', 'web.browse'], ['research'], 'main', 'priority is ignored: routing goes by quota headroom'])
+  assert.deepEqual([second!.abilities, second!.capabilities], [['web.search', 'web.browse'], ['research.lane-b']])
 })
 
-// flaky-1: the Host serves while the agents row is still waiting for its services, so a login can come before the row has announced any account.
-test('an account the agents row has not announced yet is waited for, not refused as "not configured"', { timeout: 10_000 }, async () => {
-  const web = mount(undefined, undefined, [{ name: 'system-runtime-cli' }])
-  let settled = false
-  const asked = web.loginRemote('web/chatgpt/default').finally(() => { settled = true })
-  asked.catch(() => {})
-  await Promise.resolve()
-  assert.equal(settled, false, 'it waits for the agents row to announce')
-  web.expect('web/chatgpt/default', Promise.reject(new Error('Xvfb is not installed')))
-  web.announced()
-  await assert.rejects(asked, /web\/chatgpt\/default: Xvfb is not installed/)
+test('a web Account has no quota reader', async () => {
+  const { listings } = mount([{}])
+  assert.deepEqual(await listings[0]!.quota!(), { unreadable: 'a web account has no quota reader' })
 })
 
-test('once the agents row has announced, a ref it did not announce is refused at once', { timeout: 10_000 }, async () => {
-  const web = mount(undefined, undefined, [{ name: 'system-runtime-cli' }])
-  const asked = web.loginRemote('web/chatgpt/none')
-  asked.catch(() => {})
-  web.announced()
-  await assert.rejects(asked, /web\/chatgpt\/none is not a configured web account/)
-  await assert.rejects(web.loginRemote('web/chatgpt/none'), /not a configured web account/)
+test('the row reads only the services it injects, never another Runtime\'s', () => {
+  const { read } = mount([{}])
+  assert.deepEqual([...new Set(read)].sort(), ['artifacts', 'capabilities', 'dshHomePath', 'subprocess'].sort())
 })
 
-test('the wait for the agents row is bounded by registerWaitSeconds', { timeout: 10_000 }, async () => {
-  const web = mount({ registerWaitSeconds: 0.2 }, undefined, [{ name: 'system-runtime-cli' }])
-  await assert.rejects(web.loginRemote('web/chatgpt/default'), /web\/chatgpt\/default is still registering after 0\.2 s/)
-})
-
-test('an operation waits for the registration in progress, and a failed one is refused with its own reason', { timeout: 10_000 }, async () => {
-  const web = mount()
-  let fail!: (error: Error) => void
-  web.expect('web/chatgpt/default', new Promise((_, reject) => { fail = reject }))
-  let settled = false
-  const asked = web.loginRemote('web/chatgpt/default').finally(() => { settled = true })
-  asked.catch(() => {})
-  await new Promise((r) => setTimeout(r, 200))
-  assert.equal(settled, false, 'it is still waiting for the registration')
-  fail(new Error('Xvfb is not installed'))
-  await assert.rejects(asked, /web\/chatgpt\/default: Xvfb is not installed/)
-})
-
-test('the wait is bounded by registerWaitSeconds', { timeout: 10_000 }, async () => {
-  const web = mount({ registerWaitSeconds: 0.2 })
-  web.expect('web/chatgpt/default', new Promise(() => {}))
-  await assert.rejects(web.loginRemote('web/chatgpt/default'), /web\/chatgpt\/default is still registering after 0\.2 s/)
-})
-
-test('an account whose registration failed before the operation came is refused with that reason, not as "not configured"', { timeout: 10_000 }, async () => {
-  const web = mount()
-  const failed = Promise.reject(new Error('the configured Chrome path does not exist: /gone'))
-  web.expect('web/chatgpt/default', failed)
-  await failed.catch(() => {})
-  await new Promise((r) => setTimeout(r, 50))
-  await assert.rejects(web.loginRemote('web/chatgpt/default'), /web\/chatgpt\/default: the configured Chrome path does not exist: \/gone/)
+test('an Account the row refuses is listed unavailable with its reason, registers no Worker, and the others are still tried', () => {
+  const { listings, workers } = mount([
+    { ref: 'web/gemini/default', site: 'gemini' },
+    { ref: 'web/default' },
+    { site: undefined },
+    { runtime: 'codex' },
+    { maxConcurrentAttempts: 2 },
+  ])
+  const reasons = listings.map((l) => l.status().reason)
+  assert.equal(reasons.length, 5)
+  assert.equal(reasons[0], 'unknown site gemini; the shipped sites are: chatgpt')
+  assert.match(reasons[1]!, /ref web\/default does not match site chatgpt/)
+  assert.equal(reasons[2], 'a web account names its site (site: chatgpt)')
+  assert.match(reasons[3]!, /runtime is codex/)
+  assert.deepEqual(workers, [])
+  assert.ok(listings.every((l) => !l.status().available))
 })
 
 // WW2-iv: the legacy driver is gone, and the option that chose between it and the generic Procedures with it. It is refused before any browser is looked for.
-test('an account that still sets procedures, either value, is refused with the reason', { timeout: 10_000 }, async () => {
-  const web = mount()
-  for (const value of ['legacy', 'generic', undefined, 'Generic']) {
-    await assert.rejects(web.register({ ref: 'web/chatgpt/default', capabilities: [], site: 'chatgpt', procedures: value }), /procedures was removed: the generic Procedures are the only path; delete the line/)
-  }
+test('an account that still sets procedures, either value, is refused with the reason', () => {
+  const { listings } = mount(['legacy', 'generic', 'Generic'].map((procedures) => ({ procedures }) as never))
+  for (const listing of listings) assert.match(listing.status().reason, /procedures was removed: the generic Procedures are the only path; delete the line/)
+})
+
+test('a web Account runs one attempt at a time, whatever it says', () => {
+  const { listings } = mount([{ maxConcurrentAttempts: 2 }])
+  assert.match(listings[0]!.status().reason, /a web account runs one attempt at a time \(one Chrome profile\); maxConcurrentAttempts must be 1/)
 })
 
 // WW8b: an Account offers the tiers when its Site map binds a Power control and the generic Procedures run it, as a CLI Account offers them from `models`.
@@ -93,10 +79,4 @@ test('a web account offers the three tiers when the map binds Power', () => {
   assert.deepEqual(offeredTiers({ ...map, actions: { ...map.actions, 'model.close': undefined as never } }), [], 'a map without the control')
   const { 'model.power': _, ...elements } = map.elements
   assert.deepEqual(offeredTiers({ ...map, elements }), [])
-})
-
-// WW-rename: the Site picks the shipped map and the defaults; an unknown one is refused with the shipped Sites.
-test('an unknown site is refused with the list of shipped sites', { timeout: 10_000 }, async () => {
-  const web = mount()
-  await assert.rejects(web.register({ ref: 'web/gemini/default', site: 'gemini', capabilities: [] }), /unknown site gemini; the shipped sites are: chatgpt/)
 })

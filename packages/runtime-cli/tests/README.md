@@ -8,16 +8,15 @@ a real git repository, including a Codex takeover of cancelled Claude work.
 [lifecycle.test.ts](lifecycle.test.ts) specifies the attempt lifecycle both Runtimes share (`src/lifecycle.ts`) with a stand-in turn:
 the time limit and its reason, cancel with partial outputs, a missing declared output, the bounded log.
 
-[index.test.ts](index.test.ts) tests the seam to the web Runtime: a `web` account is unavailable
-with "the web-worker row is disabled" when the row is off, and handed to its service when it is on.
-The web Runtime's own tests are in [web-worker](../../runtime-web/tests/README.md).
+[index.test.ts](index.test.ts) tests the row's Accounts as the Worker registry lists them (identity, label, models, slots), and that a `web` Account under it is refused.
+The web Runtime's own tests are in [runtime-web](../../runtime-web/tests/README.md).
 
 The booted profile is covered by [tests/agents.test.ts](../../../tests/README.md),
 and the real CLIs by the credential-gated `tests/real-agents.test.ts`.
 
 [quota.test.ts](quota.test.ts) specifies the sc-3 parsers, schemas (fixture [codex-0.171.0-rate-limits.json](codex-0.171.0-rate-limits.json), a real answer) and ten-minute cache;
 [quota-read.test.ts](quota-read.test.ts) checks CLI protocols and process cleanup;
-[quota-row.test.ts](quota-row.test.ts) checks per-account reads on the agents row.
+[quota-row.test.ts](quota-row.test.ts) checks per-account reads on the runtime-cli row.
 The synthetic fixtures and CLIs live in [test-support](../../../test-support/README.md).
 `FAKE:ratelimit=<five_hour|seven_day>:<fraction>` emits an attempt quota event
 for the hook tests in `agent.test.ts`; `FAKE:unified=<five>,<seven>` emits both

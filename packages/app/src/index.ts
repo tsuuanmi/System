@@ -16,7 +16,7 @@ import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts/contract'
 import { git } from '@system/git'
 import type { FailureClassifier, GitTreeContent, Task, WorkService } from '@system/work'
-import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities } from '@system/work/contract'
+import { GIT_TREE_KIND, TASK_KIND, dshHome, profileMigrationOfFiles, type Capabilities } from '@system/work/contract'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { buildHostProgram, type HostProcess, type Run, type WorkersView } from './cli.ts'
 import { REQUIRED_BACKEND, type HostStatus, type StorageStatus } from './doctor.ts'
@@ -266,6 +266,12 @@ async function runHost(ctx: Context, mounted: Mounted): Promise<number> {
   return status
 }
 
+/** Item rt-4: a profile that patches the old rows, or lists a web Account under the CLI row, does not start (ADR-0018 decision 5). Read from the patch files dsh read, never rewritten. */
+function profileProblem(ctx: Context): string | undefined {
+  const profile = ctx.get('profileContext')
+  return profile && profileMigrationOfFiles([profile.patchPath, join(profile.home, 'cordis.patch.yml')], profile.overlays.flat())
+}
+
 /** The row has no configuration; a config that is not an object is refused at activation. */
 export interface Config {}
 export const Config: Schema<Config> = Schema.object({})
@@ -282,6 +288,7 @@ export function apply(ctx: Context, _config: Config): void {
       return checkStore({ works: work.records(), artifacts })
     },
     runHost: () => runHost(ctx, mounted),
+    profileProblem: () => profileProblem(ctx),
   }
   let selected: Run | undefined
   const io = { out: (text: string) => { process.stdout.write(text) } }

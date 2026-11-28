@@ -68,6 +68,10 @@ Controller ([ADR-0002](../../docs/decisions/ADR-0002-work-primitive-configured-w
   and `startHost`: the `Host` over the row's own table, specs and capabilities).
 - [src/contract.ts](src/contract.ts) — `@system/work/contract` (ADR-0017 decision 1): the kinds, tiers, ids, errors and port types other
   packages import, and `work`/`capabilities` in `Context`.
+- [src/profile-migration.ts](src/profile-migration.ts) — rt-4 (ADR-0018): `profileMigration` reads a profile's patches and, when one
+  still patches the rows `agents` or `web-worker` or lists a `runtime: web` Account under `runtime-cli`, returns the refusal with the exact
+  rows to write instead (never rewritten); `system host` and `system doctor` call it. The how-to is in the
+  [runbook](../../docs/operations/accounts-and-workers.md#moving-the-accounts-to-runtime-cli-and-runtime-web).
 
 ## Cancel and retry
 
@@ -119,7 +123,7 @@ Account routing chooses has a free slot (a capable Account that is full, or over
 its quota ceiling, is passed over for the next one; see the
 [agents README](../runtime-cli/README.md#routing-by-headroom)), in Workflow file order, then waits for an attempt to
 report or a slot to be freed. An Account is a Worker's `ref`; a `WorkerPort`
-offers `maxConcurrentAttempts` (default 1, set per Account in the `agents` row)
+offers `maxConcurrentAttempts` (default 1, set per Account in the `runtime-cli` row)
 and an optional `gone(attemptId)`. It also carries the Account's view for `system workers`: `status()`, `quota()` and `version()` ([ADR-0018](../../docs/decisions/ADR-0018-runtimes-plug-into-the-worker-registry.md) decision 1), read by `Capabilities.accounts()`, and optionally `signIn(step)` and `recheck()` ([ADR-0018](../../docs/decisions/ADR-0018-runtimes-plug-into-the-worker-registry.md) decision 2), called by ref through `Capabilities.operateOn`; a Worker without one is "not supported by runtime X". A slot is reserved in the lane before
 `dispatched` is appended and released after `observed` is. Verifier and effect
 steps take none. Steps that find no slot wait in memory; a freed slot wakes the

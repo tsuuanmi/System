@@ -21,11 +21,11 @@ const { composeEntries } = await import(pathToFileURL(fromDsh.resolve('@deepseek
 interface Entry { id?: string; config?: any; disabled?: boolean }
 const bundle = parse(readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')) as unknown[]
 const flat = (entries: Entry[]): Entry[] => entries.flatMap((e) => [e, ...(Array.isArray(e.config) ? flat(e.config) : [])])
-const agents = (overlay: string) => flat(composeEntries([bundle, parse(overlay) as unknown[]])).find((e) => e.id === 'agents')!.config as { attemptTimeoutMinutes?: number; accounts: { ref: string; capabilities?: string[]; models?: Record<string, string>; command?: string }[] }
+const agents = (overlay: string) => flat(composeEntries([bundle, parse(overlay) as unknown[]])).find((e) => e.id === 'runtime-cli')!.config as { attemptTimeoutMinutes?: number; accounts: { ref: string; capabilities?: string[]; models?: Record<string, string>; command?: string }[] }
 const refs = (config: ReturnType<typeof agents>) => config.accounts.map((a) => a.ref)
 
 test('an overlay account with a ref the bundle has changes only the fields it names', () => {
-  const config = agents('- id: agents\n  config:\n    accounts:\n      - ref: codex/default\n        capabilities: [repo.write, brainstorm.idea-b, research]\n')
+  const config = agents('- id: runtime-cli\n  config:\n    accounts:\n      - ref: codex/default\n        capabilities: [repo.write, brainstorm.idea-b, research]\n')
   assert.deepEqual(refs(config), ['claude-code/default', 'codex/default'])
   const codex = config.accounts[1]!
   assert.deepEqual(codex.capabilities, ['repo.write', 'brainstorm.idea-b', 'research'], 'a list of names is replaced whole')
@@ -34,15 +34,15 @@ test('an overlay account with a ref the bundle has changes only the fields it na
 })
 
 test('an overlay account with a new ref is added after the bundle\'s; a scalar replaces; null removes a field', () => {
-  const config = agents('- id: agents\n  config:\n    attemptTimeoutMinutes: 30\n    accounts:\n      - ref: web/chatgpt/second\n        runtime: web\n        site: chatgpt\n        capabilities: [research]\n      - ref: claude-code/default\n        models: null\n')
-  assert.deepEqual(refs(config), ['claude-code/default', 'codex/default', 'web/chatgpt/second'])
+  const config = agents('- id: runtime-cli\n  config:\n    attemptTimeoutMinutes: 30\n    accounts:\n      - ref: claude-code/second\n        runtime: claude-code\n        capabilities: [research]\n      - ref: claude-code/default\n        models: null\n')
+  assert.deepEqual(refs(config), ['claude-code/default', 'codex/default', 'claude-code/second'])
   assert.equal(config.attemptTimeoutMinutes, 30)
   assert.equal('models' in config.accounts[0]!, false)
 })
 
 test('$patch: delete removes an account; $patch: replace takes the overlay whole, as before', () => {
-  assert.deepEqual(refs(agents('- id: agents\n  config:\n    accounts:\n      - ref: codex/default\n        $patch: delete\n')), ['claude-code/default'])
-  const replaced = agents('- id: agents\n  config:\n    $patch: replace\n    accounts:\n      - ref: claude-code/default\n        runtime: claude-code\n        capabilities: [research]\n')
+  assert.deepEqual(refs(agents('- id: runtime-cli\n  config:\n    accounts:\n      - ref: codex/default\n        $patch: delete\n')), ['claude-code/default'])
+  const replaced = agents('- id: runtime-cli\n  config:\n    $patch: replace\n    accounts:\n      - ref: claude-code/default\n        runtime: claude-code\n        capabilities: [research]\n')
   assert.deepEqual(replaced, { accounts: [{ ref: 'claude-code/default', runtime: 'claude-code', capabilities: ['research'] }] })
 })
 
