@@ -62,3 +62,27 @@ test('sch-1: system items carry carries a Ready Item through a real Host and ski
   assert.equal(carried.status, 1, 'exits 0 only when merged or held')
   assert.deepEqual(calls().map((l) => l.split(' ')[1]), ['implement'])
 })
+
+test('sch-2: system items carry --repo <path> without an Item ID runs a pass over two Ready Items through a real Host', () => {
+  const passRepo = mkdtempSync(join(home, 'pass-repo-'))
+  const git = (...args: string[]) => execFileSync('git', ['-C', passRepo, ...args], {
+    env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
+    encoding: 'utf8',
+  })
+  git('init', '--quiet', '-b', 'dev')
+  writeFileSync(join(passRepo, 'STATUS.md'), '# Pass\n\nAim: smoke test\n\n## Items\n\n- [ ] p-1 First ready\n- [ ] p-2 Second ready\n- [ ] p-3 Blocked (after: p-1)\n')
+  mkdirSync(join(passRepo, 'workflows'), { recursive: true })
+  git('add', '.')
+  git('commit', '--quiet', '-m', 'init')
+
+  rmSync(log, { force: true })
+  const res = system(['items', 'carry', '--repo', passRepo])
+  const records = res.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { item: string; works: string[]; outcome: string; account: string | null })
+  assert.deepEqual(records.map((r) => r.item), ['p-1', 'p-2'])
+  for (const r of records) {
+    assert.equal(r.works.length, 1)
+    assert.equal(r.outcome, 'succeeded')
+    assert.equal(r.account, 'fake-worker')
+  }
+  assert.deepEqual(calls().map((l) => l.split(' ')[1]), ['implement', 'implement'])
+})
