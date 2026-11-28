@@ -3,7 +3,7 @@ type: operations
 status: active
 reviewed: 2026-11-26
 summary: The nightly scheduled session: its prompt, repositories, report and timer.
-covers: [packages/bundle/system-night-session.sh, packages/bundle/system-night-session.service, packages/bundle/system-night-session.timer]
+covers: [packages/app/src/schedule.ts, packages/bundle/system-night-session.sh, packages/bundle/system-night-session.service, packages/bundle/system-night-session.timer]
 ---
 
 # The scheduled session
@@ -99,3 +99,47 @@ Read it with `systemctl --user list-timers system-night-session` and
 `journalctl --user -u system-night-session`; stop the series with
 `systemctl --user disable --now system-night-session.timer`. To change the time
 edit `OnCalendar=` in the installed timer, then `daemon-reload` and `restart` it.
+
+## Schedules
+
+A Schedule ([ADR-0020](../decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md) decision 6; GLOSSARY
+Schedule) is a file `~/.system/schedules/<name>.yaml` (under `SYSTEM_INSTALL` when that is set):
+
+| Key | Meaning |
+| --- | --- |
+| `kind` | `items`: carry the Ready Items of `repositories`. `kind: work` parses and is refused as not built yet. |
+| `repositories` | Absolute paths (or `~/...`), in the order the pass reads them. |
+| `at` | One or more systemd calendar expressions (a string or a list); each is checked with `systemd-analyze calendar` when that is on the `PATH`. |
+| `maxParallel` | Optional: the most Works the pass runs at once. |
+| `checkAt` | Optional: the time of the check before a pass (read from sch-5 on). |
+
+This file equals today's set-up (System and DNA at 01:00, then hourly to 07:00):
+
+```yaml
+kind: items
+repositories:
+  - ~/workspaces/System
+  - ~/workspaces/DNA
+at:
+  - "*-*-* 01:00"
+  - "*-*-* 02..07:00"
+```
+
+`system items carry --schedule <file>` runs one pass for the file. `system init` (default home `~/.dsh` on Linux)
+writes, for each file, the user units `system-schedule-<name>.service` (waits up to 5 minutes for `system doctor`,
+then runs the install's `system items carry --schedule <file>`; no start timeout) and
+`system-schedule-<name>.timer` (one `OnCalendar=` for each `at`, `Persistent=false`) under
+`~/.config/systemd/user`. It enables none, rewrites a unit when its file changed, and removes the units of a file
+that is gone. A file that does not parse is named on stderr, fails `init`, and keeps its earlier units.
+
+### Moving from the `system-night-session` units
+
+1. Write the file above as `~/.system/schedules/night.yaml`.
+2. Run `system init`, then `systemctl --user enable --now system-schedule-night.timer`.
+3. Check it with `systemctl --user list-timers 'system-schedule-*'`.
+4. Once a pass has run from it, stop the old series:
+   `systemctl --user disable --now system-night-session.timer`, then delete
+   `~/.config/systemd/user/system-night-session.{service,timer}` and run `systemctl --user daemon-reload`.
+
+The old units keep working until you do step 4; run only one of the two timers at a time,
+as both start Works for the same Items.

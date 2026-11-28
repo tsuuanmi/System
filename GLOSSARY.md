@@ -223,7 +223,7 @@ Ready Items and carries them through Works within fixed limits; it never
 approves or writes Items, and it releases only a commit the Operator approved.
 _Avoid_: night run, night session, bot, autopilot
 
-**Schedule** (specified, not built; [ADR-0020](docs/decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md)):
+**Schedule** ([ADR-0020](docs/decisions/ADR-0020-the-scheduled-session-is-a-deterministic-caller.md)):
 What the Operator writes down on one machine for a Scheduled session: when it
 starts and what it carries, either the Ready Items of named repositories or one
 Work from a fixed Workflow and Task.
