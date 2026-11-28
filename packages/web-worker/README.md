@@ -22,7 +22,7 @@ browser dependencies (`patchright-core`, `@puppeteer/browsers`, `@novnc/novnc`,
   reason (`web/chatgpt/<name>: <reason>`), one not configured with "is not a configured web account". An attempt needs no
   wait: the Worker exists only once registered. [tests/accounts.test.ts](tests/accounts.test.ts) holds a registration open by hand.
 - **Row off:** such an account is reported `unavailable` with the reason
-  "the web-worker row is disabled", `system workers login` says the same, and none of
+  "the web-worker row is disabled", `system workers login` says it is not registered, and none of
   this package is loaded.
 - **Tests:** this package's tests drive a real headed Chrome, so they are outside `corepack pnpm test`
   and `smoke`: `corepack pnpm test:web` runs them (the `web` check of `.system/checks.yaml`).

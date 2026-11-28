@@ -84,6 +84,17 @@ test('both configured accounts are registered, with the CLI version', () => {
   assert.match(out.stdout, /claude-code\/default\s+available\s+0\.0\.0-fake \(Claude Code\)/)
 })
 
+test('sign-in and recheck of an Account whose Runtime has none are refused by name, through the real Host (ADR-0018 decision 2)', () => {
+  for (const args of [['login', 'claude-code/default'], ['login', 'claude-code/default', '--remote'], ['recheck', 'claude-code/default']]) {
+    const ran = cli.run(['workers', ...args], { terminal: true })
+    assert.equal(ran.status, 1, args.join(' '))
+    assert.match(ran.stdout + ran.stderr, /not supported by runtime claude-code/, args.join(' '))
+  }
+  const unknown = cli.run(['workers', 'login', 'nope/none'], { terminal: true })
+  assert.equal(unknown.status, 1)
+  assert.match(unknown.stdout + unknown.stderr, /nope\/none is not a registered Account/)
+})
+
 test('system workers ends with the room line, with Ready Items for --repo', () => {
   const out = system(['workers', '--repo', gitRepo])
   assert.equal(out.status, 0, out.stderr)

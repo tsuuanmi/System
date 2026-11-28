@@ -76,7 +76,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     const health = new AccountHealth(web.profileDir, account.ref, { log, settings: healthSettings })
     const version = lazyVersion(subprocess, command)
     const offered = [...new Set([...account.capabilities, ...offeredTiers(shippedMap())])]
-    const off = capabilities.registerWorker(webWorker({ ref: account.ref, capabilities: [...new Set([...(account.abilities ?? []), ...offered])], command, version, offered, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts))
+    const worker = webWorker({ ref: account.ref, capabilities: [...new Set([...(account.abilities ?? []), ...offered])], command, version, offered, attemptTimeoutMinutes: account.attemptTimeoutMinutes, maxConcurrentAttempts: account.maxConcurrentAttempts, web, health, healthSettings }, artifacts, attempts)
+    // ADR-0018 decision 2: sign-in and recheck are the Worker's own, found by its ref.
+    worker.signIn = (request) => request.step === 'login' ? login(account.ref, request.cookies) : request.step === 'remote' ? loginRemote(account.ref) : loginWait(account.ref, request.cancel)
+    worker.recheck = () => recheckOf(account.ref)
+    const off = capabilities.registerWorker(worker)
     const entry = { web, health }
     webs.set(account.ref, entry)
     const dispose = () => {

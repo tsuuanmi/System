@@ -14,7 +14,6 @@ import type { Storage } from '@deepseek-ai/dsh-storage'
 import { defineDomain, domainTable, type DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import type { Artifacts, Classification } from '@system/artifacts/contract'
-import { WEB_WORKER_DISABLED, type AgentsService, type QuotaReport, type WebWorkerService } from '@system/agents/contract'
 import { git } from '@system/git'
 import type { FailureClassifier, GitTreeContent, Task, WorkService } from '@system/work'
 import { GIT_TREE_KIND, TASK_KIND, dshHome, type Capabilities } from '@system/work/contract'
@@ -147,13 +146,6 @@ export async function workersView(ctx: Context): Promise<WorkersView> {
   return { registered: capabilities?.workerRefs() ?? [], accounts: (await capabilities?.accounts()) as WorkersView['accounts'] ?? [] }
 }
 
-/** The web Runtime's service: its row is optional, and off by default. */
-function webWorkerService(ctx: Context): WebWorkerService {
-  const web = ctx.get('webWorker') as WebWorkerService | undefined
-  if (!web) throw new Error(WEB_WORKER_DISABLED)
-  return web
-}
-
 /** Whether `commit` is in the code this Host runs (its commit read once): false when it is not (git exits 1 without a message), undefined when git cannot say. */
 let running: Promise<string> | undefined
 export async function releaseHolds(repository: string, commit: string): Promise<boolean | undefined> {
@@ -219,10 +211,6 @@ async function runHost(ctx: Context): Promise<number> {
       workflowFile: (name, input) => workflowFile(artifacts, name, input),
       credentials,
       workers: () => workersView(ctx),
-      login: async (ref, cookies) => webWorkerService(ctx).login(ref, cookies),
-      loginRemote: async (ref) => webWorkerService(ctx).loginRemote(ref),
-      loginWait: async (ref, cancel) => webWorkerService(ctx).loginWait(ref, cancel),
-      recheck: async (ref) => webWorkerService(ctx).recheck(ref),
       releaseHolds: (repository, commit) => releaseHolds(repository, commit),
       ...(classifier ? { classifier: classifier.failures } : {}),
     },

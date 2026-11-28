@@ -105,6 +105,31 @@ export interface AccountListing {
 /** One row of `system workers`: the Account's status, its quota and its version. */
 export type AccountView = WorkerStatus & { ref: string; version?: string; quota: QuotaReading }
 
+/** What an Account's sign-in asks of its Runtime (ADR-0018 decision 2): sign in now (by cookie file contents, or by hand where a display exists), start a remote sign-in, or wait for / cancel the running remote one. */
+export type SignInStep = { step: 'login'; cookies?: string } | { step: 'remote' } | { step: 'wait'; cancel: boolean }
+
+export interface SignInReport {
+  signedIn: boolean
+  detail: string
+  imported?: number
+  skipped?: number
+}
+
+/** Where a remote sign-in's viewer is, and until when. */
+export interface RemoteSignIn {
+  url: string
+  port: number
+  ssh: string
+  expiresAt: number
+}
+
+/** What a recheck found: whether the Account is `ready` again, its state, and what the page showed. */
+export interface RecheckReport {
+  ready: boolean
+  state: string
+  detail: string
+}
+
 export interface WorkerPort {
   /** A stable name, recorded in routing decisions. */
   ref: string
@@ -113,6 +138,10 @@ export interface WorkerPort {
   status?(): WorkerStatus | Promise<WorkerStatus>
   /** The version of the Runtime's tool, asked when listed; absent: none shown. */
   version?(): Promise<string>
+  /** Sign the Account in (`system workers login`); absent: its Runtime has no sign-in, and the operation answers "not supported by runtime X". */
+  signIn?(request: SignInStep): Promise<SignInReport | RemoteSignIn>
+  /** Check the Account without sending anything and make it ready again only when that passes (`system workers recheck`); absent: not supported. */
+  recheck?(): Promise<RecheckReport>
   /** How many attempts of this Account run at once; default 1. */
   maxConcurrentAttempts?: number
   /** Accounts with the same key share one slot (one sign-in): at most one attempt runs across them. Absent: the Account has its own. */
@@ -366,6 +395,20 @@ export class Capabilities {
 
   verifierFor(ref: string): VerifierPort | undefined {
     return this.verifiers.find((v) => v.ref === ref)
+  }
+
+  /** The operation `method` of the Worker `ref`: its Runtime's sign-in or recheck; refused by name when the Account is not registered, or its Runtime has none. */
+  async operateOn<T>(ref: string, what: 'sign-in' | 'recheck', call: (worker: WorkerPort) => Promise<T> | undefined): Promise<T> {
+    const worker = this.workerFor(ref)
+    if (!worker) {
+      const { listing } = this.sources(ref)
+      if (!listing) throw new Error(`${ref} is not a registered Account (system workers)`)
+      const status = await listing.status()
+      throw new Error(`${ref} is not registered: ${status.reason}`)
+    }
+    const pending = call(worker)
+    if (!pending) throw new Error(`${what} is not supported by runtime ${(await this.statuses()).find((s) => s.ref === ref)?.runtime ?? 'unknown'}`)
+    return pending
   }
 
   workerRefs(): string[] {

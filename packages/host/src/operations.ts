@@ -42,14 +42,6 @@ export interface Services {
   workers(): Promise<{ registered: string[]; accounts: { ref: string; quota?: QuotaReading }[] }>
   /** The optional Classifier row (cls-1), report-only: undefined when the row is off. */
   classifier?: FailureClassifier
-  /** Sign a browser Account in, by the cookie file's contents or by hand where a display exists, and report whether it is signed in. */
-  login(ref: string, cookies: string | undefined): Promise<{ signedIn: boolean; detail: string; imported?: number; skipped?: number }>
-  /** Start the remote sign-in of a browser Account: where to reach its viewer, and until when. */
-  loginRemote(ref: string): Promise<{ url: string; port: number; ssh: string; expiresAt: number }>
-  /** Wait for the remote sign-in of `ref` to end (Save, Cancel, expiry), or end it first with `cancel`; the signed-in state. */
-  loginWait(ref: string, cancel: boolean): Promise<{ signedIn: boolean; detail: string }>
-  /** Check a browser Account without sending anything; it is `ready` again only when the check passes. */
-  recheck(ref: string): Promise<{ ready: boolean; state: string; detail: string }>
   /** Whether `commit` is in the running release of `repository`: false when it is not, undefined when unknown. */
   releaseHolds?(repository: string, commit: string): Promise<boolean | undefined>
 }
@@ -381,25 +373,25 @@ export function operations(services: Services) {
       authority: 'operator',
       summary: 'Sign a browser Account (`web/<site>/<name>`) in: import the contents of a cookie file, or without one open a visible window where the Host has a display. Returns whether it is signed in; no cookie value is returned.',
       params: z.object({ ref: z.string().min(1), cookies: z.string().max(MAX_FRAME).optional() }).strict(),
-      handler: (_host, p) => services.login(p.ref, p.cookies),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'login', cookies: p.cookies })),
     },
     'workers.loginRemote': {
       authority: 'operator',
       summary: 'Start a remote sign-in of a browser Account: its profile opens headed on a private display and a viewer is served on 127.0.0.1 behind a random token. Returns `{ url, port, ssh, expiresAt }`; the operator tunnels to the port over SSH. Follow with `workers.loginWait`.',
       params: z.object({ ref: z.string().min(1) }).strict(),
-      handler: (_host, p) => services.loginRemote(p.ref),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'remote' })),
     },
     'workers.loginWait': {
       authority: 'operator',
       summary: 'Wait until the remote sign-in of an Account ends (Save, Cancel in the viewer, or its 15 minutes), or with `cancel` end it now. Returns whether the profile is signed in.',
       params: z.object({ ref: z.string().min(1), cancel: z.boolean().optional() }).strict(),
-      handler: (_host, p) => services.loginWait(p.ref, p.cancel === true),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'sign-in', (w) => w.signIn?.({ step: 'wait', cancel: p.cancel === true })),
     },
     'workers.recheck': {
       authority: 'operator',
       summary: 'Recheck a browser Account that is quarantined or cooling down: its profile opens headed on a private display and the sign-in, Chat mode and temporary chat are checked; nothing is sent. Returns `{ ready, state, detail }`; the Account is `ready` again only when the check passes, and this is the only way out of `needs-sign-in` and `challenged`.',
       params: z.object({ ref: z.string().min(1) }).strict(),
-      handler: (_host, p) => services.recheck(p.ref),
+      handler: (_host, p) => services.capabilities.operateOn(p.ref, 'recheck', (w) => w.recheck?.()),
     },
     'credentials.status': {
       read: true,

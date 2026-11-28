@@ -25,7 +25,7 @@ const b64 = (text: string) => Buffer.from(text).toString('base64')
 /** Services over in-memory stand-ins; what they were asked is recorded in `seen`. */
 function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<string, unknown[]> } {
   const files = new Map<string, Uint8Array>()
-  const seen: Record<string, unknown[]> = { credentials: [], logins: [] }
+  const seen: Record<string, unknown[]> = { credentials: [] }
   return {
     seen,
     capabilities: f.capabilities,
@@ -54,10 +54,6 @@ function services(f: Fixture, artifacts: Artifacts): Services & { seen: Record<s
       async describe(name) { return name === 'known' ? { configured: true, source: 'store' } : { configured: false } },
     },
     async workers() { return { registered: f.capabilities.workerRefs(), accounts: f.capabilities.workerRefs().map((ref) => ({ ref, runtime: 'fake', available: true, reason: 'registered', quota: { unreadable: 'fake' } })) } },
-    async login(ref, cookies) { seen.logins!.push([ref, cookies]); return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 } },
-    async loginRemote(ref) { seen.logins!.push([ref, 'remote']); return { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 } },
-    async recheck(ref) { seen.logins!.push([ref, 'recheck']); return { ready: false, state: 'needs-sign-in', detail: 'signed out' } },
-    async loginWait(ref, cancel) { seen.logins!.push([ref, cancel ? 'cancel' : 'wait']); return { signedIn: !cancel, detail: cancel ? 'cancelled' : 'signed in' } },
   }
 }
 
@@ -170,14 +166,12 @@ test('every method of the table round-trips over the socket', async () => {
   const none = (await call('workers.list', { repository: bare }) as { room: { ready: { count?: number; error?: string }[] } }).room.ready
   assert.equal(none[0]!.count, undefined)
   assert.match(none[0]!.error!, /no STATUS\.md/)
-  assert.deepEqual(await call('workers.login', { ref: 'web/chatgpt/default', cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
-  assert.deepEqual(svc.seen.logins, [['web/chatgpt/default', 'the file']])
-  assert.deepEqual(await call('workers.loginRemote', { ref: 'web/chatgpt/default' }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })
-  assert.deepEqual(await call('workers.loginWait', { ref: 'web/chatgpt/default' }), { signedIn: true, detail: 'signed in' })
-  assert.deepEqual(await call('workers.loginWait', { ref: 'web/chatgpt/default', cancel: true }), { signedIn: false, detail: 'cancelled' })
-  assert.deepEqual(svc.seen.logins!.slice(1), [['web/chatgpt/default', 'remote'], ['web/chatgpt/default', 'wait'], ['web/chatgpt/default', 'cancel']])
-  assert.deepEqual(await call('workers.recheck', { ref: 'web/chatgpt/default' }), { ready: false, state: 'needs-sign-in', detail: 'signed out' })
-  assert.deepEqual(svc.seen.logins!.at(-1), ['web/chatgpt/default', 'recheck'])
+  // A Runtime without sign-in or recheck is refused by name (ADR-0018 decision 2); the working path is in the test below.
+  for (const method of ['workers.login', 'workers.loginRemote', 'workers.loginWait', 'workers.recheck']) {
+    await assert.rejects(call(method, { ref: 'fake/claude' }), /not supported by runtime/, method)
+    called.add(method)
+  }
+  await assert.rejects(call('workers.login', { ref: 'nobody/default' }), /nobody\/default is not a registered Account/)
   await call('credentials.set', { name: 'known', value: 's3cret' })
   assert.deepEqual(await call('credentials.status', { names: ['known', 'other'] }), [{ name: 'known', configured: true, source: 'store' }, { name: 'other', configured: false }])
   // The status of a project: its Items from STATUS.md on dev; no Work names one here, so each is todo.
@@ -536,6 +530,35 @@ test('a client that missed the notice reads on from its cursor and loses nothing
   assert.equal(missed.events.length, all.events.length - cursor - 1)
   // Watching a Work that already ended says so in the reply, which is the same wake-up.
   assert.deepEqual(await back.call('work.watch', { workId: work.id }), { status: 'succeeded', outcome: 'succeeded', seq: all.events.at(-1)!.seq })
+})
+
+test('workers.login, loginRemote, loginWait and recheck call the Worker found by ref, a Worker without them is refused by name (ADR-0018 decision 2)', async () => {
+  const seen: unknown[] = []
+  const quiet = async () => ({ status: 'cancelled' as const, outputs: {} })
+  const { open } = await started({ setup: (f) => {
+    f.capabilities.registerWorker({
+      ref: 'web/chatgpt/default', capabilities: ['research'], run: quiet,
+      status: () => ({ runtime: 'web', available: true, reason: 'registered', capabilities: ['research'] }),
+      async signIn(request) {
+        seen.push(request)
+        if (request.step === 'login') return { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 }
+        if (request.step === 'remote') return { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 }
+        return { signedIn: !request.cancel, detail: request.cancel ? 'cancelled' : 'signed in' }
+      },
+      async recheck() { seen.push('recheck'); return { ready: false, state: 'needs-sign-in', detail: 'signed out' } },
+    })
+    f.capabilities.registerWorker({ ref: 'codex/default', capabilities: ['research'], run: quiet, status: () => ({ runtime: 'codex', available: true, reason: 'registered', capabilities: ['research'] }) })
+  } })
+  const operator = await open(human, 'operator')
+  const ref = 'web/chatgpt/default'
+  assert.deepEqual(await operator.call('workers.login', { ref, cookies: 'the file' }), { signedIn: true, detail: 'signed in', imported: 1, skipped: 0 })
+  assert.deepEqual(await operator.call('workers.loginRemote', { ref }), { url: 'http://127.0.0.1:5/token/', port: 5, ssh: 'ssh -L 5:127.0.0.1:5 me@host', expiresAt: 1 })
+  assert.deepEqual(await operator.call('workers.loginWait', { ref }), { signedIn: true, detail: 'signed in' })
+  assert.deepEqual(await operator.call('workers.loginWait', { ref, cancel: true }), { signedIn: false, detail: 'cancelled' })
+  assert.deepEqual(await operator.call('workers.recheck', { ref }), { ready: false, state: 'needs-sign-in', detail: 'signed out' })
+  assert.deepEqual(seen, [{ step: 'login', cookies: 'the file' }, { step: 'remote' }, { step: 'wait', cancel: false }, { step: 'wait', cancel: true }, 'recheck'])
+  await assert.rejects(operator.call('workers.login', { ref: 'codex/default' }), /not supported by runtime codex/)
+  await assert.rejects(operator.call('workers.recheck', { ref: 'codex/default' }), /not supported by runtime codex/)
 })
 
 test('a running attempt shows its progress in work.show, and a quiet one sends a stall notice; the record keeps neither', { timeout: 120_000 }, async () => {
