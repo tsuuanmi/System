@@ -2,13 +2,16 @@
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { DRAIN_MS, recordingPid, type Spawner } from './agent.ts'
 
+const MAX_CAPTURE_BYTES = 64 * 1024 * 1024
+export const CAPTURE_CUT_MARKER = '[… truncated at 64 MiB spawner capture limit …]'
+
 /** A `Spawner` over the DSH subprocess service, which owns each process range. */
 export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
   return {
     spawn(spec) {
       const handle = subprocess.spawn({
         argv: recordingPid(spec), cwd: spec.cwd, env: spec.env, signal: spec.signal, graceMs: spec.graceMs,
-        stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
+        stdio: { stdin: 'ignore', stdout: { maxBytes: MAX_CAPTURE_BYTES }, stderr: { maxBytes: 64 * 1024 } },
       })
       return {
         // The agent's exit ends the attempt. Its range gets a bounded time to empty (and its output to arrive); what a leaked
@@ -18,7 +21,13 @@ export function subprocessSpawner(subprocess: SubprocessRuntime): Spawner {
           if (!drained) handle.terminate()
           return { exitCode: outcome.exitCode, signal: outcome.signal }
         }),
-        stdout: () => handle.collected.stdout?.readFrom(0).text ?? '',
+        stdout: () => {
+          const read = handle.collected.stdout?.readFrom(0)
+          if (!read) return ''
+          if (!read.lossy) return read.text
+          const sep = read.text.length > 0 && !read.text.endsWith('\n') ? '\n' : ''
+          return `${read.text}${sep}${CAPTURE_CUT_MARKER}\n`
+        },
         stderr: () => handle.collected.stderr?.readFrom(0).text ?? '',
       }
     },

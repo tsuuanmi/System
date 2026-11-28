@@ -18,6 +18,7 @@ import { CONVERSATION_KIND, Capabilities, VERDICT_KIND, verdictSchema, GIT_TREE_
 import { CHECK_RUN_KIND, checkRunSchema } from '../../verifiers/src/checks.ts'
 import { agentWorker, type Account } from '../src/agent.ts'
 import { lazyVersion } from '../src/index.ts'
+import { CAPTURE_CUT_MARKER, subprocessSpawner } from '../src/spawner.ts'
 import { cleanup, prepare, prompt } from '../src/workspace.ts'
 
 const fake = join(dirname(fileURLToPath(import.meta.url)), 'fake-agent.mjs')
@@ -83,17 +84,21 @@ test('a code change is captured from the working tree as one pinned commit on th
   assert.equal(artifacts.get(result.log!).state, 'stored')
 })
 
-test('usage sums every result of a stream, from the whole stdout and not the bounded log', async () => {
+test('a 400 KiB log and the prompt are stored whole as Artifacts, and usage sums every result', async () => {
   const { artifacts } = memory()
   const worker = agentWorker(account('claude-code'), artifacts, processSpawner, join(root, 'attempts-followup'))
   const result = await worker.run(request({ question: await task(artifacts, 'FAKE:outputs FAKE:followup FAKE:noise') }, ['report']))
   assert.equal(result.status, 'succeeded', result.reason)
   assert.deepEqual(result.usage, { inputTokens: 490, cacheReadTokens: 224, cacheWriteTokens: 62, outputTokens: 51, costUsd: 1.25, source: 'claude-code modelUsage (includes subagents) over 2 result(s) (inputTokens is fresh; total adds cache_creation and cache_read); cost is a client-side API-equivalent estimate' })
   const log = Buffer.from(await artifacts.readBytes(result.log!)).toString()
-  assert.ok(log.length <= 256 * 1024, 'the log is bounded')
-  assert.ok(log.includes('"input_tokens":3,'), 'the head of the log is kept: the first result is in it')
-  assert.ok(log.includes('"input_tokens":1,'), 'the tail of the log is kept: the last result is in it')
-  assert.match(log, /\[… \d+ bytes cut by System …\]/, 'the cut is marked')
+  assert.ok(log.length > 400 * 1024, `expected whole > 400 KiB log, got ${log.length}`)
+  assert.ok(log.includes('x'.repeat(400 * 1024)), 'every byte of the 400 KiB output is kept in the stored log')
+  assert.ok(log.includes('"input_tokens":3,'), 'the first result is in the stored log')
+  assert.ok(log.includes('"input_tokens":1,'), 'the last result is in the stored log')
+  assert.equal(log.includes('bytes cut by System'), false, 'no 256 KiB bound cut')
+  assert.ok(result.prompt, 'the prompt Artifact ID is recorded')
+  const storedPrompt = Buffer.from(await artifacts.readBytes(result.prompt!)).toString()
+  assert.ok(storedPrompt.includes('FAKE:outputs FAKE:followup FAKE:noise'), 'the prompt Artifact holds the attempt prompt')
 })
 
 test('without a repository every output is a file the agent wrote; a missing one fails the attempt', async () => {
@@ -650,6 +655,25 @@ test('lazyVersion spawns `<command> --version` once, on first use', async () => 
   assert.equal(spawned.length, 0)
   assert.deepEqual(await Promise.all([version(), version()]), ['1.2.3 (Fake)', '1.2.3 (Fake)'])
   assert.deepEqual(spawned, [['/bin/fake', '--version']])
+})
+
+test('subprocessSpawner keeps the 64 MiB capture limit and marks a cut log in its last line', () => {
+  let seenMaxBytes: number | undefined
+  const subprocess = {
+    spawn(spec: { stdio?: { stdout?: { maxBytes?: number } } }) {
+      seenMaxBytes = spec.stdio?.stdout?.maxBytes
+      return {
+        done: Promise.resolve({ exitCode: 0, signal: null }),
+        waitForExit: async () => true,
+        terminate: () => {},
+        collected: { stdout: { readFrom: () => ({ text: 'line-1\nline-2', nextOffset: 13, lossy: true }) }, stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) } },
+      }
+    },
+  } as unknown as Parameters<typeof subprocessSpawner>[0]
+  const spawned = subprocessSpawner(subprocess).spawn({ argv: ['/bin/fake'], cwd: process.cwd(), env: {}, signal: new AbortController().signal, graceMs: 1000 })
+  assert.equal(seenMaxBytes, 64 * 1024 * 1024)
+  const lines = spawned.stdout().trimEnd().split('\n')
+  assert.equal(lines.at(-1), CAPTURE_CUT_MARKER)
 })
 
 

@@ -1,7 +1,6 @@
-/** The attempt summary System computes from a Claude Code stream-json log, and the head+tail bound of the stored log. */
+/** The attempt summary System computes from a Claude Code stream-json log. */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { boundLog } from '../src/attempt-summary.ts'
 import { summarizeAttempt } from '../src/adapters/index.ts'
 
 const line = (event: unknown) => JSON.stringify(event)
@@ -64,16 +63,6 @@ test('a Codex log gives what can be read and unknown for the rest', () => {
 
 test('a web run has nothing to read', () => {
   assert.equal(summarizeAttempt('web', '').toolCalls, 'unknown')
-})
-
-test('head and tail of a large log are kept, with a marker for the cut', () => {
-  const big = `FIRST-LINE\n${'m\n'.repeat(400 * 1024)}LAST-LINE\n`
-  const kept = boundLog(big)
-  assert.ok(kept.length <= 256 * 1024)
-  assert.ok(kept.startsWith('FIRST-LINE\n'))
-  assert.ok(kept.endsWith('LAST-LINE\n'))
-  assert.match(kept, /\n\[… \d+ bytes cut by System …\]\n/)
-  assert.equal(boundLog('small\n'), 'small\n')
 })
 
 test('overlapping tool calls sum their seconds: the ratio is tool-seconds per second and can pass 1', () => {

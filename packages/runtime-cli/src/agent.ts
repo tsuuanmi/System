@@ -2,7 +2,7 @@
  * One account of one agent CLI as a System Worker (ADR-0004 decisions 4-6,
  * ADR-0005). Each attempt: prepare the workspace, run the CLI headless through
  * a `Spawner` (the DSH subprocess service in production), capture outputs,
- * store a bounded log, clean up. Cancellation aborts the process range with a
+ * store the whole log and prompt, clean up. Cancellation aborts the process range with a
  * 30 s grace; whatever the attempt produced is kept as unaccepted partial output.
  * An attempt past its time limit is stopped the same way but fails: nobody cancelled it.
  */
@@ -187,15 +187,18 @@ async function attempt(account: Account, artifacts: Artifacts, spawner: Spawner,
   const pre = await adapter.preflight(account)
   if ('failed' in pre) return { status: 'failed', outputs: {}, reason: pre.failed, executor }
   let stdout = () => ''
+  let promptText: string | undefined
   const secrets = [await account.token?.()]
   const run = () => runAttempt({
     secrets,
     artifacts, ref: account.ref, executor, request, dir: join(attemptsDir, request.attemptId.replace(/[^a-z0-9-]/gi, '_')),
     timeoutMinutes: account.attemptTimeoutMinutes, cancelReason: 'cancelled; the agent was stopped',
     log: () => stdout(),
+    prompt: () => promptText,
     turn: async (ctx) => {
       const { ws } = ctx
       const text = prompt(ws, request)
+      promptText = text
       const staged = pre.stage(ws.root)
       const invocation = adapter.invocation({ command: account.command, ws, prompt: text, model, codeWrite: writesRepository(request.capabilities), env: staged.env, ...(account.sandbox ? { sandbox: account.sandbox } : {}) })
       executor.scope = invocation.scope

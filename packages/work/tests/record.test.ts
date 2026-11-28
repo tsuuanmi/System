@@ -112,3 +112,11 @@ test('observed worker.scope validates and folds identically to records without i
   assert.equal(eventSchema.safeParse(withScope).success, true)
   assert.deepEqual(fold(['task'], [...prefix, withScope]), fold(['task'], [...prefix, withoutScope]))
 })
+
+test('observed prompt validates and folds identically to records without it', () => {
+  const withoutPrompt = { seq: 2, at, ...observed(2, 'task', { log: id('l') }) } as WorkEvent
+  const withPrompt = { seq: 2, at, ...observed(2, 'task', { log: id('l'), prompt: id('p') }) } as WorkEvent
+  assert.equal(eventSchema.safeParse(withoutPrompt).success, true)
+  assert.equal(eventSchema.safeParse(withPrompt).success, true)
+  assert.deepEqual(fold(['task'], [...prefix, withPrompt]), fold(['task'], [...prefix, withoutPrompt]))
+})

@@ -53,8 +53,10 @@ export interface WorkerResult {
   usage?: Omit<UsageObserved, 'state'>
   /** Why `usage` is absent, when the Worker knows (usage-1); recorded as the reason of the unavailable usage outcome. */
   usageGap?: string
-  /** Bounded agent output as an Artifact, for audit. */
+  /** Whole Attempt log as an Artifact, for audit. */
   log?: string
+  /** Redacted prompt given to the Worker for this attempt, as an Artifact. */
+  prompt?: string
   /** fl-4: what the attempt did, computed by System from its output; recorded with the observed event. */
   summary?: AttemptSummary
   /** finish-1: structured final result reported by Codex and Antigravity attempts. */

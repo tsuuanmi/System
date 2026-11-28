@@ -1,25 +1,8 @@
 /**
  * What an attempt did (fl-4) is computed by each Runtime's adapter (adapters/) from the attempt's own output: pure, no clock, no I/O; a part its log
- * does not say is `unknown`, never a guess. Here: the shared helpers, and the bound of the stored log: its head and its tail.
+ * does not say is `unknown`, never a guess. Here: the shared helpers.
  */
 import type { AttemptSummary } from '@system/work'
-
-/** The stored log's size: the first `HEAD_LOG_BYTES` (where the attempt reads the code) and the rest from the end. */
-export const MAX_LOG_BYTES = 256 * 1024
-const HEAD_LOG_BYTES = 64 * 1024
-
-/** The head and the tail of `output` with a marker line for the cut; `output` itself when it fits. */
-export function boundLog(output: string): string {
-  if (output.length <= MAX_LOG_BYTES) return output
-  const marker = (cut: number) => `\n[… ${cut} bytes cut by System …]\n`
-  const reserve = marker(output.length).length + 8
-  const headEnd = output.lastIndexOf('\n', HEAD_LOG_BYTES) + 1 || HEAD_LOG_BYTES
-  const tailBytes = MAX_LOG_BYTES - headEnd - reserve
-  let tailStart = output.length - tailBytes
-  const newline = output.indexOf('\n', tailStart)
-  if (newline >= 0 && newline - tailStart < 4096) tailStart = newline + 1
-  return output.slice(0, headEnd) + marker(tailStart - headEnd) + output.slice(tailStart)
-}
 
 const UNKNOWN = 'unknown' as const
 
